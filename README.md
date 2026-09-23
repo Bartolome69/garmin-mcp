@@ -1,42 +1,89 @@
 # garmin-mcp
 
-A local [MCP](https://modelcontextprotocol.io) server that gives Claude read-only
-access to your own Garmin Connect data. Single user, runs as a local subprocess
-over stdio, no network exposure and no hosting.
+Ask Claude about your Garmin data, then have it write the session onto your watch.
 
-It talks to Garmin's unofficial Connect API through the
-[`garminconnect`](https://github.com/cyberjunky/python-garminconnect) library,
-because Garmin has no consumer OAuth API. That means it signs in with your real
-Garmin username and password.
+A local [MCP](https://modelcontextprotocol.io) server that connects Claude Desktop
+to your own Garmin Connect account. It reads your runs, splits, heart-rate zones
+and daily health metrics — and, unlike the read-only Garmin integrations out
+there, it can build a structured workout and schedule it, so the answer to
+"what should I run on Thursday?" ends up on your wrist instead of in a chat log.
+
+Everything runs as a local subprocess on your machine. No hosting, no server
+holding your credentials, no network exposure.
+
+```
+You:    My last three runs are all at the same effort. Give me something harder
+        for Thursday, based on what my recent paces actually support.
+
+Claude: [reads your activities and splits, then proposes]
+
+        Thursday Threshold (running, about 52m 55s)
+          warmup: 15m
+        5 x
+            interval: 1.00 km @ 4:00/km-4:10/km
+            recovery: 1m 30s
+          cooldown: 10m
+
+        Create this and put it on Thursday?
+```
+
+## Install
+
+macOS, with [Claude Desktop](https://claude.ai/download) already installed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Bartolome69/garmin-mcp/main/scripts/bootstrap.sh | bash
+```
+
+That fetches the code to `~/garmin-mcp`, installs a modern Python via
+[uv](https://docs.astral.sh/uv/), signs you in to Garmin, and registers the
+server with Claude Desktop. It's the only command most people need. Read it
+first if you'd rather —
+[`scripts/bootstrap.sh`](scripts/bootstrap.sh) is short.
+
+Then quit Claude Desktop completely (⌘Q) and reopen it.
+
+<details>
+<summary>Manual install, or on Linux</summary>
+
+```bash
+git clone https://github.com/Bartolome69/garmin-mcp.git
+cd garmin-mcp
+./scripts/setup.sh          # venv + dependencies
+./scripts/login.sh          # sign in to Garmin once, caches the session
+```
+
+Then register it with your MCP client. For Claude Desktop on macOS,
+`./scripts/install-claude-desktop.sh` does it (with the app quit). For anything
+else, copy `.mcp.json.example`, fill in the absolute paths, and point your client
+at `python -m garmin_mcp` over stdio.
+
+</details>
 
 ## Tools
 
 | Tool | What it returns |
 | --- | --- |
+| `get_activities(limit, start_date, end_date)` | Runs, rides and workouts: distance, duration, pace per km and mile, average and max HR, HR zones, cadence, training effect |
+| `get_activity_details(activity_id)` | One activity in detail: per-split distance, pace, HR and cadence, plus full heart-rate time-in-zone |
 | `get_daily_summary(date)` | Steps, distance, calories, resting/min/max HR, body battery, stress, intensity minutes |
-| `get_sleep_data(date)` | Sleep stages with durations and percentages, sleep score and rating, overnight HRV, resting HR |
-| `get_activities(limit, start_date, end_date)` | Recent runs/rides/workouts: distance, duration, pace per km and mile, average and max HR, HR zones, cadence, training effect |
-| `get_activity_details(activity_id)` | One activity: per-split distance/pace/HR/cadence, plus full HR time-in-zone |
-| `get_connection_status()` | Whether the server is logged in, which account (masked), and the state of the token cache |
+| `get_sleep_data(date)` | Sleep stages with durations and percentages, sleep score, overnight HRV, resting HR |
 | `list_workouts(limit)` | Structured workouts saved in the account |
 | `create_workout(name, steps, sport, description)` | Builds a structured workout and adds it to Garmin Connect |
-| `schedule_workout(workout_id, date)` | Puts a workout on a date so it syncs to the watch |
+| `schedule_workout(workout_id, date)` | Puts a workout on a date, which is what syncs it to the watch |
+| `get_connection_status()` | Whether the server is signed in, which account (masked), and the state of the token cache |
 
-The first five are read-only. The two that write are deliberately **additive
-only**: they create and schedule, and there is no tool that deletes, overwrites
-or edits anything. The worst case is a workout you delete in the Garmin app.
+Dates accept `YYYY-MM-DD`, `today`, `yesterday`, `tomorrow`, or a signed offset
+like `-7` or `+3`.
 
-Dates accept `YYYY-MM-DD`, `today`, `yesterday`, or a negative offset like `-7`.
+## Writing workouts
 
-## Creating workouts
+`create_workout` takes an ordered list of steps. Each has a `type` (`warmup`,
+`interval`, `recovery`, `rest`, `cooldown` or `repeat`), exactly one of
+`duration_seconds` or `distance_meters`, and an optional target — either `pace`
+(minutes per km, as `"4:05"` or a range `["4:00","4:10"]`) or `hr` (`[150, 165]`).
 
-`create_workout` takes an ordered list of steps. Each step has a `type`
-(`warmup`, `interval`, `recovery`, `rest`, `cooldown` or `repeat`), exactly one
-of `duration_seconds` or `distance_meters`, and an optional target — either
-`pace` (minutes per km, as `"4:05"` or a range `["4:00","4:10"]`) or `hr`
-(`[150, 165]` bpm).
-
-A 15 minute warmup, 5x1km at 4:05 with 90 second recoveries, 10 minute cooldown:
+15 minute warmup, 5×1km at 4:05 with 90 second recoveries, 10 minute cooldown:
 
 ```json
 [{"type": "warmup", "duration_seconds": 900},
@@ -47,189 +94,76 @@ A 15 minute warmup, 5x1km at 4:05 with 90 second recoveries, 10 minute cooldown:
 ```
 
 A single pace is widened by 5 s/km either side, because Garmin alerts on a range
-and an exact target would beep constantly. Repeat groups cannot nest.
+and an exact target beeps constantly. Repeat groups don't nest. Creating a
+workout only saves it — schedule it on a date for it to reach the watch.
 
-Creating a workout only saves it. Schedule it on a date for it to reach the
-watch.
+## What it can and can't do to your account
 
-## Install
+Reading is unrestricted. Writing is deliberately **additive only**: the two write
+tools create and schedule, and there is no tool that deletes, overwrites or edits
+anything. The worst case is a workout you delete in the Garmin app.
 
-Needs Python 3.10 or newer. The system Python on macOS is 3.9, so this uses
-[`uv`](https://docs.astral.sh/uv/) to fetch a modern one:
+Your password is read from the environment, sent straight to Garmin, and never
+written to disk. Only the session token Garmin issues is cached, at
+`~/.garmin-mcp/tokens.json`, written `0600` inside a `0700` directory. No tool
+returns the password or the token — `get_connection_status` reports a masked
+address and the cache's age and permissions, nothing more. Logs go to stderr, so
+they never corrupt the MCP stream on stdout.
 
-```bash
-cd path/to/garmin-mcp && uv venv --python 3.12 .venv && VIRTUAL_ENV=.venv uv pip install -r requirements.txt
-```
+After the first sign-in the server runs off the cached token. Set
+`GARMIN_EMAIL` and `GARMIN_PASSWORD` in the server's environment if you want it
+to re-authenticate unattended when that token eventually expires; leave
+`GARMIN_PASSWORD` out and you'll re-run `scripts/login.sh` instead.
 
-With plain pip and your own Python 3.10+:
+## If it doesn't work
 
-```bash
-cd path/to/garmin-mcp && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-```
+**"Garmin is rate-limiting logins from this IP address (429)"** — the most common
+failure, and it isn't your password: Garmin blocks by network address before it
+checks credentials. Office wifi, university networks and VPNs get hit hardest.
+Sign in once over a phone hotspot; afterwards the cached session is used instead.
 
-## Credentials
+**"Garmin is asking for a multi-factor code"** — the server can't prompt over
+stdio, so run `./scripts/login.sh` in a terminal once. It handles the code and
+caches the session.
 
-The server reads two environment variables and never stores them anywhere:
+**Claude can't see the tools** — Claude Desktop loads its config at launch and
+writes its own copy back when it closes, so a change made while it's running
+disappears. Quit it fully, run `./scripts/install-claude-desktop.sh`, reopen.
 
-```bash
-export GARMIN_EMAIL="you@example.com"
-export GARMIN_PASSWORD="your-garmin-password"
-```
+**No sleep data** — the watch wasn't worn overnight, or hasn't synced. Sleep,
+HRV and overnight body battery only exist if you sleep in it.
 
-There is a `.env.example` to copy if you prefer keeping them in a file — but
-note the server does not load `.env` itself, so you would need to source it.
-
-After the first successful login the session token is cached at
-`~/.garmin-mcp/tokens.json` (owner-only, `0600`, inside a `0700` directory), and
-later runs resume from that instead of signing in again. Override the location
-with `GARMIN_MCP_TOKENS` if you want it elsewhere.
-
-### First login, and multi-factor auth
-
-If your Garmin account has multi-factor authentication on, the server cannot
-complete the login on its own: it speaks MCP over stdin/stdout, so it has
-nowhere to prompt you for a code. Do the first login in a terminal instead:
+## Development
 
 ```bash
-cd path/to/garmin-mcp && .venv/bin/python -m garmin_mcp.login
+.venv/bin/python tests/smoke_test.py
 ```
 
-It asks for anything not already in the environment (the password is never
-echoed), handles the MFA prompt, and caches the token. From then on the server
-picks that up. Run it again if the cached session is ever rejected.
-
-## Check it against your real account
-
-The fastest way to find out whether it can actually reach Garmin. It uses the
-same code path as the MCP tools and prints what comes back:
+Drives the server over real stdio like an MCP client would, against a stubbed
+Garmin account — no network, no credentials. Covers every tool's response shape,
+workout construction, bad input, and the no-credentials startup path.
 
 ```bash
-cd path/to/garmin-mcp && .venv/bin/python -m garmin_mcp.check
+.venv/bin/python -m garmin_mcp.check
 ```
 
-If you have already run the login command below, this needs no password — it
-runs off the cached session. Otherwise set the two environment variables first.
+The same code path against your real account, printing what comes back. Useful
+for confirming a setup end to end.
 
-## Try it with the MCP Inspector
+## Alternatives
 
-Before wiring this into Claude Desktop, confirm it works standalone. The
-Inspector is a browser UI that speaks MCP to your server — it needs Node, which
-you already have.
+[MissingMCP](https://missingmcp.com/) is a hosted Garmin connector — no install,
+works on Claude's web and mobile apps, which this doesn't. It's read-only, and
+because Garmin offers no OAuth you sign in with your Garmin password on their
+site. This project trades that convenience for keeping everything, credentials
+included, on your own machine, and for being able to write workouts.
 
-```bash
-cd path/to/garmin-mcp && GARMIN_EMAIL="you@example.com" GARMIN_PASSWORD="your-password" npx @modelcontextprotocol/inspector .venv/bin/python -m garmin_mcp
-```
+## Caveats
 
-It opens a browser itself, and prints the URL it used:
+Not affiliated with Garmin. It uses the same private API the Garmin Connect
+website does, via
+[`garminconnect`](https://github.com/cyberjunky/python-garminconnect), because
+Garmin publishes no consumer OAuth API. That API can change without notice and
+take this with it.
 
-```
-MCP Inspector Web is up and running at:
-   http://127.0.0.1:6274?MCP_INSPECTOR_API_TOKEN=ec50549745...
-```
-
-Use that exact URL — the token is required, so `localhost:6274` on its own will
-not authenticate.
-
-Then, in the Inspector:
-
-1. Press **Connect**. The left pane should show the server as connected.
-2. Open the **Tools** tab and press **List Tools**. You should see all five.
-3. Run **`get_connection_status`** first — it needs no arguments and tells you
-   whether authentication actually worked. Expect `"authenticated": true` and a
-   masked account like `y***@example.com`. If it returns an `error` instead,
-   fix that before trying anything else.
-4. Run **`get_daily_summary`** with `date` empty (defaults to today), then
-   **`get_sleep_data`** for `yesterday`.
-5. Run **`get_activities`** with `limit` `5`. Copy an `activity_id` from the
-   result.
-6. Run **`get_activity_details`** with that id to see splits and HR zones.
-
-Watch the **Notifications** pane at the bottom for server-side log lines; that
-is where login problems show up.
-
-There is also an offline test that drives the server exactly like a real client
-but against fixed sample data, so it needs no credentials and touches no
-network:
-
-```bash
-cd path/to/garmin-mcp && .venv/bin/python tests/smoke_test.py
-```
-
-## Add it to Claude Desktop
-
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`. That
-file already has other settings in it, so **merge** this `mcpServers` block in
-rather than replacing the whole file:
-
-```json
-{
-  "mcpServers": {
-    "garmin": {
-      "command": "/ABSOLUTE/PATH/TO/garmin-mcp/.venv/bin/python",
-      "args": ["-m", "garmin_mcp"],
-      "cwd": "/ABSOLUTE/PATH/TO/garmin-mcp",
-      "env": {
-        "GARMIN_EMAIL": "you@example.com",
-        "GARMIN_PASSWORD": "your-garmin-password"
-      }
-    }
-  }
-}
-```
-
-Restart Claude Desktop fully (quit, don't just close the window). Ask it
-something like *"what did my Garmin say about last night's sleep?"*
-
-That config file stores the password in plain text. If you would rather it did
-not, run `python -m garmin_mcp.login` once and then drop `GARMIN_PASSWORD` from
-the `env` block — the server will run off the cached token alone. You will need
-to re-run the login command whenever Garmin expires the session.
-
-## What this never does
-
-- No credential is ever written to disk by this project — only the token the
-  Garmin library issues, and only to `~/.garmin-mcp/tokens.json`.
-- No tool returns your password or the token contents. `get_connection_status`
-  reports a masked address, the cache's path, age and permissions, nothing more.
-- Logs go to stderr only, so they never corrupt the MCP stream on stdout, and
-  they never include credentials.
-
-## Troubleshooting
-
-**`error` mentioning GARMIN_EMAIL / GARMIN_PASSWORD** — the variables did not
-reach the server process. Inside Claude Desktop they must be in the `env` block
-above; your shell profile is not read.
-
-**"Garmin is asking for a multi-factor code"** — run
-`.venv/bin/python -m garmin_mcp.login` in a terminal, as described above.
-
-**"Garmin is rate-limiting login attempts"** — Garmin throttles repeated
-sign-ins. Wait several minutes. Once the token cache exists this stops happening,
-since the server resumes instead of logging in.
-
-**A tool returns `"Garmin returned no summary for this day"`** — genuinely no
-data: the watch was not worn, or has not synced to Garmin Connect yet.
-
-**The server works in the Inspector but not in Claude Desktop** — almost always
-the `command` path. It must be the absolute path to `.venv/bin/python`, not a
-bare `python`.
-
-## Layout
-
-```
-garmin-mcp/
-├── garmin_mcp/
-│   ├── __main__.py      # python -m garmin_mcp
-│   ├── server.py        # MCP tool definitions
-│   ├── session.py       # login, token cache, error translation
-│   ├── formatting.py    # Garmin JSON -> compact readable payloads
-│   ├── workouts.py      # step descriptions -> Garmin workout JSON
-│   ├── login.py         # one-off interactive/MFA login
-│   └── check.py         # pull real data, for verifying setup
-├── tests/
-│   ├── smoke_test.py    # drives the server over stdio, no network
-│   ├── fake_server.py   # real server, stubbed Garmin account
-│   └── fake_garmin.py   # sample payloads
-├── requirements.txt
-└── pyproject.toml
-```
+MIT licensed. Built with [Claude Code](https://claude.com/claude-code).

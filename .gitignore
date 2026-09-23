@@ -7,3 +7,6 @@ tokens.json
 # Machine-specific and personal; each user makes their own.
 .mcp.json
 my-prompt.md
+
+# Local drafts, not part of the project.
+launch-post.md
