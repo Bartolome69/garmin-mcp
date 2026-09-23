@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+tokens.json
+
+# Machine-specific and personal; each user makes their own.
+.mcp.json
+my-prompt.md

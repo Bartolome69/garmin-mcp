@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "garmin": {
+      "command": "REPLACE_WITH_PROJECT_PATH/.venv/bin/python",
+      "args": ["-m", "garmin_mcp"],
+      "env": {
+        "PYTHONPATH": "REPLACE_WITH_PROJECT_PATH",
+        "GARMIN_EMAIL": "you@example.com"
+      }
+    }
+  }
+}

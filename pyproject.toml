@@ -1,0 +1,20 @@
+[project]
+name = "garmin-mcp"
+version = "0.1.0"
+description = "Local MCP server exposing read-only Garmin Connect data over stdio"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.2.0",
+    "garminconnect>=0.2.25",
+]
+
+[project.scripts]
+garmin-mcp = "garmin_mcp.server:main"
+garmin-mcp-login = "garmin_mcp.login:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["garmin_mcp"]
