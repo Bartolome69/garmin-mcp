@@ -16,57 +16,61 @@
 <title>Garmin for Claude</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
     color-scheme: light;
-    --ground: #F5F7F9;
+    --ground: #F4F6F3;
     --surface: #FFFFFF;
-    --ink: #141A22;
-    --muted: #5C6773;
-    --hairline: #DCE2E8;
-    --accent: #D4502A;
-    --accent-soft: #FBEDE8;
-    --term-bg: #151B24;
-    --term-ink: #E4EAF1;
-    --term-dim: #8A97A6;
-    --z1: #4A80B8;
-    --z2: #3F9A62;
-    --z3: #D9A320;
-    --z4: #D4502A;
-    --z5: #A8342A;
+    --sunken: #E8EDE8;
+    --ink: #17211B;
+    --muted: #55655B;
+    --hairline: #D3DBD3;
+    --accent: #2F6B4F;
+    --accent-ink: #235340;
+    --clay: #BC5A2A;
+    --clay-soft: #F6ECE5;
+    --term-bg: #16201A;
+    --term-ink: #E2EBE4;
+    --term-dim: #8DA093;
     --radius: 10px;
-    --measure: 68ch;
+    --measure: 66ch;
   }
 
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --ground: #0F141A;
-      --surface: #171E27;
-      --ink: #E7ECF2;
-      --muted: #94A2B1;
-      --hairline: #28323E;
-      --accent: #FF7B4F;
-      --accent-soft: #2A1C16;
-      --term-bg: #0A0E13;
-      --term-ink: #E4EAF1;
-      --term-dim: #7A8797;
+      --ground: #0E1512;
+      --surface: #16201A;
+      --sunken: #1D2922;
+      --ink: #E3ECE5;
+      --muted: #9AAC9F;
+      --hairline: #27352C;
+      --accent: #63BC8E;
+      --accent-ink: #7FCBA1;
+      --clay: #E08A5A;
+      --clay-soft: #2A1E17;
+      --term-bg: #080D0A;
+      --term-ink: #E2EBE4;
+      --term-dim: #7E9186;
     }
   }
 
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --ground: #0F141A;
-    --surface: #171E27;
-    --ink: #E7ECF2;
-    --muted: #94A2B1;
-    --hairline: #28323E;
-    --accent: #FF7B4F;
-    --accent-soft: #2A1C16;
-    --term-bg: #0A0E13;
-    --term-ink: #E4EAF1;
-    --term-dim: #7A8797;
+    --ground: #0E1512;
+    --surface: #16201A;
+    --sunken: #1D2922;
+    --ink: #E3ECE5;
+    --muted: #9AAC9F;
+    --hairline: #27352C;
+    --accent: #63BC8E;
+    --accent-ink: #7FCBA1;
+    --clay: #E08A5A;
+    --clay-soft: #2A1E17;
+    --term-bg: #080D0A;
+    --term-ink: #E2EBE4;
+    --term-dim: #7E9186;
   }
 
   * { box-sizing: border-box; }
@@ -74,77 +78,100 @@
   body {
     background: var(--ground);
     color: var(--ink);
-    font-family: "Barlow", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    font-family: "Archivo", system-ui, -apple-system, "Helvetica Neue", sans-serif;
     font-size: 17px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
 
   .wrap {
-    max-width: 780px;
+    max-width: 800px;
     margin: 0 auto;
     padding-inline: 20px;
-    padding-block: 56px 72px;
+    padding-block: 52px 76px;
   }
 
-  h1, h2, h3 {
-    font-family: "Barlow Condensed", "Barlow", system-ui, sans-serif;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    text-wrap: balance;
-    margin: 0;
-  }
-
-  h1 { font-size: clamp(2.7rem, 9vw, 3.9rem); line-height: 1.02; }
-  h2 { font-size: clamp(1.6rem, 5vw, 2.05rem); line-height: 1.12; }
-  h3 { font-size: 1.22rem; line-height: 1.25; font-weight: 600; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+  h1 { font-size: clamp(2.2rem, 7vw, 3.2rem); font-weight: 800; line-height: 1.03; max-width: 17ch; }
+  h2 { font-size: clamp(1.45rem, 4.4vw, 1.85rem); font-weight: 700; line-height: 1.15; }
+  h3 { font-size: 1.16rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
 
   p { margin: 0; }
-  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
   a:focus-visible, button:focus-visible, summary:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--clay);
     outline-offset: 3px;
     border-radius: 3px;
   }
 
-  .eyebrow {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.72rem;
-    letter-spacing: 0.14em;
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--accent-ink);
   }
 
-  /* Five-segment bar, the shape of a heart-rate zone chart on a watch. */
-  .zones {
-    display: grid;
-    grid-template-columns: 1fr 1.4fr 2.2fr 1.5fr 0.7fr;
-    gap: 3px;
-    height: 6px;
-    margin: 22px 0 0;
-  }
-  .zones i { display: block; border-radius: 1px; }
-  .zones i:nth-child(1) { background: var(--z1); }
-  .zones i:nth-child(2) { background: var(--z2); }
-  .zones i:nth-child(3) { background: var(--z3); }
-  .zones i:nth-child(4) { background: var(--z4); }
-  .zones i:nth-child(5) { background: var(--z5); }
+  .lede { font-size: 1.14rem; color: var(--muted); max-width: var(--measure); margin-top: 18px; }
 
-  .lede {
-    font-size: 1.16rem;
-    color: var(--muted);
-    max-width: var(--measure);
-    margin-top: 20px;
-  }
-
-  section { margin-top: 52px; }
+  section { margin-top: 54px; }
   .stack { display: flex; flex-direction: column; gap: 16px; max-width: var(--measure); }
-  .stack-tight { display: flex; flex-direction: column; gap: 10px; max-width: var(--measure); }
 
-  /* What you need */
+  /* ---- Hero chart ---- */
+  .figure {
+    margin-top: 30px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .figure-head {
+    display: flex; flex-wrap: wrap; gap: 4px 14px;
+    align-items: baseline; justify-content: space-between;
+    padding: 14px 16px 10px;
+  }
+  .figure-head h2 { font-size: 0.98rem; font-weight: 600; letter-spacing: -0.005em; }
+  .figure-head .meta {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem; color: var(--muted); letter-spacing: 0.02em;
+  }
+  .chart-scroll { overflow-x: auto; }
+  .chart { display: block; width: 100%; min-width: 460px; height: auto; }
+  .chart .grid { stroke: var(--hairline); stroke-width: 1; fill: none; }
+  .chart .axis { stroke: var(--hairline); stroke-width: 1; fill: none; }
+  .chart .area { fill: var(--accent); opacity: 0.12; }
+  .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .tick {
+    fill: var(--muted);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px;
+  }
+  .chart .callout {
+    fill: var(--ink);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    font-weight: 500;
+  }
+  .chart .dot { fill: var(--clay); stroke: var(--surface); stroke-width: 2; }
+  .chart .hit { fill: transparent; cursor: crosshair; }
+  .chart .cursor { stroke: var(--clay); stroke-width: 1; fill: none; opacity: 0; }
+  .chart .cursor-dot { fill: var(--clay); stroke: var(--surface); stroke-width: 2; opacity: 0; }
+  .figure-foot {
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 0 16px 14px;
+    font-size: 0.83rem; color: var(--muted);
+  }
+  #readout {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.78rem;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Needs ---- */
   .needs {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 1px;
     background: var(--hairline);
     border: 1px solid var(--hairline);
@@ -152,171 +179,136 @@
     overflow: hidden;
     margin-top: 22px;
   }
-  .needs div { background: var(--surface); padding: 16px 18px; }
+  .needs div { background: var(--surface); padding: 15px 17px; }
   .needs dt {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 4px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
   }
   .needs dd { margin: 0; font-weight: 500; }
 
   .note {
-    border-left: 3px solid var(--accent);
-    background: var(--accent-soft);
-    padding: 16px 18px;
+    border-left: 3px solid var(--clay);
+    background: var(--clay-soft);
+    padding: 15px 17px;
     border-radius: 0 var(--radius) var(--radius) 0;
     max-width: var(--measure);
   }
   .note p + p { margin-top: 10px; }
 
-  /* Steps */
-  ol.steps { list-style: none; margin: 30px 0 0; padding: 0; display: flex; flex-direction: column; gap: 34px; }
-  ol.steps > li { display: grid; grid-template-columns: 46px 1fr; gap: 18px; align-items: start; }
-  .num {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.95rem;
-    font-weight: 500;
-    color: var(--accent);
-    border: 1px solid var(--hairline);
-    background: var(--surface);
+  /* ---- Steps as a route ---- */
+  ol.steps { list-style: none; margin: 30px 0 0; padding: 0; position: relative; }
+  ol.steps > li {
+    display: grid; grid-template-columns: 44px 1fr; gap: 18px;
+    align-items: start; position: relative; padding-bottom: 34px;
+  }
+  ol.steps > li:last-child { padding-bottom: 0; }
+  /* The route line linking one waypoint to the next. */
+  ol.steps > li:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 21px; top: 44px; bottom: 10px;
+    width: 2px;
+    background: var(--hairline);
+  }
+  .waypoint {
+    position: relative; z-index: 1;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.82rem; font-weight: 500;
+    color: var(--surface);
+    background: var(--accent);
     border-radius: 50%;
-    width: 46px; height: 46px;
+    width: 44px; height: 44px;
     display: grid; place-items: center;
   }
   .step-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
-  /* Terminal blocks */
-  .term {
-    background: var(--term-bg);
-    border-radius: var(--radius);
-    overflow: hidden;
-    border: 1px solid var(--hairline);
-  }
+  /* ---- Terminal ---- */
+  .term { background: var(--term-bg); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--hairline); }
   .term-head {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 9px 12px 9px 14px;
     border-bottom: 1px solid rgba(255,255,255,0.08);
   }
   .term-label {
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase;
     color: var(--term-dim);
   }
   .term pre {
-    margin: 0; padding: 14px;
-    overflow-x: auto;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.83rem;
-    line-height: 1.65;
-    color: var(--term-ink);
+    margin: 0; padding: 14px; overflow-x: auto;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.82rem; line-height: 1.6; color: var(--term-ink);
   }
   .term code { white-space: pre; }
   .term .prompt { color: var(--term-dim); user-select: none; }
 
   button.copy {
-    font-family: "Barlow", system-ui, sans-serif;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 0.78rem; font-weight: 600;
     color: var(--term-ink);
     background: rgba(255,255,255,0.09);
-    border: 1px solid rgba(255,255,255,0.16);
-    border-radius: 6px;
-    padding: 5px 11px;
-    cursor: pointer;
-    white-space: nowrap;
+    border: 1px solid rgba(255,255,255,0.17);
+    border-radius: 6px; padding: 5px 11px; cursor: pointer; white-space: nowrap;
     transition: background 120ms ease;
   }
-  button.copy:hover { background: rgba(255,255,255,0.17); }
-  button.copy[data-done="1"] { color: #9BDCAF; border-color: rgba(155,220,175,0.4); }
+  button.copy:hover { background: rgba(255,255,255,0.18); }
+  button.copy[data-done="1"] { color: #8FD6AC; border-color: rgba(143,214,172,0.45); }
 
-  /* Prompt box */
-  .promptbox {
-    background: var(--surface);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
+  /* ---- Prompt ---- */
+  .promptbox { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); overflow: hidden; }
   .promptbox-head {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--hairline);
+    padding: 12px 14px; border-bottom: 1px solid var(--hairline);
   }
   .promptbox pre {
-    margin: 0; padding: 16px;
-    max-height: 340px; overflow: auto;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 0.78rem; line-height: 1.6;
-    color: var(--ink);
-    white-space: pre-wrap;
+    margin: 0; padding: 16px; max-height: 330px; overflow: auto;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.76rem; line-height: 1.6; color: var(--ink); white-space: pre-wrap;
   }
-  button.copy.light {
-    color: var(--ink);
-    background: transparent;
-    border-color: var(--hairline);
-  }
-  button.copy.light:hover { background: var(--ground); }
-  button.copy.light[data-done="1"] { color: var(--z2); border-color: var(--z2); }
+  button.copy.light { color: var(--ink); background: transparent; border-color: var(--hairline); }
+  button.copy.light:hover { background: var(--sunken); }
+  button.copy.light[data-done="1"] { color: var(--accent-ink); border-color: var(--accent); }
 
-  /* Examples */
   ul.asks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: var(--measure); }
   ul.asks li {
-    background: var(--surface);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-    padding: 13px 16px;
-    font-style: italic;
-    color: var(--ink);
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: var(--radius); padding: 13px 16px; font-style: italic;
   }
 
-  /* Troubleshooting */
-  details {
-    border-bottom: 1px solid var(--hairline);
-    max-width: var(--measure);
-  }
+  details { border-bottom: 1px solid var(--hairline); max-width: var(--measure); }
   details summary {
-    cursor: pointer;
-    padding: 15px 0;
-    font-weight: 600;
-    list-style: none;
+    cursor: pointer; padding: 15px 0; font-weight: 600; list-style: none;
     display: flex; gap: 12px; align-items: baseline;
   }
   details summary::-webkit-details-marker { display: none; }
   details summary::before {
-    content: "+";
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    color: var(--accent);
-    font-weight: 500;
+    content: "+"; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--clay); font-weight: 500;
   }
   details[open] summary::before { content: "\2013"; }
   details .answer { padding: 0 0 18px 24px; display: flex; flex-direction: column; gap: 10px; color: var(--muted); }
   details .answer strong { color: var(--ink); }
 
-  .divider { height: 1px; background: var(--hairline); border: 0; margin: 0; }
-
   footer {
-    margin-top: 60px;
-    padding-top: 24px;
-    border-top: 1px solid var(--hairline);
-    color: var(--muted);
-    font-size: 0.9rem;
+    margin-top: 58px; padding-top: 24px; border-top: 1px solid var(--hairline);
+    color: var(--muted); font-size: 0.9rem;
     display: flex; flex-direction: column; gap: 8px;
   }
 
   .muted { color: var(--muted); }
   .small { font-size: 0.92rem; }
-
-  @media (prefers-reduced-motion: reduce) {
-    * { transition: none !important; animation: none !important; }
+  code.inline {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.86em; background: var(--sunken); padding: 1px 5px; border-radius: 4px;
   }
 
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
   @media (max-width: 480px) {
-    ol.steps > li { grid-template-columns: 36px 1fr; gap: 14px; }
-    .num { width: 36px; height: 36px; font-size: 0.85rem; }
+    ol.steps > li { grid-template-columns: 34px 1fr; gap: 14px; }
+    .waypoint { width: 34px; height: 34px; font-size: 0.72rem; }
+    ol.steps > li:not(:last-child)::before { left: 16px; top: 34px; }
   }
 </style>
 </head>
@@ -325,14 +317,54 @@
 <div class="wrap">
 
   <header>
-    <p class="eyebrow">Claude&nbsp;+&nbsp;Garmin Connect</p>
-    <h1>Let Claude read your running data</h1>
-    <div class="zones" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="kicker">Claude&nbsp;+&nbsp;Garmin Connect</p>
+    <h1>From your watch to your conversation</h1>
     <p class="lede">
-      This connects Claude Desktop to your Garmin account. You can then ask it about
-      your actual runs — splits, pace, heart rate, resting HR trends — and have it
-      build structured workouts and put them on your watch.
+      Connect Claude to your Garmin account and it can read what you actually ran —
+      every split, heart rate, the lot — then write the next session back onto the
+      watch.
     </p>
+
+    <figure class="figure">
+      <div class="figure-head">
+        <h2>Pace per kilometre, one real run</h2>
+        <span class="meta">21.28 km &middot; 13 Sept &middot; 4:55/km avg</span>
+      </div>
+      <div class="chart-scroll">
+        <svg class="chart" viewBox="0 0 720 200" role="img"
+             aria-label="Line chart of pace per kilometre across a 21.28 km run. It starts at 5:12 per km, slows to 5:26 by kilometre 10 through the hilliest section, then steadily speeds up to a fastest kilometre of 4:17 at kilometre 19.">
+
+          <line class="grid" x1="54" y1="60.6" x2="700" y2="60.6"></line>
+          <line class="grid" x1="54" y1="106.5" x2="700" y2="106.5"></line>
+          <text class="tick" x="46" y="64" text-anchor="end">4:30</text>
+          <text class="tick" x="46" y="110" text-anchor="end">5:00</text>
+
+          <path class="area" d="M84.4 124.8 L114.7 112.6 L145.1 112.6 L175.4 115.6 L205.8 104.9 L236.2 132.4 L266.5 135.5 L296.9 137.1 L327.2 127.9 L357.6 146.2 L388 115.6 L418.3 115.6 L448.7 91.2 L479 85.1 L509.4 88.1 L539.8 100.3 L570.1 56 L600.5 42.2 L630.8 40.7 L661.2 51.4 L691.6 60.6 L700.1 80.5 L700.1 160 L84.4 160 Z"></path>
+          <path class="line" d="M84.4 124.8 L114.7 112.6 L145.1 112.6 L175.4 115.6 L205.8 104.9 L236.2 132.4 L266.5 135.5 L296.9 137.1 L327.2 127.9 L357.6 146.2 L388 115.6 L418.3 115.6 L448.7 91.2 L479 85.1 L509.4 88.1 L539.8 100.3 L570.1 56 L600.5 42.2 L630.8 40.7 L661.2 51.4 L691.6 60.6 L700.1 80.5"></path>
+
+          <line class="axis" x1="54" y1="160" x2="700" y2="160"></line>
+          <text class="tick" x="84.4" y="177" text-anchor="middle">1</text>
+          <text class="tick" x="205.8" y="177" text-anchor="middle">5</text>
+          <text class="tick" x="357.6" y="177" text-anchor="middle">10</text>
+          <text class="tick" x="509.4" y="177" text-anchor="middle">15</text>
+          <text class="tick" x="661.2" y="177" text-anchor="middle">20</text>
+          <text class="tick" x="700" y="194" text-anchor="end">kilometre</text>
+
+          <circle class="dot" cx="357.6" cy="146.2" r="4.5"></circle>
+          <circle class="dot" cx="630.8" cy="40.7" r="4.5"></circle>
+          <text class="callout" x="366" y="158" text-anchor="start">5:26 slowest</text>
+          <text class="callout" x="630.8" y="31" text-anchor="middle">4:17 fastest</text>
+
+          <line class="cursor" id="cursor" x1="0" y1="24" x2="0" y2="160"></line>
+          <circle class="cursor-dot" id="cursorDot" cx="0" cy="0" r="4.5"></circle>
+          <rect class="hit" id="hit" x="54" y="24" width="646" height="136"></rect>
+        </svg>
+      </div>
+      <figcaption class="figure-foot">
+        <span>Slows through the hills to km 10, then negative-splits the last 5 km.</span>
+        <span id="readout">Hover for each kilometre</span>
+      </figcaption>
+    </figure>
   </header>
 
   <section>
@@ -379,7 +411,7 @@
     <ol class="steps">
 
       <li>
-        <span class="num" aria-hidden="true">1</span>
+        <span class="waypoint" aria-hidden="true">01</span>
         <div class="step-body">
           <h3>Open Terminal</h3>
           <p class="muted small">
@@ -391,7 +423,7 @@
       </li>
 
       <li>
-        <span class="num" aria-hidden="true">2</span>
+        <span class="waypoint" aria-hidden="true">02</span>
         <div class="step-body">
           <h3>Paste this and press Return</h3>
           <div class="term">
@@ -409,7 +441,7 @@
       </li>
 
       <li>
-        <span class="num" aria-hidden="true">3</span>
+        <span class="waypoint" aria-hidden="true">03</span>
         <div class="step-body">
           <h3>Sign in to Garmin when it asks</h3>
           <p class="muted small">
@@ -431,7 +463,7 @@
       </li>
 
       <li>
-        <span class="num" aria-hidden="true">4</span>
+        <span class="waypoint" aria-hidden="true">04</span>
         <div class="step-body">
           <h3>Quit Claude Desktop, then run one more line</h3>
           <p class="muted small">
@@ -448,13 +480,13 @@
           </div>
           <p class="muted small">
             If Claude is still open it will tell you so and change nothing, so you can't
-            get this wrong. Skip this step entirely if step 2 already said "Done".
+            get this wrong. Skip this step entirely if step 02 already said "Done".
           </p>
         </div>
       </li>
 
       <li>
-        <span class="num" aria-hidden="true">5</span>
+        <span class="waypoint" aria-hidden="true">05</span>
         <div class="step-body">
           <h3>Open Claude Desktop and ask it something</h3>
           <p class="muted small">
@@ -538,12 +570,12 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
         <summary>Claude says it can't find any Garmin tools</summary>
         <div class="answer">
           <p>
-            Almost always step 4. Claude Desktop has to be <strong>fully quit</strong>
+            Almost always step 04. Claude Desktop has to be <strong>fully quit</strong>
             (Cmd + Q) when the settings are written, otherwise it replaces them with its
             own copy when it closes and the connection silently disappears.
           </p>
           <p>
-            Quit it properly, run the step 4 command again, then reopen. Starting a brand
+            Quit it properly, run the step 04 command again, then reopen. Starting a brand
             new chat afterwards helps too.
           </p>
         </div>
@@ -565,8 +597,8 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
         <div class="answer">
           <p>
             Then your watch wasn't on your wrist overnight, or hasn't synced. Sleep,
-            HRV and overnight body battery only exist if you wear it while asleep. Everything
-            else — runs, splits, heart rate, resting HR — works regardless.
+            HRV and overnight body battery only exist if you wear it while asleep.
+            Everything else — runs, splits, heart rate, resting HR — works regardless.
           </p>
         </div>
       </details>
@@ -585,10 +617,11 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
         <summary>How do I remove it?</summary>
         <div class="answer">
           <p>
-            Delete the <code>garmin-mcp</code> folder in your home directory and the
-            hidden <code>.garmin-mcp</code> folder next to it — that's the saved session
-            gone. Then remove the "garmin" entry from Claude Desktop's settings file.
-            Nothing is installed anywhere else, and nothing changes on Garmin's side.
+            Delete the <code class="inline">garmin-mcp</code> folder in your home
+            directory and the hidden <code class="inline">.garmin-mcp</code> folder next
+            to it — that's the saved session gone. Then remove the "garmin" entry from
+            Claude Desktop's settings file. Nothing is installed anywhere else, and
+            nothing changes on Garmin's side.
           </p>
         </div>
       </details>
@@ -602,8 +635,8 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
       <p class="small">
         Nothing here is Claude-specific underneath — it speaks MCP, an open standard.
         Any app that can start a local MCP server will run it: Claude Code, Cursor,
-        VS Code, Zed, Windsurf. Point them at <code>python -m garmin_mcp</code> over
-        stdio; the
+        VS Code, Zed, Windsurf. Point them at
+        <code class="inline">python -m garmin_mcp</code> over stdio; the
         <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">repo</a>
         has the config to copy.
       </p>
@@ -652,6 +685,7 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
 
 <script>
   (function () {
+    /* ---- copy buttons ---- */
     document.querySelectorAll("button.copy").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var target = document.getElementById(btn.dataset.copy);
@@ -666,8 +700,8 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
           .join("")
           .trim();
 
+        var original = btn.textContent;
         var done = function () {
-          var original = btn.textContent;
           btn.textContent = "Copied";
           btn.dataset.done = "1";
           setTimeout(function () {
@@ -675,29 +709,99 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
             btn.removeAttribute("data-done");
           }, 1800);
         };
-
         // Clipboard access is refused in some app views; fall back to selecting
         // the text so it can still be copied by hand.
         var select = function () {
-          var range = document.createRange();
-          range.selectNodeContents(target);
-          var sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(range);
-          btn.textContent = "Select and copy";
+          try {
+            var range = document.createRange();
+            range.selectNodeContents(target);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            btn.textContent = "Select and copy";
+          } catch (e) { /* nothing sensible left to do */ }
         };
 
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(done, select);
-          } else {
-            select();
-          }
-        } catch (e) {
-          select();
-        }
+          } else { select(); }
+        } catch (e) { select(); }
       });
     });
+
+    /* ---- chart hover: real splits from the run above ---- */
+    var SPLITS = [
+      {km: 1, x: 84.4, y: 124.8, pace: "5:12", hr: 121},
+      {km: 2, x: 114.7, y: 112.6, pace: "5:04", hr: 130},
+      {km: 3, x: 145.1, y: 112.6, pace: "5:04", hr: 131},
+      {km: 4, x: 175.4, y: 115.6, pace: "5:06", hr: 138},
+      {km: 5, x: 205.8, y: 104.9, pace: "4:59", hr: 139},
+      {km: 6, x: 236.2, y: 132.4, pace: "5:17", hr: 133},
+      {km: 7, x: 266.5, y: 135.5, pace: "5:19", hr: 142},
+      {km: 8, x: 296.9, y: 137.1, pace: "5:20", hr: 143},
+      {km: 9, x: 327.2, y: 127.9, pace: "5:14", hr: 145},
+      {km: 10, x: 357.6, y: 146.2, pace: "5:26", hr: 147},
+      {km: 11, x: 388, y: 115.6, pace: "5:06", hr: 147},
+      {km: 12, x: 418.3, y: 115.6, pace: "5:06", hr: 152},
+      {km: 13, x: 448.7, y: 91.2, pace: "4:50", hr: 141},
+      {km: 14, x: 479, y: 85.1, pace: "4:46", hr: 146},
+      {km: 15, x: 509.4, y: 88.1, pace: "4:48", hr: 147},
+      {km: 16, x: 539.8, y: 100.3, pace: "4:56", hr: 144},
+      {km: 17, x: 570.1, y: 56, pace: "4:27", hr: 150},
+      {km: 18, x: 600.5, y: 42.2, pace: "4:18", hr: 162},
+      {km: 19, x: 630.8, y: 40.7, pace: "4:17", hr: 161},
+      {km: 20, x: 661.2, y: 51.4, pace: "4:24", hr: 167},
+      {km: 21, x: 691.6, y: 60.6, pace: "4:30", hr: 166}
+    ];
+
+    var hit = document.getElementById("hit");
+    var cursor = document.getElementById("cursor");
+    var cursorDot = document.getElementById("cursorDot");
+    var readout = document.getElementById("readout");
+    if (!hit) return;
+    var svg = hit.ownerSVGElement;
+    var idle = "Hover for each kilometre";
+
+    function nearest(svgX) {
+      var best = SPLITS[0], bestGap = Infinity;
+      for (var i = 0; i < SPLITS.length; i++) {
+        var gap = Math.abs(SPLITS[i].x - svgX);
+        if (gap < bestGap) { bestGap = gap; best = SPLITS[i]; }
+      }
+      return best;
+    }
+
+    function show(clientX) {
+      var box = svg.getBoundingClientRect();
+      if (!box.width) return;
+      // Map the pointer into the 720-unit viewBox the coordinates are written in.
+      var svgX = (clientX - box.left) / box.width * 720;
+      var s = nearest(svgX);
+      cursor.setAttribute("x1", s.x);
+      cursor.setAttribute("x2", s.x);
+      cursor.style.opacity = "0.5";
+      cursorDot.setAttribute("cx", s.x);
+      cursorDot.setAttribute("cy", s.y);
+      cursorDot.style.opacity = "1";
+      readout.textContent = "km " + s.km + " · " + s.pace + "/km · " + s.hr + " bpm";
+    }
+
+    function clear() {
+      cursor.style.opacity = "0";
+      cursorDot.style.opacity = "0";
+      readout.textContent = idle;
+    }
+
+    hit.addEventListener("mousemove", function (e) { show(e.clientX); });
+    hit.addEventListener("mouseleave", clear);
+    hit.addEventListener("touchstart", function (e) {
+      if (e.touches[0]) show(e.touches[0].clientX);
+    }, {passive: true});
+    hit.addEventListener("touchmove", function (e) {
+      if (e.touches[0]) show(e.touches[0].clientX);
+    }, {passive: true});
+    hit.addEventListener("touchend", clear);
   })();
 </script>
 
