@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Connect Claude to your Garmin Connect account: read your runs, splits and heart rate, and write structured workouts onto your watch.">
+<meta property="og:title" content="Garmin for Claude">
+<meta property="og:description" content="Let Claude read your running data and build workouts onto your watch.">
+<meta property="og:type" content="website">
+<style>
+  html { color-scheme: light; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Garmin for Claude</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #F5F7F9;
+    --surface: #FFFFFF;
+    --ink: #141A22;
+    --muted: #5C6773;
+    --hairline: #DCE2E8;
+    --accent: #D4502A;
+    --accent-soft: #FBEDE8;
+    --term-bg: #151B24;
+    --term-ink: #E4EAF1;
+    --term-dim: #8A97A6;
+    --z1: #4A80B8;
+    --z2: #3F9A62;
+    --z3: #D9A320;
+    --z4: #D4502A;
+    --z5: #A8342A;
+    --radius: 10px;
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0F141A;
+      --surface: #171E27;
+      --ink: #E7ECF2;
+      --muted: #94A2B1;
+      --hairline: #28323E;
+      --accent: #FF7B4F;
+      --accent-soft: #2A1C16;
+      --term-bg: #0A0E13;
+      --term-ink: #E4EAF1;
+      --term-dim: #7A8797;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0F141A;
+    --surface: #171E27;
+    --ink: #E7ECF2;
+    --muted: #94A2B1;
+    --hairline: #28323E;
+    --accent: #FF7B4F;
+    --accent-soft: #2A1C16;
+    --term-bg: #0A0E13;
+    --term-ink: #E4EAF1;
+    --term-dim: #7A8797;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Barlow", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 780px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 56px 72px;
+  }
+
+  h1, h2, h3 {
+    font-family: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  h1 { font-size: clamp(2.7rem, 9vw, 3.9rem); line-height: 1.02; }
+  h2 { font-size: clamp(1.6rem, 5vw, 2.05rem); line-height: 1.12; }
+  h3 { font-size: 1.22rem; line-height: 1.25; font-weight: 600; }
+
+  p { margin: 0; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* Five-segment bar, the shape of a heart-rate zone chart on a watch. */
+  .zones {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr 2.2fr 1.5fr 0.7fr;
+    gap: 3px;
+    height: 6px;
+    margin: 22px 0 0;
+  }
+  .zones i { display: block; border-radius: 1px; }
+  .zones i:nth-child(1) { background: var(--z1); }
+  .zones i:nth-child(2) { background: var(--z2); }
+  .zones i:nth-child(3) { background: var(--z3); }
+  .zones i:nth-child(4) { background: var(--z4); }
+  .zones i:nth-child(5) { background: var(--z5); }
+
+  .lede {
+    font-size: 1.16rem;
+    color: var(--muted);
+    max-width: var(--measure);
+    margin-top: 20px;
+  }
+
+  section { margin-top: 52px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; max-width: var(--measure); }
+  .stack-tight { display: flex; flex-direction: column; gap: 10px; max-width: var(--measure); }
+
+  /* What you need */
+  .needs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 22px;
+  }
+  .needs div { background: var(--surface); padding: 16px 18px; }
+  .needs dt {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .needs dd { margin: 0; font-weight: 500; }
+
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 16px 18px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    max-width: var(--measure);
+  }
+  .note p + p { margin-top: 10px; }
+
+  /* Steps */
+  ol.steps { list-style: none; margin: 30px 0 0; padding: 0; display: flex; flex-direction: column; gap: 34px; }
+  ol.steps > li { display: grid; grid-template-columns: 46px 1fr; gap: 18px; align-items: start; }
+  .num {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--accent);
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    border-radius: 50%;
+    width: 46px; height: 46px;
+    display: grid; place-items: center;
+  }
+  .step-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  /* Terminal blocks */
+  .term {
+    background: var(--term-bg);
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+  }
+  .term-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 9px 12px 9px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .term-label {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--term-dim);
+  }
+  .term pre {
+    margin: 0; padding: 14px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.83rem;
+    line-height: 1.65;
+    color: var(--term-ink);
+  }
+  .term code { white-space: pre; }
+  .term .prompt { color: var(--term-dim); user-select: none; }
+
+  button.copy {
+    font-family: "Barlow", system-ui, sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--term-ink);
+    background: rgba(255,255,255,0.09);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 6px;
+    padding: 5px 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 120ms ease;
+  }
+  button.copy:hover { background: rgba(255,255,255,0.17); }
+  button.copy[data-done="1"] { color: #9BDCAF; border-color: rgba(155,220,175,0.4); }
+
+  /* Prompt box */
+  .promptbox {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .promptbox-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .promptbox pre {
+    margin: 0; padding: 16px;
+    max-height: 340px; overflow: auto;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.78rem; line-height: 1.6;
+    color: var(--ink);
+    white-space: pre-wrap;
+  }
+  button.copy.light {
+    color: var(--ink);
+    background: transparent;
+    border-color: var(--hairline);
+  }
+  button.copy.light:hover { background: var(--ground); }
+  button.copy.light[data-done="1"] { color: var(--z2); border-color: var(--z2); }
+
+  /* Examples */
+  ul.asks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: var(--measure); }
+  ul.asks li {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 13px 16px;
+    font-style: italic;
+    color: var(--ink);
+  }
+
+  /* Troubleshooting */
+  details {
+    border-bottom: 1px solid var(--hairline);
+    max-width: var(--measure);
+  }
+  details summary {
+    cursor: pointer;
+    padding: 15px 0;
+    font-weight: 600;
+    list-style: none;
+    display: flex; gap: 12px; align-items: baseline;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before {
+    content: "+";
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  details[open] summary::before { content: "\2013"; }
+  details .answer { padding: 0 0 18px 24px; display: flex; flex-direction: column; gap: 10px; color: var(--muted); }
+  details .answer strong { color: var(--ink); }
+
+  .divider { height: 1px; background: var(--hairline); border: 0; margin: 0; }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--hairline);
+    color: var(--muted);
+    font-size: 0.9rem;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  .muted { color: var(--muted); }
+  .small { font-size: 0.92rem; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  @media (max-width: 480px) {
+    ol.steps > li { grid-template-columns: 36px 1fr; gap: 14px; }
+    .num { width: 36px; height: 36px; font-size: 0.85rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Claude&nbsp;+&nbsp;Garmin Connect</p>
+    <h1>Let Claude read your running data</h1>
+    <div class="zones" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="lede">
+      This connects Claude Desktop to your Garmin account. You can then ask it about
+      your actual runs — splits, pace, heart rate, resting HR trends — and have it
+      build structured workouts and put them on your watch.
+    </p>
+  </header>
+
+  <section>
+    <h2>Before you start</h2>
+    <dl class="needs">
+      <div><dt>Computer</dt><dd>A Mac</dd></div>
+      <div><dt>App</dt><dd>Claude Desktop, installed</dd></div>
+      <div><dt>Account</dt><dd>Garmin Connect login</dd></div>
+      <div><dt>Time</dt><dd>About 10 minutes</dd></div>
+    </dl>
+
+    <div class="note" style="margin-top:22px">
+      <p><strong>How technical is this, honestly?</strong></p>
+      <p>
+        There's no installer to double-click. You'll copy one line into an app called
+        Terminal, press Return, and then answer a few questions it asks you. If you can
+        follow a recipe, you can do this. Nothing here can break your Mac, and every
+        step is undoable.
+      </p>
+    </div>
+
+    <div class="stack" style="margin-top:26px">
+      <h3>If even that's more than you want</h3>
+      <p class="small muted">
+        There's a hosted alternative,
+        <a href="https://missingmcp.com/" target="_blank" rel="noopener">MissingMCP</a>,
+        that needs no terminal at all — you paste one address into Claude's connector
+        settings and sign in. It works on the web and on your phone, which this doesn't.
+      </p>
+      <p class="small muted">
+        Two differences worth knowing. It reads your data but can't create workouts or
+        put them on your watch. And because Garmin offers no "sign in with Garmin"
+        button, you type your Garmin password into someone else's website — they discard
+        it and keep only the access tokens, but it does leave your account reachable
+        from their server. Everything on this page runs on your own Mac instead, and
+        your password never leaves it. Pick whichever trade you prefer.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Setting it up</h2>
+
+    <ol class="steps">
+
+      <li>
+        <span class="num" aria-hidden="true">1</span>
+        <div class="step-body">
+          <h3>Open Terminal</h3>
+          <p class="muted small">
+            Press <strong>Cmd + Space</strong>, type <em>Terminal</em>, press Return.
+            A window with a blinking cursor appears. That's it — it's just a place to
+            paste instructions.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <span class="num" aria-hidden="true">2</span>
+        <div class="step-body">
+          <h3>Paste this and press Return</h3>
+          <div class="term">
+            <div class="term-head">
+              <span class="term-label">Terminal</span>
+              <button class="copy" type="button" data-copy="install">Copy</button>
+            </div>
+            <pre><code id="install"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Bartolome69/garmin-mcp/main/scripts/bootstrap.sh | bash</code></pre>
+          </div>
+          <p class="muted small">
+            It downloads the code, sets up Python, and gets everything ready. Two to
+            three minutes the first time. Lots of text will scroll past — that's normal.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <span class="num" aria-hidden="true">3</span>
+        <div class="step-body">
+          <h3>Sign in to Garmin when it asks</h3>
+          <p class="muted small">
+            It will ask for your Garmin email, then your password, then a code if you
+            have two-factor turned on.
+          </p>
+          <div class="note">
+            <p class="small">
+              <strong>Your password will not appear as you type it.</strong> No dots, no
+              stars, nothing. That's deliberate, not a frozen screen — type it and press
+              Return.
+            </p>
+          </div>
+          <p class="muted small">
+            Your password goes straight to Garmin and is never written to your disk. Only
+            the session token Garmin hands back is saved, in a file readable just by you.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <span class="num" aria-hidden="true">4</span>
+        <div class="step-body">
+          <h3>Quit Claude Desktop, then run one more line</h3>
+          <p class="muted small">
+            Claude Desktop overwrites its own settings when it closes, so it has to be
+            fully quit for this to stick. Press <strong>Cmd + Q</strong> — closing the
+            window isn't enough. Then back in Terminal:
+          </p>
+          <div class="term">
+            <div class="term-head">
+              <span class="term-label">Terminal</span>
+              <button class="copy" type="button" data-copy="register">Copy</button>
+            </div>
+            <pre><code id="register"><span class="prompt">$ </span>~/garmin-mcp/scripts/install-claude-desktop.sh</code></pre>
+          </div>
+          <p class="muted small">
+            If Claude is still open it will tell you so and change nothing, so you can't
+            get this wrong. Skip this step entirely if step 2 already said "Done".
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <span class="num" aria-hidden="true">5</span>
+        <div class="step-body">
+          <h3>Open Claude Desktop and ask it something</h3>
+          <p class="muted small">
+            Start a new chat. Try one of these — if it answers with your real numbers,
+            you're finished.
+          </p>
+          <ul class="asks">
+            <li>"What did my last run look like? Break it down by kilometre."</li>
+            <li>"How has my resting heart rate moved over the past two weeks?"</li>
+            <li>"Compare my last three runs — am I running them all at the same effort?"</li>
+          </ul>
+        </div>
+      </li>
+
+    </ol>
+  </section>
+
+  <section>
+    <h2>Make it a coach, not a lookup tool</h2>
+    <div class="stack">
+      <p>
+        Out of the box Claude will answer questions about your data. It gets
+        considerably more useful if you tell it how you want it to work first.
+      </p>
+      <p class="muted small">
+        Paste this at the start of a conversation, or put it in a Claude Project's
+        custom instructions so every chat starts there. Read the bracketed lines and
+        replace them — a prompt describing someone else's training is worse than none.
+      </p>
+    </div>
+
+    <div class="promptbox" style="margin-top:20px">
+      <div class="promptbox-head">
+        <span class="term-label">Training prompt</span>
+        <button class="copy light" type="button" data-copy="coach">Copy</button>
+      </div>
+      <pre id="coach">You have access to my Garmin Connect account through the `garmin` MCP server. Use it as my running coach and training analyst.
+
+Always pull the data before forming a view. Don't ask me what my paces or heart rates were, and don't reason from memory of earlier messages — call the tools and look. get_activities for recent sessions, get_activity_details for splits and HR zones within one run, get_daily_summary for resting heart rate, body battery and stress.
+
+What you should know about my data:
+
+- [If you don't wear the watch overnight, say so here: "I don't wear the watch overnight, so get_sleep_data returns nothing and I have no HRV or sleep score. Don't build recommendations on recovery metrics I don't have." Delete this bullet if you do sleep in it.]
+- [Roughly where your training sits — typical distance, pace and heart rate, and the date you're describing. Tell it to verify rather than assume.]
+- [Anything it would otherwise get wrong: injuries you're working around, a race you're training for, sports it will see that aren't running.]
+
+How I want you to work:
+
+- Be direct about what the data does and doesn't support. If three runs isn't enough to call a trend, say so rather than producing a confident narrative.
+- Notice the boring things that matter: pace drifting up at the same heart rate, cadence dropping late in runs, every run landing in the same narrow effort band, resting heart rate creeping.
+- When I ask for a session, build it with create_workout and schedule it with schedule_workout so it reaches my watch. Show me the structure and wait for me to confirm before you create it — those write to my real account.
+- Prefer one specific, well-argued recommendation over a menu of options.
+- You're not a doctor or physio. If something looks like an injury or health question, say so plainly and stop there.
+
+Start by pulling my last three weeks and telling me what you actually see.</pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>When it doesn't work</h2>
+    <div style="margin-top:14px">
+
+      <details>
+        <summary>It said something about being rate limited, or a 429</summary>
+        <div class="answer">
+          <p>
+            <strong>This is the most common one, and it isn't your password.</strong>
+            Garmin blocks sign-in attempts by network address before it ever checks
+            your credentials. Office wifi, university networks and VPNs get hit hardest,
+            because everyone there shares one address.
+          </p>
+          <p>
+            The reliable fix: turn off wifi, connect your Mac to your phone's personal
+            hotspot, and run the command again. You only need the clean connection for
+            that one sign-in — afterwards the saved session is used instead.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Claude says it can't find any Garmin tools</summary>
+        <div class="answer">
+          <p>
+            Almost always step 4. Claude Desktop has to be <strong>fully quit</strong>
+            (Cmd + Q) when the settings are written, otherwise it replaces them with its
+            own copy when it closes and the connection silently disappears.
+          </p>
+          <p>
+            Quit it properly, run the step 4 command again, then reopen. Starting a brand
+            new chat afterwards helps too.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>It asks for a code I never receive</summary>
+        <div class="answer">
+          <p>
+            That's Garmin's two-factor authentication. The code goes to the email address
+            on your Garmin account, or to your authenticator app — check spam if it's
+            email. Run the command again once you have it; nothing is lost by retrying.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>It says there's no sleep data</summary>
+        <div class="answer">
+          <p>
+            Then your watch wasn't on your wrist overnight, or hasn't synced. Sleep,
+            HRV and overnight body battery only exist if you wear it while asleep. Everything
+            else — runs, splits, heart rate, resting HR — works regardless.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>My data looks out of date</summary>
+        <div class="answer">
+          <p>
+            Claude reads what's in Garmin Connect, not what's on the watch. Open the
+            Garmin Connect app on your phone and let it sync, then ask again.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>How do I remove it?</summary>
+        <div class="answer">
+          <p>
+            Delete the <code>garmin-mcp</code> folder in your home directory and the
+            hidden <code>.garmin-mcp</code> folder next to it — that's the saved session
+            gone. Then remove the "garmin" entry from Claude Desktop's settings file.
+            Nothing is installed anywhere else, and nothing changes on Garmin's side.
+          </p>
+        </div>
+      </details>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>What it can and can't touch</h2>
+    <div class="stack">
+      <p class="small">
+        Everything runs on your own Mac. Your Garmin data is never sent anywhere except
+        between your computer and Garmin, and your password is never stored.
+      </p>
+      <p class="small">
+        Reading is unrestricted: daily summaries, sleep, activities, splits, heart-rate
+        zones. Writing is deliberately limited to two things — creating a workout and
+        putting it on a date. There is no ability to delete or overwrite anything in your
+        Garmin account, by design. The worst it can do is leave you a workout you don't
+        want, which you delete in the Garmin app like any other.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      The source is on
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>
+      — including the installer, so you can read it before running it.
+    </p>
+    <p>
+      Not affiliated with Garmin. It uses the same private API the Garmin Connect
+      website does, which means it can break when Garmin changes something.
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  (function () {
+    document.querySelectorAll("button.copy").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var target = document.getElementById(btn.dataset.copy);
+        if (!target) return;
+        // Strip the shell prompt so what lands on the clipboard is runnable.
+        var text = Array.prototype.slice
+          .call(target.childNodes)
+          .filter(function (n) {
+            return !(n.nodeType === 1 && n.classList.contains("prompt"));
+          })
+          .map(function (n) { return n.textContent; })
+          .join("")
+          .trim();
+
+        var done = function () {
+          var original = btn.textContent;
+          btn.textContent = "Copied";
+          btn.dataset.done = "1";
+          setTimeout(function () {
+            btn.textContent = original;
+            btn.removeAttribute("data-done");
+          }, 1800);
+        };
+
+        // Clipboard access is refused in some app views; fall back to selecting
+        // the text so it can still be copied by hand.
+        var select = function () {
+          var range = document.createRange();
+          range.selectNodeContents(target);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          btn.textContent = "Select and copy";
+        };
+
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, select);
+          } else {
+            select();
+          }
+        } catch (e) {
+          select();
+        }
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>
