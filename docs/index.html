@@ -353,9 +353,7 @@
 
     document.querySelectorAll("a[href^='http']").forEach(function (a) {
       a.addEventListener("click", function () {
-        var dest = a.href.indexOf("github.com") > -1 ? "github"
-                 : a.href.indexOf("missingmcp") > -1 ? "missingmcp"
-                 : "other";
+        var dest = a.href.indexOf("github.com") > -1 ? "github" : "other";
         track("clicked_outbound", {destination: dest});
       });
     });
@@ -432,23 +430,6 @@
       </p>
     </div>
 
-    <div class="stack" style="margin-top:26px">
-      <h3>If even that's more than you want</h3>
-      <p class="small muted">
-        <a href="https://missingmcp.com/" target="_blank" rel="noopener">MissingMCP</a>
-        is a hosted alternative with no terminal at all — paste one address into
-        Claude's connector settings and sign in. It works on the web and on your
-        phone, which this doesn't.
-      </p>
-      <p class="small muted">
-        Two trade-offs. It reads your data but can't build workouts or put them on
-        your watch. And because Garmin offers no "sign in with Garmin" button, you
-        type your password into someone else's website — they discard it and keep only
-        the tokens, but your account stays reachable from their server. Everything
-        here runs on your own Mac, and your password never leaves it. Take whichever
-        trade suits you.
-      </p>
-    </div>
   </section>
 
   <section>
@@ -695,10 +676,8 @@ Start by pulling my last three weeks and telling me what you actually see.</pre>
       <p class="small">
         <strong>ChatGPT is the exception, and it's a hard no.</strong> Its connectors
         need a public web address to call, because ChatGPT runs on OpenAI's servers and
-        can't start a program on your laptop. No setting changes that. For Garmin data
-        in ChatGPT today,
-        <a href="https://missingmcp.com/" target="_blank" rel="noopener">MissingMCP</a>
-        is hosted, so it fits — read-only, and you sign in on their site.
+        can't start a program on your laptop. No setting changes that, and no amount of
+        fiddling will get this working there.
       </p>
     </div>
   </section>

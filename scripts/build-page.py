@@ -70,9 +70,7 @@ ANALYTICS = """
 
     document.querySelectorAll("a[href^='http']").forEach(function (a) {
       a.addEventListener("click", function () {
-        var dest = a.href.indexOf("github.com") > -1 ? "github"
-                 : a.href.indexOf("missingmcp") > -1 ? "missingmcp"
-                 : "other";
+        var dest = a.href.indexOf("github.com") > -1 ? "github" : "other";
         track("clicked_outbound", {destination: dest});
       });
     });

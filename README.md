@@ -160,17 +160,9 @@ Windsurf. Copy `.mcp.json.example`, fill in absolute paths, point the client at
 
 **ChatGPT can't run this.** Its connectors take a public HTTPS URL over SSE,
 because ChatGPT executes on OpenAI's servers and cannot start a process on your
-machine — there's no local-server option to enable. Using this from ChatGPT
-would mean hosting it publicly and holding users' Garmin credentials, which is
-exactly what this project avoids.
-
-## Alternatives
-
-[MissingMCP](https://missingmcp.com/) is a hosted Garmin connector — no install,
-works on Claude's web and mobile apps, which this doesn't. It's read-only, and
-because Garmin offers no OAuth you sign in with your Garmin password on their
-site. This project trades that convenience for keeping everything, credentials
-included, on your own machine, and for being able to write workouts.
+machine — there's no local-server option to enable. Serving it to ChatGPT would
+mean hosting it publicly and holding users' Garmin credentials, which is exactly
+what this project avoids.
 
 ## Caveats
 
