@@ -150,6 +150,19 @@ workout construction, bad input, and the no-credentials startup path.
 The same code path against your real account, printing what comes back. Useful
 for confirming a setup end to end.
 
+## Other MCP clients, and ChatGPT
+
+Nothing here is Claude-specific: it speaks MCP over stdio, so any client that
+launches a local server will run it — Claude Code, Cursor, VS Code, Zed,
+Windsurf. Copy `.mcp.json.example`, fill in absolute paths, point the client at
+`python -m garmin_mcp`.
+
+**ChatGPT can't run this.** Its connectors take a public HTTPS URL over SSE,
+because ChatGPT executes on OpenAI's servers and cannot start a process on your
+machine — there's no local-server option to enable. Using this from ChatGPT
+would mean hosting it publicly and holding users' Garmin credentials, which is
+exactly what this project avoids.
+
 ## Alternatives
 
 [MissingMCP](https://missingmcp.com/) is a hosted Garmin connector — no install,
