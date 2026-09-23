@@ -71,6 +71,7 @@ at `python -m garmin_mcp` over stdio.
 | `list_workouts(limit)` | Structured workouts saved in the account |
 | `create_workout(name, steps, sport, description)` | Builds a structured workout and adds it to Garmin Connect |
 | `schedule_workout(workout_id, date)` | Puts a workout on a date, which is what syncs it to the watch |
+| `get_profile()` | VO2 max and personal records — 5k, 10k, half, marathon and the rest |
 | `get_connection_status()` | Whether the server is signed in, which account (masked), and the state of the token cache |
 
 Dates accept `YYYY-MM-DD`, `today`, `yesterday`, `tomorrow`, or a signed offset

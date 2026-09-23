@@ -568,6 +568,95 @@ async def schedule_workout(workout_id: int | str, date: str) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------
+# Profile and personal records
+# --------------------------------------------------------------------------
+
+# Garmin identifies personal records by a numeric type. Only the running ones
+# are labelled here; anything else is passed through with its raw id rather
+# than guessed at.
+RUNNING_RECORDS = {
+    1: ("fastest_1k", "time"),
+    2: ("fastest_1_mile", "time"),
+    3: ("fastest_5k", "time"),
+    4: ("fastest_10k", "time"),
+    5: ("fastest_half_marathon", "time"),
+    6: ("fastest_marathon", "time"),
+    7: ("longest_run", "distance"),
+}
+
+
+@mcp.tool()
+@tool_errors
+async def get_profile() -> dict[str, Any]:
+    """Fitness profile: VO2 max and personal records.
+
+    Use this instead of asking the user for their PBs. Note that Garmin only
+    knows records it has recorded itself — a race run without the watch, or
+    before they owned it, will be missing.
+    """
+    warnings: list[str] = []
+
+    async def _optional(label: str, fn: Callable[[Any], Any]) -> Any:
+        try:
+            return await _call(fn)
+        except GarminError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"{label} unavailable ({type(exc).__name__})")
+            return None
+
+    today = parse_date("today")
+    metrics = await _optional("vo2 max", lambda c: c.get_max_metrics(today))
+    records = await _optional("personal records", lambda c: c.get_personal_record())
+
+    vo2, fitness_age = None, None
+    if isinstance(metrics, list) and metrics:
+        generic = (metrics[0] or {}).get("generic") or {}
+        vo2 = generic.get("vo2MaxPreciseValue") or generic.get("vo2MaxValue")
+        fitness_age = generic.get("fitnessAge")
+
+    running: dict[str, Any] = {}
+    other: list[dict[str, Any]] = []
+    for record in records or []:
+        type_id = record.get("typeId")
+        value = record.get("value")
+        if value is None:
+            continue
+        known = RUNNING_RECORDS.get(type_id)
+        if known and record.get("activityType") == "running":
+            key, kind = known
+            running[key] = (
+                duration(value) if kind == "time" else f"{km(value)} km"
+            )
+        else:
+            other.append(
+                drop_empty(
+                    {
+                        "type_id": type_id,
+                        "activity_type": record.get("activityType"),
+                        "value": rounded(value, 1),
+                    }
+                )
+            )
+
+    return drop_empty(
+        {
+            "vo2max": rounded(vo2, 1),
+            "fitness_age": fitness_age,
+            "running_records": running or None,
+            "other_records": other or None,
+            "note": (
+                "Personal records only cover activities recorded on the watch. "
+                "Garmin's heart-rate zones depend on a max heart rate the user "
+                "sets in their profile, which is often an age-based estimate — "
+                "ask them to confirm it before leaning on zone percentages."
+            ),
+            "warnings": warnings or None,
+        }
+    )
+
+
+# --------------------------------------------------------------------------
 # Status
 # --------------------------------------------------------------------------
 

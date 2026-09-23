@@ -28,6 +28,7 @@ EXPECTED_TOOLS = {
     "list_workouts",
     "create_workout",
     "schedule_workout",
+    "get_profile",
 }
 
 
@@ -230,6 +231,16 @@ async def main() -> int:
                 )
             )
             check("nested repeat rejected", "error" in nested, str(nested)[:120])
+
+            print("\nprofile")
+            prof = payload(await sess.call_tool("get_profile", {}))
+            print("   ", json.dumps(prof, indent=2)[:400])
+            check("vo2max returned", prof.get("vo2max") == 60.9)
+            check("5k PB decoded", prof["running_records"]["fastest_5k"] == "17m 34s")
+            check("half PB decoded",
+                  prof["running_records"]["fastest_half_marathon"] == "1h 19m 39s")
+            check("unknown record types passed through, not guessed",
+                  prof["other_records"][0]["type_id"] == 8)
 
             print("\ntarget placement (regression)")
             check_target_placement(check)

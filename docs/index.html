@@ -302,6 +302,77 @@
     ol.steps > li:not(:last-child)::before { left: 16px; top: 34px; }
   }
 </style>
+
+<script>
+  !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){
+  function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]);
+  t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}
+  (p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,
+  p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",
+  (r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);
+  var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],
+  u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),
+  t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},
+  o="init capture register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset group".split(" "),
+  n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+
+  posthog.init("phc_fjWuvRykdQ6CmNOATEnKvryGf5TVBT3z2ob7p8zJ787", {
+    api_host: "https://eu.i.posthog.com",
+    persistence: "memory",
+    autocapture: false,
+    disable_session_recording: true,
+    capture_pageleave: false,
+    person_profiles: "never"
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    function track(name, props) {
+      try { window.posthog && posthog.capture(name, props || {}); } catch (e) {}
+    }
+
+    // The funnel that matters: did they take the install command away with them?
+    var COPY_EVENTS = {
+      install: "copied_install_command",
+      register: "copied_register_command",
+      coach: "copied_training_prompt"
+    };
+    document.querySelectorAll("button.copy").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        track(COPY_EVENTS[btn.dataset.copy] || "copied_other", {});
+      });
+    });
+
+    // Which problems people actually hit.
+    document.querySelectorAll("details").forEach(function (d) {
+      d.addEventListener("toggle", function () {
+        if (!d.open) return;
+        var q = d.querySelector("summary");
+        track("opened_troubleshooting", {question: q ? q.textContent.trim() : null});
+      });
+    });
+
+    document.querySelectorAll("a[href^='http']").forEach(function (a) {
+      a.addEventListener("click", function () {
+        var dest = a.href.indexOf("github.com") > -1 ? "github"
+                 : a.href.indexOf("missingmcp") > -1 ? "missingmcp"
+                 : "other";
+        track("clicked_outbound", {destination: dest});
+      });
+    });
+
+    // Did they read far enough to reach the setup steps?
+    var steps = document.querySelector("ol.steps");
+    if (steps && "IntersectionObserver" in window) {
+      var seen = false;
+      new IntersectionObserver(function (entries) {
+        if (!seen && entries.some(function (x) { return x.isIntersecting; })) {
+          seen = true;
+          track("reached_setup_steps", {});
+        }
+      }, {threshold: 0.2}).observe(steps);
+    }
+  });
+</script>
 </head>
 <body>
 
@@ -486,8 +557,10 @@
       </p>
       <p class="muted small">
         Paste this at the start of a conversation, or set it as a Claude Project's
-        custom instructions so every chat begins there. Replace the bracketed lines —
-        a prompt describing someone else's training is worse than none.
+        custom instructions so every chat begins there. Fill in the bracketed lines —
+        your max heart rate, how far off your best you honestly are, what you're
+        training for. Claude reads your PBs from Garmin itself, but it can't know any
+        of that.
       </p>
     </div>
 
@@ -498,13 +571,19 @@
       </div>
       <pre id="coach">You have access to my Garmin Connect account through the `garmin` MCP server. Use it as my running coach and training analyst.
 
-Always pull the data before forming a view. Don't ask me what my paces or heart rates were, and don't reason from memory of earlier messages — call the tools and look. get_activities for recent sessions, get_activity_details for splits and HR zones within one run, get_daily_summary for resting heart rate, body battery and stress.
+Always pull the data before forming a view. Don't ask me what my paces or heart rates were, and don't reason from memory of earlier messages — call the tools and look. get_activities for recent sessions, get_activity_details for splits and HR zones within one run, get_daily_summary for resting heart rate and stress, and get_profile for my VO2 max and personal bests.
 
-What you should know about my data:
+Pull get_profile before prescribing anything. It carries my PBs, so don't ask me for them — and don't assume I can currently run them.
 
+What the data can't tell you, so I'm telling you:
+
+- My max heart rate is [YOUR NUMBER, or "I don't know it"], and that figure is [from a real test / Garmin's age-based guess]. Garmin's zone percentages are only as good as that number. If it's a guess, say so whenever zones would change your answer, and lean on pace instead.
+- Against my PBs I'm currently [honest answer: in the shape of my life / about 30 seconds a kilometre off / coming back from three months out].
+- I'm training for [race and date, or "nothing specific, general fitness"].
 - [If you don't wear the watch overnight, say so here: "I don't wear the watch overnight, so get_sleep_data returns nothing and I have no HRV or sleep score. Don't build recommendations on recovery metrics I don't have." Delete this bullet if you do sleep in it.]
-- [Roughly where your training sits — typical distance, pace and heart rate, and the date you're describing. Tell it to verify rather than assume.]
-- [Anything it would otherwise get wrong: injuries you're working around, a race you're training for, sports it will see that aren't running.]
+- [Anything else it would get wrong: injuries you're working around, sports it will see that aren't running.]
+
+Prescribe from what I can do now, not from my PBs.
 
 How I want you to work:
 

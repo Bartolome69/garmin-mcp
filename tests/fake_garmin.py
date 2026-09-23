@@ -209,6 +209,16 @@ class FakeGarmin:
         self.last_upload = workout_json
         return {"workoutId": 555002}
 
+    def get_max_metrics(self, day: str) -> list[dict[str, Any]]:
+        return [{"generic": {"vo2MaxPreciseValue": 60.9, "fitnessAge": None}}]
+
+    def get_personal_record(self) -> list[dict[str, Any]]:
+        return [
+            {"typeId": 3, "activityType": "running", "value": 1054.48},
+            {"typeId": 5, "activityType": "running", "value": 4779.09},
+            {"typeId": 8, "activityType": "road_biking", "value": 163883.9},
+        ]
+
     def schedule_workout(self, workout_id: int, date_str: str) -> dict[str, Any]:
         self.last_schedule = (workout_id, date_str)
         return {"workoutScheduleId": 777001}
