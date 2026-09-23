@@ -88,7 +88,7 @@
     max-width: 800px;
     margin: 0 auto;
     padding-inline: 20px;
-    padding-block: 56px 76px;
+    padding-block: 48px 72px;
   }
 
   h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; }
@@ -112,41 +112,52 @@
     color: var(--accent-ink);
   }
 
-  .lede { font-size: 1.2rem; color: var(--muted); max-width: 54ch; margin-top: 20px; }
+  .lede { font-size: 1.2rem; color: var(--muted); max-width: 54ch; margin-top: 18px; }
 
-  section { margin-top: 56px; }
+  section { margin-top: 50px; }
   .stack { display: flex; flex-direction: column; gap: 16px; max-width: var(--measure); }
 
-  /* ---- The three beats, as waypoints on a route ---- */
+  /* ---- The three beats, as waypoints on a climbing profile ---- */
+  /* The profile carries the route line on wide screens; below 620px it is
+     dropped and each beat gets its own marker on a vertical line instead. */
+  .profile { display: block; width: 100%; height: auto; margin-top: 30px; }
+  .profile .p-area { fill: var(--accent); opacity: 0.09; }
+  .profile .p-line { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linejoin: round; }
+  .profile .p-base { stroke: var(--hairline); stroke-width: 1; fill: none; }
+  .profile .p-dot { fill: var(--accent); stroke: var(--ground); stroke-width: 3.5; }
+  .profile .p-dot.last { fill: var(--clay); }
+
   .beats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 24px;
-    margin-top: 40px;
+    margin-top: 12px;
     position: relative;
   }
-  /* The route line threading the three markers together. */
-  .beats::before {
-    content: "";
-    position: absolute;
-    left: 13px; right: 13px; top: 13px;
-    height: 2px;
-    background: var(--hairline);
-  }
-  .beat { position: relative; display: flex; flex-direction: column; gap: 9px; }
-  .beat .mark {
-    width: 26px; height: 26px; border-radius: 50%;
-    background: var(--accent);
-    border: 4px solid var(--ground);
-    position: relative; z-index: 1;
-  }
-  .beat:nth-child(3) .mark { background: var(--clay); }
-  .beat h3 { font-size: 1.09rem; }
-  .beat p { font-size: 0.95rem; color: var(--muted); line-height: 1.5; }
+  .beat { position: relative; display: flex; flex-direction: column; gap: 7px; text-align: center; }
+  .beat .mark { display: none; }
+  .beat h3 { font-size: 1.06rem; }
+  .beat p { font-size: 0.94rem; color: var(--muted); line-height: 1.5; }
 
   @media (max-width: 620px) {
-    .beats { grid-template-columns: 1fr; gap: 26px; }
-    .beats::before { left: 13px; right: auto; top: 13px; bottom: 13px; width: 2px; height: auto; }
+    .profile { display: none; }
+    .beats { grid-template-columns: 1fr; gap: 24px; margin-top: 30px; text-align: left; }
+    .beats::before {
+      content: "";
+      position: absolute;
+      left: 13px; top: 13px; bottom: 13px;
+      width: 2px;
+      background: var(--hairline);
+    }
+    .beat { text-align: left; gap: 9px; }
+    .beat .mark {
+      display: block;
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--accent);
+      border: 4px solid var(--ground);
+      position: relative; z-index: 1;
+    }
+    .beat:nth-child(3) .mark { background: var(--clay); }
   }
 
   /* ---- Needs ---- */
@@ -303,6 +314,15 @@
       Your watch already knows everything. This puts it in the conversation — and
       sends the next session back.
     </p>
+
+    <svg class="profile" viewBox="0 0 720 76" aria-hidden="true" focusable="false">
+      <path class="p-area" d="M0 60 L60 56 L120 52 L180 54 L240 44 L300 40 L360 36 L420 38 L480 28 L540 24 L600 20 L660 18 L720 13 L720 70 L0 70 Z"></path>
+      <path class="p-line" d="M0 60 L60 56 L120 52 L180 54 L240 44 L300 40 L360 36 L420 38 L480 28 L540 24 L600 20 L660 18 L720 13"></path>
+      <line class="p-base" x1="0" y1="70" x2="720" y2="70"></line>
+      <circle class="p-dot" cx="120" cy="52" r="5.5"></circle>
+      <circle class="p-dot" cx="360" cy="36" r="5.5"></circle>
+      <circle class="p-dot last" cx="600" cy="20" r="5.5"></circle>
+    </svg>
 
     <div class="beats">
       <div class="beat">
