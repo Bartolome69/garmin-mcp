@@ -33,38 +33,33 @@ jobs:
         run: |
           curl -s https://ipinfo.io/json | python3 -c "import json,sys; d=json.load(sys.stdin); print('egress org:', d.get('org')); print('region:', d.get('city'), d.get('country'))"
 
-      - name: Probe the API hosts
+      - name: Is a 403 the edge or the application
         run: |
           /tmp/probe/bin/python - <<'PY'
           from curl_cffi import requests
 
-          # A 401 is the ideal pass: it means Garmin's application answered and
-          # rejected us for having no token. A 403 or a Cloudflare challenge
-          # body means the edge stopped us before the app ever saw it.
+          # A Cloudflare block and an ordinary "you have no token" rejection can
+          # both be a 403. They are told apart by the response: an edge block
+          # serves an HTML challenge page and carries cf-mitigated / cf-ray
+          # headers, while the application returns JSON or an empty body.
           TARGETS = [
-              ("connectapi host", "https://connectapi.garmin.com/userprofile-service/socialProfile"),
-              ("connect.garmin.com", "https://connect.garmin.com/userprofile-service/socialProfile"),
-              ("connect modern proxy", "https://connect.garmin.com/modern/proxy/userprofile-service/socialProfile"),
-              ("daily summary api", "https://connectapi.garmin.com/usersummary-service/usersummary/daily/probe"),
+              ("connectapi socialProfile", "https://connectapi.garmin.com/userprofile-service/socialProfile"),
+              ("connectapi daily summary", "https://connectapi.garmin.com/usersummary-service/usersummary/daily/probe"),
           ]
 
-          reached = 0
           for label, url in TARGETS:
-              try:
-                  r = requests.get(url, impersonate="chrome", timeout=30)
-              except Exception as exc:
-                  print(f"{label:22} ERROR {type(exc).__name__}")
-                  continue
-              body = (r.text or "")[:300].lower()
-              challenge = "cloudflare" in body or "challenge" in body or "just a moment" in body
-              if r.status_code == 401 and not challenge:
-                  print(f"{label:22} HTTP 401  -> REACHED THE APP (rejected for no token)")
-                  reached += 1
-              elif r.status_code in (403, 429) or challenge:
-                  print(f"{label:22} HTTP {r.status_code}  -> BLOCKED AT THE EDGE")
-              else:
-                  print(f"{label:22} HTTP {r.status_code}  -> no edge block, but not a clean auth rejection")
-
-          print()
-          print(f"endpoints that returned a genuine 401: {reached}/{len(TARGETS)}")
+              r = requests.get(url, impersonate="chrome", timeout=30)
+              h = {k.lower(): v for k, v in r.headers.items()}
+              body = (r.text or "").strip()
+              looks_like_challenge = (
+                  "text/html" in h.get("content-type", "")
+                  and ("just a moment" in body.lower() or "challenge" in body.lower())
+              )
+              print(f"--- {label}")
+              print(f"    status        {r.status_code}")
+              print(f"    server        {h.get('server')}")
+              print(f"    cf-mitigated  {h.get('cf-mitigated', '(none)')}")
+              print(f"    content-type  {h.get('content-type')}")
+              print(f"    body starts   {body[:90]!r}")
+              print(f"    => {'CLOUDFLARE CHALLENGE' if looks_like_challenge else 'APPLICATION RESPONSE (no challenge served)'}")
           PY
