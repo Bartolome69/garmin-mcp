@@ -142,6 +142,12 @@ this fails fast rather than becoming a doomed source build, and retry against
 **No sleep data** — the watch wasn't worn overnight, or hasn't synced. Sleep,
 HRV and overnight body battery only exist if you sleep in it.
 
+## Training skills
+
+[`skills/`](skills/) holds training methodology that builds on the tools — how
+to read the data and what to prescribe from it. The first is a half marathon
+skill in Pete Pfitzinger's style.
+
 ## Hosting it for other people
 
 There's a multi-user version that removes the install entirely: people sign in
