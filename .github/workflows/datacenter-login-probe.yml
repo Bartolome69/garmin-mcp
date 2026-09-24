@@ -20,7 +20,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: Install garminconnect
-        run: uv pip install --system --only-binary :all: -r requirements.txt
+        run: |
+          uv pip install --system --only-binary :all: -r requirements.txt
 
       - name: Where is this runner
         run: |
