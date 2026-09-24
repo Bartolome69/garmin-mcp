@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import anyio
 
@@ -255,6 +255,50 @@ async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
+def _running_dynamics(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Strap and watch dynamics, if the device recorded them.
+
+    Field names differ between the activity list and the detail endpoint, so
+    both spellings are tried. Everything here is absent for people without a
+    compatible strap or watch, and drop_empty removes it rather than reporting
+    a row of nulls.
+    """
+    return drop_empty(
+        {
+            "ground_contact_ms": rounded(
+                first_present(data, "avgGroundContactTime", "groundContactTime"), 0
+            ),
+            "ground_contact_balance_left_pct": rounded(
+                first_present(
+                    data, "avgGroundContactBalance", "groundContactBalanceLeft"
+                ),
+                1,
+            ),
+            "vertical_oscillation_cm": rounded(
+                first_present(data, "avgVerticalOscillation", "verticalOscillation"), 1
+            ),
+            "vertical_ratio_pct": rounded(
+                first_present(data, "avgVerticalRatio", "verticalRatio"), 1
+            ),
+            "stride_length_cm": rounded(
+                first_present(data, "avgStrideLength", "strideLength"), 1
+            ),
+        }
+    )
+
+
+def _power(data: Mapping[str, Any]) -> dict[str, Any]:
+    return drop_empty(
+        {
+            "average_w": rounded(first_present(data, "avgPower", "averagePower"), 0),
+            "max_w": rounded(data.get("maxPower"), 0),
+            "normalized_w": rounded(
+                first_present(data, "normPower", "normalizedPower"), 0
+            ),
+        }
+    )
+
+
 def _inline_hr_zones(activity: dict[str, Any]) -> list[dict[str, Any]] | None:
     """Activity list rows often carry hrTimeInZone_1..5 already — use them free."""
     raw = [
@@ -303,6 +347,8 @@ def _summarise_activity(activity: dict[str, Any]) -> dict[str, Any]:
                 ),
                 0,
             ),
+            "running_dynamics": _running_dynamics(activity),
+            "power": _power(activity),
             "training_effect": drop_empty(
                 {
                     "aerobic": rounded(activity.get("aerobicTrainingEffect"), 1),
@@ -379,6 +425,8 @@ def _summarise_lap(lap: dict[str, Any], index: int) -> dict[str, Any]:
                 0,
             ),
             "calories": rounded(lap.get("calories"), 0),
+            "running_dynamics": _running_dynamics(lap),
+            "power": _power(lap),
         }
     )
 

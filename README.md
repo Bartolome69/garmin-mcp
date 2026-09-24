@@ -65,8 +65,8 @@ at `python -m garmin_mcp` over stdio.
 
 | Tool | What it returns |
 | --- | --- |
-| `get_activities(limit, start_date, end_date)` | Runs, rides and workouts: distance, duration, pace per km and mile, average and max HR, HR zones, cadence, training effect |
-| `get_activity_details(activity_id)` | One activity in detail: per-split distance, pace, HR and cadence, plus full heart-rate time-in-zone |
+| `get_activities(limit, start_date, end_date)` | Runs, rides and workouts: distance, duration, pace per km and mile, average and max HR, HR zones, cadence, training effect, plus running dynamics and power when the watch records them |
+| `get_activity_details(activity_id)` | One activity in detail: per-split distance, pace, HR, cadence, running dynamics and power, plus full heart-rate time-in-zone |
 | `get_daily_summary(date)` | Steps, distance, calories, resting/min/max HR, body battery, stress, intensity minutes |
 | `get_sleep_data(date)` | Sleep stages with durations and percentages, sleep score, overnight HRV, resting HR |
 | `list_workouts(limit)` | Structured workouts saved in the account |

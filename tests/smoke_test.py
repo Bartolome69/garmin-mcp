@@ -143,6 +143,10 @@ async def main() -> int:
             check("distance km", first["distance_km"] == 10.05)
             check("pace", first["pace_per_km"] == "5:12 /km")
             check("hr zones from list row", len(first.get("hr_zones") or []) == 3)
+            check("running dynamics surfaced",
+                  first["running_dynamics"]["ground_contact_ms"] == 218
+                  and first["running_dynamics"]["vertical_oscillation_cm"] == 9.5)
+            check("running power surfaced", first["power"]["normalized_w"] == 400)
 
             ranged = payload(
                 await sess.call_tool(
@@ -162,6 +166,8 @@ async def main() -> int:
             print("   ", json.dumps(detail, indent=2)[:600])
             check("splits returned", detail.get("splits_count") == 2)
             check("split pace", detail["splits"][0]["pace_per_km"] == "5:00 /km")
+            check("per-split dynamics, for watching GCT drift across reps",
+                  detail["splits"][0]["running_dynamics"]["ground_contact_ms"] == 230)
             check("hr zones", detail["hr_zones"][0]["percent"] == 25.0)
 
             print("\nworkouts")
