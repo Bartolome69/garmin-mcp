@@ -21,7 +21,8 @@ jobs:
 
       - name: Install garminconnect
         run: |
-          uv pip install --system --only-binary :all: -r requirements.txt
+          uv venv /tmp/probe
+          VIRTUAL_ENV=/tmp/probe uv pip install --only-binary :all: -r requirements.txt
 
       - name: Where is this runner
         run: |
@@ -29,7 +30,7 @@ jobs:
 
       - name: Attempt one login with throwaway credentials
         run: |
-          python3 - <<'PY'
+          /tmp/probe/bin/python - <<'PY'
           from garminconnect import Garmin
 
           # Not a real account. We only care which error comes back.
