@@ -30,17 +30,19 @@ install() {
 
 echo "Installing dependencies..."
 if ! install 2>/dev/null; then
-    # The current packages need macOS 10.15+ on an Intel Mac. Older releases
-    # still publish builds for 10.13, and carry every API this server uses.
+    # In case a package has simply dropped a prebuilt build for this machine.
+    # It will not rescue an old macOS: the interpreter itself needs 10.15+.
     echo "No prebuilt packages for this machine; trying older releases..."
     if ! install --constraints constraints-legacy.txt; then
         cat >&2 <<'MSG'
 
 Install failed: none of the available packages have a prebuilt build for this Mac.
 
-That normally means macOS is older than 10.13. Check it under the Apple menu >
-About This Mac. Updating macOS is the fix; building these from source needs Rust
-and OpenSSL and is not worth the fight.
+That normally means macOS is older than 10.15 (Catalina), which is a hard floor:
+the Python this uses is compiled for 10.15 and will not launch below it.
+
+Check your version under the Apple menu > About This Mac. Updating macOS is the
+only fix — building these from source would not help.
 
 MSG
         exit 1

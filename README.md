@@ -29,7 +29,7 @@ Claude: [reads your activities and splits, then proposes]
 
 ## Install
 
-macOS 10.13 or newer, with [Claude Desktop](https://claude.ai/download) already
+macOS 10.15 (Catalina) or newer, with [Claude Desktop](https://claude.ai/download) already
 installed:
 
 ```bash
@@ -132,11 +132,12 @@ caches the session.
 writes its own copy back when it closes, so a change made while it's running
 disappears. Quit it fully, run `./scripts/install-claude-desktop.sh`, reopen.
 
-**Install fails mentioning Rust, OpenSSL or a compiler** — macOS is too old for
-the current wheels. The installers pass `--only-binary :all:` so this never
-becomes a source build, and retry against `constraints-legacy.txt` (an older
-`cffi`, which still ships wheels for macOS 10.13) before giving up. Below 10.13
-there is nothing to fall back to.
+**Install fails mentioning Rust, OpenSSL or a compiler** — macOS is too old.
+The hard floor is **10.15 (Catalina)**, set by the Python interpreter itself:
+uv's Intel build is compiled with `minos 10.15` and will not launch below it, so
+no amount of package pinning helps. The installers pass `--only-binary :all:` so
+this fails fast rather than becoming a doomed source build, and retry against
+`constraints-legacy.txt` in case a package has simply dropped a wheel.
 
 **No sleep data** — the watch wasn't worn overnight, or hasn't synced. Sleep,
 HRV and overnight body battery only exist if you sleep in it.

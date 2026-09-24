@@ -329,7 +329,7 @@
   <section>
     <h2>Before you start</h2>
     <dl class="needs">
-      <div><dt>Computer</dt><dd>A Mac, macOS 10.13+</dd></div>
+      <div><dt>Computer</dt><dd>A Mac, macOS 10.15+</dd></div>
       <div><dt>App</dt><dd>Claude Desktop, installed</dd></div>
       <div><dt>Account</dt><dd>Garmin Connect login</dd></div>
       <div><dt>Time</dt><dd>About 10 minutes</dd></div>
@@ -531,9 +531,10 @@ Then, working with me:
         <summary>It failed while installing, mentioning Rust, OpenSSL or a compiler</summary>
         <div class="answer">
           <p>
-            Your macOS is probably too old. The installer falls back to older
-            packages automatically, which reaches back to <strong>macOS 10.13 (High
-            Sierra)</strong> — but below that there's nothing left to fall back to.
+            Your macOS is too old. The floor is <strong>macOS 10.15 (Catalina)</strong>,
+            and it's a hard one — the Python this uses simply won't start below it.
+            Updating macOS is the only fix. Any Mac from 2012 onwards can run
+            Catalina.
           </p>
           <p>
             Check it under the Apple menu &rarr; About This Mac. Updating macOS fixes
