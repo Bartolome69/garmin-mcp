@@ -21,7 +21,25 @@ if [ ! -x ".venv/bin/python" ]; then
 fi
 
 echo "Installing dependencies..."
-VIRTUAL_ENV="$PROJECT/.venv" uv pip install --quiet -r requirements.txt
+# See the note in bootstrap.sh: never fall back to compiling from source.
+if ! VIRTUAL_ENV="$PROJECT/.venv" uv pip install --quiet --only-binary :all: -r requirements.txt; then
+    cat >&2 <<'MSG'
+
+Install failed while fetching dependencies.
+
+The usual cause is macOS being too old for the prebuilt packages. On an Intel
+Mac these need macOS 10.15 (Catalina) or newer; without a matching prebuilt
+package your machine tries to compile it from source, which needs Rust and
+OpenSSL and is not worth the fight.
+
+Check your version:  Apple menu > About This Mac
+
+If you are on 10.15 or newer and still see this, send whoever pointed you here
+the last few lines above.
+
+MSG
+    exit 1
+fi
 
 echo
 echo "Done. Next:"

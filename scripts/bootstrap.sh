@@ -44,7 +44,29 @@ fi
 say "Setting up Python (first run downloads it, ~30 seconds)"
 cd "$PROJECT"
 [ -x ".venv/bin/python" ] || uv venv --python 3.12 .venv
-VIRTUAL_ENV="$PROJECT/.venv" uv pip install --quiet -r requirements.txt
+
+# --only-binary refuses to compile anything from source. Without it, a machine
+# with no matching prebuilt package silently starts a C/Rust build that needs a
+# toolchain most people don't have, and fails ten minutes later with a wall of
+# compiler errors. Failing immediately with an explanation is kinder.
+if ! VIRTUAL_ENV="$PROJECT/.venv" uv pip install --quiet --only-binary :all: -r requirements.txt; then
+    cat >&2 <<'MSG'
+
+Install failed while fetching dependencies.
+
+The usual cause is macOS being too old for the prebuilt packages. On an Intel
+Mac these need macOS 10.15 (Catalina) or newer; without a matching prebuilt
+package your machine tries to compile it from source, which needs Rust and
+OpenSSL and is not worth the fight.
+
+Check your version:  Apple menu > About This Mac
+
+If you are on 10.15 or newer and still see this, send whoever pointed you here
+the last few lines above.
+
+MSG
+    exit 1
+fi
 
 # -- 4. Garmin login ---------------------------------------------------------
 if [ -f "$HOME/.garmin-mcp/tokens.json" ]; then
