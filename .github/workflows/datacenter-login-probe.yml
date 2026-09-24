@@ -33,36 +33,38 @@ jobs:
         run: |
           curl -s https://ipinfo.io/json | python3 -c "import json,sys; d=json.load(sys.stdin); print('egress org:', d.get('org')); print('region:', d.get('city'), d.get('country'))"
 
-      - name: Probe both paths
+      - name: Probe the API hosts
         run: |
           /tmp/probe/bin/python - <<'PY'
           from curl_cffi import requests
 
-          def classify(label, url):
+          # A 401 is the ideal pass: it means Garmin's application answered and
+          # rejected us for having no token. A 403 or a Cloudflare challenge
+          # body means the edge stopped us before the app ever saw it.
+          TARGETS = [
+              ("connectapi host", "https://connectapi.garmin.com/userprofile-service/socialProfile"),
+              ("connect.garmin.com", "https://connect.garmin.com/userprofile-service/socialProfile"),
+              ("connect modern proxy", "https://connect.garmin.com/modern/proxy/userprofile-service/socialProfile"),
+              ("daily summary api", "https://connectapi.garmin.com/usersummary-service/usersummary/daily/probe"),
+          ]
+
+          reached = 0
+          for label, url in TARGETS:
               try:
-                  # Impersonate Chrome exactly as garminconnect does, so the
-                  # result reflects what the real client would see.
                   r = requests.get(url, impersonate="chrome", timeout=30)
               except Exception as exc:
-                  print(f"{label}: ERROR {type(exc).__name__}: {exc}")
-                  return None
-              body = (r.text or "")[:200].lower()
-              blocked = r.status_code in (403, 429) or "cloudflare" in body or "challenge" in body
-              verdict = "BLOCKED" if blocked else "REACHED"
-              print(f"{label}: HTTP {r.status_code} -> {verdict}")
-              return not blocked
+                  print(f"{label:22} ERROR {type(exc).__name__}")
+                  continue
+              body = (r.text or "")[:300].lower()
+              challenge = "cloudflare" in body or "challenge" in body or "just a moment" in body
+              if r.status_code == 401 and not challenge:
+                  print(f"{label:22} HTTP 401  -> REACHED THE APP (rejected for no token)")
+                  reached += 1
+              elif r.status_code in (403, 429) or challenge:
+                  print(f"{label:22} HTTP {r.status_code}  -> BLOCKED AT THE EDGE")
+              else:
+                  print(f"{label:22} HTTP {r.status_code}  -> no edge block, but not a clean auth rejection")
 
           print()
-          sso = classify("SSO login portal  (sso.garmin.com)",
-                         "https://sso.garmin.com/sso/signin?service=https%3A%2F%2Fconnect.garmin.com%2Fmodern")
-          api = classify("Data API          (connect.garmin.com)",
-                         "https://connect.garmin.com/userprofile-service/socialProfile")
-
-          print()
-          if api:
-              print("VERDICT: the data API is reachable from this datacenter IP.")
-              print("A hosted version would only need a clean IP for the sign-in step.")
-          else:
-              print("VERDICT: the data API is blocked here too.")
-              print("A hosted version would need a clean IP for everything.")
+          print(f"endpoints that returned a genuine 401: {reached}/{len(TARGETS)}")
           PY
