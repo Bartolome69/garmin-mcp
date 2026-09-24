@@ -415,7 +415,7 @@
   <section>
     <h2>Before you start</h2>
     <dl class="needs">
-      <div><dt>Computer</dt><dd>A Mac</dd></div>
+      <div><dt>Computer</dt><dd>A Mac, macOS 10.15+</dd></div>
       <div><dt>App</dt><dd>Claude Desktop, installed</dd></div>
       <div><dt>Account</dt><dd>Garmin Connect login</dd></div>
       <div><dt>Time</dt><dd>About 10 minutes</dd></div>
@@ -609,6 +609,22 @@ Then, working with me:
           <p>
             Quit it properly, run the step 04 command again, reopen. A fresh chat helps
             too.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>It failed while installing, mentioning Rust, OpenSSL or a compiler</summary>
+        <div class="answer">
+          <p>
+            Your macOS is probably too old. The ready-made packages need
+            <strong>macOS 10.15 (Catalina) or newer</strong> on an Intel Mac. Below
+            that, your machine tries to build them itself, which needs developer tools
+            most people don't have and isn't worth the fight.
+          </p>
+          <p>
+            Check it under the Apple menu &rarr; About This Mac. Updating macOS fixes
+            it.
           </p>
         </div>
       </details>
