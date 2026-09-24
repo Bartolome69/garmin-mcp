@@ -1,12 +1,18 @@
 name: Garmin datacenter IP probe
 
-# Answers one question: will Garmin's login endpoint talk to a server, or does
-# it rate-limit datacenter addresses on sight? That decides whether a hosted
-# version of this server is possible at all.
+# Two questions, no credentials needed:
 #
-# Uses deliberately invalid credentials. Garmin returns 429 at the IP level
-# before it ever checks a password, so "invalid credentials" is the PASS here —
-# it means the address was allowed to try.
+#   1. Does Garmin's SSO login portal accept a request from a datacenter IP?
+#   2. Does the data API (connect.garmin.com) accept one?
+#
+# MissingMCP's own incident notes say Cloudflare guards the login portal but
+# not the data API. If that holds, a hosted version only needs a clean IP for
+# sign-in, not for everything — which is the difference between a $4/month VPS
+# and an unworkable idea.
+#
+# Both probes are unauthenticated. 401 means "reached the app and was correctly
+# rejected" — a PASS. 403 with a Cloudflare challenge means the address never
+# got that far.
 
 on:
   workflow_dispatch:
@@ -16,10 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: astral-sh/setup-uv@v5
 
-      - name: Install garminconnect
+      - name: Install dependencies
         run: |
           uv venv /tmp/probe
           VIRTUAL_ENV=/tmp/probe uv pip install --only-binary :all: -r requirements.txt
@@ -28,31 +33,36 @@ jobs:
         run: |
           curl -s https://ipinfo.io/json | python3 -c "import json,sys; d=json.load(sys.stdin); print('egress org:', d.get('org')); print('region:', d.get('city'), d.get('country'))"
 
-      - name: Attempt one login with throwaway credentials
+      - name: Probe both paths
         run: |
           /tmp/probe/bin/python - <<'PY'
-          from garminconnect import Garmin
+          from curl_cffi import requests
 
-          # Not a real account. We only care which error comes back.
-          client = Garmin(
-              email="probe-not-a-real-account@example.invalid",
-              password="not-a-real-password",
-              prompt_mfa=lambda: "000000",
-          )
-          try:
-              client.login()
-              print("RESULT: unexpected success — investigate")
-          except Exception as exc:
-              text = str(exc).lower()
-              name = type(exc).__name__
-              if "429" in text or "too many" in text or "rate limit" in text:
-                  print(f"RESULT: BLOCKED — Garmin rate-limits this IP ({name})")
-                  print("A hosted version would fight this constantly.")
-                  raise SystemExit(1)
-              if "401" in text or "unauthorized" in text or "authentication failed" in text:
-                  print(f"RESULT: ALLOWED — reached credential check, got the expected rejection ({name})")
-                  print("A hosted version is viable from this kind of address.")
-                  raise SystemExit(0)
-              print(f"RESULT: INCONCLUSIVE — {name}: {exc}")
-              raise SystemExit(2)
+          def classify(label, url):
+              try:
+                  # Impersonate Chrome exactly as garminconnect does, so the
+                  # result reflects what the real client would see.
+                  r = requests.get(url, impersonate="chrome", timeout=30)
+              except Exception as exc:
+                  print(f"{label}: ERROR {type(exc).__name__}: {exc}")
+                  return None
+              body = (r.text or "")[:200].lower()
+              blocked = r.status_code in (403, 429) or "cloudflare" in body or "challenge" in body
+              verdict = "BLOCKED" if blocked else "REACHED"
+              print(f"{label}: HTTP {r.status_code} -> {verdict}")
+              return not blocked
+
+          print()
+          sso = classify("SSO login portal  (sso.garmin.com)",
+                         "https://sso.garmin.com/sso/signin?service=https%3A%2F%2Fconnect.garmin.com%2Fmodern")
+          api = classify("Data API          (connect.garmin.com)",
+                         "https://connect.garmin.com/userprofile-service/socialProfile")
+
+          print()
+          if api:
+              print("VERDICT: the data API is reachable from this datacenter IP.")
+              print("A hosted version would only need a clean IP for the sign-in step.")
+          else:
+              print("VERDICT: the data API is blocked here too.")
+              print("A hosted version would need a clean IP for everything.")
           PY
