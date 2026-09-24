@@ -89,6 +89,23 @@ def _mfa_unavailable() -> str:
     raise GarminMFARequired(MFA_MESSAGE)
 
 
+def _is_auth_failure(exc: BaseException) -> bool:
+    """Is this Garmin rejecting our credentials, or just a bad connection?
+
+    garminconnect raises GarminConnectConnectionError for network trouble as
+    well as for auth trouble. Re-authenticating over a dropped connection
+    achieves nothing and, with no password stored, produces a misleading
+    "your session is invalid" message for what was a momentary blip.
+    """
+    if type(exc).__name__ == "GarminConnectAuthenticationError":
+        return True
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in ("401", "unauthorized", "authentication failed", "invalid_grant")
+    )
+
+
 def _is_mfa(exc: BaseException) -> bool:
     text = str(exc).lower()
     return "multi-factor" in text or "mfa" in text
@@ -147,8 +164,12 @@ def login_error(exc: BaseException, *, had_cache: bool = False) -> GarminError:
     email, password = credentials()
     if not (email and password):
         return GarminAuthError(
-            "The cached Garmin session is no longer valid and there are no "
-            "credentials to create a new one. " + CREDS_HINT + f" ({name}: {exc})"
+            "The cached Garmin session is no longer valid. The simplest fix is to "
+            "sign in again in a terminal:\n"
+            "    ~/garmin-mcp/scripts/login.sh\n"
+            "then restart Claude Desktop. Alternatively, add GARMIN_PASSWORD to the "
+            "server's environment so it can re-authenticate by itself. "
+            f"({name}: {exc})"
         )
     stale = " The cached session was also rejected." if had_cache else ""
     return GarminAuthError(
@@ -254,7 +275,19 @@ class GarminSession:
             except _auth_error_types() as exc:
                 if _is_mfa(exc):
                     raise GarminMFARequired(MFA_MESSAGE) from exc
-                log.info("Call failed (%s); re-authenticating", type(exc).__name__)
+                if not _is_auth_failure(exc):
+                    # A connection problem, not a rejected session. Try once more
+                    # on the same client rather than throwing the session away.
+                    log.info("Call failed (%s); retrying", type(exc).__name__)
+                    try:
+                        return fn(client)
+                    except Exception as retry_exc:  # noqa: BLE001
+                        raise GarminError(
+                            "Could not reach Garmin Connect. This looks like a "
+                            f"network problem rather than a sign-in one "
+                            f"({type(retry_exc).__name__}). Try again shortly."
+                        ) from retry_exc
+                log.info("Session rejected (%s); re-authenticating", type(exc).__name__)
                 self.reset()
                 client = self.client()
                 return fn(client)
