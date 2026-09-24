@@ -9,10 +9,12 @@ are safe and useful to hand back through a tool.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable
 
@@ -164,36 +166,65 @@ class GarminSession:
     simultaneous logins.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        tokenstore: str | Callable[[], str | None] | None = None,
+        on_refresh: Callable[[str], None] | None = None,
+    ) -> None:
+        """
+        tokenstore: where the Garmin session comes from. None means the local
+            token file. The hosted server passes a callable returning that
+            person's decrypted token blob, which garminconnect accepts inline.
+        on_refresh: called with a fresh token blob after a password login, so
+            the hosted server can persist it. Unused locally, where
+            garminconnect writes the file itself.
+        """
         self._lock = threading.RLock()
         self._client: Any = None
         self._source: str | None = None
         self._connected_at: float | None = None
+        self._tokenstore = tokenstore
+        self._on_refresh = on_refresh
+
+    def _resolve_tokenstore(self) -> tuple[str | None, bool]:
+        """Return (what to hand garminconnect, whether a session already existed)."""
+        if self._tokenstore is None:
+            return str(TOKEN_FILE), TOKEN_FILE.exists()
+        blob = self._tokenstore() if callable(self._tokenstore) else self._tokenstore
+        return blob, bool(blob)
 
     def _connect(self) -> Any:
         email, password = credentials()
-        if not TOKEN_FILE.exists() and not (email and password):
+        tokenstore, had_session = self._resolve_tokenstore()
+        if not had_session and not (email and password):
             raise GarminAuthError("No cached Garmin session and no credentials. " + CREDS_HINT)
 
         client = build_client(prompt_mfa=_mfa_unavailable)
         before = _token_mtime()
 
         try:
-            # garminconnect resumes from this file, refreshes the token when it
-            # is close to expiry, falls back to the password, and rewrites the
-            # file on success — all of which we would otherwise reimplement.
-            client.login(tokenstore=str(TOKEN_FILE))
+            # garminconnect resumes from this (a file path locally, an inline
+            # token blob when hosted), refreshes when it is close to expiry,
+            # falls back to the password, and rewrites the file on success —
+            # all of which we would otherwise reimplement.
+            client.login(tokenstore=tokenstore)
         except GarminMFARequired:
             raise
         except Exception as exc:
-            raise login_error(exc, had_cache=before is not None) from exc
+            raise login_error(exc, had_cache=had_session) from exc
 
         after = _token_mtime()
         # A rewritten (or newly created) token file means the password was used;
         # an untouched one means the cached session was good.
-        resumed = before is not None and after == before
+        resumed = had_session if self._tokenstore is not None else (
+            before is not None and after == before
+        )
         self._client = client
         self._source = "cached token" if resumed else "password login"
+
+        if self._on_refresh is not None:
+            with contextlib.suppress(Exception):
+                self._on_refresh(client.client.dumps())
         self._connected_at = time.time()
         log.info("Garmin session established via %s", self._source)
         return client
@@ -234,12 +265,22 @@ class GarminSession:
         info: dict[str, Any] = {
             "authenticated": False,
             "account": mask_email(email),
-            "credentials_present": {
-                "GARMIN_EMAIL": bool(email),
-                "GARMIN_PASSWORD": bool(password),
-            },
-            "token_cache": token_cache_info(),
+            # Only meaningful for a local install: hosted, these are the
+            # operator's environment and nothing to do with this person.
+            "credentials_present": (
+                {"GARMIN_EMAIL": bool(email), "GARMIN_PASSWORD": bool(password)}
+                if self._tokenstore is None
+                else None
+            ),
+            # A hosted session has no local file, and reporting the server's
+            # filesystem layout to whoever holds the URL would be careless.
+            "token_cache": (
+                token_cache_info()
+                if self._tokenstore is None
+                else {"stored": "server-side, encrypted"}
+            ),
         }
+        info = {k: v for k, v in info.items() if v is not None}
         try:
             with self._lock:
                 client = self.client()
@@ -260,4 +301,42 @@ class GarminSession:
         return info
 
 
-session = GarminSession()
+_local_session = GarminSession()
+
+# The hosted server serves many people from one process, so the session a tool
+# should use is a property of the request, not of the module. Locally nothing
+# sets this and the single local session is used.
+_current_session: ContextVar["GarminSession | None"] = ContextVar(
+    "garmin_current_session", default=None
+)
+
+
+def use_session(target: "GarminSession"):
+    """Bind a session to the current context; returns a token for resetting."""
+    return _current_session.set(target)
+
+
+def reset_session(token) -> None:
+    _current_session.reset(token)
+
+
+class _ActiveSession:
+    """Delegates to the request's session, or the local one."""
+
+    def _target(self) -> GarminSession:
+        return _current_session.get() or _local_session
+
+    def run(self, fn: Callable[[Any], Any]) -> Any:
+        return self._target().run(fn)
+
+    def status(self) -> dict[str, Any]:
+        return self._target().status()
+
+    def client(self) -> Any:
+        return self._target().client()
+
+    def reset(self) -> None:
+        self._target().reset()
+
+
+session = _ActiveSession()
