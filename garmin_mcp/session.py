@@ -120,8 +120,18 @@ def _auth_error_types() -> tuple[type[BaseException], ...]:
     return (GarminConnectAuthenticationError, GarminConnectConnectionError)
 
 
-def build_client(*, prompt_mfa: Callable[[], str]) -> Any:
-    """Construct a Garmin client; `prompt_mfa` decides how MFA is handled."""
+def build_client(
+    *,
+    prompt_mfa: Callable[[], str],
+    email: str | None = None,
+    password: str | None = None,
+) -> Any:
+    """Construct a Garmin client; `prompt_mfa` decides how MFA is handled.
+
+    Credentials default to the environment, which is how the local install
+    works. The hosted server passes the person's own, typed into its sign-in
+    form — it has no environment credentials and must never use anyone else's.
+    """
     try:
         from garminconnect import Garmin
     except ImportError as exc:  # pragma: no cover - install problem
@@ -130,10 +140,10 @@ def build_client(*, prompt_mfa: Callable[[], str]) -> Any:
             "with `uv pip install -r requirements.txt`."
         ) from exc
 
-    email, password = credentials()
+    env_email, env_password = credentials()
     return Garmin(
-        email=email or None,
-        password=password or None,
+        email=email or env_email or None,
+        password=password or env_password or None,
         prompt_mfa=prompt_mfa,
     )
 

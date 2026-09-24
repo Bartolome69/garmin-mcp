@@ -33,7 +33,6 @@ from .session import (
     GarminError,
     GarminSession,
     build_client,
-    login_error,
     mask_email,
     reset_session,
     use_session,
@@ -186,6 +185,29 @@ async def connect_form(request: Request) -> Response:
     )
 
 
+def _signin_error(exc: BaseException) -> str:
+    """Explain a failed sign-in in terms that make sense on a web page."""
+    text = str(exc).lower()
+    if "429" in text or "rate limit" in text or "too many" in text or "cloudflare" in text:
+        return (
+            "<div class=err><strong>Garmin is blocking sign-ins from this "
+            "server's network.</strong> This is not your password — Garmin "
+            "refuses the request before checking it. Tell whoever runs this "
+            "server; it needs a different sign-in route.</div>"
+            "<p><a href=/connect>Try again</a></p>"
+        )
+    if "401" in text or "unauthorized" in text or "invalid" in text:
+        return (
+            "<div class=err>Garmin didn't accept that email and password. "
+            "Check them at connect.garmin.com and try again.</div>"
+            "<p><a href=/connect>Try again</a></p>"
+        )
+    return (
+        f"<div class=err>Sign-in failed: {type(exc).__name__}. "
+        "Try again in a moment.</div><p><a href=/connect>Try again</a></p>"
+    )
+
+
 def _finish(request: Request, client: Any, email: str) -> Response:
     """Persist the session and show the person their private URL."""
     blob = client.client.dumps()
@@ -214,9 +236,13 @@ async def connect_submit(request: Request) -> Response:
         return page("Sign in to Garmin", "<div class=err>Email and password required.</div>", 400)
 
     def _login() -> Any:
-        client = build_client(prompt_mfa=lambda: (_ for _ in ()).throw(
-            RuntimeError("multi-factor code required")
-        ))
+        client = build_client(
+            prompt_mfa=lambda: (_ for _ in ()).throw(
+                RuntimeError("multi-factor code required")
+            ),
+            email=email,
+            password=password,
+        )
         # return_on_mfa hands the flow back instead of prompting, so the code can
         # be collected over a second request.
         client.return_on_mfa = True
@@ -226,10 +252,8 @@ async def connect_submit(request: Request) -> Response:
 
     try:
         client, result = await anyio.to_thread.run_sync(_login)
-    except GarminError as exc:
-        return page("Sign in to Garmin", f"<div class=err>{exc}</div>", 400)
     except Exception as exc:  # noqa: BLE001
-        return page("Sign in to Garmin", f"<div class=err>{login_error(exc)}</div>", 400)
+        return page("Sign in to Garmin", _signin_error(exc), 400)
 
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
         _sweep_pending()

@@ -38,10 +38,12 @@ from garmin_mcp import store  # noqa: E402
 # Each stub reports which account it belongs to, so we can prove one person's
 # URL never reaches another person's session.
 BUILT: list[str] = []
+SIGNIN_CREDS: list[tuple] = []
 SECRET = "never-show-this-blob-value"
 
 
-def fake_build_client(*, prompt_mfa):
+def fake_build_client(*, prompt_mfa, email=None, password=None):
+    SIGNIN_CREDS.append((email, password))
     class Stub(FakeGarmin):
         def login(self, tokenstore=None):
             BUILT.append(tokenstore or "no-token")
@@ -147,6 +149,7 @@ async def main() -> int:
 
         # stdlib rather than another dependency just for three requests
         import urllib.error
+        import urllib.parse
         import urllib.request
 
         def fetch(path: str, data: bytes | None = None) -> tuple[int, str]:
@@ -170,6 +173,30 @@ async def main() -> int:
         code, body = await anyio_run(fetch, "/connect")
         check("sign-in form serves",
               code == 200 and "type=password" in body.replace('"', ""))
+
+        # The submitted credentials must reach Garmin. They previously did not:
+        # build_client read the environment, so a hosted sign-in used the
+        # operator's credentials or none at all.
+        SIGNIN_CREDS.clear()
+        form = urllib.parse.urlencode(
+            {"email": "someone@example.com", "password": "their-own-password"}
+        ).encode()
+        req = urllib.request.Request(
+            f"{base}/connect", data=form,
+            headers={"content-type": "application/x-www-form-urlencoded"},
+        )
+
+        def post_signin():
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    return r.status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        await anyio_run(post_signin)
+        check("sign-in passes the typed credentials through",
+              SIGNIN_CREDS and SIGNIN_CREDS[-1] == ("someone@example.com", "their-own-password"),
+              str(SIGNIN_CREDS[-1:]))
     finally:
         server.should_exit = True
         thread.join(timeout=10)
