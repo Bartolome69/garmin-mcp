@@ -20,27 +20,36 @@ if [ ! -x ".venv/bin/python" ]; then
     uv venv --python 3.12 .venv
 fi
 
+# --only-binary refuses to compile anything from source. Without it, a machine
+# with no matching prebuilt package silently starts a C and Rust build that needs
+# a toolchain most people don't have, and fails minutes later in compiler output.
+install() {
+    VIRTUAL_ENV="$PROJECT/.venv" uv pip install --quiet --only-binary :all: "$@" \
+        -r requirements.txt
+}
+
 echo "Installing dependencies..."
-# See the note in bootstrap.sh: never fall back to compiling from source.
-if ! VIRTUAL_ENV="$PROJECT/.venv" uv pip install --quiet --only-binary :all: -r requirements.txt; then
-    cat >&2 <<'MSG'
+if ! install 2>/dev/null; then
+    # The current packages need macOS 10.15+ on an Intel Mac. Older releases
+    # still publish builds for 10.13, and carry every API this server uses.
+    echo "No prebuilt packages for this machine; trying older releases..."
+    if ! install --constraints constraints-legacy.txt; then
+        cat >&2 <<'MSG'
 
-Install failed while fetching dependencies.
+Install failed: none of the available packages have a prebuilt build for this Mac.
 
-The usual cause is macOS being too old for the prebuilt packages. On an Intel
-Mac these need macOS 10.15 (Catalina) or newer; without a matching prebuilt
-package your machine tries to compile it from source, which needs Rust and
-OpenSSL and is not worth the fight.
-
-Check your version:  Apple menu > About This Mac
-
-If you are on 10.15 or newer and still see this, send whoever pointed you here
-the last few lines above.
+That normally means macOS is older than 10.13. Check it under the Apple menu >
+About This Mac. Updating macOS is the fix; building these from source needs Rust
+and OpenSSL and is not worth the fight.
 
 MSG
-    exit 1
+        exit 1
+    fi
+    echo "Installed older releases for compatibility with this macOS version."
 fi
 
-echo
-echo "Done. Next:"
-echo "    $PROJECT/scripts/login.sh"
+if [ "${GARMIN_MCP_BOOTSTRAP:-}" != "1" ]; then
+    echo
+    echo "Done. Next:"
+    echo "    $PROJECT/scripts/login.sh"
+fi

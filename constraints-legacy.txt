@@ -1,0 +1,3 @@
+# Older releases that still publish prebuilt packages for macOS 10.13/10.9.
+# Used only as a fallback when the current set has nothing for this machine.
+cffi<2
