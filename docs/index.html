@@ -602,9 +602,25 @@ Then, working with me:
         <summary>Claude can't find any Garmin tools</summary>
         <div class="answer">
           <p>
-            Nearly always step 04. Claude Desktop must be <strong>fully quit</strong>
+            First, ask it what's wrong. Paste this into Terminal — it checks every link
+            in the chain and names the broken one:
+          </p>
+          <div class="term">
+            <div class="term-head">
+              <span class="term-label">Terminal</span>
+              <button class="copy" type="button" data-copy="doctor">Copy</button>
+            </div>
+            <pre><code id="doctor"><span class="prompt">$ </span>~/garmin-mcp/scripts/doctor.sh</code></pre>
+          </div>
+          <p>
+            Nearly always it's step 04. Claude Desktop must be <strong>fully quit</strong>
             (Cmd + Q) when the settings are written, or it overwrites them with its own
             copy on the way out and the connection quietly vanishes.
+          </p>
+          <p>
+            One more thing that catches people: an existing chat keeps talking to the
+            server it started with. After fixing anything, start a <strong>new</strong>
+            chat rather than continuing the old one.
           </p>
           <p>
             Quit it properly, run the step 04 command again, reopen. A fresh chat helps

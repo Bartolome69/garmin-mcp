@@ -25,9 +25,9 @@ TOKEN_FILE = Path(
 )
 
 CREDS_HINT = (
-    "Set GARMIN_EMAIL and GARMIN_PASSWORD in the environment this server runs in "
-    '(for Claude Desktop that is the "env" block of the server entry in '
-    "claude_desktop_config.json), then restart the server."
+    "Alternatively, set GARMIN_EMAIL and GARMIN_PASSWORD in the environment this "
+    'server runs in (for Claude Desktop, the "env" block of the server entry in '
+    "claude_desktop_config.json) so it can sign in by itself."
 )
 MFA_MESSAGE = (
     "Garmin is asking for a multi-factor code, and this server has no way to "
@@ -228,7 +228,11 @@ class GarminSession:
         email, password = credentials()
         tokenstore, had_session = self._resolve_tokenstore()
         if not had_session and not (email and password):
-            raise GarminAuthError("No cached Garmin session and no credentials. " + CREDS_HINT)
+            raise GarminAuthError(
+                "Not signed in to Garmin yet. Sign in once in a terminal:\n"
+                "    ~/garmin-mcp/scripts/login.sh\n"
+                "then restart Claude Desktop. " + CREDS_HINT
+            )
 
         client = build_client(prompt_mfa=_mfa_unavailable)
         before = _token_mtime()

@@ -66,4 +66,10 @@ print("Servers now configured:", ", ".join(config["mcpServers"]))
 PY
 
 echo
-echo "Now open Claude Desktop. The garmin tools should appear in a new chat."
+echo "Checking it actually works before you open Claude..."
+if "$PYTHON" -m garmin_mcp.doctor; then
+    echo "Now open Claude Desktop. The garmin tools should appear in a new chat."
+else
+    echo "The configuration was written, but something above needs fixing first." >&2
+    exit 1
+fi

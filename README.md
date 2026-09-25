@@ -119,6 +119,14 @@ to re-authenticate unattended when that token eventually expires; leave
 
 ## If it doesn't work
 
+Start here — it walks from the interpreter to a live Garmin call and names the
+first broken link:
+
+```bash
+./scripts/doctor.sh
+```
+
+
 **"Garmin is rate-limiting logins from this IP address (429)"** — the most common
 failure, and it isn't your password: Garmin blocks by network address before it
 checks credentials. Office wifi, university networks and VPNs get hit hardest.
