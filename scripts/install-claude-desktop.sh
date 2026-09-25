@@ -12,6 +12,12 @@ CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 # live anywhere.
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="$PROJECT/.venv/bin/python"
+# See the note in login.sh: garmin_mcp is found via PYTHONPATH, not site-packages.
+# The config written below sets it for Claude Desktop; the verification step at
+# the end of this script needs it too, or it fails for anyone who ran this from
+# somewhere other than the project directory — which is what bootstrap.sh and the
+# doctor's own advice both tell people to do.
+export PYTHONPATH="$PROJECT${PYTHONPATH:+:$PYTHONPATH}"
 
 # Match the main app process exactly. `pgrep -f` also matches helper
 # processes and the lowercase claude-code binary, which would either

@@ -11,7 +11,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -74,6 +77,51 @@ def check_target_placement(check) -> None:
     check(
         "hr values sit on the step",
         (hr_step.get("targetValueOne"), hr_step.get("targetValueTwo")) == (150.0, 165.0),
+    )
+
+
+def check_entrypoints_ignore_cwd(check) -> None:
+    """The scripts have to work from any directory, not just the project root.
+
+    garmin_mcp is not installed into .venv — only its dependencies are — so a
+    bare `python -m garmin_mcp.x` resolves only when the current directory
+    happens to be the project. Every script that launches a module therefore
+    has to put the project on PYTHONPATH itself.
+
+    Three shipped without it. They worked for anyone who had cd'd into the
+    project first, and failed with ModuleNotFoundError for the first person who
+    ran one by absolute path from their home directory — which is exactly what
+    bootstrap.sh and the doctor's own advice both tell people to do.
+    """
+    launches_module = re.compile(r"-m\s+garmin_mcp\b")
+    # An assignment, not a passing mention: the comments here say "PYTHONPATH"
+    # too, and matching those would let the bug back in under its own docs.
+    sets_path = re.compile(r"^\s*(export\s+)?PYTHONPATH=", re.M)
+    enters_project = re.compile(r'^\s*cd "\$PROJECT"', re.M)
+    for script in sorted((ROOT / "scripts").glob("*.sh")):
+        body = script.read_text()
+        if not launches_module.search(body):
+            continue
+        resolves = sets_path.search(body) or enters_project.search(body)
+        check(f"{script.name} sets the import path", bool(resolves))
+
+    # And prove it end to end, rather than trusting the pattern match. login.sh
+    # is the one entry point that is safe to invoke here: with no terminal it
+    # stops at its own TTY check, which is already past the import.
+    with tempfile.TemporaryDirectory() as elsewhere:
+        proc = subprocess.run(
+            [str(ROOT / "scripts" / "login.sh")],
+            cwd=elsewhere,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    output = (proc.stdout + proc.stderr).strip()
+    check(
+        "login.sh imports when run from elsewhere",
+        "ModuleNotFoundError" not in output,
+        output[:160],
     )
 
 
@@ -250,6 +298,9 @@ async def main() -> int:
 
             print("\ntarget placement (regression)")
             check_target_placement(check)
+
+            print("\nentry points ignore the current directory (regression)")
+            check_entrypoints_ignore_cwd(check)
 
             print("\nerror handling")
             bad_date = payload(
