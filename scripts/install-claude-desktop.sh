@@ -38,7 +38,12 @@ fi
 # The email only labels the connection in get_connection_status;
 # authentication itself runs off the cached token.
 if [ -z "${GARMIN_EMAIL:-}" ]; then
-    read -r -p "Garmin email (used only to label the connection): " GARMIN_EMAIL
+    # bootstrap.sh passes the terminal through in GARMIN_MCP_TTY, because when it
+    # is run as `curl ... | bash` our inherited stdin is the download, not the
+    # keyboard, and this read would get EOF. Run on its own, stdin is already the
+    # terminal and this is a no-op.
+    read -r -p "Garmin email (used only to label the connection): " GARMIN_EMAIL \
+        < "${GARMIN_MCP_TTY:-/dev/stdin}"
 fi
 
 if [ ! -f "$CONFIG" ]; then

@@ -125,6 +125,66 @@ def check_entrypoints_ignore_cwd(check) -> None:
     )
 
 
+def check_prompts_survive_a_pipe(check) -> None:
+    """`curl ... | bash` leaves the installer's stdin attached to the download.
+
+    That is the documented way to install this, and it means stdin is the script
+    being downloaded, not the keyboard. Every prompt therefore has to read the
+    terminal explicitly. The login step didn't: it saw no terminal, printed
+    "This command needs a terminal", and exited 2 — which under `set -e` took the
+    whole install down before Claude Desktop was ever configured, while the
+    person sat looking at a shell prompt typing their email into zsh.
+
+    The redirect has to be per command. `exec < /dev/tty` would also move where
+    bash reads the rest of the script from, which a piped install cannot survive.
+    """
+    def code_only(path: Path) -> str:
+        """Drop comments: they discuss `exec < /dev/tty` in order to warn you off
+        it, and matching prose would fail the check that guards against it."""
+        return "\n".join(
+            line for line in path.read_text().splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    boot = code_only(ROOT / "scripts" / "bootstrap.sh")
+    check(
+        "bootstrap.sh points the login prompt at the terminal",
+        bool(re.search(r'-m\s+garmin_mcp\.login\s*<\s*"\$TTY_IN"', boot)),
+    )
+    check(
+        "bootstrap.sh does not move its own stdin",
+        not re.search(r"exec\s*<\s*/dev/tty", boot),
+    )
+    install = code_only(ROOT / "scripts" / "install-claude-desktop.sh")
+    check(
+        "install-claude-desktop.sh points its read at the terminal",
+        bool(re.search(r'read\b[\s\S]{0,200}?<\s*"\$\{GARMIN_MCP_TTY', install)),
+    )
+
+    # Prove the mechanism end to end, in the shape that broke: bash is reading
+    # the script from stdin, and the prompt still collects an answer because it
+    # reads TTY_IN instead. A file stands in for the terminal so this needs no pty.
+    with tempfile.TemporaryDirectory() as tmp:
+        answers = Path(tmp) / "answers"
+        answers.write_text("typed@example.com\n")
+        script = Path(tmp) / "piped.sh"
+        script.write_text(
+            "set -euo pipefail\n"
+            f'TTY_IN="{answers}"\n'
+            'read -r -p "Garmin email: " got < "$TTY_IN"\n'
+            'echo "GOT:$got"\n'
+        )
+        with open(script) as piped:
+            proc = subprocess.run(
+                ["bash"], stdin=piped, capture_output=True, text=True, timeout=30
+            )
+    check(
+        "a piped script can still collect an answer",
+        "GOT:typed@example.com" in proc.stdout,
+        (proc.stdout + proc.stderr).strip()[:160],
+    )
+
+
 async def main() -> int:
     env = dict(os.environ)
     env["GARMIN_MCP_FAKE"] = "1"  # server uses the stub client
@@ -301,6 +361,9 @@ async def main() -> int:
 
             print("\nentry points ignore the current directory (regression)")
             check_entrypoints_ignore_cwd(check)
+
+            print("\nprompts survive `curl | bash` (regression)")
+            check_prompts_survive_a_pipe(check)
 
             print("\nerror handling")
             bad_date = payload(
