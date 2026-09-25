@@ -216,6 +216,25 @@ class FakeGarmin:
             }
         ][:limit]
 
+    def get_scheduled_workouts(self, year: int, month: int) -> dict[str, Any]:
+        return {"calendarItems": [
+            {"itemType": "workout", "date": "2026-09-24", "workoutId": 555001,
+             "title": "Thursday Threshold", "sportTypeKey": "running"},
+        ]}
+
+    def get_workout_by_id(self, workout_id: int) -> dict[str, Any]:
+        return {
+            "workoutName": "Thursday Threshold",
+            "estimatedDurationInSecs": 3175,
+            "workoutSegments": [{"workoutSteps": [
+                {"endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 900},
+                {"type": "RepeatGroupDTO", "numberOfIterations": 5, "workoutSteps": [
+                    {"endCondition": {"conditionTypeKey": "distance"},
+                     "endConditionValue": 1000},
+                ]},
+            ]}],
+        }
+
     def upload_workout(self, workout_json: Any) -> dict[str, Any]:
         self.last_upload = workout_json
         return {"workoutId": 555002}

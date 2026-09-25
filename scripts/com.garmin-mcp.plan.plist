@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.garmin-mcp.plan</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PROJECT__/scripts/refresh-plan.sh</string>
+  </array>
+
+  <!-- Morning, after an overnight sync but before most people look. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>15</integer>
+  </dict>
+
+  <!-- If the Mac was asleep at 07:15, run once it wakes rather than skipping. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__PROJECT__/.plan-refresh.log</string>
+  <key>StandardErrorPath</key>
+  <string>__PROJECT__/.plan-refresh.log</string>
+</dict>
+</plist>

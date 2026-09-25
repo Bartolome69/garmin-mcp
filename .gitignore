@@ -10,3 +10,5 @@ my-prompt.md
 
 # Local drafts, not part of the project.
 launch-post.md
+plan-config.json
+.plan-refresh.log
