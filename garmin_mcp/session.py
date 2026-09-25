@@ -24,6 +24,9 @@ TOKEN_FILE = Path(
     os.environ.get("GARMIN_MCP_TOKENS") or Path.home() / ".garmin-mcp" / "tokens.json"
 )
 
+# Wherever this checkout happens to live, so the advice is runnable as printed.
+LOGIN_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "login.sh"
+
 CREDS_HINT = (
     "Alternatively, set GARMIN_EMAIL and GARMIN_PASSWORD in the environment this "
     'server runs in (for Claude Desktop, the "env" block of the server entry in '
@@ -176,7 +179,7 @@ def login_error(exc: BaseException, *, had_cache: bool = False) -> GarminError:
         return GarminAuthError(
             "The cached Garmin session is no longer valid. The simplest fix is to "
             "sign in again in a terminal:\n"
-            "    ~/garmin-mcp/scripts/login.sh\n"
+            f"    {LOGIN_SCRIPT}\n"
             "then restart Claude Desktop. Alternatively, add GARMIN_PASSWORD to the "
             "server's environment so it can re-authenticate by itself. "
             f"({name}: {exc})"
@@ -230,7 +233,7 @@ class GarminSession:
         if not had_session and not (email and password):
             raise GarminAuthError(
                 "Not signed in to Garmin yet. Sign in once in a terminal:\n"
-                "    ~/garmin-mcp/scripts/login.sh\n"
+                f"    {LOGIN_SCRIPT}\n"
                 "then restart Claude Desktop. " + CREDS_HINT
             )
 

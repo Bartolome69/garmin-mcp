@@ -1,5 +1,6 @@
 # Hosted Garmin MCP server. The local install needs none of this.
-app = "garmin-mcp-1b4387"
+# Replace with your own app name before deploying (fly apps create <name>).
+app = "garmin-mcp-CHANGE-ME"
 primary_region = "lhr"
 
 [build]
