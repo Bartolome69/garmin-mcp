@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Training plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{color-scheme:light;--ground:#F1F4F1;--surface:#fff;--ink:#17211B;--muted:#67766C;
+--line:#DCE3DC;--run:#2F6B4F;--strength:#4A80B8;--other:#D9A320;--plan:#C9D2CA;--accent:#BC5A2A}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--ground:#0D1310;--surface:#161F1A;
+--ink:#E3ECE5;--muted:#93A599;--line:#25322A;--run:#63BC8E;--strength:#7FB3E0;--other:#E0B84A;
+--plan:#36443A;--accent:#E08A5A}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.5 Archivo,system-ui,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:36px 18px 70px}
+h1{font-size:1.6rem;margin:0 0 3px;letter-spacing:-0.02em}
+h2{font-size:0.64rem;font-family:"IBM Plex Mono",monospace;letter-spacing:.15em;
+text-transform:uppercase;color:var(--muted);font-weight:500;margin:36px 0 12px}
+.sub{color:var(--muted);font-size:0.86rem;margin:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+
+.stats{display:flex;gap:38px;flex-wrap:wrap;margin-bottom:18px}
+.stats div span{display:block;font-family:"IBM Plex Mono",monospace;font-size:0.6rem;
+letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.stats div b{font-size:1.9rem;font-weight:800;letter-spacing:-0.02em;line-height:1.1}
+.sports{display:flex;gap:26px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px}
+.sport{display:flex;gap:9px;align-items:flex-start}
+.dot{width:12px;height:12px;border-radius:4px;margin-top:5px;flex:none;background:var(--run)}
+.dot.strength{background:var(--strength)}.dot.other{background:var(--other)}
+.sport b{display:block;font-size:1.05rem;font-weight:700;line-height:1.2}
+.sport span{display:block;font-family:"IBM Plex Mono",monospace;font-size:0.62rem;color:var(--muted)}
+.sport em{display:block;font-style:normal;font-size:0.72rem;color:var(--muted);margin-top:1px}
+
+/* week progression, with a scale so the heights mean something */
+.prog{position:relative;padding:12px 44px 10px 14px}
+.bars{display:flex;gap:5px;align-items:flex-end;position:relative;z-index:1}
+.wcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
+.wtrack{width:100%;height:150px;display:flex;align-items:flex-end}
+.wstack{width:100%;display:flex;flex-direction:column-reverse;border-radius:4px 4px 0 0;
+overflow:hidden;min-height:2px}
+.wb{display:block;width:100%;background:var(--run)}
+.wb.strength{background:var(--strength)}
+.wb.other{background:var(--other)}
+.wb.plan{background:var(--plan)}
+.wcol.on .wstack{outline:2px solid var(--accent);outline-offset:1px}
+.wcol span{font-family:"IBM Plex Mono",monospace;font-size:0.55rem;color:var(--muted);white-space:nowrap}
+.gl{position:absolute;left:14px;right:44px;border-top:1px dashed var(--line);height:0;
+margin-bottom:27px}
+.gl span{position:absolute;right:-38px;top:-8px;font-family:"IBM Plex Mono",monospace;
+font-size:0.58rem;color:var(--muted)}
+
+/* days: coloured actual beside grey planned, Runna-style */
+.weeknav{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.weeknav button{width:32px;height:32px;flex:none;border-radius:9px;border:1px solid var(--line);
+background:var(--surface);color:var(--ink);cursor:pointer;font-size:1rem;line-height:1}
+.weeknav button:disabled{opacity:.35;cursor:default}
+.weeknav button:hover:not(:disabled){background:var(--ground)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+padding:14px 18px 12px}
+.phead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+margin-bottom:12px;flex-wrap:wrap}
+.phead h3{font-size:0.9rem;font-weight:700;margin:0}
+.wsum{text-align:right}
+.wsum b{font-size:0.95rem;font-weight:700}
+.wsum span{display:block;font-family:"IBM Plex Mono",monospace;font-size:0.58rem;color:var(--muted)}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.day{display:flex;flex-direction:column;align-items:center;gap:4px}
+.pills{height:132px;display:flex;align-items:flex-end;justify-content:center;gap:4px;width:100%}
+.pill{width:11px;border-radius:6px;overflow:hidden;display:flex;flex-direction:column-reverse;
+background:var(--run);min-height:8px}
+.pill.plan{background:var(--plan)}
+.seg{display:block;width:100%;background:var(--run)}
+.seg.strength{background:var(--strength)}
+.seg.other{background:var(--other)}
+.day b{font-size:0.8rem;font-weight:600}
+.day span{font-family:"IBM Plex Mono",monospace;font-size:0.55rem;color:var(--muted)}
+.day.today b{color:var(--accent)}
+.key{margin-top:24px;font-size:0.78rem;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+.key i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px;
+vertical-align:-1px}
+@media(max-width:640px){.pills{height:104px}.wtrack{height:112px}.stats{gap:24px}
+.stats div b{font-size:1.5rem}}
+</style></head><body><div class="wrap">
+<h1>Training plan</h1>
+<p class="sub">Every chart is sized by time and coloured by activity. Grey is planned, colour is what you did. Updated 25 September, 19:28.</p>
+
+<div class="card" style="margin-top:22px">
+  <div class="stats">
+    <div><span>Kilometres</span><b>42.3</b></div>
+    <div><span>Time</span><b>3h 32m 17s</b></div>
+    <div><span>Runs</span><b>4</b></div>
+  </div>
+  <div class="sports"><div class="sport"><i class="dot run"></i><div><b>3h 32m 17s</b><span>1h 55m 40s planned</span><em>Running</em></div></div></div>
+</div>
+
+<h2>Weekly volume</h2>
+<div class="card prog"><div class="gl" style="bottom:0%"><span>0h</span></div><div class="gl" style="bottom:50%"><span>3h</span></div><div class="gl" style="bottom:100%"><span>7h</span></div><div class="bars"><div class="wcol" title="2h 36m 24s · 10.4 km"><div class="wtrack"><div class="wstack" style="height:34.8%"><i class="wb other" style="flex:4319"></i><i class="wb run" style="flex:3242"></i><i class="wb strength" style="flex:1823"></i></div></div><span>22/6</span></div><div class="wcol" title="2h 25m 42s · 18.0 km"><div class="wtrack"><div class="wstack" style="height:32.4%"><i class="wb other" style="flex:3682"></i><i class="wb run" style="flex:5060"></i></div></div><span>29/6</span></div><div class="wcol" title="4h 04m 37s · 28.2 km"><div class="wtrack"><div class="wstack" style="height:54.4%"><i class="wb other" style="flex:3783"></i><i class="wb run" style="flex:8821"></i><i class="wb strength" style="flex:2074"></i></div></div><span>6/7</span></div><div class="wcol" title="6h 29m 35s · 29.9 km"><div class="wtrack"><div class="wstack" style="height:86.6%"><i class="wb other" style="flex:14061"></i><i class="wb run" style="flex:9315"></i></div></div><span>13/7</span></div><div class="wcol" title="3h 57m 33s · 33.1 km"><div class="wtrack"><div class="wstack" style="height:52.8%"><i class="wb other" style="flex:4357"></i><i class="wb run" style="flex:9896"></i></div></div><span>20/7</span></div><div class="wcol" title="5h 30m 46s · 38.3 km"><div class="wtrack"><div class="wstack" style="height:73.5%"><i class="wb other" style="flex:8461"></i><i class="wb run" style="flex:11385"></i></div></div><span>27/7</span></div><div class="wcol" title="6h 17m 27s · 30.0 km"><div class="wtrack"><div class="wstack" style="height:83.9%"><i class="wb other" style="flex:12023"></i><i class="wb run" style="flex:8842"></i><i class="wb strength" style="flex:1781"></i></div></div><span>3/8</span></div><div class="wcol" title="5h 25m 25s · 32.1 km"><div class="wtrack"><div class="wstack" style="height:72.3%"><i class="wb other" style="flex:9927"></i><i class="wb run" style="flex:9598"></i></div></div><span>10/8</span></div><div class="wcol" title="7h 22m 18s · 40.4 km"><div class="wtrack"><div class="wstack" style="height:98.3%"><i class="wb other" style="flex:9102"></i><i class="wb run" style="flex:12452"></i><i class="wb strength" style="flex:4983"></i></div></div><span>17/8</span></div><div class="wcol" title="5h 03m 09s · 34.1 km"><div class="wtrack"><div class="wstack" style="height:67.4%"><i class="wb other" style="flex:7661"></i><i class="wb run" style="flex:10527"></i></div></div><span>24/8</span></div><div class="wcol" title="5h 52m 43s · 45.3 km"><div class="wtrack"><div class="wstack" style="height:78.4%"><i class="wb other" style="flex:8033"></i><i class="wb run" style="flex:13130"></i></div></div><span>31/8</span></div><div class="wcol" title="5h 57m 53s · 58.7 km"><div class="wtrack"><div class="wstack" style="height:79.5%"><i class="wb other" style="flex:3312"></i><i class="wb run" style="flex:18161"></i></div></div><span>7/9</span></div><div class="wcol" title="2h 06m 51s · 25.2 km"><div class="wtrack"><div class="wstack" style="height:28.2%"><i class="wb run" style="flex:7611"></i></div></div><span>14/9</span></div><div class="wcol on" title="3h 32m 17s · 42.3 km"><div class="wtrack"><div class="wstack" style="height:47.2%"><i class="wb run" style="flex:12737"></i></div></div><span>21/9</span></div><div class="wcol" title="0s · 0.0 km"><div class="wtrack"><div class="wstack" style="height:0"></div></div><span>28/9</span></div><div class="wcol" title="0s · 0.0 km"><div class="wtrack"><div class="wstack" style="height:0"></div></div><span>5/10</span></div></div></div>
+
+<h2>Week by week</h2>
+<div class="weeknav">
+  <button id="prev" aria-label="Earlier week">&#8249;</button>
+  <button id="next" aria-label="Later week">&#8250;</button>
+  <span class="sub" style="font-size:0.78rem" id="navhint"></span>
+</div>
+<div id="panels"><div class="panel" data-index="0" hidden><div class="phead"><h3>5 October</h3><div class="wsum"><b>0.0 km</b><span>0s · 0s planned</span></div></div><div class="days"><div class="day"><div class="pills"></div><b>5</b><span>MO</span></div><div class="day"><div class="pills"></div><b>6</b><span>TU</span></div><div class="day"><div class="pills"></div><b>7</b><span>WE</span></div><div class="day"><div class="pills"></div><b>8</b><span>TH</span></div><div class="day"><div class="pills"></div><b>9</b><span>FR</span></div><div class="day"><div class="pills"></div><b>10</b><span>SA</span></div><div class="day"><div class="pills"></div><b>11</b><span>SU</span></div></div></div><div class="panel" data-index="1" hidden><div class="phead"><h3>28 September</h3><div class="wsum"><b>0.0 km</b><span>0s · 0s planned</span></div></div><div class="days"><div class="day"><div class="pills"></div><b>28</b><span>MO</span></div><div class="day"><div class="pills"></div><b>29</b><span>TU</span></div><div class="day"><div class="pills"></div><b>30</b><span>WE</span></div><div class="day"><div class="pills"></div><b>1</b><span>TH</span></div><div class="day"><div class="pills"></div><b>2</b><span>FR</span></div><div class="day"><div class="pills"></div><b>3</b><span>SA</span></div><div class="day"><div class="pills"></div><b>4</b><span>SU</span></div></div></div><div class="panel" data-index="2" hidden><div class="phead"><h3>This week</h3><div class="wsum"><b>42.3 km</b><span>3h 32m 17s · 1h 55m 40s planned</span></div></div><div class="days"><div class="day"><div class="pills"></div><b>21</b><span>MO</span></div><div class="day"><div class="pills"><div class="pill" style="height:36.0%" title="54m 40s"><i class="seg run" style="flex:3280"></i></div></div><b>22</b><span>TU</span></div><div class="day"><div class="pills"><div class="pill" style="height:37.5%" title="56m 57s"><i class="seg run" style="flex:3417"></i></div></div><b>23</b><span>WE</span></div><div class="day"><div class="pills"><div class="pill" style="height:36.4%" title="55m 13s"><i class="seg run" style="flex:3313"></i></div><div class="pill plan" style="height:76.2%" title="planned 1h 55m 40s"></div></div><b>24</b><span>TH</span></div><div class="day today"><div class="pills"><div class="pill" style="height:30.0%" title="45m 27s"><i class="seg run" style="flex:2727"></i></div></div><b>25</b><span>FR</span></div><div class="day"><div class="pills"></div><b>26</b><span>SA</span></div><div class="day"><div class="pills"></div><b>27</b><span>SU</span></div></div></div><div class="panel" data-index="3" hidden><div class="phead"><h3>14 September</h3><div class="wsum"><b>25.2 km</b><span>2h 06m 51s · 0s planned</span></div></div><div class="days"><div class="day"><div class="pills"></div><b>14</b><span>MO</span></div><div class="day"><div class="pills"><div class="pill" style="height:19.9%" title="30m 13s"><i class="seg run" style="flex:1813"></i></div></div><b>15</b><span>TU</span></div><div class="day"><div class="pills"><div class="pill" style="height:30.2%" title="45m 47s"><i class="seg run" style="flex:2747"></i></div></div><b>16</b><span>WE</span></div><div class="day"><div class="pills"></div><b>17</b><span>TH</span></div><div class="day"><div class="pills"><div class="pill" style="height:33.5%" title="50m 51s"><i class="seg run" style="flex:3051"></i></div></div><b>18</b><span>FR</span></div><div class="day"><div class="pills"></div><b>19</b><span>SA</span></div><div class="day"><div class="pills"></div><b>20</b><span>SU</span></div></div></div><div class="panel" data-index="4" hidden><div class="phead"><h3>7 September</h3><div class="wsum"><b>58.7 km</b><span>5h 57m 53s · 0s planned</span></div></div><div class="days"><div class="day"><div class="pills"></div><b>7</b><span>MO</span></div><div class="day"><div class="pills"><div class="pill" style="height:33.1%" title="50m 17s"><i class="seg run" style="flex:3017"></i></div></div><b>8</b><span>TU</span></div><div class="day"><div class="pills"><div class="pill" style="height:35.8%" title="54m 18s"><i class="seg run" style="flex:3258"></i></div></div><b>9</b><span>WE</span></div><div class="day"><div class="pills"></div><b>10</b><span>TH</span></div><div class="day"><div class="pills"><div class="pill" style="height:75.2%" title="1h 54m 08s"><i class="seg other" style="flex:3312"></i><i class="seg run" style="flex:3535"></i></div></div><b>11</b><span>FR</span></div><div class="day"><div class="pills"><div class="pill" style="height:22.7%" title="34m 24s"><i class="seg run" style="flex:2064"></i></div></div><b>12</b><span>SA</span></div><div class="day"><div class="pills"><div class="pill" style="height:69.1%" title="1h 44m 47s"><i class="seg run" style="flex:6287"></i></div></div><b>13</b><span>SU</span></div></div></div><div class="panel" data-index="5" hidden><div class="phead"><h3>31 August</h3><div class="wsum"><b>45.3 km</b><span>5h 52m 43s · 0s planned</span></div></div><div class="days"><div class="day"><div class="pills"><div class="pill" style="height:88.3%" title="2h 13m 53s"><i class="seg other" style="flex:8033"></i></div></div><b>31</b><span>MO</span></div><div class="day"><div class="pills"></div><b>1</b><span>TU</span></div><div class="day"><div class="pills"><div class="pill" style="height:33.3%" title="50m 31s"><i class="seg run" style="flex:3031"></i></div></div><b>2</b><span>WE</span></div><div class="day"><div class="pills"><div class="pill" style="height:12.0%" title="18m 12s"><i class="seg run" style="flex:1092"></i></div></div><b>3</b><span>TH</span></div><div class="day"><div class="pills"><div class="pill" style="height:41.4%" title="1h 02m 48s"><i class="seg run" style="flex:3768"></i></div></div><b>4</b><span>FR</span></div><div class="day"><div class="pills"></div><b>5</b><span>SA</span></div><div class="day"><div class="pills"><div class="pill" style="height:57.6%" title="1h 27m 19s"><i class="seg run" style="flex:5239"></i></div></div><b>6</b><span>SU</span></div></div></div><div class="panel" data-index="6" hidden><div class="phead"><h3>24 August</h3><div class="wsum"><b>34.1 km</b><span>5h 03m 09s · 0s planned</span></div></div><div class="days"><div class="day"><div class="pills"><div class="pill" style="height:17.0%" title="25m 47s"><i class="seg run" style="flex:1547"></i></div></div><b>24</b><span>MO</span></div><div class="day"><div class="pills"><div class="pill" style="height:47.6%" title="1h 12m 08s"><i class="seg other" style="flex:4328"></i></div></div><b>25</b><span>TU</span></div><div class="day"><div class="pills"><div class="pill" style="height:34.8%" title="52m 48s"><i class="seg run" style="flex:3168"></i></div></div><b>26</b><span>WE</span></div><div class="day"><div class="pills"></div><b>27</b><span>TH</span></div><div class="day"><div class="pills"><div class="pill" style="height:72.3%" title="1h 49m 39s"><i class="seg other" style="flex:3333"></i><i class="seg run" style="flex:3246"></i></div></div><b>28</b><span>FR</span></div><div class="day"><div class="pills"><div class="pill" style="height:28.2%" title="42m 45s"><i class="seg run" style="flex:2565"></i></div></div><b>29</b><span>SA</span></div><div class="day"><div class="pills"></div><b>30</b><span>SU</span></div></div></div><div class="panel" data-index="7" hidden><div class="phead"><h3>17 August</h3><div class="wsum"><b>40.4 km</b><span>7h 22m 18s · 0s planned</span></div></div><div class="days"><div class="day"><div class="pills"><div class="pill" style="height:25.8%" title="39m 11s"><i class="seg strength" style="flex:2351"></i></div></div><b>17</b><span>MO</span></div><div class="day"><div class="pills"><div class="pill" style="height:26.9%" title="40m 46s"><i class="seg run" style="flex:2446"></i></div></div><b>18</b><span>TU</span></div><div class="day"><div class="pills"><div class="pill" style="height:47.9%" title="1h 12m 37s"><i class="seg run" style="flex:4357"></i></div></div><b>19</b><span>WE</span></div><div class="day"><div class="pills"><div class="pill" style="height:28.9%" title="43m 52s"><i class="seg strength" style="flex:2632"></i></div></div><b>20</b><span>TH</span></div><div class="day"><div class="pills"><div class="pill" style="height:28.1%" title="42m 37s"><i class="seg run" style="flex:2557"></i></div></div><b>21</b><span>FR</span></div><div class="day"><div class="pills"><div class="pill" style="height:100.0%" title="2h 31m 42s"><i class="seg other" style="flex:9102"></i></div></div><b>22</b><span>SA</span></div><div class="day"><div class="pills"><div class="pill" style="height:34.0%" title="51m 32s"><i class="seg run" style="flex:3092"></i></div></div><b>23</b><span>SU</span></div></div></div></div>
+<script>
+(function(){
+  // Panels are newest-first, so "previous" moves back in time.
+  var panels = Array.prototype.slice.call(document.querySelectorAll(".panel"));
+  var prev = document.getElementById("prev");
+  var next = document.getElementById("next");
+  var hint = document.getElementById("navhint");
+  var at = 2;
+
+  function show(i){
+    at = Math.max(0, Math.min(panels.length - 1, i));
+    panels.forEach(function(p, n){ p.hidden = n !== at; });
+    prev.disabled = at >= panels.length - 1;
+    next.disabled = at <= 0;
+    hint.textContent = (at + 1) + " of " + panels.length;
+  }
+  prev.addEventListener("click", function(){ show(at + 1); });
+  next.addEventListener("click", function(){ show(at - 1); });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "ArrowLeft") show(at + 1);
+    if (e.key === "ArrowRight") show(at - 1);
+  });
+  show(at);
+})();
+</script>
+
+<div class="key">
+  <span><i style="background:var(--run)"></i>running</span>
+  <span><i style="background:var(--strength)"></i>strength</span>
+  <span><i style="background:var(--other)"></i>other</span>
+  <span><i style="background:var(--plan)"></i>planned</span>
+</div>
+</div></body></html>
