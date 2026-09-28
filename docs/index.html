@@ -124,6 +124,33 @@
 
   .lede { font-size: 1.2rem; color: var(--muted); max-width: 54ch; margin-top: 18px; }
 
+  /* ---- Pick a route ---- */
+  /* Primary text is --ground rather than white: on the light theme that is
+     near-white on dark green, and on the dark one near-black on light green,
+     so the pair stays legible without a second rule. */
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+  .cta a {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 13px 22px;
+    border-radius: var(--radius);
+    font-weight: 600;
+    font-size: 0.97rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform 0.12s ease, background 0.12s ease;
+  }
+  .cta a:hover { transform: translateY(-1px); }
+  .cta .primary { background: var(--accent); color: var(--ground); }
+  .cta .secondary { background: var(--surface); color: var(--ink); border-color: var(--hairline); }
+  .cta .secondary:hover { background: var(--sunken); }
+  .cta-note { margin-top: 12px; }
+  @media (max-width: 520px) {
+    .cta { flex-direction: column; align-items: stretch; }
+    .cta a { justify-content: center; }
+  }
+
   section { margin-top: 50px; }
   .stack { display: flex; flex-direction: column; gap: 16px; max-width: var(--measure); }
 
@@ -394,6 +421,15 @@
       sends the next session back.
     </p>
 
+    <div class="cta">
+      <a class="primary" href="#claude">Connect with Claude</a>
+      <a class="secondary" href="#chatgpt">Connect with ChatGPT</a>
+    </div>
+    <p class="muted small cta-note">
+      A free Claude account is enough. ChatGPT needs a paid plan and an
+      administrator to switch it on.
+    </p>
+
     <svg class="profile" viewBox="0 0 720 76" aria-hidden="true" focusable="false">
       <path class="p-area" d="M0 60 L60 56 L120 52 L180 54 L240 44 L300 40 L360 36 L420 38 L480 28 L540 24 L600 20 L660 18 L720 13 L720 70 L0 70 Z"></path>
       <path class="p-line" d="M0 60 L60 56 L120 52 L180 54 L240 44 L300 40 L360 36 L420 38 L480 28 L540 24 L600 20 L660 18 L720 13"></path>
@@ -451,7 +487,7 @@
 
   </section>
 
-  <section>
+  <section id="claude">
     <h2>Setting it up</h2>
 
     <ol class="steps">
@@ -700,7 +736,7 @@ Then, working with me:
     </div>
   </section>
 
-  <section>
+  <section id="chatgpt">
     <h2>Using it in ChatGPT</h2>
     <div class="stack">
       <p class="small">
