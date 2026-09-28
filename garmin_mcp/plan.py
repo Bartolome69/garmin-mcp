@@ -112,14 +112,22 @@ def collect() -> dict[str, Any]:
         months.append((cursor.year, cursor.month))
         cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
 
-    planned: list[dict[str, Any]] = []
+    # Garmin's month view includes the days either side of the month, so a
+    # session near a boundary comes back from two calls. Keyed by calendar id,
+    # or every such session would be counted twice.
+    seen: dict[Any, dict[str, Any]] = {}
     for year, month in months:
         try:
             payload = session.run(lambda c, y=year, m=month: c.get_scheduled_workouts(y, m))
         except Exception:
             continue
         items = payload if isinstance(payload, list) else (payload or {}).get("calendarItems", [])
-        planned.extend(i for i in items if i.get("itemType") == "workout")
+        for item in items:
+            if item.get("itemType") != "workout":
+                continue
+            key = item.get("id") or (item.get("date"), item.get("workoutId"))
+            seen.setdefault(key, item)
+    planned = list(seen.values())
 
     # Planned sessions need their distance looked up once each.
     distances: dict[int, float] = {}

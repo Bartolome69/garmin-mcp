@@ -217,9 +217,13 @@ class FakeGarmin:
         ][:limit]
 
     def get_scheduled_workouts(self, year: int, month: int) -> dict[str, Any]:
+        # Garmin's month view spills into the neighbouring months, so the same
+        # session is returned by more than one call. The collector must key by
+        # id or it counts each one twice.
         return {"calendarItems": [
-            {"itemType": "workout", "date": "2026-09-24", "workoutId": 555001,
-             "title": "Thursday Threshold", "sportTypeKey": "running"},
+            {"id": 900001, "itemType": "workout", "date": "2026-09-24",
+             "workoutId": 555001, "title": "Thursday Threshold",
+             "sportTypeKey": "running"},
         ]}
 
     def get_workout_by_id(self, workout_id: int) -> dict[str, Any]:
