@@ -303,3 +303,152 @@ def build_workout(
     total = f"{hours}h {mins:02d}m" if hours else f"{mins}m {secs:02d}s"
     summary = "\n".join([f"{name} ({sport_key}, about {total})", *builder.lines])
     return workout, summary, estimated
+
+
+# --------------------------------------------------------------------------
+# Strength training
+# --------------------------------------------------------------------------
+#
+# Strength workouts are shaped differently from the endurance ones above: a
+# block is "4 sets of 10 bench press, 120s rest" rather than a sequence of
+# timed or measured steps, and each block names an exercise from Garmin's own
+# catalogue. garminconnect ships that catalogue (1527 exercises across 47
+# categories) and a helper that builds one block, so the work here is turning
+# what somebody said into a catalogue entry, and saying so clearly when it
+# cannot be done.
+
+
+def _normalise(term: str) -> str:
+    """Fold the spelling differences people actually type.
+
+    The catalogue search is a plain substring match, so "pull up" finds nothing
+    while "pull-up" finds twenty-one. Nobody should have to know that.
+    """
+    return " ".join(str(term).replace("-", " ").replace("_", " ").lower().split())
+
+
+def find_exercises(term: str, limit: int = 25) -> list[dict[str, str]]:
+    """Search Garmin's exercise catalogue, tolerant of hyphens and spacing."""
+    from garminconnect import exercises as catalogue
+
+    wanted = _normalise(term)
+    if not wanted:
+        return []
+    hits = [
+        entry for entry in catalogue.EXERCISES
+        if wanted in _normalise(entry["name"])
+    ]
+    # Prefer the plainest name: an exact match, then the shortest, so "bench
+    # press" offers "Bench Press" before "Close-grip Barbell Bench Press".
+    hits.sort(key=lambda e: (_normalise(e["name"]) != wanted, len(e["name"])))
+    return hits[:limit]
+
+
+def resolve_exercise(name: str) -> dict[str, str]:
+    """Turn what somebody called an exercise into a catalogue entry.
+
+    Raises WorkoutError naming the near misses rather than guessing, because a
+    wrong guess here is a workout on someone's watch with the wrong movement
+    in it.
+    """
+    from garminconnect import exercises as catalogue
+
+    exact = catalogue.resolve(str(name).strip())
+    if exact:
+        return exact
+
+    hits = find_exercises(name)
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        raise WorkoutError(
+            f"No exercise in Garmin's catalogue matches {name!r}. "
+            "Call find_exercises to search it."
+        )
+    # Several matches, but one is exactly what was asked for.
+    for entry in hits:
+        if _normalise(entry["name"]) == _normalise(name):
+            return entry
+    names = ", ".join(e["name"] for e in hits[:6])
+    raise WorkoutError(
+        f"{name!r} matches several exercises: {names}"
+        f"{' ...' if len(hits) > 6 else ''}. Use one of those names exactly."
+    )
+
+
+def build_strength_workout(
+    name: str,
+    exercises: list[dict[str, Any]],
+    description: str | None = None,
+) -> tuple[Any, str, int]:
+    """Build a strength workout from a list of exercise blocks."""
+    import garminconnect.workout as gw
+
+    if not exercises:
+        raise WorkoutError("A strength workout needs at least one exercise.")
+
+    steps: list[Any] = []
+    lines: list[str] = []
+    order = 1
+    estimated = 0
+
+    for position, raw in enumerate(exercises, start=1):
+        if not isinstance(raw, dict):
+            raise WorkoutError(f"Exercise {position} should be an object, not {type(raw).__name__}.")
+        wanted = raw.get("exercise") or raw.get("name")
+        if not wanted:
+            raise WorkoutError(f"Exercise {position} is missing an 'exercise' name.")
+
+        entry = resolve_exercise(wanted)
+        try:
+            sets = int(raw.get("sets", 3))
+            reps = int(raw.get("reps", 10))
+            rest = float(raw.get("rest_seconds", 90))
+        except (TypeError, ValueError) as exc:
+            raise WorkoutError(
+                f"Exercise {position} ({entry['name']}): sets, reps and "
+                "rest_seconds must be numbers."
+            ) from exc
+        if sets < 1 or reps < 1:
+            raise WorkoutError(
+                f"Exercise {position} ({entry['name']}): sets and reps must be at least 1."
+            )
+
+        weight = raw.get("weight_kg")
+        weight_kg = float(weight) if weight not in (None, "") else None
+
+        steps.append(
+            gw.create_strength_set(
+                entry["category"],
+                step_order=order,
+                sets=sets,
+                reps=reps,
+                rest_seconds=rest,
+                exercise_name=entry["exercise"],
+                weight_kg=weight_kg,
+            )
+        )
+        # The helper documents this: the block takes three step orders.
+        order += 3
+
+        # Rough, and deliberately so — a rep is not a fixed length of time.
+        estimated += int(sets * (reps * 3 + rest))
+        load = f" @ {weight_kg:g}kg" if weight_kg is not None else ""
+        lines.append(f"  {sets}x{reps} {entry['name']}{load}, {int(rest)}s rest")
+
+    workout = gw.StrengthWorkout(
+        workoutName=str(name).strip(),
+        description=description,
+        estimatedDurationInSecs=estimated,
+        workoutSegments=[
+            gw.WorkoutSegment(
+                segmentOrder=1,
+                sportType={"sportTypeId": 5, "sportTypeKey": "strength_training"},
+                workoutSteps=steps,
+            )
+        ],
+    )
+
+    mins = estimated // 60
+    summary = "\n".join([f"{name} (strength, about {mins}m)", *lines])
+    return workout, summary, estimated

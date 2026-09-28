@@ -34,6 +34,8 @@ EXPECTED_TOOLS = {
     "get_profile",
     "update_plan_view",
     "get_plan_chart",
+    "find_exercises",
+    "create_strength_workout",
 }
 
 
@@ -360,6 +362,52 @@ async def main() -> int:
 
             print("\ntarget placement (regression)")
             check_target_placement(check)
+
+            print("\nstrength training")
+            found = payload(await sess.call_tool("find_exercises", {"query": "bench press"}))
+            names = [m["name"] for m in found.get("matches", [])]
+            check("catalogue search finds exercises", "Bench Press" in names, str(names[:4]))
+            check("the plainest name comes first", names[:1] == ["Bench Press"], str(names[:2]))
+
+            # A plain substring search misses this; people type it constantly.
+            hyphen = payload(await sess.call_tool("find_exercises", {"query": "pull up"}))
+            check("hyphens and spacing are forgiven",
+                  any(m["name"] == "Pull-up" for m in hyphen.get("matches", [])),
+                  str([m["name"] for m in hyphen.get("matches", [])][:3]))
+
+            made = payload(await sess.call_tool("create_strength_workout", {
+                "name": "Push Day",
+                "exercises": [
+                    {"exercise": "Barbell Bench Press", "sets": 4, "reps": 8,
+                     "rest_seconds": 120, "weight_kg": 70},
+                    {"exercise": "Goblet Squat", "sets": 3, "reps": 12},
+                ],
+            }))
+            check("strength workout is created", bool(made.get("workout_id")), str(made)[:140])
+            check("summary reads like a session",
+                  "4x8 Barbell Bench Press @ 70kg" in made.get("summary", ""),
+                  made.get("summary", "")[:120])
+
+            # A wrong guess here is the wrong movement on someone's watch, so an
+            # unrecognised or ambiguous name must stop rather than pick one.
+            unknown = payload(await sess.call_tool("create_strength_workout", {
+                "name": "Nope",
+                "exercises": [{"exercise": "flurble press", "sets": 3, "reps": 5}],
+            }))
+            check("an unknown exercise is refused, not guessed",
+                  "error" in unknown and "find_exercises" in str(unknown),
+                  str(unknown)[:140])
+
+            # "row" and "curl" are themselves catalogue entries, so they resolve
+            # and should. "press" is a family of movements and must not be
+            # silently picked from.
+            vague = payload(await sess.call_tool("create_strength_workout", {
+                "name": "Vague",
+                "exercises": [{"exercise": "press", "sets": 3, "reps": 10}],
+            }))
+            check("an ambiguous exercise lists the candidates",
+                  "error" in vague and "matches several" in str(vague),
+                  str(vague)[:140])
 
             print("\nentry points ignore the current directory (regression)")
             check_entrypoints_ignore_cwd(check)
