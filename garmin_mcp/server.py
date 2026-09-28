@@ -32,7 +32,13 @@ from .formatting import (
     rounded,
 )
 from .session import GarminError, session
-from .workouts import SPORTS, WorkoutError, build_workout
+from .workouts import (
+    SPORTS,
+    WorkoutError,
+    build_strength_workout,
+    build_workout,
+    find_exercises as search_exercises,
+)
 
 log = logging.getLogger(__name__)
 
@@ -581,6 +587,100 @@ async def create_workout(
         "sport": str(sport).lower(),
         "estimated_duration": duration(estimated),
         "summary": summary,
+        "next_step": (
+            "Call schedule_workout with this workout_id and a date to put it on "
+            "the Garmin calendar so it reaches the watch."
+        ),
+    }
+
+
+@mcp.tool()
+@tool_errors
+async def find_exercises(query: str, limit: int = 25) -> dict[str, Any]:
+    """Search Garmin's exercise catalogue by name.
+
+    Use this before create_strength_workout when unsure what an exercise is
+    called, or when it reports that a name was ambiguous. Matching ignores
+    hyphens and spacing, so "pull up" and "pull-up" both work.
+
+    Args:
+        query: Part of an exercise name, e.g. "bench press" or "row".
+        limit: How many matches to return. Defaults to 25.
+    """
+    hits = search_exercises(query, limit=limit)
+    if not hits:
+        return {
+            "query": query,
+            "matches": [],
+            "note": "Nothing matched. Try a shorter or more common term.",
+        }
+    return {
+        "query": query,
+        "matches": [
+            {"name": h["name"], "category": h["category"], "exercise": h["exercise"]}
+            for h in hits
+        ],
+        "note": (
+            "Pass one of these 'name' values as 'exercise' to "
+            "create_strength_workout."
+        ),
+    }
+
+
+@mcp.tool()
+@tool_errors
+async def create_strength_workout(
+    name: str,
+    exercises: list[dict[str, Any]],
+    description: str | None = None,
+) -> dict[str, Any]:
+    """Create a strength training workout in Garmin Connect.
+
+    Adds a new workout; it never edits or replaces an existing one. Use
+    schedule_workout afterwards to put it on a date so it syncs to the watch.
+
+    Exercise names come from Garmin's own catalogue. Common names usually work
+    as typed; if one is ambiguous this says so and lists the candidates rather
+    than guessing, since a wrong guess is the wrong movement on a watch. Call
+    find_exercises to search.
+
+    Args:
+        name: Name shown in Garmin Connect and on the watch.
+        exercises: Ordered list of blocks. Each block is an object:
+            - "exercise": catalogue name, e.g. "Barbell Bench Press"
+            - "sets": number of sets (default 3)
+            - "reps": repetitions per set (default 10)
+            - "rest_seconds": rest after each set (default 90)
+            - "weight_kg": optional target weight
+            Example — a push day:
+                [{"exercise": "Barbell Bench Press", "sets": 4, "reps": 8,
+                  "rest_seconds": 120, "weight_kg": 70},
+                 {"exercise": "Barbell Overhead Press", "sets": 3, "reps": 10,
+                  "rest_seconds": 90},
+                 {"exercise": "Cable Triceps Pushdown", "sets": 3, "reps": 12,
+                  "rest_seconds": 60}]
+        description: Optional note stored with the workout.
+    """
+    workout, summary, estimated = build_strength_workout(name, exercises, description)
+    payload = workout.to_dict()
+
+    result = await _call(lambda c: c.upload_workout(payload)) or {}
+    workout_id = first_present(result, "workoutId", "id")
+    if workout_id is None:
+        return {
+            "error": "Garmin accepted the request but returned no workout id.",
+            "raw_response": str(result)[:300],
+        }
+
+    return {
+        "workout_id": workout_id,
+        "name": name,
+        "sport": "strength_training",
+        "estimated_duration": duration(estimated),
+        "summary": summary,
+        "note": (
+            "The estimate is rough — a repetition is not a fixed length of time."
+        ),
         "next_step": (
             "Call schedule_workout with this workout_id and a date to put it on "
             "the Garmin calendar so it reaches the watch."
