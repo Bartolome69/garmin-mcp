@@ -1,4 +1,4 @@
-<title>Garmin for Claude</title>
+<title>Garmin for Claude &amp; ChatGPT</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -291,7 +291,7 @@
 <div class="wrap">
 
   <header>
-    <p class="kicker">Claude&nbsp;+&nbsp;Garmin Connect</p>
+    <p class="kicker">Claude&nbsp;&amp;&nbsp;ChatGPT&nbsp;+&nbsp;Garmin Connect</p>
     <h1>Talk to your training</h1>
     <p class="lede">
       Your watch already knows everything. This puts it in the conversation — and
@@ -311,7 +311,7 @@
       <div class="beat">
         <span class="mark" aria-hidden="true"></span>
         <h3>Connect once</h3>
-        <p>One command, one sign-in. Ten minutes today, then never again.</p>
+        <p>Paste a link, sign in to Garmin. Two minutes, nothing to install, and it works on your phone too.</p>
       </div>
       <div class="beat">
         <span class="mark" aria-hidden="true"></span>
@@ -329,18 +329,27 @@
   <section>
     <h2>Before you start</h2>
     <dl class="needs">
-      <div><dt>Computer</dt><dd>A Mac, macOS 10.15+</dd></div>
-      <div><dt>App</dt><dd>Claude Desktop, installed</dd></div>
-      <div><dt>Account</dt><dd>Garmin Connect login</dd></div>
-      <div><dt>Time</dt><dd>About 10 minutes</dd></div>
+      <div><dt>Account</dt><dd>A Garmin Connect login</dd></div>
+      <div><dt>App</dt><dd>Claude — a free account is enough</dd></div>
+      <div><dt>Device</dt><dd>Anything. Phone, laptop, either</dd></div>
+      <div><dt>Time</dt><dd>About two minutes</dd></div>
     </dl>
 
     <div class="note" style="margin-top:22px">
       <p><strong>How technical is this, honestly?</strong></p>
       <p>
-        There's nothing to double-click. You paste one line into Terminal, press
-        Return, and answer what it asks. If you can follow a recipe, you can do this.
-        Nothing here can break your Mac, and every step undoes cleanly.
+        Not very. You paste a link into Claude's settings, sign in to Garmin the
+        way you would on any website, and that's it. No Terminal, no install,
+        nothing to keep running on your computer.
+      </p>
+    </div>
+
+    <div class="note" style="margin-top:14px">
+      <p><strong>One catch, if your Claude account is through work.</strong></p>
+      <p>
+        On Team and Enterprise plans only an administrator can add connectors.
+        A personal account — free is fine — sidesteps it, and keeps your health
+        data off a work login, which is where it belongs anyway.
       </p>
     </div>
 
@@ -354,10 +363,13 @@
       <li>
         <span class="waypoint" aria-hidden="true">01</span>
         <div class="step-body">
-          <h3>Open Terminal</h3>
+          <h3>Open Claude&rsquo;s connector settings</h3>
           <p class="muted small">
-            <strong>Cmd + Space</strong>, type <em>Terminal</em>, press Return. A window
-            with a blinking cursor appears. It's just somewhere to paste instructions.
+            On the web at <strong>claude.ai</strong>, go to
+            <strong>Settings &rarr; Connectors</strong>, then
+            <strong>Add custom connector</strong>. Do this bit on a computer &mdash;
+            you can&rsquo;t add one from the phone app, but once it&rsquo;s added it
+            appears there automatically.
           </p>
         </div>
       </li>
@@ -365,17 +377,18 @@
       <li>
         <span class="waypoint" aria-hidden="true">02</span>
         <div class="step-body">
-          <h3>Paste this, press Return</h3>
+          <h3>Paste this address</h3>
           <div class="term">
             <div class="term-head">
-              <span class="term-label">Terminal</span>
-              <button class="copy" type="button" data-copy="install">Copy</button>
+              <span class="term-label">Connector URL</span>
+              <button class="copy" type="button" data-copy="connector">Copy</button>
             </div>
-            <pre><code id="install"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Bartolome69/garmin-mcp/main/scripts/bootstrap.sh | bash</code></pre>
+            <pre><code id="connector">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
           </div>
           <p class="muted small">
-            Downloads the code, sets up Python, gets everything ready. Two or three
-            minutes the first time. Text will scroll past — let it.
+            Claude checks the address and fills in the rest itself. It should show
+            <em>Sign in now</em> already selected. Leave everything as it is and
+            press Add.
           </p>
         </div>
       </li>
@@ -385,57 +398,35 @@
         <div class="step-body">
           <h3>Sign in to Garmin</h3>
           <p class="muted small">
-            It asks for your email, your password, and a code if you use two-factor.
+            Claude sends you to a sign-in page. Enter your Garmin email and
+            password, and a code if you use two-factor. Then it returns you to
+            Claude on its own.
           </p>
           <div class="note">
             <p class="small">
-              <strong>Your password won't appear as you type.</strong> No dots, no stars,
-              nothing at all. That's deliberate, not a frozen screen — type it and press
-              Return.
+              <strong>Your password is never stored.</strong> It goes straight to
+              Garmin, is never written to disk, and is dropped from memory the
+              moment Garmin accepts it. Only the access token Garmin issues is
+              kept, encrypted.
             </p>
           </div>
-          <p class="muted small">
-            It goes straight to Garmin and is never written to disk. Only the session
-            token comes back, saved in a file only you can read.
-          </p>
         </div>
       </li>
 
       <li>
         <span class="waypoint" aria-hidden="true">04</span>
         <div class="step-body">
-          <h3>Quit Claude, run one more line</h3>
+          <h3>Ask it something</h3>
           <p class="muted small">
-            Claude Desktop rewrites its own settings when it closes, so it has to be
-            properly shut. <strong>Cmd + Q</strong> — closing the window isn't enough.
-            Then, back in Terminal:
-          </p>
-          <div class="term">
-            <div class="term-head">
-              <span class="term-label">Terminal</span>
-              <button class="copy" type="button" data-copy="register">Copy</button>
-            </div>
-            <pre><code id="register"><span class="prompt">$ </span>~/garmin-mcp/scripts/install-claude-desktop.sh</code></pre>
-          </div>
-          <p class="muted small">
-            If Claude is still open it says so and changes nothing, so you can't get
-            this wrong. Skip it entirely if step 02 already said "Done".
-          </p>
-        </div>
-      </li>
-
-      <li>
-        <span class="waypoint" aria-hidden="true">05</span>
-        <div class="step-body">
-          <h3>Open Claude and ask</h3>
-          <p class="muted small">
-            Start a new chat. If it comes back with your real numbers, you're done.
+            Start a new chat. If it comes back with your real numbers, you&rsquo;re
+            done &mdash; on your laptop and your phone, without setting up the phone.
           </p>
           <ul class="asks">
             <li>"What did my last run look like? Break it down by kilometre."</li>
             <li>"Has my resting heart rate moved over the past two weeks?"</li>
             <li>"Am I running everything at the same effort? Check my last ten runs."</li>
             <li>"Build me a threshold session for Thursday and put it on my watch."</li>
+            <li>"Write me a push day &mdash; bench, overhead press, some triceps work."</li>
           </ul>
         </div>
       </li>
@@ -516,35 +507,31 @@ Then, working with me:
         <summary>Claude can't find any Garmin tools</summary>
         <div class="answer">
           <p>
-            First, ask it what's wrong. Paste this into Terminal — it checks every link
-            in the chain and names the broken one:
-          </p>
-          <div class="term">
-            <div class="term-head">
-              <span class="term-label">Terminal</span>
-              <button class="copy" type="button" data-copy="doctor">Copy</button>
-            </div>
-            <pre><code id="doctor"><span class="prompt">$ </span>~/garmin-mcp/scripts/doctor.sh</code></pre>
-          </div>
-          <p>
-            Nearly always it's step 04. Claude Desktop must be <strong>fully quit</strong>
-            (Cmd + Q) when the settings are written, or it overwrites them with its own
-            copy on the way out and the connection quietly vanishes.
+            An existing chat keeps talking to the connection it started with, so
+            the first thing to try is simply a <strong>new chat</strong>. That
+            fixes it more often than anything else.
           </p>
           <p>
-            One more thing that catches people: an existing chat keeps talking to the
-            server it started with. After fixing anything, start a <strong>new</strong>
-            chat rather than continuing the old one.
+            If it still can't see them, open
+            <strong>Settings &rarr; Connectors</strong> and check the Garmin entry
+            is there and connected. Removing it and adding it again is safe —
+            you'll just sign in to Garmin once more.
           </p>
           <p>
-            Quit it properly, run the step 04 command again, reopen. A fresh chat helps
-            too.
+            On a <strong>free Claude account you get one custom connector</strong>.
+            If you already have another one, it holds the only slot and this
+            won't add until you remove it.
+          </p>
+          <p>
+            On a <strong>work account</strong> — Team or Enterprise — members
+            can't add connectors at all; an administrator has to. A personal
+            account avoids that.
           </p>
         </div>
       </details>
 
       <details>
-        <summary>It failed while installing, mentioning Rust, OpenSSL or a compiler</summary>
+        <summary>Running it yourself failed, mentioning Rust, OpenSSL or a compiler</summary>
         <div class="answer">
           <p>
             Your macOS is too old. The floor is <strong>macOS 10.15 (Catalina)</strong>,
@@ -595,11 +582,20 @@ Then, working with me:
         <summary>How do I remove it?</summary>
         <div class="answer">
           <p>
-            Delete the <code class="inline">garmin-mcp</code> folder in your home
-            directory and the hidden <code class="inline">.garmin-mcp</code> folder
-            beside it — that's the saved session gone. Then drop the "garmin" entry from
-            Claude Desktop's settings. Nothing is installed anywhere else, and nothing
-            changes on Garmin's side.
+            Open the sign-in page and use <strong>Disconnect</strong>. That deletes
+            the stored Garmin session outright, and the connection stops working
+            straight away. Then remove the connector from Claude's settings.
+          </p>
+          <p>
+            Signing in again also retires whatever came before it, so if you ever
+            think a connection has gone somewhere it shouldn't, signing in once
+            more is enough to take it back.
+          </p>
+          <p>
+            Nothing changes on Garmin's side either way. If you ran it yourself
+            instead, delete the <code class="inline">garmin-mcp</code> folder in
+            your home directory and the hidden <code class="inline">.garmin-mcp</code>
+            folder beside it.
           </p>
         </div>
       </details>
@@ -608,21 +604,83 @@ Then, working with me:
   </section>
 
   <section>
-    <h2>Somewhere other than Claude Desktop</h2>
+    <h2>Using it in ChatGPT</h2>
     <div class="stack">
       <p class="small">
-        None of this is Claude-specific underneath — it speaks MCP, an open standard.
-        Anything that can start a local MCP server will run it: Claude Code, Cursor,
-        VS Code, Zed, Windsurf. Point them at
-        <code class="inline">python -m garmin_mcp</code> over stdio; the
-        <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">repo</a>
-        has the config.
+        The same address works in ChatGPT, with two conditions: it needs a
+        <strong>paid plan</strong> — Plus, Pro, Business, Enterprise or Edu — and
+        you have to be an administrator of that account to turn the setting on.
+        ChatGPT&rsquo;s free tier can&rsquo;t add connectors at all.
       </p>
+    </div>
+
+    <ol class="steps">
+
+      <li>
+        <span class="waypoint" aria-hidden="true">01</span>
+        <div class="step-body">
+          <h3>Turn on developer mode</h3>
+          <p class="muted small">
+            On the web, <strong>Settings &rarr; Connectors &rarr; Advanced</strong>,
+            and switch on <strong>Developer mode</strong>. It&rsquo;s off by default.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <span class="waypoint" aria-hidden="true">02</span>
+        <div class="step-body">
+          <h3>Add the same address</h3>
+          <div class="term">
+            <div class="term-head">
+              <span class="term-label">Connector URL</span>
+              <button class="copy" type="button" data-copy="connector-gpt">Copy</button>
+            </div>
+            <pre><code id="connector-gpt">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
+          </div>
+          <p class="muted small">
+            Add it as a remote MCP server, then sign in to Garmin the same way.
+          </p>
+        </div>
+      </li>
+
+    </ol>
+
+    <div class="note">
+      <p><strong>Deep Research won&rsquo;t see it.</strong></p>
       <p class="small">
-        <strong>ChatGPT is the exception, and it's a hard no.</strong> Its connectors
-        need a public web address to call, because ChatGPT runs on OpenAI's servers and
-        can't start a program on your laptop. No setting changes that, and no amount of
-        fiddling will get this working there.
+        That mode only ever calls two specific tools, which this doesn&rsquo;t
+        have. Ordinary chat works fine. ChatGPT&rsquo;s connector support is also
+        less settled than Claude&rsquo;s — if something behaves oddly there and
+        not here, that&rsquo;s usually why.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Running it yourself instead</h2>
+    <div class="stack">
+      <p class="small">
+        You don&rsquo;t have to use the hosted version. The same tools run entirely
+        on your own machine, with your Garmin session never leaving it — and on a
+        work account where an administrator controls connectors, it&rsquo;s the way
+        in. It takes a Mac, a Terminal window and about ten minutes.
+      </p>
+      <div class="term">
+        <div class="term-head">
+          <span class="term-label">Terminal</span>
+          <button class="copy" type="button" data-copy="install">Copy</button>
+        </div>
+        <pre><code id="install"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Bartolome69/garmin-mcp/main/scripts/bootstrap.sh | bash</code></pre>
+      </div>
+      <p class="small">
+        It fetches the code, sets up Python, signs you in to Garmin and registers
+        everything with Claude Desktop. Quit Claude fully first — Cmd + Q, not just
+        the window. The
+        <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">repo</a>
+        has the detail, including Cursor, VS Code and Zed, which all speak the same
+        protocol. This route is desktop only: a local server can&rsquo;t reach your
+        phone, which is the main reason the hosted version exists.
       </p>
     </div>
   </section>
