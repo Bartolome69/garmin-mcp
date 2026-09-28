@@ -4,9 +4,8 @@ FROM python:3.12-slim
 RUN useradd --create-home --uid 10001 app
 WORKDIR /app
 
-COPY requirements.txt constraints-legacy.txt ./
-RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt \
-    && pip install --no-cache-dir uvicorn
+COPY requirements-hosted.txt ./
+RUN pip install --no-cache-dir --only-binary :all: -r requirements-hosted.txt
 
 COPY garmin_mcp/ ./garmin_mcp/
 

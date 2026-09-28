@@ -41,7 +41,29 @@ notice.
 | `GARMIN_MCP_DB` | SQLite path. Defaults to `/data/garmin-mcp.sqlite3`; put it on a volume. |
 | `GARMIN_MCP_BASE_URL` | Public URL, used when showing someone their connector link. |
 | `GARMIN_MCP_LOGIN_PROXY` | Optional. Proxy used **only** for sign-in. |
+| `GARMIN_MCP_INVITE` | **Set this.** Sign-up is open to anyone who finds the host without it. Give friends the code along with the link. |
 | `PORT` | Defaults to 8000. |
+
+## Revoking a link
+
+The URL is the credential, so losing one matters. Two ways to take it back:
+
+- **Sign in again.** A new sign-in retires every earlier URL for that email, so
+  the lost one stops working. Signing in used to mint a second URL and leave the
+  first live for ever — it no longer does.
+- **Disconnect.** The link at the bottom of the connected page deletes the
+  stored session outright.
+
+Rotating `GARMIN_MCP_SECRET` is the blunt version: every stored token becomes
+undecryptable at once and everybody signs in again. Use it if you think the
+server's logs or database have been seen by someone who shouldn't have.
+
+## Access logging is off, deliberately
+
+Every MCP request has the user's token in its path, so an access log is a log of
+everyone's credentials. `uvicorn` runs with `access_log=False`, and a logging
+filter redacts `/u/<token>/mcp` from anything else that quotes a path. If you
+add a log drain or a reverse proxy of your own, check it isn't recording paths.
 
 Losing `GARMIN_MCP_SECRET` makes every stored token unreadable and everyone has
 to sign in again. Nothing else breaks.

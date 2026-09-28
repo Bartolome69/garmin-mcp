@@ -15,6 +15,7 @@ the tokens are stored, encrypted.
 from __future__ import annotations
 
 import contextlib
+import hmac
 import logging
 import os
 import re
@@ -42,6 +43,21 @@ log = logging.getLogger(__name__)
 
 MCP_PATH = "/u/{user_token}/mcp"
 _PATH_RE = re.compile(r"^/u/(?P<token>[A-Za-z0-9_-]{16,})/mcp/?$")
+# Same shape, unanchored, for scrubbing tokens out of anything we log.
+_PATH_RE_ANY = re.compile(r"/u/[A-Za-z0-9_-]{16,}/mcp")
+
+# Sign-up is closed when this is set: friends get the code along with the link.
+# Without it the page is an open door to anyone who finds the host, who can then
+# use it to test Garmin credentials and burn the server's IP on Garmin's rate
+# limiter — which breaks sign-in for everyone else.
+INVITE_CODE = os.environ.get("GARMIN_MCP_INVITE", "").strip()
+
+# Crude per-address throttle on sign-in attempts. Not a defence against a
+# determined attacker; enough to stop this being a comfortable place to test
+# stolen Garmin passwords.
+_ATTEMPTS: dict[str, list[float]] = {}
+_ATTEMPT_WINDOW = 900
+_ATTEMPT_LIMIT = 8
 
 # Sign-ins waiting on a multi-factor code. In memory on purpose: a restart
 # simply asks the person to start again, and nothing sensitive outlives it.
@@ -109,6 +125,33 @@ def _sweep_pending() -> None:
             _PENDING.pop(key, None)
 
 
+def _client_address(request: Request) -> str:
+    """Best guess at who is asking, for throttling only.
+
+    Behind Fly the real address arrives in Fly-Client-IP; the socket address is
+    the edge. Neither is trustworthy enough for a security decision, which is
+    why the invite code carries that weight and this only paces attempts.
+    """
+    forwarded = request.headers.get("fly-client-ip") or request.headers.get(
+        "x-forwarded-for", ""
+    )
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _too_many_attempts(address: str) -> bool:
+    """Record a sign-in attempt; True once an address has had too many."""
+    now = time.time()
+    recent = [t for t in _ATTEMPTS.get(address, []) if t > now - _ATTEMPT_WINDOW]
+    recent.append(now)
+    _ATTEMPTS[address] = recent
+    if len(_ATTEMPTS) > 5000:  # Bound the dict; oldest addresses go first.
+        for key in sorted(_ATTEMPTS, key=lambda k: _ATTEMPTS[k][-1])[:1000]:
+            _ATTEMPTS.pop(key, None)
+    return len(recent) > _ATTEMPT_LIMIT
+
+
 # --------------------------------------------------------------------------
 # Pages
 # --------------------------------------------------------------------------
@@ -166,14 +209,21 @@ async def index(request: Request) -> Response:
     )
 
 
+_INVITE_FIELD = """
+          <label for=invite>Invite code</label>
+          <input id=invite name=invite required autocomplete=off>
+"""
+
+
 @mcp.custom_route("/connect", methods=["GET"])
 async def connect_form(request: Request) -> Response:
     return page(
         "Sign in to Garmin",
-        """
+        f"""
         <h1>Sign in to Garmin</h1>
         <p>These go straight to Garmin. The password is not stored.</p>
         <form method=post action=/connect>
+          {_INVITE_FIELD if INVITE_CODE else ""}
           <label for=email>Garmin email</label>
           <input id=email name=email type=email required autocomplete=username>
           <label for=password>Garmin password</label>
@@ -211,7 +261,14 @@ def _signin_error(exc: BaseException) -> str:
 def _finish(request: Request, client: Any, email: str) -> Response:
     """Persist the session and show the person their private URL."""
     blob = client.client.dumps()
-    user_token = store.save_user(mask_email(email) or "hidden", blob)
+    fingerprint = store.email_fingerprint(email)
+    # Retires any URL this person was given before, so signing in again is also
+    # how they revoke one they have lost.
+    for stale in store.tokens_for(fingerprint):
+        _SESSIONS.pop(stale, None)
+    user_token = store.save_user(
+        mask_email(email) or "hidden", blob, email_hash=fingerprint
+    )
     url = f"{base_url(request)}/u/{user_token}/mcp"
     return page(
         "Connected",
@@ -222,8 +279,45 @@ def _finish(request: Request, client: Any, email: str) -> Response:
         data.</p>
         <div class=url>{url}</div>
         <p class=note style="margin-top:16px">Shown once. Save it now — if you
-        lose it, sign in again and you'll get a new one.</p>
+        lose it, sign in again and you'll get a new one. Signing in again also
+        stops the previous link working, so it is how you take back a link you
+        have lost.</p>
+        <p class=note><a href="/disconnect?t={user_token}">Disconnect and delete
+        my stored session</a></p>
         """,
+    )
+
+
+@mcp.custom_route("/disconnect", methods=["GET", "POST"])
+async def disconnect(request: Request) -> Response:
+    """Let someone destroy their own stored session, using their URL as proof."""
+    if request.method == "GET":
+        token = request.query_params.get("t", "")
+        return page(
+            "Disconnect",
+            f"""
+            <h1>Disconnect</h1>
+            <p>This deletes your stored Garmin session. Your link stops working
+            straight away, and Claude will no longer see your data. Your Garmin
+            account itself is untouched.</p>
+            <form method=post action=/disconnect>
+              <input type=hidden name=t value="{token}">
+              <button>Delete my stored session</button>
+            </form>
+            """,
+        )
+
+    form = await request.form()
+    token = str(form.get("t", "")).strip()
+    _SESSIONS.pop(token, None)
+    removed = store.delete_user(token)
+    return page(
+        "Disconnected",
+        "<h1>Disconnected</h1><p>Your stored session has been deleted and the "
+        "link no longer works. Remove the connector in Claude's settings too.</p>"
+        if removed
+        else "<div class=err>That link isn't one we know about. It may already "
+        "have been disconnected.</div>",
     )
 
 
@@ -232,6 +326,25 @@ async def connect_submit(request: Request) -> Response:
     form = await request.form()
     email = str(form.get("email", "")).strip()
     password = str(form.get("password", ""))
+
+    if _too_many_attempts(_client_address(request)):
+        return page(
+            "Sign in to Garmin",
+            "<div class=err>Too many sign-in attempts. Wait fifteen minutes and "
+            "try again.</div>",
+            429,
+        )
+
+    if INVITE_CODE and not hmac.compare_digest(
+        str(form.get("invite", "")).strip(), INVITE_CODE
+    ):
+        return page(
+            "Sign in to Garmin",
+            "<div class=err>That invite code isn't right. Ask whoever sent you "
+            "the link.</div><p><a href=/connect>Try again</a></p>",
+            403,
+        )
+
     if not email or not password:
         return page("Sign in to Garmin", "<div class=err>Email and password required.</div>", 400)
 
@@ -360,14 +473,39 @@ def build_app() -> Any:
     return app
 
 
+class RedactUserTokens(logging.Filter):
+    """Keep connector URLs out of the logs.
+
+    The path of every MCP request contains the user's token, and that token is
+    the credential — the whole auth model is that holding the URL is holding the
+    account. Uvicorn's access log wrote one to the log stream on every single
+    tool call, where the hosting dashboard and any log drain could read it back.
+
+    Access logging is off below; this is the second line of defence, for
+    tracebacks and anything else that quotes a path.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        redacted = _PATH_RE_ANY.sub(r"/u/<redacted>/mcp", str(record.getMessage()))
+        if redacted != str(record.getMessage()):
+            record.msg, record.args = redacted, ()
+        return True
+
+
 def main() -> None:
     import uvicorn
 
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(RedactUserTokens())
+
     uvicorn.run(
         build_app(),
         host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
+        # The request path is a credential. There is no way to keep an access
+        # log that records paths without logging everyone's key.
+        access_log=False,
     )
 
 

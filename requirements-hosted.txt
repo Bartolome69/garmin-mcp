@@ -1,0 +1,18 @@
+# Pinned dependencies for the hosted server image.
+#
+# Separate from requirements.txt on purpose. That file stays unpinned so the
+# local installer can fall back to constraints-legacy.txt on an old Mac; exact
+# pins there would make the two impossible to satisfy at once. This server holds
+# other people's Garmin tokens, so here an unreviewed rebuild picking up a new
+# release on its own is a risk rather than a convenience.
+#
+# To move these: bump, run tests/hosted_test.py, and deploy deliberately.
+mcp==2.2.0
+garminconnect==0.3.16
+
+# Direct dependency, not just a transitive one: store.py encrypts every stored
+# token with Fernet. It arrived via garminconnect before, which meant the
+# encryption library was only ever pinned by accident.
+cryptography==50.0.1
+
+uvicorn==0.54.0

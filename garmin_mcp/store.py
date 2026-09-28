@@ -9,8 +9,8 @@ is never written: it is exchanged for tokens during sign-in and discarded.
 
 from __future__ import annotations
 
-import base64
-import json
+import hashlib
+import hmac
 import os
 import secrets
 import sqlite3
@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS users (
     last_seen_at  INTEGER
 );
 """
+
+# Added after the first deploy, so it arrives by migration rather than in SCHEMA.
+MIGRATIONS = (
+    "ALTER TABLE users ADD COLUMN email_hash TEXT",
+    "CREATE INDEX IF NOT EXISTS users_email_hash ON users (email_hash)",
+)
 
 
 class StoreError(RuntimeError):
@@ -66,6 +72,11 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    for statement in MIGRATIONS:
+        try:
+            conn.execute(statement)
+        except sqlite3.OperationalError:
+            pass  # Already applied.
     return conn
 
 
@@ -74,20 +85,67 @@ def new_user_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def save_user(email_masked: str, token_blob: str, user_token: str | None = None) -> str:
-    """Store (or replace) someone's Garmin session. Returns their URL token."""
+def email_fingerprint(email: str) -> str:
+    """A stable, non-reversible handle for one person's email address.
+
+    Signing in again has to be able to find and revoke that person's previous
+    URLs, which means recognising them across sign-ins. Storing the address to
+    do that would undo the point of only keeping a masked copy, so this keeps an
+    HMAC of it instead: enough to match, not enough to read.
+    """
+    key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
+    return hmac.new(key, email.strip().lower().encode(), hashlib.sha256).hexdigest()
+
+
+def save_user(
+    email_masked: str,
+    token_blob: str,
+    user_token: str | None = None,
+    *,
+    email_hash: str | None = None,
+) -> str:
+    """Store someone's Garmin session, retiring any earlier one. Returns their token.
+
+    Signing in again used to mint a second URL and leave the first one working
+    for ever, with no way to take it back. Now the old rows go, so a fresh
+    sign-in is also how you revoke a link you have lost.
+    """
     user_token = user_token or new_user_token()
     encrypted = _cipher().encrypt(token_blob.encode())
     now = int(time.time())
     with _connect() as conn:
+        if email_hash:
+            conn.execute(
+                "DELETE FROM users WHERE email_hash = ? AND user_token != ?",
+                (email_hash, user_token),
+            )
         conn.execute(
-            "INSERT INTO users (user_token, email_masked, token_blob, created_at) "
-            "VALUES (?, ?, ?, ?) "
+            "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
-            "  token_blob = excluded.token_blob, email_masked = excluded.email_masked",
-            (user_token, email_masked, encrypted, now),
+            "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
+            "  email_hash = excluded.email_hash",
+            (user_token, email_masked, encrypted, now, email_hash),
         )
     return user_token
+
+
+def tokens_for(email_hash: str) -> list[str]:
+    """Every URL token currently issued to one person, newest last."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT user_token FROM users WHERE email_hash = ? ORDER BY created_at",
+            (email_hash,),
+        ).fetchall()
+    return [row[0] for row in rows]
+
+
+def delete_user(user_token: str) -> bool:
+    """Forget someone entirely. Their URL stops working immediately."""
+    with _connect() as conn:
+        return conn.execute(
+            "DELETE FROM users WHERE user_token = ?", (user_token,)
+        ).rowcount > 0
 
 
 def load_blob(user_token: str) -> str | None:

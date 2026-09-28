@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -42,9 +44,34 @@ SIGNIN_CREDS: list[tuple] = []
 SECRET = "never-show-this-blob-value"
 
 
+class _Garth:
+    """Stands in for garth, whose dumps() is the blob _finish stores.
+
+    Without this the stub had no `.client`, so _finish raised on every sign-in
+    and the whole success path went unexercised — while the suite still printed
+    "all checks passed".
+    """
+
+    def __init__(self, marker: str) -> None:
+        self._marker = marker
+
+    def dumps(self) -> str:
+        return json.dumps({"di_token": self._marker})
+
+
 def fake_build_client(*, prompt_mfa, email=None, password=None):
     SIGNIN_CREDS.append((email, password))
     class Stub(FakeGarmin):
+        # A fresh sign-in has no tokenstore yet, so it is identified by the email
+        # typed into the form; login() below switches this to whichever account
+        # the tokenstore belongs to. Getting that wrong silently rewrites one
+        # person's stored blob with another's on the next refresh.
+        _marker = f"{email}-token"
+
+        @property
+        def client(self):
+            return _Garth(self._marker)
+
         def login(self, tokenstore=None):
             BUILT.append(tokenstore or "no-token")
             super().login(tokenstore)
@@ -54,6 +81,8 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
                 marker = json.loads(tokenstore or "{}").get("di_token", "none")
             except ValueError:
                 marker = "unparsed"
+            if tokenstore:
+                self._marker = marker
             self.full_name = f"account:{marker}"
             return (None, None)
 
@@ -197,6 +226,75 @@ async def main() -> int:
         check("sign-in passes the typed credentials through",
               SIGNIN_CREDS and SIGNIN_CREDS[-1] == ("someone@example.com", "their-own-password"),
               str(SIGNIN_CREDS[-1:]))
+
+        # ---- everything below was unreachable until the stub grew a .client --
+
+        def post(path: str, fields: dict) -> tuple:
+            body = urllib.parse.urlencode(fields).encode()
+            request = urllib.request.Request(
+                f"{base}{path}", data=body,
+                headers={"content-type": "application/x-www-form-urlencoded"},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=20) as r:
+                    return r.status, r.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+
+        def signin(email: str) -> tuple:
+            return post("/connect", {"email": email, "password": "pw"})
+
+        code, body = await anyio_run(signin, "repeat@example.com")
+        first = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
+        check("sign-in completes and shows a connector URL", code == 200 and bool(first),
+              f"status {code}")
+
+        # Signing in again used to mint a second URL and leave the first one
+        # working for ever, with no way to take it back.
+        code, body = await anyio_run(signin, "repeat@example.com")
+        second = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
+        check("signing in again issues a different URL",
+              bool(second) and first and second.group(1) != first.group(1))
+        if first and second:
+            check("the previous URL is revoked, not left working",
+                  store.get_user(first.group(1)) is None)
+            check("the new URL works", store.get_user(second.group(1)) is not None)
+            check("one row per person, not one per sign-in",
+                  len(store.tokens_for(store.email_fingerprint("repeat@example.com"))) == 1)
+
+            # Someone must be able to destroy their own session.
+            code, body = await anyio_run(post, "/disconnect", {"t": second.group(1)})
+            check("disconnect deletes the stored session",
+                  code == 200 and store.get_user(second.group(1)) is None)
+
+        # The credential must not reach the logs.
+        record = logging.LogRecord(
+            "uvicorn.access", logging.INFO, __file__, 1,
+            'GET /u/SUPERSECRETTOKENVALUE123456/mcp HTTP/1.1 200', (), None,
+        )
+        hosted.RedactUserTokens().filter(record)
+        check("connector URL is redacted from log records",
+              "SUPERSECRETTOKENVALUE123456" not in record.getMessage(),
+              record.getMessage())
+
+        # Sign-up is an open door unless an invite code is set.
+        hosted.INVITE_CODE = "let-me-in"
+        hosted._ATTEMPTS.clear()
+        try:
+            code, _ = await anyio_run(signin, "gatecrasher@example.com")
+            check("sign-in refused without the invite code", code == 403, str(code))
+            code, _ = await anyio_run(
+                post, "/connect",
+                {"email": "friend@example.com", "password": "pw", "invite": "let-me-in"},
+            )
+            check("sign-in accepted with the invite code", code == 200, str(code))
+        finally:
+            hosted.INVITE_CODE = ""
+
+        # And repeated attempts from one address get throttled.
+        hosted._ATTEMPTS.clear()
+        codes = [(await anyio_run(signin, "spray@example.com"))[0] for _ in range(12)]
+        check("repeated sign-in attempts are throttled", 429 in codes, str(codes[-3:]))
     finally:
         server.should_exit = True
         thread.join(timeout=10)
