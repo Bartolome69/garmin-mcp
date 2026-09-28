@@ -11,7 +11,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -74,6 +77,111 @@ def check_target_placement(check) -> None:
     check(
         "hr values sit on the step",
         (hr_step.get("targetValueOne"), hr_step.get("targetValueTwo")) == (150.0, 165.0),
+    )
+
+
+def check_entrypoints_ignore_cwd(check) -> None:
+    """The scripts have to work from any directory, not just the project root.
+
+    garmin_mcp is not installed into .venv — only its dependencies are — so a
+    bare `python -m garmin_mcp.x` resolves only when the current directory
+    happens to be the project. Every script that launches a module therefore
+    has to put the project on PYTHONPATH itself.
+
+    Three shipped without it. They worked for anyone who had cd'd into the
+    project first, and failed with ModuleNotFoundError for the first person who
+    ran one by absolute path from their home directory — which is exactly what
+    bootstrap.sh and the doctor's own advice both tell people to do.
+    """
+    launches_module = re.compile(r"-m\s+garmin_mcp\b")
+    # An assignment, not a passing mention: the comments here say "PYTHONPATH"
+    # too, and matching those would let the bug back in under its own docs.
+    sets_path = re.compile(r"^\s*(export\s+)?PYTHONPATH=", re.M)
+    enters_project = re.compile(r'^\s*cd "\$PROJECT"', re.M)
+    for script in sorted((ROOT / "scripts").glob("*.sh")):
+        body = script.read_text()
+        if not launches_module.search(body):
+            continue
+        resolves = sets_path.search(body) or enters_project.search(body)
+        check(f"{script.name} sets the import path", bool(resolves))
+
+    # And prove it end to end, rather than trusting the pattern match. login.sh
+    # is the one entry point that is safe to invoke here: with no terminal it
+    # stops at its own TTY check, which is already past the import.
+    with tempfile.TemporaryDirectory() as elsewhere:
+        proc = subprocess.run(
+            [str(ROOT / "scripts" / "login.sh")],
+            cwd=elsewhere,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    output = (proc.stdout + proc.stderr).strip()
+    check(
+        "login.sh imports when run from elsewhere",
+        "ModuleNotFoundError" not in output,
+        output[:160],
+    )
+
+
+def check_prompts_survive_a_pipe(check) -> None:
+    """`curl ... | bash` leaves the installer's stdin attached to the download.
+
+    That is the documented way to install this, and it means stdin is the script
+    being downloaded, not the keyboard. Every prompt therefore has to read the
+    terminal explicitly. The login step didn't: it saw no terminal, printed
+    "This command needs a terminal", and exited 2 — which under `set -e` took the
+    whole install down before Claude Desktop was ever configured, while the
+    person sat looking at a shell prompt typing their email into zsh.
+
+    The redirect has to be per command. `exec < /dev/tty` would also move where
+    bash reads the rest of the script from, which a piped install cannot survive.
+    """
+    def code_only(path: Path) -> str:
+        """Drop comments: they discuss `exec < /dev/tty` in order to warn you off
+        it, and matching prose would fail the check that guards against it."""
+        return "\n".join(
+            line for line in path.read_text().splitlines()
+            if not line.lstrip().startswith("#")
+        )
+
+    boot = code_only(ROOT / "scripts" / "bootstrap.sh")
+    check(
+        "bootstrap.sh points the login prompt at the terminal",
+        bool(re.search(r'-m\s+garmin_mcp\.login\s*<\s*"\$TTY_IN"', boot)),
+    )
+    check(
+        "bootstrap.sh does not move its own stdin",
+        not re.search(r"exec\s*<\s*/dev/tty", boot),
+    )
+    install = code_only(ROOT / "scripts" / "install-claude-desktop.sh")
+    check(
+        "install-claude-desktop.sh points its read at the terminal",
+        bool(re.search(r'read\b[\s\S]{0,200}?<\s*"\$\{GARMIN_MCP_TTY', install)),
+    )
+
+    # Prove the mechanism end to end, in the shape that broke: bash is reading
+    # the script from stdin, and the prompt still collects an answer because it
+    # reads TTY_IN instead. A file stands in for the terminal so this needs no pty.
+    with tempfile.TemporaryDirectory() as tmp:
+        answers = Path(tmp) / "answers"
+        answers.write_text("typed@example.com\n")
+        script = Path(tmp) / "piped.sh"
+        script.write_text(
+            "set -euo pipefail\n"
+            f'TTY_IN="{answers}"\n'
+            'read -r -p "Garmin email: " got < "$TTY_IN"\n'
+            'echo "GOT:$got"\n'
+        )
+        with open(script) as piped:
+            proc = subprocess.run(
+                ["bash"], stdin=piped, capture_output=True, text=True, timeout=30
+            )
+    check(
+        "a piped script can still collect an answer",
+        "GOT:typed@example.com" in proc.stdout,
+        (proc.stdout + proc.stderr).strip()[:160],
     )
 
 
@@ -250,6 +358,12 @@ async def main() -> int:
 
             print("\ntarget placement (regression)")
             check_target_placement(check)
+
+            print("\nentry points ignore the current directory (regression)")
+            check_entrypoints_ignore_cwd(check)
+
+            print("\nprompts survive `curl | bash` (regression)")
+            check_prompts_survive_a_pipe(check)
 
             print("\nerror handling")
             bad_date = payload(

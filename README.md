@@ -156,13 +156,6 @@ HRV and overnight body battery only exist if you sleep in it.
 to read the data and what to prescribe from it. The first is a half marathon
 skill in Pete Pfitzinger's style.
 
-## Hosting it for other people
-
-There's a multi-user version that removes the install entirely: people sign in
-on a web page and get a private connector URL, which works on Claude's web and
-mobile apps too. See [HOSTING.md](HOSTING.md) — including the one real
-constraint, which is that Garmin's login endpoint blocks datacenter IPs.
-
 ## Development
 
 ```bash

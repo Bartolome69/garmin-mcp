@@ -99,6 +99,16 @@ HEAD = """<!doctype html>
 <meta property="og:title" content="Garmin for Claude">
 <meta property="og:description" content="Let Claude read your running data and build workouts onto your watch.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://garmin.daash.run/">
+<meta property="og:site_name" content="Garmin for Claude">
+<!-- Absolute URL: Slack, iMessage and the rest will not resolve a relative one.
+     Cache-busted, because every platform caches previews aggressively. -->
+<meta property="og:image" content="https://garmin.daash.run/og.png?v=1">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Talk to your training — a rising elevation profile with three waypoints">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://garmin.daash.run/og.png?v=1">
 <style>
   html { color-scheme: light; }
   body { margin: 0; }

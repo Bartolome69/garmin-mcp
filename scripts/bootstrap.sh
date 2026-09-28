@@ -9,6 +9,24 @@ set -euo pipefail
 REPO="https://github.com/Bartolome69/garmin-mcp.git"
 PROJECT="${GARMIN_MCP_DIR:-$HOME/garmin-mcp}"
 
+# The documented way to run this is `curl ... | bash`, which hands the script to
+# bash on stdin. So stdin is the download, not the keyboard: the login step saw
+# no terminal, printed "This command needs a terminal", and exited — taking the
+# whole install down with it before Claude Desktop was ever configured. The
+# prompts have to read the terminal directly.
+#
+# Per command, never `exec < /dev/tty`: bash is still reading the rest of THIS
+# script from stdin, and moving stdin would have it read the script from the
+# keyboard instead.
+if [ -r /dev/tty ]; then
+    TTY_IN=/dev/tty
+else
+    # No controlling terminal at all (CI, a hook). Leave stdin alone and let the
+    # steps that need a person say so themselves.
+    TTY_IN=/dev/stdin
+fi
+export GARMIN_MCP_TTY="$TTY_IN"
+
 say() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 if [ "$(uname -s)" != "Darwin" ]; then
@@ -53,7 +71,7 @@ else
     echo "Your password is sent straight to Garmin and never saved to disk."
     echo "Only the session token Garmin issues is kept."
     echo
-    "$PROJECT/.venv/bin/python" -m garmin_mcp.login
+    "$PROJECT/.venv/bin/python" -m garmin_mcp.login < "$TTY_IN"
 fi
 
 # -- 5. Claude Desktop -------------------------------------------------------

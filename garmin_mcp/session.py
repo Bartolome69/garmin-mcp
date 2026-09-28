@@ -131,9 +131,8 @@ def build_client(
 ) -> Any:
     """Construct a Garmin client; `prompt_mfa` decides how MFA is handled.
 
-    Credentials default to the environment, which is how the local install
-    works. The hosted server passes the person's own, typed into its sign-in
-    form — it has no environment credentials and must never use anyone else's.
+    Credentials default to the environment, which is how this server works.
+    They can be passed explicitly by a caller that collects them another way.
     """
     try:
         from garminconnect import Garmin
@@ -207,11 +206,12 @@ class GarminSession:
     ) -> None:
         """
         tokenstore: where the Garmin session comes from. None means the local
-            token file. The hosted server passes a callable returning that
-            person's decrypted token blob, which garminconnect accepts inline.
-        on_refresh: called with a fresh token blob after a password login, so
-            the hosted server can persist it. Unused locally, where
-            garminconnect writes the file itself.
+            token file, which is all this server uses. A caller embedding this
+            module can pass a string, or a callable returning one, to supply the
+            token from somewhere else — garminconnect accepts it inline.
+        on_refresh: called with a fresh token blob after a password login, for
+            callers storing it themselves. Unused here, where garminconnect
+            writes the file.
         """
         self._lock = threading.RLock()
         self._client: Any = None
@@ -322,8 +322,8 @@ class GarminSession:
                 if self._tokenstore is None
                 else None
             ),
-            # A hosted session has no local file, and reporting the server's
-            # filesystem layout to whoever holds the URL would be careless.
+            # A session backed by something other than the local file has no
+            # path worth reporting.
             "token_cache": (
                 token_cache_info()
                 if self._tokenstore is None
@@ -353,9 +353,8 @@ class GarminSession:
 
 _local_session = GarminSession()
 
-# The hosted server serves many people from one process, so the session a tool
-# should use is a property of the request, not of the module. Locally nothing
-# sets this and the single local session is used.
+# Nothing sets this in normal use: the single local session is used. It exists
+# so a caller embedding this module can scope a session to a request.
 _current_session: ContextVar["GarminSession | None"] = ContextVar(
     "garmin_current_session", default=None
 )

@@ -12,6 +12,12 @@ CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 # live anywhere.
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="$PROJECT/.venv/bin/python"
+# See the note in login.sh: garmin_mcp is found via PYTHONPATH, not site-packages.
+# The config written below sets it for Claude Desktop; the verification step at
+# the end of this script needs it too, or it fails for anyone who ran this from
+# somewhere other than the project directory — which is what bootstrap.sh and the
+# doctor's own advice both tell people to do.
+export PYTHONPATH="$PROJECT${PYTHONPATH:+:$PYTHONPATH}"
 
 # Match the main app process exactly. `pgrep -f` also matches helper
 # processes and the lowercase claude-code binary, which would either
@@ -32,7 +38,12 @@ fi
 # The email only labels the connection in get_connection_status;
 # authentication itself runs off the cached token.
 if [ -z "${GARMIN_EMAIL:-}" ]; then
-    read -r -p "Garmin email (used only to label the connection): " GARMIN_EMAIL
+    # bootstrap.sh passes the terminal through in GARMIN_MCP_TTY, because when it
+    # is run as `curl ... | bash` our inherited stdin is the download, not the
+    # keyboard, and this read would get EOF. Run on its own, stdin is already the
+    # terminal and this is a no-op.
+    read -r -p "Garmin email (used only to label the connection): " GARMIN_EMAIL \
+        < "${GARMIN_MCP_TTY:-/dev/stdin}"
 fi
 
 if [ ! -f "$CONFIG" ]; then
