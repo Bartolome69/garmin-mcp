@@ -1,0 +1,318 @@
+"""Drive the whole OAuth 2.1 flow against the hosted server.
+
+Registers a client, runs authorize -> Garmin sign-in -> code -> token, then
+calls a tool with the bearer token. No network: the Garmin client is stubbed,
+as in hosted_test.
+
+    .venv/bin/python tests/oauth_test.py
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import json
+import os
+import secrets
+import sys
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+DB = ROOT / "tests" / "oauth-test.sqlite3"
+for suffix in ("", "-wal", "-shm"):
+    Path(str(DB) + suffix).unlink(missing_ok=True)
+
+from cryptography.fernet import Fernet  # noqa: E402
+
+os.environ["GARMIN_MCP_DB"] = str(DB)
+os.environ["GARMIN_MCP_SECRET"] = Fernet.generate_key().decode()
+os.environ["GARMIN_MCP_OAUTH"] = "1"
+os.environ["GARMIN_MCP_BASE_URL"] = "http://127.0.0.1:8932"
+os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
+os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
+
+from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
+
+import garmin_mcp.hosted as hosted  # noqa: E402
+from garmin_mcp import store  # noqa: E402
+
+
+class _Garth:
+    def __init__(self, marker: str) -> None:
+        self._marker = marker
+
+    def dumps(self) -> str:
+        return json.dumps({"di_token": self._marker})
+
+
+def fake_build_client(*, prompt_mfa, email=None, password=None):
+    class Stub(FakeGarmin):
+        _marker = f"{email}-token"
+
+        @property
+        def client(self):
+            return _Garth(self._marker)
+
+        def login(self, tokenstore=None):
+            if tokenstore:
+                try:
+                    self._marker = json.loads(tokenstore).get("di_token", "none")
+                except ValueError:
+                    pass
+            self.full_name = f"account:{self._marker}"
+            return (None, None)
+
+        def get_user_profile(self):
+            return {**PROFILE, "fullName": self.full_name}
+
+    stub = Stub()
+    stub.password = password
+    return stub
+
+
+hosted.build_client = fake_build_client
+import garmin_mcp.session as session_mod  # noqa: E402
+
+session_mod.build_client = fake_build_client
+
+BASE = "http://127.0.0.1:8932"
+REDIRECT = "http://localhost:9999/callback"
+
+
+def http(method: str, path: str, body=None, headers=None, allow_redirect=False,
+         as_json=False):
+    """Registration speaks JSON; the token endpoint speaks form encoding."""
+    url = path if path.startswith("http") else f"{BASE}{path}"
+    data = None
+    head = dict(headers or {})
+    if body is not None:
+        if as_json:
+            data = json.dumps(body).encode()
+            head.setdefault("content-type", "application/json")
+        else:
+            data = urllib.parse.urlencode(body).encode()
+            head.setdefault("content-type", "application/x-www-form-urlencoded")
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+
+    opener = urllib.request.build_opener(
+        *( [] if allow_redirect else [NoRedirect] )
+    )
+    req = urllib.request.Request(url, data=data, headers=head, method=method)
+    try:
+        with opener.open(req, timeout=20) as r:
+            return r.status, r.read().decode(), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(), dict(e.headers)
+
+
+async def main() -> int:
+    import uvicorn
+
+    failures: list[str] = []
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        print(f"  {'PASS' if ok else 'FAIL'}  {name}{f' — {detail}' if detail else ''}")
+        if not ok:
+            failures.append(name)
+
+    app = hosted.build_app()
+    routes = sorted({getattr(r, "path", "") for r in app.routes})
+    for needed in ("/authorize", "/token", "/register", "/revoke", "/mcp"):
+        check(f"{needed} is mounted", needed in routes)
+    check(
+        "metadata document is served",
+        "/.well-known/oauth-authorization-server" in routes,
+    )
+
+    config = uvicorn.Config(app, host="127.0.0.1", port=8932, log_level="error")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(100):
+        if server.started:
+            break
+        await asyncio.sleep(0.05)
+    check("server started", server.started)
+
+    def run(fn, *a):
+        return asyncio.get_event_loop().run_in_executor(None, fn, *a)
+
+    try:
+        # -- 1. discovery ------------------------------------------------
+        code, body, _ = await run(
+            lambda: http("GET", "/.well-known/oauth-authorization-server")
+        )
+        meta = json.loads(body) if code == 200 else {}
+        check("metadata advertises the endpoints", code == 200
+              and "authorization_endpoint" in meta and "token_endpoint" in meta,
+              str(code))
+
+        # -- 2. dynamic client registration ------------------------------
+        code, body, _ = await run(
+            lambda: http("POST", "/register", {
+                "client_name": "Test Client",
+                "redirect_uris": [REDIRECT],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "token_endpoint_auth_method": "none",
+            }, as_json=True)
+        )
+        registered = json.loads(body) if code in (200, 201) else {}
+        client_id = registered.get("client_id", "")
+        check("client can register itself", bool(client_id), f"status {code} {body[:120]}")
+
+        # -- 3. authorize -> redirected to the Garmin sign-in ------------
+        verifier = secrets.token_urlsafe(48)
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()
+        ).decode().rstrip("=")
+        query = urllib.parse.urlencode({
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": REDIRECT,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "state": "xyz-state",
+        })
+        code, body, headers = await run(lambda: http("GET", f"/authorize?{query}"))
+        location = headers.get("location", "")
+        check("authorize sends the person to sign in",
+              code in (302, 303, 307) and "/connect?" in location and "flow=" in location,
+              f"{code} {location[:90]}")
+        flow = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("flow", [""])[0]
+
+        # -- 4. sign in; expect to be sent back with a code --------------
+        code, body, headers = await run(lambda: http("POST", "/connect", {
+            "email": "oauth@example.com", "password": "pw", "flow": flow,
+        }))
+        back = headers.get("location", "")
+        parsed = urllib.parse.parse_qs(urllib.parse.urlparse(back).query)
+        auth_code = parsed.get("code", [""])[0]
+        check("sign-in returns to the client with a code",
+              code in (302, 303) and back.startswith(REDIRECT) and bool(auth_code),
+              f"{code} {back[:90]}")
+        check("state is handed back untouched", parsed.get("state", [""])[0] == "xyz-state")
+        check("no connector URL is shown anywhere",
+              "/u/" not in body and "/u/" not in back, back[:90])
+
+        # -- 5. exchange the code ----------------------------------------
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code",
+            "code": auth_code,
+            "redirect_uri": REDIRECT,
+            "client_id": client_id,
+            "code_verifier": verifier,
+        }))
+        tokens = json.loads(body) if code == 200 else {}
+        access = tokens.get("access_token", "")
+        refresh = tokens.get("refresh_token", "")
+        check("code exchanges for a token", bool(access), f"status {code} {body[:140]}")
+        check("a refresh token comes with it", bool(refresh))
+        check("the token expires", bool(tokens.get("expires_in")))
+
+        # -- 6. the code is single use -----------------------------------
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code", "code": auth_code,
+            "redirect_uri": REDIRECT, "client_id": client_id,
+            "code_verifier": verifier,
+        }))
+        check("the same code cannot be used twice", code != 200, f"status {code}")
+
+        # -- 7. nothing stored is usable as a credential -----------------
+        with __import__("sqlite3").connect(DB) as conn:
+            rows = conn.execute("SELECT token_hash FROM oauth_tokens").fetchall()
+        check("tokens are stored hashed, not in the clear",
+              bool(rows) and all(access not in r[0] and refresh not in r[0] for r in rows))
+
+        # -- 8. refresh ---------------------------------------------------
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "refresh_token", "refresh_token": refresh,
+            "client_id": client_id,
+        }))
+        refreshed = json.loads(body) if code == 200 else {}
+        check("refresh token yields a new access token",
+              bool(refreshed.get("access_token")), f"status {code} {body[:120]}")
+        code, _, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "refresh_token", "refresh_token": refresh,
+            "client_id": client_id,
+        }))
+        check("the used refresh token is dead", code != 200, f"status {code}")
+
+        # -- 9. the token actually gates the MCP endpoint ----------------
+        # The point of all of the above: /mcp is one public path, and who is
+        # asking comes from the header rather than the URL.
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+        import httpx2
+
+        async def call_tool(bearer: str | None, tool: str):
+            head = {"Authorization": f"Bearer {bearer}"} if bearer else {}
+            async with httpx2.AsyncClient(headers=head) as http_client:
+                async with streamable_http_client(
+                    f"{BASE}/mcp", http_client=http_client
+                ) as (r, w):
+                    async with ClientSession(r, w) as sess:
+                        await sess.initialize()
+                        result = await sess.call_tool(tool, {})
+                        return json.loads(result.content[0].text)
+
+        fresh = refreshed["access_token"]
+        try:
+            payload = await call_tool(fresh, "get_connection_status")
+            ok = payload.get("authenticated") is True
+            check("a bearer token reaches that person's Garmin session", ok,
+                  str(payload)[:140])
+            check("it is the right person",
+                  "oauth@example.com-token" in json.dumps(payload)
+                  or payload.get("garmin_display_name", "").endswith("oauth@example.com-token"),
+                  str(payload.get("garmin_display_name"))[:80])
+        except Exception as exc:  # noqa: BLE001
+            check("a bearer token reaches that person's Garmin session", False,
+                  f"{type(exc).__name__}: {exc}"[:160])
+            check("it is the right person", False, "not reached")
+
+        # Assert the status directly. Going through the MCP client wraps the
+        # refusal in an ExceptionGroup, which hid a genuine 401 on a valid token
+        # behind the same message as a correct rejection.
+        probe = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        accept = "application/json, text/event-stream"
+        for label, bearer in (("no token", None), ("a made-up token", "not-a-real-token")):
+            head = {"accept": accept}
+            if bearer:
+                head["Authorization"] = f"Bearer {bearer}"
+            status, body, _ = await run(
+                lambda h=head: http("POST", "/mcp", probe, headers=h, as_json=True)
+            )
+            check(f"{label} is refused with 401", status == 401, f"got {status} {body[:90]}")
+
+        head = {"accept": accept, "Authorization": f"Bearer {fresh}"}
+        status, body, _ = await run(
+            lambda: http("POST", "/mcp", probe, headers=head, as_json=True)
+        )
+        check("a valid token is not refused", status != 401, f"got {status} {body[:90]}")
+
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+    print()
+    if failures:
+        print(f"{len(failures)} failed: {', '.join(failures)}")
+        return 1
+    print("all checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(asyncio.run(main()))

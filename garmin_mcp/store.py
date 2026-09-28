@@ -38,6 +38,34 @@ MIGRATIONS = (
     "CREATE INDEX IF NOT EXISTS users_email_hash ON users (email_hash)",
 )
 
+# OAuth state. Separate from `users`: a person is one row there however many
+# clients they authorise, and revoking a client must not touch their Garmin
+# session. `subject` on the token rows is the user_token that owns them.
+OAUTH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS oauth_clients (
+    client_id     TEXT PRIMARY KEY,
+    client_json   TEXT NOT NULL,
+    created_at    INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_codes (
+    code          TEXT PRIMARY KEY,
+    code_json     TEXT NOT NULL,
+    expires_at    INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    token_hash    TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL,          -- 'access' or 'refresh'
+    client_id     TEXT NOT NULL,
+    subject       TEXT NOT NULL,
+    scopes        TEXT NOT NULL,
+    resource      TEXT,
+    expires_at    INTEGER,
+    created_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS oauth_tokens_subject ON oauth_tokens (subject);
+CREATE INDEX IF NOT EXISTS oauth_tokens_client ON oauth_tokens (client_id);
+"""
+
 
 class StoreError(RuntimeError):
     """Something is wrong with the store's configuration."""
@@ -72,6 +100,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    conn.executescript(OAUTH_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -186,3 +215,121 @@ def get_user(user_token: str) -> User | None:
 def count_users() -> int:
     with _connect() as conn:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+# --------------------------------------------------------------------------
+# OAuth
+# --------------------------------------------------------------------------
+
+
+def token_hash(token: str) -> str:
+    """Tokens are stored hashed, so the database holds nothing usable.
+
+    Unlike the Garmin blob, a bearer token needs no reversing: verifying one
+    only means recognising it again. Anyone reading the database gets a list of
+    hashes they cannot present to anything.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def save_oauth_client(client_id: str, client_json: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO oauth_clients (client_id, client_json, created_at) "
+            "VALUES (?, ?, ?) ON CONFLICT(client_id) DO UPDATE SET "
+            "  client_json = excluded.client_json",
+            (client_id, client_json, int(time.time())),
+        )
+
+
+def load_oauth_client(client_id: str) -> str | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT client_json FROM oauth_clients WHERE client_id = ?", (client_id,)
+        ).fetchone()
+    return row[0] if row else None
+
+
+def save_oauth_code(code: str, code_json: str, expires_at: int) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO oauth_codes (code, code_json, expires_at) "
+            "VALUES (?, ?, ?)",
+            (token_hash(code), code_json, expires_at),
+        )
+
+
+def take_oauth_code(code: str) -> str | None:
+    """Read an authorization code and consume it. Single use, by construction."""
+    digest = token_hash(code)
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute("DELETE FROM oauth_codes WHERE expires_at < ?", (now,))
+        row = conn.execute(
+            "SELECT code_json FROM oauth_codes WHERE code = ?", (digest,)
+        ).fetchone()
+        conn.execute("DELETE FROM oauth_codes WHERE code = ?", (digest,))
+    return row[0] if row else None
+
+
+def save_oauth_token(
+    token: str,
+    *,
+    kind: str,
+    client_id: str,
+    subject: str,
+    scopes: str,
+    resource: str | None,
+    expires_at: int | None,
+) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO oauth_tokens "
+            "(token_hash, kind, client_id, subject, scopes, resource, expires_at, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                token_hash(token), kind, client_id, subject, scopes,
+                resource, expires_at, int(time.time()),
+            ),
+        )
+
+
+def load_oauth_token(token: str, kind: str) -> dict | None:
+    """Return a token's row, or None if unknown or expired."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT client_id, subject, scopes, resource, expires_at FROM oauth_tokens "
+            "WHERE token_hash = ? AND kind = ?",
+            (token_hash(token), kind),
+        ).fetchone()
+    if not row:
+        return None
+    client_id, subject, scopes, resource, expires_at = row
+    if expires_at is not None and expires_at < time.time():
+        delete_oauth_token(token)
+        return None
+    return {
+        "client_id": client_id,
+        "subject": subject,
+        "scopes": scopes.split() if scopes else [],
+        "resource": resource,
+        "expires_at": expires_at,
+    }
+
+
+def delete_oauth_token(token: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(token),))
+
+
+def delete_tokens_for_subject(subject: str) -> int:
+    """Revoke everything issued to one person.
+
+    Disconnecting, or signing in again, has to take the access tokens with it.
+    Otherwise deleting the Garmin session would leave live bearer tokens whose
+    subject no longer resolves — working credentials pointing at nothing.
+    """
+    with _connect() as conn:
+        return conn.execute(
+            "DELETE FROM oauth_tokens WHERE subject = ?", (subject,)
+        ).rowcount

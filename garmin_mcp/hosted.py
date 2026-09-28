@@ -28,7 +28,7 @@ import anyio
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import store
+from . import oauth, store
 from .server import mcp
 from .session import (
     GarminError,
@@ -51,6 +51,12 @@ _PATH_RE_ANY = re.compile(r"/u/[A-Za-z0-9_-]{16,}/mcp")
 # use it to test Garmin credentials and burn the server's IP on Garmin's rate
 # limiter — which breaks sign-in for everyone else.
 INVITE_CODE = os.environ.get("GARMIN_MCP_INVITE", "").strip()
+
+# OAuth moves the credential out of the URL and into an Authorization header,
+# with expiry and per-client revocation. Off by default so the running
+# deployment is unchanged until it is turned on deliberately.
+OAUTH_ENABLED = os.environ.get("GARMIN_MCP_OAUTH", "").strip() == "1"
+OAUTH_PROVIDER = oauth.GarminOAuthProvider() if OAUTH_ENABLED else None
 
 # Crude per-address throttle on sign-in attempts. Not a defence against a
 # determined attacker; enough to stop this being a comfortable place to test
@@ -218,6 +224,9 @@ _INVITE_FIELD = """
 
 @mcp.custom_route("/connect", methods=["GET"])
 async def connect_form(request: Request) -> Response:
+    # Set when Claude sent them here from /authorize; it ties this sign-in back
+    # to the waiting authorization request.
+    flow = request.query_params.get("flow", "")
     return page(
         "Sign in to Garmin",
         f"""
@@ -225,6 +234,7 @@ async def connect_form(request: Request) -> Response:
         <p>These go straight to Garmin. The password is never written to disk,
         and is dropped from memory once Garmin has accepted it.</p>
         <form method=post action=/connect>
+          <input type=hidden name=flow value="{flow}">
           {_INVITE_FIELD if INVITE_CODE else ""}
           <label for=email>Garmin email</label>
           <input id=email name=email type=email required autocomplete=username>
@@ -260,7 +270,7 @@ def _signin_error(exc: BaseException) -> str:
     )
 
 
-def _finish(request: Request, client: Any, email: str) -> Response:
+def _finish(request: Request, client: Any, email: str, flow: str = "") -> Response:
     """Persist the session and show the person their private URL."""
     blob = client.client.dumps()
     fingerprint = store.email_fingerprint(email)
@@ -271,6 +281,20 @@ def _finish(request: Request, client: Any, email: str) -> Response:
     user_token = store.save_user(
         mask_email(email) or "hidden", blob, email_hash=fingerprint
     )
+
+    if OAUTH_ENABLED and flow:
+        # Came from /authorize: hand the client its code and get out of the way.
+        # There is no URL to show, which is the entire point.
+        destination = OAUTH_PROVIDER.complete(flow, user_token)
+        if destination:
+            return RedirectResponse(destination, status_code=303)
+        return page(
+            "Sign-in expired",
+            "<div class=err>That sign-in took too long and the request has "
+            "expired. Start again from the connector in Claude.</div>",
+            400,
+        )
+
     url = f"{base_url(request)}/u/{user_token}/mcp"
     return page(
         "Connected",
@@ -383,6 +407,7 @@ async def connect_submit(request: Request) -> Response:
             "client": client,
             "state": result[1],
             "email": email,
+            "flow": str(form.get("flow", "")),
             "started": time.time(),
         }
         return page(
@@ -399,7 +424,7 @@ async def connect_submit(request: Request) -> Response:
             """,
         )
 
-    return _finish(request, client, email)
+    return _finish(request, client, email, str(form.get("flow", "")))
 
 
 @mcp.custom_route("/mfa", methods=["POST"])
@@ -426,7 +451,7 @@ async def mfa_submit(request: Request) -> Response:
             "Start again from <a href=/connect>the sign-in page</a>.</div>",
             400,
         )
-    return _finish(request, client, pending["email"])
+    return _finish(request, client, pending["email"], pending.get("flow", ""))
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -454,13 +479,42 @@ class SessionBinding:
             await self.app(scope, receive, send)
             return
 
-        match = _PATH_RE.match(scope.get("path", ""))
-        if not match:
-            await self.app(scope, receive, send)
-            return
+        if OAUTH_ENABLED:
+            # Everyone shares one path; who is asking comes from the bearer
+            # token the SDK has already verified, not from the URL.
+            if scope.get("path", "").rstrip("/") != "/mcp":
+                await self.app(scope, receive, send)
+                return
 
-        user_token = match.group("token")
+            # Read the header rather than the SDK's auth context: add_middleware
+            # wraps outermost, so this runs before that context is populated and
+            # get_access_token() is always None here. The SDK still does the
+            # enforcing — an unrecognised token falls through to its 401 below.
+            header = ""
+            for key, value in scope.get("headers", []):
+                if key.lower() == b"authorization":
+                    header = value.decode("latin-1")
+                    break
+            if not header.lower().startswith("bearer "):
+                await self.app(scope, receive, send)
+                return
+            row = store.load_oauth_token(header[7:].strip(), "access")
+            user_token = row["subject"] if row else None
+            if not user_token:
+                await self.app(scope, receive, send)
+                return
+        else:
+            match = _PATH_RE.match(scope.get("path", ""))
+            if not match:
+                await self.app(scope, receive, send)
+                return
+            user_token = match.group("token")
+
         if store.get_user(user_token) is None:
+            # The Garmin session behind this token is gone — disconnected, or
+            # signed in again. The token outlived what it pointed at.
+            store.delete_tokens_for_subject(user_token)
+            _SESSIONS.pop(user_token, None)
             await Response("Unknown connector URL", status_code=404)(scope, receive, send)
             return
 
@@ -472,8 +526,55 @@ class SessionBinding:
 
 
 def build_app() -> Any:
+    """Build the ASGI app, in whichever auth mode is configured.
+
+    Both modes ship in one image so this can be turned on, and off again, with
+    an environment variable rather than a rollback. The URL mode stays the
+    default until the OAuth one has been run against a real client.
+    """
+    if not OAUTH_ENABLED:
+        app = mcp.streamable_http_app(
+            streamable_http_path=MCP_PATH,
+            stateless_http=True,
+            host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
+        )
+        app.add_middleware(SessionBinding)
+        return app
+
+    from mcp.server.auth.settings import (
+        AuthSettings,
+        ClientRegistrationOptions,
+        RevocationOptions,
+    )
+    from pydantic import AnyHttpUrl
+
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        raise RuntimeError(
+            "GARMIN_MCP_BASE_URL must be set when GARMIN_MCP_OAUTH=1: it is the "
+            "issuer identity in the OAuth metadata, and clients check it."
+        )
+
+    from mcp.server.auth.provider import ProviderTokenVerifier
+
+    mcp._auth_server_provider = OAUTH_PROVIDER
+    # The constructor derives this from the provider; attaching the provider
+    # afterwards skips that, and a server with no verifier authenticates
+    # nothing — it served unauthenticated requests happily until a test asked.
+    mcp._token_verifier = ProviderTokenVerifier(OAUTH_PROVIDER)
+    mcp.settings.auth = AuthSettings(
+        issuer_url=AnyHttpUrl(base),
+        resource_server_url=AnyHttpUrl(base),
+        # Claude registers itself; there is no console to add clients by hand.
+        client_registration_options=ClientRegistrationOptions(enabled=True),
+        revocation_options=RevocationOptions(enabled=True),
+        # Off by default today, which would accept a token minted for a
+        # different resource. Nothing here wants that.
+        validate_token_resource=True,
+    )
+
     app = mcp.streamable_http_app(
-        streamable_http_path=MCP_PATH,
+        streamable_http_path="/mcp",
         stateless_http=True,
         host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
     )

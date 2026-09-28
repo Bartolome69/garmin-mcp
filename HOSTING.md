@@ -44,6 +44,34 @@ notice.
 | `GARMIN_MCP_INVITE` | **Set this.** Sign-up is open to anyone who finds the host without it. Give friends the code along with the link. |
 | `PORT` | Defaults to 8000. |
 
+## OAuth (optional, and the better mode)
+
+Set `GARMIN_MCP_OAUTH=1` and the credential stops being the URL. Everyone shares
+one public endpoint, `/mcp`, and identity arrives as a bearer token in an
+`Authorization` header instead. `GARMIN_MCP_BASE_URL` becomes required — it is
+the issuer identity in the metadata, and clients check it.
+
+What changes for the person connecting: they paste `https://your-host/mcp` into
+Claude, which sends them here to sign in to Garmin, then returns them with a
+token of their own. No link to copy, nothing to keep secret, and Claude's
+"anyone with the server URL can use this connector" warning goes away.
+
+What it buys over the URL mode:
+
+- Access tokens expire after an hour and refresh in the background.
+- Each client is registered separately and can be revoked on its own.
+- The credential is never in a URL, so it cannot leak through browser history,
+  access logs, referrer headers or a screenshot.
+- Refresh tokens are single use: a stolen one is worth one request.
+- Tokens are stored as SHA-256 hashes, so the database holds nothing usable.
+- Tokens are bound to this server as their audience and are refused elsewhere.
+
+Both modes ship in the same image. Leave the variable unset and nothing changes;
+existing connector URLs keep working. Turning it on does not migrate anyone —
+people reconnect once, through Claude.
+
+    fly secrets set GARMIN_MCP_OAUTH=1 -a your-app
+
 ## Revoking a link
 
 The URL is the credential, so losing one matters. Two ways to take it back:
