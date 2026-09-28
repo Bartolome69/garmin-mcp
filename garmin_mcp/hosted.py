@@ -202,8 +202,9 @@ async def index(request: Request) -> Response:
         <p>Sign in once and you'll get a private link to paste into Claude's
         connector settings. No install, and it works on the web and mobile apps
         as well as the desktop one.</p>
-        <p class=note>Your Garmin password is used once to sign in and is then
-        discarded — only the access token Garmin issues is kept, encrypted.</p>
+        <p class=note>Your Garmin password goes straight to Garmin, is never
+        written to disk, and is dropped from memory as soon as it has been
+        exchanged. Only the access token Garmin issues is kept, encrypted.</p>
         <form method=get action=/connect><button>Get started</button></form>
         """,
     )
@@ -221,7 +222,8 @@ async def connect_form(request: Request) -> Response:
         "Sign in to Garmin",
         f"""
         <h1>Sign in to Garmin</h1>
-        <p>These go straight to Garmin. The password is not stored.</p>
+        <p>These go straight to Garmin. The password is never written to disk,
+        and is dropped from memory once Garmin has accepted it.</p>
         <form method=post action=/connect>
           {_INVITE_FIELD if INVITE_CODE else ""}
           <label for=email>Garmin email</label>
@@ -371,6 +373,12 @@ async def connect_submit(request: Request) -> Response:
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
         _sweep_pending()
         pending_id = secrets.token_urlsafe(16)
+        # garminconnect drops the plaintext password once a login completes, but
+        # the MFA path returns early and never reaches that line. Without this,
+        # the client parked below would hold the password in memory for the whole
+        # ten-minute window — while the sign-in page promises it is not kept.
+        # resume_login() works from the MFA state and never reads it.
+        client.password = None
         _PENDING[pending_id] = {
             "client": client,
             "state": result[1],

@@ -42,6 +42,9 @@ from garmin_mcp import store  # noqa: E402
 BUILT: list[str] = []
 SIGNIN_CREDS: list[tuple] = []
 SECRET = "never-show-this-blob-value"
+# Signing in as this address makes the stub demand a multi-factor code, which is
+# the path where the password used to survive in memory.
+MFA_EMAIL = "mfa@example.com"
 
 
 class _Garth:
@@ -74,6 +77,10 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
 
         def login(self, tokenstore=None):
             BUILT.append(tokenstore or "no-token")
+            if email == MFA_EMAIL:
+                # The real library returns early here, before the line that
+                # drops the plaintext password.
+                return ("needs_mfa", "fake-mfa-state")
             super().login(tokenstore)
             # Identify which account answered, without echoing the blob —
             # otherwise the leak assertions below would trip on the harness.
@@ -89,7 +96,11 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
         def get_user_profile(self):
             return {**PROFILE, "fullName": self.full_name}
 
-    return Stub()
+    stub = Stub()
+    # The real Garmin client keeps the typed password as an attribute, which is
+    # what makes scrubbing it before parking the client meaningful.
+    stub.password = password
+    return stub
 
 
 hosted.build_client = fake_build_client
@@ -266,6 +277,21 @@ async def main() -> int:
             code, body = await anyio_run(post, "/disconnect", {"t": second.group(1)})
             check("disconnect deletes the stored session",
                   code == 200 and store.get_user(second.group(1)) is None)
+
+        # A sign-in that stops for a code parks the client in memory for ten
+        # minutes. garminconnect only drops the password on the clean path, so
+        # without scrubbing it here the plaintext sat in that dict the whole
+        # time — while the page promised it was not kept.
+        hosted._ATTEMPTS.clear()
+        hosted._PENDING.clear()
+        code, body = await anyio_run(signin, MFA_EMAIL)
+        check("a sign-in needing a code asks for one",
+              code == 200 and "multi-factor" in body, f"status {code}")
+        check("the pending sign-in was parked", len(hosted._PENDING) == 1)
+        check("no plaintext password survives in the pending sign-in",
+              all(p["client"].password is None for p in hosted._PENDING.values()),
+              str([p["client"].password for p in hosted._PENDING.values()]))
+        hosted._PENDING.clear()
 
         # The credential must not reach the logs.
         record = logging.LogRecord(
