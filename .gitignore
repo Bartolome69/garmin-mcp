@@ -12,3 +12,4 @@ my-prompt.md
 launch-post.md
 plan-config.json
 .plan-refresh.log
+tests/oauth-test.sqlite3*
