@@ -731,6 +731,30 @@ async def update_plan_view() -> dict[str, Any]:
     return result
 
 
+@mcp.tool()
+@tool_errors
+async def get_plan_chart(weeks_back: int = 1, weeks_forward: int = 1) -> Any:
+    """Draw the training plan as an image, to show in the conversation.
+
+    Returns a picture of the weeks around today: each day's completed sessions
+    beside what was planned, coloured by activity, sized by time. Use it when
+    the user wants to see their plan rather than read a list.
+
+    Args:
+        weeks_back: Completed weeks to include before this one. Defaults to 1.
+        weeks_forward: Weeks to show ahead. Defaults to 1.
+    """
+    from mcp.server.mcpserver import Image
+
+    from .chart import build
+
+    png = await anyio.to_thread.run_sync(
+        functools.partial(build, max(0, min(int(weeks_back), 6)),
+                          max(0, min(int(weeks_forward), 4)))
+    )
+    return Image(data=png, format="png")
+
+
 # --------------------------------------------------------------------------
 # Status
 # --------------------------------------------------------------------------

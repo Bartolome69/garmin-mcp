@@ -33,6 +33,7 @@ EXPECTED_TOOLS = {
     "schedule_workout",
     "get_profile",
     "update_plan_view",
+    "get_plan_chart",
 }
 
 
