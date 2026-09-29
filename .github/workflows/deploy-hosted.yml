@@ -1,0 +1,132 @@
+name: Deploy hosted server
+
+# The website deploys itself: a push to main and GitHub Pages rebuilds it. The
+# Fly machine did not, so every server change needed somebody to remember to
+# run `flyctl deploy` by hand — and a forgotten deploy looks exactly like a
+# change that did not work.
+#
+# This closes that gap. Push to `hosted`, the tests run, and if they pass the
+# image is built and rolled out.
+#
+# Needs one repository secret, FLY_API_TOKEN: Settings -> Secrets and variables
+# -> Actions -> New repository secret. Use a deploy token scoped to this app
+# (Fly dashboard -> the app -> Tokens -> Create deploy token), not an org-wide
+# personal token, so the worst a leak allows is redeploying this one app.
+
+on:
+  push:
+    branches: [hosted]
+    # Documentation and local-install scripts change often and cannot affect
+    # what the server runs. Deploying for them would just add noise and risk.
+    paths:
+      - "garmin_mcp/**"
+      - "tests/**"
+      - "Dockerfile"
+      - "fly.toml"
+      - "requirements-hosted.txt"
+      - ".github/workflows/deploy-hosted.yml"
+  workflow_dispatch:
+
+# The app name is public — it is the connector address people paste into
+# Claude. fly.toml deliberately carries a placeholder so a self-hoster does not
+# deploy over this app by accident, so the real name is passed on the command
+# line instead.
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+# Two pushes in quick succession should not race each other onto the machine.
+# Not cancel-in-progress: a half-finished deploy is worse than a redundant one.
+concurrency:
+  group: deploy-hosted
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The same pinned set the image installs, so a dependency that breaks the
+      # server fails here rather than in production.
+      # Block scalar, not a plain string: the " : " in `--only-binary :all:`
+      # parses as a YAML mapping and breaks the file.
+      - name: Install
+        run: |
+          pip install --only-binary :all: -r requirements-hosted.txt
+
+      - name: Hosted server
+        run: python tests/hosted_test.py
+
+      - name: OAuth
+        run: python tests/oauth_test.py
+
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Fails loudly rather than skipping. A deploy job that quietly does
+      # nothing when the secret is missing rebuilds the exact problem this
+      # workflow exists to remove: code on the branch, not on the machine.
+      - name: Check the token is set
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set."
+            echo "Add it under Settings -> Secrets and variables -> Actions,"
+            echo "using a deploy token scoped to $FLY_APP."
+            exit 1
+          fi
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app "$FLY_APP" --remote-only
+
+      # `flyctl deploy` exiting 0 means the machine started, not that it serves
+      # what we think it serves. These are the two pages that ask for a Garmin
+      # password, so if either is broken nobody should be signing in.
+      - name: Check it serves what we just shipped
+        run: |
+          base="https://${FLY_APP}.fly.dev"
+          for path in / /connect; do
+            echo "--- $base$path"
+            # Fly may still be draining the previous machine for a moment.
+            for attempt in 1 2 3 4 5; do
+              body="$(curl -fsS --max-time 20 "$base$path" || true)"
+              [ -n "$body" ] && break
+              echo "    no response yet, retrying ($attempt)"
+              sleep 6
+            done
+            if [ -z "$body" ]; then
+              echo "    FAIL: no response"
+              exit 1
+            fi
+            # An f-string that lost its prefix renders the placeholder as
+            # literal text and still returns 200, so absence of the bug is
+            # checked as well as presence of the link.
+            case "$body" in
+              *'{PRIVACY_URL}'*)
+                echo "    FAIL: unrendered placeholder in the page"
+                exit 1 ;;
+            esac
+            case "$body" in
+              *"garmin.daash.run/privacy/"*)
+                echo "    ok: privacy link present" ;;
+              *)
+                echo "    FAIL: no privacy link"
+                exit 1 ;;
+            esac
+          done
+          echo "--- $base/health"
+          curl -fsS --max-time 20 "$base/health" && echo
