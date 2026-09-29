@@ -146,7 +146,7 @@ def head_for(title: str, description: str, path: str) -> str:
 <meta property="og:image" content="{SITE}/og.png?v=1">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Talk to your training — a rising elevation profile with three waypoints">
+<meta property="og:image:alt" content="Talk to your training: a rising elevation profile with three waypoints">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="{SITE}/og.png?v=1">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F6F3">
