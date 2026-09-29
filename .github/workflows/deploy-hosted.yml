@@ -71,6 +71,12 @@ jobs:
       - name: Tools
         run: python tests/smoke_test.py
 
+      # The matcher decides whether somebody is told they missed a session.
+      # Getting that wrong is the one bug that would make them stop trusting
+      # the whole thing, so it is guarded independently of the tool wiring.
+      - name: Progress matching
+        run: python tests/progress_test.py
+
   deploy:
     name: Deploy
     needs: test
