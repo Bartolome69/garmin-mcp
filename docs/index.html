@@ -318,6 +318,20 @@
   ul.asks li {
     background: var(--surface); border: 1px solid var(--hairline);
     border-radius: var(--radius); padding: 13px 16px; font-style: italic;
+    display: flex; gap: 12px; align-items: baseline;
+  }
+  /* Six identical boxes scan as one idea. Labelled and colour-split, a glance
+     at any two rows shows it both reads your training and writes to it —
+     which is the whole point and was the thing being missed. */
+  ul.asks .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.58rem; letter-spacing: 0.13em; text-transform: uppercase;
+    font-style: normal; color: var(--accent-ink); flex: none;
+  }
+  ul.asks .tag.create { color: var(--clay); }
+  @media (max-width: 420px) {
+    /* Side by side, the label steals a third of the line on a small phone. */
+    ul.asks li { flex-direction: column; gap: 6px; }
   }
 
   details { border-bottom: 1px solid var(--hairline); max-width: var(--measure); }
@@ -586,12 +600,12 @@
                the first two pairs stay on one sport so the jump from looking at
                a run to building one reads as the same conversation. -->
           <ul class="asks">
-            <li>"What did my last run look like? Break it down by kilometre."</li>
-            <li>"Build me a threshold session for Thursday and put it on my watch."</li>
-            <li>"How much of my last ride was actually in zone 2?"</li>
-            <li>"Put 3 &times; 10 minutes at threshold on the bike into Saturday."</li>
-            <li>"Am I running everything at the same effort? Check my last ten runs."</li>
-            <li>"Write me a push day &mdash; bench, overhead press, some triceps work."</li>
+            <li><span class="tag">Analyse</span>"What did my last run look like? Break it down by kilometre."</li>
+            <li><span class="tag create">Create</span>"Build me a threshold session for Thursday and put it on my watch."</li>
+            <li><span class="tag">Analyse</span>"How much of my last ride was actually in zone 2?"</li>
+            <li><span class="tag create">Create</span>"Put 3 &times; 10 minutes at threshold on the bike into Saturday."</li>
+            <li><span class="tag">Analyse</span>"Am I running everything at the same effort? Check my last ten runs."</li>
+            <li><span class="tag create">Create</span>"Write me a push day &mdash; bench, overhead press, some triceps work."</li>
           </ul>
         </div>
       </li>
