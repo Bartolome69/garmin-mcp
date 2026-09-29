@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://garmin.daash.run/sitemap.xml

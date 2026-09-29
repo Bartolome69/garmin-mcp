@@ -1,5 +1,5 @@
-<title>Garmin for Claude &amp; ChatGPT</title>
-<meta name="description" content="Connect Claude or ChatGPT to your Garmin Connect account: read your runs, splits and heart rate, and write structured workouts onto your watch.">
+<title>Garmin MCP Server: Connect Garmin to Claude &amp; ChatGPT</title>
+<meta name="description" content="Free, open-source MCP server for Garmin Connect. Ask Claude or ChatGPT about your runs, sleep and heart rate, and have it write structured workouts onto your watch.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -79,7 +79,7 @@
   }
 
   h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; }
-  h1 { font-size: clamp(2.4rem, 8vw, 3.5rem); font-weight: 800; line-height: 1.0; max-width: 15ch; }
+  h1 { font-size: clamp(2.2rem, 7.5vw, 3.3rem); font-weight: 800; line-height: 1.02; max-width: 16ch; }
   h2 { font-size: clamp(1.45rem, 4.4vw, 1.9rem); font-weight: 700; line-height: 1.12; }
   h3 { font-size: 1.16rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
 
@@ -124,6 +124,91 @@
   .cta .secondary { background: var(--surface); color: var(--ink); border-color: var(--hairline); }
   .cta .secondary:hover { background: var(--sunken); }
   .cta-note { margin-top: 12px; }
+
+  /* ---- Top bar ---- */
+  /* One line: the mark and address on the left, the anchors on the right.
+     The anchors go on a phone, where everything they point at is a short
+     scroll away. */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-bottom: 44px;
+  }
+  .wordmark {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-weight: 700; font-size: 0.98rem; letter-spacing: -0.01em;
+    color: var(--ink); text-decoration: none;
+  }
+  .wordmark svg { width: 26px; height: 26px; flex: none; }
+  .wordmark .m-bg { fill: var(--accent); }
+  .wordmark .m-line { fill: none; stroke: var(--ground); stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
+  .wordmark .tld { color: var(--muted); font-weight: 500; }
+  .topnav { display: flex; align-items: center; gap: 22px; }
+  .topnav a { color: var(--muted); text-decoration: none; font-size: 0.93rem; font-weight: 500; }
+  .topnav a:hover { color: var(--ink); }
+  @media (max-width: 620px) {
+    .topnav { display: none; }
+    .topbar { margin-bottom: 36px; }
+  }
+
+  /* ---- Live usage ---- */
+  /* Hidden until the number has arrived: a pill that says "0 people" or sits
+     empty while fetching does the opposite of what it is for. */
+  .pulse {
+    display: inline-flex; align-items: center; gap: 9px;
+    margin-top: 20px; padding: 7px 14px 7px 11px;
+    border: 1px solid var(--hairline); border-radius: 999px;
+    background: var(--surface); font-size: 0.9rem; font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .pulse .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 0 var(--accent); animation: pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+    70% { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  /* ---- Trust strip ---- */
+  ul.trust {
+    list-style: none; margin: 22px 0 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 6px 18px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  ul.trust li { display: inline-flex; align-items: center; gap: 7px; }
+  ul.trust li::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
+  ul.trust a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--hairline); }
+  ul.trust a:hover { color: var(--ink); border-color: var(--ink); }
+
+  /* ---- Suggestion box ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; max-width: var(--measure); }
+  .chips button {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 0.9rem; font-weight: 500; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 8px 14px; cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .chips button:hover { background: var(--sunken); }
+  .chips button[data-voted="1"] { border-color: var(--accent); color: var(--accent-ink); background: var(--surface); cursor: default; }
+  .chips button[data-voted="1"]::before { content: "\2713\00a0"; }
+  form.suggest { display: flex; gap: 8px; margin-top: 14px; max-width: var(--measure); }
+  form.suggest input {
+    flex: 1; min-width: 0; padding: 11px 13px; font: inherit; font-size: 0.95rem;
+    color: var(--ink); background: var(--surface);
+    border: 1px solid var(--hairline); border-radius: var(--radius);
+  }
+  form.suggest input:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+  form.suggest button {
+    font-family: "Archivo", system-ui, sans-serif; font-size: 0.93rem; font-weight: 600;
+    color: var(--ground); background: var(--accent); border: 0;
+    border-radius: var(--radius); padding: 11px 18px; cursor: pointer; white-space: nowrap;
+  }
+  .suggest-thanks { margin-top: 14px; color: var(--accent-ink); font-weight: 500; }
+  @media (max-width: 420px) { form.suggest { flex-direction: column; } }
   @media (max-width: 520px) {
     .cta { flex-direction: column; align-items: stretch; }
     .cta a { justify-content: center; }
@@ -290,6 +375,20 @@
   ul.asks li {
     background: var(--surface); border: 1px solid var(--hairline);
     border-radius: var(--radius); padding: 13px 16px; font-style: italic;
+    display: flex; gap: 12px; align-items: baseline;
+  }
+  /* Six identical boxes scan as one idea. Labelled and colour-split, a glance
+     at any two rows shows it both reads your training and writes to it —
+     which is the whole point and was the thing being missed. */
+  ul.asks .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.58rem; letter-spacing: 0.13em; text-transform: uppercase;
+    font-style: normal; color: var(--accent-ink); flex: none;
+  }
+  ul.asks .tag.create { color: var(--clay); }
+  @media (max-width: 420px) {
+    /* Side by side, the label steals a third of the line on a small phone. */
+    ul.asks li { flex-direction: column; gap: 6px; }
   }
 
   details { border-bottom: 1px solid var(--hairline); max-width: var(--measure); }
@@ -351,12 +450,35 @@
 
 <div class="wrap">
 
+  <nav class="topbar" aria-label="Page">
+    <a class="wordmark" href="/">
+      <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect class="m-bg" width="32" height="32" rx="7"></rect>
+        <path class="m-line" d="M6 22 L12.5 14 L18 18.5 L26 8.5"></path>
+      </svg>
+      garmin<span class="tld">.daash.run</span>
+    </a>
+    <div class="topnav">
+      <a href="#claude">How it works</a>
+      <a href="#chatgpt">ChatGPT</a>
+      <a href="#security">Security</a>
+    </div>
+  </nav>
+
   <header>
-    <p class="kicker">Claude&nbsp;&amp;&nbsp;ChatGPT&nbsp;+&nbsp;Garmin Connect</p>
-    <h1>Talk to your training</h1>
+    <p class="kicker">Garmin Connect MCP server</p>
+    <h1>Connect Garmin to Claude&nbsp;&amp; ChatGPT</h1>
     <p class="lede">
-      Your watch already knows everything. This puts it in the conversation — and
-      sends the next session back.
+      Talk to your training. Your watch already knows everything; this puts it
+      in the conversation, and sends the next session back to your wrist.
+    </p>
+
+    <!-- Filled in by the script below from the server's own count of accounts
+         that made a request in the last 30 days. Stays hidden until it has a
+         number worth showing. -->
+    <p class="pulse" id="pulse" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      <span id="pulse-text"></span>
     </p>
 
     <div class="cta">
@@ -367,6 +489,13 @@
       A free Claude account is enough. ChatGPT needs a paid plan and an
       administrator to switch it on.
     </p>
+
+    <ul class="trust" aria-label="In short">
+      <li><a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">Open source, MIT</a></li>
+      <li>Password never stored</li>
+      <li>Disconnect deletes everything</li>
+      <li>Works in any MCP app</li>
+    </ul>
 
     <svg class="profile" viewBox="0 0 720 76" aria-hidden="true" focusable="false">
       <path class="p-area" d="M0 60 L60 56 L120 52 L180 54 L240 44 L300 40 L360 36 L420 38 L480 28 L540 24 L600 20 L660 18 L720 13 L720 70 L0 70 Z"></path>
@@ -407,7 +536,7 @@
   </section>
 
   <section id="claude">
-    <h2>Setting it up</h2>
+    <h2>How to connect Garmin to Claude</h2>
 
     <ol class="steps">
 
@@ -417,10 +546,15 @@
           <h3>Open Claude&rsquo;s connector settings</h3>
           <p class="muted small">
             On <strong>claude.ai</strong>: Settings → Connectors →
-            <strong>Add custom connector</strong>. It has to be claude.ai
-            rather than the Claude app — the app can use a connector but
-            can&rsquo;t add one. Your phone&rsquo;s browser counts, and once
-            it&rsquo;s added the app picks it up by itself.
+            <strong>Add custom connector</strong>.
+          </p>
+          <p class="muted small">
+            On the <strong>phone app</strong>: tap <strong>+</strong> beside the
+            message box → Connectors → <strong>+</strong> (top right) →
+            <strong>Add custom connector</strong>. No laptop needed at any point.
+          </p>
+          <p class="muted small">
+            Whichever you use, it reaches your other devices by itself.
           </p>
         </div>
       </li>
@@ -434,10 +568,10 @@
               <span class="term-label">Connector URL</span>
               <button class="copy" type="button" data-copy="connector">Copy</button>
             </div>
-            <pre><code id="connector">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
+            <pre><code id="connector">https://mcp.garmin.daash.run/mcp</code></pre>
           </div>
           <p class="muted small">
-            Claude fills in the rest itself — it should show <em>Sign in
+            Claude fills in the rest itself, and should show <em>Sign in
             now</em> selected. Leave it as it is and press Add.
           </p>
         </div>
@@ -472,15 +606,19 @@
         <div class="step-body">
           <h3>Ask it something</h3>
           <p class="muted small">
-            Start a new chat. Real numbers back means you’re done — on the
-            laptop and the phone, without setting up the phone.
+            Start a new chat. Real numbers back means you’re done, on the
+            laptop and the phone alike, without setting up the phone.
           </p>
+          <!-- Alternating: something it reads, then something it writes, and
+               the first two pairs stay on one sport so the jump from looking at
+               a run to building one reads as the same conversation. -->
           <ul class="asks">
-            <li>"What did my last run look like? Break it down by kilometre."</li>
-            <li>"Has my resting heart rate moved over the past two weeks?"</li>
-            <li>"Am I running everything at the same effort? Check my last ten runs."</li>
-            <li>"Build me a threshold session for Thursday and put it on my watch."</li>
-            <li>"Write me a push day &mdash; bench, overhead press, some triceps work."</li>
+            <li><span class="tag">Analyse</span>"What did my last run look like? Break it down by kilometre."</li>
+            <li><span class="tag create">Create</span>"Build me a threshold session for Thursday and put it on my watch."</li>
+            <li><span class="tag">Analyse</span>"How much of my last ride was actually in zone 2?"</li>
+            <li><span class="tag create">Create</span>"Put 3 &times; 10 minutes at threshold on the bike into Saturday."</li>
+            <li><span class="tag">Analyse</span>"Am I running everything at the same effort? Check my last ten runs."</li>
+            <li><span class="tag create">Create</span>"Write me a push day: bench, overhead press, some triceps work."</li>
           </ul>
         </div>
       </li>
@@ -489,11 +627,11 @@
   </section>
 
   <section id="chatgpt">
-    <h2>Using it in ChatGPT</h2>
+    <h2>How to connect Garmin to ChatGPT</h2>
     <div class="stack">
       <p class="small">
         The same address works in ChatGPT, with two conditions: it needs a
-        <strong>paid plan</strong> — Plus, Pro, Business, Enterprise or Edu — and
+        <strong>paid plan</strong> (Plus, Pro, Business, Enterprise or Edu), and
         you have to be an administrator of that account to turn the setting on.
         ChatGPT&rsquo;s free tier can&rsquo;t add connectors at all.
       </p>
@@ -521,7 +659,7 @@
               <span class="term-label">Connector URL</span>
               <button class="copy" type="button" data-copy="connector-gpt">Copy</button>
             </div>
-            <pre><code id="connector-gpt">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
+            <pre><code id="connector-gpt">https://mcp.garmin.daash.run/mcp</code></pre>
           </div>
           <p class="muted small">
             Add it as a remote MCP server, then sign in to Garmin the same way.
@@ -536,7 +674,7 @@
       <p class="small">
         That mode only ever calls two specific tools, which this doesn&rsquo;t
         have. Ordinary chat works fine. ChatGPT&rsquo;s connector support is also
-        less settled than Claude&rsquo;s — if something behaves oddly there and
+        less settled than Claude&rsquo;s. If something behaves oddly there and
         not here, that&rsquo;s usually why.
       </p>
     </div>
@@ -546,32 +684,32 @@
     <h2>Who made this</h2>
     <div class="stack">
       <p>
-        I&rsquo;m Bart Etcheverry &mdash; I build software, and I run. This started
+        I&rsquo;m Bart Etcheverry. I build software, and I run. This started
         because I wanted to ask Claude about my own training and there wasn&rsquo;t
         a good way to. Friends asked for it, so here it is.
       </p>
       <p class="small">
         <a href="https://www.bartetcheverry.com/" target="_blank" rel="noopener">bartetcheverry.com</a>
         &middot;
-        <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">every line of it on GitHub</a>
-        &mdash; including the sign-in page, if you&rsquo;d rather read it than take
+        <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">every line of it on GitHub</a>,
+        including the sign-in page, if you&rsquo;d rather read it than take
         my word.
       </p>
     </div>
   </section>
 
-  <section>
-    <h2>What it can and can't touch</h2>
+  <section id="security">
+    <h2>Security: what it can and can't touch</h2>
     <div class="stack">
       <p class="small">
         Your Garmin password is never stored. It goes to Garmin, and what comes
         back is an access token, kept encrypted on the server that runs this.
-        Signing in again, or Disconnect, destroys it — either one takes the
+        Signing in again, or Disconnect, destroys it. Either one takes the
         connection back straight away.
       </p>
       <p class="small">
         Reading is unrestricted: daily summaries, sleep, activities, splits, heart-rate
-        zones. Writing stays inside the workout library — building a session, putting
+        zones. Writing stays inside the workout library: building a session, putting
         it on a date, taking it back off, and deleting one you're done with.
       </p>
       <p class="small">
@@ -590,21 +728,8 @@
     </div>
   </section>
 
-  <footer>
-    <p>
-      Source on
-      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>,
-      installer included — read it before you run it.
-    </p>
-    <p>
-      Not affiliated with Garmin. It uses the same private API the Garmin Connect
-      website does, so it can break when Garmin changes something.
-    </p>
-    <p><a href="/privacy/">Privacy</a></p>
-  </footer>
-
   <section>
-    <h2>Make it a coach, not a lookup tool</h2>
+    <h2>A running coach prompt for Claude</h2>
     <div class="stack">
       <p>
         Claude will answer questions about your data straight away. It gets sharper if
@@ -616,7 +741,7 @@
       <summary>Show the prompt</summary>
       <div class="answer">
         <p>
-          Nothing to fill in. Paste it in and it interviews you &mdash; reading your
+          Nothing to fill in. Paste it in and it interviews you, reading your
           personal bests back from Garmin to check they&rsquo;re current, asking how
           you feel against them, what you&rsquo;re aiming at next, and what your real
           max heart rate is. Four questions, one message.
@@ -634,12 +759,12 @@
 
 Start with a short interview. Before you ask me anything, call get_profile and get_activities, so your questions come from evidence rather than blind. Then ask me, in a single message:
 
-1. My personal bests. Read back what Garmin has and ask which are still right — it only knows races I ran wearing the watch, so some may be missing, and some may be years old.
+1. My personal bests. Read back what Garmin has and ask which are still right. It only knows races I ran wearing the watch, so some may be missing, and some may be years old.
 2. How I feel against those bests right now: still in that shape, some way off it, or coming back from a break.
 3. What distance I want to focus on next, and whether there's a race and a date.
 4. My max heart rate, and whether that's from a real test or Garmin's age-based guess. Every heart-rate zone you'll see depends on that number, so if it's a guess, treat zone percentages with suspicion and lean on pace instead.
 
-Group all of it into one message — don't spread it across five turns. Alongside the questions, tell me what you've already worked out from my recent training, and ask me what you've got wrong. Don't prescribe anything until I've answered.
+Group all of it into one message rather than spreading it across five turns. Alongside the questions, tell me what you've already worked out from my recent training, and ask me what you've got wrong. Don't prescribe anything until I've answered.
 
 Then, working with me:
 
@@ -648,7 +773,7 @@ Then, working with me:
 - Be direct about what the data does and doesn't support. If three runs isn't enough to call a trend, say so rather than producing a confident narrative.
 - Notice the boring things that matter: pace drifting up at the same heart rate, cadence dropping late in runs, every run landing in the same narrow effort band, resting heart rate creeping.
 - If get_sleep_data comes back empty several nights running, I don't wear the watch overnight. Say so once, then stop building on recovery metrics I don't have.
-- When I ask for a session, build it with create_workout and schedule it with schedule_workout so it reaches my watch. Show me the structure and wait for me to confirm — those write to my real account.
+- When I ask for a session, build it with create_workout and schedule it with schedule_workout so it reaches my watch. Show me the structure and wait for me to confirm, because those write to my real account.
 - If I want something gone, unschedule_workout takes it off the calendar and keeps it; delete_workout removes it for good and will make you confirm its name. Tell me what is about to go and wait for my answer before you confirm it.
 - Prefer one specific, well-argued recommendation to a menu of options.
 - You're not a doctor or physio. If something looks like an injury or health question, say so plainly and stop there.</pre>
@@ -658,11 +783,11 @@ Then, working with me:
   </section>
 
   <section id="diy">
-    <h2>Running it yourself instead</h2>
+    <h2>Self-host the Garmin MCP server</h2>
     <div class="stack">
       <p class="small">
         You don&rsquo;t have to use the hosted version. The same tools run entirely
-        on your own machine, with your Garmin session never leaving it — and on a
+        on your own machine, with your Garmin session never leaving it. On a
         work account where an administrator controls connectors, it&rsquo;s the way
         in. It takes a Mac, a Terminal window and about ten minutes.
       </p>
@@ -675,8 +800,8 @@ Then, working with me:
       </div>
       <p class="small">
         It fetches the code, sets up Python, signs you in to Garmin and registers
-        everything with Claude Desktop. Quit Claude fully first — Cmd + Q, not just
-        the window. The
+        everything with Claude Desktop. Quit Claude fully first, with Cmd + Q rather than
+        just closing the window. The
         <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">repo</a>
         has the detail, including Cursor, VS Code and Zed, which all speak the same
         protocol. This route is desktop only: a local server can&rsquo;t reach your
@@ -685,8 +810,8 @@ Then, working with me:
     </div>
   </section>
 
-  <section>
-    <h2>Questions</h2>
+  <section id="faq">
+    <h2>Frequently asked questions</h2>
     <div style="margin-top:14px">
 
       <details>
@@ -701,14 +826,14 @@ Then, working with me:
       </details>
 
       <details>
-        <summary>My Claude account is through work — does that matter?</summary>
+        <summary>My Claude account is through work. Does that matter?</summary>
         <div class="answer">
           <p>
             Yes. On Team and Enterprise plans only an administrator can add
             connectors, so a member can't do this themselves.
           </p>
           <p>
-            A personal account — free is fine — sidesteps it, and keeps your
+            A personal account sidesteps it, and free is fine. It also keeps your
             health data off a work login, which is where it belongs anyway.
           </p>
         </div>
@@ -725,8 +850,8 @@ Then, working with me:
           </p>
           <p>
             The fix that works: turn off wifi, tether to your phone's hotspot, run the
-            command again. You only need the clean connection for that one sign-in —
-            after that the saved session does the work.
+            command again. You only need the clean connection for that one sign-in.
+            After that the saved session does the work.
           </p>
         </div>
       </details>
@@ -742,8 +867,8 @@ Then, working with me:
           <p>
             If it still can't see them, open
             <strong>Settings &rarr; Connectors</strong> and check the Garmin entry
-            is there and connected. Removing it and adding it again is safe —
-            you'll just sign in to Garmin once more.
+            is there and connected. Removing it and adding it again is safe.
+            You'll just sign in to Garmin once more.
           </p>
           <p>
             On a <strong>free Claude account you get one custom connector</strong>.
@@ -751,7 +876,7 @@ Then, working with me:
             won't add until you remove it.
           </p>
           <p>
-            On a <strong>work account</strong> — Team or Enterprise — members
+            On a <strong>work account</strong>, Team or Enterprise, members
             can't add connectors at all; an administrator has to. A personal
             account avoids that.
           </p>
@@ -763,7 +888,7 @@ Then, working with me:
         <div class="answer">
           <p>
             Your macOS is too old. The floor is <strong>macOS 10.15 (Catalina)</strong>,
-            and it's a hard one — the Python this uses simply won't start below it.
+            and it's a hard one: the Python this uses simply won't start below it.
             Updating macOS is the only fix. Any Mac from 2012 onwards can run
             Catalina.
           </p>
@@ -779,7 +904,7 @@ Then, working with me:
         <div class="answer">
           <p>
             That's Garmin's two-factor. The code goes to the email on your Garmin
-            account, or to your authenticator app — check spam if it's email. Run the
+            account, or to your authenticator app. Check spam if it's email. Run the
             command again once you have it; retrying costs nothing.
           </p>
         </div>
@@ -831,10 +956,105 @@ Then, working with me:
     </div>
   </section>
 
+  <section id="next">
+    <h2>Which connector should be next?</h2>
+    <div class="stack">
+      <p class="small">
+        Garmin came first because it&rsquo;s what I wear. If you&rsquo;d connect
+        something else, tap it. One tap is one vote, nothing else is sent, and
+        it&rsquo;s how I decide what to build.
+      </p>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Connectors people ask for">
+      <button type="button" data-name="Strava">Strava</button>
+      <button type="button" data-name="Oura">Oura</button>
+      <button type="button" data-name="Whoop">Whoop</button>
+      <button type="button" data-name="Apple Health">Apple Health</button>
+      <button type="button" data-name="Coros">Coros</button>
+      <button type="button" data-name="Polar">Polar</button>
+      <button type="button" data-name="Suunto">Suunto</button>
+      <button type="button" data-name="Wahoo">Wahoo</button>
+      <button type="button" data-name="Zwift">Zwift</button>
+      <button type="button" data-name="TrainingPeaks">TrainingPeaks</button>
+      <button type="button" data-name="intervals.icu">intervals.icu</button>
+      <button type="button" data-name="MyFitnessPal">MyFitnessPal</button>
+    </div>
+    <form class="suggest" id="suggest" autocomplete="off">
+      <input id="suggest-other" name="other" type="text" maxlength="80"
+             placeholder="Something else?" aria-label="Something else you would connect">
+      <button type="submit">Send</button>
+    </form>
+    <p class="suggest-thanks" id="suggest-thanks" hidden></p>
+    <p class="muted small" style="margin-top:14px">
+      Want to say more than a name?
+      <a href="https://github.com/Bartolome69/garmin-mcp/issues/new?title=Connector%20request%3A%20" target="_blank" rel="noopener">Open an issue on GitHub</a>.
+    </p>
+  </section>
+
+  <footer>
+    <p>
+      Source on
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>,
+      installer included. Read it before you run it.
+    </p>
+    <p>
+      Not affiliated with Garmin. It uses the same private API the Garmin Connect
+      website does, so it can break when Garmin changes something.
+    </p>
+    <p><a href="/privacy/">Privacy</a></p>
+  </footer>
+
 </div>
 
 <script>
   (function () {
+    // ---- Live usage ----
+    // The server counts accounts that made a request in the last 30 days and
+    // serves the total, and nothing else, at /stats. Below the floor the pill
+    // stays hidden: "3 people" reassures nobody.
+    var STATS_URL = "https://mcp.garmin.daash.run/stats";
+    var STATS_FLOOR = 5;
+    try {
+      fetch(STATS_URL, {mode: "cors", credentials: "omit"})
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          var n = data && Number(data.active_30d);
+          if (!n || n < STATS_FLOOR) return;
+          document.getElementById("pulse-text").textContent =
+            n.toLocaleString() + " people used this in the last 30 days";
+          document.getElementById("pulse").hidden = false;
+        })
+        .catch(function () { /* stays hidden */ });
+    } catch (e) { /* no fetch, stays hidden */ }
+
+    // ---- Suggestions ----
+    // The page only records the choice as a custom event; whether anything
+    // listens (the hosted page's analytics do) is not this script's business.
+    var thanks = document.getElementById("suggest-thanks");
+    function suggested(name, via) {
+      document.dispatchEvent(new CustomEvent("suggested", {detail: {name: name, via: via}}));
+      thanks.textContent = "Noted: " + name + ". Thanks.";
+      thanks.hidden = false;
+    }
+    document.querySelectorAll("#chips button").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        if (chip.dataset.voted) return;
+        chip.dataset.voted = "1";
+        suggested(chip.dataset.name, "chip");
+      });
+    });
+    var form = document.getElementById("suggest");
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var input = document.getElementById("suggest-other");
+        var name = input.value.trim().slice(0, 80);
+        if (!name) { input.focus(); return; }
+        suggested(name, "text");
+        input.value = "";
+      });
+    }
+
     document.querySelectorAll("button.copy").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var target = document.getElementById(btn.dataset.copy);

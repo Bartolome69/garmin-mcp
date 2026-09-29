@@ -43,15 +43,60 @@ from .workouts import (
 
 log = logging.getLogger(__name__)
 
-mcp = MCPServer(
-    "garmin",
-    instructions=(
-        "Read-only access to the user's own Garmin Connect account: daily health "
-        "summaries, sleep, and activities. Dates are YYYY-MM-DD and also accept "
-        "'today', 'yesterday', or a negative day offset such as '-7'. If a tool "
-        "returns an 'error' key, show it to the user rather than retrying blindly."
-    ),
+SITE = "https://garmin.daash.run"
+
+_INSTRUCTIONS = (
+    "Read-only access to the user's own Garmin Connect account: daily health "
+    "summaries, sleep, and activities. Dates are YYYY-MM-DD and also accept "
+    "'today', 'yesterday', or a negative day offset such as '-7'. If a tool "
+    "returns an 'error' key, show it to the user rather than retrying blindly."
 )
+
+
+def _server() -> MCPServer:
+    """The server, introduced to clients with a name, a site and an icon.
+
+    Without these a connector list shows a grey initial where the icon should
+    be. Older SDKs don't take the extra fields, so they are dropped rather than
+    letting a cosmetic detail stop the server starting.
+    """
+    try:
+        from mcp.types import Icon
+
+        return MCPServer(
+            "garmin",
+            title="Garmin",
+            instructions=_INSTRUCTIONS,
+            website_url=SITE,
+            icons=[
+                Icon(src=f"{SITE}/icon-512.png", mime_type="image/png", sizes=["512x512"]),
+                Icon(src=f"{SITE}/favicon.svg", mime_type="image/svg+xml", sizes=["any"]),
+            ],
+        )
+    except (ImportError, TypeError):
+        return MCPServer("garmin", instructions=_INSTRUCTIONS)
+
+
+mcp = _server()
+
+
+# Anything that fetches an icon by convention, rather than by asking the
+# server, asks the host it was given. Only the hosted server answers over
+# HTTP; over stdio these are inert.
+def _icon_redirects() -> None:
+    from starlette.responses import RedirectResponse
+
+    for name in ("favicon.ico", "favicon.svg", "apple-touch-icon.png"):
+        async def redirect(request, _name=name):
+            return RedirectResponse(f"{SITE}/{_name}", status_code=301)
+
+        mcp.custom_route(f"/{name}", methods=["GET"])(redirect)
+
+
+try:
+    _icon_redirects()
+except Exception:  # noqa: BLE001 - an SDK without custom routes still serves tools
+    log.debug("icon routes not registered", exc_info=True)
 
 MAX_ACTIVITIES = 50
 

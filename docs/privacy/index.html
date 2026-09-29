@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
 <link rel="canonical" href="https://garmin.daash.run/privacy/">
-<meta property="og:title" content="Privacy — Garmin for Claude">
+<meta property="og:title" content="Privacy · Garmin for Claude">
 <meta property="og:description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://garmin.daash.run/privacy/">
@@ -15,19 +15,21 @@
 <meta property="og:image" content="https://garmin.daash.run/og.png?v=1">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Talk to your training — a rising elevation profile with three waypoints">
+<meta property="og:image:alt" content="Talk to your training: a rising elevation profile with three waypoints">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://garmin.daash.run/og.png?v=1">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F6F3">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0E1512">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=&#39;http://www.w3.org/2000/svg&#39; viewBox=&#39;0 0 32 32&#39;%3E%3Crect width=&#39;32&#39; height=&#39;32&#39; rx=&#39;7&#39; fill=&#39;%232F6B4F&#39;/%3E%3Cpath d=&#39;M6 22 L12.5 14 L18 18.5 L26 8.5&#39; fill=&#39;none&#39; stroke=&#39;%23F4F6F3&#39; stroke-width=&#39;3.4&#39; stroke-linecap=&#39;round&#39; stroke-linejoin=&#39;round&#39;/%3E%3C/svg%3E">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
   html { color-scheme: light; }
   body { margin: 0; }
   img { max-width: 100%; }
   [hidden] { display: none !important; }
 </style>
-<title>Privacy — Garmin for Claude</title>
+<title>Privacy · Garmin for Claude</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -242,6 +244,13 @@
       });
     });
 
+    // The suggestion box. One event per tap or send, carrying the name and
+    // nothing else; counting them per name is the whole feature.
+    document.addEventListener("suggested", function (e) {
+      var d = e.detail || {};
+      track("suggested_connector", {name: d.name, via: d.via});
+    });
+
     // Did they read far enough to reach the setup steps?
     var steps = document.querySelector("ol.steps");
     if (steps && "IntersectionObserver" in window) {
@@ -284,8 +293,8 @@
         When you sign in, your email and password are passed straight to Garmin
         to be exchanged for an access token. The password is never written to
         disk, never logged, and is dropped from memory the moment Garmin accepts
-        it. It is not kept in any form &mdash; not encrypted, not hashed, not at
-        all &mdash; so nobody can recover it later, including me.
+        it. It is not kept in any form: not encrypted, not hashed, not at
+        all. Nobody can recover it later, including me.
       </p>
       <p class="small">
         If you would rather not type it here at all, that is a reasonable
@@ -307,11 +316,11 @@
     <ul class="plain" style="margin-top:16px">
       <li>
         <span><strong>The access token Garmin issued you</strong>, encrypted at
-        rest. This is the part that does the work &mdash; it is what lets the
+        rest. This is the part that does the work: it is what lets the
         connector read your training without asking you to sign in again.</span>
       </li>
       <li>
-        <span><strong>A masked version of your email</strong> &mdash; the first
+        <span><strong>A masked version of your email</strong>: the first
         letter and the domain, like <code class="inline">b****@gmail.com</code>.
         It exists so you can tell which account is connected. The full address
         is not stored.</span>
@@ -348,14 +357,14 @@
     <div class="stack">
       <p class="small">
         <strong>Reading is unrestricted.</strong> Activities, splits, heart-rate
-        zones, daily summaries, sleep, body battery, personal records &mdash; the
+        zones, daily summaries, sleep, body battery, personal records, the
         same things you see in the Garmin Connect app.
       </p>
       <p class="small">
         <strong>Writing stays inside the workout library:</strong> creating a
         workout, putting it on a date, taking it off again, and deleting one you
-        no longer want. Deleting is gated rather than merely discouraged &mdash;
-        the first attempt only reads the workout&rsquo;s name back, and removing
+        no longer want. Deleting is gated rather than merely discouraged.
+        The first attempt only reads the workout&rsquo;s name back, and removing
         it takes a second one quoting that name, so nothing goes without having
         been named out loud first.
       </p>
@@ -378,8 +387,8 @@
     <div class="note">
       <p><strong>Whatever you ask for arrives in your chat.</strong></p>
       <p class="small">
-        Once your Garmin data is in a conversation, it is in that conversation
-        &mdash; which means Anthropic or OpenAI handle it under
+        Once your Garmin data is in a conversation, it is in that conversation,
+        which means Anthropic or OpenAI handle it under
         <em>their</em> privacy policy, exactly as they handle everything else you
         type. If you are not comfortable with your resting heart rate sitting in
         your chat history, this tool is not for you, and no promise I make about
@@ -405,10 +414,13 @@
         no advertising identifiers, no session recording, and no profile built
         about you. It records that a page was opened and that a button was
         pressed, which is how I know whether the instructions actually work.
+        If you use the box on the front page that asks which connector should
+        be next, the name you tapped or typed is recorded the same way, and
+        that is all it carries.
       </p>
       <p class="small">
         It never receives your email, your Garmin data, or your connector
-        address. That is also why this site has no cookie banner &mdash; there is
+        address. That is also why this site has no cookie banner: there is
         nothing to ask you to consent to.
       </p>
     </div>
@@ -419,8 +431,8 @@
     <div class="stack">
       <p class="small">
         Open the sign-in page and choose <strong>Disconnect</strong>. That deletes
-        your row outright &mdash; token, masked email, fingerprint, timestamps
-        &mdash; and the connection stops working immediately. Nothing is retained
+        your row outright (token, masked email, fingerprint, timestamps)
+        and the connection stops working immediately. Nothing is retained
         afterwards, so there is no backlog to request a copy of or ask to be
         forgotten from.
       </p>
@@ -449,8 +461,8 @@
         something.
       </p>
       <p class="small">
-        It is not intended for children under 13, and it is not a medical device
-        &mdash; nothing it tells you is medical advice.
+        It is not intended for children under 13, and it is not a medical device.
+        Nothing it tells you is medical advice.
       </p>
       <p class="small">
         If this policy changes, the date at the top changes with it, and the

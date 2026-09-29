@@ -12,6 +12,8 @@ of the source's own <title> and <meta name="description">, so a second page
 describes itself rather than inheriting the front page's copy.
 """
 
+import html
+import json
 import re
 import sys
 from pathlib import Path
@@ -86,6 +88,13 @@ ANALYTICS = """
       });
     });
 
+    // The suggestion box. One event per tap or send, carrying the name and
+    // nothing else; counting them per name is the whole feature.
+    document.addEventListener("suggested", function (e) {
+      var d = e.detail || {};
+      track("suggested_connector", {name: d.name, via: d.via});
+    });
+
     // Did they read far enough to reach the setup steps?
     var steps = document.querySelector("ol.steps");
     if (steps && "IntersectionObserver" in window) {
@@ -101,13 +110,12 @@ ANALYTICS = """
 </script>
 """
 
-# The inline SVG is the same mark as the site's accent: a route climbing over
-# three waypoints. Inline so there is no second request and nothing to 404.
-FAVICON = """<link rel="icon" href="data:image/svg+xml,\
-%3Csvg xmlns=&#39;http://www.w3.org/2000/svg&#39; viewBox=&#39;0 0 32 32&#39;%3E\
-%3Crect width=&#39;32&#39; height=&#39;32&#39; rx=&#39;7&#39; fill=&#39;%232F6B4F&#39;/%3E\
-%3Cpath d=&#39;M6 22 L12.5 14 L18 18.5 L26 8.5&#39; fill=&#39;none&#39; stroke=&#39;%23F4F6F3&#39; \
-stroke-width=&#39;3.4&#39; stroke-linecap=&#39;round&#39; stroke-linejoin=&#39;round&#39;/%3E%3C/svg%3E">"""
+# The icon files come from scripts/make-favicon.py. Real URLs rather than an
+# inline data URI, because search results, connector lists and phone home
+# screens all fetch the icon by address and could not see the inline one.
+FAVICON = """<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">"""
 
 BASE_STYLE = """<style>
   html { color-scheme: light; }
@@ -138,13 +146,76 @@ def head_for(title: str, description: str, path: str) -> str:
 <meta property="og:image" content="{SITE}/og.png?v=1">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Talk to your training — a rising elevation profile with three waypoints">
+<meta property="og:image:alt" content="Talk to your training: a rising elevation profile with three waypoints">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="{SITE}/og.png?v=1">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F6F3">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0E1512">
 {FAVICON}
 {BASE_STYLE}"""
+
+
+def _text(fragment: str) -> str:
+    """Visible text of an HTML fragment, on one line."""
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", fragment))).strip()
+
+
+def structured_data(page: str, path: str) -> str:
+    """JSON-LD for search engines: what this is, and the FAQ, kept in sync.
+
+    Only the front page describes the software. The FAQ is read out of the
+    section marked id="faq", so a question added to the page is a question
+    added here; nothing is hand-copied.
+    """
+    blocks: list[dict] = []
+    if path == "/":
+        blocks.append({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "Garmin MCP Server",
+            "url": SITE + "/",
+            "applicationCategory": "HealthApplication",
+            "operatingSystem": "Web, macOS, Linux",
+            "description": (
+                "Open-source MCP server that connects Claude and ChatGPT to a "
+                "Garmin Connect account: reads activities, splits, heart rate and "
+                "sleep, and writes structured workouts onto the watch."
+            ),
+            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+            "license": "https://opensource.org/license/mit",
+            "codeRepository": "https://github.com/Bartolome69/garmin-mcp",
+            "author": {
+                "@type": "Person",
+                "name": "Bart Etcheverry",
+                "url": "https://www.bartetcheverry.com/",
+            },
+        })
+
+    faq = re.search(r'<section id="faq">(.*?)</section>', page, re.S)
+    if faq:
+        pairs = re.findall(
+            r"<details>\s*<summary>(.*?)</summary>\s*<div class=\"answer\">(.*?)</div>\s*</details>",
+            faq.group(1), re.S,
+        )
+        if pairs:
+            blocks.append({
+                "@context": "https://schema.org",
+                "@type": "FAQPage",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": _text(q),
+                        "acceptedAnswer": {"@type": "Answer", "text": _text(a)},
+                    }
+                    for q, a in pairs
+                ],
+            })
+
+    if not blocks:
+        return ""
+    # "</" inside a string would end the script element early.
+    body = json.dumps(blocks if len(blocks) > 1 else blocks[0], ensure_ascii=False)
+    return '<script type="application/ld+json">' + body.replace("</", "<\\/") + "</script>\n"
 
 
 def meta_from(head: str) -> tuple[str, str]:
@@ -182,6 +253,7 @@ def main() -> int:
     dest.write_text(
         head_for(title, description, path)
         + head
+        + structured_data(page, path)
         + ANALYTICS
         + "</head>\n<body>\n"
         + page
