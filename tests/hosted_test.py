@@ -210,6 +210,31 @@ async def main() -> int:
         check("unknown connector URL rejected", code == 404, str(code))
         code, body = await anyio_run(fetch, "/")
         check("landing page serves", code == 200 and "Connect Garmin" in body)
+
+        # The front page quotes this number, from another origin, so the body
+        # has to be exactly one count and the CORS header has to be there.
+        def fetch_stats() -> tuple[int, str, str]:
+            with urllib.request.urlopen(f"{base}/stats", timeout=15) as r:
+                return (r.status, r.headers.get("Access-Control-Allow-Origin", ""),
+                        r.read().decode())
+
+        code, cors, stats_raw = await anyio_run(fetch_stats)
+        stats_body = json.loads(stats_raw) if code == 200 else {}
+        check("stats serve one public count",
+              code == 200 and list(stats_body) == ["active_30d"], stats_raw[:80])
+        check("stats count both recent users",
+              stats_body.get("active_30d") == 2, stats_raw[:80])
+        check("stats readable from the website's origin", cors == "*", repr(cors))
+        check("stats reveal nothing else",
+              SECRET not in stats_raw and "example.com" not in stats_raw
+              and alice not in stats_raw)
+
+        with store._connect() as conn:
+            seen = conn.execute(
+                "SELECT last_seen_at FROM users WHERE user_token = ?", (alice,)
+            ).fetchone()[0]
+        check("a tool call marks the person as seen",
+              seen is not None and time.time() - seen < 60, str(seen))
         landing = body
         code, body = await anyio_run(fetch, "/connect")
         check("sign-in form serves",

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -81,6 +82,17 @@ _PENDING_TTL = 600
 # One live session per person, reused across their requests so the token is not
 # re-read on every tool call.
 _SESSIONS: dict[str, GarminSession] = {}
+
+# When each person was last marked as seen. A conversation makes a burst of tool
+# calls; writing last_seen_at once an hour per person records the same fact
+# without a database write on every one of them.
+_TOUCHED: dict[str, float] = {}
+_TOUCH_EVERY = 3600
+
+# The front page shows how many people used this recently. One number, cached,
+# so a busy page never turns into a query per visitor.
+_STATS_CACHE: dict[str, Any] = {"at": 0.0, "body": ""}
+_STATS_TTL = 300
 
 
 # Cloudflare in front of Garmin's SSO blocks datacenter addresses — verified
@@ -472,6 +484,28 @@ async def health(request: Request) -> Response:
     return HTMLResponse("ok")
 
 
+@mcp.custom_route("/stats", methods=["GET"])
+async def stats(request: Request) -> Response:
+    """How many people used this in the last 30 days, for the front page.
+
+    Public on purpose: it is the number the site quotes, and it is all this
+    returns. No emails, no tokens, no per-person anything. The CORS header is
+    what lets a page on another host read it.
+    """
+    now = time.time()
+    if now - _STATS_CACHE["at"] > _STATS_TTL:
+        _STATS_CACHE["body"] = json.dumps({"active_30d": store.count_active(30)})
+        _STATS_CACHE["at"] = now
+    return Response(
+        _STATS_CACHE["body"],
+        media_type="application/json",
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": f"public, max-age={_STATS_TTL}",
+        },
+    )
+
+
 # --------------------------------------------------------------------------
 # Binding each MCP request to its owner
 # --------------------------------------------------------------------------
@@ -530,6 +564,11 @@ class SessionBinding:
             _SESSIONS.pop(user_token, None)
             await Response("Unknown connector URL", status_code=404)(scope, receive, send)
             return
+
+        now = time.time()
+        if now - _TOUCHED.get(user_token, 0.0) > _TOUCH_EVERY:
+            _TOUCHED[user_token] = now
+            store.touch_user(user_token)
 
         token = use_session(session_for(user_token))
         try:

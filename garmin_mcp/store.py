@@ -217,6 +217,30 @@ def count_users() -> int:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
+def touch_user(user_token: str) -> None:
+    """Note that this person's connector was just used.
+
+    last_seen_at used to move only when a token refreshed, which is every few
+    weeks at best. It now moves on use, so it can answer the one question the
+    front page asks: how many people actually used this recently.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET last_seen_at = ? WHERE user_token = ?",
+            (int(time.time()), user_token),
+        )
+
+
+def count_active(days: int = 30) -> int:
+    """People seen in the last `days` days. A fresh sign-in counts as seen."""
+    cutoff = int(time.time()) - days * 86400
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM users WHERE last_seen_at >= ? OR created_at >= ?",
+            (cutoff, cutoff),
+        ).fetchone()[0]
+
+
 # --------------------------------------------------------------------------
 # OAuth
 # --------------------------------------------------------------------------
