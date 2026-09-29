@@ -507,7 +507,9 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------
-# Workouts (additive only — these create and schedule, never delete or overwrite)
+# Workouts. These create, schedule, unschedule and delete — but only workouts.
+# Nothing here can touch a recorded activity, so training history cannot be
+# lost through this server however wrong a tool call goes.
 # --------------------------------------------------------------------------
 
 
@@ -713,6 +715,132 @@ async def schedule_workout(workout_id: int | str, date: str) -> dict[str, Any]:
         "schedule_id": first_present(result, "workoutScheduleId", "id"),
         "note": "Sync the watch (or open Garmin Connect on your phone) to pick it up.",
     }
+
+
+def _scheduled_in_month(calendar: Any) -> list[dict[str, Any]]:
+    """The workout entries from a month of Garmin's calendar.
+
+    The calendar carries races and other item types alongside workouts, and the
+    payload has been seen both as a bare list and wrapped in calendarItems.
+    """
+    items = calendar if isinstance(calendar, list) else (calendar or {}).get(
+        "calendarItems", []
+    )
+    return [i for i in items or [] if (i.get("itemType") or "workout") == "workout"]
+
+
+@mcp.tool()
+@tool_errors
+async def unschedule_workout(
+    date: str = "", schedule_id: int | str = 0
+) -> dict[str, Any]:
+    """Take a workout off a day in the Garmin calendar.
+
+    This is the reversible one: the workout itself is kept and can be
+    scheduled again. Use it to clear a session the watch should no longer show.
+    Deleting the workout outright is delete_workout.
+
+    Args:
+        date: The day to clear. YYYY-MM-DD, 'today', 'tomorrow', or an offset
+            like '+3'. If more than one workout sits on that day, they are
+            listed back rather than guessed between.
+        schedule_id: Remove one specific entry, from a previous listing or from
+            what schedule_workout returned. Takes precedence over date.
+    """
+    if schedule_id:
+        try:
+            schedule_id = int(str(schedule_id).strip())
+        except ValueError:
+            return {"error": f"schedule_id must be numeric, got {schedule_id!r}."}
+        await _call(lambda c: c.unschedule_workout(schedule_id))
+        return {"unscheduled": schedule_id, "note": "The workout itself is kept."}
+
+    if not date:
+        return {"error": "Give either a date or a schedule_id."}
+
+    day = parse_date(date)
+    year, month = day.split("-")[0], day.split("-")[1]
+    calendar = await _call(lambda c: c.get_scheduled_workouts(int(year), int(month)))
+    on_day = [i for i in _scheduled_in_month(calendar) if i.get("date") == day]
+
+    if not on_day:
+        return {"date": day, "unscheduled": None, "note": "Nothing was scheduled then."}
+
+    if len(on_day) > 1:
+        # Two sessions on one day is normal enough (a double day). Picking one
+        # would be a guess, and the wrong guess silently clears the wrong thing.
+        return {
+            "date": day,
+            "error": "More than one workout is scheduled that day. "
+            "Call again with the schedule_id of the one to remove.",
+            "candidates": [
+                drop_empty(
+                    {
+                        "schedule_id": first_present(i, "id", "workoutScheduleId"),
+                        "name": first_present(i, "title", "workoutName"),
+                        "workout_id": i.get("workoutId"),
+                    }
+                )
+                for i in on_day
+            ],
+        }
+
+    entry = on_day[0]
+    found = first_present(entry, "id", "workoutScheduleId")
+    await _call(lambda c: c.unschedule_workout(found))
+    return {
+        "date": day,
+        "unscheduled": found,
+        "name": first_present(entry, "title", "workoutName"),
+        "note": "Off the calendar. The workout is kept and can be scheduled again.",
+    }
+
+
+@mcp.tool()
+@tool_errors
+async def delete_workout(workout_id: int | str, confirm: str = "") -> dict[str, Any]:
+    """Delete a workout from the Garmin account. Permanent.
+
+    This asks before it acts, and the check is real rather than advisory: the
+    first call never deletes. It reads the workout back and returns its name,
+    and only a second call passing that name as `confirm` goes through. Show
+    the person what is about to go and let them answer before confirming.
+
+    Recorded activities are untouchable here. This removes a workout from the
+    workout library — a plan for a session, not a session you ran.
+
+    Args:
+        workout_id: Id from list_workouts or create_workout.
+        confirm: The workout's exact name, which the first call returns.
+    """
+    try:
+        workout_id = int(str(workout_id).strip())
+    except ValueError:
+        return {"error": f"workout_id must be numeric, got {workout_id!r}."}
+
+    detail = await _call(lambda c: c.get_workout_by_id(workout_id)) or {}
+    name = first_present(detail, "workoutName", "name")
+    if not name:
+        return {"error": f"No workout {workout_id} in this account."}
+
+    # Compared loosely so a retyped name is not rejected over spacing or case,
+    # but it still has to be *this* workout's name — which means it has been
+    # read back and seen before anything is destroyed.
+    if " ".join(str(confirm).split()).casefold() != " ".join(name.split()).casefold():
+        return {
+            "workout_id": workout_id,
+            "name": name,
+            "sport": (detail.get("sportType") or {}).get("sportTypeKey"),
+            "confirmation_required": True,
+            "note": (
+                f"Nothing has been deleted. Check with the person first, then "
+                f"call delete_workout again with confirm={name!r} to remove it. "
+                f"This cannot be undone."
+            ),
+        }
+
+    await _call(lambda c: c.delete_workout(workout_id))
+    return {"deleted": workout_id, "name": name, "note": "Permanently removed."}
 
 
 # --------------------------------------------------------------------------

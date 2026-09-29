@@ -673,10 +673,18 @@
       </p>
       <p class="small">
         Reading is unrestricted: daily summaries, sleep, activities, splits, heart-rate
-        zones. Writing is limited to two things by design — creating a workout, and
-        putting it on a date. There is no tool that deletes or overwrites anything in
-        your Garmin account. The worst it can do is leave you a session you didn't
-        want, which you bin in the Garmin app like any other.
+        zones. Writing stays inside the workout library — building a session, putting
+        it on a date, taking it back off, and deleting one you're done with.
+      </p>
+      <p class="small">
+        Deleting asks first, and the check isn't advisory: the first attempt only reads
+        the workout's name back to you, and it takes a second one quoting that name to
+        remove anything.
+      </p>
+      <p class="small">
+        What it can't reach is your training history. No tool here deletes or edits a
+        recorded activity, so a run you've actually done can't be lost through this,
+        however badly a request is worded.
       </p>
       <p class="small muted">
         <a href="/privacy/">What's stored, and what isn't</a>
@@ -743,6 +751,7 @@ Then, working with me:
 - Notice the boring things that matter: pace drifting up at the same heart rate, cadence dropping late in runs, every run landing in the same narrow effort band, resting heart rate creeping.
 - If get_sleep_data comes back empty several nights running, I don't wear the watch overnight. Say so once, then stop building on recovery metrics I don't have.
 - When I ask for a session, build it with create_workout and schedule it with schedule_workout so it reaches my watch. Show me the structure and wait for me to confirm — those write to my real account.
+- If I want something gone, unschedule_workout takes it off the calendar and keeps it; delete_workout removes it for good and will make you confirm its name. Tell me what is about to go and wait for my answer before you confirm it.
 - Prefer one specific, well-argued recommendation to a menu of options.
 - You're not a doctor or physio. If something looks like an injury or health question, say so plainly and stop there.</pre>
         </div>

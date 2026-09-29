@@ -160,6 +160,17 @@ class FakeGarmin:
     def __init__(self, **_: Any) -> None:
         self.display_name = None
         self.full_name = None
+        self.unscheduled: list[int] = []
+        self.deleted: list[int] = []
+        self.workouts: list[dict[str, Any]] = [
+            {
+                "workoutId": 555001,
+                "workoutName": "Thursday Threshold",
+                "sportType": {"sportTypeKey": "running"},
+                "estimatedDurationInSecs": 3175,
+                "updateDate": "2026-09-22T19:00:00.0",
+            }
+        ]
 
     def login(self, tokenstore: str | None = None) -> tuple[None, None]:
         self.display_name = PROFILE["displayName"]
@@ -206,15 +217,11 @@ class FakeGarmin:
     # -- workouts ----------------------------------------------------------
 
     def get_workouts(self, start: int, limit: int) -> list[dict[str, Any]]:
-        return [
-            {
-                "workoutId": 555001,
-                "workoutName": "Thursday Threshold",
-                "sportType": {"sportTypeKey": "running"},
-                "estimatedDurationInSecs": 3175,
-                "updateDate": "2026-09-22T19:00:00.0",
-            }
-        ][:limit]
+        # Reads the mutable library rather than a literal, so a delete is
+        # visible through the same path a person would look down. A stub that
+        # returned a fixed list would report success for a delete that never
+        # happened.
+        return list(self.workouts)[start : start + limit]
 
     def get_scheduled_workouts(self, year: int, month: int) -> dict[str, Any]:
         # Garmin's month view spills into the neighbouring months, so the same
@@ -227,6 +234,12 @@ class FakeGarmin:
         ]}
 
     def get_workout_by_id(self, workout_id: int) -> dict[str, Any]:
+        # Honours the id: delete_workout has to be able to tell an unknown
+        # workout from a real one, and a stub that answers to anything would
+        # let that branch pass untested. 555002 is what upload_workout mints.
+        known = {w["workoutId"] for w in self.workouts} | {555002}
+        if int(workout_id) not in known:
+            return {}
         return {
             "workoutName": "Thursday Threshold",
             "estimatedDurationInSecs": 3175,
@@ -256,3 +269,17 @@ class FakeGarmin:
     def schedule_workout(self, workout_id: int, date_str: str) -> dict[str, Any]:
         self.last_schedule = (workout_id, date_str)
         return {"workoutScheduleId": 777001}
+
+    def unschedule_workout(self, scheduled_workout_id: int) -> dict[str, Any]:
+        self.unscheduled.append(int(scheduled_workout_id))
+        return {}
+
+    def delete_workout(self, workout_id: int) -> dict[str, Any]:
+        # Actually removes it, so a test can prove the unconfirmed call left
+        # the library alone. Asserting only the response would pass even if the
+        # workout had been destroyed on the way to producing it.
+        self.deleted.append(int(workout_id))
+        self.workouts = [
+            w for w in self.workouts if int(w["workoutId"]) != int(workout_id)
+        ]
+        return {}
