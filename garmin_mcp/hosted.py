@@ -222,8 +222,7 @@ async def index(request: Request) -> Response:
         exchanged. Only the access token Garmin issues is kept, encrypted.</p>
         <form method=get action=/connect><button>Get started</button></form>
         <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
-        target=_blank rel=noopener>What this does with your data</a> &mdash; all
-        of it, in plain English.</p>
+        target=_blank rel=noopener>Privacy</a></p>
         """,
     )
 
@@ -255,10 +254,8 @@ async def connect_form(request: Request) -> Response:
                  autocomplete=current-password>
           <button>Connect</button>
         </form>
-        <p class=note style="margin-top:20px">The password is exchanged with
-        Garmin and discarded; only the token it returns is kept, encrypted.
-        <a href="{PRIVACY_URL}" target=_blank rel=noopener>The rest of what is
-        stored, and what isn&rsquo;t</a>.</p>
+        <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
+        target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
         """,
     )
 
