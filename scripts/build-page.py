@@ -109,6 +109,13 @@ HEAD = """<!doctype html>
 <meta property="og:image:alt" content="Talk to your training — a rising elevation profile with three waypoints">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://garmin.daash.run/og.png?v=1">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F6F3">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0E1512">
+<link rel="icon" href="data:image/svg+xml,\
+%3Csvg xmlns=&#39;http://www.w3.org/2000/svg&#39; viewBox=&#39;0 0 32 32&#39;%3E\
+%3Crect width=&#39;32&#39; height=&#39;32&#39; rx=&#39;7&#39; fill=&#39;%232F6B4F&#39;/%3E\
+%3Cpath d=&#39;M6 22 L12.5 14 L18 18.5 L26 8.5&#39; fill=&#39;none&#39; stroke=&#39;%23F4F6F3&#39; \
+stroke-width=&#39;3.4&#39; stroke-linecap=&#39;round&#39; stroke-linejoin=&#39;round&#39;/%3E%3C/svg%3E">
 <style>
   html { color-scheme: light; }
   body { margin: 0; }

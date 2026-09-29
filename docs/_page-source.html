@@ -67,12 +67,13 @@
     font-size: 17px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
   }
 
   .wrap {
     max-width: 800px;
     margin: 0 auto;
-    padding-inline: 20px;
+    padding-inline: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
     padding-block: 48px 72px;
   }
 
@@ -323,6 +324,27 @@
     ol.steps > li { grid-template-columns: 34px 1fr; gap: 14px; }
     .waypoint { width: 34px; height: 34px; font-size: 0.72rem; }
     ol.steps > li:not(:last-child)::before { left: 16px; top: 34px; }
+  }
+
+  /* ---- Narrow screens ---- */
+  @media (max-width: 620px) {
+    /* Three boxes across a phone left a two-plus-one orphan row. */
+    .needs { grid-template-columns: 1fr; }
+
+    /* These are read and copied, not scrolled sideways in a 300px window.
+       The URL breaks anywhere; the shell command only at its spaces, so it
+       stays recognisable as one command. */
+    .term pre { overflow-x: visible; }
+    .term code { white-space: pre-wrap; overflow-wrap: break-word; }
+    #install { overflow-wrap: normal; word-break: normal; }
+  }
+
+  /* Anything without a fine pointer: the copy buttons were around 26px tall,
+     and copying the address is the one thing everybody has to do. */
+  @media (pointer: coarse) {
+    button.copy { padding: 11px 16px; font-size: 0.82rem; }
+    .cta a { padding: 15px 22px; }
+    details summary { padding: 17px 0; }
   }
 </style>
 
