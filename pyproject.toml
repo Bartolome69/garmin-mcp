@@ -20,6 +20,8 @@ classifiers = [
 dependencies = [
     "mcp>=1.2.0",
     "garminconnect>=0.2.25",
+    # get_plan_chart draws the plan as an image for the conversation.
+    "pillow>=10.0",
 ]
 
 # Only the hosted, multi-user server needs these. A local install talks stdio

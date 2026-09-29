@@ -32,7 +32,6 @@ EXPECTED_TOOLS = {
     "create_workout",
     "schedule_workout",
     "get_profile",
-    "update_plan_view",
     "get_plan_chart",
     "find_exercises",
     "create_strength_workout",

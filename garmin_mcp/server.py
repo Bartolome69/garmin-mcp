@@ -811,28 +811,6 @@ async def get_profile() -> dict[str, Any]:
 
 @mcp.tool()
 @tool_errors
-async def update_plan_view() -> dict[str, Any]:
-    """Regenerate the training plan page from the Garmin calendar and activities.
-
-    Call this after scheduling or changing sessions, so the page reflects the
-    conversation. It writes the page locally and returns its address; a
-    scheduled job publishes it, so a freshly written page may take until the
-    next run to appear online.
-    """
-    from .plan import build
-
-    result = await anyio.to_thread.run_sync(build)
-    if not result.get("planned_sessions_in_view"):
-        result["note"] = (
-            "Nothing is scheduled in the visible window, so the page shows no "
-            "planned bars. Schedule sessions with create_workout and "
-            "schedule_workout for the comparison to mean anything."
-        )
-    return result
-
-
-@mcp.tool()
-@tool_errors
 async def get_plan_chart(weeks_back: int = 1, weeks_forward: int = 1) -> Any:
     """Draw the training plan as an image, to show in the conversation.
 
