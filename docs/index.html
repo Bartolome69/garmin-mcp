@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Connect Claude or ChatGPT to your Garmin Connect account: read your runs, splits and heart rate, and write structured workouts onto your watch.">
+<meta name="description" content="Free, open-source MCP server for Garmin Connect. Ask Claude or ChatGPT about your runs, sleep and heart rate, and have it write structured workouts onto your watch.">
 <link rel="canonical" href="https://garmin.daash.run/">
-<meta property="og:title" content="Garmin for Claude &amp; ChatGPT">
-<meta property="og:description" content="Connect Claude or ChatGPT to your Garmin Connect account: read your runs, splits and heart rate, and write structured workouts onto your watch.">
+<meta property="og:title" content="Garmin MCP Server: Connect Garmin to Claude &amp; ChatGPT">
+<meta property="og:description" content="Free, open-source MCP server for Garmin Connect. Ask Claude or ChatGPT about your runs, sleep and heart rate, and have it write structured workouts onto your watch.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://garmin.daash.run/">
 <meta property="og:site_name" content="Garmin for Claude">
@@ -27,7 +27,7 @@
   img { max-width: 100%; }
   [hidden] { display: none !important; }
 </style>
-<title>Garmin for Claude &amp; ChatGPT</title>
+<title>Garmin MCP Server: Connect Garmin to Claude &amp; ChatGPT</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -107,7 +107,7 @@
   }
 
   h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; }
-  h1 { font-size: clamp(2.4rem, 8vw, 3.5rem); font-weight: 800; line-height: 1.0; max-width: 15ch; }
+  h1 { font-size: clamp(2.2rem, 7.5vw, 3.3rem); font-weight: 800; line-height: 1.02; max-width: 16ch; }
   h2 { font-size: clamp(1.45rem, 4.4vw, 1.9rem); font-weight: 700; line-height: 1.12; }
   h3 { font-size: 1.16rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
 
@@ -483,6 +483,7 @@
     details summary { padding: 17px 0; }
   }
 </style>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Garmin MCP Server", "url": "https://garmin.daash.run/", "applicationCategory": "HealthApplication", "operatingSystem": "Web, macOS, Linux", "description": "Open-source MCP server that connects Claude and ChatGPT to a Garmin Connect account: reads activities, splits, heart rate and sleep, and writes structured workouts onto the watch.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/license/mit", "codeRepository": "https://github.com/Bartolome69/garmin-mcp", "author": {"@type": "Person", "name": "Bart Etcheverry", "url": "https://www.bartetcheverry.com/"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "How technical is this, honestly?", "acceptedAnswer": {"@type": "Answer", "text": "Not very. You paste a link into Claude's settings, sign in to Garmin the way you would on any website, and that's it. No Terminal, no install, nothing to keep running on your computer."}}, {"@type": "Question", "name": "My Claude account is through work — does that matter?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. On Team and Enterprise plans only an administrator can add connectors, so a member can't do this themselves. A personal account — free is fine — sidesteps it, and keeps your health data off a work login, which is where it belongs anyway."}}, {"@type": "Question", "name": "It mentioned being rate limited, or a 429", "acceptedAnswer": {"@type": "Answer", "text": "The most common one, and it isn't your password. Garmin blocks sign-ins by network address before it ever checks your credentials. Office wifi, university networks and VPNs get hit hardest, because everyone on them shares a single address. The fix that works: turn off wifi, tether to your phone's hotspot, run the command again. You only need the clean connection for that one sign-in — after that the saved session does the work."}}, {"@type": "Question", "name": "Claude can't find any Garmin tools", "acceptedAnswer": {"@type": "Answer", "text": "An existing chat keeps talking to the connection it started with, so the first thing to try is simply a new chat. That fixes it more often than anything else. If it still can't see them, open Settings → Connectors and check the Garmin entry is there and connected. Removing it and adding it again is safe — you'll just sign in to Garmin once more. On a free Claude account you get one custom connector. If you already have another one, it holds the only slot and this won't add until you remove it. On a work account — Team or Enterprise — members can't add connectors at all; an administrator has to. A personal account avoids that."}}, {"@type": "Question", "name": "Running it yourself failed, mentioning Rust, OpenSSL or a compiler", "acceptedAnswer": {"@type": "Answer", "text": "Your macOS is too old. The floor is macOS 10.15 (Catalina), and it's a hard one — the Python this uses simply won't start below it. Updating macOS is the only fix. Any Mac from 2012 onwards can run Catalina. Check it under the Apple menu → About This Mac. Updating macOS fixes it."}}, {"@type": "Question", "name": "Garmin is asking for a two-factor code I never got", "acceptedAnswer": {"@type": "Answer", "text": "That's Garmin's two-factor. The code goes to the email on your Garmin account, or to your authenticator app — check spam if it's email. Run the command again once you have it; retrying costs nothing."}}, {"@type": "Question", "name": "It says there's no sleep data", "acceptedAnswer": {"@type": "Answer", "text": "Your watch wasn't on your wrist overnight, or hasn't synced. Sleep, HRV and overnight body battery only exist if you wear it while asleep. Runs, splits and heart rate all work regardless."}}, {"@type": "Question", "name": "My data looks out of date", "acceptedAnswer": {"@type": "Answer", "text": "Claude reads Garmin Connect, not the watch itself. Open the Garmin Connect app on your phone, let it sync, ask again."}}, {"@type": "Question", "name": "How do I remove it?", "acceptedAnswer": {"@type": "Answer", "text": "Open the sign-in page and use Disconnect. That deletes the stored Garmin session outright, and the connection stops working straight away. Then remove the connector from Claude's settings. Signing in again also retires whatever came before it, so if you ever think a connection has gone somewhere it shouldn't, signing in once more is enough to take it back. Nothing changes on Garmin's side either way. If you ran it yourself instead, delete the garmin-mcp folder in your home directory and the hidden .garmin-mcp folder beside it."}}]}]</script>
 
 <script>
   !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){
@@ -587,11 +588,11 @@
   </nav>
 
   <header>
-    <p class="kicker">Claude&nbsp;&amp;&nbsp;ChatGPT&nbsp;+&nbsp;Garmin Connect</p>
-    <h1>Talk to your training</h1>
+    <p class="kicker">Garmin Connect MCP server</p>
+    <h1>Connect Garmin to Claude&nbsp;&amp; ChatGPT</h1>
     <p class="lede">
-      Your watch already knows everything. This puts it in the conversation — and
-      sends the next session back.
+      Talk to your training. Your watch already knows everything; this puts it
+      in the conversation, and sends the next session back to your wrist.
     </p>
 
     <!-- Filled in by the script below from the server's own count of accounts
@@ -657,7 +658,7 @@
   </section>
 
   <section id="claude">
-    <h2>Setting it up</h2>
+    <h2>How to connect Garmin to Claude</h2>
 
     <ol class="steps">
 
@@ -748,7 +749,7 @@
   </section>
 
   <section id="chatgpt">
-    <h2>Using it in ChatGPT</h2>
+    <h2>How to connect Garmin to ChatGPT</h2>
     <div class="stack">
       <p class="small">
         The same address works in ChatGPT, with two conditions: it needs a
@@ -825,7 +826,7 @@
   </section>
 
   <section id="security">
-    <h2>What it can and can't touch</h2>
+    <h2>Security: what it can and can't touch</h2>
     <div class="stack">
       <p class="small">
         Your Garmin password is never stored. It goes to Garmin, and what comes
@@ -855,7 +856,7 @@
   </section>
 
   <section>
-    <h2>Make it a coach, not a lookup tool</h2>
+    <h2>A running coach prompt for Claude</h2>
     <div class="stack">
       <p>
         Claude will answer questions about your data straight away. It gets sharper if
@@ -909,7 +910,7 @@ Then, working with me:
   </section>
 
   <section id="diy">
-    <h2>Running it yourself instead</h2>
+    <h2>Self-host the Garmin MCP server</h2>
     <div class="stack">
       <p class="small">
         You don&rsquo;t have to use the hosted version. The same tools run entirely
@@ -936,8 +937,8 @@ Then, working with me:
     </div>
   </section>
 
-  <section>
-    <h2>Questions</h2>
+  <section id="faq">
+    <h2>Frequently asked questions</h2>
     <div style="margin-top:14px">
 
       <details>
@@ -1083,7 +1084,7 @@ Then, working with me:
   </section>
 
   <section id="next">
-    <h2>What should be next?</h2>
+    <h2>Which connector should be next?</h2>
     <div class="stack">
       <p class="small">
         Garmin came first because it&rsquo;s what I wear. If you&rsquo;d connect

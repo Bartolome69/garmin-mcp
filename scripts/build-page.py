@@ -12,6 +12,8 @@ of the source's own <title> and <meta name="description">, so a second page
 describes itself rather than inheriting the front page's copy.
 """
 
+import html
+import json
 import re
 import sys
 from pathlib import Path
@@ -155,6 +157,69 @@ def head_for(title: str, description: str, path: str) -> str:
 {BASE_STYLE}"""
 
 
+def _text(fragment: str) -> str:
+    """Visible text of an HTML fragment, on one line."""
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", fragment))).strip()
+
+
+def structured_data(page: str, path: str) -> str:
+    """JSON-LD for search engines: what this is, and the FAQ, kept in sync.
+
+    Only the front page describes the software. The FAQ is read out of the
+    section marked id="faq", so a question added to the page is a question
+    added here; nothing is hand-copied.
+    """
+    blocks: list[dict] = []
+    if path == "/":
+        blocks.append({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "Garmin MCP Server",
+            "url": SITE + "/",
+            "applicationCategory": "HealthApplication",
+            "operatingSystem": "Web, macOS, Linux",
+            "description": (
+                "Open-source MCP server that connects Claude and ChatGPT to a "
+                "Garmin Connect account: reads activities, splits, heart rate and "
+                "sleep, and writes structured workouts onto the watch."
+            ),
+            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+            "license": "https://opensource.org/license/mit",
+            "codeRepository": "https://github.com/Bartolome69/garmin-mcp",
+            "author": {
+                "@type": "Person",
+                "name": "Bart Etcheverry",
+                "url": "https://www.bartetcheverry.com/",
+            },
+        })
+
+    faq = re.search(r'<section id="faq">(.*?)</section>', page, re.S)
+    if faq:
+        pairs = re.findall(
+            r"<details>\s*<summary>(.*?)</summary>\s*<div class=\"answer\">(.*?)</div>\s*</details>",
+            faq.group(1), re.S,
+        )
+        if pairs:
+            blocks.append({
+                "@context": "https://schema.org",
+                "@type": "FAQPage",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": _text(q),
+                        "acceptedAnswer": {"@type": "Answer", "text": _text(a)},
+                    }
+                    for q, a in pairs
+                ],
+            })
+
+    if not blocks:
+        return ""
+    # "</" inside a string would end the script element early.
+    body = json.dumps(blocks if len(blocks) > 1 else blocks[0], ensure_ascii=False)
+    return '<script type="application/ld+json">' + body.replace("</", "<\\/") + "</script>\n"
+
+
 def meta_from(head: str) -> tuple[str, str]:
     """Pull the page's own title and description out of the source head."""
     title = re.search(r"<title>(.*?)</title>", head, re.S)
@@ -190,6 +255,7 @@ def main() -> int:
     dest.write_text(
         head_for(title, description, path)
         + head
+        + structured_data(page, path)
         + ANALYTICS
         + "</head>\n<body>\n"
         + page
