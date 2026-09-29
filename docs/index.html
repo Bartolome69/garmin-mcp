@@ -690,7 +690,7 @@
               <span class="term-label">Connector URL</span>
               <button class="copy" type="button" data-copy="connector">Copy</button>
             </div>
-            <pre><code id="connector">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
+            <pre><code id="connector">https://mcp.garmin.daash.run/mcp</code></pre>
           </div>
           <p class="muted small">
             Claude fills in the rest itself — it should show <em>Sign in
@@ -781,7 +781,7 @@
               <span class="term-label">Connector URL</span>
               <button class="copy" type="button" data-copy="connector-gpt">Copy</button>
             </div>
-            <pre><code id="connector-gpt">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
+            <pre><code id="connector-gpt">https://mcp.garmin.daash.run/mcp</code></pre>
           </div>
           <p class="muted small">
             Add it as a remote MCP server, then sign in to Garmin the same way.
@@ -1139,7 +1139,7 @@ Then, working with me:
     // The server counts accounts that made a request in the last 30 days and
     // serves the total, and nothing else, at /stats. Below the floor the pill
     // stays hidden: "3 people" reassures nobody.
-    var STATS_URL = "https://garmin-mcp-1b4387.fly.dev/stats";
+    var STATS_URL = "https://mcp.garmin.daash.run/stats";
     var STATS_FLOOR = 5;
     try {
       fetch(STATS_URL, {mode: "cors", credentials: "omit"})
