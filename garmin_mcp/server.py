@@ -31,6 +31,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
+from . import plan, progress
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -841,6 +842,49 @@ async def delete_workout(workout_id: int | str, confirm: str = "") -> dict[str, 
 
     await _call(lambda c: c.delete_workout(workout_id))
     return {"deleted": workout_id, "name": name, "note": "Permanently removed."}
+
+
+@mcp.tool()
+@tool_errors
+async def get_progress(weeks: int = 6) -> dict[str, Any]:
+    """Which planned sessions actually got done, week by week.
+
+    Answers "am I keeping up" rather than "what did I run". A session counts if
+    it happened within a day either side of its scheduled day and ran at least
+    roughly as long as planned — people move sessions around, and a week where
+    everything got done on shifted days is a good week, not a failed one.
+
+    Each completed session carries a plain-English reason. Read those back when
+    something looks wrong: a mismatch is visible there rather than hidden.
+
+    Effort is not judged here. This says whether a session happened; whether it
+    was run at the right intensity is yours to assess from get_activity_details.
+
+    Args:
+        weeks: How many weeks back to report, including this one (1-12).
+    """
+    weeks = max(1, min(int(weeks or 6), 12))
+
+    data = await anyio.to_thread.run_sync(plan.collect)
+    planned, actual = progress.from_collected(data)
+    result = progress.match(planned, actual, data["today"])
+
+    weekly = progress.by_week(result, data["today"], weeks)
+    earliest = weekly[0]["week_of"] if weekly else None
+    # collect() reaches further back than the report does, so trim rather than
+    # showing sessions from outside the window the caller asked for.
+    in_window = lambda rows: [r for r in rows if not earliest or r["date"] >= earliest]
+
+    done, missed = in_window(result.done), in_window(result.missed)
+    return {
+        "weeks": weekly,
+        "completed": len(done),
+        "planned": len(done) + len(missed),
+        "sessions": done,
+        "missed": missed,
+        "unplanned": in_window(result.extra),
+        "upcoming": result.upcoming,
+    }
 
 
 # --------------------------------------------------------------------------
