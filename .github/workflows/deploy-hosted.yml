@@ -65,6 +65,12 @@ jobs:
       - name: OAuth
         run: python tests/oauth_test.py
 
+      # Covers the tools themselves rather than the transport — including the
+      # confirmation gate on delete_workout, which is now the most consequential
+      # code path here: it is the only one that destroys anything.
+      - name: Tools
+        run: python tests/smoke_test.py
+
   deploy:
     name: Deploy
     needs: test
