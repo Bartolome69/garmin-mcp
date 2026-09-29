@@ -111,13 +111,12 @@ ANALYTICS = """
 </script>
 """
 
-# The inline SVG is the same mark as the site's accent: a route climbing over
-# three waypoints. Inline so there is no second request and nothing to 404.
-FAVICON = """<link rel="icon" href="data:image/svg+xml,\
-%3Csvg xmlns=&#39;http://www.w3.org/2000/svg&#39; viewBox=&#39;0 0 32 32&#39;%3E\
-%3Crect width=&#39;32&#39; height=&#39;32&#39; rx=&#39;7&#39; fill=&#39;%232F6B4F&#39;/%3E\
-%3Cpath d=&#39;M6 22 L12.5 14 L18 18.5 L26 8.5&#39; fill=&#39;none&#39; stroke=&#39;%23F4F6F3&#39; \
-stroke-width=&#39;3.4&#39; stroke-linecap=&#39;round&#39; stroke-linejoin=&#39;round&#39;/%3E%3C/svg%3E">"""
+# The icon files come from scripts/make-favicon.py. Real URLs rather than an
+# inline data URI, because search results, connector lists and phone home
+# screens all fetch the icon by address and could not see the inline one.
+FAVICON = """<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">"""
 
 BASE_STYLE = """<style>
   html { color-scheme: light; }
