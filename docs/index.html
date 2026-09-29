@@ -156,9 +156,9 @@
   .cta-note { margin-top: 12px; }
 
   /* ---- Top bar ---- */
-  /* One line: the mark and address on the left, the anchors and the beer on
-     the right. The anchors go on a phone; the beer stays, since it is the
-     one thing up here that is not also reachable by scrolling. */
+  /* One line: the mark and address on the left, the anchors on the right.
+     The anchors go on a phone, where everything they point at is a short
+     scroll away. */
   .topbar {
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
     margin-bottom: 44px;
@@ -175,16 +175,8 @@
   .topnav { display: flex; align-items: center; gap: 22px; }
   .topnav a { color: var(--muted); text-decoration: none; font-size: 0.93rem; font-weight: 500; }
   .topnav a:hover { color: var(--ink); }
-  .beer {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 8px 14px; border-radius: 999px;
-    border: 1px solid var(--clay); background: var(--clay-soft);
-    color: var(--clay) !important; font-weight: 600 !important; white-space: nowrap;
-    transition: transform 0.12s ease;
-  }
-  .beer:hover { transform: translateY(-1px); color: var(--clay) !important; }
   @media (max-width: 620px) {
-    .topnav a:not(.beer) { display: none; }
+    .topnav { display: none; }
     .topbar { margin-bottom: 36px; }
   }
 
@@ -540,8 +532,7 @@
 
     document.querySelectorAll("a[href^='http']").forEach(function (a) {
       a.addEventListener("click", function () {
-        var dest = a.href.indexOf("github.com") > -1 ? "github"
-          : a.href.indexOf("buymeacoffee.com") > -1 ? "buymeacoffee" : "other";
+        var dest = a.href.indexOf("github.com") > -1 ? "github" : "other";
         track("clicked_outbound", {destination: dest});
       });
     });
@@ -583,9 +574,6 @@
       <a href="#claude">How it works</a>
       <a href="#chatgpt">ChatGPT</a>
       <a href="#security">Security</a>
-      <a class="beer" href="https://buymeacoffee.com/YOUR-HANDLE" target="_blank" rel="noopener">
-        <span aria-hidden="true">&#127866;</span> Buy me a beer
-      </a>
     </div>
   </nav>
 
@@ -818,11 +806,6 @@
         <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">every line of it on GitHub</a>
         &mdash; including the sign-in page, if you&rsquo;d rather read it than take
         my word.
-      </p>
-      <p class="small">
-        It&rsquo;s free, and it costs me a server each month. If it has earned its
-        place in your training,
-        <a href="https://buymeacoffee.com/YOUR-HANDLE" target="_blank" rel="noopener">buy me a beer</a>.
       </p>
     </div>
   </section>
