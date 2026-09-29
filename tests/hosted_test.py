@@ -210,9 +210,18 @@ async def main() -> int:
         check("unknown connector URL rejected", code == 404, str(code))
         code, body = await anyio_run(fetch, "/")
         check("landing page serves", code == 200 and "Connect Garmin" in body)
+        landing = body
         code, body = await anyio_run(fetch, "/connect")
         check("sign-in form serves",
               code == 200 and "type=password" in body.replace('"', ""))
+
+        # Both pages ask for a Garmin password, so both have to say what happens
+        # to it. These are f-strings interpolating PRIVACY_URL: a stray brace or
+        # a missing prefix renders the placeholder as literal text, which no
+        # other check would notice.
+        for label, page_body in (("landing page", landing), ("sign-in form", body)):
+            check(f"{label} links the privacy policy",
+                  hosted.PRIVACY_URL in page_body and "{PRIVACY_URL}" not in page_body)
 
         # The submitted credentials must reach Garmin. They previously did not:
         # build_client read the environment, so a hosted sign-in used the

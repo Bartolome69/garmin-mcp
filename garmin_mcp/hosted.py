@@ -46,6 +46,14 @@ _PATH_RE = re.compile(r"^/u/(?P<token>[A-Za-z0-9_-]{16,})/mcp/?$")
 # Same shape, unanchored, for scrubbing tokens out of anything we log.
 _PATH_RE_ANY = re.compile(r"/u/[A-Za-z0-9_-]{16,}/mcp")
 
+# Linked from both pages that ask for a Garmin password, because that is where
+# the decision is actually made. Overridable so a self-hosted copy can point at
+# its own policy rather than vouching for mine.
+PRIVACY_URL = (
+    os.environ.get("GARMIN_MCP_PRIVACY_URL", "").strip()
+    or "https://garmin.daash.run/privacy/"
+)
+
 # Sign-up is closed when this is set: friends get the code along with the link.
 # Without it the page is an open door to anyone who finds the host, who can then
 # use it to test Garmin credentials and burn the server's IP on Garmin's rate
@@ -186,6 +194,7 @@ code, .url { font-family:ui-monospace, monospace; font-size:0.85rem;
   background:var(--surface); border:1px solid var(--line); border-radius:8px;
   padding:12px; display:block; word-break:break-all; color:var(--ink) }
 .note { font-size:0.9rem }
+a { color:var(--accent); text-underline-offset:2px }
 """
 
 
@@ -203,7 +212,7 @@ def page(title: str, body: str, status: int = 200) -> HTMLResponse:
 async def index(request: Request) -> Response:
     return page(
         "Garmin for Claude",
-        """
+        f"""
         <h1>Connect Garmin to Claude</h1>
         <p>Sign in once and you'll get a private link to paste into Claude's
         connector settings. No install, and it works on the web and mobile apps
@@ -212,6 +221,9 @@ async def index(request: Request) -> Response:
         written to disk, and is dropped from memory as soon as it has been
         exchanged. Only the access token Garmin issues is kept, encrypted.</p>
         <form method=get action=/connect><button>Get started</button></form>
+        <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
+        target=_blank rel=noopener>What this does with your data</a> &mdash; all
+        of it, in plain English.</p>
         """,
     )
 
@@ -243,6 +255,10 @@ async def connect_form(request: Request) -> Response:
                  autocomplete=current-password>
           <button>Connect</button>
         </form>
+        <p class=note style="margin-top:20px">The password is exchanged with
+        Garmin and discarded; only the token it returns is kept, encrypted.
+        <a href="{PRIVACY_URL}" target=_blank rel=noopener>The rest of what is
+        stored, and what isn&rsquo;t</a>.</p>
         """,
     )
 
