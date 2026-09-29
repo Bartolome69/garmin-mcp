@@ -37,6 +37,7 @@ EXPECTED_TOOLS = {
     "create_strength_workout",
     "unschedule_workout",
     "delete_workout",
+    "get_progress",
 }
 
 
@@ -318,6 +319,25 @@ async def main() -> int:
             )
             check("workout scheduled", scheduled.get("schedule_id") == 777001
                   and scheduled.get("scheduled_for"))
+
+            # -- progress ------------------------------------------------
+            # Before the removal checks below, which delete 555001 out from
+            # under the scheduled session this reads.
+            prog = payload(await sess.call_tool("get_progress", {"weeks": 3}))
+            check("progress reports the planned session",
+                  prog.get("planned") == 1, str(prog)[:200])
+            # The stub's session is scheduled two days after its nearest run,
+            # which is outside the one-day window — so it is missed, and the
+            # runs that did happen are unplanned rather than silently credited.
+            check("a session two days from any run is missed",
+                  prog.get("completed") == 0 and len(prog.get("missed", [])) == 1,
+                  str(prog.get("missed"))[:160])
+            check("the runs that happened are reported as unplanned",
+                  len(prog.get("unplanned", [])) == 3,
+                  str(len(prog.get("unplanned", []))))
+            check("weeks are rolled up", len(prog.get("weeks", [])) == 3
+                  and prog["weeks"][-1]["current"] is True,
+                  str(prog.get("weeks"))[:200])
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout

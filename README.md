@@ -75,6 +75,7 @@ at `python -m garmin_mcp` over stdio.
 | `unschedule_workout(date, schedule_id)` | Takes a workout off a day. Reversible — the workout itself is kept |
 | `delete_workout(workout_id, confirm)` | Deletes a workout. The first call only reads its name back; removing it needs a second call quoting that name |
 | `get_plan_chart(weeks_back, weeks_forward)` | Draws the plan as an image for the conversation: each day's sessions beside what was planned |
+| `get_progress(weeks)` | Which planned sessions actually got done, week by week. Counts a session if it happened within a day either side of its scheduled day |
 | `get_profile()` | VO2 max and personal records — 5k, 10k, half, marathon and the rest |
 | `get_connection_status()` | Whether the server is signed in, which account (masked), and the state of the token cache |
 
