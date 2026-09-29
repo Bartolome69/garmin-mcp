@@ -403,10 +403,13 @@
       try { window.posthog && posthog.capture(name, props || {}); } catch (e) {}
     }
 
-    // The funnel that matters: did they take the install command away with them?
+    // The funnel that matters: did they take the address away with them, and
+    // by which route? copied_install_command now means they chose to self-host
+    // rather than sign in here, which is worth knowing on its own.
     var COPY_EVENTS = {
+      connector: "copied_connector_url",
+      "connector-gpt": "copied_connector_url_chatgpt",
       install: "copied_install_command",
-      register: "copied_register_command",
       coach: "copied_training_prompt"
     };
     document.querySelectorAll("button.copy").forEach(function (btn) {
