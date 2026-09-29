@@ -124,6 +124,99 @@
   .cta .secondary { background: var(--surface); color: var(--ink); border-color: var(--hairline); }
   .cta .secondary:hover { background: var(--sunken); }
   .cta-note { margin-top: 12px; }
+
+  /* ---- Top bar ---- */
+  /* One line: the mark and address on the left, the anchors and the beer on
+     the right. The anchors go on a phone; the beer stays, since it is the
+     one thing up here that is not also reachable by scrolling. */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    margin-bottom: 44px;
+  }
+  .wordmark {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-weight: 700; font-size: 0.98rem; letter-spacing: -0.01em;
+    color: var(--ink); text-decoration: none;
+  }
+  .wordmark svg { width: 26px; height: 26px; flex: none; }
+  .wordmark .m-bg { fill: var(--accent); }
+  .wordmark .m-line { fill: none; stroke: var(--ground); stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
+  .wordmark .tld { color: var(--muted); font-weight: 500; }
+  .topnav { display: flex; align-items: center; gap: 22px; }
+  .topnav a { color: var(--muted); text-decoration: none; font-size: 0.93rem; font-weight: 500; }
+  .topnav a:hover { color: var(--ink); }
+  .beer {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--clay); background: var(--clay-soft);
+    color: var(--clay) !important; font-weight: 600 !important; white-space: nowrap;
+    transition: transform 0.12s ease;
+  }
+  .beer:hover { transform: translateY(-1px); color: var(--clay) !important; }
+  @media (max-width: 620px) {
+    .topnav a:not(.beer) { display: none; }
+    .topbar { margin-bottom: 36px; }
+  }
+
+  /* ---- Live usage ---- */
+  /* Hidden until the number has arrived: a pill that says "0 people" or sits
+     empty while fetching does the opposite of what it is for. */
+  .pulse {
+    display: inline-flex; align-items: center; gap: 9px;
+    margin-top: 20px; padding: 7px 14px 7px 11px;
+    border: 1px solid var(--hairline); border-radius: 999px;
+    background: var(--surface); font-size: 0.9rem; font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .pulse .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 0 var(--accent); animation: pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+    70% { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  /* ---- Trust strip ---- */
+  ul.trust {
+    list-style: none; margin: 22px 0 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 6px 18px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  ul.trust li { display: inline-flex; align-items: center; gap: 7px; }
+  ul.trust li::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: none; }
+  ul.trust a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--hairline); }
+  ul.trust a:hover { color: var(--ink); border-color: var(--ink); }
+
+  /* ---- Suggestion box ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; max-width: var(--measure); }
+  .chips button {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 0.9rem; font-weight: 500; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 8px 14px; cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .chips button:hover { background: var(--sunken); }
+  .chips button[data-voted="1"] { border-color: var(--accent); color: var(--accent-ink); background: var(--surface); cursor: default; }
+  .chips button[data-voted="1"]::before { content: "\2713\00a0"; }
+  form.suggest { display: flex; gap: 8px; margin-top: 14px; max-width: var(--measure); }
+  form.suggest input {
+    flex: 1; min-width: 0; padding: 11px 13px; font: inherit; font-size: 0.95rem;
+    color: var(--ink); background: var(--surface);
+    border: 1px solid var(--hairline); border-radius: var(--radius);
+  }
+  form.suggest input:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+  form.suggest button {
+    font-family: "Archivo", system-ui, sans-serif; font-size: 0.93rem; font-weight: 600;
+    color: var(--ground); background: var(--accent); border: 0;
+    border-radius: var(--radius); padding: 11px 18px; cursor: pointer; white-space: nowrap;
+  }
+  .suggest-thanks { margin-top: 14px; color: var(--accent-ink); font-weight: 500; }
+  @media (max-width: 420px) { form.suggest { flex-direction: column; } }
   @media (max-width: 520px) {
     .cta { flex-direction: column; align-items: stretch; }
     .cta a { justify-content: center; }
@@ -365,12 +458,38 @@
 
 <div class="wrap">
 
+  <nav class="topbar" aria-label="Page">
+    <a class="wordmark" href="/">
+      <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect class="m-bg" width="32" height="32" rx="7"></rect>
+        <path class="m-line" d="M6 22 L12.5 14 L18 18.5 L26 8.5"></path>
+      </svg>
+      garmin<span class="tld">.daash.run</span>
+    </a>
+    <div class="topnav">
+      <a href="#claude">How it works</a>
+      <a href="#chatgpt">ChatGPT</a>
+      <a href="#security">Security</a>
+      <a class="beer" href="https://buymeacoffee.com/YOUR-HANDLE" target="_blank" rel="noopener">
+        <span aria-hidden="true">&#127866;</span> Buy me a beer
+      </a>
+    </div>
+  </nav>
+
   <header>
     <p class="kicker">Claude&nbsp;&amp;&nbsp;ChatGPT&nbsp;+&nbsp;Garmin Connect</p>
     <h1>Talk to your training</h1>
     <p class="lede">
       Your watch already knows everything. This puts it in the conversation — and
       sends the next session back.
+    </p>
+
+    <!-- Filled in by the script below from the server's own count of accounts
+         that made a request in the last 30 days. Stays hidden until it has a
+         number worth showing. -->
+    <p class="pulse" id="pulse" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      <span id="pulse-text"></span>
     </p>
 
     <div class="cta">
@@ -381,6 +500,13 @@
       A free Claude account is enough. ChatGPT needs a paid plan and an
       administrator to switch it on.
     </p>
+
+    <ul class="trust" aria-label="In short">
+      <li><a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">Open source, MIT</a></li>
+      <li>Password never stored</li>
+      <li>Disconnect deletes everything</li>
+      <li>Works in any MCP app</li>
+    </ul>
 
     <svg class="profile" viewBox="0 0 720 76" aria-hidden="true" focusable="false">
       <path class="p-area" d="M0 60 L60 56 L120 52 L180 54 L240 44 L300 40 L360 36 L420 38 L480 28 L540 24 L600 20 L660 18 L720 13 L720 70 L0 70 Z"></path>
@@ -580,10 +706,15 @@
         &mdash; including the sign-in page, if you&rsquo;d rather read it than take
         my word.
       </p>
+      <p class="small">
+        It&rsquo;s free, and it costs me a server each month. If it has earned its
+        place in your training,
+        <a href="https://buymeacoffee.com/YOUR-HANDLE" target="_blank" rel="noopener">buy me a beer</a>.
+      </p>
     </div>
   </section>
 
-  <section>
+  <section id="security">
     <h2>What it can and can't touch</h2>
     <div class="stack">
       <p class="small">
@@ -612,19 +743,6 @@
       </p>
     </div>
   </section>
-
-  <footer>
-    <p>
-      Source on
-      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>,
-      installer included — read it before you run it.
-    </p>
-    <p>
-      Not affiliated with Garmin. It uses the same private API the Garmin Connect
-      website does, so it can break when Garmin changes something.
-    </p>
-    <p><a href="/privacy/">Privacy</a></p>
-  </footer>
 
   <section>
     <h2>Make it a coach, not a lookup tool</h2>
@@ -854,10 +972,105 @@ Then, working with me:
     </div>
   </section>
 
+  <section id="next">
+    <h2>What should be next?</h2>
+    <div class="stack">
+      <p class="small">
+        Garmin came first because it&rsquo;s what I wear. If you&rsquo;d connect
+        something else, tap it. One tap is one vote, nothing else is sent, and
+        it&rsquo;s how I decide what to build.
+      </p>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Connectors people ask for">
+      <button type="button" data-name="Strava">Strava</button>
+      <button type="button" data-name="Oura">Oura</button>
+      <button type="button" data-name="Whoop">Whoop</button>
+      <button type="button" data-name="Apple Health">Apple Health</button>
+      <button type="button" data-name="Coros">Coros</button>
+      <button type="button" data-name="Polar">Polar</button>
+      <button type="button" data-name="Suunto">Suunto</button>
+      <button type="button" data-name="Wahoo">Wahoo</button>
+      <button type="button" data-name="Zwift">Zwift</button>
+      <button type="button" data-name="TrainingPeaks">TrainingPeaks</button>
+      <button type="button" data-name="intervals.icu">intervals.icu</button>
+      <button type="button" data-name="MyFitnessPal">MyFitnessPal</button>
+    </div>
+    <form class="suggest" id="suggest" autocomplete="off">
+      <input id="suggest-other" name="other" type="text" maxlength="80"
+             placeholder="Something else?" aria-label="Something else you would connect">
+      <button type="submit">Send</button>
+    </form>
+    <p class="suggest-thanks" id="suggest-thanks" hidden></p>
+    <p class="muted small" style="margin-top:14px">
+      Want to say more than a name?
+      <a href="https://github.com/Bartolome69/garmin-mcp/issues/new?title=Connector%20request%3A%20" target="_blank" rel="noopener">Open an issue on GitHub</a>.
+    </p>
+  </section>
+
+  <footer>
+    <p>
+      Source on
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>,
+      installer included — read it before you run it.
+    </p>
+    <p>
+      Not affiliated with Garmin. It uses the same private API the Garmin Connect
+      website does, so it can break when Garmin changes something.
+    </p>
+    <p><a href="/privacy/">Privacy</a></p>
+  </footer>
+
 </div>
 
 <script>
   (function () {
+    // ---- Live usage ----
+    // The server counts accounts that made a request in the last 30 days and
+    // serves the total, and nothing else, at /stats. Below the floor the pill
+    // stays hidden: "3 people" reassures nobody.
+    var STATS_URL = "https://garmin-mcp-1b4387.fly.dev/stats";
+    var STATS_FLOOR = 5;
+    try {
+      fetch(STATS_URL, {mode: "cors", credentials: "omit"})
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          var n = data && Number(data.active_30d);
+          if (!n || n < STATS_FLOOR) return;
+          document.getElementById("pulse-text").textContent =
+            n.toLocaleString() + " people used this in the last 30 days";
+          document.getElementById("pulse").hidden = false;
+        })
+        .catch(function () { /* stays hidden */ });
+    } catch (e) { /* no fetch, stays hidden */ }
+
+    // ---- Suggestions ----
+    // The page only records the choice as a custom event; whether anything
+    // listens (the hosted page's analytics do) is not this script's business.
+    var thanks = document.getElementById("suggest-thanks");
+    function suggested(name, via) {
+      document.dispatchEvent(new CustomEvent("suggested", {detail: {name: name, via: via}}));
+      thanks.textContent = "Noted \u2014 " + name + ". Thanks.";
+      thanks.hidden = false;
+    }
+    document.querySelectorAll("#chips button").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        if (chip.dataset.voted) return;
+        chip.dataset.voted = "1";
+        suggested(chip.dataset.name, "chip");
+      });
+    });
+    var form = document.getElementById("suggest");
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var input = document.getElementById("suggest-other");
+        var name = input.value.trim().slice(0, 80);
+        if (!name) { input.focus(); return; }
+        suggested(name, "text");
+        input.value = "";
+      });
+    }
+
     document.querySelectorAll("button.copy").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var target = document.getElementById(btn.dataset.copy);

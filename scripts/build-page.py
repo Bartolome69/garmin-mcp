@@ -81,9 +81,17 @@ ANALYTICS = """
 
     document.querySelectorAll("a[href^='http']").forEach(function (a) {
       a.addEventListener("click", function () {
-        var dest = a.href.indexOf("github.com") > -1 ? "github" : "other";
+        var dest = a.href.indexOf("github.com") > -1 ? "github"
+          : a.href.indexOf("buymeacoffee.com") > -1 ? "buymeacoffee" : "other";
         track("clicked_outbound", {destination: dest});
       });
+    });
+
+    // The suggestion box. One event per tap or send, carrying the name and
+    // nothing else; counting them per name is the whole feature.
+    document.addEventListener("suggested", function (e) {
+      var d = e.detail || {};
+      track("suggested_connector", {name: d.name, via: d.via});
     });
 
     // Did they read far enough to reach the setup steps?

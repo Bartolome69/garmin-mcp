@@ -237,9 +237,17 @@
 
     document.querySelectorAll("a[href^='http']").forEach(function (a) {
       a.addEventListener("click", function () {
-        var dest = a.href.indexOf("github.com") > -1 ? "github" : "other";
+        var dest = a.href.indexOf("github.com") > -1 ? "github"
+          : a.href.indexOf("buymeacoffee.com") > -1 ? "buymeacoffee" : "other";
         track("clicked_outbound", {destination: dest});
       });
+    });
+
+    // The suggestion box. One event per tap or send, carrying the name and
+    // nothing else; counting them per name is the whole feature.
+    document.addEventListener("suggested", function (e) {
+      var d = e.detail || {};
+      track("suggested_connector", {name: d.name, via: d.via});
     });
 
     // Did they read far enough to reach the setup steps?
@@ -405,6 +413,9 @@
         no advertising identifiers, no session recording, and no profile built
         about you. It records that a page was opened and that a button was
         pressed, which is how I know whether the instructions actually work.
+        If you use the box on the front page that asks which connector should
+        be next, the name you tapped or typed is recorded the same way, and
+        that is all it carries.
       </p>
       <p class="small">
         It never receives your email, your Garmin data, or your connector
