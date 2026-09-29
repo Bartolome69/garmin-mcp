@@ -1,16 +1,46 @@
 [project]
+# Publishing to PyPI needs a different name: "garmin-mcp" is taken there by an
+# unrelated project. "garmin-training-mcp" was free when checked. Nothing here
+# depends on it — the import name is garmin_mcp either way.
 name = "garmin-mcp"
 version = "0.1.0"
-description = "Local MCP server exposing read-only Garmin Connect data over stdio"
+description = "MCP server for Garmin Connect: read your training, write workouts onto your watch"
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Bart Etcheverry" }]
+keywords = ["mcp", "garmin", "garmin-connect", "running", "training", "workouts", "claude"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
 dependencies = [
     "mcp>=1.2.0",
     "garminconnect>=0.2.25",
+    # get_plan_chart draws the plan as an image for the conversation.
+    "pillow>=10.0",
 ]
+
+# Only the hosted, multi-user server needs these. A local install talks stdio
+# and never imports them, so they stay out of the default dependency set.
+[project.optional-dependencies]
+hosted = [
+    "cryptography>=42",
+    "uvicorn>=0.30",
+]
+
+[project.urls]
+Homepage = "https://garmin.daash.run"
+Repository = "https://github.com/Bartolome69/garmin-mcp"
+Issues = "https://github.com/Bartolome69/garmin-mcp/issues"
 
 [project.scripts]
 garmin-mcp = "garmin_mcp.server:main"
 garmin-mcp-login = "garmin_mcp.login:main"
+garmin-mcp-doctor = "garmin_mcp.doctor:main"
 
 [build-system]
 requires = ["hatchling"]

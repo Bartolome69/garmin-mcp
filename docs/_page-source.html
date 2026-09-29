@@ -1,4 +1,5 @@
-<title>Garmin for Claude</title>
+<title>Garmin for Claude &amp; ChatGPT</title>
+<meta name="description" content="Connect Claude or ChatGPT to your Garmin Connect account: read your runs, splits and heart rate, and write structured workouts onto your watch.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -67,12 +68,13 @@
     font-size: 17px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
   }
 
   .wrap {
     max-width: 800px;
     margin: 0 auto;
-    padding-inline: 20px;
+    padding-inline: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
     padding-block: 48px 72px;
   }
 
@@ -99,7 +101,45 @@
 
   .lede { font-size: 1.2rem; color: var(--muted); max-width: 54ch; margin-top: 18px; }
 
+  /* ---- Pick a route ---- */
+  /* Primary text is --ground rather than white: on the light theme that is
+     near-white on dark green, and on the dark one near-black on light green,
+     so the pair stays legible without a second rule. */
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+  .cta a {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 13px 22px;
+    border-radius: var(--radius);
+    font-weight: 600;
+    font-size: 0.97rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform 0.12s ease, background 0.12s ease;
+  }
+  .cta a:hover { transform: translateY(-1px); }
+  .cta a:active { transform: translateY(0); }
+  .cta .primary { background: var(--accent); color: var(--ground); }
+  .cta .secondary { background: var(--surface); color: var(--ink); border-color: var(--hairline); }
+  .cta .secondary:hover { background: var(--sunken); }
+  .cta-note { margin-top: 12px; }
+  @media (max-width: 520px) {
+    .cta { flex-direction: column; align-items: stretch; }
+    .cta a { justify-content: center; }
+  }
+
   section { margin-top: 50px; }
+  /* Anchored sections land under the top edge otherwise, with the heading
+     jammed against it — the CTA jumps here, so it is worth the two lines. */
+  section[id] { scroll-margin-top: 24px; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  /* Stops headings breaking with one orphaned word, which the shorter step
+     titles were prone to on narrow screens. */
+  h1, h2, h3 { text-wrap: balance; }
+  .lede, .beat p { text-wrap: pretty; }
   .stack { display: flex; flex-direction: column; gap: 16px; max-width: var(--measure); }
 
   /* ---- The three beats, as waypoints on a climbing profile ---- */
@@ -286,16 +326,46 @@
     .waypoint { width: 34px; height: 34px; font-size: 0.72rem; }
     ol.steps > li:not(:last-child)::before { left: 16px; top: 34px; }
   }
+
+  /* ---- Narrow screens ---- */
+  @media (max-width: 620px) {
+    /* Three boxes across a phone left a two-plus-one orphan row. */
+    .needs { grid-template-columns: 1fr; }
+
+    /* These are read and copied, not scrolled sideways in a 300px window.
+       The URL breaks anywhere; the shell command only at its spaces, so it
+       stays recognisable as one command. */
+    .term pre { overflow-x: visible; }
+    .term code { white-space: pre-wrap; overflow-wrap: break-word; }
+    #install { overflow-wrap: normal; word-break: normal; }
+  }
+
+  /* Anything without a fine pointer: the copy buttons were around 26px tall,
+     and copying the address is the one thing everybody has to do. */
+  @media (pointer: coarse) {
+    button.copy { padding: 11px 16px; font-size: 0.82rem; }
+    .cta a { padding: 15px 22px; }
+    details summary { padding: 17px 0; }
+  }
 </style>
 
 <div class="wrap">
 
   <header>
-    <p class="kicker">Claude&nbsp;+&nbsp;Garmin Connect</p>
+    <p class="kicker">Claude&nbsp;&amp;&nbsp;ChatGPT&nbsp;+&nbsp;Garmin Connect</p>
     <h1>Talk to your training</h1>
     <p class="lede">
       Your watch already knows everything. This puts it in the conversation — and
       sends the next session back.
+    </p>
+
+    <div class="cta">
+      <a class="primary" href="#claude">Connect with Claude</a>
+      <a class="secondary" href="#chatgpt">Connect with ChatGPT</a>
+    </div>
+    <p class="muted small cta-note">
+      A free Claude account is enough. ChatGPT needs a paid plan and an
+      administrator to switch it on.
     </p>
 
     <svg class="profile" viewBox="0 0 720 76" aria-hidden="true" focusable="false">
@@ -311,7 +381,7 @@
       <div class="beat">
         <span class="mark" aria-hidden="true"></span>
         <h3>Connect once</h3>
-        <p>One command, one sign-in. Ten minutes today, then never again.</p>
+        <p>Paste a link, sign in to Garmin. Two minutes, nothing to install, and it works on your phone too.</p>
       </div>
       <div class="beat">
         <span class="mark" aria-hidden="true"></span>
@@ -329,24 +399,14 @@
   <section>
     <h2>Before you start</h2>
     <dl class="needs">
-      <div><dt>Computer</dt><dd>A Mac, macOS 10.15+</dd></div>
-      <div><dt>App</dt><dd>Claude Desktop, installed</dd></div>
-      <div><dt>Account</dt><dd>Garmin Connect login</dd></div>
-      <div><dt>Time</dt><dd>About 10 minutes</dd></div>
+      <div><dt>Account</dt><dd>A Garmin Connect login</dd></div>
+      <div><dt>App</dt><dd>Claude. Free is fine</dd></div>
+      <div><dt>Time</dt><dd>Two minutes</dd></div>
     </dl>
-
-    <div class="note" style="margin-top:22px">
-      <p><strong>How technical is this, honestly?</strong></p>
-      <p>
-        There's nothing to double-click. You paste one line into Terminal, press
-        Return, and answer what it asks. If you can follow a recipe, you can do this.
-        Nothing here can break your Mac, and every step undoes cleanly.
-      </p>
-    </div>
 
   </section>
 
-  <section>
+  <section id="claude">
     <h2>Setting it up</h2>
 
     <ol class="steps">
@@ -354,10 +414,13 @@
       <li>
         <span class="waypoint" aria-hidden="true">01</span>
         <div class="step-body">
-          <h3>Open Terminal</h3>
+          <h3>Open Claude&rsquo;s connector settings</h3>
           <p class="muted small">
-            <strong>Cmd + Space</strong>, type <em>Terminal</em>, press Return. A window
-            with a blinking cursor appears. It's just somewhere to paste instructions.
+            On <strong>claude.ai</strong>: Settings → Connectors →
+            <strong>Add custom connector</strong>. It has to be claude.ai
+            rather than the Claude app — the app can use a connector but
+            can&rsquo;t add one. Your phone&rsquo;s browser counts, and once
+            it&rsquo;s added the app picks it up by itself.
           </p>
         </div>
       </li>
@@ -365,17 +428,17 @@
       <li>
         <span class="waypoint" aria-hidden="true">02</span>
         <div class="step-body">
-          <h3>Paste this, press Return</h3>
+          <h3>Paste this address</h3>
           <div class="term">
             <div class="term-head">
-              <span class="term-label">Terminal</span>
-              <button class="copy" type="button" data-copy="install">Copy</button>
+              <span class="term-label">Connector URL</span>
+              <button class="copy" type="button" data-copy="connector">Copy</button>
             </div>
-            <pre><code id="install"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Bartolome69/garmin-mcp/main/scripts/bootstrap.sh | bash</code></pre>
+            <pre><code id="connector">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
           </div>
           <p class="muted small">
-            Downloads the code, sets up Python, gets everything ready. Two or three
-            minutes the first time. Text will scroll past — let it.
+            Claude fills in the rest itself — it should show <em>Sign in
+            now</em> selected. Leave it as it is and press Add.
           </p>
         </div>
       </li>
@@ -385,63 +448,160 @@
         <div class="step-body">
           <h3>Sign in to Garmin</h3>
           <p class="muted small">
-            It asks for your email, your password, and a code if you use two-factor.
+            Claude sends you to a sign-in page. Your Garmin email and password,
+            plus a two-factor code if you use one. It returns you to Claude
+            on its own.
+          </p>
+          <p class="muted small">
+            Rather not hand your Garmin login to a site that isn&rsquo;t Garmin?
+            <a href="#diy">Run the whole thing on your own machine instead</a>.
           </p>
           <div class="note">
             <p class="small">
-              <strong>Your password won't appear as you type.</strong> No dots, no stars,
-              nothing at all. That's deliberate, not a frozen screen — type it and press
-              Return.
+              <strong>Your password is never stored.</strong> It goes straight to
+              Garmin, is never written to disk, and is dropped from memory the
+              moment Garmin accepts it. Only the access token Garmin issues is
+              kept, encrypted.
             </p>
           </div>
-          <p class="muted small">
-            It goes straight to Garmin and is never written to disk. Only the session
-            token comes back, saved in a file only you can read.
-          </p>
         </div>
       </li>
 
       <li>
         <span class="waypoint" aria-hidden="true">04</span>
         <div class="step-body">
-          <h3>Quit Claude, run one more line</h3>
+          <h3>Ask it something</h3>
           <p class="muted small">
-            Claude Desktop rewrites its own settings when it closes, so it has to be
-            properly shut. <strong>Cmd + Q</strong> — closing the window isn't enough.
-            Then, back in Terminal:
-          </p>
-          <div class="term">
-            <div class="term-head">
-              <span class="term-label">Terminal</span>
-              <button class="copy" type="button" data-copy="register">Copy</button>
-            </div>
-            <pre><code id="register"><span class="prompt">$ </span>~/garmin-mcp/scripts/install-claude-desktop.sh</code></pre>
-          </div>
-          <p class="muted small">
-            If Claude is still open it says so and changes nothing, so you can't get
-            this wrong. Skip it entirely if step 02 already said "Done".
-          </p>
-        </div>
-      </li>
-
-      <li>
-        <span class="waypoint" aria-hidden="true">05</span>
-        <div class="step-body">
-          <h3>Open Claude and ask</h3>
-          <p class="muted small">
-            Start a new chat. If it comes back with your real numbers, you're done.
+            Start a new chat. Real numbers back means you’re done — on the
+            laptop and the phone, without setting up the phone.
           </p>
           <ul class="asks">
             <li>"What did my last run look like? Break it down by kilometre."</li>
             <li>"Has my resting heart rate moved over the past two weeks?"</li>
             <li>"Am I running everything at the same effort? Check my last ten runs."</li>
             <li>"Build me a threshold session for Thursday and put it on my watch."</li>
+            <li>"Write me a push day &mdash; bench, overhead press, some triceps work."</li>
           </ul>
         </div>
       </li>
 
     </ol>
   </section>
+
+  <section id="chatgpt">
+    <h2>Using it in ChatGPT</h2>
+    <div class="stack">
+      <p class="small">
+        The same address works in ChatGPT, with two conditions: it needs a
+        <strong>paid plan</strong> — Plus, Pro, Business, Enterprise or Edu — and
+        you have to be an administrator of that account to turn the setting on.
+        ChatGPT&rsquo;s free tier can&rsquo;t add connectors at all.
+      </p>
+    </div>
+
+    <ol class="steps">
+
+      <li>
+        <span class="waypoint" aria-hidden="true">01</span>
+        <div class="step-body">
+          <h3>Turn on developer mode</h3>
+          <p class="muted small">
+            On the web, <strong>Settings &rarr; Connectors &rarr; Advanced</strong>,
+            and switch on <strong>Developer mode</strong>. It&rsquo;s off by default.
+          </p>
+        </div>
+      </li>
+
+      <li>
+        <span class="waypoint" aria-hidden="true">02</span>
+        <div class="step-body">
+          <h3>Add the same address</h3>
+          <div class="term">
+            <div class="term-head">
+              <span class="term-label">Connector URL</span>
+              <button class="copy" type="button" data-copy="connector-gpt">Copy</button>
+            </div>
+            <pre><code id="connector-gpt">https://garmin-mcp-1b4387.fly.dev/mcp</code></pre>
+          </div>
+          <p class="muted small">
+            Add it as a remote MCP server, then sign in to Garmin the same way.
+          </p>
+        </div>
+      </li>
+
+    </ol>
+
+    <div class="note">
+      <p><strong>Deep Research won&rsquo;t see it.</strong></p>
+      <p class="small">
+        That mode only ever calls two specific tools, which this doesn&rsquo;t
+        have. Ordinary chat works fine. ChatGPT&rsquo;s connector support is also
+        less settled than Claude&rsquo;s — if something behaves oddly there and
+        not here, that&rsquo;s usually why.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Who made this</h2>
+    <div class="stack">
+      <p>
+        I&rsquo;m Bart Etcheverry &mdash; I build software, and I run. This started
+        because I wanted to ask Claude about my own training and there wasn&rsquo;t
+        a good way to. Friends asked for it, so here it is.
+      </p>
+      <p class="small">
+        <a href="https://www.bartetcheverry.com/" target="_blank" rel="noopener">bartetcheverry.com</a>
+        &middot;
+        <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">every line of it on GitHub</a>
+        &mdash; including the sign-in page, if you&rsquo;d rather read it than take
+        my word.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it can and can't touch</h2>
+    <div class="stack">
+      <p class="small">
+        Your Garmin password is never stored. It goes to Garmin, and what comes
+        back is an access token, kept encrypted on the server that runs this.
+        Signing in again, or Disconnect, destroys it — either one takes the
+        connection back straight away.
+      </p>
+      <p class="small">
+        Reading is unrestricted: daily summaries, sleep, activities, splits, heart-rate
+        zones. Writing stays inside the workout library — building a session, putting
+        it on a date, taking it back off, and deleting one you're done with.
+      </p>
+      <p class="small">
+        Deleting asks first, and the check isn't advisory: the first attempt only reads
+        the workout's name back to you, and it takes a second one quoting that name to
+        remove anything.
+      </p>
+      <p class="small">
+        What it can't reach is your training history. No tool here deletes or edits a
+        recorded activity, so a run you've actually done can't be lost through this,
+        however badly a request is worded.
+      </p>
+      <p class="small muted">
+        <a href="/privacy/">What's stored, and what isn't</a>
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Source on
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>,
+      installer included — read it before you run it.
+    </p>
+    <p>
+      Not affiliated with Garmin. It uses the same private API the Garmin Connect
+      website does, so it can break when Garmin changes something.
+    </p>
+    <p><a href="/privacy/">Privacy</a></p>
+  </footer>
 
   <section>
     <h2>Make it a coach, not a lookup tool</h2>
@@ -450,19 +610,22 @@
         Claude will answer questions about your data straight away. It gets sharper if
         you tell it how to work first.
       </p>
-      <p class="muted small">
-        Nothing to fill in. Paste it in and it interviews you — reading your personal
-        bests back from Garmin to check they're current, asking how you feel against
-        them, what you're aiming at next, and what your real max heart rate is. Four
-        questions, one message.
-      </p>
-      <p class="muted small">
-        Once you've answered, paste your answers underneath it and later chats can skip
-        the interview.
-      </p>
     </div>
 
-    <div class="promptbox" style="margin-top:20px">
+    <details style="margin-top:8px">
+      <summary>Show the prompt</summary>
+      <div class="answer">
+        <p>
+          Nothing to fill in. Paste it in and it interviews you &mdash; reading your
+          personal bests back from Garmin to check they&rsquo;re current, asking how
+          you feel against them, what you&rsquo;re aiming at next, and what your real
+          max heart rate is. Four questions, one message.
+        </p>
+        <p>
+          Once you&rsquo;ve answered, paste your answers underneath it and later
+          chats can skip the interview.
+        </p>
+        <div class="promptbox" style="margin-top:20px">
       <div class="promptbox-head">
         <span class="term-label">Training prompt</span>
         <button class="copy light" type="button" data-copy="coach">Copy</button>
@@ -486,14 +649,70 @@ Then, working with me:
 - Notice the boring things that matter: pace drifting up at the same heart rate, cadence dropping late in runs, every run landing in the same narrow effort band, resting heart rate creeping.
 - If get_sleep_data comes back empty several nights running, I don't wear the watch overnight. Say so once, then stop building on recovery metrics I don't have.
 - When I ask for a session, build it with create_workout and schedule it with schedule_workout so it reaches my watch. Show me the structure and wait for me to confirm — those write to my real account.
+- If I want something gone, unschedule_workout takes it off the calendar and keeps it; delete_workout removes it for good and will make you confirm its name. Tell me what is about to go and wait for my answer before you confirm it.
 - Prefer one specific, well-argued recommendation to a menu of options.
 - You're not a doctor or physio. If something looks like an injury or health question, say so plainly and stop there.</pre>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section id="diy">
+    <h2>Running it yourself instead</h2>
+    <div class="stack">
+      <p class="small">
+        You don&rsquo;t have to use the hosted version. The same tools run entirely
+        on your own machine, with your Garmin session never leaving it — and on a
+        work account where an administrator controls connectors, it&rsquo;s the way
+        in. It takes a Mac, a Terminal window and about ten minutes.
+      </p>
+      <div class="term">
+        <div class="term-head">
+          <span class="term-label">Terminal</span>
+          <button class="copy" type="button" data-copy="install">Copy</button>
+        </div>
+        <pre><code id="install"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Bartolome69/garmin-mcp/main/scripts/bootstrap.sh | bash</code></pre>
+      </div>
+      <p class="small">
+        It fetches the code, sets up Python, signs you in to Garmin and registers
+        everything with Claude Desktop. Quit Claude fully first — Cmd + Q, not just
+        the window. The
+        <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">repo</a>
+        has the detail, including Cursor, VS Code and Zed, which all speak the same
+        protocol. This route is desktop only: a local server can&rsquo;t reach your
+        phone, which is the main reason the hosted version exists.
+      </p>
     </div>
   </section>
 
   <section>
-    <h2>When it doesn't work</h2>
+    <h2>Questions</h2>
     <div style="margin-top:14px">
+
+      <details>
+        <summary>How technical is this, honestly?</summary>
+        <div class="answer">
+          <p>
+            Not very. You paste a link into Claude's settings, sign in to Garmin
+            the way you would on any website, and that's it. No Terminal, no
+            install, nothing to keep running on your computer.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>My Claude account is through work — does that matter?</summary>
+        <div class="answer">
+          <p>
+            Yes. On Team and Enterprise plans only an administrator can add
+            connectors, so a member can't do this themselves.
+          </p>
+          <p>
+            A personal account — free is fine — sidesteps it, and keeps your
+            health data off a work login, which is where it belongs anyway.
+          </p>
+        </div>
+      </details>
 
       <details>
         <summary>It mentioned being rate limited, or a 429</summary>
@@ -516,35 +735,31 @@ Then, working with me:
         <summary>Claude can't find any Garmin tools</summary>
         <div class="answer">
           <p>
-            First, ask it what's wrong. Paste this into Terminal — it checks every link
-            in the chain and names the broken one:
-          </p>
-          <div class="term">
-            <div class="term-head">
-              <span class="term-label">Terminal</span>
-              <button class="copy" type="button" data-copy="doctor">Copy</button>
-            </div>
-            <pre><code id="doctor"><span class="prompt">$ </span>~/garmin-mcp/scripts/doctor.sh</code></pre>
-          </div>
-          <p>
-            Nearly always it's step 04. Claude Desktop must be <strong>fully quit</strong>
-            (Cmd + Q) when the settings are written, or it overwrites them with its own
-            copy on the way out and the connection quietly vanishes.
+            An existing chat keeps talking to the connection it started with, so
+            the first thing to try is simply a <strong>new chat</strong>. That
+            fixes it more often than anything else.
           </p>
           <p>
-            One more thing that catches people: an existing chat keeps talking to the
-            server it started with. After fixing anything, start a <strong>new</strong>
-            chat rather than continuing the old one.
+            If it still can't see them, open
+            <strong>Settings &rarr; Connectors</strong> and check the Garmin entry
+            is there and connected. Removing it and adding it again is safe —
+            you'll just sign in to Garmin once more.
           </p>
           <p>
-            Quit it properly, run the step 04 command again, reopen. A fresh chat helps
-            too.
+            On a <strong>free Claude account you get one custom connector</strong>.
+            If you already have another one, it holds the only slot and this
+            won't add until you remove it.
+          </p>
+          <p>
+            On a <strong>work account</strong> — Team or Enterprise — members
+            can't add connectors at all; an administrator has to. A personal
+            account avoids that.
           </p>
         </div>
       </details>
 
       <details>
-        <summary>It failed while installing, mentioning Rust, OpenSSL or a compiler</summary>
+        <summary>Running it yourself failed, mentioning Rust, OpenSSL or a compiler</summary>
         <div class="answer">
           <p>
             Your macOS is too old. The floor is <strong>macOS 10.15 (Catalina)</strong>,
@@ -560,7 +775,7 @@ Then, working with me:
       </details>
 
       <details>
-        <summary>It wants a code I never received</summary>
+        <summary>Garmin is asking for a two-factor code I never got</summary>
         <div class="answer">
           <p>
             That's Garmin's two-factor. The code goes to the email on your Garmin
@@ -595,66 +810,26 @@ Then, working with me:
         <summary>How do I remove it?</summary>
         <div class="answer">
           <p>
-            Delete the <code class="inline">garmin-mcp</code> folder in your home
-            directory and the hidden <code class="inline">.garmin-mcp</code> folder
-            beside it — that's the saved session gone. Then drop the "garmin" entry from
-            Claude Desktop's settings. Nothing is installed anywhere else, and nothing
-            changes on Garmin's side.
+            Open the sign-in page and use <strong>Disconnect</strong>. That deletes
+            the stored Garmin session outright, and the connection stops working
+            straight away. Then remove the connector from Claude's settings.
+          </p>
+          <p>
+            Signing in again also retires whatever came before it, so if you ever
+            think a connection has gone somewhere it shouldn't, signing in once
+            more is enough to take it back.
+          </p>
+          <p>
+            Nothing changes on Garmin's side either way. If you ran it yourself
+            instead, delete the <code class="inline">garmin-mcp</code> folder in
+            your home directory and the hidden <code class="inline">.garmin-mcp</code>
+            folder beside it.
           </p>
         </div>
       </details>
 
     </div>
   </section>
-
-  <section>
-    <h2>Somewhere other than Claude Desktop</h2>
-    <div class="stack">
-      <p class="small">
-        None of this is Claude-specific underneath — it speaks MCP, an open standard.
-        Anything that can start a local MCP server will run it: Claude Code, Cursor,
-        VS Code, Zed, Windsurf. Point them at
-        <code class="inline">python -m garmin_mcp</code> over stdio; the
-        <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">repo</a>
-        has the config.
-      </p>
-      <p class="small">
-        <strong>ChatGPT is the exception, and it's a hard no.</strong> Its connectors
-        need a public web address to call, because ChatGPT runs on OpenAI's servers and
-        can't start a program on your laptop. No setting changes that, and no amount of
-        fiddling will get this working there.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>What it can and can't touch</h2>
-    <div class="stack">
-      <p class="small">
-        Everything runs on your own Mac. Your data goes nowhere except between your
-        computer and Garmin, and your password is never stored.
-      </p>
-      <p class="small">
-        Reading is unrestricted: daily summaries, sleep, activities, splits, heart-rate
-        zones. Writing is limited to two things by design — creating a workout, and
-        putting it on a date. There is no tool that deletes or overwrites anything in
-        your Garmin account. The worst it can do is leave you a session you didn't
-        want, which you bin in the Garmin app like any other.
-      </p>
-    </div>
-  </section>
-
-  <footer>
-    <p>
-      Source on
-      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>,
-      installer included — read it before you run it.
-    </p>
-    <p>
-      Not affiliated with Garmin. It uses the same private API the Garmin Connect
-      website does, so it can break when Garmin changes something.
-    </p>
-  </footer>
 
 </div>
 

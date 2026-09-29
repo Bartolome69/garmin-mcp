@@ -16,3 +16,8 @@ garminconnect==0.3.16
 cryptography==50.0.1
 
 uvicorn==0.54.0
+
+# get_plan_chart draws the plan as a PNG for the conversation. chart.py is
+# imported inside that tool rather than at module load, so the server starts
+# without this — but the tool is advertised, so it has to work when called.
+pillow==12.3.0

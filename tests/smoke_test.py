@@ -32,8 +32,11 @@ EXPECTED_TOOLS = {
     "create_workout",
     "schedule_workout",
     "get_profile",
+    "get_plan_chart",
     "find_exercises",
     "create_strength_workout",
+    "unschedule_workout",
+    "delete_workout",
 }
 
 
@@ -315,6 +318,73 @@ async def main() -> int:
             )
             check("workout scheduled", scheduled.get("schedule_id") == 777001
                   and scheduled.get("scheduled_for"))
+
+            # -- removal ------------------------------------------------
+            # Unscheduling is the reversible one: off the calendar, workout
+            # kept. Resolved from the date, which is how a person refers to it.
+            cleared = payload(
+                await sess.call_tool("unschedule_workout", {"date": "2026-09-24"})
+            )
+            check("unscheduled by date", cleared.get("unscheduled") == 900001,
+                  str(cleared)[:140])
+            check("unschedule keeps the workout",
+                  "kept" in (cleared.get("note") or ""))
+
+            empty_day = payload(
+                await sess.call_tool("unschedule_workout", {"date": "2026-09-25"})
+            )
+            check("nothing scheduled reports cleanly",
+                  empty_day.get("unscheduled") is None and "error" not in empty_day,
+                  str(empty_day)[:140])
+
+            # The gate. An unconfirmed call must not delete, and the proof is
+            # that the workout is still listed afterwards — not merely that the
+            # response said so.
+            unconfirmed = payload(
+                await sess.call_tool("delete_workout", {"workout_id": 555001})
+            )
+            check("delete asks first",
+                  unconfirmed.get("confirmation_required") is True
+                  and unconfirmed.get("name") == "Thursday Threshold",
+                  str(unconfirmed)[:160])
+
+            still_there = payload(await sess.call_tool("list_workouts", {}))
+            check("unconfirmed delete left the workout alone",
+                  any(w.get("workout_id") == 555001
+                      for w in still_there.get("workouts", [])),
+                  str(still_there)[:160])
+
+            wrong = payload(
+                await sess.call_tool(
+                    "delete_workout",
+                    {"workout_id": 555001, "confirm": "Something Else"},
+                )
+            )
+            check("wrong name does not delete",
+                  wrong.get("confirmation_required") is True, str(wrong)[:140])
+
+            gone = payload(
+                await sess.call_tool(
+                    "delete_workout",
+                    # Deliberately different spacing and case: the check has to
+                    # be about identity, not transcription.
+                    {"workout_id": 555001, "confirm": "thursday   threshold"},
+                )
+            )
+            check("confirmed delete goes through",
+                  gone.get("deleted") == 555001, str(gone)[:140])
+
+            after = payload(await sess.call_tool("list_workouts", {}))
+            check("deleted workout is gone from the library",
+                  not any(w.get("workout_id") == 555001
+                          for w in after.get("workouts", [])),
+                  str(after)[:160])
+
+            missing = payload(
+                await sess.call_tool("delete_workout", {"workout_id": 555001})
+            )
+            check("deleting an unknown workout errors",
+                  "error" in missing, str(missing)[:140])
 
             bad_step = payload(
                 await sess.call_tool(

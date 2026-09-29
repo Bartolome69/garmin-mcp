@@ -1,0 +1,376 @@
+<title>Privacy — Garmin for Claude</title>
+<meta name="description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #F4F6F3;
+    --surface: #FFFFFF;
+    --sunken: #E8EDE8;
+    --ink: #17211B;
+    --muted: #55655B;
+    --hairline: #D3DBD3;
+    --accent: #2F6B4F;
+    --accent-ink: #235340;
+    --clay: #BC5A2A;
+    --clay-soft: #F6ECE5;
+    --radius: 10px;
+    --measure: 66ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0E1512;
+      --surface: #16201A;
+      --sunken: #1D2922;
+      --ink: #E3ECE5;
+      --muted: #9AAC9F;
+      --hairline: #27352C;
+      --accent: #63BC8E;
+      --accent-ink: #7FCBA1;
+      --clay: #E08A5A;
+      --clay-soft: #2A1E17;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0E1512;
+    --surface: #16201A;
+    --sunken: #1D2922;
+    --ink: #E3ECE5;
+    --muted: #9AAC9F;
+    --hairline: #27352C;
+    --accent: #63BC8E;
+    --accent-ink: #7FCBA1;
+    --clay: #E08A5A;
+    --clay-soft: #2A1E17;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Archivo", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap {
+    max-width: 800px;
+    margin: 0 auto;
+    padding-inline: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
+    padding-block: 48px 72px;
+  }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; }
+  h1 { font-size: clamp(2.1rem, 7vw, 3rem); font-weight: 800; line-height: 1.04; max-width: 17ch; }
+  h2 { font-size: clamp(1.3rem, 4vw, 1.6rem); font-weight: 700; line-height: 1.15; }
+
+  p { margin: 0; text-wrap: pretty; }
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; border-radius: 3px; }
+
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  /* The back link is the kicker slot, so the page keeps the front page's
+     silhouette while still being escapable in one tap. */
+  .kicker a { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; }
+
+  .lede { font-size: 1.15rem; color: var(--muted); max-width: 56ch; margin-top: 18px; }
+  .stamp {
+    margin-top: 14px; font-size: 0.86rem; color: var(--muted);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  section { margin-top: 46px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; max-width: var(--measure); margin-top: 14px; }
+  .small { font-size: 0.94rem; }
+  .muted { color: var(--muted); }
+
+  /* ---- The summary table, same shape as "Before you start" ---- */
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 26px;
+  }
+  .facts div { background: var(--surface); padding: 15px 17px; }
+  .facts dt {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .facts dd { margin: 0; font-weight: 500; font-size: 0.95rem; }
+  @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
+
+  .note {
+    border-left: 3px solid var(--clay);
+    background: var(--clay-soft);
+    padding: 15px 17px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    max-width: var(--measure);
+    margin-top: 16px;
+  }
+  .note p + p { margin-top: 10px; }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; max-width: var(--measure); }
+  ul.plain li {
+    display: grid; grid-template-columns: 18px 1fr; gap: 11px;
+    align-items: baseline; font-size: 0.95rem;
+  }
+  ul.plain li::before {
+    content: "—";
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--accent); font-size: 0.8rem;
+  }
+  ul.plain strong { color: var(--ink); }
+
+  code.inline {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.86em; background: var(--sunken); padding: 1px 5px; border-radius: 4px;
+    overflow-wrap: anywhere;
+  }
+
+  footer {
+    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--hairline);
+    color: var(--muted); font-size: 0.9rem;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="kicker"><a href="/">&larr;&nbsp;Garmin for Claude</a></p>
+    <h1>What this does with your data</h1>
+    <p class="lede">
+      You are about to give a stranger&rsquo;s website your Garmin login. That
+      deserves a straight answer rather than four pages of legal throat-clearing,
+      so here is the whole of it.
+    </p>
+    <p class="stamp">Last updated 29 September 2026</p>
+
+    <dl class="facts">
+      <div><dt>Password</dt><dd>Never stored, anywhere</dd></div>
+      <div><dt>Kept</dt><dd>One encrypted Garmin token</dd></div>
+      <div><dt>Sold or shared</dt><dd>Never, to anyone</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>Your Garmin password</h2>
+    <div class="stack">
+      <p class="small">
+        When you sign in, your email and password are passed straight to Garmin
+        to be exchanged for an access token. The password is never written to
+        disk, never logged, and is dropped from memory the moment Garmin accepts
+        it. It is not kept in any form &mdash; not encrypted, not hashed, not at
+        all &mdash; so nobody can recover it later, including me.
+      </p>
+      <p class="small">
+        If you would rather not type it here at all, that is a reasonable
+        instinct. <a href="/#diy">Run the whole thing on your own machine</a>
+        and your Garmin session never leaves it.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What is stored, and where</h2>
+    <div class="stack">
+      <p class="small">
+        One row per person, on a single server in London, run by
+        <a href="https://fly.io" target="_blank" rel="noopener">Fly.io</a>. That
+        row holds:
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li>
+        <span><strong>The access token Garmin issued you</strong>, encrypted at
+        rest. This is the part that does the work &mdash; it is what lets the
+        connector read your training without asking you to sign in again.</span>
+      </li>
+      <li>
+        <span><strong>A masked version of your email</strong> &mdash; the first
+        letter and the domain, like <code class="inline">b****@gmail.com</code>.
+        It exists so you can tell which account is connected. The full address
+        is not stored.</span>
+      </li>
+      <li>
+        <span><strong>A one-way fingerprint of your email.</strong> Signing in
+        again has to recognise you in order to retire your previous session, and
+        that is the only thing this is for. It cannot be turned back into your
+        address.</span>
+      </li>
+      <li>
+        <span><strong>Two timestamps</strong>, for when the connection was made
+        and last used.</span>
+      </li>
+    </ul>
+    <div class="stack">
+      <p class="small">
+        Nothing from Garmin is cached: no activities, no heart rate, no sleep, no
+        location. Each question fetches from Garmin fresh and the answer is gone
+        when the request ends. There is no copy of your training history on this
+        server to leak, subpoena or lose.
+      </p>
+      <p class="small">
+        Your IP address is held in memory for a few minutes so that repeated
+        failed sign-ins can be slowed down. It is never written to disk, and the
+        web server&rsquo;s request log is switched off precisely so that private
+        connector addresses do not end up in it.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it can do inside your Garmin account</h2>
+    <div class="stack">
+      <p class="small">
+        <strong>Reading is unrestricted.</strong> Activities, splits, heart-rate
+        zones, daily summaries, sleep, body battery, personal records &mdash; the
+        same things you see in the Garmin Connect app.
+      </p>
+      <p class="small">
+        <strong>Writing stays inside the workout library:</strong> creating a
+        workout, putting it on a date, taking it off again, and deleting one you
+        no longer want. Deleting is gated rather than merely discouraged &mdash;
+        the first attempt only reads the workout&rsquo;s name back, and removing
+        it takes a second one quoting that name, so nothing goes without having
+        been named out loud first.
+      </p>
+      <p class="small">
+        <strong>Your training history is out of reach.</strong> There is no tool
+        that deletes or edits a recorded activity, changes your profile, posts
+        anything, or touches anyone else&rsquo;s account. A run you actually did
+        cannot be lost through this, whatever is asked of it.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Who else sees your training data</h2>
+    <div class="stack">
+      <p class="small">
+        This is the part people miss, so it gets said plainly.
+      </p>
+    </div>
+    <div class="note">
+      <p><strong>Whatever you ask for arrives in your chat.</strong></p>
+      <p class="small">
+        Once your Garmin data is in a conversation, it is in that conversation
+        &mdash; which means Anthropic or OpenAI handle it under
+        <em>their</em> privacy policy, exactly as they handle everything else you
+        type. If you are not comfortable with your resting heart rate sitting in
+        your chat history, this tool is not for you, and no promise I make about
+        my own server changes that.
+      </p>
+    </div>
+    <div class="stack">
+      <p class="small">
+        Beyond that: nothing is sold, rented, or handed to advertisers, data
+        brokers or anyone else. There is no third party with access to the
+        database. It is one server, one person, no business model.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>This website</h2>
+    <div class="stack">
+      <p class="small">
+        These pages count views using
+        <a href="https://posthog.com" target="_blank" rel="noopener">PostHog</a>
+        on its European servers, configured to leave nothing behind: no cookies,
+        no advertising identifiers, no session recording, and no profile built
+        about you. It records that a page was opened and that a button was
+        pressed, which is how I know whether the instructions actually work.
+      </p>
+      <p class="small">
+        It never receives your email, your Garmin data, or your connector
+        address. That is also why this site has no cookie banner &mdash; there is
+        nothing to ask you to consent to.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Getting rid of it</h2>
+    <div class="stack">
+      <p class="small">
+        Open the sign-in page and choose <strong>Disconnect</strong>. That deletes
+        your row outright &mdash; token, masked email, fingerprint, timestamps
+        &mdash; and the connection stops working immediately. Nothing is retained
+        afterwards, so there is no backlog to request a copy of or ask to be
+        forgotten from.
+      </p>
+      <p class="small">
+        Signing in again has the same effect on whatever came before it: the old
+        session is destroyed as the new one is created. If you ever think a
+        connection has ended up somewhere it shouldn&rsquo;t, signing in once more
+        takes it back.
+      </p>
+      <p class="small">
+        Removing the connector in Claude or ChatGPT is worth doing too, but it
+        only removes it at their end. The Disconnect button is what deletes the
+        stored session here. Nothing changes on Garmin&rsquo;s side either way.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The bits that are legally dull but true</h2>
+    <div class="stack">
+      <p class="small">
+        This is a personal project run by Bart Etcheverry, in the UK. It is not
+        affiliated with, endorsed by, or connected to Garmin, Anthropic or
+        OpenAI. It reaches Garmin through the same private interface the Garmin
+        Connect website uses, which is why it can break when Garmin changes
+        something.
+      </p>
+      <p class="small">
+        It is not intended for children under 13, and it is not a medical device
+        &mdash; nothing it tells you is medical advice.
+      </p>
+      <p class="small">
+        If this policy changes, the date at the top changes with it, and the
+        <a href="https://github.com/Bartolome69/garmin-mcp/commits/main/docs" target="_blank" rel="noopener">edit
+        history is public</a> like the rest of it. Questions, or anything here
+        that turns out not to match the code:
+        <a href="https://github.com/Bartolome69/garmin-mcp/issues" target="_blank" rel="noopener">open
+        an issue</a>, or find me at
+        <a href="https://www.bartetcheverry.com/" target="_blank" rel="noopener">bartetcheverry.com</a>.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Every claim on this page is checkable: the storage layer is
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/store.py" target="_blank" rel="noopener">store.py</a>
+      and the sign-in server is
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/hosted.py" target="_blank" rel="noopener">hosted.py</a>.
+      Don&rsquo;t take my word for it.
+    </p>
+    <p><a href="/">&larr; Back to setting it up</a></p>
+  </footer>
+
+</div>

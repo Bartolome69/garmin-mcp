@@ -72,6 +72,9 @@ at `python -m garmin_mcp` over stdio.
 | `list_workouts(limit)` | Structured workouts saved in the account |
 | `create_workout(name, steps, sport, description)` | Builds a structured workout and adds it to Garmin Connect |
 | `schedule_workout(workout_id, date)` | Puts a workout on a date, which is what syncs it to the watch |
+| `unschedule_workout(date, schedule_id)` | Takes a workout off a day. Reversible — the workout itself is kept |
+| `delete_workout(workout_id, confirm)` | Deletes a workout. The first call only reads its name back; removing it needs a second call quoting that name |
+| `get_plan_chart(weeks_back, weeks_forward)` | Draws the plan as an image for the conversation: each day's sessions beside what was planned |
 | `get_profile()` | VO2 max and personal records — 5k, 10k, half, marathon and the rest |
 | `get_connection_status()` | Whether the server is signed in, which account (masked), and the state of the token cache |
 
@@ -101,9 +104,15 @@ workout only saves it — schedule it on a date for it to reach the watch.
 
 ## What it can and can't do to your account
 
-Reading is unrestricted. Writing is deliberately **additive only**: the two write
-tools create and schedule, and there is no tool that deletes, overwrites or edits
-anything. The worst case is a workout you delete in the Garmin app.
+Reading is unrestricted. Writing is confined to the **workout library**: create a
+workout, schedule it, unschedule it, delete it. Nothing reaches your training
+history — no tool deletes or edits a recorded activity, so a run you did cannot
+be lost here however wrong a tool call goes.
+
+`delete_workout` is gated rather than trusted to a docstring. The first call
+never deletes: it reads the workout back and returns its name, and only a second
+call passing that name as `confirm` removes it. A model cannot destroy a workout
+it has not first named.
 
 Your password is read from the environment, sent straight to Garmin, and never
 written to disk. Only the session token Garmin issues is cached, at
