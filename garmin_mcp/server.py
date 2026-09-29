@@ -12,11 +12,18 @@ from typing import Any, Callable, Mapping
 
 import anyio
 
+try:
+    from mcp.server.auth.middleware.auth_context import get_access_token
+except ImportError:  # an mcp too old for HTTP auth, which stdio doesn't need
+    def get_access_token():
+        return None
+
 try:  # mcp >= 2.0
     from mcp.server.mcpserver import MCPServer
 except ImportError:  # mcp 1.x called the same thing FastMCP
     from mcp.server.fastmcp import FastMCP as MCPServer
 
+from . import remote
 from .formatting import (
     DateError,
     drop_empty,
@@ -53,6 +60,11 @@ _INSTRUCTIONS = (
 )
 
 
+# Empty for stdio. With GARMIN_MCP_TRANSPORT=http, the OAuth settings and
+# provider, which the SDK only accepts when the server object is built.
+_server_options, _oauth_provider = remote.server_options()
+
+
 def _server() -> MCPServer:
     """The server, introduced to clients with a name, a site and an icon.
 
@@ -72,9 +84,10 @@ def _server() -> MCPServer:
                 Icon(src=f"{SITE}/icon-512.png", mime_type="image/png", sizes=["512x512"]),
                 Icon(src=f"{SITE}/favicon.svg", mime_type="image/svg+xml", sizes=["any"]),
             ],
+            **_server_options,
         )
     except (ImportError, TypeError):
-        return MCPServer("garmin", instructions=_INSTRUCTIONS)
+        return MCPServer("garmin", instructions=_INSTRUCTIONS, **_server_options)
 
 
 mcp = _server()
@@ -115,6 +128,9 @@ def tool_errors(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
+        caller = get_access_token()
+        if caller is not None:  # only over HTTP; stdio has no token
+            log.info("%s called by %s", fn.__name__, caller.subject)
         try:
             return await fn(*args, **kwargs)
         except (GarminError, DateError, WorkoutError) as exc:
@@ -1072,7 +1088,10 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    mcp.run(transport="stdio")
+    if remote.transport() == "http":
+        remote.run(mcp, _oauth_provider)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
