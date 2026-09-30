@@ -1,0 +1,343 @@
+<title>What it can see · Garmin for Claude</title>
+<meta name="description" content="Every kind of Garmin data the connector reads for Claude and ChatGPT, the workouts it can write to your watch, and what it never touches.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #F4F6F3;
+    --surface: #FFFFFF;
+    --sunken: #E8EDE8;
+    --ink: #17211B;
+    --muted: #55655B;
+    --hairline: #D3DBD3;
+    --accent: #2F6B4F;
+    --accent-ink: #235340;
+    --clay: #BC5A2A;
+    --clay-soft: #F6ECE5;
+    --radius: 10px;
+    --measure: 66ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0E1512;
+      --surface: #16201A;
+      --sunken: #1D2922;
+      --ink: #E3ECE5;
+      --muted: #9AAC9F;
+      --hairline: #27352C;
+      --accent: #63BC8E;
+      --accent-ink: #7FCBA1;
+      --clay: #E08A5A;
+      --clay-soft: #2A1E17;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0E1512;
+    --surface: #16201A;
+    --sunken: #1D2922;
+    --ink: #E3ECE5;
+    --muted: #9AAC9F;
+    --hairline: #27352C;
+    --accent: #63BC8E;
+    --accent-ink: #7FCBA1;
+    --clay: #E08A5A;
+    --clay-soft: #2A1E17;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Archivo", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap {
+    max-width: 800px;
+    margin: 0 auto;
+    padding-inline: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
+    padding-block: 48px 72px;
+  }
+
+  h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; }
+  h1 { font-size: clamp(2.1rem, 7vw, 3rem); font-weight: 800; line-height: 1.04; max-width: 17ch; }
+  h2 { font-size: clamp(1.3rem, 4vw, 1.6rem); font-weight: 700; line-height: 1.15; }
+
+  p { margin: 0; text-wrap: pretty; }
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; border-radius: 3px; }
+
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  /* The back link is the kicker slot, so the page keeps the front page's
+     silhouette while still being escapable in one tap. */
+  .kicker a { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; }
+
+  .lede { font-size: 1.15rem; color: var(--muted); max-width: 56ch; margin-top: 18px; }
+  .stamp {
+    margin-top: 14px; font-size: 0.86rem; color: var(--muted);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  section { margin-top: 46px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; max-width: var(--measure); margin-top: 14px; }
+  .small { font-size: 0.94rem; }
+  .muted { color: var(--muted); }
+
+  /* ---- The summary table, same shape as "Before you start" ---- */
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 26px;
+  }
+  .facts div { background: var(--surface); padding: 15px 17px; }
+  .facts dt {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .facts dd { margin: 0; font-weight: 500; font-size: 0.95rem; }
+  @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
+
+  .note {
+    border-left: 3px solid var(--clay);
+    background: var(--clay-soft);
+    padding: 15px 17px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    max-width: var(--measure);
+    margin-top: 16px;
+  }
+  .note p + p { margin-top: 10px; }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; max-width: var(--measure); }
+  ul.plain li {
+    display: grid; grid-template-columns: 18px 1fr; gap: 11px;
+    align-items: baseline; font-size: 0.95rem;
+  }
+  ul.plain li::before {
+    content: "—";
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--accent); font-size: 0.8rem;
+  }
+  ul.plain strong { color: var(--ink); }
+
+  code.inline {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.86em; background: var(--sunken); padding: 1px 5px; border-radius: 4px;
+    overflow-wrap: anywhere;
+  }
+
+  footer {
+    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--hairline);
+    color: var(--muted); font-size: 0.9rem;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="kicker"><a href="/">&larr;&nbsp;Garmin for Claude</a></p>
+    <h1>What it can see, and what it can change</h1>
+    <p class="lede">
+      The connector is a set of questions Claude or ChatGPT can ask your Garmin
+      account, and a small set of things it can put there. This is the whole
+      list, in the order you would think of them, with what each one never
+      touches.
+    </p>
+    <p class="stamp">Last updated 30 September 2026</p>
+
+    <dl class="facts">
+      <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, your plan</dd></div>
+      <div><dt>Writes</dt><dd>The workout library, and only that</dd></div>
+      <div><dt>Never</dt><dd>Your recorded runs, your route maps, your body composition</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>About today</h2>
+    <div class="stack">
+      <p class="small">
+        The morning questions. Should today be hard or easy, did you sleep,
+        where is your training load sitting. Three tools cover it.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Daily summary.</strong> Steps and distance, calories, resting and
+        min and max heart rate, body battery high and low, stress, intensity
+        minutes, blood oxygen. The same numbers as the Garmin Connect home
+        screen for the day.</span></li>
+      <li><span><strong>Sleep.</strong> Total time, the stages with durations and
+        percentages, sleep score, overnight HRV, resting heart rate, awake
+        count. Needs the watch worn overnight; otherwise it says so.</span></li>
+      <li><span><strong>Readiness.</strong> Garmin&rsquo;s training readiness score and
+        the six factors behind it; training status (productive, maintaining,
+        strained, recovery and the rest); acute against chronic load and the
+        ratio between them; the four-week load focus with its targets;
+        overnight HRV against your personal baseline; body battery, stress,
+        resting heart rate and sleep folded in. One call, so the answer to
+        &ldquo;threshold today or tomorrow?&rdquo; comes from evidence.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>About a run</h2>
+    <div class="stack">
+      <p class="small">
+        Every activity Garmin has, at three depths.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>The list.</strong> Runs, rides, swims, strength sessions and
+        anything else recorded, with distance, duration, pace per kilometre and
+        mile, average and max heart rate, time in each heart-rate zone,
+        cadence, training effect, and running dynamics and power when the
+        watch records them. By count or by date range.</span></li>
+      <li><span><strong>One activity in detail.</strong> Every lap or split with its own
+        distance, pace, heart rate, cadence, dynamics and power, plus the full
+        heart-rate time-in-zone for the session.</span></li>
+      <li><span><strong>Inside the recording.</strong> The per-second data behind the
+        laps. For any lap longer than five minutes: heart rate across the first
+        third against the last, at the paces run, which is how cardiac drift and
+        fitness show up. Kilometre splits derived for you when the watch did
+        not lap by kilometre. The GPS route is deliberately not requested.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>About your fitness</h2>
+    <div class="stack">
+      <p class="small">
+        The markers Garmin computes from everything above, so goals and
+        training paces can start from what your body is doing rather than from
+        what you remember.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>VO2 max</strong> and fitness age.</span></li>
+      <li><span><strong>Race predictions</strong> for 5k, 10k, half and marathon, as finish
+        times and the pace each implies.</span></li>
+      <li><span><strong>Lactate threshold</strong> heart rate and pace, the anchor for tempo
+        and threshold sessions.</span></li>
+      <li><span><strong>Endurance score and hill score</strong>, with the class Garmin puts
+        you in, read off the boundaries Garmin ships with the score.</span></li>
+      <li><span><strong>Running tolerance</strong>, Garmin&rsquo;s estimate of the weekly
+        load your body currently handles.</span></li>
+      <li><span><strong>Personal records</strong>, with the caveat that Garmin only knows
+        races it timed itself.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>About your plan</h2>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Scheduled workouts</strong> on the Garmin calendar, and the
+        library they come from.</span></li>
+      <li><span><strong>Progress</strong>: which planned sessions actually happened, week by
+        week. A session counts if it was run within a day either side of its
+        date, because people move things and a plan that calls that a failure
+        gets closed.</span></li>
+      <li><span><strong>The plan chart</strong>, drawn as an image for the conversation:
+        each day&rsquo;s sessions beside what was planned.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What it can change</h2>
+    <div class="stack">
+      <p class="small">
+        Writing is confined to the <strong>workout library</strong>: the structured
+        sessions you would otherwise build by hand in Garmin Connect.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Create</strong> a workout from a list of steps with pace or
+        heart-rate targets, or a strength session from Garmin&rsquo;s exercise
+        catalogue.</span></li>
+      <li><span><strong>Update</strong> one in place, keeping its id, so the dates it is
+        already scheduled on stay put and the watch picks up the new version at
+        the next sync. This is how paces get retuned as you get fitter.</span></li>
+      <li><span><strong>Schedule</strong> it on a date, which is what sends it to the watch,
+        and <strong>unschedule</strong> it again without deleting it.</span></li>
+      <li><span><strong>Delete</strong> a workout, behind a real gate: the first request only
+        reads the name back, and removing it needs a second request quoting
+        that name.</span></li>
+    </ul>
+    <div class="note">
+      <p class="small">
+        <strong>Nothing here touches your training history.</strong> No tool deletes,
+        edits or renames a recorded activity, so a run you actually did cannot
+        be lost through this however badly a request is worded.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it never reads</h2>
+    <div class="stack">
+      <p class="small">
+        Garmin exposes far more than this connector asks for. The following is
+        available to it and deliberately not requested, today:
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Where you were.</strong> GPS routes and maps are excluded from every
+        request, including the per-second recording.</span></li>
+      <li><span><strong>Your body.</strong> Weight, body composition, blood pressure,
+        hydration, nutrition, menstrual and pregnancy tracking.</span></li>
+      <li><span><strong>Your things and your people.</strong> Devices, gear, badges,
+        challenges, connections and anything social.</span></li>
+    </ul>
+    <div class="stack" style="margin-top:16px">
+      <p class="small muted">
+        If one of these would make the coaching better, it gets added in the
+        open, on this page and in the code, before it is read.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where the answers go</h2>
+    <div class="stack">
+      <p class="small">
+        Each question is answered live from Garmin and returned into your
+        conversation. The server keeps one encrypted token per person so it can
+        ask on your behalf, and nothing of what comes back.
+        <a href="/privacy/">The privacy page</a> has the exact list of what is
+        stored, and how to delete it.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Every tool on this page is one function in
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/main/garmin_mcp/server.py" target="_blank" rel="noopener">server.py</a>,
+      with its Garmin calls in plain sight. Don&rsquo;t take my word for it.
+    </p>
+    <p><a href="/">&larr; Back to setting it up</a></p>
+  </footer>
+
+</div>
