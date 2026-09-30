@@ -208,18 +208,32 @@ async def check_calendar_fallback(check) -> None:
          "title": "Easy 8k", "sportTypeKey": "running"},
         {"id": 2, "date": (monday + _td(days=9)).isoformat(), "workoutId": 555001,
          "title": "Tempo 6k", "sportTypeKey": "running"},
-        {"id": 3, "date": (monday + _td(days=70)).isoformat(), "workoutId": 555001,
+        {"id": 3, "date": (monday + _td(weeks=20)).isoformat(), "workoutId": 555001,
          "title": "Far off", "sportTypeKey": "running"},
     ]
 
     async def calendar(start, end):
         return [dict(i) for i in items]
 
+    class RecentRuns(FakeGarmin):
+        """Last week's planned run, done, and a run nobody planned the day after."""
+
+        def get_activities_by_date(self, start, end):
+            return [
+                {"activityId": 901, "startTimeLocal": f"{monday - _td(days=6)} 07:00:00",
+                 "activityName": "Easy", "activityType": {"typeKey": "running"},
+                 "duration": 3000, "distance": 8000},
+                {"activityId": 902, "startTimeLocal": f"{monday - _td(days=5)} 12:30:00",
+                 "activityName": "Lunch run", "activityType": {"typeKey": "running"},
+                 "duration": 1800, "distance": 5200},
+            ]
+
     saved = server._plan_calendar, session_mod.build_client
     os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
     os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
     server._plan_calendar = calendar
-    session_mod.build_client = lambda **_: FakeGarmin()
+    session_mod.build_client = lambda **_: RecentRuns()
+    session_mod.session.reset()  # the next call builds the client above
     try:
         token = preview.use(False)
         try:
@@ -248,6 +262,17 @@ async def check_calendar_fallback(check) -> None:
         check("asking for a plan by code still says it isn't there",
               "error" in named and named.get("source") != "calendar", str(named)[:120])
         check("status says preview is on", status_on.get("preview_features") == "on", str(status_on)[:120])
+        last_week = next((w for w in cal.get("weeks", []) if w["starts"] == (monday - _td(weeks=1)).isoformat()), {})
+        # 15 minutes at the default easy pace, then 5 x 1 km: the fake workout's steps.
+        check("each week carries the distance planned, from the workout's steps",
+              last_week.get("planned_km") == 7.9 and last_week["sessions"][0].get("planned_km") == 7.9,
+              str(last_week)[:200])
+        check("and the distance run, counting the run nobody planned",
+              last_week.get("run_km") == 13.2, str(last_week.get("run_km")))
+        check("the unplanned run is listed on its day",
+              [x.get("name") for x in last_week.get("extra") or []] == ["Lunch run"], str(last_week.get("extra")))
+        check("a session beyond the horizon is left out",
+              not any(s["name"] == "Far off" for w in cal["weeks"] for s in w["sessions"]))
     finally:
         server._plan_calendar, session_mod.build_client = saved
 
