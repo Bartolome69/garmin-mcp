@@ -194,6 +194,43 @@ def pick(plans: Mapping[str, list[dict[str, Any]]], today: date) -> str | None:
     return min(plans, key=key) if plans else None
 
 
+CALENDAR_WEEKS_BACK = 3
+CALENDAR_WEEKS_AHEAD = 3
+
+
+def around(items: Iterable[Mapping[str, Any]], today: date) -> list[dict[str, Any]]:
+    """Scheduled workouts from three weeks back to three weeks ahead, whole weeks."""
+    start = monday_of(today) - timedelta(weeks=CALENDAR_WEEKS_BACK)
+    end = monday_of(today) + timedelta(weeks=CALENDAR_WEEKS_AHEAD + 1)
+    return [dict(i) for i in items if (d := _day(i.get("date"))) and start <= d < end]
+
+
+def summarise_calendar(
+    items: Sequence[Mapping[str, Any]],
+    activities: Sequence[Mapping[str, Any]],
+    today: date,
+    *,
+    planned_seconds: Mapping[Any, float] | None = None,
+) -> dict[str, Any]:
+    """The calendar read as a plan: what was scheduled around now, against what was run.
+
+    The same shape as summarise, marked as coming from the calendar, so the
+    same view draws it. There is no code and no goal; weeks are dated rather
+    than numbered, because week 1 would only mean the first week shown.
+    """
+    result = summarise("", items, activities, today, planned_seconds=planned_seconds)
+    result.pop("label", None)
+    for key in ("current_week", "weeks_total", "finished"):
+        result.pop(key, None)
+    result["source"] = "calendar"
+    result["note"] = (
+        "These are the workouts scheduled on the Garmin calendar, from "
+        f"{CALENDAR_WEEKS_BACK} weeks back to {CALENDAR_WEEKS_AHEAD} ahead, whoever "
+        "put them there. The same ids move or retune them."
+    )
+    return result
+
+
 def _day(value: Any) -> date | None:
     try:
         return date.fromisoformat(str(value or "")[:10])

@@ -174,6 +174,67 @@ async def check_preview_gate(check) -> None:
         preview.reset(token)
 
 
+async def check_calendar_fallback(check) -> None:
+    """With no plan made here, a preview account sees its calendar as the plan.
+
+    Dates are relative to today, so this doesn't go stale. The calendar is
+    stubbed at the one seam get_plan reads it through.
+    """
+    from datetime import date as _d, timedelta as _td
+    from garmin_mcp import preview, server, session as session_mod
+    from tests.fake_garmin import FakeGarmin
+
+    today = _d.today()
+    monday = today - _td(days=today.weekday())
+    items = [
+        {"id": 1, "date": (monday - _td(days=6)).isoformat(), "workoutId": 555001,
+         "title": "Easy 8k", "sportTypeKey": "running"},
+        {"id": 2, "date": (monday + _td(days=9)).isoformat(), "workoutId": 555001,
+         "title": "Tempo 6k", "sportTypeKey": "running"},
+        {"id": 3, "date": (monday + _td(days=70)).isoformat(), "workoutId": 555001,
+         "title": "Far off", "sportTypeKey": "running"},
+    ]
+
+    async def calendar(start, end):
+        return [dict(i) for i in items]
+
+    saved = server._plan_calendar, session_mod.build_client
+    os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
+    os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
+    server._plan_calendar = calendar
+    session_mod.build_client = lambda **_: FakeGarmin()
+    try:
+        token = preview.use(False)
+        try:
+            off = await server.get_plan()
+            status_off = await server.get_connection_status()
+        finally:
+            preview.reset(token)
+        check("without preview, no plan is still an error", "No plan found" in str(off.get("error")), str(off)[:120])
+        check("without preview, status is unchanged", "preview_features" not in status_off, str(status_off)[:120])
+
+        token = preview.use(True)
+        try:
+            cal = await server.get_plan()
+            named = await server.get_plan(label="HM")
+            status_on = await server.get_connection_status()
+        finally:
+            preview.reset(token)
+        check("with preview, the calendar stands in for a plan",
+              cal.get("source") == "calendar" and "label" not in cal, str(cal)[:160])
+        check("the calendar plan is the weeks around this one",
+              cal.get("sessions_total") == 2 and cal.get("weeks")
+              and not any(s["name"] == "Far off" for w in cal["weeks"] for s in w["sessions"]),
+              str(cal.get("sessions_total")))
+        check("the calendar plan names what is next",
+              (cal.get("next_session") or {}).get("name") == "Tempo 6k", str(cal.get("next_session")))
+        check("asking for a plan by code still says it isn't there",
+              "error" in named and named.get("source") != "calendar", str(named)[:120])
+        check("status says preview is on", status_on.get("preview_features") == "on", str(status_on)[:120])
+    finally:
+        server._plan_calendar, session_mod.build_client = saved
+
+
 def check_stream_km_splits(check) -> None:
     """A 7 km steady lap recorded by a watch that did not auto-lap.
 
@@ -586,6 +647,7 @@ async def main() -> int:
             check("the plan is gone afterwards", "error" in gone_plan, str(gone_plan)[:140])
             check_plan_summary(check)
             await check_preview_gate(check)
+            await check_calendar_fallback(check)
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout

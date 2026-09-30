@@ -292,10 +292,19 @@
     if (/race|parkrun/.test(n)) return { t: "race", c: "var(--race)", label: "Race" };
     if (/strength|gym|core|push|pull|legs/.test(n)) return { t: "strength", c: "var(--strength)", label: "Strength" };
     if (/long/.test(n)) return { t: "long", c: "var(--long)", label: "Long run" };
-    if (/threshold|tempo|interval|reps|x\s?\d|\d\s?x|hill|vo2|fartlek|progression|marathon pace|mp\b/.test(n))
+    if (/threshold|tempo|interval|reps|x\s?\d|\d\s?x|hill|vo2|fartlek|progression|marathon pace|mp\b|steady|test\b|race pace/.test(n))
       return { t: "quality", c: "var(--quality)", label: "Quality" };
     return { t: "easy", c: "var(--easy)", label: "Easy" };
   }
+  // A calendar week is named by where it sits from today, not by a number.
+  function weekName(w) {
+    var gap = Math.round((parse(w.starts) - parse(iso(mondayOf(new Date())))) / 604800000);
+    if (gap === 0) return "This week";
+    if (gap === -1) return "Last week";
+    if (gap === 1) return "Next week";
+    return gap < 0 ? -gap + " weeks ago" : "In " + gap + " weeks";
+  }
+  function mondayOf(d) { return addDays(d, -((d.getDay() + 6) % 7)); }
   function statusText(s) {
     if (s.status === "done") return "Done";
     if (s.status === "done, moved") return "Done " + DAYS[(parse(s.done_on).getDay() + 6) % 7];
@@ -353,12 +362,17 @@
     var today = iso(new Date());
 
     // Header
-    var weekLine = plan.current_week ? "Week " + plan.current_week + " of " + plan.weeks_total
+    // A plan made here has a code, a goal and numbered weeks. One read off the
+    // calendar has none of those: it is simply the weeks around this one.
+    var fromCalendar = plan.source === "calendar";
+    var weekLine = fromCalendar ? "Scheduled on Garmin"
+      : plan.current_week ? "Week " + plan.current_week + " of " + plan.weeks_total
       : plan.finished ? "Finished" : plan.weeks_total + " weeks";
     app.appendChild(el("div", { class: "top" }, [
       el("div", {}, [
-        el("div", { class: "kicker" }, [el("span", { class: "code", text: plan.label }), "Training plan"]),
-        el("h1", { text: plan.goal || "Your plan" }),
+        el("div", { class: "kicker" }, fromCalendar ? ["Your calendar"]
+          : [el("span", { class: "code", text: plan.label }), "Training plan"]),
+        el("h1", { text: plan.goal || (fromCalendar ? "Your training" : "Your plan") }),
         el("div", { class: "sub", text: weekLine + " · " + short(plan.starts) + " to " + short(plan.ends) }),
       ]),
       el("button", { class: "icon-btn", title: "Refresh", "aria-label": "Refresh the plan", onclick: refresh },
@@ -406,7 +420,9 @@
         w.sessions.map(function (s) { return el("span", { class: "pip " + cls(s) }); }));
       var head = el("button", { class: "week-head", "aria-expanded": String(isOpen), onclick: function () {
         state.open[w.week] = !box.classList.contains("open"); render(state.plan); } }, [
-        el("div", { class: "wk" }, ["Week " + w.week, el("small", { text: short(w.starts) })]),
+        el("div", { class: "wk" }, fromCalendar
+          ? [weekName(w), el("small", { text: short(w.starts) })]
+          : ["Week " + w.week, el("small", { text: short(w.starts) })]),
         pips,
         el("span", { class: "count", text: (w.done || 0) + "/" + w.planned }),
         svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
