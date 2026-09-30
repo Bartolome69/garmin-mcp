@@ -47,6 +47,15 @@ EXPECTED_TOOLS = {
 }
 
 
+def field(obj, *names):
+    """The first of these attributes present: SDK 2 renamed them to snake_case."""
+    for name in names:
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return None
+
+
 def payload(result) -> dict:
     """Pull the JSON body out of a CallToolResult."""
     if getattr(result, "structuredContent", None):
@@ -137,6 +146,32 @@ def check_plan_summary(check) -> None:
     check("weeks are numbered from the plan's first",
           [w["week"] for w in s["weeks"]] == [1, 2] and s["current_week"] == 2
           and s["weeks"][1]["current"] is True, str([(w["week"], w["current"]) for w in s["weeks"]]))
+
+
+async def check_preview_gate(check) -> None:
+    """Views are a preview: listed only where it is switched on."""
+    from garmin_mcp import preview, server
+
+    def view_of(tools):
+        tool = next(t for t in tools if t.name == "get_plan")
+        return (getattr(tool, "meta", None) or {}).get("ui")
+
+    token = preview.use(False)
+    try:
+        tools = await server.mcp.list_tools()
+        resources = await server.mcp.list_resources()
+        check("without preview, get_plan has no view", view_of(tools) is None)
+        check("without preview, no view is listed",
+              not any(str(r.uri).startswith("ui://") for r in resources))
+        check("without preview, get_plan still has its output schema",
+              next(t for t in tools if t.name == "get_plan").output_schema is not None)
+    finally:
+        preview.reset(token)
+    token = preview.use(True)
+    try:
+        check("with preview, get_plan has its view", view_of(await server.mcp.list_tools()) is not None)
+    finally:
+        preview.reset(token)
 
 
 def check_stream_km_splits(check) -> None:
@@ -271,6 +306,7 @@ def check_prompts_survive_a_pipe(check) -> None:
 async def main() -> int:
     env = dict(os.environ)
     env["GARMIN_MCP_FAKE"] = "1"  # server uses the stub client
+    env["GARMIN_MCP_PREVIEW"] = "1"  # preview features are tested here too
     env.pop("GARMIN_EMAIL", None)
     env.pop("GARMIN_PASSWORD", None)
     env["PYTHONPATH"] = str(ROOT)
@@ -301,6 +337,24 @@ async def main() -> int:
                 "every tool documented",
                 all(t.description for t in tools.tools),
             )
+
+            # The plan view. A host that draws MCP Apps follows get_plan's
+            # pointer to this resource; the rest ignore it.
+            plan_tool = next(t for t in tools.tools if t.name == "get_plan")
+            view_uri = ((plan_tool.meta or {}).get("ui") or {}).get("resourceUri")
+            check("get_plan points at its view, versioned by its contents",
+                  re.fullmatch(r"ui://garmin/plan/[0-9a-f]{10}", view_uri or "") is not None, str(plan_tool.meta))
+            listed_views = await sess.list_resources()
+            check("the view is listed as an app",
+                  any(str(r.uri) == view_uri and field(r, "mime_type", "mimeType") == "text/html;profile=mcp-app"
+                      for r in listed_views.resources), str(listed_views.resources)[:200])
+            view = await sess.read_resource(view_uri)
+            html = view.contents[0].text if view.contents else ""
+            check("the view is served as html",
+                  field(view.contents[0], "mime_type", "mimeType") == "text/html;profile=mcp-app"
+                  and "ui/initialize" in html and "tool-result" in html, str(view.contents[0])[:120])
+            check("the view loads nothing from outside the frame",
+                  not re.search(r"""(src|href)=["']?https?:""", html) and "@import" not in html)
 
             print("\nget_connection_status")
             status = payload(await sess.call_tool("get_connection_status"))
@@ -491,6 +545,10 @@ async def main() -> int:
 
             got = payload(await sess.call_tool("get_plan", {}))
             print("   ", json.dumps(got, indent=2)[:700])
+            raw_plan = await sess.call_tool("get_plan", {})
+            check("get_plan hands the view structured content",
+                  (field(raw_plan, "structured_content", "structuredContent") or {}).get("label") == "HM",
+                  str(field(raw_plan, "structured_content", "structuredContent"))[:120])
             check("get_plan finds the running plan without being told",
                   got.get("label") == "HM" and got.get("sessions_total") == 4, str(got)[:200])
             check("the goal is read back from Garmin",
@@ -527,6 +585,7 @@ async def main() -> int:
             gone_plan = payload(await sess.call_tool("get_plan", {"label": "HM"}))
             check("the plan is gone afterwards", "error" in gone_plan, str(gone_plan)[:140])
             check_plan_summary(check)
+            await check_preview_gate(check)
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout
