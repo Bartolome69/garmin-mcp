@@ -144,7 +144,8 @@
   .pip.done { background: var(--done); border-color: var(--done); }
   .pip.missed { background: var(--miss); border-color: var(--miss); }
   .pip.today { border: 2px solid var(--ring); background: transparent; }
-  .count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; gap: 10px; }
+  .count .km { color: var(--ink); font-weight: 600; }
   .chev { color: var(--faint); transition: transform 0.15s ease; flex: none; }
   .week.open .chev { transform: rotate(90deg); }
 
@@ -168,6 +169,9 @@
   .cell.missed .n { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--miss) 60%, transparent); }
   .cell.today { border: 2px solid var(--ring); }
   .cell[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+  .cell.extra { background: transparent; border: 1px dashed var(--line); cursor: default; }
+  .cell.extra::before { background: var(--faint); opacity: 0.5; }
+  .cell.extra .n { font-weight: 500; color: var(--muted); }
   .rest { min-height: 58px; border-radius: var(--radius-sm); border: 1px dashed var(--line); opacity: 0.55; }
 
   /* ---- Detail ---- */
@@ -189,6 +193,7 @@
     .cell { flex: 1; min-height: 0; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; padding: 9px 10px 9px 12px; }
     .cell .n { font-size: 13.5px; overflow-wrap: normal; }
     .cell .s { font-size: 12px; white-space: nowrap; }
+    .count .sessions { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -287,9 +292,17 @@
       if (!weeks[start]) { weeks[start] = { starts: start, sessions: [], current: start === thisMonday }; order.push(start); }
       weeks[start].sessions.push(r);
     });
+    var extras = (p.unplanned || []).filter(function (r) { return r.date >= earliest && r.date <= today; });
     var list = order.map(function (start, i) {
       var w = weeks[start];
+      var end = iso(addDays(parse(start), 7));
+      var inWeek = function (r) { return r.date >= start && r.date < end; };
       w.week = i + 1;
+      w.extra = extras.filter(inWeek).map(function (r) {
+        return { date: r.date, name: r.name, sport: r.sport, actual_km: r.actual_km };
+      });
+      var ran = w.sessions.concat(w.extra).filter(function (r) { return r.sport === "run" && r.actual_km; });
+      w.run_km = Math.round(10 * ran.reduce(function (t, r) { return t + r.actual_km; }, 0)) / 10;
       w.done = w.sessions.filter(function (s) { return s.status.indexOf("done") === 0; }).length;
       w.missed = w.sessions.filter(function (s) { return s.status === "missed"; }).length;
       w.planned = w.sessions.length;
@@ -352,6 +365,17 @@
     if (/threshold|tempo|interval|reps|x\s?\d|\d\s?x|hill|vo2|fartlek|progression|marathon pace|mp\b|steady|test\b|race pace/.test(n))
       return { t: "quality", c: "var(--quality)", label: "Quality" };
     return { t: "easy", c: "var(--easy)", label: "Easy" };
+  }
+  // Distance: whole kilometres read best at a glance, tenths only when short.
+  function fmtKm(v) { return v >= 20 ? String(Math.round(v)) : String(Math.round(v * 10) / 10); }
+  function kmText(w) {
+    return w.planned_km ? fmtKm(w.run_km || 0) + " / " + fmtKm(w.planned_km) + " km" : fmtKm(w.run_km || 0) + " km";
+  }
+  function thisWeekKm(plan) {
+    var w = (plan.weeks || []).filter(function (x) { return x.current; })[0];
+    if (!w || w.run_km == null) return null;
+    return el("span", {}, [el("b", { text: fmtKm(w.run_km || 0) }),
+      w.planned_km ? " of " + fmtKm(w.planned_km) + " km this week" : " km this week"]);
   }
   // A calendar week is named by where it sits from today, not by a number.
   function weekName(w) {
@@ -449,6 +473,7 @@
         el("span", {}, [el("span", { class: "dot", style: "background:var(--miss)" }), el("b", { text: String(plan.missed || 0) }), " missed"]),
         el("span", {}, [el("span", { class: "dot", style: "background:var(--sunk);border:1px solid color-mix(in srgb, var(--faint) 50%, var(--line))" }), el("b", { text: String(plan.remaining || 0) }), " to go"]),
         due ? el("span", {}, [el("b", { text: (plan.completion_percent != null ? plan.completion_percent : 0) + "%" }), " of due sessions"]) : null,
+        thisWeekKm(plan),
       ]),
     ]));
 
@@ -482,7 +507,10 @@
           ? [weekName(w), el("small", { text: short(w.starts) })]
           : ["Week " + w.week, el("small", { text: short(w.starts) })]),
         pips,
-        el("span", { class: "count", text: (w.done || 0) + "/" + w.planned }),
+        el("span", { class: "count" }, [
+          w.run_km != null ? el("span", { class: "km", text: kmText(w) }) : null,
+          el("span", { class: w.run_km != null ? "sessions" : "", text: (w.done || 0) + "/" + w.planned }),
+        ]),
         svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
       ]);
       box.appendChild(head);
@@ -492,15 +520,25 @@
       for (var i = 0; i < 7; i++) {
         var d = iso(addDays(monday, i));
         var todays = w.sessions.filter(function (s) { return s.date === d; });
+        var extras = (w.extra || []).filter(function (x) { return x.date === d; });
         var col = el("div", { class: "day" }, [el("div", { class: "dname" + (d === today ? " is-today" : ""), text: DAYS[i] })]);
-        if (!todays.length) col.appendChild(el("div", { class: "rest", "aria-label": "Rest" }));
+        if (!todays.length && !extras.length) col.appendChild(el("div", { class: "rest", "aria-label": "Rest" }));
         todays.forEach(function (s) {
           var k2 = kind(s.name, s.sport), key = s.schedule_id || (s.date + s.name);
           col.appendChild(el("button", {
             class: "cell " + cls(s), style: "--t:" + k2.c, "aria-pressed": String(state.selected === key),
             "aria-label": s.name + ", " + long(s.date) + ", " + (statusText(s) || "ahead"),
             onclick: function () { state.selected = state.selected === key ? null : key; state.open[w.week] = true; render(state.plan); },
-          }, [el("span", { class: "n", text: s.name }), el("span", { class: "s", text: statusText(s) })]));
+          }, [el("span", { class: "n", text: s.name }),
+              el("span", { class: "s", text: statusText(s) || (s.planned_km ? fmtKm(s.planned_km) + " km" : "") })]));
+        });
+        // Runs nobody planned still count towards the week, so they are drawn,
+        // quietly, in the day they happened.
+        extras.forEach(function (x) {
+          col.appendChild(el("div", { class: "cell extra", "aria-label": "Unplanned: " + x.name + (x.actual_km ? ", " + x.actual_km + " km" : "") }, [
+            el("span", { class: "n", text: x.name }),
+            el("span", { class: "s", text: x.actual_km ? fmtKm(x.actual_km) + " km, extra" : "Extra" }),
+          ]));
         });
         grid.appendChild(col);
       }

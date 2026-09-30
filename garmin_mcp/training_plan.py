@@ -23,7 +23,7 @@ from datetime import date, timedelta
 from typing import Any, Iterable, Mapping, Sequence
 
 from .formatting import DateError, drop_empty, duration, parse_date
-from .plan import category, monday_of
+from .plan import category, monday_of, planned_distance_m
 from .progress import Actual, Planned, match
 from .workouts import WorkoutError, build_workout
 
@@ -195,14 +195,22 @@ def pick(plans: Mapping[str, list[dict[str, Any]]], today: date) -> str | None:
 
 
 CALENDAR_WEEKS_BACK = 3
-CALENDAR_WEEKS_AHEAD = 3
+# Far enough to reach race day in most blocks. Weeks with nothing scheduled
+# aren't shown, so a coach who plans a week at a time gets a short card.
+CALENDAR_WEEKS_AHEAD = 16
 
 
 def around(items: Iterable[Mapping[str, Any]], today: date) -> list[dict[str, Any]]:
-    """Scheduled workouts from three weeks back to three weeks ahead, whole weeks."""
+    """Scheduled workouts from three weeks back to the last one ahead, whole weeks."""
     start = monday_of(today) - timedelta(weeks=CALENDAR_WEEKS_BACK)
     end = monday_of(today) + timedelta(weeks=CALENDAR_WEEKS_AHEAD + 1)
     return [dict(i) for i in items if (d := _day(i.get("date"))) and start <= d < end]
+
+
+def planned_metres(workout: Mapping[str, Any]) -> float:
+    """How far a workout is meant to be: Garmin's own figure, else its steps added up."""
+    given = float(workout.get("estimatedDistanceInMeters") or 0)
+    return given if given > 0 else planned_distance_m(dict(workout))
 
 
 def summarise_calendar(
@@ -211,6 +219,8 @@ def summarise_calendar(
     today: date,
     *,
     planned_seconds: Mapping[Any, float] | None = None,
+    planned_metres: Mapping[Any, float] | None = None,
+    weekly_km: bool = False,
 ) -> dict[str, Any]:
     """The calendar read as a plan: what was scheduled around now, against what was run.
 
@@ -218,14 +228,15 @@ def summarise_calendar(
     same view draws it. There is no code and no goal; weeks are dated rather
     than numbered, because week 1 would only mean the first week shown.
     """
-    result = summarise("", items, activities, today, planned_seconds=planned_seconds)
+    result = summarise("", items, activities, today, planned_seconds=planned_seconds,
+                       planned_metres=planned_metres, weekly_km=weekly_km)
     result.pop("label", None)
     for key in ("current_week", "weeks_total", "finished"):
         result.pop(key, None)
     result["source"] = "calendar"
     result["note"] = (
         "These are the workouts scheduled on the Garmin calendar, from "
-        f"{CALENDAR_WEEKS_BACK} weeks back to {CALENDAR_WEEKS_AHEAD} ahead, whoever "
+        f"{CALENDAR_WEEKS_BACK} weeks back to up to {CALENDAR_WEEKS_AHEAD} ahead, whoever "
         "put them there. The same ids move or retune them."
     )
     return result
@@ -238,6 +249,31 @@ def _day(value: Any) -> date | None:
         return None
 
 
+def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequence[Mapping[str, Any]]) -> None:
+    """Planned km against run km for one week, and the runs nobody planned."""
+    start = date.fromisoformat(week["starts"])
+    end = start + timedelta(days=7)
+    planned = sum(s.get("planned_km") or 0 for s in week["sessions"])
+    run = sum(a.metres for a in actual if a.sport == "run" and start <= a.day < end)
+    week["planned_km"] = round(planned, 1) if planned else None
+    week["run_km"] = round(run / 1000, 1)
+    week["extra"] = [
+        drop_empty({
+            "date": row["date"],
+            "day": date.fromisoformat(row["date"]).strftime("%a"),
+            "name": row["name"],
+            "sport": row.get("sport"),
+            "actual_km": row.get("actual_km"),
+            "actual": duration(row.get("actual_seconds")),
+        })
+        for row in extra
+        if start <= date.fromisoformat(row["date"]) < end
+    ] or None
+    for key in ("planned_km", "extra"):
+        if week[key] is None:
+            del week[key]
+
+
 def summarise(
     code: str,
     items: Sequence[Mapping[str, Any]],
@@ -246,9 +282,17 @@ def summarise(
     *,
     goal: str | None = None,
     planned_seconds: Mapping[Any, float] | None = None,
+    planned_metres: Mapping[Any, float] | None = None,
+    weekly_km: bool = False,
 ) -> dict[str, Any]:
-    """The plan week by week, each session marked done, missed, today or ahead."""
+    """The plan week by week, each session marked done, missed, today or ahead.
+
+    With weekly_km, each week also carries the distance planned against the
+    distance run, counting every run that week, and the runs that weren't on
+    the plan.
+    """
     planned_seconds = planned_seconds or {}
+    planned_metres = planned_metres or {}
     sessions = sorted(
         (i for i in items if _day(i.get("date"))), key=lambda i: (i.get("date"), str(i.get("id")))
     )
@@ -276,7 +320,9 @@ def summarise(
             activity_id=a.get("activityId"),
         )
         for a in activities
-        if _day(a.get("startTimeLocal")) and first - timedelta(days=1) <= _day(a.get("startTimeLocal")) <= last + timedelta(days=1)
+        if _day(a.get("startTimeLocal"))
+        and (monday_of(first) if weekly_km else first - timedelta(days=1))
+        <= _day(a.get("startTimeLocal")) <= last + timedelta(days=1)
     ]
     verdict = match(planned, actual, today)
     done = {row["name"]: row for row in verdict.done}
@@ -308,6 +354,10 @@ def summarise(
                 "actual": duration(hit.get("actual_seconds")) if hit else None,
                 "workout_id": item.get("workoutId"),
                 "schedule_id": schedule_id,
+                "planned_km": (
+                    round(planned_metres[item.get("workoutId")] / 1000, 1)
+                    if weekly_km and planned_metres.get(item.get("workoutId")) else None
+                ),
             }
         )
         rows.append(row)
@@ -322,6 +372,8 @@ def summarise(
         week["missed"] = statuses.count("missed")
         week["planned"] = len(statuses)
         week["current"] = week["starts"] == monday_of(today).isoformat()
+        if weekly_km:
+            _add_distance(week, actual, verdict.extra)
 
     past = [r for r in rows if r["status"] in ("done", "done, moved", "missed")]
     completed = sum(r["status"].startswith("done") for r in past)
