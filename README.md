@@ -1,15 +1,25 @@
 # garmin-mcp
 
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/bartolome69/garmin-mcp)
+
 Ask Claude about your Garmin data, then have it write the session onto your watch.
 
-A local [MCP](https://modelcontextprotocol.io) server that connects Claude Desktop
-to your own Garmin Connect account. It reads your runs, splits, heart-rate zones
-and daily health metrics — and, unlike the read-only Garmin integrations out
-there, it can build a structured workout and schedule it, so the answer to
-"what should I run on Thursday?" ends up on your wrist instead of in a chat log.
+An [MCP](https://modelcontextprotocol.io) server for your own Garmin Connect
+account. It reads your runs, splits, heart-rate zones and daily health metrics —
+and, unlike the read-only Garmin integrations out there, it can build a
+structured workout and schedule it, so the answer to "what should I run on
+Thursday?" ends up on your wrist instead of in a chat log.
 
-Everything runs as a local subprocess on your machine. No hosting, no server
-holding your credentials, no network exposure.
+**Run it yourself** and it is a local subprocess on your machine: no hosting, no
+server holding your credentials, no network exposure. That is the rest of this
+README, and it takes a Mac and a Terminal window.
+
+**Or don't run anything.** [garmin.daash.run](https://garmin.daash.run) is the
+same tools hosted behind OAuth 2.1 — paste one address into Claude or ChatGPT,
+sign in to Garmin once, and it works on your phone as well as your laptop with
+nothing installed. The trade is that a server holds your Garmin session,
+encrypted; [the privacy policy](https://garmin.daash.run/privacy/) sets out
+exactly what is kept and what is not.
 
 ```
 You:    My last three runs are all at the same effort. Give me something harder
@@ -66,11 +76,14 @@ at `python -m garmin_mcp` over stdio.
 | Tool | What it returns |
 | --- | --- |
 | `get_activities(limit, start_date, end_date)` | Runs, rides and workouts: distance, duration, pace per km and mile, average and max HR, HR zones, cadence, training effect, plus running dynamics and power when the watch records them |
-| `get_activity_details(activity_id)` | One activity in detail: per-split distance, pace, HR, cadence, running dynamics and power, plus full heart-rate time-in-zone |
+| `get_activity_details(activity_id)` | One activity in detail: per-split distance, pace, HR, cadence, running dynamics and power, full heart-rate time-in-zone, and what the recording says inside each lap: HR drift from first third to last at the paces run, plus per-km splits when the watch did not lap by kilometre |
+| `get_readiness(date)` | Today's recovery picture in one call: Garmin's readiness score and its factors, training status, acute against chronic load, four-week load focus, overnight HRV against baseline, body battery, stress, resting HR and sleep |
+| `get_fitness()` | Fitness markers: VO2 max, predicted race times from 5k to marathon, lactate threshold pace and HR, endurance score, hill score and running tolerance, each classified where Garmin classifies them |
 | `get_daily_summary(date)` | Steps, distance, calories, resting/min/max HR, body battery, stress, intensity minutes |
 | `get_sleep_data(date)` | Sleep stages with durations and percentages, sleep score, overnight HRV, resting HR |
 | `list_workouts(limit)` | Structured workouts saved in the account |
 | `create_workout(name, steps, sport, description)` | Builds a structured workout and adds it to Garmin Connect |
+| `update_workout(workout_id, name, steps, sport, description)` | Changes a workout in place. Same id, so dates it is scheduled on stay scheduled and the watch gets the new version at the next sync |
 | `schedule_workout(workout_id, date)` | Puts a workout on a date, which is what syncs it to the watch |
 | `unschedule_workout(date, schedule_id)` | Takes a workout off a day. Reversible — the workout itself is kept |
 | `delete_workout(workout_id, confirm)` | Deletes a workout. The first call only reads its name back; removing it needs a second call quoting that name |

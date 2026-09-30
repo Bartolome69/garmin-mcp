@@ -38,6 +38,9 @@ EXPECTED_TOOLS = {
     "unschedule_workout",
     "delete_workout",
     "get_progress",
+    "get_readiness",
+    "get_fitness",
+    "update_workout",
 }
 
 
@@ -84,6 +87,30 @@ def check_target_placement(check) -> None:
         "hr values sit on the step",
         (hr_step.get("targetValueOne"), hr_step.get("targetValueTwo")) == (150.0, 165.0),
     )
+
+
+def check_stream_km_splits(check) -> None:
+    """A 7 km steady lap recorded by a watch that did not auto-lap.
+
+    The splits endpoint gives one row; the recording gives seven kilometres
+    and the drift across the whole effort. Even pace at 4:30/km, HR 150 to 162.
+    """
+    from garmin_mcp import stream
+    from tests.fake_garmin import _stream
+
+    recording = _stream([(7000.0, 1890.0, 150.0, 162.0)], step=5.0)
+    laps = [{"lapIndex": 1, "distance": 7000.0, "duration": 1890.0}]
+    inside = stream.analyse(recording, laps) or {}
+    splits = inside.get("km_splits") or []
+    check("a single long lap yields per-km splits", len(splits) == 7, str(len(splits)))
+    check("km split pace is the even pace that was run",
+          splits and all(s["pace_per_km"] == "4:30 /km" for s in splits),
+          str([s.get("pace_per_km") for s in splits]))
+    check("km split HR rises through the effort",
+          splits and splits[0]["avg_hr"] < splits[-1]["avg_hr"],
+          str([s.get("avg_hr") for s in splits]))
+    drift = (inside.get("laps") or [{}])[0]
+    check("whole-lap drift is reported", 7 <= (drift.get("hr_drift_bpm") or 0) <= 9, str(drift))
 
 
 def check_entrypoints_ignore_cwd(check) -> None:
@@ -283,6 +310,16 @@ async def main() -> int:
             check("per-split dynamics, for watching GCT drift across reps",
                   detail["splits"][0]["running_dynamics"]["ground_contact_ms"] == 230)
             check("hr zones", detail["hr_zones"][0]["percent"] == 25.0)
+            inside = detail.get("inside") or {}
+            lap1 = (inside.get("laps") or [{}])[0]
+            check("the recording gives HR drift inside a lap",
+                  9 <= (lap1.get("hr_drift_bpm") or 0) <= 14, str(lap1))
+            check("drift comes with the paces it happened at",
+                  lap1.get("pace_first_third") == "5:00 /km" and lap1.get("pace_last_third") == "5:00 /km",
+                  str(lap1))
+            check("no km splits when the watch already lapped by km",
+                  "km_splits" not in inside, str(list(inside)))
+            check_stream_km_splits(check)
 
             print("\nworkouts")
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))
@@ -319,6 +356,30 @@ async def main() -> int:
             )
             check("workout scheduled", scheduled.get("schedule_id") == 777001
                   and scheduled.get("scheduled_for"))
+
+            print("\nupdate_workout")
+            renamed = payload(await sess.call_tool(
+                "update_workout", {"workout_id": 555001, "name": "Thursday Tempo"}))
+            check("rename keeps the id", renamed.get("workout_id") == 555001
+                  and renamed.get("name") == "Thursday Tempo" and renamed.get("changed") == ["name"],
+                  str(renamed)[:200])
+            relisted = payload(await sess.call_tool("list_workouts", {"limit": 5}))
+            check("the library shows the new name",
+                  relisted["workouts"][0]["name"] == "Thursday Tempo", str(relisted)[:200])
+            rebuilt = payload(await sess.call_tool("update_workout", {
+                "workout_id": 555001,
+                "steps": [{"type": "warmup", "duration_seconds": 600},
+                          {"type": "interval", "distance_meters": 5000, "pace": ["4:20", "4:30"]},
+                          {"type": "cooldown", "duration_seconds": 600}],
+            }))
+            check("new steps rebuild the workout and report the shape",
+                  "5.00 km" in rebuilt.get("summary", "") and rebuilt.get("changed") == ["steps"]
+                  and rebuilt.get("estimated_duration"), str(rebuilt)[:300])
+            nothing = payload(await sess.call_tool("update_workout", {"workout_id": 555001}))
+            check("an update with nothing to change is refused", "error" in nothing, str(nothing))
+            missing = payload(await sess.call_tool(
+                "update_workout", {"workout_id": 424242, "name": "Ghost"}))
+            check("updating an unknown workout errors", "error" in missing, str(missing))
 
             # -- progress ------------------------------------------------
             # Before the removal checks below, which delete 555001 out from
@@ -437,6 +498,43 @@ async def main() -> int:
                 )
             )
             check("nested repeat rejected", "error" in nested, str(nested)[:120])
+
+            print("\nreadiness")
+            ready = payload(await sess.call_tool("get_readiness", {"date": "today"}))
+            print("   ", json.dumps(ready, indent=2)[:700])
+            check("readiness score and level", ready["readiness"]["score"] == 58
+                  and ready["readiness"]["level"] == "Moderate", str(ready.get("readiness")))
+            check("training status read off the phrase",
+                  ready["training_status"]["status"] == "Productive", str(ready.get("training_status")))
+            check("acute:chronic ratio and its verdict",
+                  ready["training_status"]["acute_chronic_ratio"] == 1.06
+                  and ready["training_status"]["ratio_status"] == "Optimal")
+            check("load focus names the shortage",
+                  ready["load_focus"]["verdict"] == "Anaerobic shortage"
+                  and ready["load_focus"]["low_aerobic"]["target"] == [360, 720], str(ready.get("load_focus")))
+            check("hrv against its baseline", ready["hrv"]["last_night_ms"] == 61
+                  and ready["hrv"]["balanced_range_ms"] == [53, 66] and ready["hrv"]["status"] == "Balanced")
+            check("body battery, stress and sleep folded in",
+                  ready["body_battery"]["now"] == 71 and ready["stress"]["average"] == 28
+                  and ready["sleep"]["score"] == 82 and ready["sleep"]["total"] == "7h 12m 00s")
+            check("readiness carries no raw device map", "3400" not in json.dumps(ready))
+
+            print("\nfitness")
+            fit = payload(await sess.call_tool("get_fitness", {}))
+            print("   ", json.dumps(fit, indent=2)[:600])
+            check("race predictions as times and paces",
+                  fit["race_predictions"]["half_marathon"]["time"] == "1h 25m 00s"
+                  and fit["race_predictions"]["5k"]["pace_per_km"] == "3:36 /km", str(fit.get("race_predictions")))
+            check("lactate threshold as pace, not m/s",
+                  fit["lactate_threshold"]["pace_per_km"] == "4:23 /km"
+                  and fit["lactate_threshold"]["heart_rate_bpm"] == 172, str(fit.get("lactate_threshold")))
+            check("endurance class read off Garmin's own boundaries",
+                  fit["endurance_score"]["class"] == "Trained", str(fit.get("endurance_score")))
+            check("hill score class likewise", fit["hill_score"]["class"] == "Trained", str(fit.get("hill_score")))
+            check("running tolerance passed through without ids",
+                  fit["running_tolerance"].get("toleranceLimit") == 61.0
+                  and "userProfilePK" not in fit["running_tolerance"], str(fit.get("running_tolerance")))
+            check("vo2max on fitness too", fit.get("vo2max") == 60.9)
 
             print("\nprofile")
             prof = payload(await sess.call_tool("get_profile", {}))
