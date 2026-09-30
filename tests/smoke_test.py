@@ -161,6 +161,8 @@ async def check_preview_gate(check) -> None:
         tools = await server.mcp.list_tools()
         resources = await server.mcp.list_resources()
         check("without preview, get_plan has no view", view_of(tools) is None)
+        check("without preview, no tool has a view",
+              not any(((getattr(t, "meta", None) or {}).get("ui")) for t in tools))
         check("without preview, no view is listed",
               not any(str(r.uri).startswith("ui://") for r in resources))
         check("without preview, get_plan still has its output schema",
@@ -169,7 +171,11 @@ async def check_preview_gate(check) -> None:
         preview.reset(token)
     token = preview.use(True)
     try:
-        check("with preview, get_plan has its view", view_of(await server.mcp.list_tools()) is not None)
+        listed = await server.mcp.list_tools()
+        check("with preview, get_plan has its view", view_of(listed) is not None)
+        progress_tool = next(t for t in listed if t.name == "get_progress")
+        check("with preview, get_progress draws the same view",
+              ((getattr(progress_tool, "meta", None) or {}).get("ui") or {}) == view_of(listed))
     finally:
         preview.reset(token)
 

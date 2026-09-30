@@ -1077,7 +1077,7 @@ async def delete_workout(workout_id: int | str, confirm: str = "") -> dict[str, 
     return {"deleted": workout_id, "name": name, "note": "Permanently removed."}
 
 
-@mcp.tool()
+@_app_tool(PLAN_VIEW)
 @tool_errors
 async def get_progress(weeks: int = 6) -> dict[str, Any]:
     """Which planned sessions actually got done, week by week.

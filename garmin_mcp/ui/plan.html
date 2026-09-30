@@ -254,7 +254,63 @@
         if (c.type === "text") { try { plan = JSON.parse(c.text); break; } catch (e) {} }
       }
     }
-    render(plan);
+    render(isProgress(plan) ? fromProgress(plan) : plan);
+  }
+
+  // get_progress answers "how's my plan going" too, with the same sessions in
+  // three lists. Drawn as the calendar version of the plan.
+  function isProgress(p) {
+    return !!(p && !p.error && Array.isArray(p.upcoming) && Array.isArray(p.sessions) && p.weeks && p.weeks.length && "week_of" in p.weeks[0]);
+  }
+  var WEEKS_AHEAD = 3;
+  function fromProgress(p) {
+    var today = iso(new Date()), thisMonday = iso(mondayOf(new Date()));
+    var horizon = iso(addDays(mondayOf(new Date()), 7 * (WEEKS_AHEAD + 1)));
+    var earliest = p.weeks[0].week_of;
+    var rows = [];
+    (p.sessions || []).forEach(function (r) {
+      rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.done_on && r.done_on !== r.date ? "done, moved" : "done",
+        done_on: r.done_on !== r.date ? r.done_on : undefined, activity_id: r.activity_id, actual_km: r.actual_km,
+        actual: r.actual_seconds ? duration(r.actual_seconds) : undefined });
+    });
+    (p.missed || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "missed" }); });
+    (p.upcoming || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "ahead" }); });
+    rows = rows.filter(function (r) { return r.date >= earliest && r.date < horizon; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    if (!rows.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
+    rows.forEach(function (r) { r.day = DAYS[(parse(r.date).getDay() + 6) % 7]; });
+
+    var weeks = {}, order = [];
+    rows.forEach(function (r) {
+      var start = iso(mondayOf(parse(r.date)));
+      if (!weeks[start]) { weeks[start] = { starts: start, sessions: [], current: start === thisMonday }; order.push(start); }
+      weeks[start].sessions.push(r);
+    });
+    var list = order.map(function (start, i) {
+      var w = weeks[start];
+      w.week = i + 1;
+      w.done = w.sessions.filter(function (s) { return s.status.indexOf("done") === 0; }).length;
+      w.missed = w.sessions.filter(function (s) { return s.status === "missed"; }).length;
+      w.planned = w.sessions.length;
+      return w;
+    });
+    var done = rows.filter(function (r) { return r.status.indexOf("done") === 0; }).length;
+    var missed = rows.filter(function (r) { return r.status === "missed"; }).length;
+    var ahead = rows.filter(function (r) { return r.status === "today" || r.status === "ahead"; });
+    var weekAgo = iso(addDays(new Date(), -7));
+    var recent = rows.filter(function (r) { return r.status === "missed" && r.date >= weekAgo; });
+    return {
+      source: "calendar", starts: rows[0].date, ends: rows[rows.length - 1].date,
+      sessions_total: rows.length, completed: done, missed: missed, remaining: ahead.length,
+      completion_percent: done + missed ? Math.round(100 * done / (done + missed)) : null,
+      next_session: ahead[0] || null,
+      review: recent.length ? { missed_last_7_days: recent } : null,
+      weeks: list,
+    };
+  }
+  function duration(seconds) {
+    var m = Math.round(seconds / 60), h = Math.floor(m / 60);
+    return h ? h + "h " + String(m % 60).padStart(2, "0") + "m" : m + "m";
   }
 
   // Tell the host how tall the view is, so the chat gives it exactly that.
@@ -287,10 +343,10 @@
   function long(d) { return parse(d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
 
   // Session type from its name: what a runner would call it, not Garmin's enum.
-  function kind(name) {
+  function kind(name, sport) {
     var n = (name || "").toLowerCase();
     if (/race|parkrun/.test(n)) return { t: "race", c: "var(--race)", label: "Race" };
-    if (/strength|gym|core|push|pull|legs/.test(n)) return { t: "strength", c: "var(--strength)", label: "Strength" };
+    if (sport === "strength" || /strength|gym|core|push|pull|legs|full body/.test(n)) return { t: "strength", c: "var(--strength)", label: "Strength" };
     if (/long/.test(n)) return { t: "long", c: "var(--long)", label: "Long run" };
     if (/threshold|tempo|interval|reps|x\s?\d|\d\s?x|hill|vo2|fartlek|progression|marathon pace|mp\b|steady|test\b|race pace/.test(n))
       return { t: "quality", c: "var(--quality)", label: "Quality" };
@@ -397,7 +453,7 @@
     // Next session
     var nx = plan.next_session;
     if (nx) {
-      var k = kind(nx.name);
+      var k = kind(nx.name, nx.sport);
       var label = nx.date === today ? "Today" : nx.date === iso(addDays(new Date(), 1)) ? "Tomorrow" : long(nx.date);
       var missedNote = plan.review && plan.review.missed_last_7_days ? plan.review.missed_last_7_days.length : 0;
       app.appendChild(el("div", { class: "next" }, [
@@ -437,7 +493,7 @@
         var col = el("div", { class: "day" }, [el("div", { class: "dname" + (d === today ? " is-today" : ""), text: DAYS[i] })]);
         if (!todays.length) col.appendChild(el("div", { class: "rest", "aria-label": "Rest" }));
         todays.forEach(function (s) {
-          var k2 = kind(s.name), key = s.schedule_id || (s.date + s.name);
+          var k2 = kind(s.name, s.sport), key = s.schedule_id || (s.date + s.name);
           col.appendChild(el("button", {
             class: "cell " + cls(s), style: "--t:" + k2.c, "aria-pressed": String(state.selected === key),
             "aria-label": s.name + ", " + long(s.date) + ", " + (statusText(s) || "ahead"),
@@ -450,7 +506,7 @@
 
       var sel = w.sessions.filter(function (s) { return (s.schedule_id || (s.date + s.name)) === state.selected; })[0];
       if (sel && isOpen) {
-        var lines = [kind(sel.name).label + " · " + long(sel.date)];
+        var lines = [kind(sel.name, sel.sport).label + " · " + long(sel.date)];
         if (sel.status.indexOf("done") === 0) {
           var bits = [];
           if (sel.done_on) bits.push("run on " + long(sel.done_on));
