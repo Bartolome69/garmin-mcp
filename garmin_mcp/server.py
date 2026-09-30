@@ -9,6 +9,7 @@ from __future__ import annotations
 import functools
 import logging
 from datetime import date as date_cls, timedelta
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 import anyio
@@ -103,6 +104,50 @@ try:
     _icon_redirects()
 except Exception:  # noqa: BLE001 - an SDK without custom routes still serves tools
     log.debug("icon routes not registered", exc_info=True)
+
+# --------------------------------------------------------------------------
+# Apps: views a host can draw inline, beside a tool's result
+# --------------------------------------------------------------------------
+#
+# Hosts that support MCP Apps (Claude, ChatGPT, VS Code) read the resource a
+# tool points at and render it in a sandboxed frame, handing it the tool's
+# result. Every other host ignores the pointer and shows the JSON, so the text
+# answer stays complete on its own.
+
+APP_MIME = "text/html;profile=mcp-app"
+PLAN_VIEW = "ui://garmin/plan"
+_UI = Path(__file__).parent / "ui"
+
+
+def _app_tool(view: str):
+    """mcp.tool() that also names a view, on SDKs that know about tool meta."""
+    meta = {"ui": {"resourceUri": view}, "ui/resourceUri": view}
+    try:
+        return mcp.tool(meta=meta)
+    except TypeError:
+        return mcp.tool()
+
+
+def _app_view(uri: str, filename: str, description: str) -> None:
+    def read() -> str:
+        return (_UI / filename).read_text(encoding="utf-8")
+
+    read.__name__ = filename.split(".")[0] + "_view"
+    try:
+        mcp.resource(uri, name=read.__name__, description=description, mime_type=APP_MIME)(read)
+    except TypeError:
+        pass
+
+
+try:
+    _app_view(
+        PLAN_VIEW,
+        "plan.html",
+        "The training plan as an interactive view: progress, the next session, and each week's days.",
+    )
+except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
+    log.debug("plan view not registered", exc_info=True)
+
 
 MAX_ACTIVITIES = 50
 
@@ -1246,7 +1291,7 @@ async def create_plan(
     }
 
 
-@mcp.tool()
+@_app_tool(PLAN_VIEW)
 @tool_errors
 async def get_plan(label: str | None = None) -> dict[str, Any]:
     """The training plan, week by week, with every session marked done, missed or ahead.

@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training plan</title>
+<style>
+  /* Plan view for the get_plan tool, rendered inside the chat by hosts that
+     support MCP Apps. Colours and type come from the host's theme variables
+     where it passes them, so the view looks like part of Claude or ChatGPT;
+     the fallbacks are the site's own palette. Status and session type are the
+     only two things colour encodes. */
+  :root {
+    color-scheme: light;
+    --bg: var(--color-background-primary, #F4F6F3);
+    --card: var(--color-background-secondary, #FFFFFF);
+    --sunk: var(--color-background-tertiary, #E8EDE8);
+    --ink: var(--color-text-primary, #17211B);
+    --muted: var(--color-text-secondary, #55655B);
+    --faint: var(--color-text-tertiary, #7A897F);
+    --line: var(--color-border-secondary, #D3DBD3);
+    --done: var(--color-text-success, #2F6B4F);
+    --done-bg: var(--color-background-success, #E3EFE7);
+    --miss: var(--color-text-danger, #B4492A);
+    --miss-bg: var(--color-background-danger, #F6E6DE);
+    --ring: var(--color-ring-primary, #2F6B4F);
+    --easy: #6E9C82;
+    --long: #3F6E9E;
+    --quality: #C2612F;
+    --race: #B08A1E;
+    --strength: #7C6BA6;
+    --radius: var(--border-radius-lg, 12px);
+    --radius-sm: var(--border-radius-sm, 6px);
+    --sans: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+    --mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: var(--color-background-primary, #0E1512);
+      --card: var(--color-background-secondary, #16201A);
+      --sunk: var(--color-background-tertiary, #1D2922);
+      --ink: var(--color-text-primary, #E3ECE5);
+      --muted: var(--color-text-secondary, #9AAC9F);
+      --faint: var(--color-text-tertiary, #6F8176);
+      --line: var(--color-border-secondary, #27352C);
+      --done: var(--color-text-success, #63BC8E);
+      --done-bg: var(--color-background-success, #17301F);
+      --miss: var(--color-text-danger, #E08A5A);
+      --miss-bg: var(--color-background-danger, #33201A);
+      --ring: var(--color-ring-primary, #63BC8E);
+      --easy: #7FB597; --long: #6E9CCB; --quality: #E08A5A; --race: #D4B04A; --strength: #A694D1;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: var(--color-background-primary, #0E1512);
+    --card: var(--color-background-secondary, #16201A);
+    --sunk: var(--color-background-tertiary, #1D2922);
+    --ink: var(--color-text-primary, #E3ECE5);
+    --muted: var(--color-text-secondary, #9AAC9F);
+    --faint: var(--color-text-tertiary, #6F8176);
+    --line: var(--color-border-secondary, #27352C);
+    --done: var(--color-text-success, #63BC8E);
+    --done-bg: var(--color-background-success, #17301F);
+    --miss: var(--color-text-danger, #E08A5A);
+    --miss-bg: var(--color-background-danger, #33201A);
+    --ring: var(--color-ring-primary, #63BC8E);
+    --easy: #7FB597; --long: #6E9CCB; --quality: #E08A5A; --race: #D4B04A; --strength: #A694D1;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, .cell:focus-visible, .week-head:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .mono { font-family: var(--mono); }
+
+  /* ---- Header ---- */
+  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); display: flex; gap: 8px; align-items: center;
+  }
+  .code { background: var(--sunk); color: var(--ink); padding: 2px 7px; border-radius: 999px; letter-spacing: 0.08em; }
+  h1 { margin: 4px 0 0; font-size: 21px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .icon-btn {
+    flex: none; width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--card); cursor: pointer; display: grid; place-items: center; color: var(--muted);
+  }
+  .icon-btn:hover { color: var(--ink); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .spin svg { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Progress ---- */
+  .progress { display: flex; flex-direction: column; gap: 6px; }
+  .bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--sunk); }
+  .bar i { display: block; height: 100%; }
+  .bar .d { background: var(--done); }
+  .bar .m { background: var(--miss); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .legend b { color: var(--ink); font-weight: 600; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+
+  /* ---- Next session ---- */
+  .next {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px; display: grid; grid-template-columns: 4px 1fr; gap: 12px;
+  }
+  .stripe { border-radius: 999px; background: var(--easy); }
+  .next-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .next-name { font-size: 17px; font-weight: 650; margin-top: 2px; }
+  .next-meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .act {
+    border: 1px solid var(--line); background: var(--bg); border-radius: 999px;
+    padding: 7px 13px; font-size: 13px; font-weight: 550; cursor: pointer;
+  }
+  .act:hover { background: var(--sunk); }
+  .act.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .act.primary:hover { opacity: 0.88; }
+  .sent { font-size: 12.5px; color: var(--done); margin-top: 8px; }
+
+  /* ---- Weeks ---- */
+  .weeks { display: flex; flex-direction: column; gap: 8px; }
+  .week { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .week.current { border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring) inset; }
+  .week-head {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    background: none; border: 0; cursor: pointer; text-align: left;
+  }
+  .wk { font-weight: 650; font-size: 14px; min-width: 64px; }
+  .wk small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .pips { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+  .pip { width: 10px; height: 10px; border-radius: 3px; background: var(--sunk); border: 1px solid color-mix(in srgb, var(--faint) 50%, var(--line)); }
+  .pip.done { background: var(--done); border-color: var(--done); }
+  .pip.missed { background: var(--miss); border-color: var(--miss); }
+  .pip.today { border: 2px solid var(--ring); background: transparent; }
+  .count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chev { color: var(--faint); transition: transform 0.15s ease; flex: none; }
+  .week.open .chev { transform: rotate(90deg); }
+
+  .grid { display: none; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 0 8px 10px; }
+  .week.open .grid { display: grid; }
+  .day { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .dname { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); text-align: center; }
+  .dname.is-today { color: var(--ring); font-weight: 600; }
+  .cell {
+    position: relative; border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: var(--bg); padding: 6px 5px 6px 8px; min-height: 58px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 2px; text-align: left; overflow: hidden;
+  }
+  .cell::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--t, var(--easy)); }
+  .cell .n { font-size: 11.5px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+  .cell .s { font-size: 10.5px; color: var(--muted); }
+  .cell.done { background: var(--done-bg); border-color: transparent; }
+  .cell.done .s { color: var(--done); font-weight: 600; }
+  .cell.missed { background: var(--miss-bg); border-color: transparent; }
+  .cell.missed .s { color: var(--miss); font-weight: 600; }
+  .cell.missed .n { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--miss) 60%, transparent); }
+  .cell.today { border: 2px solid var(--ring); }
+  .cell[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+  .rest { min-height: 58px; border-radius: var(--radius-sm); border: 1px dashed var(--line); opacity: 0.55; }
+
+  /* ---- Detail ---- */
+  .detail { margin: 0 8px 10px; padding: 12px; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--line); }
+  .detail h3 { margin: 0; font-size: 15px; }
+  .detail p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+
+  .foot { color: var(--faint); font-size: 12px; text-align: center; padding: 2px 0 4px; }
+  .empty { padding: 28px 12px; text-align: center; color: var(--muted); }
+
+  /* A phone has no room for seven columns: the week becomes a list of the
+     days that have something on them. */
+  @media (max-width: 520px) {
+    .app { padding: 12px; }
+    .week.open .grid { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 10px; }
+    .day { flex-direction: row; align-items: stretch; gap: 8px; }
+    .day:has(> .rest) { display: none; }
+    .dname { width: 34px; flex: none; text-align: left; align-self: center; }
+    .cell { flex: 1; min-height: 0; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; padding: 9px 10px 9px 12px; }
+    .cell .n { font-size: 13.5px; overflow-wrap: normal; }
+    .cell .s { font-size: 12px; white-space: nowrap; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app"><div class="empty">Loading your plan&hellip;</div></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- bridge
+  // The host speaks JSON-RPC over postMessage. Only the handful of messages
+  // this view needs are implemented, so there is no SDK to load.
+  var host = window.parent !== window ? window.parent : null;
+  var nextId = 1, pending = {}, hostContext = {};
+
+  function send(msg) { if (host) host.postMessage(Object.assign({ jsonrpc: "2.0" }, msg), "*"); }
+  function request(method, params) {
+    var id = nextId++;
+    return new Promise(function (resolve, reject) {
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ id: id, method: method, params: params || {} });
+      setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 20000);
+    });
+  }
+  function notify(method, params) { send({ method: method, params: params || {} }); }
+
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.jsonrpc !== "2.0") return;
+    if (data.id != null && !data.method && pending[data.id]) {
+      var p = pending[data.id]; delete pending[data.id];
+      data.error ? p.reject(new Error(data.error.message || "error")) : p.resolve(data.result);
+      return;
+    }
+    switch (data.method) {
+      case "ui/notifications/tool-result": onResult(data.params); break;
+      case "ui/notifications/host-context-changed": applyContext(data.params || {}); break;
+      case "ui/notifications/tool-cancelled": render(null, "The plan could not be loaded."); break;
+      case "ui/resource-teardown": case "ping":
+        if (data.id != null) send({ id: data.id, result: {} });
+        break;
+    }
+  });
+
+  function applyContext(ctx) {
+    Object.assign(hostContext, ctx);
+    if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
+    var vars = ctx.styles && ctx.styles.variables;
+    if (vars) Object.keys(vars).forEach(function (k) { if (vars[k]) document.documentElement.style.setProperty(k, vars[k]); });
+    var fonts = ctx.styles && ctx.styles.css && ctx.styles.css.fonts;
+    if (fonts && !document.getElementById("host-fonts")) {
+      var s = document.createElement("style"); s.id = "host-fonts"; s.textContent = fonts; document.head.appendChild(s);
+    }
+  }
+
+  function onResult(result) {
+    if (!result) return;
+    var plan = result.structuredContent;
+    if (!plan && result.content) {
+      for (var i = 0; i < result.content.length; i++) {
+        var c = result.content[i];
+        if (c.type === "text") { try { plan = JSON.parse(c.text); break; } catch (e) {} }
+      }
+    }
+    render(plan);
+  }
+
+  // Tell the host how tall the view is, so the chat gives it exactly that.
+  if (host && "ResizeObserver" in window) {
+    var last = 0;
+    new ResizeObserver(function () {
+      var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+      if (h !== last) { last = h; notify("ui/notifications/size-changed", { width: document.documentElement.clientWidth, height: h }); }
+    }).observe(document.documentElement);
+  }
+
+  // ---------------------------------------------------------------- helpers
+  var DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "class") n.className = attrs[k];
+      else if (k === "text") n.textContent = attrs[k];
+      else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), attrs[k]);
+      else if (k === "style") n.setAttribute("style", attrs[k]);
+      else n.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return n;
+  }
+  function parse(d) { var p = d.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function iso(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function addDays(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function short(d) { return parse(d).toLocaleDateString(undefined, { day: "numeric", month: "short" }); }
+  function long(d) { return parse(d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
+
+  // Session type from its name: what a runner would call it, not Garmin's enum.
+  function kind(name) {
+    var n = (name || "").toLowerCase();
+    if (/race|parkrun/.test(n)) return { t: "race", c: "var(--race)", label: "Race" };
+    if (/strength|gym|core|push|pull|legs/.test(n)) return { t: "strength", c: "var(--strength)", label: "Strength" };
+    if (/long/.test(n)) return { t: "long", c: "var(--long)", label: "Long run" };
+    if (/threshold|tempo|interval|reps|x\s?\d|\d\s?x|hill|vo2|fartlek|progression|marathon pace|mp\b/.test(n))
+      return { t: "quality", c: "var(--quality)", label: "Quality" };
+    return { t: "easy", c: "var(--easy)", label: "Easy" };
+  }
+  function statusText(s) {
+    if (s.status === "done") return "Done";
+    if (s.status === "done, moved") return "Done " + DAYS[(parse(s.done_on).getDay() + 6) % 7];
+    if (s.status === "missed") return "Missed";
+    if (s.status === "today") return "Today";
+    return "";
+  }
+  function cls(s) { return s.status.indexOf("done") === 0 ? "done" : s.status; }
+
+  // ---------------------------------------------------------------- actions
+  function ask(text, button) {
+    if (!host) { flash(button, "Would ask: “" + text + "”"); return; }
+    // The SDK sends content as a list, the written spec as one block. Hosts
+    // validate against one or the other, so try the list and fall back.
+    var block = { type: "text", text: text };
+    request("ui/message", { role: "user", content: [block] })
+      .catch(function () { return request("ui/message", { role: "user", content: block }); })
+      .then(function () { flash(button, "Sent to the chat"); })
+      .catch(function () { flash(button, "The chat did not accept that"); });
+  }
+  function flash(button, msg) {
+    var box = button.closest(".next, .detail"); if (!box) return;
+    var old = box.querySelector(".sent"); if (old) old.remove();
+    box.appendChild(el("div", { class: "sent", text: msg }));
+  }
+  function actionsFor(s, planLabel) {
+    var when = long(s.date), n = s.name, row = [];
+    if (s.status.indexOf("done") === 0) {
+      row.push(el("button", { class: "act primary", text: "How did it go?", onclick: function (e) {
+        ask("Look at my " + n + " from " + when + " against what was planned in my " + planLabel + " plan.", e.currentTarget); } }));
+    } else if (s.status === "missed") {
+      row.push(el("button", { class: "act primary", text: "Fit it back in", onclick: function (e) {
+        ask("I missed " + n + " on " + when + ". Should I fit it back into my " + planLabel + " plan, and where?", e.currentTarget); } }));
+    } else {
+      row.push(el("button", { class: "act primary", text: "Move it", onclick: function (e) {
+        ask("Move my " + n + " on " + when + " to another day that works with the rest of the week.", e.currentTarget); } }));
+      row.push(el("button", { class: "act", text: "Make it easier", onclick: function (e) {
+        ask("Check my readiness, then make " + n + " on " + when + " easier if it should be.", e.currentTarget); } }));
+    }
+    return el("div", { class: "actions" }, row);
+  }
+
+  // ---------------------------------------------------------------- render
+  var state = { plan: null, open: {}, selected: null };
+
+  function render(plan, error) {
+    var app = document.getElementById("app");
+    app.textContent = "";
+    if (!plan || plan.error || !plan.weeks) {
+      app.appendChild(el("div", { class: "empty", text: error || (plan && plan.error) || "No plan to show." }));
+      return;
+    }
+    if (state.plan && state.plan.label !== plan.label) state.open = {};
+    state.plan = plan;
+    var today = iso(new Date());
+
+    // Header
+    var weekLine = plan.current_week ? "Week " + plan.current_week + " of " + plan.weeks_total
+      : plan.finished ? "Finished" : plan.weeks_total + " weeks";
+    app.appendChild(el("div", { class: "top" }, [
+      el("div", {}, [
+        el("div", { class: "kicker" }, [el("span", { class: "code", text: plan.label }), "Training plan"]),
+        el("h1", { text: plan.goal || "Your plan" }),
+        el("div", { class: "sub", text: weekLine + " · " + short(plan.starts) + " to " + short(plan.ends) }),
+      ]),
+      el("button", { class: "icon-btn", title: "Refresh", "aria-label": "Refresh the plan", onclick: refresh },
+        [svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')]),
+    ]));
+
+    // Progress
+    var due = (plan.completed || 0) + (plan.missed || 0), total = plan.sessions_total || 1;
+    app.appendChild(el("div", { class: "progress" }, [
+      el("div", { class: "bar", role: "img", "aria-label": plan.completed + " done, " + plan.missed + " missed, " + plan.remaining + " to go" }, [
+        el("i", { class: "d", style: "width:" + (100 * (plan.completed || 0) / total) + "%" }),
+        el("i", { class: "m", style: "width:" + (100 * (plan.missed || 0) / total) + "%" }),
+      ]),
+      el("div", { class: "legend" }, [
+        el("span", {}, [el("span", { class: "dot", style: "background:var(--done)" }), el("b", { text: String(plan.completed || 0) }), " done"]),
+        el("span", {}, [el("span", { class: "dot", style: "background:var(--miss)" }), el("b", { text: String(plan.missed || 0) }), " missed"]),
+        el("span", {}, [el("span", { class: "dot", style: "background:var(--sunk);border:1px solid color-mix(in srgb, var(--faint) 50%, var(--line))" }), el("b", { text: String(plan.remaining || 0) }), " to go"]),
+        due ? el("span", {}, [el("b", { text: (plan.completion_percent != null ? plan.completion_percent : 0) + "%" }), " of due sessions"]) : null,
+      ]),
+    ]));
+
+    // Next session
+    var nx = plan.next_session;
+    if (nx) {
+      var k = kind(nx.name);
+      var label = nx.date === today ? "Today" : nx.date === iso(addDays(new Date(), 1)) ? "Tomorrow" : long(nx.date);
+      var missedNote = plan.review && plan.review.missed_last_7_days ? plan.review.missed_last_7_days.length : 0;
+      app.appendChild(el("div", { class: "next" }, [
+        el("div", { class: "stripe", style: "background:" + k.c }),
+        el("div", {}, [
+          el("div", { class: "next-label", text: "Next · " + label }),
+          el("div", { class: "next-name", text: nx.name }),
+          el("div", { class: "next-meta", text: k.label + (missedNote ? " · " + missedNote + " missed this past week" : "") }),
+          actionsFor(nx, plan.label),
+        ]),
+      ]));
+    }
+
+    // Weeks
+    var weeks = el("div", { class: "weeks" });
+    plan.weeks.forEach(function (w) {
+      var isOpen = state.open[w.week] != null ? state.open[w.week] : !!w.current;
+      var box = el("div", { class: "week" + (w.current ? " current" : "") + (isOpen ? " open" : "") });
+      var pips = el("div", { class: "pips", "aria-hidden": "true" },
+        w.sessions.map(function (s) { return el("span", { class: "pip " + cls(s) }); }));
+      var head = el("button", { class: "week-head", "aria-expanded": String(isOpen), onclick: function () {
+        state.open[w.week] = !box.classList.contains("open"); render(state.plan); } }, [
+        el("div", { class: "wk" }, ["Week " + w.week, el("small", { text: short(w.starts) })]),
+        pips,
+        el("span", { class: "count", text: (w.done || 0) + "/" + w.planned }),
+        svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
+      ]);
+      box.appendChild(head);
+
+      var grid = el("div", { class: "grid" });
+      var monday = parse(w.starts);
+      for (var i = 0; i < 7; i++) {
+        var d = iso(addDays(monday, i));
+        var todays = w.sessions.filter(function (s) { return s.date === d; });
+        var col = el("div", { class: "day" }, [el("div", { class: "dname" + (d === today ? " is-today" : ""), text: DAYS[i] })]);
+        if (!todays.length) col.appendChild(el("div", { class: "rest", "aria-label": "Rest" }));
+        todays.forEach(function (s) {
+          var k2 = kind(s.name), key = s.schedule_id || (s.date + s.name);
+          col.appendChild(el("button", {
+            class: "cell " + cls(s), style: "--t:" + k2.c, "aria-pressed": String(state.selected === key),
+            "aria-label": s.name + ", " + long(s.date) + ", " + (statusText(s) || "ahead"),
+            onclick: function () { state.selected = state.selected === key ? null : key; state.open[w.week] = true; render(state.plan); },
+          }, [el("span", { class: "n", text: s.name }), el("span", { class: "s", text: statusText(s) })]));
+        });
+        grid.appendChild(col);
+      }
+      box.appendChild(grid);
+
+      var sel = w.sessions.filter(function (s) { return (s.schedule_id || (s.date + s.name)) === state.selected; })[0];
+      if (sel && isOpen) {
+        var lines = [kind(sel.name).label + " · " + long(sel.date)];
+        if (sel.status.indexOf("done") === 0) {
+          var bits = [];
+          if (sel.done_on) bits.push("run on " + long(sel.done_on));
+          if (sel.actual_km) bits.push(sel.actual_km + " km");
+          if (sel.actual) bits.push(sel.actual);
+          if (bits.length) lines.push("Done: " + bits.join(", "));
+        } else if (sel.status === "missed") lines.push("No run found within a day of it.");
+        box.appendChild(el("div", { class: "detail" }, [
+          el("h3", { text: sel.name }),
+        ].concat(lines.map(function (t) { return el("p", { text: t }); })).concat([actionsFor(sel, plan.label)])));
+      }
+      weeks.appendChild(box);
+    });
+    app.appendChild(weeks);
+    app.appendChild(el("div", { class: "foot", text: "Tap a session to move it or ask about it. Done means run within a day of its date." }));
+  }
+
+  function svg(inner, extra) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", "16"); s.setAttribute("height", "16");
+    s.setAttribute("aria-hidden", "true"); if (extra) s.setAttribute("class", extra);
+    s.innerHTML = inner; return s;
+  }
+
+  function refresh(event) {
+    var btn = event.currentTarget;
+    if (!host) return;
+    btn.classList.add("spin");
+    request("tools/call", { name: "get_plan", arguments: state.plan ? { label: state.plan.label } : {} })
+      .then(function (r) { onResult(r); })
+      .catch(function () {})
+      .then(function () { btn.classList.remove("spin"); });
+  }
+
+  // ---------------------------------------------------------------- start
+  if (window.__PLAN_DEMO__) { render(window.__PLAN_DEMO__); return; }
+  if (!host) { render(null, "This view opens inside a chat that supports MCP Apps."); return; }
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "garmin-plan", version: "1.0.0" },
+    clientInfo: { name: "garmin-plan", version: "1.0.0" },
+    appCapabilities: { availableDisplayModes: ["inline"] },
+  }).then(function (result) {
+    applyContext((result && result.hostContext) || {});
+    notify("ui/notifications/initialized", {});
+  }).catch(function () { notify("ui/notifications/initialized", {}); });
+})();
+</script>
+</body>
+</html>
