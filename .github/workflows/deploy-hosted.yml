@@ -142,3 +142,17 @@ jobs:
           done
           echo "--- $base/health"
           curl -fsS --max-time 20 "$base/health" && echo
+
+          # The address people actually paste. The server checks that a token
+          # was minted for the exact resource it is presented to, so a wrong
+          # issuer here breaks every sign-in while both pages still render.
+          public="https://mcp.garmin.daash.run"
+          echo "--- $public/health"
+          curl -fsS --max-time 20 "$public/health" && echo
+          echo "--- $public/.well-known/oauth-authorization-server"
+          issuer="$(curl -fsS --max-time 20 "$public/.well-known/oauth-authorization-server" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("issuer",""))')"
+          case "$issuer" in
+            "$public"|"$public/") echo "    ok: issuer is $issuer" ;;
+            *) echo "    FAIL: issuer is '$issuer', expected $public"; exit 1 ;;
+          esac
