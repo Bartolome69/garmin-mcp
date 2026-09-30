@@ -7,10 +7,11 @@ hole exactly where it mattered.
 
 Three events close it: a sign-in succeeded, a sign-in failed (and roughly
 why), and a connection was used for the first time. Each carries a handful of
-flags and no more: no email, no token, no Garmin data. The distinct id is an
-HMAC of the user's token under the server secret, so the same person counts
-once without PostHog being able to name them, and person profiles are turned
-off so nothing accumulates against that id.
+flags and the masked form of the account's email (first letter and domain, as
+the store keeps it), so the person running this can tell one friend's row from
+another's in a report. Never the full address, a token or any Garmin data. The
+distinct id is an HMAC of the user's token under the server secret, and person
+profiles are turned off so nothing accumulates against it.
 
 Off unless GARMIN_MCP_POSTHOG_KEY is set, so a self-hosted copy reports to
 nobody by default. Sending happens on a background thread and swallows every

@@ -391,11 +391,19 @@ async def main() -> int:
                   "throttled", "blocked_by_garmin", "bad_credentials", "other", "mfa_rejected"},
               str(reasons))
         blob = json.dumps(SENT)
-        check("analytics carry no email, token, secret or password",
-              "example.com" not in blob and alice not in blob and bob not in blob
+        # The masked address travels; the full one never does. Every address
+        # the suite signs in with is listed here so a regression on any path
+        # shows up, not just the first.
+        full_addresses = ("someone@example.com", "friend@example.com",
+                          "spray@example.com", "gatecrasher@example.com", MFA_EMAIL)
+        check("analytics carry the masked account and nothing that names anyone",
+              all(e["properties"].get("account", "").count("*") >= 1
+                  for e in connected + first_calls)
+              and not any(addr in blob for addr in full_addresses)
+              and alice not in blob and bob not in blob
               and SECRET not in blob and "their-own-password" not in blob
               and "hunter2" not in blob,
-              blob[:200] if any(x in blob for x in ("example.com", alice, bob, SECRET)) else "")
+              str([e["properties"].get("account") for e in connected + first_calls][:4]))
         check("analytics build no person profile",
               all(e["properties"].get("$process_person_profile") is False for e in SENT))
         check("analytics stay silent without a key",

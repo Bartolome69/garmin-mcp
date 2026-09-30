@@ -321,13 +321,16 @@ def _finish(
     previous = store.tokens_for(fingerprint)
     for stale in previous:
         _SESSIONS.pop(stale, None)
-    user_token = store.save_user(
-        mask_email(email) or "hidden", blob, email_hash=fingerprint
-    )
+    masked = mask_email(email) or "hidden"
+    user_token = store.save_user(masked, blob, email_hash=fingerprint)
+    # The masked address goes along: first letter and domain, the same form
+    # the store keeps. Enough for the person running this to tell friends
+    # apart in a report, not enough for anyone else to write to them.
     analytics.capture(
         "connector_connected",
         user_token,
         {
+            "account": masked,
             "via": "oauth" if (OAUTH_ENABLED and flow) else "url",
             "mfa": mfa,
             "returning": bool(previous),
@@ -587,7 +590,8 @@ class SessionBinding:
                 return
             user_token = match.group("token")
 
-        if store.get_user(user_token) is None:
+        user = store.get_user(user_token)
+        if user is None:
             # The Garmin session behind this token is gone — disconnected, or
             # signed in again. The token outlived what it pointed at.
             store.delete_tokens_for_subject(user_token)
@@ -599,7 +603,7 @@ class SessionBinding:
         if now - _TOUCHED.get(user_token, 0.0) > _TOUCH_EVERY:
             _TOUCHED[user_token] = now
             if store.touch_user(user_token):
-                analytics.capture("first_tool_call", user_token, {})
+                analytics.capture("first_tool_call", user_token, {"account": user.email_masked})
 
         token = use_session(session_for(user_token))
         try:
