@@ -1355,18 +1355,26 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     today = date_cls.today()
     items = await _plan_calendar(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
     plans = training_plan.plans_in(items)
-    if not plans:
+    code: str | None = None
+    if not plans and not label and preview.enabled():
+        # Most people's plan came from a coach, an app or Garmin Coach, not
+        # create_plan. Their calendar is still a plan: the weeks around this
+        # one, as scheduled, against what was run.
+        sessions = training_plan.around(items, today)
+        if not sessions:
+            return {"error": "Nothing is scheduled on the Garmin calendar in the weeks around this one."}
+    elif not plans:
         return {
             "error": (
                 "No plan found on the Garmin calendar. create_plan builds one; "
                 "single scheduled workouts are in get_progress."
             )
         }
-    code = (training_plan.normalise_label(label, "") if label else None) or training_plan.pick(plans, today)
-    if code not in plans:
-        return {"error": f"No plan with code {code}.", "plans_found": sorted(plans)}
-
-    sessions = plans[code]
+    else:
+        code = (training_plan.normalise_label(label, "") if label else None) or training_plan.pick(plans, today)
+        if code not in plans:
+            return {"error": f"No plan with code {code}.", "plans_found": sorted(plans)}
+        sessions = plans[code]
     first = min(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
     last = max(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
 
@@ -1394,8 +1402,11 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         except Exception:  # noqa: BLE001
             continue
         seconds[wid] = float(detail.get("estimatedDurationInSecs") or 0)
-        goal = goal or training_plan.goal_from_description(detail.get("description"), code)
+        if code:
+            goal = goal or training_plan.goal_from_description(detail.get("description"), code)
 
+    if code is None:
+        return training_plan.summarise_calendar(sessions, activities, today, planned_seconds=seconds)
     others = sorted(p for p in plans if p != code)
     result = training_plan.summarise(
         code, sessions, activities, today, goal=goal, planned_seconds=seconds
@@ -1582,7 +1593,10 @@ async def get_connection_status() -> dict[str, Any]:
     Reports which credentials are present and whether the cached session is
     usable. Never returns the password or the cached token itself.
     """
-    return await anyio.to_thread.run_sync(session.status)
+    status = await anyio.to_thread.run_sync(session.status)
+    if preview.enabled():
+        status["preview_features"] = "on"
+    return status
 
 
 def main() -> None:
