@@ -193,6 +193,21 @@ workout construction, bad input, and the no-credentials startup path.
 The same code path against your real account, printing what comes back. Useful
 for confirming a setup end to end.
 
+```bash
+.venv/bin/python tests/http_test.py
+```
+
+The HTTP transport, as Claude drives it: discovery, client registration,
+Google sign-in (stubbed), consent, token exchange and rotation, and tool calls
+with the token.
+
+## Running it as a service
+
+To use it from every Claude client on your account, web and mobile included,
+run it on a machine at home as a Docker container. It then serves MCP over
+HTTP behind Google sign-in instead of stdio. [SELF-HOSTING.md](SELF-HOSTING.md)
+has the setup.
+
 ## Other MCP clients, and ChatGPT
 
 Nothing here is Claude-specific: it speaks MCP over stdio, so any client that
