@@ -76,6 +76,10 @@ class User:
     user_token: str
     email_masked: str
     created_at: int
+    # The HMAC of the email, when the row has one. It outlives the token: a
+    # fresh sign-in mints a new token but the same fingerprint, which is what
+    # makes it the right thing to count a person by.
+    email_hash: str | None = None
 
 
 def _cipher() -> Fernet:
@@ -206,7 +210,8 @@ def update_blob(user_token: str, token_blob: str) -> None:
 def get_user(user_token: str) -> User | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT user_token, email_masked, created_at FROM users WHERE user_token = ?",
+            "SELECT user_token, email_masked, created_at, email_hash "
+            "FROM users WHERE user_token = ?",
             (user_token,),
         ).fetchone()
     return User(*row) if row else None

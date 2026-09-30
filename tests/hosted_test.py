@@ -385,6 +385,15 @@ async def main() -> int:
         check("first-use ids differ per person and match nobody's token",
               len({e["distinct_id"] for e in first_calls}) == 2
               and not ({alice, bob} & {e["distinct_id"] for e in first_calls}))
+        # The same address signing in repeatedly is one person, however many
+        # tokens that minted; different addresses are different people.
+        ids_by_account: dict[str, set[str]] = {}
+        for e in connected:
+            ids_by_account.setdefault(e["properties"]["account"], set()).add(e["distinct_id"])
+        check("repeat sign-ins keep one id per account",
+              ids_by_account and all(len(ids) == 1 for ids in ids_by_account.values())
+              and len({next(iter(v)) for v in ids_by_account.values()}) == len(ids_by_account),
+              str({k: len(v) for k, v in ids_by_account.items()}))
         reasons = {e["properties"].get("reason") for e in failed}
         check("failed sign-ins carry a one-word reason",
               "throttled" in reasons and reasons <= {

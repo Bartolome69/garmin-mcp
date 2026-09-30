@@ -44,27 +44,30 @@ def enabled() -> bool:
     return bool(KEY)
 
 
-def distinct_id(user_token: str | None) -> str:
+def distinct_id(subject: str | None) -> str:
     """One stable, unreadable id per person; a fixed one for nobody in particular.
 
-    Keyed on the server secret so the id cannot be recomputed from a leaked
-    token, and prefixed so it can never collide with the email fingerprint the
-    store keeps for the same person.
+    `subject` is the store's email fingerprint where the row has one, so a
+    person who signs in again keeps the same id instead of counting twice; the
+    token is the fallback for rows that predate the fingerprint. Either way it
+    is HMAC'd again under the server secret with its own prefix, so the id can
+    be recomputed from nothing PostHog holds and never collides with what the
+    store keeps.
     """
-    if not user_token:
+    if not subject:
         return "anonymous"
     key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
-    return hmac.new(key, b"posthog:" + user_token.encode(), hashlib.sha256).hexdigest()[:32]
+    return hmac.new(key, b"posthog:" + subject.encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def capture(event: str, user_token: str | None = None, properties: dict[str, Any] | None = None) -> None:
+def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:
     """Record one event. Returns at once; the request goes out on its own thread."""
     if not KEY:
         return
     payload = {
         "api_key": KEY,
         "event": event,
-        "distinct_id": distinct_id(user_token),
+        "distinct_id": distinct_id(subject),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "properties": {
             **(properties or {}),

@@ -328,7 +328,7 @@ def _finish(
     # apart in a report, not enough for anyone else to write to them.
     analytics.capture(
         "connector_connected",
-        user_token,
+        fingerprint,
         {
             "account": masked,
             "via": "oauth" if (OAUTH_ENABLED and flow) else "url",
@@ -603,7 +603,11 @@ class SessionBinding:
         if now - _TOUCHED.get(user_token, 0.0) > _TOUCH_EVERY:
             _TOUCHED[user_token] = now
             if store.touch_user(user_token):
-                analytics.capture("first_tool_call", user_token, {"account": user.email_masked})
+                analytics.capture(
+                    "first_tool_call",
+                    user.email_hash or user_token,
+                    {"account": user.email_masked},
+                )
 
         token = use_session(session_for(user_token))
         try:
