@@ -1123,9 +1123,9 @@ Then, working with me:
     // ---- Live usage ----
     // The server counts accounts that made a request in the last 30 days and
     // serves the total, and nothing else, at /stats. Below the floor the pill
-    // stays hidden: "3 people" reassures nobody.
+    // stays hidden: a small number reassures nobody.
     var STATS_URL = "https://mcp.garmin.daash.run/stats";
-    var STATS_FLOOR = 5;
+    var STATS_FLOOR = 20;
     try {
       fetch(STATS_URL, {mode: "cors", credentials: "omit"})
         .then(function (r) { return r.ok ? r.json() : null; })
