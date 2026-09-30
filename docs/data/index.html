@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
-<link rel="canonical" href="https://garmin.daash.run/privacy/">
-<meta property="og:title" content="Privacy · Garmin for Claude">
-<meta property="og:description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
+<meta name="description" content="Every kind of Garmin data the connector reads for Claude and ChatGPT, the workouts it can write to your watch, and what it never touches.">
+<link rel="canonical" href="https://garmin.daash.run/data/">
+<meta property="og:title" content="What it can see · Garmin for Claude">
+<meta property="og:description" content="Every kind of Garmin data the connector reads for Claude and ChatGPT, the workouts it can write to your watch, and what it never touches.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://garmin.daash.run/privacy/">
+<meta property="og:url" content="https://garmin.daash.run/data/">
 <meta property="og:site_name" content="Garmin for Claude">
 <!-- Absolute URL: Slack, iMessage and the rest will not resolve a relative one.
      Cache-busted, because every platform caches previews aggressively. -->
@@ -29,7 +29,7 @@
   img { max-width: 100%; }
   [hidden] { display: none !important; }
 </style>
-<title>Privacy · Garmin for Claude</title>
+<title>What it can see · Garmin for Claude</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -271,228 +271,195 @@
 
   <header>
     <p class="kicker"><a href="/">&larr;&nbsp;Garmin for Claude</a></p>
-    <h1>What this does with your data</h1>
+    <h1>What it can see, and what it can change</h1>
     <p class="lede">
-      You are about to give a stranger&rsquo;s website your Garmin login. That
-      deserves a straight answer rather than four pages of legal throat-clearing,
-      so here is the whole of it.
+      The connector is a set of questions Claude or ChatGPT can ask your Garmin
+      account, and a small set of things it can put there. This is the whole
+      list, in the order you would think of them, with what each one never
+      touches.
     </p>
-    <p class="stamp">Last updated 29 September 2026</p>
+    <p class="stamp">Last updated 30 September 2026</p>
 
     <dl class="facts">
-      <div><dt>Password</dt><dd>Never stored, anywhere</dd></div>
-      <div><dt>Kept</dt><dd>One encrypted Garmin token</dd></div>
-      <div><dt>Sold or shared</dt><dd>Never, to anyone</dd></div>
+      <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, your plan</dd></div>
+      <div><dt>Writes</dt><dd>The workout library, and only that</dd></div>
+      <div><dt>Never</dt><dd>Your recorded runs, your route maps, your body composition</dd></div>
     </dl>
   </header>
 
   <section>
-    <h2>Your Garmin password</h2>
+    <h2>About today</h2>
     <div class="stack">
       <p class="small">
-        When you sign in, your email and password are passed straight to Garmin
-        to be exchanged for an access token. The password is never written to
-        disk, never logged, and is dropped from memory the moment Garmin accepts
-        it. It is not kept in any form: not encrypted, not hashed, not at
-        all. Nobody can recover it later, including me.
-      </p>
-      <p class="small">
-        If you would rather not type it here at all, that is a reasonable
-        instinct. <a href="/#diy">Run the whole thing on your own machine</a>
-        and your Garmin session never leaves it.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>What is stored, and where</h2>
-    <div class="stack">
-      <p class="small">
-        One row per person, on a single server in London, run by
-        <a href="https://fly.io" target="_blank" rel="noopener">Fly.io</a>. That
-        row holds:
+        The morning questions. Should today be hard or easy, did you sleep,
+        where is your training load sitting. Three tools cover it.
       </p>
     </div>
     <ul class="plain" style="margin-top:16px">
-      <li>
-        <span><strong>The access token Garmin issued you</strong>, encrypted at
-        rest. This is the part that does the work: it is what lets the
-        connector read your training without asking you to sign in again.</span>
-      </li>
-      <li>
-        <span><strong>A masked version of your email</strong>: the first
-        letter and the domain, like <code class="inline">b****@gmail.com</code>.
-        It exists so you can tell which account is connected. The full address
-        is not stored.</span>
-      </li>
-      <li>
-        <span><strong>A one-way fingerprint of your email.</strong> Signing in
-        again has to recognise you in order to retire your previous session, and
-        that is the only thing this is for. It cannot be turned back into your
-        address.</span>
-      </li>
-      <li>
-        <span><strong>Two timestamps</strong>, for when the connection was made
-        and last used.</span>
-      </li>
+      <li><span><strong>Daily summary.</strong> Steps and distance, calories, resting and
+        min and max heart rate, body battery high and low, stress, intensity
+        minutes, blood oxygen. The same numbers as the Garmin Connect home
+        screen for the day.</span></li>
+      <li><span><strong>Sleep.</strong> Total time, the stages with durations and
+        percentages, sleep score, overnight HRV, resting heart rate, awake
+        count. Needs the watch worn overnight; otherwise it says so.</span></li>
+      <li><span><strong>Readiness.</strong> Garmin&rsquo;s training readiness score and
+        the six factors behind it; training status (productive, maintaining,
+        strained, recovery and the rest); acute against chronic load and the
+        ratio between them; the four-week load focus with its targets;
+        overnight HRV against your personal baseline; body battery, stress,
+        resting heart rate and sleep folded in. One call, so the answer to
+        &ldquo;threshold today or tomorrow?&rdquo; comes from evidence.</span></li>
     </ul>
-    <div class="stack">
-      <p class="small">
-        Nothing from Garmin is cached: no activities, no heart rate, no sleep, no
-        location. Each question fetches from Garmin fresh and the answer is gone
-        when the request ends. There is no copy of your training history on this
-        server to leak, subpoena or lose.
-      </p>
-      <p class="small">
-        Your IP address is held in memory for a few minutes so that repeated
-        failed sign-ins can be slowed down. It is never written to disk, and the
-        web server&rsquo;s request log is switched off precisely so that private
-        connector addresses do not end up in it.
-      </p>
-    </div>
   </section>
 
   <section>
-    <h2>What it can do inside your Garmin account</h2>
+    <h2>About a run</h2>
     <div class="stack">
       <p class="small">
-        <strong>Reading is unrestricted.</strong> Activities, splits, heart-rate
-        zones, daily summaries, sleep, body battery, personal records, the
-        same things you see in the Garmin Connect app.
-      </p>
-      <p class="small">
-        <strong>Writing stays inside the workout library:</strong> creating a
-        workout, putting it on a date, taking it off again, and deleting one you
-        no longer want. Deleting is gated rather than merely discouraged.
-        The first attempt only reads the workout&rsquo;s name back, and removing
-        it takes a second one quoting that name, so nothing goes without having
-        been named out loud first.
-      </p>
-      <p class="small">
-        <strong>Your training history is out of reach.</strong> There is no tool
-        that deletes or edits a recorded activity, changes your profile, posts
-        anything, or touches anyone else&rsquo;s account. A run you actually did
-        cannot be lost through this, whatever is asked of it.
+        Every activity Garmin has, at three depths.
       </p>
     </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>The list.</strong> Runs, rides, swims, strength sessions and
+        anything else recorded, with distance, duration, pace per kilometre and
+        mile, average and max heart rate, time in each heart-rate zone,
+        cadence, training effect, and running dynamics and power when the
+        watch records them. By count or by date range.</span></li>
+      <li><span><strong>One activity in detail.</strong> Every lap or split with its own
+        distance, pace, heart rate, cadence, dynamics and power, plus the full
+        heart-rate time-in-zone for the session.</span></li>
+      <li><span><strong>Inside the recording.</strong> The per-second data behind the
+        laps. For any lap longer than five minutes: heart rate across the first
+        third against the last, at the paces run, which is how cardiac drift and
+        fitness show up. Kilometre splits derived for you when the watch did
+        not lap by kilometre. The GPS route is deliberately not requested.</span></li>
+    </ul>
   </section>
 
   <section>
-    <h2>Who else sees your training data</h2>
+    <h2>About your fitness</h2>
     <div class="stack">
       <p class="small">
-        This is the part people miss, so it gets said plainly.
+        The markers Garmin computes from everything above, so goals and
+        training paces can start from what your body is doing rather than from
+        what you remember.
       </p>
     </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>VO2 max</strong> and fitness age.</span></li>
+      <li><span><strong>Race predictions</strong> for 5k, 10k, half and marathon, as finish
+        times and the pace each implies.</span></li>
+      <li><span><strong>Lactate threshold</strong> heart rate and pace, the anchor for tempo
+        and threshold sessions.</span></li>
+      <li><span><strong>Endurance score and hill score</strong>, with the class Garmin puts
+        you in, read off the boundaries Garmin ships with the score.</span></li>
+      <li><span><strong>Running tolerance</strong>, Garmin&rsquo;s estimate of the weekly
+        load your body currently handles.</span></li>
+      <li><span><strong>Personal records</strong>, with the caveat that Garmin only knows
+        races it timed itself.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>About your plan</h2>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>A training block as one thing.</strong> Claude designs the plan
+        with you, from your goal and your fitness markers, and the connector
+        builds and schedules every session in one go. Each workout carries a
+        short plan code in its name, like <code class="inline">Threshold 5x1k · HM</code>,
+        which is how the block is found again. The plan lives on your Garmin
+        calendar and nowhere else.</span></li>
+      <li><span><strong>How the plan is going</strong>, week by week: each session done,
+        done on another day, missed, today or ahead, with the next session and
+        what slipped in the last week. Sessions can be moved or retuned
+        without leaving the plan.</span></li>
+      <li><span><strong>Scheduled workouts</strong> on the Garmin calendar, and the
+        library they come from.</span></li>
+      <li><span><strong>Progress</strong>: which planned sessions actually happened, week by
+        week. A session counts if it was run within a day either side of its
+        date, because people move things and a plan that calls that a failure
+        gets closed.</span></li>
+      <li><span><strong>The plan chart</strong>, drawn as an image for the conversation:
+        each day&rsquo;s sessions beside what was planned.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What it can change</h2>
+    <div class="stack">
+      <p class="small">
+        Writing is confined to the <strong>workout library</strong>: the structured
+        sessions you would otherwise build by hand in Garmin Connect.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Create</strong> a workout from a list of steps with pace or
+        heart-rate targets, or a strength session from Garmin&rsquo;s exercise
+        catalogue.</span></li>
+      <li><span><strong>Update</strong> one in place, keeping its id, so the dates it is
+        already scheduled on stay put and the watch picks up the new version at
+        the next sync. This is how paces get retuned as you get fitter.</span></li>
+      <li><span><strong>Schedule</strong> it on a date, which is what sends it to the watch,
+        and <strong>unschedule</strong> it again without deleting it.</span></li>
+      <li><span><strong>Delete</strong> a workout, behind a real gate: the first request only
+        reads the name back, and removing it needs a second request quoting
+        that name. Removing the rest of a plan works the same way, and keeps
+        every session already past.</span></li>
+    </ul>
     <div class="note">
-      <p><strong>Whatever you ask for arrives in your chat.</strong></p>
       <p class="small">
-        Once your Garmin data is in a conversation, it is in that conversation,
-        which means Anthropic or OpenAI handle it under
-        <em>their</em> privacy policy, exactly as they handle everything else you
-        type. If you are not comfortable with your resting heart rate sitting in
-        your chat history, this tool is not for you, and no promise I make about
-        my own server changes that.
-      </p>
-    </div>
-    <div class="stack">
-      <p class="small">
-        Beyond that: nothing is sold, rented, or handed to advertisers, data
-        brokers or anyone else. There is no third party with access to the
-        database. It is one server, one person, no business model.
+        <strong>Nothing here touches your training history.</strong> No tool deletes,
+        edits or renames a recorded activity, so a run you actually did cannot
+        be lost through this however badly a request is worded.
       </p>
     </div>
   </section>
 
   <section>
-    <h2>This website</h2>
+    <h2>What it never reads</h2>
     <div class="stack">
       <p class="small">
-        These pages count views using
-        <a href="https://posthog.com" target="_blank" rel="noopener">PostHog</a>
-        on its European servers, configured to leave nothing behind: no cookies,
-        no advertising identifiers, no session recording, and no profile built
-        about you. It records that a page was opened and that a button was
-        pressed, which is how I know whether the instructions actually work.
-        If you use the box on the front page that asks which connector should
-        be next, the name you tapped or typed is recorded the same way, and
-        that is all it carries.
+        Garmin exposes far more than this connector asks for. The following is
+        available to it and deliberately not requested, today:
       </p>
-      <p class="small">
-        The server reports three moments the same way: a sign-in that worked,
-        a sign-in that failed and roughly why, and the first time a new
-        connection is used. Each carries a few yes-or-no flags and the same
-        masked form of your email the server keeps, the first letter and the
-        domain, so I can tell one connected account from another when I look
-        at how it is being used.
-      </p>
-      <p class="small">
-        Neither receives your full email address, your Garmin data, or your
-        connector address. That is also why this site has no cookie banner:
-        there is nothing to ask you to consent to.
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Where you were.</strong> GPS routes and maps are excluded from every
+        request, including the per-second recording.</span></li>
+      <li><span><strong>Your body.</strong> Weight, body composition, blood pressure,
+        hydration, nutrition, menstrual and pregnancy tracking.</span></li>
+      <li><span><strong>Your things and your people.</strong> Devices, gear, badges,
+        challenges, connections and anything social.</span></li>
+    </ul>
+    <div class="stack" style="margin-top:16px">
+      <p class="small muted">
+        If one of these would make the coaching better, it gets added in the
+        open, on this page and in the code, before it is read.
       </p>
     </div>
   </section>
 
   <section>
-    <h2>Getting rid of it</h2>
+    <h2>Where the answers go</h2>
     <div class="stack">
       <p class="small">
-        Open the sign-in page and choose <strong>Disconnect</strong>. That deletes
-        your row outright (token, masked email, fingerprint, timestamps)
-        and the connection stops working immediately. Nothing is retained
-        afterwards, so there is no backlog to request a copy of or ask to be
-        forgotten from.
-      </p>
-      <p class="small">
-        Signing in again has the same effect on whatever came before it: the old
-        session is destroyed as the new one is created. If you ever think a
-        connection has ended up somewhere it shouldn&rsquo;t, signing in once more
-        takes it back.
-      </p>
-      <p class="small">
-        Removing the connector in Claude or ChatGPT is worth doing too, but it
-        only removes it at their end. The Disconnect button is what deletes the
-        stored session here. Nothing changes on Garmin&rsquo;s side either way.
-      </p>
-    </div>
-  </section>
-
-  <section>
-    <h2>The bits that are legally dull but true</h2>
-    <div class="stack">
-      <p class="small">
-        This is a personal project run by Bart Etcheverry, in the UK. It is not
-        affiliated with, endorsed by, or connected to Garmin, Anthropic or
-        OpenAI. It reaches Garmin through the same private interface the Garmin
-        Connect website uses, which is why it can break when Garmin changes
-        something.
-      </p>
-      <p class="small">
-        It is not intended for children under 13, and it is not a medical device.
-        Nothing it tells you is medical advice.
-      </p>
-      <p class="small">
-        If this policy changes, the date at the top changes with it, and the
-        <a href="https://github.com/Bartolome69/garmin-mcp/commits/main/docs" target="_blank" rel="noopener">edit
-        history is public</a> like the rest of it. Questions, or anything here
-        that turns out not to match the code:
-        <a href="https://github.com/Bartolome69/garmin-mcp/issues" target="_blank" rel="noopener">open
-        an issue</a>, or find me at
-        <a href="https://www.bartetcheverry.com/" target="_blank" rel="noopener">bartetcheverry.com</a>.
+        Each question is answered live from Garmin and returned into your
+        conversation. The server keeps one encrypted token per person so it can
+        ask on your behalf, and nothing of what comes back.
+        <a href="/privacy/">The privacy page</a> has the exact list of what is
+        stored, and how to delete it.
       </p>
     </div>
   </section>
 
   <footer>
     <p>
-      Every claim on this page is checkable: the storage layer is
-      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/store.py" target="_blank" rel="noopener">store.py</a>
-      and the sign-in server is
-      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/hosted.py" target="_blank" rel="noopener">hosted.py</a>.
-      Don&rsquo;t take my word for it.
+      Every tool on this page is one function in
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/main/garmin_mcp/server.py" target="_blank" rel="noopener">server.py</a>,
+      with its Garmin calls in plain sight. Don&rsquo;t take my word for it.
     </p>
-    <p><a href="/">&larr; Back to setting it up</a> &middot; <a href="/data/">What it can see</a></p>
+    <p><a href="/">&larr; Back to setting it up</a></p>
   </footer>
 
 </div>

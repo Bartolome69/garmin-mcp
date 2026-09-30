@@ -87,6 +87,9 @@ at `python -m garmin_mcp` over stdio.
 | `schedule_workout(workout_id, date)` | Puts a workout on a date, which is what syncs it to the watch |
 | `unschedule_workout(date, schedule_id)` | Takes a workout off a day. Reversible — the workout itself is kept |
 | `delete_workout(workout_id, confirm)` | Deletes a workout. The first call only reads its name back; removing it needs a second call quoting that name |
+| `create_plan(goal, sessions, label)` | Builds and schedules a whole training block in one call. Every session is validated first, so a mistake fails the call without leaving half a plan behind. Each workout is named with a short plan code, "Threshold 5x1k · HM", which is how the plan is found again; nothing about it is stored outside Garmin |
+| `get_plan(label)` | The plan week by week, each session done, done on another day, missed, today or ahead, with completion so far, the next session, and what slipped in the last week |
+| `remove_plan(label, confirm)` | Takes the rest of a plan off the calendar and out of the library. Past sessions stay. The first call only reports what would go |
 | `get_plan_chart(weeks_back, weeks_forward)` | Draws the plan as an image for the conversation: each day's sessions beside what was planned |
 | `get_progress(weeks)` | Which planned sessions actually got done, week by week. Counts a session if it happened within a day either side of its scheduled day |
 | `get_profile()` | VO2 max and personal records — 5k, 10k, half, marathon and the rest |
