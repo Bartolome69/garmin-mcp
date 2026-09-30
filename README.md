@@ -1,15 +1,25 @@
 # garmin-mcp
 
+[![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/bartolome69/garmin-mcp)
+
 Ask Claude about your Garmin data, then have it write the session onto your watch.
 
-A local [MCP](https://modelcontextprotocol.io) server that connects Claude Desktop
-to your own Garmin Connect account. It reads your runs, splits, heart-rate zones
-and daily health metrics — and, unlike the read-only Garmin integrations out
-there, it can build a structured workout and schedule it, so the answer to
-"what should I run on Thursday?" ends up on your wrist instead of in a chat log.
+An [MCP](https://modelcontextprotocol.io) server for your own Garmin Connect
+account. It reads your runs, splits, heart-rate zones and daily health metrics —
+and, unlike the read-only Garmin integrations out there, it can build a
+structured workout and schedule it, so the answer to "what should I run on
+Thursday?" ends up on your wrist instead of in a chat log.
 
-Everything runs as a local subprocess on your machine. No hosting, no server
-holding your credentials, no network exposure.
+**Run it yourself** and it is a local subprocess on your machine: no hosting, no
+server holding your credentials, no network exposure. That is the rest of this
+README, and it takes a Mac and a Terminal window.
+
+**Or don't run anything.** [garmin.daash.run](https://garmin.daash.run) is the
+same tools hosted behind OAuth 2.1 — paste one address into Claude or ChatGPT,
+sign in to Garmin once, and it works on your phone as well as your laptop with
+nothing installed. The trade is that a server holds your Garmin session,
+encrypted; [the privacy policy](https://garmin.daash.run/privacy/) sets out
+exactly what is kept and what is not.
 
 ```
 You:    My last three runs are all at the same effort. Give me something harder
