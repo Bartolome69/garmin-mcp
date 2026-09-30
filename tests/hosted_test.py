@@ -162,7 +162,8 @@ async def main() -> int:
 
     # A marker that must never appear in any response.
     alice = store.save_user(
-        "a***@example.com", json.dumps({"di_token": "alice-token", "secret": SECRET})
+        "a***@example.com", json.dumps({"di_token": "alice-token", "secret": SECRET}),
+        email_hash=store.email_fingerprint("alice@example.com"),
     )
     bob = store.save_user("b***@example.com", json.dumps({"di_token": "bob-token"}))
     check("two users stored", store.count_users() == 2)
@@ -197,6 +198,37 @@ async def main() -> int:
                 tools_seen = {t.name for t in (await sess.list_tools()).tools}
         check("tools served over http", "get_daily_summary" in (tools_seen or set()),
               f"{len(tools_seen or [])} tools")
+
+        # Preview features, per account. Alice is on the list (written the way
+        # a person types it); Bob is not, and must see exactly what he did
+        # before views existed.
+        async def plan_view_for(user_token: str):
+            async with streamable_http_client(f"{base}/u/{user_token}/mcp") as (r, w):
+                async with ClientSession(r, w) as sess:
+                    await sess.initialize()
+                    tools = (await sess.list_tools()).tools
+                    resources = (await sess.list_resources()).resources
+            plan_tool = next(t for t in tools if t.name == "get_plan")
+            view = ((getattr(plan_tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
+            listed = [str(r.uri) for r in resources if str(r.uri).startswith("ui://")]
+            return view, listed
+
+        os.environ["GARMIN_MCP_PREVIEW"] = " Alice@Example.com , carol@example.com"
+        try:
+            view_a, listed_a = await plan_view_for(alice)
+            view_b, listed_b = await plan_view_for(bob)
+            check("an account on the preview list gets the plan view",
+                  bool(view_a) and view_a in listed_a, f"{view_a} {listed_a}")
+            check("an account not on it gets no view and no ui resource",
+                  view_b is None and not listed_b, f"{view_b} {listed_b}")
+            os.environ["GARMIN_MCP_PREVIEW"] = "on"
+            view_b_on, _ = await plan_view_for(bob)
+            check("'on' switches it on for everyone", bool(view_b_on), str(view_b_on))
+            os.environ.pop("GARMIN_MCP_PREVIEW")
+            view_a_off, listed_a_off = await plan_view_for(alice)
+            check("unset, nobody gets it", view_a_off is None and not listed_a_off)
+        finally:
+            os.environ.pop("GARMIN_MCP_PREVIEW", None)
 
         day = await call(alice, "get_daily_summary", {"date": "2026-09-22"})
         check("alice gets data", day.get("steps") == 12345, str(day)[:120])

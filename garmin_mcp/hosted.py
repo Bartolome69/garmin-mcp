@@ -15,6 +15,7 @@ the tokens are stored, encrypted.
 from __future__ import annotations
 
 import contextlib
+import functools
 import hmac
 import html
 import json
@@ -31,7 +32,7 @@ import anyio
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import analytics, oauth, store
+from . import analytics, oauth, preview, store
 from .server import mcp
 from .session import (
     GarminError,
@@ -719,6 +720,33 @@ async def stats(request: Request) -> Response:
 # --------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=4)
+def _preview_accounts(configured: str) -> frozenset[str]:
+    """Fingerprints of the accounts in GARMIN_MCP_PREVIEW.
+
+    The addresses are only ever read from the secret and compared as
+    fingerprints, the same way sign-in recognises a returning person; none is
+    stored.
+    """
+    return frozenset(
+        store.email_fingerprint(entry)
+        for entry in configured.split(",")
+        if "@" in entry
+    )
+
+
+def _preview_for(user: store.User) -> bool:
+    """Whether this account sees preview features.
+
+    GARMIN_MCP_PREVIEW is either a switch for everyone ("on") or a comma
+    separated list of Garmin sign-in addresses. Unset, nobody does.
+    """
+    if preview.switched_on_for_everyone():
+        return True
+    configured = os.environ.get("GARMIN_MCP_PREVIEW", "").strip()
+    return bool(configured and user.email_hash and user.email_hash in _preview_accounts(configured))
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 
@@ -785,9 +813,11 @@ class SessionBinding:
                 )
 
         token = use_session(session_for(user_token))
+        preview_token = preview.use(_preview_for(user))
         try:
             await self.app(scope, receive, send)
         finally:
+            preview.reset(preview_token)
             reset_session(token)
 
 
