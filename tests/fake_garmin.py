@@ -251,6 +251,13 @@ class FakeGarmin:
         self.full_name = None
         self.unscheduled: list[int] = []
         self.deleted: list[int] = []
+        # What upload_workout and schedule_workout have written, so a plan that
+        # was just created can be read back through the calendar like the real
+        # thing. The fixed library and calendar entries below are untouched.
+        self.uploaded: dict[int, dict[str, Any]] = {}
+        self.scheduled: list[dict[str, Any]] = []
+        self._next_workout = 555002
+        self._next_schedule = 777001
         self.workouts: list[dict[str, Any]] = [
             {
                 "workoutId": 555001,
@@ -345,16 +352,25 @@ class FakeGarmin:
         # Garmin's month view spills into the neighbouring months, so the same
         # session is returned by more than one call. The collector must key by
         # id or it counts each one twice.
+        prefix = f"{int(year):04d}-{int(month):02d}"
         return {"calendarItems": [
             {"id": 900001, "itemType": "workout", "date": "2026-09-24",
              "workoutId": 555001, "title": "Thursday Threshold",
              "sportTypeKey": "running"},
+            *[dict(s) for s in self.scheduled if s["date"].startswith(prefix)],
         ]}
 
     def get_workout_by_id(self, workout_id: int) -> dict[str, Any]:
         # Honours the id: delete_workout has to be able to tell an unknown
         # workout from a real one, and a stub that answers to anything would
         # let that branch pass untested. 555002 is what upload_workout mints.
+        if int(workout_id) in self.uploaded:
+            up = self.uploaded[int(workout_id)]
+            return {"workoutId": int(workout_id), "workoutName": up.get("workoutName"),
+                    "description": up.get("description"),
+                    "estimatedDurationInSecs": up.get("estimatedDurationInSecs"),
+                    "sportType": {"sportTypeKey": "running"},
+                    "workoutSegments": up.get("workoutSegments") or []}
         known = {w["workoutId"] for w in self.workouts} | {555002}
         if int(workout_id) not in known:
             return {}
@@ -372,14 +388,23 @@ class FakeGarmin:
 
     def upload_workout(self, workout_json: Any) -> dict[str, Any]:
         self.last_upload = workout_json
-        return {"workoutId": 555002}
+        workout_id = self._next_workout
+        self._next_workout += 1
+        if isinstance(workout_json, dict):
+            self.uploaded[workout_id] = dict(workout_json)
+        return {"workoutId": workout_id}
 
     def update_workout(self, workout_id: int, workout_json: Any) -> dict[str, Any]:
         # Replaces in place, like the real PUT: the id survives, the name in
         # the library changes, and a caller can prove which happened.
-        known = {w["workoutId"] for w in self.workouts}
+        known = {w["workoutId"] for w in self.workouts} | set(self.uploaded)
         if int(workout_id) not in known:
             raise ValueError(f"404 for workout {workout_id}")
+        if int(workout_id) in self.uploaded and isinstance(workout_json, dict):
+            self.uploaded[int(workout_id)].update(workout_json)
+            for s in self.scheduled:
+                if s["workoutId"] == int(workout_id) and workout_json.get("workoutName"):
+                    s["title"] = workout_json["workoutName"]
         self.last_update = (int(workout_id), workout_json)
         for w in self.workouts:
             if int(w["workoutId"]) == int(workout_id) and isinstance(workout_json, dict):
@@ -399,10 +424,18 @@ class FakeGarmin:
 
     def schedule_workout(self, workout_id: int, date_str: str) -> dict[str, Any]:
         self.last_schedule = (workout_id, date_str)
-        return {"workoutScheduleId": 777001}
+        schedule_id = self._next_schedule
+        self._next_schedule += 1
+        title = (self.uploaded.get(int(workout_id)) or {}).get("workoutName") or next(
+            (w["workoutName"] for w in self.workouts if w["workoutId"] == int(workout_id)), "Workout")
+        self.scheduled.append({"id": schedule_id, "itemType": "workout", "date": date_str,
+                               "workoutId": int(workout_id), "title": title,
+                               "sportTypeKey": "running"})
+        return {"workoutScheduleId": schedule_id}
 
     def unschedule_workout(self, scheduled_workout_id: int) -> dict[str, Any]:
         self.unscheduled.append(int(scheduled_workout_id))
+        self.scheduled = [s for s in self.scheduled if s["id"] != int(scheduled_workout_id)]
         return {}
 
     def delete_workout(self, workout_id: int) -> dict[str, Any]:
@@ -410,6 +443,7 @@ class FakeGarmin:
         # the library alone. Asserting only the response would pass even if the
         # workout had been destroyed on the way to producing it.
         self.deleted.append(int(workout_id))
+        self.uploaded.pop(int(workout_id), None)
         self.workouts = [
             w for w in self.workouts if int(w["workoutId"]) != int(workout_id)
         ]

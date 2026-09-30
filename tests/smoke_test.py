@@ -41,6 +41,9 @@ EXPECTED_TOOLS = {
     "get_readiness",
     "get_fitness",
     "update_workout",
+    "create_plan",
+    "get_plan",
+    "remove_plan",
 }
 
 
@@ -87,6 +90,53 @@ def check_target_placement(check) -> None:
         "hr values sit on the step",
         (hr_step.get("targetValueOne"), hr_step.get("targetValueTwo")) == (150.0, 165.0),
     )
+
+
+def check_plan_summary(check) -> None:
+    """A plan midway through, against real runs: the verdicts that matter.
+
+    Two weeks in. Week one: Tuesday done on the day, Thursday done a day late,
+    Sunday missed. Week two: Tuesday missed, today's session not yet run, one
+    session ahead.
+    """
+    from datetime import date as _d
+    from garmin_mcp import training_plan as tp
+
+    today = _d(2026, 9, 30)  # Wednesday of week two
+    cal = [
+        {"id": 1, "date": "2026-09-22", "workoutId": 11, "title": "Easy 8k · HM", "sportTypeKey": "running"},
+        {"id": 2, "date": "2026-09-24", "workoutId": 12, "title": "Threshold 5x1k · HM", "sportTypeKey": "running"},
+        {"id": 3, "date": "2026-09-27", "workoutId": 13, "title": "Long run 16k · HM", "sportTypeKey": "running"},
+        {"id": 4, "date": "2026-09-29", "workoutId": 14, "title": "Easy 8k · HM", "sportTypeKey": "running"},
+        {"id": 5, "date": "2026-09-30", "workoutId": 15, "title": "Tempo 6k · HM", "sportTypeKey": "running"},
+        {"id": 6, "date": "2026-10-04", "workoutId": 16, "title": "Long run 18k · HM", "sportTypeKey": "running"},
+        {"id": 7, "date": "2026-09-26", "workoutId": 99, "title": "Parkrun", "sportTypeKey": "running"},
+    ]
+    runs = [
+        {"activityId": 501, "startTimeLocal": "2026-09-22 07:00:00", "activityName": "Easy",
+         "activityType": {"typeKey": "running"}, "duration": 2700, "distance": 8100},
+        {"activityId": 502, "startTimeLocal": "2026-09-25 07:00:00", "activityName": "Reps",
+         "activityType": {"typeKey": "running"}, "duration": 3100, "distance": 10200},
+    ]
+    plans = tp.plans_in(cal)
+    check("only tagged sessions form the plan", set(plans) == {"HM"} and len(plans["HM"]) == 6,
+          str({k: len(v) for k, v in plans.items()}))
+    s = tp.summarise("HM", plans["HM"], runs, today, goal="Half")
+    status = {r["date"]: r["status"] for w in s["weeks"] for r in w["sessions"]}
+    check("done on the day, and done a day late, both count",
+          status["2026-09-22"] == "done" and status["2026-09-24"] == "done, moved", str(status))
+    check("an unrun session in the past is missed",
+          status["2026-09-27"] == "missed" and status["2026-09-29"] == "missed", str(status))
+    check("today's unrun session is today, not missed", status["2026-09-30"] == "today", str(status))
+    check("completion counts only the sessions that are due",
+          s["completed"] == 2 and s["missed"] == 2 and s["completion_percent"] == 50, str(s)[:200])
+    check("the next session is today's", s["next_session"]["date"] == "2026-09-30")
+    check("the review names what slipped this week",
+          [m["date"] for m in s["review"]["missed_last_7_days"]] == ["2026-09-27", "2026-09-29"]
+          and s["review"]["this_week_remaining"] == ["Tempo 6k", "Long run 18k"], str(s.get("review")))
+    check("weeks are numbered from the plan's first",
+          [w["week"] for w in s["weeks"]] == [1, 2] and s["current_week"] == 2
+          and s["weeks"][1]["current"] is True, str([(w["week"], w["current"]) for w in s["weeks"]]))
 
 
 def check_stream_km_splits(check) -> None:
@@ -399,6 +449,84 @@ async def main() -> int:
             check("weeks are rolled up", len(prog.get("weeks", [])) == 3
                   and prog["weeks"][-1]["current"] is True,
                   str(prog.get("weeks"))[:200])
+
+            # -- training plan -------------------------------------------
+            print("\ntraining plan")
+            from datetime import date as _d, timedelta as _td
+            day = lambda n: (_d.today() + _td(days=n)).isoformat()
+            easy = [{"type": "interval", "duration_seconds": 2400, "pace": ["5:20", "5:40"]}]
+            thr = [{"type": "warmup", "duration_seconds": 900},
+                   {"type": "repeat", "times": 5, "steps": [
+                       {"type": "interval", "distance_meters": 1000, "pace": "4:05"},
+                       {"type": "recovery", "duration_seconds": 90}]},
+                   {"type": "cooldown", "duration_seconds": 600}]
+            block = [
+                {"date": day(8), "name": "Long run 16k", "steps": easy},
+                {"date": day(2), "name": "Easy 8k", "steps": easy},
+                {"date": day(4), "name": "Threshold 5x1k", "steps": thr},
+                {"date": day(9), "name": "Easy 8k", "steps": easy},
+            ]
+            bad_block = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon, 1:40",
+                "sessions": block + [{"date": day(10), "name": "Broken", "steps": [{"type": "interval"}]}],
+            }))
+            check("a bad session fails the whole plan before anything is created",
+                  "error" in bad_block and "Session 5" in bad_block["error"], str(bad_block)[:160])
+            past = payload(await sess.call_tool("create_plan", {
+                "goal": "Half", "sessions": [{"date": day(-3), "name": "Too late", "steps": easy}]}))
+            check("a session in the past is refused", "error" in past and "passed" in past["error"], str(past)[:140])
+
+            made = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon, 1:40, mid November", "sessions": block}))
+            print("   ", json.dumps(made, indent=2)[:500])
+            check("plan created with a code from the goal",
+                  made.get("label") == "HM" and made.get("sessions_created") == 4, str(made)[:200])
+            check("sessions come back in date order",
+                  [s["date"] for s in made.get("first_sessions", [])] == sorted(s["date"] for s in block),
+                  str(made.get("first_sessions"))[:200])
+            again = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon", "sessions": block}))
+            check("the same code in the same window is refused",
+                  "error" in again and "already" in again["error"], str(again)[:160])
+
+            got = payload(await sess.call_tool("get_plan", {}))
+            print("   ", json.dumps(got, indent=2)[:700])
+            check("get_plan finds the running plan without being told",
+                  got.get("label") == "HM" and got.get("sessions_total") == 4, str(got)[:200])
+            check("the goal is read back from Garmin",
+                  got.get("goal") == "Half marathon, 1:40, mid November", str(got.get("goal")))
+            check("the next session is the earliest ahead",
+                  (got.get("next_session") or {}).get("date") == day(2)
+                  and (got.get("next_session") or {}).get("name") == "Easy 8k",
+                  str(got.get("next_session")))
+            check("names come back without the plan code",
+                  all(" · " not in s["name"] for w in got.get("weeks", []) for s in w["sessions"]))
+            check("every session carries the ids needed to move or retune it",
+                  all(s.get("workout_id") and s.get("schedule_id")
+                      for w in got.get("weeks", []) for s in w["sessions"]))
+            check("nothing is done or missed yet",
+                  got.get("completed") == 0 and got.get("missed") == 0 and got.get("remaining") == 4)
+
+            thr_row = next(s for w in got["weeks"] for s in w["sessions"] if s["name"] == "Threshold 5x1k")
+            retuned = payload(await sess.call_tool("update_workout", {
+                "workout_id": thr_row["workout_id"], "name": "Threshold 6x1k"}))
+            check("renaming a plan session keeps its plan code",
+                  retuned.get("name") == "Threshold 6x1k · HM", str(retuned)[:160])
+            got2 = payload(await sess.call_tool("get_plan", {"label": "hm"}))
+            check("the renamed session is still in the plan",
+                  any(s["name"] == "Threshold 6x1k" for w in got2["weeks"] for s in w["sessions"])
+                  and got2.get("sessions_total") == 4, str(got2)[:200])
+
+            ask = payload(await sess.call_tool("remove_plan", {"label": "HM"}))
+            check("remove_plan asks first",
+                  ask.get("confirmation_required") is True and ask.get("would_remove") == 4, str(ask))
+            still = payload(await sess.call_tool("get_plan", {"label": "HM"}))
+            check("an unconfirmed remove changes nothing", still.get("sessions_total") == 4)
+            removed = payload(await sess.call_tool("remove_plan", {"label": "HM", "confirm": "hm"}))
+            check("confirmed remove takes every future session", removed.get("removed") == 4, str(removed))
+            gone_plan = payload(await sess.call_tool("get_plan", {"label": "HM"}))
+            check("the plan is gone afterwards", "error" in gone_plan, str(gone_plan)[:140])
+            check_plan_summary(check)
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout

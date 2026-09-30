@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import logging
+from datetime import date as date_cls, timedelta
 from typing import Any, Callable, Mapping
 
 import anyio
@@ -31,7 +32,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import metrics, plan, progress, stream
+from . import metrics, plan, progress, stream, training_plan
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -51,7 +52,8 @@ _INSTRUCTIONS = (
     "fitness markers such as race predictions and lactate threshold "
     "(get_fitness). Writes only to the workout library: create, update, "
     "schedule, unschedule and delete structured workouts; scheduling is what "
-    "sends one to the watch. Dates are YYYY-MM-DD and also accept 'today', "
+    "sends one to the watch. A whole training block is create_plan, read back "
+    "with get_plan. Dates are YYYY-MM-DD and also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
     "'error' key, show it to the user rather than retrying blindly."
 )
@@ -121,7 +123,7 @@ def tool_errors(fn):
     async def wrapper(*args, **kwargs):
         try:
             return await fn(*args, **kwargs)
-        except (GarminError, DateError, WorkoutError) as exc:
+        except (GarminError, DateError, WorkoutError, training_plan.PlanError) as exc:
             return {"error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - a tool must never crash the server
             log.exception("Tool %s failed", fn.__name__)
@@ -696,6 +698,10 @@ async def update_workout(
     current_sport = (
         (existing.get("sportType") or {}).get("sportTypeKey") or "running"
     )
+    # A session renamed without its plan code would silently leave the plan.
+    code = training_plan.label_of(current_name)
+    if name and code and not training_plan.label_of(name):
+        name = training_plan.tagged(name, code)
 
     summary = None
     if steps is not None:
@@ -1112,6 +1118,259 @@ async def get_profile() -> dict[str, Any]:
             ),
             "warnings": warnings or None,
         }
+    )
+
+
+# --------------------------------------------------------------------------
+# Training plans
+# --------------------------------------------------------------------------
+
+# How far the calendar is read to find a plan. Plans are capped at 30 weeks
+# ahead when created, so this always covers one that is still running.
+PLAN_SCAN_BACK = timedelta(weeks=16)
+PLAN_SCAN_AHEAD = timedelta(weeks=training_plan.MAX_WEEKS_AHEAD + 1)
+# Past sessions whose planned length is looked up for matching; beyond this a
+# session counts on existence alone, which is the matcher's fallback anyway.
+PLAN_LOOKUPS = 40
+
+
+async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]:
+    payloads = []
+    for year, month in training_plan.months_between(start, end):
+        try:
+            payloads.append(await _call(lambda c, y=year, m=month: c.get_scheduled_workouts(y, m)))
+        except GarminError:
+            raise
+        except Exception:  # noqa: BLE001 - one missing month should not hide the plan
+            log.debug("calendar %s-%s unavailable", year, month, exc_info=True)
+    return training_plan.calendar_items(payloads)
+
+
+@mcp.tool()
+@tool_errors
+async def create_plan(
+    goal: str,
+    sessions: list[dict[str, Any]],
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Create a whole training block at once: every session built and put on its date.
+
+    You design the plan, from the user's goal, their current fitness
+    (get_fitness), their readiness and history, and a methodology; this builds
+    each session as a structured workout and schedules it, so the whole block is
+    on the watch in one go. Show the user the plan and get their agreement
+    before calling this, because it writes to their real calendar.
+
+    Every workout is named with a short plan code after a middle dot, like
+    "Threshold 5x1k · HM", which is how get_plan finds the block again. Nothing
+    about the plan is stored anywhere but Garmin.
+
+    Every session is validated before anything is created, so a mistake in
+    session 40 fails the call without leaving half a plan behind.
+
+    Args:
+        goal: What the block is for, e.g. "Half marathon, 1:40, 15 November".
+        sessions: One object per session, in any order:
+            - "date": YYYY-MM-DD (today or later, at most 30 weeks out)
+            - "name": short, as it should read on the watch, e.g. "Long run 18k"
+            - "steps": exactly as for create_workout
+            - optional "sport" (running by default) and "description"
+            Rest days are simply days with no session. At most 150 sessions.
+        label: 2 to 8 letters or digits used as the plan code, e.g. "HM" or
+            "MARA26". Derived from the goal when omitted.
+    """
+    today = date_cls.today()
+    code, prepared = training_plan.prepare(goal, sessions, label, today)
+    first, last = prepared[0]["date"], prepared[-1]["date"]
+
+    existing = training_plan.plans_in(await _plan_calendar(first, last))
+    if code in existing:
+        return {
+            "error": (
+                f"Plan code {code} is already on the calendar between "
+                f"{first.isoformat()} and {last.isoformat()}. Pass a different "
+                "label, or remove the old plan first with remove_plan."
+            )
+        }
+
+    created: list[dict[str, Any]] = []
+    for item in prepared:
+        payload = item["workout"].to_dict()
+        try:
+            uploaded = await _call(lambda c, p=payload: c.upload_workout(p)) or {}
+            workout_id = first_present(uploaded, "workoutId", "id")
+            if workout_id is None:
+                raise RuntimeError("Garmin returned no workout id")
+            scheduled = await _call(
+                lambda c, w=workout_id, d=item["date"].isoformat(): c.schedule_workout(w, d)
+            ) or {}
+        except GarminError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "error": (
+                    f"Stopped at {item['date'].isoformat()} ({item['name']}): "
+                    f"{type(exc).__name__}: {exc}. The sessions before it were "
+                    "created and scheduled; retry the remaining ones with the same "
+                    "label, or remove_plan to start again."
+                ),
+                "label": code,
+                "created": created,
+                "not_created": len(prepared) - len(created),
+            }
+        created.append(
+            drop_empty(
+                {
+                    "date": item["date"].isoformat(),
+                    "name": item["name"],
+                    "workout_id": workout_id,
+                    "schedule_id": first_present(scheduled, "workoutScheduleId", "id"),
+                    "estimated": duration(item["estimated"]),
+                }
+            )
+        )
+
+    weeks = (plan.monday_of(last) - plan.monday_of(first)).days // 7 + 1
+    return {
+        "label": code,
+        "goal": goal.strip(),
+        "starts": first.isoformat(),
+        "ends": last.isoformat(),
+        "weeks": weeks,
+        "sessions_created": len(created),
+        "first_sessions": created[:7],
+        "next_step": (
+            "Every session is on the Garmin calendar and syncs to the watch. "
+            f"Use get_plan (label {code}) to see the block and how it is going."
+        ),
+    }
+
+
+@mcp.tool()
+@tool_errors
+async def get_plan(label: str | None = None) -> dict[str, Any]:
+    """The training plan, week by week, with every session marked done, missed or ahead.
+
+    Answers "how is my plan going" and "what's next" in one call: completion so
+    far, the next session, what was missed in the last week, and each week's
+    sessions with their workout_id and schedule_id so any of them can be moved
+    or retuned. Start a coaching conversation with this when the user has a plan.
+
+    A session counts as done if it was run within a day either side of its
+    date, because people move sessions, and a week done on shifted days is a
+    good week.
+
+    Args:
+        label: The plan code, e.g. "HM". Omit to get the plan that is running
+            now, or the most recent one.
+    """
+    today = date_cls.today()
+    items = await _plan_calendar(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
+    plans = training_plan.plans_in(items)
+    if not plans:
+        return {
+            "error": (
+                "No plan found on the Garmin calendar. create_plan builds one; "
+                "single scheduled workouts are in get_progress."
+            )
+        }
+    code = (training_plan.normalise_label(label, "") if label else None) or training_plan.pick(plans, today)
+    if code not in plans:
+        return {"error": f"No plan with code {code}.", "plans_found": sorted(plans)}
+
+    sessions = plans[code]
+    first = min(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
+    last = max(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
+
+    activities: list[dict[str, Any]] = []
+    if first <= today:
+        activities = await _call(
+            lambda c: c.get_activities_by_date(
+                (first - timedelta(days=1)).isoformat(), min(today, last + timedelta(days=1)).isoformat()
+            )
+        ) or []
+
+    # Planned length for the past sessions, newest first, and the goal from
+    # whichever workout is read first.
+    past_ids = []
+    for item in sorted(sessions, key=lambda i: i["date"], reverse=True):
+        wid = item.get("workoutId")
+        if item["date"][:10] <= today.isoformat() and wid and wid not in past_ids:
+            past_ids.append(wid)
+    goal, seconds = None, {}
+    for wid in past_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]:
+        try:
+            detail = await _call(lambda c, w=wid: c.get_workout_by_id(w)) or {}
+        except GarminError:
+            raise
+        except Exception:  # noqa: BLE001
+            continue
+        seconds[wid] = float(detail.get("estimatedDurationInSecs") or 0)
+        goal = goal or training_plan.goal_from_description(detail.get("description"), code)
+
+    others = sorted(p for p in plans if p != code)
+    result = training_plan.summarise(
+        code, sessions, activities, today, goal=goal, planned_seconds=seconds
+    )
+    if others:
+        result["other_plans"] = others
+    return result
+
+
+@mcp.tool()
+@tool_errors
+async def remove_plan(label: str, confirm: str = "") -> dict[str, Any]:
+    """Take the rest of a plan off the calendar and out of the workout library.
+
+    For starting again or abandoning a block. Only sessions from today onward
+    are removed; past ones stay, so the record of what was planned against
+    what was run is kept. The first call only reports what would go. Removing
+    it needs a second call with confirm set to the plan code, after the user
+    has agreed.
+
+    Args:
+        label: The plan code, e.g. "HM".
+        confirm: The plan code again, to go ahead.
+    """
+    code = training_plan.normalise_label(label, "")
+    today = date_cls.today()
+    items = await _plan_calendar(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
+    sessions = training_plan.plans_in(items).get(code) or [
+        i for i in items if training_plan.label_of(i.get("title")) == code
+    ]
+    ahead = [i for i in sessions if i["date"][:10] >= today.isoformat()]
+    if not ahead:
+        return {"label": code, "removed": 0, "note": "Nothing from today onward carries that plan code."}
+
+    if (confirm or "").strip().upper() != code:
+        return {
+            "label": code,
+            "confirmation_required": True,
+            "would_remove": len(ahead),
+            "from": min(i["date"][:10] for i in ahead),
+            "to": max(i["date"][:10] for i in ahead),
+            "kept": len(sessions) - len(ahead),
+            "note": f"Nothing has changed yet. Call again with confirm='{code}' to remove them.",
+        }
+
+    # A workout also scheduled on a kept date is only unscheduled, never deleted.
+    kept_workouts = {i.get("workoutId") for i in sessions if i not in ahead}
+    removed, failed = 0, []
+    for item in ahead:
+        try:
+            sid = first_present(item, "id", "workoutScheduleId")
+            if sid:
+                await _call(lambda c, s=sid: c.unschedule_workout(s))
+            wid = item.get("workoutId")
+            if wid and wid not in kept_workouts:
+                await _call(lambda c, w=wid: c.delete_workout(w))
+            removed += 1
+        except GarminError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"date": item["date"][:10], "error": type(exc).__name__})
+    return drop_empty(
+        {"label": code, "removed": removed, "kept": len(sessions) - len(ahead), "failed": failed or None}
     )
 
 

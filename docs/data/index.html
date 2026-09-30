@@ -364,6 +364,16 @@
   <section>
     <h2>About your plan</h2>
     <ul class="plain" style="margin-top:16px">
+      <li><span><strong>A training block as one thing.</strong> Claude designs the plan
+        with you, from your goal and your fitness markers, and the connector
+        builds and schedules every session in one go. Each workout carries a
+        short plan code in its name, like <code class="inline">Threshold 5x1k · HM</code>,
+        which is how the block is found again. The plan lives on your Garmin
+        calendar and nowhere else.</span></li>
+      <li><span><strong>How the plan is going</strong>, week by week: each session done,
+        done on another day, missed, today or ahead, with the next session and
+        what slipped in the last week. Sessions can be moved or retuned
+        without leaving the plan.</span></li>
       <li><span><strong>Scheduled workouts</strong> on the Garmin calendar, and the
         library they come from.</span></li>
       <li><span><strong>Progress</strong>: which planned sessions actually happened, week by
@@ -394,7 +404,8 @@
         and <strong>unschedule</strong> it again without deleting it.</span></li>
       <li><span><strong>Delete</strong> a workout, behind a real gate: the first request only
         reads the name back, and removing it needs a second request quoting
-        that name.</span></li>
+        that name. Removing the rest of a plan works the same way, and keeps
+        every session already past.</span></li>
     </ul>
     <div class="note">
       <p class="small">
