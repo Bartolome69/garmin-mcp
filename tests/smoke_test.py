@@ -167,12 +167,23 @@ async def check_preview_gate(check) -> None:
               not any(str(r.uri).startswith("ui://") for r in resources))
         check("without preview, get_plan still has its output schema",
               next(t for t in tools if t.name == "get_plan").output_schema is not None)
+        check("without preview, no view template is listed",
+              not any(str(t.uri_template).startswith("ui://") for t in await server.mcp.list_resource_templates()))
+        plain_description = next(t for t in tools if t.name == "get_plan").description
     finally:
         preview.reset(token)
     token = preview.use(True)
     try:
         listed = await server.mcp.list_tools()
         check("with preview, get_plan has its view", view_of(listed) is not None)
+        preview_description = next(t for t in listed if t.name == "get_plan").description
+        check("with preview, get_plan says it covers any plan on the calendar",
+              preview_description != plain_description and "coach" in preview_description, preview_description[:80])
+        old_copy = list(await server.mcp.read_resource("ui://garmin/plan/0000000000"))
+        current = list(await server.mcp.read_resource(server.PLAN_VIEW))
+        check("an older view address still serves the current view",
+              old_copy and old_copy[0].content == current[0].content
+              and old_copy[0].mime_type == "text/html;profile=mcp-app")
         progress_tool = next(t for t in listed if t.name == "get_progress")
         check("with preview, get_progress draws the same view",
               ((getattr(progress_tool, "meta", None) or {}).get("ui") or {}) == view_of(listed))

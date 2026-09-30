@@ -71,7 +71,7 @@ class _Server(MCPServer):
     async def list_tools(self):
         tools = await super().list_tools()
         if preview.enabled():
-            return tools
+            return [_with_preview_description(tool) for tool in tools]
         return [_without_view(tool) for tool in tools]
 
     async def list_resources(self):
@@ -79,6 +79,38 @@ class _Server(MCPServer):
         if preview.enabled():
             return resources
         return [r for r in resources if not str(r.uri).startswith("ui://")]
+
+    async def list_resource_templates(self):
+        templates = await super().list_resource_templates()
+        if preview.enabled():
+            return templates
+        return [t for t in templates if not str(t.uri_template).startswith("ui://")]
+
+
+# What a tool is for, as a preview account's model should read it. The model
+# chooses a tool by its description, and get_plan's everyday one reads as if
+# it were only for plans made with create_plan.
+_PREVIEW_DESCRIPTIONS = {
+    "get_plan": (
+        "The user's training plan, week by week: every session marked done, "
+        "missed or ahead, with the next one.\n\n"
+        "Use this first for any question about how their plan or training is "
+        "going, what's next this week, or whether they're keeping up, wherever "
+        "the plan came from: a coach, an app, Garmin Coach or create_plan. With "
+        "no plan made by create_plan it reads the workouts scheduled on the "
+        "Garmin calendar around this week. Each session carries its workout_id "
+        "and schedule_id so it can be moved or retuned. A session counts as "
+        "done if it was run within a day either side of its date.\n\n"
+        "Args:\n"
+        "    label: The code of a plan made with create_plan, e.g. \"HM\". Omit "
+        "it for the plan running now, or the calendar."
+    ),
+}
+
+
+def _with_preview_description(tool):
+    text = _PREVIEW_DESCRIPTIONS.get(tool.name)
+    return tool.model_copy(update={"description": text}) if text else tool
 
 
 def _without_view(tool):
@@ -180,7 +212,23 @@ def _app_view(uri: str, filename: str, description: str) -> None:
     try:
         mcp.resource(uri, name=read.__name__, description=description, mime_type=APP_MIME)(read)
     except TypeError:
-        pass
+        return
+
+    # A chat that kept an older tool list asks for an older address. It gets
+    # the view as it is now rather than nothing, so a change never breaks one.
+    def read_any(version: str) -> str:
+        return read()
+
+    read_any.__name__ = read.__name__ + "_any_version"
+    try:
+        mcp.resource(
+            uri.rsplit("/", 1)[0] + "/{version}",
+            name=read_any.__name__,
+            description=description,
+            mime_type=APP_MIME,
+        )(read_any)
+    except (TypeError, ValueError):
+        log.debug("view template not registered", exc_info=True)
 
 
 try:
