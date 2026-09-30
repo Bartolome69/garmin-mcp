@@ -35,6 +35,12 @@ os.environ["GARMIN_MCP_POSTHOG_KEY"] = "phc_test_key"
 os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
 os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
 
+from garminconnect import (  # noqa: E402
+    GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
+    GarminConnectTooManyRequestsError,
+)
+
 from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
 
 import garmin_mcp.hosted as hosted  # noqa: E402
@@ -53,6 +59,11 @@ SECRET = "never-show-this-blob-value"
 # Signing in as this address makes the stub demand a multi-factor code, which is
 # the path where the password used to survive in memory.
 MFA_EMAIL = "mfa@example.com"
+# Addresses the fake refuses, each the way the real library would: the
+# exception class is what the server classifies on first.
+WRONG_PASSWORD_EMAIL = "wrongpw@example.com"
+RATE_LIMITED_EMAIL = "toomany@example.com"
+BLOCKED_EMAIL = "blocked@example.com"
 
 
 class _Garth:
@@ -85,6 +96,21 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
 
         def login(self, tokenstore=None):
             BUILT.append(tokenstore or "no-token")
+            if email == WRONG_PASSWORD_EMAIL:
+                raise GarminConnectAuthenticationError(
+                    "Authentication failed (401 Unauthorized). Possible causes: ..."
+                )
+            if email == RATE_LIMITED_EMAIL:
+                raise GarminConnectTooManyRequestsError(
+                    "Too many login attempts. Please wait a few minutes before trying again."
+                )
+            if email == BLOCKED_EMAIL:
+                # Cloudflare's bot challenge in front of Garmin's SSO, as the
+                # library wraps it: a plain connection error with the 403 inside.
+                raise GarminConnectConnectionError(
+                    "Login failed: 403 Client Error: Forbidden for url: "
+                    "https://sso.garmin.com/sso/signin"
+                )
             if email == MFA_EMAIL:
                 # The real library returns early here, before the line that
                 # drops the plaintext password.
@@ -359,6 +385,19 @@ async def main() -> int:
         finally:
             hosted.INVITE_CODE = ""
 
+        # Each way Garmin says no gets its own page and its own word, because
+        # each wants a different response from the person reading it.
+        hosted._ATTEMPTS.clear()
+        code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
+        check("a wrong password is called a wrong password",
+              code == 400 and "didn't accept that email and password" in body, f"status {code}")
+        code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
+        check("a rate limit says to wait, not to worry",
+              code == 400 and "slow down" in body and "half an hour" in body, f"status {code}")
+        code, body = await anyio_run(signin, BLOCKED_EMAIL)
+        check("a network block says to tell the operator",
+              code == 400 and "blocking sign-ins from this" in body, f"status {code}")
+
         # And repeated attempts from one address get throttled.
         hosted._ATTEMPTS.clear()
         codes = [(await anyio_run(signin, "spray@example.com"))[0] for _ in range(12)]
@@ -395,9 +434,10 @@ async def main() -> int:
               and len({next(iter(v)) for v in ids_by_account.values()}) == len(ids_by_account),
               str({k: len(v) for k, v in ids_by_account.items()}))
         reasons = {e["properties"].get("reason") for e in failed}
-        check("failed sign-ins carry a one-word reason",
-              "throttled" in reasons and reasons <= {
-                  "throttled", "blocked_by_garmin", "bad_credentials", "other", "mfa_rejected"},
+        check("failed sign-ins carry the right one-word reason",
+              {"throttled", "bad_credentials", "rate_limited", "blocked_by_garmin"} <= reasons
+              and reasons <= {"throttled", "blocked_by_garmin", "rate_limited",
+                              "bad_credentials", "other", "mfa_rejected"},
               str(reasons))
         blob = json.dumps(SENT)
         # The masked address travels; the full one never does. Every address

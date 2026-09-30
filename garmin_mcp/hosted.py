@@ -275,24 +275,66 @@ async def connect_form(request: Request) -> Response:
     )
 
 
+def _http_status(exc: BaseException) -> int | None:
+    """The HTTP status behind a failure, if the library kept one anywhere."""
+    for e in (exc, exc.__cause__, exc.__context__):
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if isinstance(status, int):
+            return status
+    return None
+
+
 def _failure_reason(exc: BaseException) -> str:
-    """Which of the three things that go wrong at sign-in this was.
+    """Which of the four things that go wrong at sign-in this was.
+
+    Told apart by the library's exception type first, then by status code and
+    message. The two network failures need opposite responses: a 429 is a
+    rate limit that clears on its own, so the person should simply wait; a 403
+    is Cloudflare refusing the server's address outright, and no amount of
+    waiting helps. The old single word for both hid which one was happening.
 
     The analytics event carries this word and nothing else about the failure,
     so the count of people Garmin turned away can be told from the count who
     mistyped a password without either being traceable to anyone.
     """
+    name = type(exc).__name__
     text = str(exc).lower()
-    if "429" in text or "rate limit" in text or "too many" in text or "cloudflare" in text:
+    status = _http_status(exc)
+    if name == "GarminConnectTooManyRequestsError" or status == 429 or "429" in text:
+        return "rate_limited"
+    if name == "GarminConnectAuthenticationError" or status == 401 or "401" in text:
+        return "bad_credentials"
+    if status == 403 or "403" in text or "cloudflare" in text or "forbidden" in text:
         return "blocked_by_garmin"
-    if "401" in text or "unauthorized" in text or "invalid" in text:
+    if "unauthorized" in text or "invalid" in text or "password" in text:
         return "bad_credentials"
     return "other"
+
+
+def _log_signin_failure(exc: BaseException, reason: str) -> None:
+    """One line per failed sign-in: what kind, and the status if there was one.
+
+    Type and status only. The message can quote the request, and the request
+    is the one place a password could appear.
+    """
+    log.warning(
+        "sign-in failed: reason=%s type=%s status=%s",
+        reason, type(exc).__name__, _http_status(exc),
+    )
 
 
 def _signin_error(exc: BaseException) -> str:
     """Explain a failed sign-in in terms that make sense on a web page."""
     reason = _failure_reason(exc)
+    _log_signin_failure(exc, reason)
+    if reason == "rate_limited":
+        return (
+            "<div class=err><strong>Garmin is asking this server to slow down.</strong> "
+            "It is not your password. Garmin limits how many sign-ins it takes "
+            "from one address, and several people have signed in through here "
+            "recently. Wait half an hour and try again; it clears on its own.</div>"
+            "<p><a href=/connect>Try again</a></p>"
+        )
     if reason == "blocked_by_garmin":
         return (
             "<div class=err><strong>Garmin is blocking sign-ins from this "
@@ -303,8 +345,10 @@ def _signin_error(exc: BaseException) -> str:
         )
     if reason == "bad_credentials":
         return (
-            "<div class=err>Garmin didn't accept that email and password. "
-            "Check them at connect.garmin.com and try again.</div>"
+            "<div class=err><strong>Garmin didn't accept that email and password.</strong> "
+            "Check them by signing in at connect.garmin.com, then come back and "
+            "try again. If Garmin asks you for a code there, you have two-factor "
+            "on, and you'll be asked for the same code here.</div>"
             "<p><a href=/connect>Try again</a></p>"
         )
     return (
