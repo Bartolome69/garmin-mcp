@@ -7,6 +7,7 @@ password or the cached token.
 from __future__ import annotations
 
 import functools
+import hashlib
 import logging
 from datetime import date as date_cls, timedelta
 from pathlib import Path
@@ -33,7 +34,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import metrics, plan, progress, stream, training_plan
+from . import metrics, plan, preview, progress, stream, training_plan
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -60,6 +61,34 @@ _INSTRUCTIONS = (
 )
 
 
+class _Server(MCPServer):
+    """The SDK's server, with preview features hidden from whoever isn't trying them.
+
+    Only the listings change. A host that has not been told a tool has a view
+    never asks for it, so nothing else needs gating.
+    """
+
+    async def list_tools(self):
+        tools = await super().list_tools()
+        if preview.enabled():
+            return tools
+        return [_without_view(tool) for tool in tools]
+
+    async def list_resources(self):
+        resources = await super().list_resources()
+        if preview.enabled():
+            return resources
+        return [r for r in resources if not str(r.uri).startswith("ui://")]
+
+
+def _without_view(tool):
+    meta = getattr(tool, "meta", None)
+    if not meta or not ({"ui", "ui/resourceUri"} & set(meta)):
+        return tool
+    rest = {k: v for k, v in meta.items() if k not in ("ui", "ui/resourceUri")}
+    return tool.model_copy(update={"meta": rest or None})
+
+
 def _server() -> MCPServer:
     """The server, introduced to clients with a name, a site and an icon.
 
@@ -70,7 +99,7 @@ def _server() -> MCPServer:
     try:
         from mcp.types import Icon
 
-        return MCPServer(
+        return _Server(
             "garmin",
             title="Garmin",
             instructions=_INSTRUCTIONS,
@@ -81,7 +110,7 @@ def _server() -> MCPServer:
             ],
         )
     except (ImportError, TypeError):
-        return MCPServer("garmin", instructions=_INSTRUCTIONS)
+        return _Server("garmin", instructions=_INSTRUCTIONS)
 
 
 mcp = _server()
@@ -112,11 +141,26 @@ except Exception:  # noqa: BLE001 - an SDK without custom routes still serves to
 # Hosts that support MCP Apps (Claude, ChatGPT, VS Code) read the resource a
 # tool points at and render it in a sandboxed frame, handing it the tool's
 # result. Every other host ignores the pointer and shows the JSON, so the text
-# answer stays complete on its own.
+# answer stays complete on its own. Views are a preview feature: see preview.py.
 
 APP_MIME = "text/html;profile=mcp-app"
-PLAN_VIEW = "ui://garmin/plan"
 _UI = Path(__file__).parent / "ui"
+
+
+def _versioned(name: str, filename: str) -> str:
+    """The view's URI, with a digest of its contents at the end.
+
+    Hosts may keep a view they have already fetched. A changed view gets a new
+    address, so the next chat fetches it fresh and nobody has to reconnect.
+    """
+    try:
+        digest = hashlib.sha256((_UI / filename).read_bytes()).hexdigest()[:10]
+    except OSError:
+        digest = "missing"
+    return f"ui://garmin/{name}/{digest}"
+
+
+PLAN_VIEW = _versioned("plan", "plan.html")
 
 
 def _app_tool(view: str):
@@ -147,7 +191,6 @@ try:
     )
 except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
     log.debug("plan view not registered", exc_info=True)
-
 
 MAX_ACTIVITIES = 50
 
