@@ -14,6 +14,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import sys
 import threading
@@ -192,19 +193,48 @@ async def main() -> int:
               f"{code} {location[:90]}")
         flow = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("flow", [""])[0]
 
-        # -- 4. sign in; expect to be sent back with a code --------------
+        # -- 4. sign in; expect the consent page, not a code -------------
+        # Registration is open, so a signed-in person is not evidence that they
+        # wanted *this* client. Nothing is issued until they say so.
         code, body, headers = await run(lambda: http("POST", "/connect", {
             "email": "oauth@example.com", "password": "pw", "flow": flow,
+        }))
+        check("sign-in asks before handing anything over",
+              code == 200 and "Allow access?" in body and "location" not in headers,
+              f"{code} {body[:120]}")
+        check("the consent page names where the code goes", REDIRECT in body)
+        check("the consent page cannot be framed",
+              headers.get("x-frame-options", "").upper() == "DENY",
+              str(dict(headers))[:120])
+        consent = re.search(r'name=consent value="([^"]+)"', body)
+        check("a consent token is issued", bool(consent))
+        consent_token = consent.group(1) if consent else ""
+
+        # A loopback callback is an ordinary desktop client, so no alarm.
+        check("a recognised destination is not flagged",
+              "not an app we recognise" not in body)
+
+        # -- 4b. approve ------------------------------------------------
+        code, body, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent_token, "decision": "allow",
         }))
         back = headers.get("location", "")
         parsed = urllib.parse.parse_qs(urllib.parse.urlparse(back).query)
         auth_code = parsed.get("code", [""])[0]
-        check("sign-in returns to the client with a code",
+        check("approving returns to the client with a code",
               code in (302, 303) and back.startswith(REDIRECT) and bool(auth_code),
               f"{code} {back[:90]}")
         check("state is handed back untouched", parsed.get("state", [""])[0] == "xyz-state")
         check("no connector URL is shown anywhere",
               "/u/" not in body and "/u/" not in back, back[:90])
+
+        # -- 4c. the consent token is single use ------------------------
+        code, body, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent_token, "decision": "allow",
+        }))
+        check("a consent token cannot be replayed",
+              code != 303 or not headers.get("location", "").startswith(REDIRECT),
+              f"{code} {headers.get('location', '')[:80]}")
 
         # -- 5. exchange the code ----------------------------------------
         code, body, _ = await run(lambda: http("POST", "/token", {
@@ -234,6 +264,60 @@ async def main() -> int:
             rows = conn.execute("SELECT token_hash FROM oauth_tokens").fetchall()
         check("tokens are stored hashed, not in the clear",
               bool(rows) and all(access not in r[0] and refresh not in r[0] for r in rows))
+
+        # -- 7b. the attack the consent page exists to stop ---------------
+        # Anyone may register a client. Registering one that points at a site
+        # you control, then sending somebody a crafted /authorize link, gets
+        # them a sign-in page that is genuinely ours on a domain that is
+        # genuinely ours. PKCE is no help: the attacker is the client.
+        evil_redirect = "https://evil.example/collect"
+        code, body, _ = await run(
+            lambda: http("POST", "/register", {
+                "client_name": "<img src=x onerror=alert(1)>Garmin Sync",
+                "redirect_uris": [evil_redirect],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "token_endpoint_auth_method": "none",
+            }, as_json=True)
+        )
+        evil_id = (json.loads(body) if code in (200, 201) else {}).get("client_id", "")
+        check("an attacker can still register (registration is open)", bool(evil_id))
+
+        evil_query = urllib.parse.urlencode({
+            "response_type": "code", "client_id": evil_id,
+            "redirect_uri": evil_redirect, "code_challenge": challenge,
+            "code_challenge_method": "S256", "state": "victim-state",
+        })
+        _, _, headers = await run(lambda: http("GET", f"/authorize?{evil_query}"))
+        evil_flow = urllib.parse.parse_qs(
+            urllib.parse.urlparse(headers.get("location", "")).query
+        ).get("flow", [""])[0]
+        code, body, headers = await run(lambda: http("POST", "/connect", {
+            "email": "victim@example.com", "password": "pw", "flow": evil_flow,
+        }))
+        check("signing in does not hand the attacker a code",
+              code == 200 and "location" not in headers,
+              f"{code} {headers.get('location', '')[:80]}")
+        check("the page warns the destination is unrecognised",
+              "not an app we recognise" in body, body[:160])
+        check("the attacker's address is shown in full",
+              evil_redirect in body)
+        check("a hostile client name cannot inject markup",
+              "<img src=x" not in body and "&lt;img src=x" in body,
+              body[body.find("Garmin Sync") - 90 : body.find("Garmin Sync") + 12])
+
+        evil_consent = re.search(r'name=consent value="([^"]+)"', body)
+        code, body, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": evil_consent.group(1) if evil_consent else "", "decision": "deny",
+        }))
+        denied = urllib.parse.parse_qs(
+            urllib.parse.urlparse(headers.get("location", "")).query
+        )
+        check("cancelling tells the client it was refused",
+              denied.get("error", [""])[0] == "access_denied", str(denied)[:120])
+        check("cancelling issues no code", "code" not in denied)
+        check("cancelling keeps the client's state",
+              denied.get("state", [""])[0] == "victim-state")
 
         # -- 8. refresh ---------------------------------------------------
         code, body, _ = await run(lambda: http("POST", "/token", {

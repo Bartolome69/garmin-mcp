@@ -37,6 +37,7 @@ from mcp.server.auth.provider import (
     AuthorizationParams,
     OAuthAuthorizationServerProvider,
     RefreshToken,
+    RegistrationError,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
@@ -52,12 +53,56 @@ REFRESH_TTL = 60 * 60 * 24 * 30
 # outlives the attempt.
 _PENDING_AUTH: dict[str, dict[str, Any]] = {}
 
+# Sign-ins that succeeded and are waiting for the person to approve the client
+# on the consent page. Separate from _PENDING_AUTH because the Garmin session
+# already exists by this point; only the handover to the client is outstanding.
+_AWAITING_CONSENT: dict[str, dict[str, Any]] = {}
+
+# Where a code may be sent without comment. Anything else still works, because
+# refusing an unrecognised client would break ChatGPT and whatever comes next,
+# but the consent page says loudly where it is going.
+CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _extra_redirects() -> set[str]:
+    raw = os.environ.get("GARMIN_MCP_ALLOWED_REDIRECTS", "")
+    return {u.strip() for u in raw.split(",") if u.strip()}
+
+
+def strict_redirects() -> bool:
+    """Refuse unrecognised redirect targets outright rather than warning.
+
+    Off by default: the set of legitimate MCP clients is still growing, and a
+    hard list would lock out ChatGPT before anyone noticed. Worth turning on
+    once the clients in use here are known.
+    """
+    return os.environ.get("GARMIN_MCP_STRICT_REDIRECTS", "").strip() == "1"
+
+
+def recognised_redirect(uri: str) -> bool:
+    """Whether a code going here is business as usual.
+
+    Loopback covers the desktop and CLI clients, which register a callback on
+    an arbitrary local port and cannot be listed in advance.
+    """
+    from urllib.parse import urlparse
+
+    uri = str(uri)
+    if uri == CLAUDE_CALLBACK or uri in _extra_redirects():
+        return True
+    parsed = urlparse(uri)
+    return parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS
+
 
 def _sweep() -> None:
     cutoff = time.time() - CODE_TTL
     for key, value in list(_PENDING_AUTH.items()):
         if value["started"] < cutoff:
             _PENDING_AUTH.pop(key, None)
+    for key, value in list(_AWAITING_CONSENT.items()):
+        if value["started"] < cutoff:
+            _AWAITING_CONSENT.pop(key, None)
 
 
 def _own_resource() -> str | None:
@@ -86,6 +131,15 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         return OAuthClientInformationFull.model_validate_json(raw) if raw else None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        if strict_redirects():
+            for uri in client_info.redirect_uris or []:
+                if not recognised_redirect(str(uri)):
+                    raise RegistrationError(
+                        error="invalid_redirect_uri",
+                        error_description=(
+                            f"{uri} is not an allowed redirect for this server."
+                        ),
+                    )
         store.save_oauth_client(client_info.client_id, client_info.model_dump_json())
 
     # -- authorization ----------------------------------------------------
@@ -103,6 +157,10 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         flow = secrets.token_urlsafe(24)
         _PENDING_AUTH[flow] = {
             "client_id": client.client_id,
+            # Kept for the consent page. Self-declared at registration, so it
+            # is shown as a claim rather than trusted, alongside the redirect
+            # that actually determines where the code goes.
+            "client_name": getattr(client, "client_name", None),
             "params": params,
             "started": time.time(),
         }
@@ -111,6 +169,58 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
     def pending(self, flow: str) -> dict[str, Any] | None:
         _sweep()
         return _PENDING_AUTH.get(flow)
+
+    def stage(self, flow: str, subject: str) -> tuple[str, dict[str, Any]] | None:
+        """Sign-in succeeded; hold the handover until the person approves it.
+
+        Registration is open to anyone, so a client asking for this code is not
+        evidence that the person wanted it. Somebody can register a client
+        pointing anywhere, send a crafted /authorize link, and collect a code
+        from a sign-in that looked entirely normal on our own domain. PKCE does
+        not help, because the attacker is the client and holds the verifier.
+
+        The defence is that the person has to see who is asking and where the
+        code goes, and say yes.
+        """
+        _sweep()
+        entry = _PENDING_AUTH.get(flow)
+        if entry is None:
+            return None
+        token = secrets.token_urlsafe(32)
+        _AWAITING_CONSENT[token] = {
+            "flow": flow,
+            "subject": subject,
+            "started": time.time(),
+        }
+        return token, entry
+
+    def approve(self, consent_token: str) -> str | None:
+        """Consent given: mint the code and hand back the return URL."""
+        entry = _AWAITING_CONSENT.pop(consent_token, None)
+        if entry is None:
+            return None
+        return self.complete(entry["flow"], entry["subject"])
+
+    def deny(self, consent_token: str) -> str | None:
+        """Consent refused: tell the client so, rather than leaving it hanging.
+
+        The Garmin session stays; refusing a client is not disconnecting.
+        """
+        entry = _AWAITING_CONSENT.pop(consent_token, None)
+        if entry is None:
+            return None
+        parked = _PENDING_AUTH.pop(entry["flow"], None)
+        if parked is None:
+            return None
+        params: AuthorizationParams = parked["params"]
+        returned = {
+            "error": "access_denied",
+            "error_description": "The person refused this client.",
+        }
+        if params.state:
+            returned["state"] = params.state
+        separator = "&" if "?" in str(params.redirect_uri) else "?"
+        return f"{params.redirect_uri}{separator}{urlencode(returned)}"
 
     def complete(self, flow: str, subject: str) -> str | None:
         """Sign-in finished: mint a one-use code and hand back the return URL."""

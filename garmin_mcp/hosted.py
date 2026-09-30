@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -198,6 +199,8 @@ p { margin:0 0 14px; color:var(--muted) }
 label { display:block; font-weight:600; color:var(--ink); margin:16px 0 6px }
 input { width:100%; padding:11px 12px; font-size:1rem; border:1px solid var(--line);
   border-radius:8px; background:var(--surface); color:var(--ink) }
+button.secondary { background:var(--surface); color:var(--ink);
+  border:1px solid var(--line); margin-top:10px }
 button { margin-top:20px; width:100%; padding:12px; font-size:1rem; font-weight:600;
   border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer }
 .err { border-left:3px solid var(--clay); background:var(--surface);
@@ -310,6 +313,71 @@ def _signin_error(exc: BaseException) -> str:
     )
 
 
+def _consent_page(consent_token: str, parked: dict[str, Any]) -> Response:
+    """Ask, by name, before handing a client access to this Garmin session.
+
+    Everything variable here is escaped: the client name and the redirect come
+    from an open registration endpoint, so both are attacker-controlled text.
+    """
+    params = parked["params"]
+    destination = str(params.redirect_uri)
+    name = parked.get("client_name") or parked["client_id"]
+    known = oauth.recognised_redirect(destination)
+
+    warning = (
+        ""
+        if known
+        else "<div class=err><strong>This is not an app we recognise.</strong> "
+        "If you did not just try to connect it yourself, press Cancel. "
+        "Approving sends access to your Garmin data to the address below.</div>"
+    )
+
+    body = f"""
+        <h1>Allow access?</h1>
+        <p><strong>{html.escape(str(name))}</strong> is asking to read your Garmin
+        data and write workouts to your watch.</p>
+        {warning}
+        <p class=note>It will be sent to:</p>
+        <div class=url>{html.escape(destination)}</div>
+        <form method=post action=/oauth/consent style="margin-top:8px">
+          <input type=hidden name=consent value="{html.escape(consent_token)}">
+          <button name=decision value=allow>Allow</button>
+          <button name=decision value=deny class=secondary>Cancel</button>
+        </form>
+        <p class=note style="margin-top:20px">You stay signed in to Garmin
+        either way. Cancelling refuses this app, it does not disconnect you.</p>
+    """
+    response = page("Allow access?", body)
+    # A consent page that can be framed can be clicked through invisibly.
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    return response
+
+
+@mcp.custom_route("/oauth/consent", methods=["POST"])
+async def oauth_consent(request: Request) -> Response:
+    """Act on the answer. The unguessable one-use token is the proof."""
+    if not OAUTH_ENABLED:
+        return page("Not found", "<div class=err>Unknown page.</div>", 404)
+    form = await request.form()
+    consent_token = str(form.get("consent", ""))
+    allow = str(form.get("decision", "")) == "allow"
+
+    destination = (
+        OAUTH_PROVIDER.approve(consent_token)
+        if allow
+        else OAUTH_PROVIDER.deny(consent_token)
+    )
+    if destination:
+        return RedirectResponse(destination, status_code=303)
+    return page(
+        "Request expired",
+        "<div class=err>That request has expired or was already answered. "
+        "Start again from the connector in Claude.</div>",
+        400,
+    )
+
+
 def _finish(
     request: Request, client: Any, email: str, flow: str = "", *, mfa: bool = False
 ) -> Response:
@@ -338,11 +406,13 @@ def _finish(
     )
 
     if OAUTH_ENABLED and flow:
-        # Came from /authorize: hand the client its code and get out of the way.
-        # There is no URL to show, which is the entire point.
-        destination = OAUTH_PROVIDER.complete(flow, user_token)
-        if destination:
-            return RedirectResponse(destination, status_code=303)
+        # Came from /authorize. The Garmin session exists now, but the client
+        # asking for it still has to be approved by name, because anyone can
+        # register one pointing anywhere. See GarminOAuthProvider.stage.
+        staged = OAUTH_PROVIDER.stage(flow, user_token)
+        if staged:
+            consent_token, parked = staged
+            return _consent_page(consent_token, parked)
         return page(
             "Sign-in expired",
             "<div class=err>That sign-in took too long and the request has "
