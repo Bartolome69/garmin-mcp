@@ -25,6 +25,7 @@ import secrets
 import threading
 import time
 from typing import Any
+from urllib.parse import quote
 
 import anyio
 from starlette.requests import Request
@@ -225,6 +226,25 @@ def page(title: str, body: str, status: int = 200) -> HTMLResponse:
 
 @mcp.custom_route("/", methods=["GET"])
 async def index(request: Request) -> Response:
+    if OAUTH_ENABLED:
+        # There is no link to collect here. The connector is added in Claude,
+        # which brings the person back to sign in with the request attached.
+        return page(
+            "Garmin for Claude",
+            f"""
+            <h1>Connect Garmin to Claude</h1>
+            <p>Add this address in Claude &rarr; Settings &rarr; Connectors &rarr;
+            Add custom connector. Claude will bring you back here to sign in to
+            Garmin, once.</p>
+            <div class=url>{base_url(request)}/mcp</div>
+            <p class=note style="margin-top:16px">Your Garmin password goes
+            straight to Garmin, is never written to disk, and is dropped from
+            memory as soon as it has been exchanged. Only the access token Garmin
+            issues is kept, encrypted.</p>
+            <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
+            target=_blank rel=noopener>Privacy</a></p>
+            """,
+        )
     return page(
         "Garmin for Claude",
         f"""
@@ -240,6 +260,20 @@ async def index(request: Request) -> Response:
         target=_blank rel=noopener>Privacy</a></p>
         """,
     )
+
+
+def _connect_url(flow: str) -> str:
+    """The sign-in form, still attached to Claude's pending request if there was one.
+
+    A "Try again" that dropped the flow sent people back to the form as if
+    they had arrived on their own, and a sign-in without a flow ends in the
+    wrong place. Every retry link goes through here.
+    """
+    return f"/connect?flow={quote(flow, safe='')}" if flow else "/connect"
+
+
+def _try_again(flow: str) -> str:
+    return f'<p><a href="{_connect_url(flow)}">Try again</a></p>'
 
 
 _INVITE_FIELD = """
@@ -323,7 +357,7 @@ def _log_signin_failure(exc: BaseException, reason: str) -> None:
     )
 
 
-def _signin_error(exc: BaseException) -> str:
+def _signin_error(exc: BaseException, flow: str = "") -> str:
     """Explain a failed sign-in in terms that make sense on a web page."""
     reason = _failure_reason(exc)
     _log_signin_failure(exc, reason)
@@ -333,7 +367,7 @@ def _signin_error(exc: BaseException) -> str:
             "It is not your password. Garmin limits how many sign-ins it takes "
             "from one address, and several people have signed in through here "
             "recently. Wait half an hour and try again; it clears on its own.</div>"
-            "<p><a href=/connect>Try again</a></p>"
+            + _try_again(flow)
         )
     if reason == "blocked_by_garmin":
         return (
@@ -341,7 +375,7 @@ def _signin_error(exc: BaseException) -> str:
             "server's network.</strong> This is not your password — Garmin "
             "refuses the request before checking it. Tell whoever runs this "
             "server; it needs a different sign-in route.</div>"
-            "<p><a href=/connect>Try again</a></p>"
+            + _try_again(flow)
         )
     if reason == "bad_credentials":
         return (
@@ -349,11 +383,11 @@ def _signin_error(exc: BaseException) -> str:
             "Check them by signing in at connect.garmin.com, then come back and "
             "try again. If Garmin asks you for a code there, you have two-factor "
             "on, and you'll be asked for the same code here.</div>"
-            "<p><a href=/connect>Try again</a></p>"
+            + _try_again(flow)
         )
     return (
         f"<div class=err>Sign-in failed: {type(exc).__name__}. "
-        "Try again in a moment.</div><p><a href=/connect>Try again</a></p>"
+        "Try again in a moment.</div>" + _try_again(flow)
     )
 
 
@@ -443,7 +477,9 @@ def _finish(
         fingerprint,
         {
             "account": masked,
-            "via": "oauth" if (OAUTH_ENABLED and flow) else "url",
+            # "direct" is someone who reached the form without Claude's request
+            # attached; the page below sends them back to start from Claude.
+            "via": ("oauth" if flow else "direct") if OAUTH_ENABLED else "url",
             "mfa": mfa,
             "returning": bool(previous),
         },
@@ -462,6 +498,25 @@ def _finish(
             "<div class=err>That sign-in took too long and the request has "
             "expired. Start again from the connector in Claude.</div>",
             400,
+        )
+
+    if OAUTH_ENABLED:
+        # Signed in, but not on Claude's behalf, so there is nothing to hand
+        # back. The old page here showed a /u/<token>/ link, which this mode
+        # does not serve: a dead end that looked like success.
+        return page(
+            "Signed in to Garmin",
+            f"""
+            <h1>Signed in to Garmin</h1>
+            <p>One more step. In Claude, go to Settings &rarr; Connectors &rarr;
+            Add custom connector and paste this address:</p>
+            <div class=url>{base_url(request)}/mcp</div>
+            <p class=note style="margin-top:16px">Claude will send you back here.
+            Sign in once more when it does; that is what ties the connector to
+            your account. Nothing from this visit needs saving.</p>
+            <p class=note><a href="/disconnect?t={user_token}">Disconnect and delete
+            my stored session</a></p>
+            """,
         )
 
     url = f"{base_url(request)}/u/{user_token}/mcp"
@@ -521,13 +576,14 @@ async def connect_submit(request: Request) -> Response:
     form = await request.form()
     email = str(form.get("email", "")).strip()
     password = str(form.get("password", ""))
+    flow = str(form.get("flow", ""))
 
     if _too_many_attempts(_client_address(request)):
         analytics.capture("sign_in_failed", None, {"reason": "throttled"})
         return page(
             "Sign in to Garmin",
             "<div class=err>Too many sign-in attempts. Wait fifteen minutes and "
-            "try again.</div>",
+            "try again.</div>" + _try_again(flow),
             429,
         )
 
@@ -537,12 +593,16 @@ async def connect_submit(request: Request) -> Response:
         return page(
             "Sign in to Garmin",
             "<div class=err>That invite code isn't right. Ask whoever sent you "
-            "the link.</div><p><a href=/connect>Try again</a></p>",
+            "the link.</div>" + _try_again(flow),
             403,
         )
 
     if not email or not password:
-        return page("Sign in to Garmin", "<div class=err>Email and password required.</div>", 400)
+        return page(
+            "Sign in to Garmin",
+            "<div class=err>Email and password required.</div>" + _try_again(flow),
+            400,
+        )
 
     def _login() -> Any:
         client = build_client(
@@ -563,7 +623,7 @@ async def connect_submit(request: Request) -> Response:
         client, result = await anyio.to_thread.run_sync(_login)
     except Exception as exc:  # noqa: BLE001
         analytics.capture("sign_in_failed", None, {"reason": _failure_reason(exc)})
-        return page("Sign in to Garmin", _signin_error(exc), 400)
+        return page("Sign in to Garmin", _signin_error(exc, flow), 400)
 
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
         _sweep_pending()
@@ -578,7 +638,7 @@ async def connect_submit(request: Request) -> Response:
             "client": client,
             "state": result[1],
             "email": email,
-            "flow": str(form.get("flow", "")),
+            "flow": flow,
             "started": time.time(),
         }
         return page(
@@ -595,7 +655,7 @@ async def connect_submit(request: Request) -> Response:
             """,
         )
 
-    return _finish(request, client, email, str(form.get("flow", "")))
+    return _finish(request, client, email, flow)
 
 
 @mcp.custom_route("/mfa", methods=["POST"])
@@ -620,7 +680,8 @@ async def mfa_submit(request: Request) -> Response:
         return page(
             "Enter your code",
             f"<div class=err>That code wasn't accepted ({type(exc).__name__}). "
-            "Start again from <a href=/connect>the sign-in page</a>.</div>",
+            f'Start again from <a href="{_connect_url(pending.get("flow", ""))}">'
+            "the sign-in page</a>.</div>",
             400,
         )
     return _finish(request, client, pending["email"], pending.get("flow", ""), mfa=True)

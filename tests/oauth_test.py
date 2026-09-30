@@ -63,6 +63,8 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
             return _Garth(self._marker)
 
         def login(self, tokenstore=None):
+            if email == "wrongpw@example.com":
+                raise GarminConnectAuthenticationError("Authentication failed (401 Unauthorized).")
             if tokenstore:
                 try:
                     self._marker = json.loads(tokenstore).get("di_token", "none")
@@ -81,6 +83,7 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
 
 hosted.build_client = fake_build_client
 import garmin_mcp.session as session_mod  # noqa: E402
+from garminconnect import GarminConnectAuthenticationError  # noqa: E402
 
 session_mod.build_client = fake_build_client
 
@@ -192,6 +195,28 @@ async def main() -> int:
               code in (302, 303, 307) and "/connect?" in location and "flow=" in location,
               f"{code} {location[:90]}")
         flow = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("flow", [""])[0]
+
+        # -- 3b. a failed sign-in keeps Claude's request attached ----------
+        # A "Try again" that dropped it sent people to the form as if they had
+        # arrived on their own, and that road ends in a link this mode never
+        # serves. Both halves of that are checked here.
+        code, body, headers = await run(lambda: http("POST", "/connect", {
+            "email": "wrongpw@example.com", "password": "pw", "flow": flow,
+        }))
+        check("a failed sign-in's retry link keeps the flow",
+              code == 400 and f"flow={urllib.parse.quote(flow, safe='')}" in body,
+              f"{code} {body[body.find('Try again') - 120 : body.find('Try again')]}")
+        code, body, headers = await run(lambda: http("POST", "/connect", {
+            "email": "direct@example.com", "password": "pw",
+        }))
+        check("a sign-in without a flow is sent back to Claude, not given a link",
+              code == 200 and "/mcp" in body and "/u/" not in body
+              and "Add custom connector" in body,
+              f"{code} {body[:160]}")
+        code, body, headers = await run(lambda: http("GET", "/"))
+        check("the landing page points at Claude, not at a private link",
+              code == 200 and "/mcp" in body and "private link" not in body
+              and "Get started" not in body)
 
         # -- 4. sign in; expect the consent page, not a code -------------
         # Registration is open, so a signed-in person is not evidence that they
