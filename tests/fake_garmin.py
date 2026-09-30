@@ -156,6 +156,95 @@ HR_ZONES = [
 ]
 
 
+READINESS = [{
+    "calendarDate": "2026-09-30", "score": 58, "level": "MODERATE",
+    "feedbackShort": "MODERATE_READINESS_1", "sleepScore": 82,
+    "sleepScoreFactorFeedback": "GOOD", "recoveryTime": 14,
+    "recoveryTimeFactorFeedback": "MODERATE", "acwrFactorFeedback": "OPTIMAL",
+    "hrvFactorFeedback": "BALANCED", "stressHistoryFactorFeedback": "LOW",
+    "sleepHistoryFactorFeedback": "GOOD", "primaryTrainingDevice": True,
+}]
+
+TRAINING_STATUS = {
+    "mostRecentVO2Max": {"generic": {"vo2MaxPreciseValue": 60.9, "vo2MaxValue": 61}},
+    "mostRecentTrainingLoadBalance": {"metricsTrainingLoadBalanceDTOMap": {"3400": {
+        "primaryTrainingDevice": True, "monthlyLoadAerobicLow": 402.0,
+        "monthlyLoadAerobicHigh": 188.0, "monthlyLoadAnaerobic": 41.0,
+        "monthlyLoadAerobicLowTargetMin": 360.0, "monthlyLoadAerobicLowTargetMax": 720.0,
+        "monthlyLoadAerobicHighTargetMin": 180.0, "monthlyLoadAerobicHighTargetMax": 360.0,
+        "monthlyLoadAnaerobicTargetMin": 90.0, "monthlyLoadAnaerobicTargetMax": 180.0,
+        "trainingBalanceFeedbackPhrase": "ANAEROBIC_SHORTAGE",
+    }}},
+    "mostRecentTrainingStatus": {"latestTrainingStatusData": {"3400": {
+        "primaryTrainingDevice": True, "sinceDate": "2026-09-14",
+        "weeklyTrainingLoad": 512, "loadTunnelMin": 430, "loadTunnelMax": 690,
+        "trainingStatus": 4, "trainingStatusFeedbackPhrase": "PRODUCTIVE_1",
+        "trainingPaused": False,
+        "acuteTrainingLoadDTO": {
+            "acwrStatus": "OPTIMAL", "dailyTrainingLoadAcute": 350,
+            "dailyTrainingLoadChronic": 330, "minTrainingLoadChronic": 280,
+            "maxTrainingLoadChronic": 420, "dailyAcuteChronicWorkloadRatio": 1.06,
+        },
+    }}},
+}
+
+HRV = {"hrvSummary": {"weeklyAvg": 58, "lastNightAvg": 61, "lastNight5MinHigh": 78,
+                      "baseline": {"lowUpper": 50, "balancedLow": 53, "balancedUpper": 66},
+                      "status": "BALANCED"}}
+
+RACE_PREDICTIONS = {"calendarDate": "2026-09-30", "time5K": 1080, "time10K": 2280,
+                    "timeHalfMarathon": 5100, "timeMarathon": 10800}
+
+LACTATE = {"speed_and_heart_rate": {"calendarDate": "2026-09-21", "speed": 3.8,
+                                    "heartRate": 172}, "power": {}}
+
+ENDURANCE = {"calendarDate": "2026-09-30", "overallScore": 6512,
+             "classificationLowerLimitIntermediate": 4900,
+             "classificationLowerLimitTrained": 6100,
+             "classificationLowerLimitWellTrained": 7300,
+             "classificationLowerLimitExpert": 8200,
+             "classificationLowerLimitSuperior": 8900,
+             "classificationLowerLimitElite": 9400}
+
+HILL = {"calendarDate": "2026-09-30", "overallScore": 46, "strengthScore": 42,
+        "enduranceScore": 51, "classificationLowerLimitIntermediate": 30,
+        "classificationLowerLimitTrained": 45, "classificationLowerLimitWellTrained": 60}
+
+TOLERANCE = [{"calendarDate": "2026-09-22", "userProfilePK": 1, "weeklyLoad": 48.2,
+              "toleranceLimit": 61.0}]
+
+
+def _stream(laps: list[tuple[float, float, float, float]], step: float = 10.0) -> dict[str, Any]:
+    """A recording matching a list of laps: (metres, seconds, hr_start, hr_end).
+
+    Heart rate climbs linearly through each lap so drift is measurable, and
+    pace is even, which is the case that makes drift meaningful.
+    """
+    rows: list[dict[str, Any]] = []
+    dist = time = 0.0
+    for metres, seconds, hr0, hr1 in laps:
+        n = int(seconds // step)
+        for i in range(n):
+            frac = i / max(n - 1, 1)
+            rows.append({"metrics": [time, dist, metres / seconds, hr0 + (hr1 - hr0) * frac]})
+            time += step
+            dist += metres / n
+    rows.append({"metrics": [time, dist, 0.0, laps[-1][3]]})
+    return {
+        "metricDescriptors": [
+            {"metricsIndex": 0, "key": "sumDuration", "unit": {"key": "second"}},
+            {"metricsIndex": 1, "key": "sumDistance", "unit": {"key": "meter"}},
+            {"metricsIndex": 2, "key": "directSpeed", "unit": {"key": "mps"}},
+            {"metricsIndex": 3, "key": "directHeartRate", "unit": {"key": "bpm"}},
+        ],
+        "activityDetailMetrics": rows,
+    }
+
+
+# Matches SPLITS: two 1 km laps of 300 s and 296 s, HR climbing through each.
+RECORDING = _stream([(1000.0, 300.0, 140.0, 156.0), (1000.0, 296.0, 150.0, 158.0)])
+
+
 class FakeGarmin:
     def __init__(self, **_: Any) -> None:
         self.display_name = None
@@ -214,6 +303,35 @@ class FakeGarmin:
     def get_activity_hr_in_timezones(self, activity_id: int) -> list[dict[str, Any]]:
         return list(HR_ZONES)
 
+    def get_activity_details(self, activity_id: int, maxchart: int = 2000, maxpoly: int = 4000) -> dict[str, Any]:
+        return RECORDING
+
+    # -- readiness and fitness ---------------------------------------------
+
+    def get_training_readiness(self, day: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in READINESS]
+
+    def get_training_status(self, day: str) -> dict[str, Any]:
+        return TRAINING_STATUS
+
+    def get_hrv_data(self, day: str) -> dict[str, Any]:
+        return HRV
+
+    def get_race_predictions(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return dict(RACE_PREDICTIONS)
+
+    def get_lactate_threshold(self, **kwargs: Any) -> dict[str, Any]:
+        return LACTATE
+
+    def get_endurance_score(self, start: str, end: str | None = None) -> dict[str, Any]:
+        return dict(ENDURANCE)
+
+    def get_hill_score(self, start: str, end: str | None = None) -> dict[str, Any]:
+        return dict(HILL)
+
+    def get_running_tolerance(self, start: str, end: str, aggregation: str = "weekly") -> list[dict[str, Any]]:
+        return [dict(t) for t in TOLERANCE]
+
     # -- workouts ----------------------------------------------------------
 
     def get_workouts(self, start: int, limit: int) -> list[dict[str, Any]]:
@@ -255,6 +373,19 @@ class FakeGarmin:
     def upload_workout(self, workout_json: Any) -> dict[str, Any]:
         self.last_upload = workout_json
         return {"workoutId": 555002}
+
+    def update_workout(self, workout_id: int, workout_json: Any) -> dict[str, Any]:
+        # Replaces in place, like the real PUT: the id survives, the name in
+        # the library changes, and a caller can prove which happened.
+        known = {w["workoutId"] for w in self.workouts}
+        if int(workout_id) not in known:
+            raise ValueError(f"404 for workout {workout_id}")
+        self.last_update = (int(workout_id), workout_json)
+        for w in self.workouts:
+            if int(w["workoutId"]) == int(workout_id) and isinstance(workout_json, dict):
+                if workout_json.get("workoutName"):
+                    w["workoutName"] = workout_json["workoutName"]
+        return {"workoutId": int(workout_id)}
 
     def get_max_metrics(self, day: str) -> list[dict[str, Any]]:
         return [{"generic": {"vo2MaxPreciseValue": 60.9, "fitnessAge": None}}]
