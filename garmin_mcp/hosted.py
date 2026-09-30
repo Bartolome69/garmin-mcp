@@ -29,7 +29,7 @@ import anyio
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import oauth, store
+from . import analytics, oauth, store
 from .server import mcp
 from .session import (
     GarminError,
@@ -272,10 +272,25 @@ async def connect_form(request: Request) -> Response:
     )
 
 
-def _signin_error(exc: BaseException) -> str:
-    """Explain a failed sign-in in terms that make sense on a web page."""
+def _failure_reason(exc: BaseException) -> str:
+    """Which of the three things that go wrong at sign-in this was.
+
+    The analytics event carries this word and nothing else about the failure,
+    so the count of people Garmin turned away can be told from the count who
+    mistyped a password without either being traceable to anyone.
+    """
     text = str(exc).lower()
     if "429" in text or "rate limit" in text or "too many" in text or "cloudflare" in text:
+        return "blocked_by_garmin"
+    if "401" in text or "unauthorized" in text or "invalid" in text:
+        return "bad_credentials"
+    return "other"
+
+
+def _signin_error(exc: BaseException) -> str:
+    """Explain a failed sign-in in terms that make sense on a web page."""
+    reason = _failure_reason(exc)
+    if reason == "blocked_by_garmin":
         return (
             "<div class=err><strong>Garmin is blocking sign-ins from this "
             "server's network.</strong> This is not your password — Garmin "
@@ -283,7 +298,7 @@ def _signin_error(exc: BaseException) -> str:
             "server; it needs a different sign-in route.</div>"
             "<p><a href=/connect>Try again</a></p>"
         )
-    if "401" in text or "unauthorized" in text or "invalid" in text:
+    if reason == "bad_credentials":
         return (
             "<div class=err>Garmin didn't accept that email and password. "
             "Check them at connect.garmin.com and try again.</div>"
@@ -295,16 +310,28 @@ def _signin_error(exc: BaseException) -> str:
     )
 
 
-def _finish(request: Request, client: Any, email: str, flow: str = "") -> Response:
+def _finish(
+    request: Request, client: Any, email: str, flow: str = "", *, mfa: bool = False
+) -> Response:
     """Persist the session and show the person their private URL."""
     blob = client.client.dumps()
     fingerprint = store.email_fingerprint(email)
     # Retires any URL this person was given before, so signing in again is also
     # how they revoke one they have lost.
-    for stale in store.tokens_for(fingerprint):
+    previous = store.tokens_for(fingerprint)
+    for stale in previous:
         _SESSIONS.pop(stale, None)
     user_token = store.save_user(
         mask_email(email) or "hidden", blob, email_hash=fingerprint
+    )
+    analytics.capture(
+        "connector_connected",
+        user_token,
+        {
+            "via": "oauth" if (OAUTH_ENABLED and flow) else "url",
+            "mfa": mfa,
+            "returning": bool(previous),
+        },
     )
 
     if OAUTH_ENABLED and flow:
@@ -379,6 +406,7 @@ async def connect_submit(request: Request) -> Response:
     password = str(form.get("password", ""))
 
     if _too_many_attempts(_client_address(request)):
+        analytics.capture("sign_in_failed", None, {"reason": "throttled"})
         return page(
             "Sign in to Garmin",
             "<div class=err>Too many sign-in attempts. Wait fifteen minutes and "
@@ -417,6 +445,7 @@ async def connect_submit(request: Request) -> Response:
     try:
         client, result = await anyio.to_thread.run_sync(_login)
     except Exception as exc:  # noqa: BLE001
+        analytics.capture("sign_in_failed", None, {"reason": _failure_reason(exc)})
         return page("Sign in to Garmin", _signin_error(exc), 400)
 
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
@@ -470,13 +499,14 @@ async def mfa_submit(request: Request) -> Response:
 
         await anyio.to_thread.run_sync(_resume)
     except Exception as exc:  # noqa: BLE001
+        analytics.capture("sign_in_failed", None, {"reason": "mfa_rejected"})
         return page(
             "Enter your code",
             f"<div class=err>That code wasn't accepted ({type(exc).__name__}). "
             "Start again from <a href=/connect>the sign-in page</a>.</div>",
             400,
         )
-    return _finish(request, client, pending["email"], pending.get("flow", ""))
+    return _finish(request, client, pending["email"], pending.get("flow", ""), mfa=True)
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -568,7 +598,8 @@ class SessionBinding:
         now = time.time()
         if now - _TOUCHED.get(user_token, 0.0) > _TOUCH_EVERY:
             _TOUCHED[user_token] = now
-            store.touch_user(user_token)
+            if store.touch_user(user_token):
+                analytics.capture("first_tool_call", user_token, {})
 
         token = use_session(session_for(user_token))
         try:

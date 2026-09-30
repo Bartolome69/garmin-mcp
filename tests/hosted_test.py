@@ -29,12 +29,20 @@ from cryptography.fernet import Fernet  # noqa: E402
 
 os.environ["GARMIN_MCP_DB"] = str(DB)
 os.environ["GARMIN_MCP_SECRET"] = Fernet.generate_key().decode()
+# Turn analytics on so the events can be checked; the network call is replaced
+# below, so nothing leaves the test.
+os.environ["GARMIN_MCP_POSTHOG_KEY"] = "phc_test_key"
 os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
 os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
 
 from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
 
 import garmin_mcp.hosted as hosted  # noqa: E402
+from garmin_mcp import analytics  # noqa: E402
+
+# Every event the server would have sent to PostHog, kept for inspection.
+SENT: list[dict] = []
+analytics._post = SENT.append
 from garmin_mcp import store  # noqa: E402
 
 # Each stub reports which account it belongs to, so we can prove one person's
@@ -355,6 +363,46 @@ async def main() -> int:
         hosted._ATTEMPTS.clear()
         codes = [(await anyio_run(signin, "spray@example.com"))[0] for _ in range(12)]
         check("repeated sign-in attempts are throttled", 429 in codes, str(codes[-3:]))
+
+        # ---- what the server told PostHog, and what it kept to itself -------
+        # Events go out on a thread, so give the last of them a moment to land.
+        time.sleep(0.3)
+        by_name: dict[str, list[dict]] = {}
+        for sent in SENT:
+            by_name.setdefault(sent["event"], []).append(sent)
+        connected = by_name.get("connector_connected", [])
+        first_calls = by_name.get("first_tool_call", [])
+        failed = by_name.get("sign_in_failed", [])
+        check("a completed sign-in is reported", len(connected) >= 1, str(len(connected)))
+        check("a completed sign-in says how, and whether it was a repeat",
+              all(e["properties"].get("via") in ("url", "oauth")
+                  and isinstance(e["properties"].get("mfa"), bool)
+                  and isinstance(e["properties"].get("returning"), bool)
+                  for e in connected),
+              str([e["properties"] for e in connected][:2]))
+        check("the first request on a connection is reported once per person",
+              len(first_calls) == 2, str(len(first_calls)))
+        check("first-use ids differ per person and match nobody's token",
+              len({e["distinct_id"] for e in first_calls}) == 2
+              and not ({alice, bob} & {e["distinct_id"] for e in first_calls}))
+        reasons = {e["properties"].get("reason") for e in failed}
+        check("failed sign-ins carry a one-word reason",
+              "throttled" in reasons and reasons <= {
+                  "throttled", "blocked_by_garmin", "bad_credentials", "other", "mfa_rejected"},
+              str(reasons))
+        blob = json.dumps(SENT)
+        check("analytics carry no email, token, secret or password",
+              "example.com" not in blob and alice not in blob and bob not in blob
+              and SECRET not in blob and "their-own-password" not in blob
+              and "hunter2" not in blob,
+              blob[:200] if any(x in blob for x in ("example.com", alice, bob, SECRET)) else "")
+        check("analytics build no person profile",
+              all(e["properties"].get("$process_person_profile") is False for e in SENT))
+        check("analytics stay silent without a key",
+              analytics.enabled() and (lambda: (
+                  setattr(analytics, "KEY", ""), analytics.capture("x", None, {}),
+                  setattr(analytics, "KEY", "phc_test_key"), True))()[-1]
+              and not any(e["event"] == "x" for e in SENT))
     finally:
         server.should_exit = True
         thread.join(timeout=10)

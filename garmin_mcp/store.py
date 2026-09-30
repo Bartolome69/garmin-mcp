@@ -217,18 +217,24 @@ def count_users() -> int:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
-def touch_user(user_token: str) -> None:
-    """Note that this person's connector was just used.
+def touch_user(user_token: str) -> bool:
+    """Note that this person's connector was just used. True the first time.
 
     last_seen_at used to move only when a token refreshed, which is every few
     weeks at best. It now moves on use, so it can answer the one question the
-    front page asks: how many people actually used this recently.
+    front page asks: how many people actually used this recently. The first
+    touch is reported separately: it is the moment a sign-in turned into a
+    connector that works.
     """
     with _connect() as conn:
+        row = conn.execute(
+            "SELECT last_seen_at FROM users WHERE user_token = ?", (user_token,)
+        ).fetchone()
         conn.execute(
             "UPDATE users SET last_seen_at = ? WHERE user_token = ?",
             (int(time.time()), user_token),
         )
+    return bool(row) and row[0] is None
 
 
 def count_active(days: int = 30) -> int:
