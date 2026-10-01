@@ -71,6 +71,9 @@
 
   * { box-sizing: border-box; }
   html, body { margin: 0; }
+  /* If the host's theme variables fail to apply, the page still has a
+     background and a readable text colour of its own. */
+  html { background: Canvas; color: CanvasText; }
   body {
     background: var(--bg); color: var(--ink);
     font-family: var(--sans); font-size: 15px; line-height: 1.45;
@@ -196,15 +199,65 @@
     .cell .s { font-size: 12px; white-space: nowrap; }
     .count .sessions { display: none; }
   }
+  /* The status box: fixed colours, nothing from the theme, so it is readable
+     whatever went wrong. */
+  .diag { margin: 12px; padding: 12px 14px; border-radius: 10px; background: #FFF3CD; color: #3D2C00;
+    border: 1px solid #E8C96A; font: 14px/1.45 system-ui, -apple-system, Roboto, sans-serif; }
+  .diag.waiting { background: #EEF2EE; color: #1F2A23; border-color: #C9D3CB; }
+  .diag[hidden] { display: none; }
+  .diag-tech { margin-top: 6px; font: 12px/1.4 ui-monospace, Menlo, monospace; opacity: 0.85; word-break: break-word; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <div class="app" id="app"><div class="empty">Loading your plan&hellip;</div></div>
+<div class="diag" id="diag" hidden></div>
 
+<script>
+// Watchdog. Runs before the view itself, so it can say what happened even if
+// the view's script never starts: how far the conversation with the host got,
+// what the host called itself, and any error. Shown only if the plan hasn't
+// appeared after a few seconds, and removed the moment it does.
+(function () {
+  var d = window.__planDiag = { steps: [], errors: [], host: "", rendered: false, gotResult: false, initOk: false };
+  function show() {
+    var box = document.getElementById("diag");
+    if (!box) return;
+    if (d.rendered && !d.errors.length) { box.hidden = true; return; }
+    var waiting = d.initOk && !d.gotResult && !d.errors.length;
+    box.className = "diag" + (waiting ? " waiting" : "");
+    box.textContent = "";
+    var head = document.createElement("strong");
+    head.textContent = waiting ? "Still fetching your plan from Garmin\u2026" : "The plan didn't load here.";
+    box.appendChild(head);
+    if (!waiting) {
+      var hint = document.createElement("div");
+      hint.textContent = "Ask Claude to show it as text instead.";
+      box.appendChild(hint);
+    }
+    var tech = document.createElement("div");
+    tech.className = "diag-tech";
+    tech.textContent = d.steps.join(" > ") + (d.host ? " | app: " + d.host : "") +
+      (d.errors.length ? " | error: " + d.errors.join("; ") : "");
+    box.appendChild(tech);
+    box.hidden = false;
+  }
+  d.step = function (s) { if (d.steps.length < 24) d.steps.push(s); };
+  d.fail = function (msg) { d.errors.push(String(msg).slice(0, 160)); show(); };
+  d.done = function () { d.rendered = true; show(); };
+  window.addEventListener("error", function (e) { d.fail(e.message || "script error"); });
+  window.addEventListener("unhandledrejection", function (e) {
+    d.fail((e.reason && e.reason.message) || "promise rejected");
+  });
+  setTimeout(show, 8000);
+  setTimeout(show, 30000);
+  d.step("page");
+})();
+</script>
 <script>
 (function () {
   "use strict";
+  var D = window.__planDiag || { step: function () {}, fail: function () {}, done: function () {} };
 
   // ---------------------------------------------------------------- bridge
   // The host speaks JSON-RPC over postMessage. Only the handful of messages
@@ -225,19 +278,25 @@
 
   window.addEventListener("message", function (event) {
     var data = event.data;
-    if (!data || data.jsonrpc !== "2.0") return;
+    // Anything that isn't JSON-RPC is noted, not ignored silently: a host on
+    // an older version of the protocol speaks a different shape.
+    if (data && data.jsonrpc !== "2.0") { D.step("other msg " + String(data.type || typeof data).slice(0, 40)); return; }
+    if (!data) return;
     if (data.id != null && !data.method && pending[data.id]) {
       var p = pending[data.id]; delete pending[data.id];
       data.error ? p.reject(new Error(data.error.message || "error")) : p.resolve(data.result);
       return;
     }
     switch (data.method) {
-      case "ui/notifications/tool-result": onResult(data.params); break;
+      case "ui/notifications/tool-input": D.step("input"); break;
+      case "ui/notifications/tool-result": D.step("result"); D.gotResult = true; onResult(data.params); break;
       case "ui/notifications/host-context-changed": applyContext(data.params || {}); break;
-      case "ui/notifications/tool-cancelled": render(null, "The plan could not be loaded."); break;
+      case "ui/notifications/tool-cancelled": D.step("cancelled"); render(null, "The plan could not be loaded."); D.done(); break;
       case "ui/resource-teardown": case "ping":
         if (data.id != null) send({ id: data.id, result: {} });
         break;
+      default:
+        if (data.method) D.step("got " + String(data.method).slice(0, 60));
     }
   });
 
@@ -253,7 +312,10 @@
   }
 
   function onResult(result) {
-    if (!result) return;
+    try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
+  }
+  function showResult(result) {
+    if (!result) { D.fail("empty result"); return; }
     var plan = result.structuredContent;
     if (!plan && result.content) {
       for (var i = 0; i < result.content.length; i++) {
@@ -262,6 +324,7 @@
       }
     }
     render(isProgress(plan) ? fromProgress(plan) : plan);
+    D.done();
   }
 
   // get_progress answers "how's my plan going" too, with the same sessions in
@@ -593,17 +656,27 @@
   }
 
   // ---------------------------------------------------------------- start
-  if (window.__PLAN_DEMO__) { render(window.__PLAN_DEMO__); return; }
-  if (!host) { render(null, "This view opens inside a chat that supports MCP Apps."); return; }
+  if (window.__PLAN_DEMO__) { render(window.__PLAN_DEMO__); D.done(); return; }
+  if (!host) { D.step("no host frame"); render(null, "This view opens inside a chat that supports MCP Apps."); D.done(); return; }
+  D.step("init sent");
   request("ui/initialize", {
     protocolVersion: "2026-01-26",
     appInfo: { name: "garmin-plan", version: "1.0.0" },
     clientInfo: { name: "garmin-plan", version: "1.0.0" },
     appCapabilities: { availableDisplayModes: ["inline"] },
   }).then(function (result) {
-    applyContext((result && result.hostContext) || {});
+    var info = (result && (result.hostInfo || result.serverInfo)) || {};
+    var ctx = (result && result.hostContext) || {};
+    D.initOk = true;
+    D.host = [info.name, info.version, ctx.platform, ctx.theme, ctx.displayMode].filter(Boolean).join(" ") || "unnamed";
+    D.step("init ok");
+    applyContext(ctx);
     notify("ui/notifications/initialized", {});
-  }).catch(function () { notify("ui/notifications/initialized", {}); });
+    D.step("ready sent");
+  }).catch(function (e) {
+    D.step("init failed: " + (e && e.message));
+    notify("ui/notifications/initialized", {});
+  });
 })();
 </script>
 </body>
