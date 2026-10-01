@@ -207,6 +207,21 @@ def around(items: Iterable[Mapping[str, Any]], today: date) -> list[dict[str, An
     return [dict(i) for i in items if (d := _day(i.get("date"))) and start <= d < end]
 
 
+def covers_week(sessions: Iterable[Mapping[str, Any]], today: date) -> bool:
+    """Whether a plan is running this week: begun by Sunday, not over before Monday."""
+    days = [d for i in sessions if (d := _day(i.get("date")))]
+    monday = monday_of(today)
+    return bool(days) and min(days) <= monday + timedelta(days=6) and max(days) >= monday
+
+
+def has_week(items: Iterable[Mapping[str, Any]], today: date) -> bool:
+    """Whether anything is scheduled this week."""
+    monday = monday_of(today)
+    return any(
+        (d := _day(i.get("date"))) and monday <= d <= monday + timedelta(days=6) for i in items
+    )
+
+
 def planned_metres(workout: Mapping[str, Any]) -> float:
     """How far a workout is meant to be: Garmin's own figure, else its steps added up."""
     given = float(workout.get("estimatedDistanceInMeters") or 0)
