@@ -20,6 +20,10 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
+# Remembered answers per session. Small payloads; past this many the memory is
+# simply emptied rather than tracked entry by entry.
+MEMO_LIMIT = 400
+
 TOKEN_FILE = Path(
     os.environ.get("GARMIN_MCP_TOKENS") or Path.home() / ".garmin-mcp" / "tokens.json"
 )
@@ -214,6 +218,7 @@ class GarminSession:
             writes the file.
         """
         self._lock = threading.RLock()
+        self._memo: dict[Any, tuple[float, Any]] = {}
         self._client: Any = None
         self._source: str | None = None
         self._connected_at: float | None = None
@@ -309,6 +314,27 @@ class GarminSession:
                 client = self.client()
                 return fn(client)
 
+    def remembered(self, key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
+        """run(fn), keeping the answer for ttl seconds under key.
+
+        For reads that rarely change and are asked for again within minutes:
+        a workout's steps, a month of the calendar. Kept per session, so one
+        person's answers are never another's.
+        """
+        now = time.monotonic()
+        hit = self._memo.get(key)
+        if hit is not None and now - hit[0] < ttl:
+            return hit[1]
+        value = self.run(fn)
+        if len(self._memo) >= MEMO_LIMIT:
+            self._memo.clear()
+        self._memo[key] = (now, value)
+        return value
+
+    def forget(self) -> None:
+        """Drop everything remembered, after anything that writes to Garmin."""
+        self._memo.clear()
+
     def status(self) -> dict[str, Any]:
         """Describe the connection without touching the password or the token."""
         email, password = credentials()
@@ -386,6 +412,12 @@ class _ActiveSession:
 
     def reset(self) -> None:
         self._target().reset()
+
+    def remembered(self, key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
+        return self._target().remembered(key, ttl, fn)
+
+    def forget(self) -> None:
+        self._target().forget()
 
 
 session = _ActiveSession()
