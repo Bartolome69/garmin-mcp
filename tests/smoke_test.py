@@ -377,6 +377,14 @@ async def check_calendar_fallback(check) -> None:
         check("after a change through the tools, workouts are read fresh", after_write == first,
               f"after_write={after_write}")
 
+        # A timed strength session has no distance, however its steps add up.
+        gym = await scenario([row(61, 1, "Easy 8k"),
+                              {**row(62, 2, "Full body (runner)"), "sportTypeKey": "strength_training"}])
+        week = next((w for w in gym.get("weeks", []) if w.get("current")), {})
+        strength_row = next((x for x in week.get("sessions", []) if x["name"] == "Full body (runner)"), {})
+        check("a strength session adds nothing to planned km",
+              "planned_km" not in strength_row and week.get("planned_km") == 7.9, str(week)[:200])
+
         # Only next week scheduled, by anyone: still a card.
         nxt = await scenario([row(41, 8, "Easy 10k"), row(42, 10, "Intervals 6x800")])
         check("next week alone is still a plan",

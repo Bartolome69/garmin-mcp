@@ -396,9 +396,13 @@ def summarise(
                 "actual": duration(hit.get("actual_seconds")) if hit else None,
                 "workout_id": item.get("workoutId"),
                 "schedule_id": schedule_id,
+                # Distance only means something for a run: a timed strength
+                # session converted at running pace would add phantom km.
                 "planned_km": (
                     round(planned_metres[item.get("workoutId")] / 1000, 1)
-                    if weekly_km and planned_metres.get(item.get("workoutId")) else None
+                    if weekly_km and planned_metres.get(item.get("workoutId"))
+                    and category(item.get("sportTypeKey") or "running") == "run"
+                    else None
                 ),
             }
         )
