@@ -71,7 +71,7 @@ class _Server(MCPServer):
     async def list_tools(self):
         tools = await super().list_tools()
         if preview.enabled():
-            return [_with_preview_description(tool) for tool in tools]
+            return [_with_preview_description(tool) for tool in tools if tool.name not in _REPLACED_BY_VIEWS]
         return [_without_view(tool) for tool in tools]
 
     async def list_resources(self):
@@ -85,6 +85,11 @@ class _Server(MCPServer):
         if preview.enabled():
             return templates
         return [t for t in templates if not str(t.uri_template).startswith("ui://")]
+
+
+# Tools a preview account doesn't see, because a view does the job better and
+# offering both lets the model pick the weaker one.
+_REPLACED_BY_VIEWS = {"get_plan_chart"}
 
 
 # What a tool is for, as a preview account's model should read it. The model
