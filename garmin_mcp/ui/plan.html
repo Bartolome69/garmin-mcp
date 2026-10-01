@@ -447,16 +447,22 @@
     // Header
     // A plan made here has a code, a goal and numbered weeks. One read off the
     // calendar has none of those: it is simply the weeks around this one.
+    // A calendar that a plan made here is running through is headed by that
+    // plan; its other sessions are still all there below.
     var fromCalendar = plan.source === "calendar";
-    var weekLine = fromCalendar ? "Scheduled on Garmin"
+    var running = fromCalendar && plan.current_plan;
+    var weekLine = running
+      ? (running.week ? "Week " + running.week + " of " + running.weeks_total : running.weeks_total + " weeks")
+      : fromCalendar ? "Scheduled on Garmin"
       : plan.current_week ? "Week " + plan.current_week + " of " + plan.weeks_total
       : plan.finished ? "Finished" : plan.weeks_total + " weeks";
+    var planCode = running ? running.label : plan.label;
     app.appendChild(el("div", { class: "top" }, [
       el("div", {}, [
-        el("div", { class: "kicker" }, fromCalendar ? ["Your calendar"]
-          : [el("span", { class: "code", text: plan.label }), "Training plan"]),
-        el("h1", { text: plan.goal || (fromCalendar ? "Your training" : "Your plan") }),
-        el("div", { class: "sub", text: weekLine + " · " + short(plan.starts) + " to " + short(plan.ends) }),
+        el("div", { class: "kicker" }, fromCalendar && !running ? ["Your calendar"]
+          : [el("span", { class: "code", text: planCode }), "Training plan"]),
+        el("h1", { text: (running ? running.goal : plan.goal) || (fromCalendar ? "Your training" : "Your plan") }),
+        el("div", { class: "sub", text: weekLine + " · " + short(running ? running.starts : plan.starts) + " to " + short(running ? running.ends : plan.ends) }),
         plan.upcoming_plan ? el("div", { class: "upcoming" }, [
           el("span", { class: "code", text: plan.upcoming_plan.label }),
           "Plan starts " + long(plan.upcoming_plan.starts) + (plan.upcoming_plan.goal ? ": " + plan.upcoming_plan.goal : ""),
@@ -494,7 +500,7 @@
           el("div", { class: "next-label", text: "Next · " + label }),
           el("div", { class: "next-name", text: nx.name }),
           el("div", { class: "next-meta", text: k.label + (missedNote ? " · " + missedNote + " missed this past week" : "") }),
-          actionsFor(nx, plan.label),
+          actionsFor(nx, plan.label || (plan.current_plan && plan.current_plan.label)),
         ]),
       ]));
     }
@@ -561,7 +567,7 @@
         } else if (sel.status === "missed") lines.push("No run found within a day of it.");
         box.appendChild(el("div", { class: "detail" }, [
           el("h3", { text: sel.name }),
-        ].concat(lines.map(function (t) { return el("p", { text: t }); })).concat([actionsFor(sel, plan.label)])));
+        ].concat(lines.map(function (t) { return el("p", { text: t }); })).concat([actionsFor(sel, plan.label || (plan.current_plan && plan.current_plan.label))])));
       }
       weeks.appendChild(box);
     });

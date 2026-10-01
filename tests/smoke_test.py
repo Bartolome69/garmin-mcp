@@ -315,6 +315,45 @@ async def check_calendar_fallback(check) -> None:
         check("without preview, the plan alone is shown as before",
               plain.get("label") == "BASE" and "upcoming_plan" not in plain and "source" not in plain,
               str(plain)[:120])
+
+        async def scenario(entries):
+            async def cal(start, end):
+                return [dict(i) for i in entries]
+            server._plan_calendar = cal
+            token = preview.use(True)
+            try:
+                return await server.get_plan()
+            finally:
+                preview.reset(token)
+
+        def row(n, offset, title):
+            return {"id": n, "date": (monday + _td(days=offset)).isoformat(), "workoutId": 555001,
+                    "title": title, "sportTypeKey": "running"}
+
+        # A plan made here running this week, with a run club session on top.
+        running = await scenario([row(21, 1, "Easy 8k · HM"), row(22, 3, "Run club"),
+                                  row(23, 5, "Long 16k · HM"), row(24, 9, "Tempo 6k · HM")])
+        names = [x["name"] for w in running.get("weeks", []) for x in w["sessions"]]
+        check("a running plan heads the card and nothing else scheduled is dropped",
+              names == ["Easy 8k", "Run club", "Long 16k", "Tempo 6k"]
+              and (running.get("current_plan") or {}).get("label") == "HM"
+              and running["current_plan"].get("week") == 1 and running["current_plan"].get("weeks_total") == 2,
+              f"{names} {running.get('current_plan')}")
+
+        # A plan that finished a fortnight ago, and a coach's session next week.
+        after = await scenario([row(31, -13, "Easy 8k · OLD"), row(32, -11, "Long 16k · OLD"),
+                                row(33, 8, "Coach easy 10k")])
+        names = [x["name"] for w in after.get("weeks", []) for x in w["sessions"]]
+        check("a finished plan names nothing and doesn't hide what's next",
+              "Coach easy 10k" in names and "current_plan" not in after and "upcoming_plan" not in after
+              and (after.get("next_session") or {}).get("name") == "Coach easy 10k",
+              f"{names} {after.get('next_session')}")
+
+        # Only next week scheduled, by anyone: still a card.
+        nxt = await scenario([row(41, 8, "Easy 10k"), row(42, 10, "Intervals 6x800")])
+        check("next week alone is still a plan",
+              nxt.get("source") == "calendar" and nxt.get("sessions_total") == 2
+              and (nxt.get("next_session") or {}).get("name") == "Easy 10k", str(nxt)[:120])
     finally:
         server._plan_calendar, session_mod.build_client = saved
 
@@ -451,7 +490,6 @@ def check_prompts_survive_a_pipe(check) -> None:
 async def main() -> int:
     env = dict(os.environ)
     env["GARMIN_MCP_FAKE"] = "1"  # server uses the stub client
-    env["GARMIN_MCP_PREVIEW"] = "1"  # preview features are tested here too
     env.pop("GARMIN_EMAIL", None)
     env.pop("GARMIN_PASSWORD", None)
     env["PYTHONPATH"] = str(ROOT)
@@ -483,23 +521,8 @@ async def main() -> int:
                 all(t.description for t in tools.tools),
             )
 
-            # The plan view. A host that draws MCP Apps follows get_plan's
-            # pointer to this resource; the rest ignore it.
-            plan_tool = next(t for t in tools.tools if t.name == "get_plan")
-            view_uri = ((plan_tool.meta or {}).get("ui") or {}).get("resourceUri")
-            check("get_plan points at its view, versioned by its contents",
-                  re.fullmatch(r"ui://garmin/plan/[0-9a-f]{10}", view_uri or "") is not None, str(plan_tool.meta))
-            listed_views = await sess.list_resources()
-            check("the view is listed as an app",
-                  any(str(r.uri) == view_uri and field(r, "mime_type", "mimeType") == "text/html;profile=mcp-app"
-                      for r in listed_views.resources), str(listed_views.resources)[:200])
-            view = await sess.read_resource(view_uri)
-            html = view.contents[0].text if view.contents else ""
-            check("the view is served as html",
-                  field(view.contents[0], "mime_type", "mimeType") == "text/html;profile=mcp-app"
-                  and "ui/initialize" in html and "tool-result" in html, str(view.contents[0])[:120])
-            check("the view loads nothing from outside the frame",
-                  not re.search(r"""(src|href)=["']?https?:""", html) and "@import" not in html)
+            check("an ordinary account is offered no view",
+                  not any(((t.meta or {}).get("ui")) for t in tools.tools))
 
             print("\nget_connection_status")
             status = payload(await sess.call_tool("get_connection_status"))
@@ -690,10 +713,6 @@ async def main() -> int:
 
             got = payload(await sess.call_tool("get_plan", {}))
             print("   ", json.dumps(got, indent=2)[:700])
-            raw_plan = await sess.call_tool("get_plan", {})
-            check("get_plan hands the view structured content",
-                  (field(raw_plan, "structured_content", "structuredContent") or {}).get("label") == "HM",
-                  str(field(raw_plan, "structured_content", "structuredContent"))[:120])
             check("get_plan finds the running plan without being told",
                   got.get("label") == "HM" and got.get("sessions_total") == 4, str(got)[:200])
             check("the goal is read back from Garmin",
@@ -945,6 +964,42 @@ async def main() -> int:
             check("bad id returns error", "error" in bad_id, str(bad_id)[:120])
             still_up = payload(await sess.call_tool("get_connection_status"))
             check("server still alive after errors", still_up.get("authenticated") is True)
+
+    # The same server for an account trying preview features: the plan view
+    # over the wire, as a host reads it.
+    print("\npreview account, plan view")
+    preview_params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(ROOT / "tests" / "fake_server.py")],
+        env={**env, "GARMIN_MCP_PREVIEW": "1"},
+        cwd=str(ROOT),
+    )
+    async with stdio_client(preview_params) as (read, write):
+        async with ClientSession(read, write) as sess:
+            await sess.initialize()
+            tools = await sess.list_tools()
+            # The plan view. A host that draws MCP Apps follows get_plan's
+            # pointer to this resource; the rest ignore it.
+            plan_tool = next(t for t in tools.tools if t.name == "get_plan")
+            view_uri = ((plan_tool.meta or {}).get("ui") or {}).get("resourceUri")
+            check("get_plan points at its view, versioned by its contents",
+                  re.fullmatch(r"ui://garmin/plan/[0-9a-f]{10}", view_uri or "") is not None, str(plan_tool.meta))
+            listed_views = await sess.list_resources()
+            check("the view is listed as an app",
+                  any(str(r.uri) == view_uri and field(r, "mime_type", "mimeType") == "text/html;profile=mcp-app"
+                      for r in listed_views.resources), str(listed_views.resources)[:200])
+            view = await sess.read_resource(view_uri)
+            html = view.contents[0].text if view.contents else ""
+            check("the view is served as html",
+                  field(view.contents[0], "mime_type", "mimeType") == "text/html;profile=mcp-app"
+                  and "ui/initialize" in html and "tool-result" in html, str(view.contents[0])[:120])
+            check("the view loads nothing from outside the frame",
+                  not re.search(r"""(src|href)=["']?https?:""", html) and "@import" not in html)
+
+            raw_plan = await sess.call_tool("get_plan", {})
+            structured = field(raw_plan, "structured_content", "structuredContent")
+            check("get_plan hands the view structured content",
+                  isinstance(structured, dict) and structured == payload(raw_plan), str(structured)[:120])
 
     # The real entry point, with no credentials and no cache: the server must
     # come up and explain itself rather than crash on startup.
