@@ -248,6 +248,28 @@ async def _call(fn: Callable[[Any], Any]) -> Any:
     return await anyio.to_thread.run_sync(functools.partial(session.run, fn))
 
 
+# How long a read may be answered from memory, for preview accounts. Anything
+# changed through these tools clears it at once; something changed in the
+# Garmin app shows after this long at most.
+CALENDAR_MEMORY = 90
+WORKOUT_MEMORY = 600
+
+
+async def _read(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
+    """_call, answered from the session's memory where preview allows it."""
+    if not preview.enabled():
+        return await _call(fn)
+    return await anyio.to_thread.run_sync(functools.partial(session.remembered, key, ttl, fn))
+
+
+# Tools that change something in Garmin. After any of them, success or not,
+# nothing remembered can be trusted.
+WRITES = {
+    "create_workout", "update_workout", "create_strength_workout", "schedule_workout",
+    "unschedule_workout", "delete_workout", "create_plan", "remove_plan",
+}
+
+
 def tool_errors(fn):
     """Return a clear error payload instead of letting an exception escape.
 
@@ -258,6 +280,11 @@ def tool_errors(fn):
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
         try:
+            if fn.__name__ in WRITES:
+                try:
+                    return await fn(*args, **kwargs)
+                finally:
+                    session.forget()
             return await fn(*args, **kwargs)
         except (GarminError, DateError, WorkoutError, training_plan.PlanError) as exc:
             return {"error": str(exc)}
@@ -1274,7 +1301,10 @@ async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]
     payloads = []
     for year, month in training_plan.months_between(start, end):
         try:
-            payloads.append(await _call(lambda c, y=year, m=month: c.get_scheduled_workouts(y, m)))
+            payloads.append(await _read(
+                ("calendar", year, month), CALENDAR_MEMORY,
+                lambda c, y=year, m=month: c.get_scheduled_workouts(y, m),
+            ))
         except GarminError:
             raise
         except Exception:  # noqa: BLE001 - one missing month should not hide the plan
@@ -1463,7 +1493,7 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     goal_code = code or (context or {}).get("label")
     for wid in lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]:
         try:
-            detail = await _call(lambda c, w=wid: c.get_workout_by_id(w)) or {}
+            detail = await _read(("workout", wid), WORKOUT_MEMORY, lambda c, w=wid: c.get_workout_by_id(w)) or {}
         except GarminError:
             raise
         except Exception:  # noqa: BLE001

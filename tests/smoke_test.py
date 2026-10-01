@@ -349,6 +349,34 @@ async def check_calendar_fallback(check) -> None:
               and (after.get("next_session") or {}).get("name") == "Coach easy 10k",
               f"{names} {after.get('next_session')}")
 
+        # Asked again within minutes, the workouts aren't fetched again; after
+        # anything is changed through the tools, they are.
+        lookups = []
+        real_lookup = RecentRuns.get_workout_by_id
+        def counting(self, workout_id):
+            lookups.append(workout_id)
+            return real_lookup(self, workout_id)
+        RecentRuns.get_workout_by_id = counting
+        try:
+            session_mod.session.forget()
+            await scenario([row(51, 1, "Easy 8k"), row(52, 3, "Tempo 6k")])
+            first = len(lookups)
+            await scenario([row(51, 1, "Easy 8k"), row(52, 3, "Tempo 6k")])
+            again = len(lookups) - first
+            token = preview.use(True)
+            try:
+                await server.unschedule_workout(date=(monday + _td(days=40)).isoformat())
+            finally:
+                preview.reset(token)
+            await scenario([row(51, 1, "Easy 8k"), row(52, 3, "Tempo 6k")])
+            after_write = len(lookups) - first - again
+        finally:
+            RecentRuns.get_workout_by_id = real_lookup
+        check("a second look within minutes reads no workouts again", first >= 1 and again == 0,
+              f"first={first} again={again}")
+        check("after a change through the tools, workouts are read fresh", after_write == first,
+              f"after_write={after_write}")
+
         # Only next week scheduled, by anyone: still a card.
         nxt = await scenario([row(41, 8, "Easy 10k"), row(42, 10, "Intervals 6x800")])
         check("next week alone is still a plan",
