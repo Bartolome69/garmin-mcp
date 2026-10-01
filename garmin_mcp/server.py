@@ -101,15 +101,32 @@ _PREVIEW_DESCRIPTIONS = {
         "Garmin calendar around this week. Each session carries its workout_id "
         "and schedule_id so it can be moved or retuned. A session counts as "
         "done if it was run within a day either side of its date.\n\n"
+        "Call it again each time the plan is asked about, even if it was "
+        "fetched earlier in the conversation: runs sync through the day, so an "
+        "earlier answer goes stale. Its result is drawn for the user as an "
+        "interactive plan card, so there is no need to draw the plan yourself; "
+        "add what the card can't say, such as how the week is going.\n\n"
         "Args:\n"
         "    label: The code of a plan made with create_plan, e.g. \"HM\". Omit "
         "it for the plan running now, or the calendar."
     ),
 }
 
+# Added to a tool's own description, for preview accounts.
+_PREVIEW_NOTES = {
+    "get_progress": (
+        "\n\nFetch it fresh each time it is asked for; runs sync through the "
+        "day. Its result is drawn for the user as an interactive plan card, so "
+        "there is no need to draw the weeks yourself. For \"how is my plan "
+        "going\", get_plan is the better first call."
+    ),
+}
+
 
 def _with_preview_description(tool):
     text = _PREVIEW_DESCRIPTIONS.get(tool.name)
+    if text is None and tool.name in _PREVIEW_NOTES:
+        text = (tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]
     return tool.model_copy(update={"description": text}) if text else tool
 
 

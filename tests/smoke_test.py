@@ -179,6 +179,12 @@ async def check_preview_gate(check) -> None:
         preview_description = next(t for t in listed if t.name == "get_plan").description
         check("with preview, get_plan says it covers any plan on the calendar",
               preview_description != plain_description and "coach" in preview_description, preview_description[:80])
+        check("with preview, get_plan asks to be called fresh and says it draws a card",
+              "earlier answer goes stale" in preview_description and "plan card" in preview_description)
+        progress_description = next(t for t in listed if t.name == "get_progress").description
+        check("with preview, get_progress says the same, after its own description",
+              progress_description.startswith("Which planned sessions") and "plan card" in progress_description,
+              progress_description[-120:])
         old_copy = list(await server.mcp.read_resource("ui://garmin/plan/0000000000"))
         current = list(await server.mcp.read_resource(server.PLAN_VIEW))
         check("an older view address still serves the current view",
