@@ -1404,14 +1404,19 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     items = await _plan_calendar(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
     plans = training_plan.plans_in(items)
     code: str | None = None
-    if not plans and not label and preview.enabled():
-        # Most people's plan came from a coach, an app or Garmin Coach, not
-        # create_plan. Their calendar is still a plan: the weeks around this
-        # one, as scheduled, against what was run.
-        sessions = training_plan.around(items, today)
-        if not sessions:
-            return {"error": "Nothing is scheduled on the Garmin calendar in the weeks around this one."}
+    context: dict[str, Any] | None = None
+    calendar_first = not label and preview.enabled()
+    window = training_plan.around(items, today) if calendar_first else []
+    if window:
+        # For preview accounts the calendar is the plan: everything scheduled,
+        # from a coach, an app, Garmin Coach or create_plan, so nothing that is
+        # on the watch is missing from the card. A plan made here is named on
+        # it, as running or coming up, rather than shown in place of it.
+        sessions = window
+        context = training_plan.plan_context(plans, window, today)
     elif not plans:
+        if calendar_first:
+            return {"error": "Nothing is scheduled on the Garmin calendar in the weeks around this one."}
         return {
             "error": (
                 "No plan found on the Garmin calendar. create_plan builds one; "
@@ -1423,17 +1428,6 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         if code not in plans:
             return {"error": f"No plan with code {code}.", "plans_found": sorted(plans)}
         sessions = plans[code]
-    # A plan made here that starts next week, or finished last week, would hide
-    # what's on the calendar now. Unless asked for by code, the calendar is
-    # shown instead, the plan's sessions in it, and the plan named as coming up.
-    upcoming: dict[str, Any] | None = None
-    if code and not label and preview.enabled() and not training_plan.covers_week(sessions, today):
-        window = training_plan.around(items, today)
-        if training_plan.has_week(window, today):
-            starts = min(i["date"][:10] for i in sessions)
-            if starts > today.isoformat():
-                upcoming = {"label": code, "starts": starts}
-            sessions, code = window, None
     first = min(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
     last = max(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
     # Weekly distance, planned against run, is a preview feature. It needs every
@@ -1466,7 +1460,7 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
             if item["date"][:10] <= today.isoformat() and wid and wid not in lookup_ids:
                 lookup_ids.append(wid)
     goal, seconds, metres = None, {}, {}
-    goal_code = code or (upcoming or {}).get("label")
+    goal_code = code or (context or {}).get("label")
     for wid in lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]:
         try:
             detail = await _call(lambda c, w=wid: c.get_workout_by_id(w)) or {}
@@ -1485,8 +1479,9 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
             sessions, activities, today, planned_seconds=seconds,
             planned_metres=metres, weekly_km=weekly_km,
         )
-        if upcoming:
-            result["upcoming_plan"] = drop_empty({**upcoming, "goal": goal})
+        if context:
+            key = "current_plan" if context.pop("running") else "upcoming_plan"
+            result[key] = drop_empty({**context, "goal": goal})
         return result
     others = sorted(p for p in plans if p != code)
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}

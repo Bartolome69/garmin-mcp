@@ -214,12 +214,39 @@ def covers_week(sessions: Iterable[Mapping[str, Any]], today: date) -> bool:
     return bool(days) and min(days) <= monday + timedelta(days=6) and max(days) >= monday
 
 
-def has_week(items: Iterable[Mapping[str, Any]], today: date) -> bool:
-    """Whether anything is scheduled this week."""
-    monday = monday_of(today)
-    return any(
-        (d := _day(i.get("date"))) and monday <= d <= monday + timedelta(days=6) for i in items
-    )
+def plan_context(
+    plans: Mapping[str, Sequence[Mapping[str, Any]]],
+    window: Iterable[Mapping[str, Any]],
+    today: date,
+) -> dict[str, Any] | None:
+    """The plan made here that the calendar around now belongs to, if any.
+
+    One running this week comes first, with its week number; otherwise the
+    soonest one starting later. Only plans with sessions on the calendar
+    shown count, so a plan that finished, or one months off, names nothing.
+    """
+    shown = {label_of(i.get("title") or i.get("workoutName")) for i in window} - {None}
+    candidates = {code: plans[code] for code in plans if code in shown}
+    if not candidates:
+        return None
+    running = {code: s for code, s in candidates.items() if covers_week(s, today)}
+    ahead = {code: s for code, s in candidates.items() if min(i["date"][:10] for i in s) > today.isoformat()}
+    if running:
+        code = pick(running, today)
+    elif ahead:
+        code = min(ahead, key=lambda c: min(i["date"][:10] for i in ahead[c]))
+    else:
+        return None
+    days = sorted(d for i in plans[code] if (d := _day(i.get("date"))))
+    first, last = days[0], days[-1]
+    return drop_empty({
+        "label": code,
+        "starts": first.isoformat(),
+        "ends": last.isoformat(),
+        "week": (monday_of(today) - monday_of(first)).days // 7 + 1 if code in running else None,
+        "weeks_total": (monday_of(last) - monday_of(first)).days // 7 + 1,
+        "running": code in running,
+    }) | {"running": code in running}
 
 
 def planned_metres(workout: Mapping[str, Any]) -> float:
