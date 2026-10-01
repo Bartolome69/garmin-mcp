@@ -1423,6 +1423,17 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         if code not in plans:
             return {"error": f"No plan with code {code}.", "plans_found": sorted(plans)}
         sessions = plans[code]
+    # A plan made here that starts next week, or finished last week, would hide
+    # what's on the calendar now. Unless asked for by code, the calendar is
+    # shown instead, the plan's sessions in it, and the plan named as coming up.
+    upcoming: dict[str, Any] | None = None
+    if code and not label and preview.enabled() and not training_plan.covers_week(sessions, today):
+        window = training_plan.around(items, today)
+        if training_plan.has_week(window, today):
+            starts = min(i["date"][:10] for i in sessions)
+            if starts > today.isoformat():
+                upcoming = {"label": code, "starts": starts}
+            sessions, code = window, None
     first = min(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
     last = max(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
     # Weekly distance, planned against run, is a preview feature. It needs every
@@ -1455,6 +1466,7 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
             if item["date"][:10] <= today.isoformat() and wid and wid not in lookup_ids:
                 lookup_ids.append(wid)
     goal, seconds, metres = None, {}, {}
+    goal_code = code or (upcoming or {}).get("label")
     for wid in lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]:
         try:
             detail = await _call(lambda c, w=wid: c.get_workout_by_id(w)) or {}
@@ -1465,14 +1477,17 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         seconds[wid] = float(detail.get("estimatedDurationInSecs") or 0)
         if weekly_km:
             metres[wid] = training_plan.planned_metres(detail)
-        if code:
-            goal = goal or training_plan.goal_from_description(detail.get("description"), code)
+        if goal_code:
+            goal = goal or training_plan.goal_from_description(detail.get("description"), goal_code)
 
     if code is None:
-        return training_plan.summarise_calendar(
+        result = training_plan.summarise_calendar(
             sessions, activities, today, planned_seconds=seconds,
             planned_metres=metres, weekly_km=weekly_km,
         )
+        if upcoming:
+            result["upcoming_plan"] = drop_empty({**upcoming, "goal": goal})
+        return result
     others = sorted(p for p in plans if p != code)
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
     result = training_plan.summarise(

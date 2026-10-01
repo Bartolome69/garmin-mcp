@@ -87,6 +87,7 @@
     font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
     color: var(--muted); display: flex; gap: 8px; align-items: center;
   }
+  .upcoming { margin-top: 8px; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .code { background: var(--sunk); color: var(--ink); padding: 2px 7px; border-radius: 999px; letter-spacing: 0.08em; }
   h1 { margin: 4px 0 0; font-size: 21px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
   .sub { color: var(--muted); font-size: 13px; margin-top: 3px; font-variant-numeric: tabular-nums; }
@@ -456,6 +457,10 @@
           : [el("span", { class: "code", text: plan.label }), "Training plan"]),
         el("h1", { text: plan.goal || (fromCalendar ? "Your training" : "Your plan") }),
         el("div", { class: "sub", text: weekLine + " · " + short(plan.starts) + " to " + short(plan.ends) }),
+        plan.upcoming_plan ? el("div", { class: "upcoming" }, [
+          el("span", { class: "code", text: plan.upcoming_plan.label }),
+          "Plan starts " + long(plan.upcoming_plan.starts) + (plan.upcoming_plan.goal ? ": " + plan.upcoming_plan.goal : ""),
+        ]) : null,
       ]),
       el("button", { class: "icon-btn", title: "Refresh", "aria-label": "Refresh the plan", onclick: refresh },
         [svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')]),

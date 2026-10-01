@@ -273,6 +273,48 @@ async def check_calendar_fallback(check) -> None:
               [x.get("name") for x in last_week.get("extra") or []] == ["Lunch run"], str(last_week.get("extra")))
         check("a session beyond the horizon is left out",
               not any(s["name"] == "Far off" for w in cal["weeks"] for s in w["sessions"]))
+
+        # A plan made here that starts next week, with this week's sessions on
+        # the calendar from elsewhere: the week someone is in must not vanish.
+        this_week = monday + _td(days=3)
+        with_plan = [
+            {"id": 11, "date": this_week.isoformat(), "workoutId": 555001,
+             "title": "10km easy + strides", "sportTypeKey": "running"},
+            {"id": 12, "date": (monday + _td(days=8)).isoformat(), "workoutId": 555001,
+             "title": "12km easy · BASE", "sportTypeKey": "running"},
+            {"id": 13, "date": (monday + _td(days=13)).isoformat(), "workoutId": 555001,
+             "title": "16km long run · BASE", "sportTypeKey": "running"},
+        ]
+
+        async def calendar_with_plan(start, end):
+            return [dict(i) for i in with_plan]
+
+        server._plan_calendar = calendar_with_plan
+        token = preview.use(True)
+        try:
+            mixed = await server.get_plan()
+            by_code = await server.get_plan(label="BASE")
+        finally:
+            preview.reset(token)
+        token = preview.use(False)
+        try:
+            plain = await server.get_plan()
+        finally:
+            preview.reset(token)
+        names = [s["name"] for w in mixed.get("weeks", []) for s in w["sessions"]]
+        check("a plan that starts next week doesn't hide this week",
+              mixed.get("source") == "calendar" and "10km easy + strides" in names, str(names))
+        check("its sessions follow on, without their code",
+              names[1:] == ["12km easy", "16km long run"], str(names))
+        check("and it is named as coming up",
+              (mixed.get("upcoming_plan") or {}).get("label") == "BASE"
+              and mixed["upcoming_plan"].get("starts") == (monday + _td(days=8)).isoformat(),
+              str(mixed.get("upcoming_plan")))
+        check("asked for by code, the plan alone is shown",
+              by_code.get("label") == "BASE" and by_code.get("sessions_total") == 2, str(by_code)[:120])
+        check("without preview, the plan alone is shown as before",
+              plain.get("label") == "BASE" and "upcoming_plan" not in plain and "source" not in plain,
+              str(plain)[:120])
     finally:
         server._plan_calendar, session_mod.build_client = saved
 
