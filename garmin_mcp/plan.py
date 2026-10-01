@@ -14,6 +14,7 @@ target, and the random path segment the page is published under.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -22,6 +23,8 @@ from typing import Any
 
 from .formatting import duration, km, pace_per_km
 from .session import session
+
+log = logging.getLogger(__name__)
 
 PROJECT = Path(__file__).resolve().parent.parent
 CONFIG = Path(os.environ.get("GARMIN_MCP_PLAN_CONFIG") or PROJECT / "plan-config.json")
@@ -81,12 +84,21 @@ def planned_distance_m(workout: dict[str, Any]) -> float:
     return total
 
 
+DEFAULT_CONFIG = {"weekly_target_km": 50}
+
+
 def load_config() -> dict[str, Any]:
-    if CONFIG.exists():
-        return json.loads(CONFIG.read_text())
-    config = {"weekly_target_km": 50}
-    CONFIG.write_text(json.dumps(config, indent=2) + "\n")
-    return config
+    """The chart's settings, from the config file if someone has written one.
+
+    Never writes: the hosted server runs from a read-only folder shared by
+    everyone, where creating the file failed and took the chart down with it.
+    """
+    try:
+        if CONFIG.exists():
+            return {**DEFAULT_CONFIG, **json.loads(CONFIG.read_text())}
+    except (OSError, ValueError):
+        log.debug("plan config unreadable; using defaults", exc_info=True)
+    return dict(DEFAULT_CONFIG)
 
 
 def monday_of(day: date) -> date:

@@ -190,6 +190,8 @@ async def check_preview_gate(check) -> None:
         check("an older view address still serves the current view",
               old_copy and old_copy[0].content == current[0].content
               and old_copy[0].mime_type == "text/html;profile=mcp-app")
+        check("with preview, the picture chart is left to the card",
+              not any(t.name == "get_plan_chart" for t in listed))
         progress_tool = next(t for t in listed if t.name == "get_progress")
         check("with preview, get_progress draws the same view",
               ((getattr(progress_tool, "meta", None) or {}).get("ui") or {}) == view_of(listed))
@@ -400,6 +402,35 @@ async def check_calendar_fallback(check) -> None:
         server._plan_calendar, session_mod.build_client = saved
 
 
+def check_chart_config_read_only(check) -> None:
+    """The chart's settings are read, never written: hosted, the folder is read-only."""
+    import stat
+    from pathlib import Path as _P
+    from garmin_mcp import plan as plan_mod
+
+    saved = plan_mod.CONFIG
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = _P(tmp) / "readonly"
+        folder.mkdir()
+        folder.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            plan_mod.CONFIG = folder / "plan-config.json"
+            try:
+                config = plan_mod.load_config()
+                ok, detail = config.get("weekly_target_km") == 50, str(config)
+            except OSError as exc:
+                ok, detail = False, repr(exc)
+            check("the chart works from a folder it can't write to",
+                  ok and not plan_mod.CONFIG.exists(), detail)
+            folder.chmod(stat.S_IRWXU)
+            plan_mod.CONFIG.write_text('{"weekly_target_km": 62}')
+            check("a settings file someone wrote is still read",
+                  plan_mod.load_config().get("weekly_target_km") == 62)
+        finally:
+            folder.chmod(stat.S_IRWXU)
+            plan_mod.CONFIG = saved
+
+
 def check_stream_km_splits(check) -> None:
     """A 7 km steady lap recorded by a watch that did not auto-lap.
 
@@ -565,6 +596,13 @@ async def main() -> int:
 
             check("an ordinary account is offered no view",
                   not any(((t.meta or {}).get("ui")) for t in tools.tools))
+
+            # The picture chart, end to end: it used to fail on the hosted
+            # server before drawing anything.
+            chart = await sess.call_tool("get_plan_chart", {})
+            kinds = [getattr(c, "type", None) for c in chart.content]
+            check("the plan chart comes back as an image", "image" in kinds,
+                  str(chart.content)[:160])
 
             print("\nget_connection_status")
             status = payload(await sess.call_tool("get_connection_status"))
@@ -791,6 +829,7 @@ async def main() -> int:
             gone_plan = payload(await sess.call_tool("get_plan", {"label": "HM"}))
             check("the plan is gone afterwards", "error" in gone_plan, str(gone_plan)[:140])
             check_plan_summary(check)
+            check_chart_config_read_only(check)
             await check_preview_gate(check)
             await check_calendar_fallback(check)
 
