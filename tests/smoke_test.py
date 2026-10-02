@@ -393,6 +393,25 @@ async def check_calendar_fallback(check) -> None:
         check("a strength session adds nothing to planned km",
               "planned_km" not in strength_row and week.get("planned_km") == 7.9, str(week)[:200])
 
+        # Nothing scheduled at all: a training log from what was run, every
+        # week shown, with the way to a plan.
+        log = await scenario([])
+        check("with nothing scheduled, the card gets a training log",
+              log.get("source") == "log" and len(log.get("weeks", [])) == 4 and log.get("runs") == 2
+              and log.get("run_km") == 13.2, str({k: log.get(k) for k in ("source", "runs", "run_km")}))
+        check("the log names the longest run and says how to get a plan",
+              (log.get("longest") or {}).get("actual_km") == 8.0 and "create_plan" in (log.get("note") or ""),
+              str(log.get("longest")))
+        check("weeks with no running stay in the log as gaps",
+              sum(1 for w in log["weeks"] if w["runs"] == 0) == 3, str([w["runs"] for w in log["weeks"]]))
+        token = preview.use(False)
+        try:
+            plain_empty = await server.get_plan()
+        finally:
+            preview.reset(token)
+        check("without preview, nothing scheduled is still the plain error",
+              "No plan found" in str(plain_empty.get("error")), str(plain_empty)[:100])
+
         # Only next week scheduled, by anyone: still a card.
         nxt = await scenario([row(41, 8, "Easy 10k"), row(42, 10, "Intervals 6x800")])
         check("next week alone is still a plan",
