@@ -22,7 +22,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Iterable, Mapping, Sequence
 
-from .formatting import DateError, drop_empty, duration, parse_date
+from .formatting import DateError, drop_empty, duration, pace_per_km, parse_date
 from .plan import category, monday_of, planned_distance_m
 from .progress import Actual, Planned, match
 from .workouts import WorkoutError, build_workout
@@ -247,6 +247,86 @@ def plan_context(
         "weeks_total": (monday_of(last) - monday_of(first)).days // 7 + 1,
         "running": code in running,
     }) | {"running": code in running}
+
+
+LOG_WEEKS = 4
+# A run shorter than this doesn't count for "fastest": a 1 km jog to the
+# shop would otherwise win.
+FASTEST_MIN_METRES = 3000
+
+
+def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: int = LOG_WEEKS) -> dict[str, Any]:
+    """What was run over the last few weeks, for someone with nothing scheduled.
+
+    Every week is listed, empty ones too, so a gap shows as a gap rather than
+    the trend skipping over it. The same shape the plan view already draws
+    weeks from, marked as a log.
+    """
+    monday = monday_of(today)
+    first = monday - timedelta(weeks=weeks - 1)
+    rows = []
+    for a in activities:
+        day = _day(a.get("startTimeLocal"))
+        if not day or not first <= day <= today:
+            continue
+        sport = category((a.get("activityType") or {}).get("typeKey"))
+        metres = float(a.get("distance") or 0)
+        seconds = float(a.get("duration") or 0)
+        # Pace from moving time, as Garmin shows it; a stop at a crossing
+        # shouldn't slow an easy run down on paper.
+        moving = float(a.get("movingDuration") or 0) or seconds
+        rows.append(drop_empty({
+            "date": day.isoformat(),
+            "day": day.strftime("%a"),
+            "name": a.get("activityName") or "Activity",
+            "sport": sport,
+            "status": "logged",
+            "actual_km": round(metres / 1000, 2) if metres else None,
+            "actual": duration(seconds) if seconds else None,
+            "pace": pace_per_km(metres, moving) if sport == "run" else None,
+            "activity_id": a.get("activityId"),
+            "_metres": metres,
+            "_seconds": moving,
+        }))
+    rows.sort(key=lambda r: (r["date"], str(r.get("activity_id"))))
+
+    out_weeks = []
+    for n in range(weeks):
+        start = first + timedelta(weeks=n)
+        end = start + timedelta(days=7)
+        here = [r for r in rows if start.isoformat() <= r["date"] < end.isoformat()]
+        runs = [r for r in here if r["sport"] == "run"]
+        out_weeks.append({
+            "week": n + 1,
+            "starts": start.isoformat(),
+            "current": start == monday,
+            "run_km": round(sum(r["_metres"] for r in runs) / 1000, 1),
+            "runs": len(runs),
+            "sessions": [{k: v for k, v in r.items() if not k.startswith("_")} for r in here],
+        })
+
+    runs = [r for r in rows if r["sport"] == "run" and r["_metres"] > 0]
+    longest = max(runs, key=lambda r: r["_metres"], default=None)
+    paced = [r for r in runs if r["_metres"] >= FASTEST_MIN_METRES and r["_seconds"] > 0]
+    fastest = min(paced, key=lambda r: r["_seconds"] / r["_metres"], default=None)
+    clean = lambda r: {k: v for k, v in r.items() if not k.startswith("_")} if r else None
+    total = sum(r["_metres"] for r in runs) / 1000
+    return drop_empty({
+        "source": "log",
+        "starts": first.isoformat(),
+        "ends": today.isoformat(),
+        "weeks": out_weeks,
+        "run_km": round(total, 1),
+        "runs": len(runs),
+        "average_week_km": round(total / weeks, 1),
+        "longest": clean(longest),
+        "fastest": clean(fastest),
+        "note": (
+            "Nothing is scheduled on the Garmin calendar, so this is what was run "
+            f"over the last {weeks} weeks. create_plan builds a plan from here; ask "
+            "the user's goal and race date first."
+        ),
+    })
 
 
 def planned_metres(workout: Mapping[str, Any]) -> float:

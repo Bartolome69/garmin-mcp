@@ -114,6 +114,30 @@
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
 
   /* ---- Next session ---- */
+  /* ---- Training log ---- */
+  .trend { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; align-items: end; height: 132px; padding: 4px 2px 0; }
+  .tcol { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+  .tval { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tbar-wrap { flex: 1; width: 100%; max-width: 44px; display: flex; align-items: flex-end; }
+  .tbar { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: color-mix(in srgb, var(--done) 55%, var(--sunk)); }
+  .tcol.current .tbar { background: var(--done); }
+  .tlab { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .tcol.current .tlab { color: var(--ink); font-weight: 600; }
+  .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .hl { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+  .hl-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+  .hl-val { font-size: 18px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .hl-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .loglist { display: none; padding: 0 8px 10px; flex-direction: column; gap: 4px; }
+  .week.open .loglist { display: flex; }
+  .logrow { position: relative; display: grid; grid-template-columns: 38px 1fr auto; gap: 8px; align-items: baseline;
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 9px 10px 9px 12px; font-size: 13.5px; }
+  .logrow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--t, var(--easy)); border-radius: 3px 0 0 3px; }
+  .lday { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+  .lname { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+  .lval { color: var(--muted); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .logrow.empty-week { display: block; color: var(--faint); font-style: italic; }
+  .logrow.empty-week::before { display: none; }
   .next {
     background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
     padding: 14px; display: grid; grid-template-columns: 4px 1fr; gap: 12px;
@@ -347,7 +371,7 @@
     (p.upcoming || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "ahead" }); });
     rows = rows.filter(function (r) { return r.date >= earliest && r.date < horizon; })
       .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-    if (!rows.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
+    if (!rows.length) return logFromProgress(p) || { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
     rows.forEach(function (r) { r.day = DAYS[(parse(r.date).getDay() + 6) % 7]; });
 
     var weeks = {}, order = [];
@@ -385,6 +409,38 @@
       review: recent.length ? { missed_last_7_days: recent } : null,
       weeks: list,
     };
+  }
+  // get_progress's unplanned list, drawn as a training log when nothing at all
+  // was planned. The same shape get_plan sends.
+  function logFromProgress(p) {
+    var today = iso(new Date());
+    var thisMonday = iso(mondayOf(new Date()));
+    var all = (p.unplanned || []).map(function (r) {
+      var pace = r.sport === "run" && r.actual_km && r.actual_seconds ? paceText(r.actual_seconds / r.actual_km) : null;
+      return { date: r.date, day: DAYS[(parse(r.date).getDay() + 6) % 7], name: r.name, sport: r.sport, status: "logged",
+        actual_km: r.actual_km, actual: r.actual_seconds ? duration(r.actual_seconds) : null, pace: pace,
+        _m: (r.actual_km || 0) * 1000, _s: r.actual_seconds || 0 };
+    });
+    if (!all.length) return null;
+    var weeks = p.weeks.map(function (w, i) {
+      var end = iso(addDays(parse(w.week_of), 7));
+      var here = all.filter(function (r) { return r.date >= w.week_of && r.date < end; });
+      var runs = here.filter(function (r) { return r.sport === "run"; });
+      return { week: i + 1, starts: w.week_of, current: w.week_of === thisMonday, sessions: here, runs: runs.length,
+        run_km: Math.round(runs.reduce(function (t, r) { return t + (r.actual_km || 0); }, 0) * 10) / 10 };
+    });
+    var runs = all.filter(function (r) { return r.sport === "run" && r._m > 0; });
+    var total = runs.reduce(function (t, r) { return t + r._m; }, 0) / 1000;
+    var longest = runs.slice().sort(function (a, b) { return b._m - a._m; })[0] || null;
+    var fastest = runs.filter(function (r) { return r._m >= 3000 && r._s > 0; })
+      .sort(function (a, b) { return a._s / a._m - b._s / b._m; })[0] || null;
+    return { source: "log", starts: p.weeks[0].week_of, ends: today, weeks: weeks, runs: runs.length,
+      run_km: Math.round(total * 10) / 10, average_week_km: Math.round(total / weeks.length * 10) / 10,
+      longest: longest, fastest: fastest };
+  }
+  function paceText(secondsPerKm) {
+    var t = Math.round(secondsPerKm), m = Math.floor(t / 60);
+    return m + ":" + String(t % 60).padStart(2, "0") + " /km";
   }
   function duration(seconds) {
     var m = Math.round(seconds / 60), h = Math.floor(m / 60);
@@ -497,6 +553,7 @@
   var state = { plan: null, open: {}, selected: null };
 
   function render(plan, error) {
+    if (plan && plan.source === "log" && plan.weeks) { renderLog(plan); return; }
     var app = document.getElementById("app");
     app.textContent = "";
     if (!plan || plan.error || !plan.weeks) {
@@ -643,6 +700,93 @@
     s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", "16"); s.setAttribute("height", "16");
     s.setAttribute("aria-hidden", "true"); if (extra) s.setAttribute("class", extra);
     s.innerHTML = inner; return s;
+  }
+
+  // ---------------------------------------------------------------- log
+  // Nothing scheduled: what was run over the last few weeks, and the way to a
+  // plan. A week with no running stays in the trend as a gap.
+  function renderLog(plan) {
+    state.plan = plan;
+    var app = document.getElementById("app");
+    app.textContent = "";
+    app.appendChild(el("div", { class: "top" }, [
+      el("div", {}, [
+        el("div", { class: "kicker" }, ["Your training log"]),
+        el("h1", { text: "Last " + plan.weeks.length + " weeks" }),
+        el("div", { class: "sub", text: "Nothing scheduled on Garmin · " + short(plan.starts) + " to " + short(plan.ends) }),
+      ]),
+      el("button", { class: "icon-btn", title: "Refresh", "aria-label": "Refresh", onclick: refresh },
+        [svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')]),
+    ]));
+
+    app.appendChild(el("div", { class: "legend" }, [
+      el("span", {}, [el("b", { text: fmtKm(plan.run_km || 0) }), " km run"]),
+      el("span", {}, [el("b", { text: String(plan.runs || 0) }), plan.runs === 1 ? " run" : " runs"]),
+      el("span", {}, [el("b", { text: fmtKm(plan.average_week_km || 0) }), " km a week"]),
+    ]));
+
+    var max = Math.max.apply(null, plan.weeks.map(function (w) { return w.run_km || 0; }).concat([1]));
+    app.appendChild(el("div", { class: "trend", role: "img",
+      "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + fmtKm(w.run_km || 0) + " km"; }).join(", ") },
+      plan.weeks.map(function (w) {
+        return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
+          el("div", { class: "tval", text: fmtKm(w.run_km || 0) }),
+          el("div", { class: "tbar-wrap" }, [el("i", { class: "tbar", style: "height:" + Math.max(3, 100 * (w.run_km || 0) / max) + "%" })]),
+          el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
+        ]);
+      })));
+
+    var hl = [];
+    if (plan.longest) hl.push(highlight("Longest", plan.longest));
+    if (plan.fastest) hl.push(highlight("Fastest", plan.fastest));
+    if (hl.length) app.appendChild(el("div", { class: "highlights" }, hl));
+
+    app.appendChild(el("div", { class: "next" }, [
+      el("div", { class: "stripe", style: "background:var(--ring)" }),
+      el("div", {}, [
+        el("div", { class: "next-label", text: "No plan yet" }),
+        el("div", { class: "next-name", text: "Turn this into a plan" }),
+        el("div", { class: "next-meta", text: "Claude builds it from these weeks and puts it on your Garmin calendar and watch." }),
+        el("div", { class: "actions" }, [
+          el("button", { class: "act primary", text: "Build me a plan", onclick: function (e) {
+            ask("Build me a training plan from my last few weeks of running. Ask me my goal and race date first, then put it on my Garmin calendar.", e.currentTarget); } }),
+        ]),
+      ]),
+    ]));
+
+    var weeks = el("div", { class: "weeks" });
+    plan.weeks.slice().reverse().forEach(function (w) {
+      var isOpen = state.open["log" + w.week] != null ? state.open["log" + w.week] : !!w.current;
+      var box = el("div", { class: "week" + (w.current ? " current" : "") + (isOpen ? " open" : "") });
+      box.appendChild(el("button", { class: "week-head", "aria-expanded": String(isOpen), onclick: function () {
+        state.open["log" + w.week] = !box.classList.contains("open"); renderLog(state.plan); } }, [
+        el("div", { class: "wk" }, [weekName(w), el("small", { text: short(w.starts) })]),
+        el("span", { class: "pips" }),
+        el("span", { class: "count" }, [el("span", { class: "km", text: fmtKm(w.run_km || 0) + " km" }),
+          el("span", { class: "sessions", text: (w.runs || 0) + (w.runs === 1 ? " run" : " runs") })]),
+        svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
+      ]));
+      var list = el("div", { class: "loglist" });
+      if (!w.sessions.length) list.appendChild(el("div", { class: "logrow empty-week", text: "Nothing recorded" }));
+      w.sessions.forEach(function (r) {
+        var k = kind(r.name, r.sport);
+        list.appendChild(el("div", { class: "logrow", style: "--t:" + k.c }, [
+          el("span", { class: "lday", text: r.day }),
+          el("span", { class: "lname", text: r.name }),
+          el("span", { class: "lval", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : r.actual, r.pace].filter(Boolean).join(" · ") }),
+        ]));
+      });
+      box.appendChild(list);
+      weeks.appendChild(box);
+    });
+    app.appendChild(weeks);
+  }
+  function highlight(label, r) {
+    return el("div", { class: "hl" }, [
+      el("div", { class: "hl-label", text: label }),
+      el("div", { class: "hl-val", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : null, r.pace && r.pace.replace(" /km", "/km")].filter(Boolean).join(" · ") }),
+      el("div", { class: "hl-meta", text: r.name + " · " + long(r.date) }),
+    ]);
   }
 
   function refresh(event) {

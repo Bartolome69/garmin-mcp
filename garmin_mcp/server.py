@@ -1506,7 +1506,9 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         context = training_plan.plan_context(plans, window, today)
     elif not plans:
         if calendar_first:
-            return {"error": "Nothing is scheduled on the Garmin calendar in the weeks around this one."}
+            # Nothing scheduled at all: what was run is still worth seeing, and
+            # it's where a plan would start from.
+            return await _training_log(today)
         return {
             "error": (
                 "No plan found on the Garmin calendar. create_plan builds one; "
@@ -1581,6 +1583,21 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     if others:
         result["other_plans"] = others
     return result
+
+
+async def _training_log(today: date_cls) -> dict[str, Any]:
+    first = training_plan.monday_of(today) - timedelta(weeks=training_plan.LOG_WEEKS - 1)
+    activities = await _call(
+        lambda c: c.get_activities_by_date(first.isoformat(), today.isoformat())
+    ) or []
+    if not activities:
+        return {
+            "error": (
+                "Nothing is scheduled on the Garmin calendar, and nothing was recorded "
+                f"in the last {training_plan.LOG_WEEKS} weeks."
+            )
+        }
+    return training_plan.summarise_log(activities, today)
 
 
 @mcp.tool()
