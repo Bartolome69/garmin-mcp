@@ -7,6 +7,7 @@ password or the cached token.
 from __future__ import annotations
 
 import functools
+import json
 import hashlib
 import logging
 from datetime import date as date_cls, timedelta
@@ -217,13 +218,55 @@ def _versioned(name: str, filename: str) -> str:
 PLAN_VIEW = _versioned("plan", "plan.html")
 
 
-def _app_tool(view: str):
-    """mcp.tool() that also names a view, on SDKs that know about tool meta."""
-    meta = {"ui": {"resourceUri": view}, "ui/resourceUri": view}
+# Said to the model ahead of the data whenever a view is drawing it. Read at
+# the moment the model decides how to answer, which a tool description, read
+# once at the start of a chat, isn't: without it the model sometimes drew its
+# own version of the plan from an older answer in the chat.
+VIEW_NOTE = (
+    "The user is looking at this as an interactive plan card, drawn from the "
+    "data below and fetched just now, so it is current. Don't draw the plan "
+    "again or list it day by day: answer in a few sentences about what matters, "
+    "such as how the week is going and what's next. Use the ids below for any change."
+)
+
+
+def _for_view(result: Any) -> Any:
+    """A tool's result with the note to the model in front, for preview accounts."""
+    if not preview.enabled() or not isinstance(result, dict) or "error" in result:
+        return result
     try:
-        return mcp.tool(meta=meta)
-    except TypeError:
-        return mcp.tool()
+        from mcp.types import CallToolResult, TextContent
+    except ImportError:
+        return result
+    return CallToolResult(
+        content=[
+            TextContent(type="text", text=VIEW_NOTE),
+            TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str)),
+        ],
+        structured_content=result,
+    )
+
+
+def _app_tool(view: str):
+    """mcp.tool() that also names a view, on SDKs that know about tool meta.
+
+    The function stays importable as written, returning its plain dict; what
+    the server registers adds the note to the model in front of it.
+    """
+    meta = {"ui": {"resourceUri": view}, "ui/resourceUri": view}
+
+    def register(fn):
+        @functools.wraps(fn)
+        async def answered(*args, **kwargs):
+            return _for_view(await fn(*args, **kwargs))
+
+        try:
+            mcp.tool(meta=meta)(answered)
+        except TypeError:
+            mcp.tool()(answered)
+        return fn
+
+    return register
 
 
 def _app_view(uri: str, filename: str, description: str) -> None:
