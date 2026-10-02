@@ -231,20 +231,15 @@ VIEW_NOTE = (
 
 
 def _for_view(result: Any) -> Any:
-    """A tool's result with the note to the model in front, for preview accounts."""
+    """A tool's result with the note to the model as its first field, for preview accounts.
+
+    In the data itself rather than a separate text block, because some hosts
+    hand the model the structured content and others the text: this way the
+    note reaches it either way. The view ignores the field.
+    """
     if not preview.enabled() or not isinstance(result, dict) or "error" in result:
         return result
-    try:
-        from mcp.types import CallToolResult, TextContent
-    except ImportError:
-        return result
-    return CallToolResult(
-        content=[
-            TextContent(type="text", text=VIEW_NOTE),
-            TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False, default=str)),
-        ],
-        structured_content=result,
-    )
+    return {"for_the_assistant": VIEW_NOTE, **result}
 
 
 def _app_tool(view: str):
