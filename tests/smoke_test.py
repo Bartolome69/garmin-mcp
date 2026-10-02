@@ -596,6 +596,9 @@ async def main() -> int:
 
             check("an ordinary account is offered no view",
                   not any(((t.meta or {}).get("ui")) for t in tools.tools))
+            plain_plan = await sess.call_tool("get_progress", {"weeks": 2})
+            check("an ordinary account's answer carries no card note",
+                  len(plain_plan.content) == 1 and "interactive plan card" not in plain_plan.content[0].text)
 
             # The picture chart, end to end: it used to fail on the hosted
             # server before drawing anything.
@@ -1079,8 +1082,14 @@ async def main() -> int:
 
             raw_plan = await sess.call_tool("get_plan", {})
             structured = field(raw_plan, "structured_content", "structuredContent")
+            texts = [c.text for c in raw_plan.content if getattr(c, "type", "") == "text"]
             check("get_plan hands the view structured content",
-                  isinstance(structured, dict) and structured == payload(raw_plan), str(structured)[:120])
+                  isinstance(structured, dict) and structured == json.loads(texts[-1]), str(structured)[:120])
+            if "error" not in (structured or {}):
+                check("the model is told the card is on screen, ahead of the data",
+                      len(texts) == 2 and "interactive plan card" in texts[0], texts[0][:120])
+            else:
+                check("an error goes back plain, with no card note", len(texts) == 1, str(texts)[:120])
 
     # The real entry point, with no credentials and no cache: the server must
     # come up and explain itself rather than crash on startup.
