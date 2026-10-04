@@ -35,7 +35,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import metrics, plan, preview, progress, stream, training_plan
+from . import conditions, gear, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -73,7 +73,7 @@ class _Server(MCPServer):
         tools = await super().list_tools()
         if preview.enabled():
             return [_with_preview_description(tool) for tool in tools if tool.name not in _REPLACED_BY_VIEWS]
-        return [_without_view(tool) for tool in tools]
+        return [_without_view(tool) for tool in tools if tool.name not in _PREVIEW_ONLY]
 
     async def list_resources(self):
         resources = await super().list_resources()
@@ -91,6 +91,9 @@ class _Server(MCPServer):
 # Tools a preview account doesn't see, because a view does the job better and
 # offering both lets the model pick the weaker one.
 _REPLACED_BY_VIEWS = {"get_plan_chart"}
+
+# Tools only preview accounts are offered yet.
+_PREVIEW_ONLY = {"get_shoes", "get_recovery_trends"}
 
 
 # What a tool is for, as a preview account's model should read it. The model
@@ -120,6 +123,14 @@ _PREVIEW_DESCRIPTIONS = {
 
 # Added to a tool's own description, for preview accounts.
 _PREVIEW_NOTES = {
+    "get_activity_details": (
+        "\n\nAlso returns the weather during it (temperature, dew point, wind, "
+        "and what that does to pace), the shoes worn, the terrain (climbs, "
+        "pace on uphill, flat and downhill, the pace the effort was worth on "
+        "the flat, heart-rate decoupling and where it faded) and earlier runs "
+        "of the same route with their pace and heart rate. Use these to "
+        "explain a run rather than guessing why it was slow or hard."
+    ),
     "get_progress": (
         "\n\nFetch it fresh each time it is asked for; runs sync through the "
         "day. Its result is drawn for the user as an interactive plan card, so "
@@ -777,10 +788,13 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         inside = None
         warnings.append(f"recording could not be analysed ({type(exc).__name__})")
 
+    around = await _around_the_run(activity_id, flat, recording, _optional, warnings) if preview.enabled() else {}
+
     return drop_empty(
         {
             "activity_id": activity_id,
             "summary": _summarise_activity(flat) or None,
+            **around.get("first", {}),
             "hr_zones": hr_zones(zones),
             "splits_count": len(laps) or None,
             "splits": [
@@ -788,9 +802,59 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             ]
             or None,
             "inside": inside,
+            **around.get("last", {}),
             "warnings": warnings or None,
         }
     )
+
+
+SAME_ROUTE_LOOKBACK = timedelta(weeks=26)
+
+
+async def _around_the_run(activity_id: int, flat: dict[str, Any], recording: Any,
+                          optional: Callable[..., Any], warnings: list[str]) -> dict[str, dict[str, Any]]:
+    """Weather, shoes, terrain and earlier runs of the same route, for preview accounts."""
+    found = await optional(
+        "weather",
+        lambda c: (c.get_activity_weather(activity_id), getattr(c, "unit_system", None)),
+    )
+    weather = conditions.shape_weather(*found) if found else None
+
+    worn = await optional("shoes", lambda c: c.get_activity_gear(activity_id))
+    shoes = [gear.name_of(g) for g in (worn or []) if isinstance(g, Mapping) and gear.is_shoe(g)]
+
+    columns = stream.parse_stream(recording)
+    try:
+        ground = terrain.analyse(columns) if columns else None
+    except Exception as exc:  # noqa: BLE001 - an odd recording must not lose the rest
+        ground = None
+        warnings.append(f"terrain could not be analysed ({type(exc).__name__})")
+
+    same = None
+    day = str(flat.get("startTimeLocal") or "")[:10]
+    this = dict(flat, activityId=activity_id)
+    if this.get("startLatitude") is None:
+        track = [(la, lo) for la, lo in zip(columns.get("directLatitude") or [], columns.get("directLongitude") or [])
+                 if la is not None and lo is not None]
+        if track:
+            this.update(startLatitude=track[0][0], startLongitude=track[0][1],
+                        endLatitude=track[-1][0], endLongitude=track[-1][1])
+    if day and this.get("startLatitude") is not None:
+        try:
+            until = date_cls.fromisoformat(day)
+        except ValueError:
+            until = None
+        if until:
+            since = (until - SAME_ROUTE_LOOKBACK).isoformat()
+            earlier = await optional(
+                "earlier runs", lambda c: c.get_activities_by_date(since, (until - timedelta(days=1)).isoformat())
+            )
+            same = terrain.same_route(this, earlier or [])
+
+    return {
+        "first": drop_empty({"weather": weather, "shoes": ", ".join(s for s in shoes if s) or None}),
+        "last": drop_empty({"terrain": ground, "same_route": same}),
+    }
 
 
 # --------------------------------------------------------------------------
@@ -1733,6 +1797,119 @@ async def get_fitness() -> dict[str, Any]:
     if all(x is None for x in (vo2, race, lactate, endurance, hill, tolerance)):
         return {"error": "Garmin returned no fitness data.", "warnings": warnings}
     return metrics.shape_fitness(vo2, race, lactate, endurance, hill, tolerance, warnings)
+
+
+RECOVERY_WEEKS = 4
+MAX_RECOVERY_WEEKS = 12
+# Garmin's daily ranges answer a month at a time.
+RANGE_CHUNK_DAYS = 28
+
+
+def _chunked(fetch: Callable[[Any, str, str], Any], start: date_cls, end: date_cls) -> Callable[[Any], list[Any]]:
+    def run(c: Any) -> list[Any]:
+        rows: list[Any] = []
+        lo = start
+        while lo <= end:
+            hi = min(lo + timedelta(days=RANGE_CHUNK_DAYS - 1), end)
+            got = fetch(c, lo.isoformat(), hi.isoformat())
+            if isinstance(got, dict):
+                got = got.get("hrvSummaries") or []
+            rows.extend(got or [])
+            lo = hi + timedelta(days=1)
+        return rows
+
+    return run
+
+
+@mcp.tool()
+@tool_errors
+async def get_recovery_trends(weeks: int = RECOVERY_WEEKS) -> dict[str, Any]:
+    """How the user is recovering across weeks, beside the training that caused it.
+
+    Week by week: overnight HRV, resting heart rate, sleep hours and score,
+    Body Battery peak and stress, next to training load, run km and sessions,
+    plus the last two weeks day by day and any marker that has moved off its
+    usual range (resting HR up, HRV down, short sleep, a jump in load). Use it
+    for "am I recovering well", "is this block too much" or "why do I feel
+    flat". For whether to train hard today, get_readiness is the one.
+
+    Args:
+        weeks: Weeks to look back, including this one (1-12). Defaults to 4.
+    """
+    weeks = max(1, min(int(weeks or RECOVERY_WEEKS), MAX_RECOVERY_WEEKS))
+    today = date_cls.fromisoformat(parse_date("today"))
+    start = training_plan.monday_of(today) - timedelta(weeks=weeks - 1)
+    s, e = start.isoformat(), today.isoformat()
+    (hrv, rhr, sleep, battery, stress, activities), warnings = await _gather(
+        [
+            ("hrv", _chunked(lambda c, a, b: c.get_hrv_data_range(a, b), start, today)),
+            ("resting heart rate", lambda c: c.get_rhr_daily(s, e)),
+            ("sleep", lambda c: c.get_sleep_daily(s, e)),
+            ("body battery", _chunked(lambda c, a, b: c.get_body_battery(a, b), start, today)),
+            ("stress", lambda c: c.get_weekly_stress(e, weeks + 1)),
+            ("activities", lambda c: c.get_activities_by_date(s, e)),
+        ]
+    )
+    if all(not x for x in (hrv, rhr, sleep, battery, stress)):
+        return {"error": f"Garmin returned no recovery data from {s} to {e}.", "warnings": warnings}
+    return recovery.shape_trends(start, today, hrv, rhr, sleep, battery, stress, activities, warnings)
+
+
+MAX_SHOE_LOOKUPS = 10
+
+
+@mcp.tool()
+@tool_errors
+async def get_shoes() -> dict[str, Any]:
+    """The user's running shoes and how far each pair has gone.
+
+    For each active pair: km so far, runs, the limit set in Garmin (or a
+    typical 650 km when none is set) and km left, km in the last four weeks,
+    when it was last worn, and whether Garmin adds it to new runs by default.
+    Pairs near the end of their life are flagged. Retired pairs are listed
+    by name and km. Use it for "do I need new shoes" or "which shoes do I run
+    in most".
+    """
+    number = await _call(
+        lambda c: getattr(c, "profile_id", None) or (c.get_device_last_used() or {}).get("userProfileNumber")
+    )
+    if not number:
+        return {"error": "Garmin didn't say which profile the shoes belong to. Try again shortly."}
+    (items, defaults), warnings = await _gather(
+        [("gear", lambda c: c.get_gear(number)), ("default gear", lambda c: c.get_gear_defaults(number))]
+    )
+    shoes = [g for g in (items or []) if isinstance(g, Mapping) and gear.is_shoe(g)]
+    if not shoes:
+        return {"shoes": [], "note": "No shoes are set up in Garmin Connect. They're added under Gear in the app."}
+    active = [g for g in shoes if str(g.get("gearStatusName") or "active").lower() != "retired"]
+    retired = [g for g in shoes if g not in active]
+    by_default = gear.running_default(defaults)
+    today = date_cls.fromisoformat(parse_date("today"))
+
+    shown = []
+    for item in active[:MAX_SHOE_LOOKUPS]:
+        uuid = str(item.get("uuid") or "")
+        (stats, runs), more = await _gather(
+            [("shoe stats", lambda c: c.get_gear_stats(uuid)),
+             ("shoe runs", lambda c: c.get_gear_activities(uuid, 50))]
+        ) if uuid else ((None, None), [])
+        warnings.extend(more)
+        shown.append(gear.shape_shoe(item, stats, runs, uuid in by_default, today))
+
+    retired_shown = []
+    for item in retired[:MAX_SHOE_LOOKUPS]:
+        uuid = str(item.get("uuid") or "")
+        (stats,), more = await _gather([("shoe stats", lambda c: c.get_gear_stats(uuid))]) if uuid else ((None,), [])
+        warnings.extend(more)
+        retired_shown.append(drop_empty({"name": gear.name_of(item), "km": km((stats or {}).get("totalDistance"), 0),
+                                         "retired": str(item.get("dateEnd") or "")[:10] or None}))
+
+    return drop_empty({
+        "shoes": sorted(shown, key=lambda x: -(x.get("km_last_4_weeks") or 0)),
+        "retired": retired_shown or None,
+        "warnings": sorted(set(warnings)) or None,
+        "note": "Most running shoes last 500 to 800 km; lighter racing shoes less.",
+    })
 
 
 # --------------------------------------------------------------------------
