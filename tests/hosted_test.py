@@ -423,12 +423,28 @@ async def main() -> int:
         code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
         check("a wrong password is called a wrong password",
               code == 400 and "didn't accept that email and password" in body, f"status {code}")
+        hosted._paused_until = 0.0
         code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
         check("a rate limit says to wait, not to worry",
-              code == 400 and "slow down" in body and "half an hour" in body, f"status {code}")
+              code == 400 and "slow down" in body and "paused for 30 minutes" in body, f"status {code}")
+
+        # While Garmin's limit is in force, nobody's attempt is passed on to
+        # it: each would count against the limit everyone shares.
+        tried_before = len(SIGNIN_CREDS)
+        code, body = await anyio_run(signin, "later@example.com")
+        check("after a rate limit, the next sign-in is paused, not sent to Garmin",
+              code == 429 and "paused" in body and "minutes" in body
+              and len(SIGNIN_CREDS) == tried_before, f"status {code}")
+        hosted._paused_until = 0.0
+        code, body = await anyio_run(signin, "later@example.com")
+        check("once the pause is over, sign-in works again",
+              code == 200 and "/mcp" in body, f"status {code}")
+
         code, body = await anyio_run(signin, BLOCKED_EMAIL)
         check("a network block says to tell the operator",
               code == 400 and "blocking sign-ins from this" in body, f"status {code}")
+        check("a network block pauses sign-ins too", hosted._pause_left() > 0)
+        hosted._paused_until = 0.0
 
         # And repeated attempts from one address get throttled.
         hosted._ATTEMPTS.clear()
@@ -467,16 +483,28 @@ async def main() -> int:
               str({k: len(v) for k, v in ids_by_account.items()}))
         reasons = {e["properties"].get("reason") for e in failed}
         check("failed sign-ins carry the right one-word reason",
-              {"throttled", "bad_credentials", "rate_limited", "blocked_by_garmin"} <= reasons
+              {"throttled", "bad_credentials", "rate_limited", "blocked_by_garmin", "paused"} <= reasons
               and reasons <= {"throttled", "blocked_by_garmin", "rate_limited",
-                              "bad_credentials", "other", "mfa_rejected"},
+                              "bad_credentials", "other", "mfa_rejected", "paused"},
               str(reasons))
+        check("failed sign-ins carry the masked address that was tried",
+              all(e["properties"].get("account", "").count("*") >= 1 for e in failed),
+              str([e["properties"].get("account") for e in failed][:4]))
+        later_fail = [e for e in failed if e["properties"].get("reason") == "paused"]
+        later_ok = [e for e in connected if e["properties"].get("account", "").startswith("l")
+                    and e["properties"]["account"].endswith("@example.com")]
+        check("a failure and a later success by the same person share one id",
+              later_fail and later_ok and later_fail[0]["distinct_id"] == later_ok[-1]["distinct_id"]
+              and later_fail[0]["distinct_id"] != "anonymous",
+              f"{[e['distinct_id'][:8] for e in later_fail]} {[e['distinct_id'][:8] for e in later_ok]}")
         blob = json.dumps(SENT)
         # The masked address travels; the full one never does. Every address
         # the suite signs in with is listed here so a regression on any path
         # shows up, not just the first.
         full_addresses = ("someone@example.com", "friend@example.com",
-                          "spray@example.com", "gatecrasher@example.com", MFA_EMAIL)
+                          "spray@example.com", "gatecrasher@example.com", MFA_EMAIL,
+                          "later@example.com", WRONG_PASSWORD_EMAIL, RATE_LIMITED_EMAIL,
+                          BLOCKED_EMAIL)
         check("analytics carry the masked account and nothing that names anyone",
               all(e["properties"].get("account", "").count("*") >= 1
                   for e in connected + first_calls)

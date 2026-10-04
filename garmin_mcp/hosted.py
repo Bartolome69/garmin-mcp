@@ -77,6 +77,42 @@ _ATTEMPTS: dict[str, list[float]] = {}
 _ATTEMPT_WINDOW = 900
 _ATTEMPT_LIMIT = 8
 
+# A server-wide pause on sign-ins after Garmin says "too many" or blocks the
+# address. Everyone signs in through the same address, so Garmin's limit is
+# shared, and each retry while it is in force counts against it and pushes it
+# towards a block. During the pause nothing is sent to Garmin; people are told
+# how long to wait instead. In memory: one machine serves this, and a restart
+# that forgets the pause costs at most one more refused attempt.
+GARMIN_PAUSE = 1800
+_paused_until = 0.0
+
+
+def _pause_sign_ins(reason: str) -> None:
+    global _paused_until
+    if reason in ("rate_limited", "blocked_by_garmin"):
+        _paused_until = max(_paused_until, time.time() + GARMIN_PAUSE)
+        log.warning("sign-ins paused for %ss after %s", GARMIN_PAUSE, reason)
+
+
+def _pause_left() -> int:
+    """Seconds left on the pause, or 0."""
+    return max(0, int(_paused_until - time.time()))
+
+
+def _failed(reason: str, email: str = "") -> None:
+    """Record a failed sign-in: the reason, and who, as the store would see them.
+
+    The masked address and the same per-person id a successful sign-in gets, so
+    a failure and a later success by the same person line up in the report.
+    """
+    email = email.strip()
+    analytics.capture(
+        "sign_in_failed",
+        store.email_fingerprint(email) if email else None,
+        {"reason": reason, **({"account": mask_email(email)} if email else {})},
+    )
+
+
 # Sign-ins waiting on a multi-factor code. In memory on purpose: a restart
 # simply asks the person to start again, and nothing sensitive outlives it.
 _PENDING: dict[str, dict[str, Any]] = {}
@@ -367,7 +403,8 @@ def _signin_error(exc: BaseException, flow: str = "") -> str:
             "<div class=err><strong>Garmin is asking this server to slow down.</strong> "
             "It is not your password. Garmin limits how many sign-ins it takes "
             "from one address, and several people have signed in through here "
-            "recently. Wait half an hour and try again; it clears on its own.</div>"
+            f"recently. Sign-ins are paused for {GARMIN_PAUSE // 60} minutes so the "
+            "limit can clear; try again after that.</div>"
             + _try_again(flow)
         )
     if reason == "blocked_by_garmin":
@@ -580,7 +617,7 @@ async def connect_submit(request: Request) -> Response:
     flow = str(form.get("flow", ""))
 
     if _too_many_attempts(_client_address(request)):
-        analytics.capture("sign_in_failed", None, {"reason": "throttled"})
+        _failed("throttled", email)
         return page(
             "Sign in to Garmin",
             "<div class=err>Too many sign-in attempts. Wait fifteen minutes and "
@@ -605,6 +642,20 @@ async def connect_submit(request: Request) -> Response:
             400,
         )
 
+    left = _pause_left()
+    if left:
+        _failed("paused", email)
+        minutes = max(1, -(-left // 60))
+        return page(
+            "Sign in to Garmin",
+            "<div class=err><strong>Garmin asked this server to slow down, so "
+            "sign-ins are paused for a little while.</strong> It is not your "
+            f"password, and nothing was sent to Garmin. Try again in about {minutes} "
+            f"minute{'s' if minutes != 1 else ''}; trying sooner would only keep "
+            "Garmin's limit in place for longer.</div>" + _try_again(flow),
+            429,
+        )
+
     def _login() -> Any:
         client = build_client(
             prompt_mfa=lambda: (_ for _ in ()).throw(
@@ -623,7 +674,9 @@ async def connect_submit(request: Request) -> Response:
     try:
         client, result = await anyio.to_thread.run_sync(_login)
     except Exception as exc:  # noqa: BLE001
-        analytics.capture("sign_in_failed", None, {"reason": _failure_reason(exc)})
+        reason = _failure_reason(exc)
+        _pause_sign_ins(reason)
+        _failed(reason, email)
         return page("Sign in to Garmin", _signin_error(exc, flow), 400)
 
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
@@ -677,7 +730,7 @@ async def mfa_submit(request: Request) -> Response:
 
         await anyio.to_thread.run_sync(_resume)
     except Exception as exc:  # noqa: BLE001
-        analytics.capture("sign_in_failed", None, {"reason": "mfa_rejected"})
+        _failed("mfa_rejected", pending.get("email", ""))
         return page(
             "Enter your code",
             f"<div class=err>That code wasn't accepted ({type(exc).__name__}). "

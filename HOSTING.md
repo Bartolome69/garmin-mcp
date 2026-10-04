@@ -33,6 +33,14 @@ Without either, expect sign-ups to fail intermittently while your own already-
 connected account works perfectly — which is exactly the failure you won't
 notice.
 
+Even from a clean address, Garmin limits how many sign-ins it takes from one
+place, and every user signs in through the same one. When Garmin answers "too
+many" (429) or blocks the address (403), the server pauses all sign-ins for 30
+minutes and tells anyone who tries how long to wait, rather than passing their
+attempts on: each one would count against the shared limit and push it towards
+a block. Someone already entering a two-factor code can still finish. The pause
+lives in memory, so a restart lifts it.
+
 ## Configuration
 
 | Variable | Purpose |
