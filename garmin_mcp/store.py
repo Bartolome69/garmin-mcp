@@ -3,8 +3,9 @@
 Only used by the hosted server. The local stdio server keeps its single token
 file and never touches this.
 
-What is stored is the token blob Garmin issues, encrypted at rest. The password
-is never written: it is exchanged for tokens during sign-in and discarded.
+What is stored is the token blob Garmin issues and the email it was issued to,
+both encrypted at rest. The password is never written: it is exchanged for
+tokens during sign-in and discarded.
 """
 
 from __future__ import annotations
@@ -36,6 +37,9 @@ CREATE TABLE IF NOT EXISTS users (
 MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN email_hash TEXT",
     "CREATE INDEX IF NOT EXISTS users_email_hash ON users (email_hash)",
+    # The address itself, encrypted like the token, so whoever runs this can
+    # get in touch about a connection. Rows from before this column are NULL.
+    "ALTER TABLE users ADD COLUMN email_enc BLOB",
 )
 
 # OAuth state. Separate from `users`: a person is one row there however many
@@ -136,6 +140,7 @@ def save_user(
     user_token: str | None = None,
     *,
     email_hash: str | None = None,
+    email: str | None = None,
 ) -> str:
     """Store someone's Garmin session, retiring any earlier one. Returns their token.
 
@@ -145,6 +150,7 @@ def save_user(
     """
     user_token = user_token or new_user_token()
     encrypted = _cipher().encrypt(token_blob.encode())
+    email_enc = _cipher().encrypt(email.strip().encode()) if email and email.strip() else None
     now = int(time.time())
     with _connect() as conn:
         if email_hash:
@@ -153,12 +159,13 @@ def save_user(
                 (email_hash, user_token),
             )
         conn.execute(
-            "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash, email_enc) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
-            "  email_hash = excluded.email_hash",
-            (user_token, email_masked, encrypted, now, email_hash),
+            "  email_hash = excluded.email_hash, "
+            "  email_enc = COALESCE(excluded.email_enc, users.email_enc)",
+            (user_token, email_masked, encrypted, now, email_hash, email_enc),
         )
     return user_token
 
@@ -240,6 +247,20 @@ def touch_user(user_token: str) -> bool:
             (int(time.time()), user_token),
         )
     return bool(row) and row[0] is None
+
+
+def email_for(user_token: str) -> str | None:
+    """The address this connection was signed in with, where one was kept."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT email_enc FROM users WHERE user_token = ?", (user_token,)
+        ).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        return _cipher().decrypt(row[0]).decode()
+    except InvalidToken:
+        return None
 
 
 def count_active(days: int = 30) -> int:

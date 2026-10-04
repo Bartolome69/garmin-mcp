@@ -50,7 +50,7 @@ lives in memory, so a restart lifts it.
 | `GARMIN_MCP_BASE_URL` | Public URL, used when showing someone their connector link. |
 | `GARMIN_MCP_LOGIN_PROXY` | Optional. Proxy used **only** for sign-in. |
 | `GARMIN_MCP_INVITE` | **Set this.** Sign-up is open to anyone who finds the host without it. Give friends the code along with the link. |
-| `GARMIN_MCP_POSTHOG_KEY` | Optional. A PostHog project key. When set, the server reports three events: a sign-in succeeded, a sign-in failed (with a one-word reason), and a connection was used for the first time. Each carries a few flags, the masked email the store already keeps (first letter and domain) and an unreadable per-person id; never the full address, a token or any Garmin data. Unset, nothing is sent. |
+| `GARMIN_MCP_POSTHOG_KEY` | Optional. A PostHog project key. When set, the server reports three events: a sign-in succeeded, a sign-in failed (with a one-word reason), and a connection was used for the first time. Each carries a few flags, the email address (masked and in full) and an unreadable per-person id; never a password, a token or any Garmin data. The store also keeps each connected person's email, encrypted like their token, and deletes it with the row on disconnect. Unset, nothing is sent. |
 | `GARMIN_MCP_POSTHOG_HOST` | Optional. PostHog ingestion host; defaults to the EU one. |
 | `GARMIN_MCP_PREVIEW` | Optional. Turns preview features (currently the plan view inside the chat) on for some accounts before everyone: a comma separated list of the Garmin sign-in addresses to include, or `on` for everyone. Unset, nobody sees them. Addresses are compared as fingerprints and never stored. Takes effect in the next new chat, with no reconnecting. |
 | `PORT` | Defaults to 8000. |

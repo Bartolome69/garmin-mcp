@@ -100,16 +100,18 @@ def _pause_left() -> int:
 
 
 def _failed(reason: str, email: str = "") -> None:
-    """Record a failed sign-in: the reason, and who, as the store would see them.
+    """Record a failed sign-in: the reason, and who tried.
 
-    The masked address and the same per-person id a successful sign-in gets, so
-    a failure and a later success by the same person line up in the report.
+    The address tried, masked and in full, and the same per-person id a
+    successful sign-in gets, so a failure and a later success by the same
+    person line up in the report and whoever got stuck can be helped.
     """
     email = email.strip()
+    who = {"account": mask_email(email), "email": email} if email else {}
     analytics.capture(
         "sign_in_failed",
         store.email_fingerprint(email) if email else None,
-        {"reason": reason, **({"account": mask_email(email)} if email else {})},
+        {"reason": reason, **who},
     )
 
 
@@ -328,8 +330,7 @@ async def connect_form(request: Request) -> Response:
         "Sign in to Garmin",
         f"""
         <h1>Sign in to Garmin</h1>
-        <p>These go straight to Garmin. The password is never written to disk,
-        and is dropped from memory once Garmin has accepted it.</p>
+        <p>These go straight to Garmin. Your password is never stored.</p>
         <form method=post action=/connect>
           <input type=hidden name=flow value="{flow}">
           {_INVITE_FIELD if INVITE_CODE else ""}
@@ -364,9 +365,8 @@ def _failure_reason(exc: BaseException) -> str:
     is Cloudflare refusing the server's address outright, and no amount of
     waiting helps. The old single word for both hid which one was happening.
 
-    The analytics event carries this word and nothing else about the failure,
-    so the count of people Garmin turned away can be told from the count who
-    mistyped a password without either being traceable to anyone.
+    The analytics event carries this word, so the count of people Garmin
+    turned away can be told from the count who mistyped a password.
     """
     name = type(exc).__name__
     text = str(exc).lower()
@@ -506,15 +506,15 @@ def _finish(
     for stale in previous:
         _SESSIONS.pop(stale, None)
     masked = mask_email(email) or "hidden"
-    user_token = store.save_user(masked, blob, email_hash=fingerprint)
-    # The masked address goes along: first letter and domain, the same form
-    # the store keeps. Enough for the person running this to tell friends
-    # apart in a report, not enough for anyone else to write to them.
+    user_token = store.save_user(masked, blob, email_hash=fingerprint, email=email)
+    # The address goes along, so the report says who connected and whoever
+    # runs this can get in touch if their connection goes wrong.
     analytics.capture(
         "connector_connected",
         fingerprint,
         {
             "account": masked,
+            "email": email.strip(),
             # "direct" is someone who reached the form without Claude's request
             # attached; the page below sends them back to start from Claude.
             "via": ("oauth" if flow else "direct") if OAUTH_ENABLED else "url",
@@ -859,10 +859,11 @@ class SessionBinding:
         if now - _TOUCHED.get(user_token, 0.0) > _TOUCH_EVERY:
             _TOUCHED[user_token] = now
             if store.touch_user(user_token):
+                email = store.email_for(user_token)
                 analytics.capture(
                     "first_tool_call",
                     user.email_hash or user_token,
-                    {"account": user.email_masked},
+                    {"account": user.email_masked, **({"email": email} if email else {})},
                 )
 
         token = use_session(session_for(user_token))

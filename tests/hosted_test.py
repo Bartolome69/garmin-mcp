@@ -161,9 +161,10 @@ async def main() -> int:
             failures.append(name)
 
     # A marker that must never appear in any response.
+    # Alice signed in after emails were kept; Bob's row predates that.
     alice = store.save_user(
         "a***@example.com", json.dumps({"di_token": "alice-token", "secret": SECRET}),
-        email_hash=store.email_fingerprint("alice@example.com"),
+        email_hash=store.email_fingerprint("alice@example.com"), email="alice@example.com",
     )
     bob = store.save_user("b***@example.com", json.dumps({"di_token": "bob-token"}))
     check("two users stored", store.count_users() == 2)
@@ -497,22 +498,42 @@ async def main() -> int:
               later_fail and later_ok and later_fail[0]["distinct_id"] == later_ok[-1]["distinct_id"]
               and later_fail[0]["distinct_id"] != "anonymous",
               f"{[e['distinct_id'][:8] for e in later_fail]} {[e['distinct_id'][:8] for e in later_ok]}")
-        blob = json.dumps(SENT)
-        # The masked address travels; the full one never does. Every address
-        # the suite signs in with is listed here so a regression on any path
-        # shows up, not just the first.
+        # The address travels in its own field, masked and in full, and
+        # nowhere else; no token, password or blob ever does. Every address
+        # the suite signs in with is listed so a regression on any path shows.
         full_addresses = ("someone@example.com", "friend@example.com",
                           "spray@example.com", "gatecrasher@example.com", MFA_EMAIL,
                           "later@example.com", WRONG_PASSWORD_EMAIL, RATE_LIMITED_EMAIL,
                           BLOCKED_EMAIL)
-        check("analytics carry the masked account and nothing that names anyone",
+        check("a sign-in and a failure each name who, in full",
+              all("@" in e["properties"].get("email", "") and "*" not in e["properties"]["email"]
+                  for e in connected + failed),
+              str([e["properties"].get("email") for e in connected + failed][:4]))
+        check("a first use names who where the email was kept, and only the masked form where not",
+              sorted(e["properties"].get("email", "-") for e in first_calls) == ["-", "alice@example.com"],
+              str([e["properties"] for e in first_calls]))
+        without_email = json.dumps([
+            {**e, "properties": {k: v for k, v in e["properties"].items() if k != "email"}}
+            for e in SENT
+        ])
+        blob = json.dumps(SENT)
+        check("the full address is only ever in its own field",
               all(e["properties"].get("account", "").count("*") >= 1
                   for e in connected + first_calls)
-              and not any(addr in blob for addr in full_addresses)
-              and alice not in blob and bob not in blob
+              and not any(addr in without_email for addr in full_addresses))
+        check("no token, password or Garmin session ever reaches analytics",
+              alice not in blob and bob not in blob
               and SECRET not in blob and "their-own-password" not in blob
-              and "hunter2" not in blob,
-              str([e["properties"].get("account") for e in connected + first_calls][:4]))
+              and "hunter2" not in blob and "-token" not in without_email)
+
+        # Kept on the server too, so whoever runs it can get in touch, but
+        # encrypted like the token: the database file never holds it in clear.
+        later_token = next((t for t in store.tokens_for(store.email_fingerprint("later@example.com"))), None)
+        check("the email is kept with the connection and can be read back",
+              later_token and store.email_for(later_token) == "later@example.com")
+        raw = b"".join(p.read_bytes() for p in DB.parent.glob(DB.name + "*"))
+        check("the database never holds an email in clear",
+              not any(addr.encode() in raw for addr in full_addresses + ("alice@example.com",)))
         check("analytics build no person profile",
               all(e["properties"].get("$process_person_profile") is False for e in SENT))
         check("analytics stay silent without a key",
