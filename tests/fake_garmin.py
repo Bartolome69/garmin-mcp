@@ -6,6 +6,7 @@ gets exercised the same way it would against the real API.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 PROFILE = {"displayName": "bart-7f3a", "fullName": "Bart T"}
@@ -90,6 +91,10 @@ ACTIVITIES = [
         "hrTimeInZone_1": 600.0,
         "hrTimeInZone_2": 1200.0,
         "hrTimeInZone_3": 1400.0,
+        "startLatitude": 51.5,
+        "startLongitude": -0.05,
+        "endLatitude": 51.5001,
+        "endLongitude": -0.05,
     },
     {
         "activityId": 2222,
@@ -245,10 +250,70 @@ def _stream(laps: list[tuple[float, float, float, float]], step: float = 10.0) -
 RECORDING = _stream([(1000.0, 300.0, 140.0, 156.0), (1000.0, 296.0, 150.0, 158.0)])
 
 
+def _hilly(step: float = 10.0) -> dict[str, Any]:
+    """10 km out and back at an even 5:00/km, over a 40 m hill at 2.0-2.8 km and back down it.
+
+    Heart rate climbs steadily from 140 to 156, so the second half costs more
+    per kilometre than the first: measurable decoupling at a level pace.
+    """
+    speed, seconds = 1000.0 / 300.0, 3000.0
+
+    def elevation(d: float) -> float:
+        out = d if d <= 5000 else 10000 - d
+        if out <= 2000:
+            return 20.0
+        if out <= 2800:
+            return 20.0 + (out - 2000) * 0.05
+        return 60.0
+
+    rows = []
+    t = 0.0
+    while t <= seconds:
+        d = t * speed
+        north = d if d <= 5000 else 10000 - d
+        rows.append({"metrics": [t, d, speed, 140.0 + 16.0 * t / seconds, elevation(d),
+                                 51.5 + north / 111000.0, -0.05]})
+        t += step
+    keys = [("sumDuration", "second"), ("sumDistance", "meter"), ("directSpeed", "mps"),
+            ("directHeartRate", "bpm"), ("directElevation", "meter"),
+            ("directLatitude", "dd"), ("directLongitude", "dd")]
+    return {
+        "metricDescriptors": [{"metricsIndex": i, "key": k, "unit": {"key": u}} for i, (k, u) in enumerate(keys)],
+        "activityDetailMetrics": rows,
+    }
+
+
+HILLY = _hilly()
+HILLY_ID = 4444
+
+# Garmin sends Fahrenheit whatever the account's units, and wind in the account's units.
+WEATHER = {"temp": 75, "apparentTemp": 77, "dewPoint": 63, "relativeHumidity": 66,
+           "windDirection": 225, "windDirectionCompassPoint": "sw", "windSpeed": 10,
+           "windGust": None, "weatherStationDTO": {"id": "EGLC", "name": "London City"},
+           "weatherTypeDTO": {"desc": "Partly Cloudy"}}
+
+SHOE_A, SHOE_B, SHOE_OLD = "aaaa1111bbbb2222cccc3333dddd4444", "eeee5555ffff6666aaaa7777bbbb8888", "1234abcd1234abcd1234abcd1234abcd"
+GEAR = [
+    {"uuid": SHOE_A, "displayName": "Pegasus", "gearMakeName": "Nike", "gearModelName": "Pegasus 41",
+     "gearTypeName": "Shoes", "gearStatusName": "active", "maximumMeters": 800000.0,
+     "dateBegin": "2026-03-01T00:00:00.0"},
+    {"uuid": SHOE_B, "displayName": None, "customMakeModel": "Race day flats", "gearTypeName": "Shoes",
+     "gearStatusName": "active", "maximumMeters": 0.0},
+    {"uuid": SHOE_OLD, "displayName": "Old Ghosts", "gearTypeName": "Shoes", "gearStatusName": "retired",
+     "dateEnd": "2026-02-28T00:00:00.0"},
+    {"uuid": "9999", "displayName": "Bike", "gearTypeName": "Bike", "gearStatusName": "active"},
+]
+GEAR_STATS = {SHOE_A: {"totalDistance": 690000.0, "totalActivities": 81},
+              SHOE_B: {"totalDistance": 120000.0, "totalActivities": 14},
+              SHOE_OLD: {"totalDistance": 803000.0, "totalActivities": 95}}
+
+
 class FakeGarmin:
     def __init__(self, **_: Any) -> None:
         self.display_name = None
         self.full_name = None
+        self.unit_system = "metric"
+        self.profile_id = 4242
         self.unscheduled: list[int] = []
         self.deleted: list[int] = []
         # What upload_workout and schedule_workout have written, so a plan that
@@ -289,6 +354,15 @@ class FakeGarmin:
         return list(ACTIVITIES)
 
     def get_activity(self, activity_id: int) -> dict[str, Any]:
+        if int(activity_id) == HILLY_ID:
+            return {
+                "activityId": activity_id,
+                "activityName": "Hill loop",
+                "activityTypeDTO": {"typeKey": "running"},
+                "summaryDTO": {"startTimeLocal": "2026-09-29T07:00:00.0", "distance": 10000.0,
+                               "duration": 3000.0, "movingDuration": 3000.0, "averageHR": 148,
+                               "elevationGain": 40.0},
+            }
         return {
             "activityId": activity_id,
             "activityName": "Morning Run",
@@ -311,7 +385,72 @@ class FakeGarmin:
         return list(HR_ZONES)
 
     def get_activity_details(self, activity_id: int, maxchart: int = 2000, maxpoly: int = 4000) -> dict[str, Any]:
-        return RECORDING
+        return HILLY if int(activity_id) == HILLY_ID else RECORDING
+
+    # -- around a run --------------------------------------------------------
+
+    def get_activity_weather(self, activity_id: Any) -> dict[str, Any]:
+        return dict(WEATHER)
+
+    def get_activity_gear(self, activity_id: Any) -> list[dict[str, Any]]:
+        return [dict(GEAR[0])]
+
+    def get_gear(self, profile_number: Any) -> list[dict[str, Any]]:
+        assert int(profile_number) == 4242
+        return [dict(g) for g in GEAR]
+
+    def get_gear_defaults(self, profile_number: Any) -> list[dict[str, Any]]:
+        return [{"uuid": SHOE_A, "activityTypePk": 1, "defaultGear": True}]
+
+    def get_gear_stats(self, uuid: str) -> dict[str, Any]:
+        return dict(GEAR_STATS.get(uuid, {}))
+
+    def get_gear_activities(self, uuid: str, limit: int = 1000) -> list[dict[str, Any]]:
+        if uuid != SHOE_A:
+            return []
+        recent = date.today() - timedelta(days=3)
+        return [{"startTimeLocal": f"{recent} 07:00:00", "distance": 10000.0},
+                {"startTimeLocal": "2026-01-02 07:00:00", "distance": 8000.0}]
+
+    # -- recovery over weeks: the last few days look worse than the rest ------
+
+    @staticmethod
+    def _days(start: str, end: str) -> list[date]:
+        a, b = date.fromisoformat(start), date.fromisoformat(end)
+        return [a + timedelta(days=i) for i in range((b - a).days + 1)]
+
+    @staticmethod
+    def _recent(d: date, days: int) -> bool:
+        return d > date.today() - timedelta(days=days)
+
+    def get_hrv_data_range(self, start: str, end: str) -> dict[str, Any]:
+        return {"hrvSummaries": [
+            {"calendarDate": d.isoformat(), "lastNightAvg": 50 if self._recent(d, 7) else 60,
+             "status": "UNBALANCED" if self._recent(d, 3) else "BALANCED",
+             "baseline": {"balancedLow": 53, "balancedUpper": 66}}
+            for d in self._days(start, end)]}
+
+    def get_rhr_daily(self, start: str, end: str) -> list[dict[str, Any]]:
+        return [{"calendarDate": d.isoformat(), "value": 53 if self._recent(d, 3) else 48}
+                for d in self._days(start, end)]
+
+    def get_sleep_daily(self, start: str, end: str) -> list[dict[str, Any]]:
+        return [{"calendarDate": d.isoformat(), "values": {"totalSleepTimeInSeconds": 27000, "sleepScore": 80}}
+                for d in self._days(start, end)]
+
+    def get_body_battery(self, start: str, end: str | None = None) -> list[dict[str, Any]]:
+        return [{"date": d.isoformat(), "charged": 60, "drained": 55,
+                 "bodyBatteryValueDescriptorDTOList": [
+                     {"bodyBatteryValueDescriptorIndex": 0, "bodyBatteryValueDescriptorKey": "timestamp"},
+                     {"bodyBatteryValueDescriptorIndex": 1, "bodyBatteryValueDescriptorKey": "bodyBatteryStatus"},
+                     {"bodyBatteryValueDescriptorIndex": 2, "bodyBatteryValueDescriptorKey": "bodyBatteryLevel"},
+                     {"bodyBatteryValueDescriptorIndex": 3, "bodyBatteryValueDescriptorKey": "bodyBatteryVersion"}],
+                 "bodyBatteryValuesArray": [[1, "MEASURED", 88, 3.0], [2, "MEASURED", 21, 3.0]]}
+                for d in self._days(start, end or start)]
+
+    def get_weekly_stress(self, end: str, weeks: int = 52) -> list[dict[str, Any]]:
+        last = date.fromisoformat(end)
+        return [{"calendarDate": (last - timedelta(weeks=i)).isoformat(), "value": 31} for i in range(weeks)]
 
     # -- readiness and fitness ---------------------------------------------
 

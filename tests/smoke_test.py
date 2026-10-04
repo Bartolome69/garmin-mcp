@@ -148,6 +148,21 @@ def check_plan_summary(check) -> None:
           and s["weeks"][1]["current"] is True, str([(w["week"], w["current"]) for w in s["weeks"]]))
 
 
+def check_conditions(check) -> None:
+    """Units the weather endpoint never states, and the line on what they did."""
+    from garmin_mcp import conditions
+
+    us = conditions.shape_weather({"temp": 50, "apparentTemp": 48, "dewPoint": 40, "windSpeed": 20}, "statute_us")
+    check("a US account gets Fahrenheit and mph beside Celsius and km/h",
+          us.get("temperature_c") == 10.0 and us.get("temperature_f") == 50
+          and us.get("wind_mph") == 20 and us.get("wind_kmh") == 32, str(us))
+    uk = conditions.shape_weather({"temp": 50, "windSpeed": 20}, "statute_uk")
+    check("a UK account's wind is mph, its temperature Celsius only",
+          uk.get("wind_kmh") == 32 and "temperature_f" not in uk, str(uk))
+    check("mild still weather says nothing", conditions.effect(12, 6, 8) is None)
+    check("no weather is no block", conditions.shape_weather({}, "metric") is None)
+
+
 async def check_preview_gate(check) -> None:
     """Views are a preview: listed only where it is switched on."""
     from garmin_mcp import preview, server
@@ -693,7 +708,10 @@ async def main() -> int:
                   str(lap1))
             check("no km splits when the watch already lapped by km",
                   "km_splits" not in inside, str(list(inside)))
+            check("an ordinary account's run details are as before: no weather, shoes or terrain",
+                  not ({"weather", "shoes", "terrain", "same_route"} & set(detail)), str(list(detail)))
             check_stream_km_splits(check)
+            check_conditions(check)
 
             print("\nworkouts")
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))
@@ -1098,6 +1116,72 @@ async def main() -> int:
                   and "ui/initialize" in html and "tool-result" in html, str(view.contents[0])[:120])
             check("the view loads nothing from outside the frame",
                   not re.search(r"""(src|href)=["']?https?:""", html) and "@import" not in html)
+
+            preview_names = {t.name for t in tools.tools}
+            check("a preview account is offered shoes and recovery trends",
+                  {"get_shoes", "get_recovery_trends"} <= preview_names, str(sorted(preview_names)))
+            details_tool = next(t for t in tools.tools if t.name == "get_activity_details")
+            check("a preview account is told what run details now include",
+                  "weather" in details_tool.description and "same route" in details_tool.description)
+
+            print("\npreview account, around a run")
+            hilly = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
+            print("   ", json.dumps({k: hilly.get(k) for k in ("weather", "shoes", "same_route")}, indent=2)[:900])
+            weather = hilly.get("weather") or {}
+            check("weather comes in Celsius from Garmin's Fahrenheit",
+                  weather.get("temperature_c") == 23.9 and weather.get("dew_point_c") == 17.2, str(weather))
+            check("a metric account's wind is already km/h", weather.get("wind_kmh") == 10 and "wind_mph" not in weather,
+                  str(weather))
+            check("weather says what it did to the run", "humid" in (weather.get("effect") or ""), str(weather))
+            check("the shoes worn are named", hilly.get("shoes") == "Pegasus", str(hilly.get("shoes")))
+            ground = hilly.get("terrain") or {}
+            climbs = ground.get("climbs") or []
+            check("the hill is found, about the right size and where it was",
+                  len(climbs) == 1 and 35 <= climbs[0].get("gain_m", 0) <= 42 and climbs[0].get("starts_at_km") in (1.9, 2.0, 2.1),
+                  str(climbs))
+            check("uphill pace is worth more on the flat",
+                  ground["by_gradient"]["uphill"]["flat_equivalent_pace"] < ground["by_gradient"]["uphill"]["pace_per_km"],
+                  str(ground.get("by_gradient")))
+            check("an out-and-back is recognised, with no coordinates in the answer",
+                  ground.get("route", {}).get("kind") == "out and back" and "51.5" not in json.dumps(hilly),
+                  str(ground.get("route")))
+            check("rising heart rate at level pace shows as decoupling",
+                  5 <= (ground.get("effort") or {}).get("decoupling_pct", 0) <= 12, str(ground.get("effort")))
+            same = hilly.get("same_route") or {}
+            check("an earlier run of the same route is found and ranked",
+                  same.get("earlier_runs") == 1 and same.get("this_run_rank") == "1 of 2 by pace"
+                  and same["recent"][0]["activity_id"] == 1111, str(same))
+
+            print("\npreview account, shoes")
+            shoes = payload(await sess.call_tool("get_shoes", {}))
+            print("   ", json.dumps(shoes, indent=2)[:700])
+            pairs = {x["name"]: x for x in shoes.get("shoes") or []}
+            check("only shoes, active ones, by name", set(pairs) == {"Pegasus", "Race day flats"}, str(list(pairs)))
+            peg = pairs.get("Pegasus") or {}
+            check("km used, left and recent",
+                  peg.get("km") == 690 and peg.get("km_left") == 110 and peg.get("km_last_4_weeks") == 10.0, str(peg))
+            check("a pair near its limit is flagged, and the default for runs marked",
+                  peg.get("nearly_done") is True and peg.get("default_for_running") is True, str(peg))
+            flats = pairs.get("Race day flats") or {}
+            check("with no limit set, a typical life is assumed and said",
+                  flats.get("km_left") == 530 and "typical" in flats.get("limit_is", ""), str(flats))
+            check("retired pairs are listed by name and km",
+                  shoes.get("retired") == [{"name": "Old Ghosts", "km": 803.0, "retired": "2026-02-28"}], str(shoes.get("retired")))
+
+            print("\npreview account, recovery trends")
+            trends = payload(await sess.call_tool("get_recovery_trends", {"weeks": 4}))
+            print("   ", json.dumps({k: trends.get(k) for k in ("hrv_now", "signals")}, indent=2)[:700])
+            signals = " ".join(trends.get("signals") or [])
+            check("four weeks, Monday to Monday", len(trends.get("weeks") or []) == 4, str(trends.get("weeks"))[:200])
+            check("a resting heart rate rise is named", "Resting heart rate 5 bpm above" in signals, signals)
+            check("unbalanced HRV nights are named", "HRV status unbalanced" in signals, signals)
+            check("a drop in HRV is named", "averaging 50 ms" in signals, signals)
+            check("sleep and Body Battery are read week by week",
+                  trends["weeks"][0].get("sleep_hours") == 7.5 and trends["weeks"][0].get("body_battery_peak") == 88,
+                  str(trends["weeks"][0]))
+            check("today's HRV status with its balanced range",
+                  trends.get("hrv_now") == {"status": "UNBALANCED", "last_night_ms": 50, "balanced_range_ms": [53, 66]},
+                  str(trends.get("hrv_now")))
 
             raw_plan = await sess.call_tool("get_plan", {})
             structured = field(raw_plan, "structured_content", "structuredContent")
