@@ -134,3 +134,15 @@ masked address and nothing about the server's filesystem.
 Runs the real app over HTTP against a stubbed Garmin account and proves the part
 that matters: two people's URLs resolve to their own sessions, an unknown URL is
 rejected, and neither the stored token nor any server path appears in a response.
+
+## Deploying
+
+Everything lives on `main`: the connector, and the hosted server's own files
+(`garmin_mcp/hosted.py`, `oauth.py`, `store.py`, `analytics.py`, the
+Dockerfile and `fly.toml`). Running the connector locally never loads them.
+
+Every push to `main` runs the full test suite. Nothing is deployed until
+somebody starts it: Actions -> Deploy hosted server -> Run workflow, on
+`main`. That run tests again, deploys to Fly only if the tests pass, and then
+checks the live sign-in pages and the public address.
+

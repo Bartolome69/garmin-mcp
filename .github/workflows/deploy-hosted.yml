@@ -5,8 +5,11 @@ name: Deploy hosted server
 # run `flyctl deploy` by hand — and a forgotten deploy looks exactly like a
 # change that did not work.
 #
-# This closes that gap. Push to `hosted`, the tests run, and if they pass the
-# image is built and rolled out.
+# Everything lives on main, hosted server included. Every push to main runs
+# the tests. Deploying is a deliberate step: run this workflow by hand
+# (Actions -> Deploy hosted server -> Run workflow, on main), and only if the
+# tests pass is the image built and rolled out. A merge never reaches the
+# people using the connector without somebody choosing to ship it.
 #
 # Needs one repository secret, FLY_API_TOKEN: Settings -> Secrets and variables
 # -> Actions -> New repository secret. Use a deploy token scoped to this app
@@ -15,7 +18,7 @@ name: Deploy hosted server
 
 on:
   push:
-    branches: [hosted]
+    branches: [main]
     # Documentation and local-install scripts change often and cannot affect
     # what the server runs. Deploying for them would just add noise and risk.
     paths:
@@ -80,6 +83,8 @@ jobs:
   deploy:
     name: Deploy
     needs: test
+    # Only a hand-started run on main deploys. A push runs the tests and stops.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
