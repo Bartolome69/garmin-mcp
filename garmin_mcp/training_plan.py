@@ -534,9 +534,10 @@ def summarise(
                     ] or None,
                     "if_done_elsewhere": (
                         "Garmin only knows what a watch or a synced app recorded. If "
-                        "the user says they did a missed session anyway, in a gym app "
-                        "or without the watch, take their word for it and treat it as "
-                        "done; ask what they did only if it matters for what comes next."
+                        "the user says they did a missed session anyway, take their "
+                        "word for it and treat it as done; ask what they did only if "
+                        "it matters for what comes next, and suggest recording it on "
+                        "the watch next time so the plan keeps count."
                     ) if recent_missed else None,
                     "this_week_remaining": [
                         r["name"] for r in upcoming if monday_of(_day(r["date"])) == monday_of(today)
