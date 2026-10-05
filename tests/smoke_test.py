@@ -163,6 +163,27 @@ def check_conditions(check) -> None:
     check("no weather is no block", conditions.shape_weather({}, "metric") is None)
 
 
+def check_terrain_ignores_stops(check) -> None:
+    """A five-minute regroup with the watch running is not a very slow kilometre."""
+    from garmin_mcp import terrain
+
+    d = t = stopped = 0.0
+    cols = {"sumDistance": [], "sumDuration": [], "directElevation": [], "directHeartRate": []}
+    while d < 9000:
+        for key, value in zip(cols, (d, t, 40.0 - min(max(0.0, d - 3500), 1000) * 0.03, 135.0)):
+            cols[key].append(value)
+        if d >= 3500 and stopped < 300:
+            stopped += 5
+        else:
+            d += 1000 / 300 * 5
+        t += 5
+    r = terrain.analyse(cols)
+    check("a stop is left out of the paces",
+          r["flat_equivalent_pace"] in ("5:01 /km", "5:02 /km", "5:03 /km")
+          and r["by_gradient"]["downhill"]["pace_per_km"] == "5:00 /km", str(r.get("by_gradient")))
+    check("a stop doesn't read as surging", "decoupling_pct" in (r.get("effort") or {}), str(r.get("effort")))
+
+
 async def check_preview_gate(check) -> None:
     """Views are a preview: listed only where it is switched on."""
     from garmin_mcp import preview, server
@@ -712,6 +733,7 @@ async def main() -> int:
                   not ({"weather", "shoes", "terrain", "same_route"} & set(detail)), str(list(detail)))
             check_stream_km_splits(check)
             check_conditions(check)
+            check_terrain_ignores_stops(check)
 
             print("\nworkouts")
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))

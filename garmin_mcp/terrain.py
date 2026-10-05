@@ -20,6 +20,10 @@ from .formatting import drop_empty, km, pace_per_km, rounded
 SEGMENT_M = 100.0
 SMOOTH_SAMPLES = 5
 
+# Slower than this between samples is standing still: a stop at lights or a
+# run club regroup with the watch still running. Left out of every pace here.
+MOVING_SPEED = 0.8
+
 # A grade inside this band, either way, counts as flat.
 FLAT_GRADE = 2.0
 
@@ -71,7 +75,7 @@ def _metres_between(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 def _points(columns: Mapping[str, Sequence[float | None]]) -> list[dict[str, Any]]:
-    """The run every SEGMENT_M: distance, time, smoothed elevation, and what happened in between."""
+    """The run every SEGMENT_M: distance, moving time, smoothed elevation, and what happened in between."""
     distance = columns.get("sumDistance")
     seconds = columns.get("sumDuration") or columns.get("sumElapsedDuration")
     elevation = columns.get("directElevation")
@@ -82,23 +86,25 @@ def _points(columns: Mapping[str, Sequence[float | None]]) -> list[dict[str, Any
     gap = columns.get("directGradeAdjustedSpeed") or []
 
     points: list[dict[str, Any]] = []
-    hr_sum = hr_time = gap_dist = 0.0
-    prev_t = None
+    moving = hr_sum = hr_time = gap_dist = 0.0
+    prev_t = prev_d = None
     for i, (d, t, e) in enumerate(zip(distance, seconds, elevation)):
         if d is None or t is None or e is None:
             continue
         if prev_t is not None:
             dt = max(0.0, t - prev_t)
-            h = hr[i] if i < len(hr) else None
-            if h:
-                hr_sum += h * dt
-                hr_time += dt
-            g = gap[i] if i < len(gap) else None
-            if g is not None:
-                gap_dist += g * dt
-        prev_t = t
+            if dt and (d - prev_d) / dt >= MOVING_SPEED:
+                moving += dt
+                h = hr[i] if i < len(hr) else None
+                if h:
+                    hr_sum += h * dt
+                    hr_time += dt
+                g = gap[i] if i < len(gap) else None
+                if g is not None:
+                    gap_dist += g * dt
+        prev_t, prev_d = t, d
         if not points or d - points[-1]["d"] >= SEGMENT_M:
-            points.append({"d": d, "t": t, "e": e, "hr_sum": hr_sum, "hr_time": hr_time, "gap_dist": gap_dist})
+            points.append({"d": d, "t": moving, "e": e, "hr_sum": hr_sum, "hr_time": hr_time, "gap_dist": gap_dist})
     return points
 
 
