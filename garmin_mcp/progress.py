@@ -114,8 +114,11 @@ def match(
             if abs(drift) > shift_days:
                 continue
             # With no estimate on the planned session there is nothing to be
-            # short of, so existence is the whole test.
-            if session.seconds and candidate.seconds < session.seconds * min_fraction:
+            # short of, so existence is the whole test. Strength is always
+            # existence alone: a gym session runs as long as the gym allows, and
+            # Garmin's estimate for one counts every rest to the second.
+            if (session.seconds and session.sport != "strength"
+                    and candidate.seconds < session.seconds * min_fraction):
                 continue
             # Nearest day wins; then the closest length, so two runs a day apart
             # land on the sessions they most resemble.

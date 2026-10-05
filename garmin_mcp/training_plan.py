@@ -532,6 +532,12 @@ def summarise(
                          "schedule_id": r.get("schedule_id")}
                         for r in recent_missed
                     ] or None,
+                    "if_done_elsewhere": (
+                        "Garmin only knows what a watch or a synced app recorded. If "
+                        "the user says they did a missed session anyway, in a gym app "
+                        "or without the watch, take their word for it and treat it as "
+                        "done; ask what they did only if it matters for what comes next."
+                    ) if recent_missed else None,
                     "this_week_remaining": [
                         r["name"] for r in upcoming if monday_of(_day(r["date"])) == monday_of(today)
                     ] or None,
@@ -543,7 +549,8 @@ def summarise(
                 "schedule_workout with its workout_id on the new date. To change "
                 "paces or structure: update_workout with its workout_id; the plan "
                 "code in the name is kept. A session counts as done if it was run "
-                "within a day either side of its date. Check get_readiness before "
+                "within a day either side of its date; strength counts whatever its "
+                "length. Check get_readiness before "
                 "moving a hard session, and get_fitness before retuning paces."
             ),
         }

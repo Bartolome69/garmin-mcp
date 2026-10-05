@@ -143,6 +143,8 @@ def check_plan_summary(check) -> None:
     check("the review names what slipped this week",
           [m["date"] for m in s["review"]["missed_last_7_days"]] == ["2026-09-27", "2026-09-29"]
           and s["review"]["this_week_remaining"] == ["Tempo 6k", "Long run 18k"], str(s.get("review")))
+    check("with something missed, the model is told a session done off the watch still counts",
+          "take their word" in s["review"].get("if_done_elsewhere", ""), str(s.get("review")))
     check("weeks are numbered from the plan's first",
           [w["week"] for w in s["weeks"]] == [1, 2] and s["current_week"] == 2
           and s["weeks"][1]["current"] is True, str([(w["week"], w["current"]) for w in s["weeks"]]))
@@ -217,6 +219,8 @@ async def check_preview_gate(check) -> None:
               preview_description != plain_description and "coach" in preview_description, preview_description[:80])
         check("with preview, get_plan asks to be called fresh and says it draws a card",
               "earlier answer goes stale" in preview_description and "plan card" in preview_description)
+        check("with preview, get_plan says to check before saying a session isn't in Garmin",
+              "don't guess" in preview_description and "gym app" in preview_description)
         progress_description = next(t for t in listed if t.name == "get_progress").description
         check("with preview, get_progress says the same, after its own description",
               progress_description.startswith("Which planned sessions") and "plan card" in progress_description,
