@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Free, open-source MCP server for Garmin Connect. Ask Claude or ChatGPT about your runs, sleep and heart rate, and have it write structured workouts onto your watch.">
+<meta name="description" content="Free Garmin MCP server: connect Garmin Connect to Claude or ChatGPT in two minutes. Analyse runs, rides and sleep, and send training plans to your watch.">
 <link rel="canonical" href="https://garmin.daash.run/">
-<meta property="og:title" content="Garmin MCP Server: Connect Garmin to Claude &amp; ChatGPT">
-<meta property="og:description" content="Free, open-source MCP server for Garmin Connect. Ask Claude or ChatGPT about your runs, sleep and heart rate, and have it write structured workouts onto your watch.">
+<meta property="og:title" content="Connect Garmin to Claude &amp; ChatGPT | Free Garmin MCP Server">
+<meta property="og:description" content="Free Garmin MCP server: connect Garmin Connect to Claude or ChatGPT in two minutes. Analyse runs, rides and sleep, and send training plans to your watch.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://garmin.daash.run/">
 <meta property="og:site_name" content="Garmin for Claude">
@@ -29,7 +29,7 @@
   img { max-width: 100%; }
   [hidden] { display: none !important; }
 </style>
-<title>Garmin MCP Server: Connect Garmin to Claude &amp; ChatGPT</title>
+<title>Connect Garmin to Claude &amp; ChatGPT | Free Garmin MCP Server</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -274,6 +274,34 @@
     margin-top: 12px;
     position: relative;
   }
+  .asks {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .ask {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ask h3 { font-size: 1.02rem; }
+  .ask p { font-size: 0.92rem; color: var(--muted); line-height: 1.5; }
+  .ask q {
+    display: block;
+    font-size: 0.92rem;
+    color: var(--ink);
+    border-left: 3px solid var(--accent);
+    padding-left: 10px;
+    quotes: "\201C" "\201D";
+  }
+  @media (max-width: 640px) {
+    .asks { grid-template-columns: 1fr; }
+  }
   .beat { position: relative; display: flex; flex-direction: column; gap: 7px; text-align: center; }
   .beat .mark { display: none; }
   .beat h3 { font-size: 1.06rem; }
@@ -477,7 +505,7 @@
     details summary { padding: 17px 0; }
   }
 </style>
-<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Garmin MCP Server", "url": "https://garmin.daash.run/", "applicationCategory": "HealthApplication", "operatingSystem": "Web, macOS, Linux", "description": "Open-source MCP server that connects Claude and ChatGPT to a Garmin Connect account: reads activities, splits, heart rate and sleep, and writes structured workouts onto the watch.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/license/mit", "codeRepository": "https://github.com/Bartolome69/garmin-mcp", "author": {"@type": "Person", "name": "Bart Etcheverry", "url": "https://www.bartetcheverry.com/"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "How technical is this, honestly?", "acceptedAnswer": {"@type": "Answer", "text": "Not very. You paste a link into Claude's settings, sign in to Garmin the way you would on any website, and that's it. No Terminal, no install, nothing to keep running on your computer."}}, {"@type": "Question", "name": "My Claude account is through work. Does that matter?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. On Team and Enterprise plans only an administrator can add connectors, so a member can't do this themselves. A personal account sidesteps it, and free is fine. It also keeps your health data off a work login, which is where it belongs anyway."}}, {"@type": "Question", "name": "It mentioned being rate limited, or a 429", "acceptedAnswer": {"@type": "Answer", "text": "The most common one, and it isn't your password. Garmin blocks sign-ins by network address before it ever checks your credentials. Office wifi, university networks and VPNs get hit hardest, because everyone on them shares a single address. The fix that works: turn off wifi, tether to your phone's hotspot, run the command again. You only need the clean connection for that one sign-in. After that the saved session does the work."}}, {"@type": "Question", "name": "Claude can't find any Garmin tools", "acceptedAnswer": {"@type": "Answer", "text": "An existing chat keeps talking to the connection it started with, so the first thing to try is simply a new chat. That fixes it more often than anything else. If it still can't see them, open Settings → Connectors and check the Garmin entry is there and connected. Removing it and adding it again is safe. You'll just sign in to Garmin once more. On a free Claude account you get one custom connector. If you already have another one, it holds the only slot and this won't add until you remove it. On a work account, Team or Enterprise, members can't add connectors at all; an administrator has to. A personal account avoids that."}}, {"@type": "Question", "name": "Running it yourself failed, mentioning Rust, OpenSSL or a compiler", "acceptedAnswer": {"@type": "Answer", "text": "Your macOS is too old. The floor is macOS 10.15 (Catalina), and it's a hard one: the Python this uses simply won't start below it. Updating macOS is the only fix. Any Mac from 2012 onwards can run Catalina. Check it under the Apple menu → About This Mac. Updating macOS fixes it."}}, {"@type": "Question", "name": "Garmin is asking for a two-factor code I never got", "acceptedAnswer": {"@type": "Answer", "text": "That's Garmin's two-factor. The code goes to the email on your Garmin account, or to your authenticator app. Check spam if it's email. Run the command again once you have it; retrying costs nothing."}}, {"@type": "Question", "name": "It says there's no sleep data", "acceptedAnswer": {"@type": "Answer", "text": "Your watch wasn't on your wrist overnight, or hasn't synced. Sleep, HRV and overnight body battery only exist if you wear it while asleep. Runs, splits and heart rate all work regardless."}}, {"@type": "Question", "name": "My data looks out of date", "acceptedAnswer": {"@type": "Answer", "text": "Claude reads Garmin Connect, not the watch itself. Open the Garmin Connect app on your phone, let it sync, ask again."}}, {"@type": "Question", "name": "How do I remove it?", "acceptedAnswer": {"@type": "Answer", "text": "Open the sign-in page and use Disconnect. That deletes the stored Garmin session outright, and the connection stops working straight away. Then remove the connector from Claude's settings. Signing in again also retires whatever came before it, so if you ever think a connection has gone somewhere it shouldn't, signing in once more is enough to take it back. Nothing changes on Garmin's side either way. If you ran it yourself instead, delete the garmin-mcp folder in your home directory and the hidden .garmin-mcp folder beside it."}}]}]</script>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Garmin MCP Server", "url": "https://garmin.daash.run/", "applicationCategory": "HealthApplication", "operatingSystem": "Web, macOS, Linux", "alternateName": ["Garmin Connect MCP", "Garmin connector for Claude"], "description": "Free, open-source MCP server that connects Claude and ChatGPT to a Garmin Connect account: reads runs, rides, splits, power, heart rate, HRV and sleep, and writes structured workouts and whole training plans onto the watch.", "featureList": ["Analyse runs and rides: splits, pace, heart-rate zones, power, normalised power, training stress", "Training readiness, HRV, sleep, Body Battery and training load", "VO2 max, race predictions and lactate threshold", "Structured running, cycling and strength workouts sent to a Garmin watch", "Whole training plans scheduled on the Garmin calendar, tracked as done, moved or missed", "Works in Claude and ChatGPT, on the web and phone, with nothing to install"], "screenshot": "https://garmin.daash.run/og.png", "isAccessibleForFree": true, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/license/mit", "codeRepository": "https://github.com/Bartolome69/garmin-mcp", "author": {"@type": "Person", "name": "Bart Etcheverry", "url": "https://www.bartetcheverry.com/"}}, {"@context": "https://schema.org", "@type": "WebSite", "name": "Garmin for Claude", "url": "https://garmin.daash.run/", "inLanguage": "en"}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is this an official Garmin app?", "acceptedAnswer": {"@type": "Answer", "text": "No. It’s an independent, open-source project, not made or endorsed by Garmin. It signs in to your own Garmin Connect account and reads it the way the Garmin Connect website does."}}, {"@type": "Question", "name": "Is it free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. There’s no subscription and no paid tier, and the code is open source under the MIT licence. A free Claude account is enough to use it."}}, {"@type": "Question", "name": "Can Claude make a training plan and put it on my Garmin watch?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Tell it your goal, such as a race and a target time, and it designs the block from your current fitness, shows it to you, and once you agree builds every session as a structured workout with paces or heart-rate targets and schedules it on your Garmin calendar. Your watch picks the sessions up at its next sync, and Claude can move or retune them later."}}, {"@type": "Question", "name": "Does it work for cycling and other sports?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Rides come with speed, cadence and power: average, normalised and max power, intensity factor, training stress and your best efforts. It reads every activity Garmin records, and it can write cycling, swimming, walking and strength workouts as well as runs."}}, {"@type": "Question", "name": "Which Garmin watches does it work with?", "acceptedAnswer": {"@type": "Answer", "text": "Any Garmin device that syncs to Garmin Connect, including Forerunner, Fenix, Epix, Enduro, Venu and Instinct watches and Edge bike computers. What it can tell you depends on what your device records: HRV and training readiness need a recent watch worn overnight, and power needs a power meter or a watch that measures running power."}}, {"@type": "Question", "name": "How technical is this, honestly?", "acceptedAnswer": {"@type": "Answer", "text": "Not very. You paste a link into Claude's settings, sign in to Garmin the way you would on any website, and that's it. No Terminal, no install, nothing to keep running on your computer."}}, {"@type": "Question", "name": "My Claude account is through work. Does that matter?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. On Team and Enterprise plans only an administrator can add connectors, so a member can't do this themselves. A personal account sidesteps it, and free is fine. It also keeps your health data off a work login, which is where it belongs anyway."}}, {"@type": "Question", "name": "It mentioned being rate limited, or a 429", "acceptedAnswer": {"@type": "Answer", "text": "The most common one, and it isn't your password. Garmin blocks sign-ins by network address before it ever checks your credentials. Office wifi, university networks and VPNs get hit hardest, because everyone on them shares a single address. The fix that works: turn off wifi, tether to your phone's hotspot, run the command again. You only need the clean connection for that one sign-in. After that the saved session does the work."}}, {"@type": "Question", "name": "Claude can't find any Garmin tools", "acceptedAnswer": {"@type": "Answer", "text": "An existing chat keeps talking to the connection it started with, so the first thing to try is simply a new chat. That fixes it more often than anything else. If it still can't see them, open Settings → Connectors and check the Garmin entry is there and connected. Removing it and adding it again is safe. You'll just sign in to Garmin once more. On a free Claude account you get one custom connector. If you already have another one, it holds the only slot and this won't add until you remove it. On a work account, Team or Enterprise, members can't add connectors at all; an administrator has to. A personal account avoids that."}}, {"@type": "Question", "name": "Running it yourself failed, mentioning Rust, OpenSSL or a compiler", "acceptedAnswer": {"@type": "Answer", "text": "Your macOS is too old. The floor is macOS 10.15 (Catalina), and it's a hard one: the Python this uses simply won't start below it. Updating macOS is the only fix. Any Mac from 2012 onwards can run Catalina. Check it under the Apple menu → About This Mac. Updating macOS fixes it."}}, {"@type": "Question", "name": "Garmin is asking for a two-factor code I never got", "acceptedAnswer": {"@type": "Answer", "text": "That's Garmin's two-factor. The code goes to the email on your Garmin account, or to your authenticator app. Check spam if it's email. Run the command again once you have it; retrying costs nothing."}}, {"@type": "Question", "name": "It says there's no sleep data", "acceptedAnswer": {"@type": "Answer", "text": "Your watch wasn't on your wrist overnight, or hasn't synced. Sleep, HRV and overnight body battery only exist if you wear it while asleep. Runs, splits and heart rate all work regardless."}}, {"@type": "Question", "name": "My data looks out of date", "acceptedAnswer": {"@type": "Answer", "text": "Claude reads Garmin Connect, not the watch itself. Open the Garmin Connect app on your phone, let it sync, ask again."}}, {"@type": "Question", "name": "How do I remove it?", "acceptedAnswer": {"@type": "Answer", "text": "Open the sign-in page and use Disconnect. That deletes the stored Garmin session outright, and the connection stops working straight away. Then remove the connector from Claude's settings. Signing in again also retires whatever came before it, so if you ever think a connection has gone somewhere it shouldn't, signing in once more is enough to take it back. Nothing changes on Garmin's side either way. If you ran it yourself instead, delete the garmin-mcp folder in your home directory and the hidden .garmin-mcp folder beside it."}}]}]</script>
 
 <script>
   !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){
@@ -792,6 +820,53 @@
     </div>
   </section>
 
+  <section id="ask">
+    <h2>What you can ask Claude about your Garmin data</h2>
+    <div class="stack">
+      <p class="small">
+        It reads Garmin Connect live, so every answer comes from your own
+        numbers rather than a guess. It works as an AI running coach, a cycling
+        analyst and a training planner that can write to your watch. A few of
+        the things people ask:
+      </p>
+    </div>
+    <div class="asks">
+      <div class="ask">
+        <h3>Analyse a run or a ride</h3>
+        <p>Splits, pace, heart-rate zones, cadence and running dynamics for a run. Speed, power, normalised power, intensity factor and training stress for a ride.</p>
+        <q>Why did Sunday&rsquo;s long run feel so hard?</q>
+      </div>
+      <div class="ask">
+        <h3>Recovery and readiness</h3>
+        <p>Training readiness, overnight HRV against its baseline, sleep, Body Battery, stress and resting heart rate, beside your training load.</p>
+        <q>Should I do the threshold session today or push it to tomorrow?</q>
+      </div>
+      <div class="ask">
+        <h3>Fitness and race predictions</h3>
+        <p>VO2 max, Garmin&rsquo;s 5K to marathon race predictions, lactate threshold, endurance score and hill score.</p>
+        <q>What half marathon time is realistic for me in eight weeks?</q>
+      </div>
+      <div class="ask">
+        <h3>A training plan on your watch</h3>
+        <p>Structured workouts with target paces or heart rate, a whole training block scheduled onto your Garmin calendar, and a check on which sessions you did, moved or missed.</p>
+        <q>Build me a 12-week marathon plan and put it on my watch.</q>
+      </div>
+      <div class="ask">
+        <h3>Strength sessions</h3>
+        <p>Gym workouts from Garmin&rsquo;s own exercise list, with sets, reps, rest and weights, sent to your watch like any other workout.</p>
+        <q>Add a 30-minute strength session for runners on Thursday.</q>
+      </div>
+      <div class="ask">
+        <h3>How the training is going</h3>
+        <p>Planned sessions against what you actually did, week by week, so a missed run or a moved session shows up straight away.</p>
+        <q>How has my training gone this month?</q>
+      </div>
+    </div>
+    <p class="muted small" style="margin-top:14px">
+      <a href="/data/">Everything it can see, and what it never touches</a>
+    </p>
+  </section>
+
   <section>
     <h2>Who made this</h2>
     <div class="stack">
@@ -927,6 +1002,68 @@ Then, working with me:
   <section id="faq">
     <h2>Frequently asked questions</h2>
     <div style="margin-top:14px">
+
+      <details>
+        <summary>Is this an official Garmin app?</summary>
+        <div class="answer">
+          <p>
+            No. It&rsquo;s an independent, open-source project, not made or
+            endorsed by Garmin. It signs in to your own Garmin Connect account
+            and reads it the way the Garmin Connect website does.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Is it free?</summary>
+        <div class="answer">
+          <p>
+            Yes. There&rsquo;s no subscription and no paid tier, and the code is
+            open source under the MIT licence. A free Claude account is enough
+            to use it.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Can Claude make a training plan and put it on my Garmin watch?</summary>
+        <div class="answer">
+          <p>
+            Yes. Tell it your goal, such as a race and a target time, and it
+            designs the block from your current fitness, shows it to you, and
+            once you agree builds every session as a structured workout with
+            paces or heart-rate targets and schedules it on your Garmin
+            calendar. Your watch picks the sessions up at its next sync, and
+            Claude can move or retune them later.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Does it work for cycling and other sports?</summary>
+        <div class="answer">
+          <p>
+            Yes. Rides come with speed, cadence and power: average, normalised
+            and max power, intensity factor, training stress and your best
+            efforts. It reads every activity Garmin records, and it can write
+            cycling, swimming, walking and strength workouts as well as runs.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Which Garmin watches does it work with?</summary>
+        <div class="answer">
+          <p>
+            Any Garmin device that syncs to Garmin Connect, including
+            Forerunner, Fenix, Epix, Enduro, Venu and Instinct watches and Edge
+            bike computers. What it can tell you depends on what your device
+            records: HRV and training readiness need a recent watch worn
+            overnight, and power needs a power meter or a watch that measures
+            running power.
+          </p>
+        </div>
+      </details>
 
       <details>
         <summary>How technical is this, honestly?</summary>

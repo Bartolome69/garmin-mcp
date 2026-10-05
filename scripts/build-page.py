@@ -176,11 +176,23 @@ def structured_data(page: str, path: str) -> str:
             "url": SITE + "/",
             "applicationCategory": "HealthApplication",
             "operatingSystem": "Web, macOS, Linux",
+            "alternateName": ["Garmin Connect MCP", "Garmin connector for Claude"],
             "description": (
-                "Open-source MCP server that connects Claude and ChatGPT to a "
-                "Garmin Connect account: reads activities, splits, heart rate and "
-                "sleep, and writes structured workouts onto the watch."
+                "Free, open-source MCP server that connects Claude and ChatGPT to a "
+                "Garmin Connect account: reads runs, rides, splits, power, heart "
+                "rate, HRV and sleep, and writes structured workouts and whole "
+                "training plans onto the watch."
             ),
+            "featureList": [
+                "Analyse runs and rides: splits, pace, heart-rate zones, power, normalised power, training stress",
+                "Training readiness, HRV, sleep, Body Battery and training load",
+                "VO2 max, race predictions and lactate threshold",
+                "Structured running, cycling and strength workouts sent to a Garmin watch",
+                "Whole training plans scheduled on the Garmin calendar, tracked as done, moved or missed",
+                "Works in Claude and ChatGPT, on the web and phone, with nothing to install",
+            ],
+            "screenshot": SITE + "/og.png",
+            "isAccessibleForFree": True,
             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
             "license": "https://opensource.org/license/mit",
             "codeRepository": "https://github.com/Bartolome69/garmin-mcp",
@@ -189,6 +201,13 @@ def structured_data(page: str, path: str) -> str:
                 "name": "Bart Etcheverry",
                 "url": "https://www.bartetcheverry.com/",
             },
+        })
+        blocks.append({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "Garmin for Claude",
+            "url": SITE + "/",
+            "inLanguage": "en",
         })
 
     faq = re.search(r'<section id="faq">(.*?)</section>', page, re.S)

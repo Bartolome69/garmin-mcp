@@ -1,5 +1,5 @@
-<title>Garmin MCP Server: Connect Garmin to Claude &amp; ChatGPT</title>
-<meta name="description" content="Free, open-source MCP server for Garmin Connect. Ask Claude or ChatGPT about your runs, sleep and heart rate, and have it write structured workouts onto your watch.">
+<title>Connect Garmin to Claude &amp; ChatGPT | Free Garmin MCP Server</title>
+<meta name="description" content="Free Garmin MCP server: connect Garmin Connect to Claude or ChatGPT in two minutes. Analyse runs, rides and sleep, and send training plans to your watch.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -243,6 +243,34 @@
     gap: 24px;
     margin-top: 12px;
     position: relative;
+  }
+  .asks {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .ask {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ask h3 { font-size: 1.02rem; }
+  .ask p { font-size: 0.92rem; color: var(--muted); line-height: 1.5; }
+  .ask q {
+    display: block;
+    font-size: 0.92rem;
+    color: var(--ink);
+    border-left: 3px solid var(--accent);
+    padding-left: 10px;
+    quotes: "\201C" "\201D";
+  }
+  @media (max-width: 640px) {
+    .asks { grid-template-columns: 1fr; }
   }
   .beat { position: relative; display: flex; flex-direction: column; gap: 7px; text-align: center; }
   .beat .mark { display: none; }
@@ -680,6 +708,53 @@
     </div>
   </section>
 
+  <section id="ask">
+    <h2>What you can ask Claude about your Garmin data</h2>
+    <div class="stack">
+      <p class="small">
+        It reads Garmin Connect live, so every answer comes from your own
+        numbers rather than a guess. It works as an AI running coach, a cycling
+        analyst and a training planner that can write to your watch. A few of
+        the things people ask:
+      </p>
+    </div>
+    <div class="asks">
+      <div class="ask">
+        <h3>Analyse a run or a ride</h3>
+        <p>Splits, pace, heart-rate zones, cadence and running dynamics for a run. Speed, power, normalised power, intensity factor and training stress for a ride.</p>
+        <q>Why did Sunday&rsquo;s long run feel so hard?</q>
+      </div>
+      <div class="ask">
+        <h3>Recovery and readiness</h3>
+        <p>Training readiness, overnight HRV against its baseline, sleep, Body Battery, stress and resting heart rate, beside your training load.</p>
+        <q>Should I do the threshold session today or push it to tomorrow?</q>
+      </div>
+      <div class="ask">
+        <h3>Fitness and race predictions</h3>
+        <p>VO2 max, Garmin&rsquo;s 5K to marathon race predictions, lactate threshold, endurance score and hill score.</p>
+        <q>What half marathon time is realistic for me in eight weeks?</q>
+      </div>
+      <div class="ask">
+        <h3>A training plan on your watch</h3>
+        <p>Structured workouts with target paces or heart rate, a whole training block scheduled onto your Garmin calendar, and a check on which sessions you did, moved or missed.</p>
+        <q>Build me a 12-week marathon plan and put it on my watch.</q>
+      </div>
+      <div class="ask">
+        <h3>Strength sessions</h3>
+        <p>Gym workouts from Garmin&rsquo;s own exercise list, with sets, reps, rest and weights, sent to your watch like any other workout.</p>
+        <q>Add a 30-minute strength session for runners on Thursday.</q>
+      </div>
+      <div class="ask">
+        <h3>How the training is going</h3>
+        <p>Planned sessions against what you actually did, week by week, so a missed run or a moved session shows up straight away.</p>
+        <q>How has my training gone this month?</q>
+      </div>
+    </div>
+    <p class="muted small" style="margin-top:14px">
+      <a href="/data/">Everything it can see, and what it never touches</a>
+    </p>
+  </section>
+
   <section>
     <h2>Who made this</h2>
     <div class="stack">
@@ -815,6 +890,68 @@ Then, working with me:
   <section id="faq">
     <h2>Frequently asked questions</h2>
     <div style="margin-top:14px">
+
+      <details>
+        <summary>Is this an official Garmin app?</summary>
+        <div class="answer">
+          <p>
+            No. It&rsquo;s an independent, open-source project, not made or
+            endorsed by Garmin. It signs in to your own Garmin Connect account
+            and reads it the way the Garmin Connect website does.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Is it free?</summary>
+        <div class="answer">
+          <p>
+            Yes. There&rsquo;s no subscription and no paid tier, and the code is
+            open source under the MIT licence. A free Claude account is enough
+            to use it.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Can Claude make a training plan and put it on my Garmin watch?</summary>
+        <div class="answer">
+          <p>
+            Yes. Tell it your goal, such as a race and a target time, and it
+            designs the block from your current fitness, shows it to you, and
+            once you agree builds every session as a structured workout with
+            paces or heart-rate targets and schedules it on your Garmin
+            calendar. Your watch picks the sessions up at its next sync, and
+            Claude can move or retune them later.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Does it work for cycling and other sports?</summary>
+        <div class="answer">
+          <p>
+            Yes. Rides come with speed, cadence and power: average, normalised
+            and max power, intensity factor, training stress and your best
+            efforts. It reads every activity Garmin records, and it can write
+            cycling, swimming, walking and strength workouts as well as runs.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Which Garmin watches does it work with?</summary>
+        <div class="answer">
+          <p>
+            Any Garmin device that syncs to Garmin Connect, including
+            Forerunner, Fenix, Epix, Enduro, Venu and Instinct watches and Edge
+            bike computers. What it can tell you depends on what your device
+            records: HRV and training readiness need a recent watch worn
+            overnight, and power needs a power meter or a watch that measures
+            running power.
+          </p>
+        </div>
+      </details>
 
       <details>
         <summary>How technical is this, honestly?</summary>
