@@ -186,6 +186,22 @@ def check_terrain_ignores_stops(check) -> None:
     check("a stop doesn't read as surging", "decoupling_pct" in (r.get("effort") or {}), str(r.get("effort")))
 
 
+def check_shoes_and_nights(check) -> None:
+    """What a real account showed: unnamed models, worn-out pairs, no watch at night."""
+    from datetime import date as _d
+    from garmin_mcp import gear, recovery
+
+    shoe = gear.shape_shoe({"displayName": "Novas", "gearMakeName": "Unknown", "gearModelName": "Unknown Shoes",
+                            "maximumMeters": 644000.0}, {"totalDistance": 688000.0}, [], False, _d(2026, 10, 5))
+    check("Garmin's placeholder model isn't shown as a model", "model" not in shoe, str(shoe))
+    check("a pair past its limit says by how much, not negative km left",
+          shoe.get("km_left") == 0 and shoe.get("km_over_limit") == 44, str(shoe))
+    day = _d(2026, 10, 5)
+    bare = recovery.shape_trends(_d(2026, 9, 14), day, None, [{"calendarDate": "2026-10-01", "value": 55}],
+                                 [], [], [], [], [])
+    check("no watch overnight is said, not left out", "worn overnight" in (bare.get("overnight") or ""), str(bare)[:200])
+
+
 async def check_preview_gate(check) -> None:
     """Views are a preview: listed only where it is switched on."""
     from garmin_mcp import preview, server
@@ -739,6 +755,7 @@ async def main() -> int:
             check_stream_km_splits(check)
             check_conditions(check)
             check_terrain_ignores_stops(check)
+            check_shoes_and_nights(check)
 
             print("\nworkouts")
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))
