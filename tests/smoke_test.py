@@ -220,7 +220,8 @@ async def check_preview_gate(check) -> None:
         check("with preview, get_plan asks to be called fresh and says it draws a card",
               "earlier answer goes stale" in preview_description and "plan card" in preview_description)
         check("with preview, get_plan says to check before saying a session isn't in Garmin",
-              "don't guess" in preview_description and "gym app" in preview_description)
+              "don't guess" in preview_description and "gym app" in preview_description
+              and "sets and weights aren't needed" in preview_description)
         progress_description = next(t for t in listed if t.name == "get_progress").description
         check("with preview, get_progress says the same, after its own description",
               progress_description.startswith("Which planned sessions") and "plan card" in progress_description,
