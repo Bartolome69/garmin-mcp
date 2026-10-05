@@ -106,6 +106,17 @@ def main() -> int:
     check("a gym session does not tick off a run",
           len(r.missed) == 1 and len(r.extra) == 1)
 
+    print("\nstrength")
+    # Garmin estimates a strength workout by counting every set and rest, so a
+    # real gym session often comes in well under it. Any strength session on the
+    # day is the session.
+    r = match([plan("Full body", sport="strength", secs=3300, day=TUE)],
+              [run("Strength", sport="strength", secs=1200, day=TUE)], TODAY)
+    check("a short strength session still counts", len(r.done) == 1, str(r.missed))
+    r = match([plan("Full body", sport="strength", secs=3300, day=TUE)],
+              [run("Easy", sport="run", secs=3300, day=TUE)], TODAY)
+    check("but a run doesn't tick off strength", len(r.missed) == 1)
+
     print("\none run cannot satisfy two sessions")
     r = match(
         [plan("Easy", secs=1800, day=TUE), plan("Threshold", secs=2400, day=TUE)],
