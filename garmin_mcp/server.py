@@ -48,6 +48,8 @@ from .workouts import (
 log = logging.getLogger(__name__)
 
 SITE = "https://garmin.daash.run"
+# Where people read about it. The icons and the privacy pages stay on SITE.
+WEBSITE = "https://daash.run"
 
 _INSTRUCTIONS = (
     "The user's own Garmin Connect account. Reads activities and splits, daily "
@@ -188,7 +190,7 @@ def _server() -> MCPServer:
             "garmin",
             title="Garmin",
             instructions=_INSTRUCTIONS,
-            website_url=SITE,
+            website_url=WEBSITE,
             icons=[
                 Icon(src=f"{SITE}/icon-512.png", mime_type="image/png", sizes=["512x512"]),
                 Icon(src=f"{SITE}/favicon.svg", mime_type="image/svg+xml", sizes=["any"]),
