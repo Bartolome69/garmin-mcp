@@ -429,6 +429,7 @@ def summarise(
             sport=category(i.get("sportTypeKey") or "running"),
             seconds=float(planned_seconds.get(i.get("workoutId"), 0.0)),
             workout_id=i.get("workoutId"),
+            title=strip_tag(i.get("title") or i.get("workoutName") or ""),
         )
         for i in sessions
     ]
@@ -550,7 +551,8 @@ def summarise(
                 "schedule_workout with its workout_id on the new date. To change "
                 "paces or structure: update_workout with its workout_id; the plan "
                 "code in the name is kept. A session counts as done if it was run "
-                "within a day either side of its date; strength counts any day that "
+                "within a day either side of its date, or any day that week if started "
+                "from its workout on the watch; strength counts any day of its own "
                 "week, whatever its length. Check get_readiness before "
                 "moving a hard session, and get_fitness before retuning paces."
             ),

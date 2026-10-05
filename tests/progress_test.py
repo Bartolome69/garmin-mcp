@@ -42,8 +42,8 @@ def run(name: str, sport: str = "run", secs: float = 0.0, km: float = 0.0, day=N
                   activity_id=f"{name}-{day}")
 
 
-def plan(name: str, sport: str = "run", secs: float = 0.0, day=None):
-    return Planned(day=day, name=name, sport=sport, seconds=secs)
+def plan(name: str, sport: str = "run", secs: float = 0.0, day=None, titled: bool = False):
+    return Planned(day=day, name=name, sport=sport, seconds=secs, title=name if titled else "")
 
 
 def main() -> int:
@@ -131,6 +131,52 @@ def main() -> int:
           f"done={[d['name'] for d in r.done]}")
     r = match([plan("Easy", day=SAT)], [run("Easy", secs=1800, day=MON)], TODAY)
     check("runs still have to be within a day", len(r.missed) == 1)
+
+    print("\nstrength stays in its own week")
+    NEXT_MON = SUN + timedelta(days=1)
+    r = match([plan("Full body", sport="strength", day=SUN),
+               plan("Full body", sport="strength", day=NEXT_MON)],
+              [run("Strength", sport="strength", secs=1900, day=NEXT_MON)], NEXT_MON)
+    check("Monday's gym is Monday's session, not last Sunday's",
+          [d["date"] for d in r.done] == [NEXT_MON.isoformat()]
+          and [m["date"] for m in r.missed] == [SUN.isoformat()], f"done={r.done} missed={r.missed}")
+    r = match([plan("Full body", sport="strength", day=SUN)],
+              [run("Strength", sport="strength", secs=1900, day=NEXT_MON)], NEXT_MON)
+    check("and never back-dates to cover last week", len(r.missed) == 1 and len(r.extra) == 1)
+
+    print("\nstrength done early")
+    r = match([plan("Full body", sport="strength", day=SAT)],
+              [run("Strength", sport="strength", secs=1900, day=TUE)], WED)
+    check("a session still ahead this week is ticked by one already done",
+          len(r.done) == 1 and not r.upcoming and r.done[0]["done_on"] == TUE.isoformat(), str(r.done or r.upcoming))
+    r = match([plan("Easy", day=SAT)], [run("Easy", secs=1800, day=TUE)], WED)
+    check("a run is not ticked early by type alone", len(r.upcoming) == 1 and len(r.extra) == 1)
+    r = match([plan("Full body", sport="strength", day=SAT + timedelta(days=7))],
+              [run("Strength", sport="strength", secs=1900, day=TUE)], WED)
+    check("nor is next week's strength", len(r.upcoming) == 1)
+
+    print("\nthe workout's own name")
+    # Garmin names an activity after the workout it was started from, with the
+    # place in front for runs. That says which session it was, wherever it fell.
+    r = match([plan("Threshold 5x1km", day=TUE, titled=True)],
+              [run("Tower Hamlets - Threshold 5x1km", secs=3000, day=FRI)], SUN)
+    check("a run started from its workout counts, moved, anywhere in the week",
+          len(r.done) == 1 and r.done[0]["done_on"] == FRI.isoformat(), str(r.done or r.missed))
+    r = match([plan("Threshold 5x1km", day=TUE, titled=True)],
+              [run("Morning Run", secs=3000, day=FRI)], SUN)
+    check("without the name it is still a miss and an extra run", len(r.missed) == 1 and len(r.extra) == 1)
+    r = match([plan("Push", sport="strength", day=MON, titled=True),
+               plan("Pull", sport="strength", day=WED, titled=True)],
+              [run("Pull", sport="strength", secs=1900, day=MON),
+               run("Push", sport="strength", secs=1900, day=WED)], SUN)
+    check("named strength sessions go to their own workouts, swapped days and all",
+          {d["name"]: d["done_on"] for d in r.done} == {"Push": WED.isoformat(), "Pull": MON.isoformat()},
+          str(r.done))
+    r = match([plan("Push", sport="strength", day=MON, titled=True),
+               plan("Pull", sport="strength", day=WED, titled=True)],
+              [run("Strength", sport="strength", secs=1900, day=MON),
+               run("Strength", sport="strength", secs=1900, day=WED)], SUN)
+    check("unnamed ones still count, by day", len(r.done) == 2 and not r.missed)
 
     print("\none run cannot satisfy two sessions")
     r = match(
