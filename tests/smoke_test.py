@@ -1221,6 +1221,9 @@ async def main() -> int:
                   ride["summary"]["power"].get("normalized_w_per_kg") == 2.79, str(ride["summary"].get("power")))
             check("time in power zones", [z["zone"] for z in ride.get("power_zones") or []] == [1, 2, 3]
                   and ride["power_zones"][1]["percent"] == 53.8, str(ride.get("power_zones")))
+            check("a ride's work is power over time pedalled, in kJ",
+                  ride["summary"]["power"].get("work_kj") == 684, str(ride["summary"].get("power")))
+            check("a ride gets no running pace analysis", "inside" not in ride, str(list(ride)))
             check("ride splits read by speed", "pace_per_km" not in ride["splits"][0]
                   and ride["splits"][0].get("avg_speed_kmh") == 12.0, str(ride["splits"][0]))
             fit = payload(await sess.call_tool("get_fitness", {}))
