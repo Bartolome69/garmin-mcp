@@ -18,12 +18,19 @@ def is_shoe(item: Mapping[str, Any]) -> bool:
     return "shoe" in str(item.get("gearTypeName") or "").lower()
 
 
+# What Garmin fills the make and model with when nobody chose one.
+_NO_NAME = {"other", "unknown", "unknown shoes", "unknown shoe"}
+
+
+def model_of(item: Mapping[str, Any]) -> str | None:
+    parts = [str(x) for x in (item.get("gearMakeName"), item.get("gearModelName"))
+             if x and str(x).strip().lower() not in _NO_NAME]
+    return " ".join(parts) or None
+
+
 def name_of(item: Mapping[str, Any]) -> str | None:
     custom = item.get("displayName") or item.get("customMakeModel")
-    if custom:
-        return str(custom)
-    made = " ".join(str(x) for x in (item.get("gearMakeName"), item.get("gearModelName")) if x and x != "Other")
-    return made or None
+    return str(custom) if custom else model_of(item)
 
 
 def _recent_km(activities: Iterable[Mapping[str, Any]] | None, today: date) -> tuple[float | None, str | None]:
@@ -52,11 +59,12 @@ def shape_shoe(item: Mapping[str, Any], stats: Mapping[str, Any] | None,
     worn = used / life if used is not None else None
     return drop_empty({
         "name": name_of(item),
-        "model": " ".join(str(x) for x in (item.get("gearMakeName"), item.get("gearModelName")) if x and x != "Other") or None,
+        "model": model_of(item),
         "km": used,
         "runs": (stats or {}).get("totalActivities"),
         "limit_km": limit,
-        "km_left": round(life - used) if used is not None else None,
+        "km_left": max(0, round(life - used)) if used is not None else None,
+        "km_over_limit": round(used - life) if used is not None and used > life else None,
         "limit_is": None if limit else f"typical ({TYPICAL_LIFE_KM} km), none set in Garmin",
         "km_last_4_weeks": recent,
         "last_used": last,

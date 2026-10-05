@@ -195,6 +195,11 @@ def shape_trends(start: date, today: date, hrv: Any, rhr: Any, sleep: Any, batte
             "last_night_ms": rounded(latest_hrv.get("ms"), 0),
             "balanced_range_ms": [rounded(x, 0) for x in latest_hrv["band"]] if all(latest_hrv.get("band") or ()) else None,
         }) if latest_hrv else None,
+        "overnight": (
+            "No HRV or sleep recorded in this window. Both need the watch worn "
+            "overnight, so the trend here is resting heart rate, Body Battery, "
+            "stress and load only."
+        ) if not h and not any(v.get("hours") or v.get("score") for v in s.values()) else None,
         "signals": signals or ["Nothing has moved off its usual range."],
         "weeks": weeks,
         "daily": [d for d in daily if len(d) > 1] or None,
