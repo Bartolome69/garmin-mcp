@@ -776,7 +776,12 @@ async def main() -> int:
             # -- progress ------------------------------------------------
             # Before the removal checks below, which delete 555001 out from
             # under the scheduled session this reads.
-            prog = payload(await sess.call_tool("get_progress", {"weeks": 3}))
+            # The stub's runs have fixed dates (week of 2026-09-14 and the
+            # next), so ask for enough weeks to reach back to them from today.
+            from datetime import date as _pd, timedelta as _ptd
+            this_monday = _pd.today() - _ptd(days=_pd.today().weekday())
+            prog_weeks = (this_monday - _pd(2026, 9, 14)).days // 7 + 1
+            prog = payload(await sess.call_tool("get_progress", {"weeks": prog_weeks}))
             check("progress reports the planned session",
                   prog.get("planned") == 1, str(prog)[:200])
             # The stub's session is scheduled two days after its nearest run,
@@ -788,7 +793,7 @@ async def main() -> int:
             check("the runs that happened are reported as unplanned",
                   len(prog.get("unplanned", [])) == 3,
                   str(len(prog.get("unplanned", []))))
-            check("weeks are rolled up", len(prog.get("weeks", [])) == 3
+            check("weeks are rolled up", len(prog.get("weeks", [])) == prog_weeks
                   and prog["weeks"][-1]["current"] is True,
                   str(prog.get("weeks"))[:200])
 
