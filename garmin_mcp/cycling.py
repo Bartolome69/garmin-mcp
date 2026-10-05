@@ -29,7 +29,8 @@ def _positive(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) and value > 0 else None
 
 
-def power(data: Mapping[str, Any], ftp: float | None = None, weight_kg: float | None = None) -> dict[str, Any]:
+def power(data: Mapping[str, Any], ftp: float | None = None, weight_kg: float | None = None,
+          ride: bool = False) -> dict[str, Any]:
     """The power block for one activity or lap, richest where Garmin gives the most."""
     avg = _positive(first_present(data, "avgPower", "averagePower"))
     norm = _positive(first_present(data, "normPower", "normalizedPower"))
@@ -42,8 +43,12 @@ def power(data: Mapping[str, Any], ftp: float | None = None, weight_kg: float | 
     secs = _positive(first_present(data, "movingDuration", "duration", "elapsedDuration"))
     if tss is None and intensity and norm and ftp and secs:
         tss = secs * norm * intensity / (ftp * 3600) * 100
+    # Work is average power over the time pedalled. Garmin's totalWork is in
+    # kilocalories (a 1,490 kJ ride reads 358), so it is only the fallback.
     work = _positive(data.get("totalWork"))
-    work_kj = (work / 1000 if work > 10000 else work) if work else None
+    work_kj = None
+    if ride:
+        work_kj = avg * secs / 1000 if avg and secs else (work * 4.184 if work else None)
     best = {
         label: rounded(data.get(f"maxAvgPower_{seconds}"), 0)
         for seconds, label in BEST_EFFORTS

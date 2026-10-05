@@ -598,8 +598,8 @@ def _running_dynamics(data: Mapping[str, Any]) -> dict[str, Any]:
     )
 
 
-def _power(data: Mapping[str, Any]) -> dict[str, Any]:
-    return cycling.power(data)
+def _power(data: Mapping[str, Any], ride: bool = False) -> dict[str, Any]:
+    return cycling.power(data, ride=ride)
 
 
 def _inline_hr_zones(activity: dict[str, Any]) -> list[dict[str, Any]] | None:
@@ -687,7 +687,7 @@ def _summarise_ride(activity: dict[str, Any], distance: Any, secs: Any) -> dict[
                 }
             ),
             "hr_zones": _inline_hr_zones(activity),
-            "power": cycling.power(activity),
+            "power": cycling.power(activity, ride=True),
             "avg_cadence_rpm": rounded(
                 first_present(activity, "averageBikingCadenceInRevPerMinute", "averageBikeCadence"), 0
             ),
@@ -767,7 +767,7 @@ def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[
             "avg_cadence_rpm": rounded(
                 first_present(lap, "averageBikeCadence", "averageBikingCadenceInRevPerMinute"), 0
             ),
-            "power": _power(lap),
+            "power": _power(lap, ride=True),
         })
     return drop_empty(
         {
@@ -853,13 +853,14 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
     if isinstance(summary.get("activityTypeDTO"), dict):
         flat["activityType"] = {"typeKey": summary["activityTypeDTO"].get("typeKey")}
 
+    ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
     try:
-        inside = stream.analyse(recording, laps)
+        # Per-km pace and lap drift are a run's questions; a ride's are in terrain.
+        inside = None if ride else stream.analyse(recording, laps)
     except Exception as exc:  # noqa: BLE001 - an odd recording must not lose the splits
         inside = None
         warnings.append(f"recording could not be analysed ({type(exc).__name__})")
 
-    ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
     around = await _around_the_run(activity_id, flat, recording, _optional, warnings) if preview.enabled() else {}
     if ride and preview.enabled():
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
@@ -898,7 +899,7 @@ async def _ride_power(activity_id: int, flat: dict[str, Any], optional: Callable
     kg = cycling.weight_kg(profile)
     ftp = cycling.shape_ftp(ftp_raw, kg)
     zones = await optional("power zones", lambda c: c.get_activity_power_in_timezones(activity_id))
-    watts = cycling.power(flat, (ftp or {}).get("watts"), kg)
+    watts = cycling.power(flat, (ftp or {}).get("watts"), kg, ride=True)
     if not watts:
         return drop_empty({"ftp": ftp})
     return drop_empty({
@@ -946,9 +947,14 @@ async def _around_the_run(activity_id: int, flat: dict[str, Any], recording: Any
         if until:
             since = (until - SAME_ROUTE_LOOKBACK).isoformat()
             earlier = await optional(
-                "earlier runs", lambda c: c.get_activities_by_date(since, (until - timedelta(days=1)).isoformat())
+                "earlier runs", lambda c: c.get_activities_by_date(since, until.isoformat())
             )
-            same = terrain.same_route(this, earlier or [])
+            # The list row carries what the detail endpoint leaves out, such as
+            # a ride's best efforts and 20-minute power.
+            own = next((r for r in earlier or [] if r.get("activityId") == activity_id), None)
+            for key, value in (own or {}).items():
+                flat.setdefault(key, value)
+            same = terrain.same_route(this, [r for r in earlier or [] if str(r.get("startTimeLocal") or "")[:10] < day])
 
     return {
         "first": drop_empty({"weather": weather, "shoes": ", ".join(s for s in shoes if s) or None}),
