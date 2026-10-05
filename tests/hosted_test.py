@@ -470,6 +470,13 @@ async def main() -> int:
               str([e["properties"] for e in connected][:2]))
         check("the first request on a connection is reported once per person",
               len(first_calls) == 2, str(len(first_calls)))
+        used = by_name.get("connector_used", [])
+        check("each person's use is reported once a day, however many requests",
+              len(used) == 2 and len({e["distinct_id"] for e in used}) == 2, str(len(used)))
+        check("daily use carries the day and who, under the same id as first use",
+              all(e["properties"].get("day") and e["properties"].get("account") for e in used)
+              and {e["distinct_id"] for e in used} == {e["distinct_id"] for e in first_calls},
+              str([e["properties"] for e in used][:2]))
         check("first-use ids differ per person and match nobody's token",
               len({e["distinct_id"] for e in first_calls}) == 2
               and not ({alice, bob} & {e["distinct_id"] for e in first_calls}))

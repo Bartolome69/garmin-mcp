@@ -130,6 +130,12 @@ _SESSIONS: dict[str, GarminSession] = {}
 _TOUCHED: dict[str, float] = {}
 _TOUCH_EVERY = 3600
 
+# The UTC day each person was last reported as using the connector. One event
+# per person per day is what "who uses this daily" needs; one per request would
+# be a conversation's worth of noise. In memory, so a restart may report a day
+# twice, which a count of distinct people per day absorbs.
+_USED_ON: dict[str, str] = {}
+
 # The front page shows how many people used this recently. One number, cached,
 # so a busy page never turns into a query per visitor.
 _STATS_CACHE: dict[str, Any] = {"at": 0.0, "body": ""}
@@ -865,6 +871,16 @@ class SessionBinding:
                     user.email_hash or user_token,
                     {"account": user.email_masked, **({"email": email} if email else {})},
                 )
+
+        today = time.strftime("%Y-%m-%d", time.gmtime(now))
+        if _USED_ON.get(user_token) != today:
+            _USED_ON[user_token] = today
+            email = store.email_for(user_token)
+            analytics.capture(
+                "connector_used",
+                user.email_hash or user_token,
+                {"account": user.email_masked, "day": today, **({"email": email} if email else {})},
+            )
 
         token = use_session(session_for(user_token))
         preview_token = preview.use(_preview_for(user))
