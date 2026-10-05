@@ -9,7 +9,7 @@ counts.
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -116,6 +116,21 @@ def main() -> int:
     r = match([plan("Full body", sport="strength", secs=3300, day=TUE)],
               [run("Easy", sport="run", secs=3300, day=TUE)], TODAY)
     check("but a run doesn't tick off strength", len(r.missed) == 1)
+    r = match([plan("Full body", sport="strength", day=SAT)],
+              [run("Strength", sport="strength", secs=2000, day=MON)], TODAY)
+    check("strength done earlier in the week counts, moved",
+          len(r.done) == 1 and r.done[0]["done_on"] == MON.isoformat()
+          and "5 days early" in r.done[0]["why"], str(r.done or r.missed))
+    r = match([plan("Full body", sport="strength", day=MON)],
+              [run("Strength", sport="strength", secs=2000, day=MON - timedelta(days=2))], TODAY)
+    check("but not from the week before", len(r.missed) == 1 and len(r.extra) == 1)
+    r = match([plan("Upper", sport="strength", day=MON), plan("Lower", sport="strength", day=THU)],
+              [run("Strength", sport="strength", secs=2000, day=THU)], TODAY)
+    check("a session on its own day is never taken to cover an earlier one",
+          [d["name"] for d in r.done] == ["Lower"] and [m["name"] for m in r.missed] == ["Upper"],
+          f"done={[d['name'] for d in r.done]}")
+    r = match([plan("Easy", day=SAT)], [run("Easy", secs=1800, day=MON)], TODAY)
+    check("runs still have to be within a day", len(r.missed) == 1)
 
     print("\none run cannot satisfy two sessions")
     r = match(

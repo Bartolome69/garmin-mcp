@@ -550,8 +550,8 @@ def summarise(
                 "schedule_workout with its workout_id on the new date. To change "
                 "paces or structure: update_workout with its workout_id; the plan "
                 "code in the name is kept. A session counts as done if it was run "
-                "within a day either side of its date; strength counts whatever its "
-                "length. Check get_readiness before "
+                "within a day either side of its date; strength counts any day that "
+                "week, whatever its length. Check get_readiness before "
                 "moving a hard session, and get_fitness before retuning paces."
             ),
         }

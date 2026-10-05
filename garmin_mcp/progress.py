@@ -9,7 +9,8 @@ The whole thing turns on being forgiving in the right direction. People move
 sessions around — a friend wants to train on Thursday, so the runs shuffle —
 and a matcher that insists on the scheduled day reports a week of failures in
 a week where nothing was missed. That is the failure that makes somebody stop
-opening the page, so a session counts if it happened within a day either side.
+opening the page, so a session counts if it happened within a day either side,
+and a strength session if it happened any day that week.
 
 It is deliberately generous about intensity and strict about existence. Whether
 a session was run at the right effort is a coaching judgement, made in the
@@ -93,25 +94,15 @@ def match(
     result = Result()
     unused = sorted(actual, key=lambda a: (a.day, str(a.activity_id)))
     taken: set[int] = set()
+    due = []
 
-    # Earliest first, so a session that could satisfy two planned workouts goes
-    # to the one it was scheduled for rather than whichever came up first.
-    for session in sorted(planned, key=lambda p: (p.day, p.name)):
-        if session.day > today:
-            result.upcoming.append({
-                "date": session.day.isoformat(),
-                "name": session.name,
-                "sport": session.sport,
-                "planned_seconds": session.seconds or None,
-            })
-            continue
-
+    def pick(session: Planned, allowed) -> int | None:
         best, best_rank = None, None
         for index, candidate in enumerate(unused):
             if index in taken or candidate.sport != session.sport:
                 continue
             drift = (candidate.day - session.day).days
-            if abs(drift) > shift_days:
+            if not allowed(candidate, drift):
                 continue
             # With no estimate on the planned session there is nothing to be
             # short of, so existence is the whole test. Strength is always
@@ -125,8 +116,40 @@ def match(
             rank = (abs(drift), abs(candidate.seconds - session.seconds))
             if best_rank is None or rank < best_rank:
                 best, best_rank = index, rank
+        return best
 
-        if best is None:
+    # Earliest first, so a session that could satisfy two planned workouts goes
+    # to the one it was scheduled for rather than whichever came up first.
+    hits: dict[int, int] = {}
+    for session in sorted(planned, key=lambda p: (p.day, p.name)):
+        if session.day > today:
+            result.upcoming.append({
+                "date": session.day.isoformat(),
+                "name": session.name,
+                "sport": session.sport,
+                "planned_seconds": session.seconds or None,
+            })
+            continue
+        due.append(session)
+        best = pick(session, lambda c, drift: abs(drift) <= shift_days)
+        if best is not None:
+            taken.add(best)
+            hits[len(due) - 1] = best
+
+    # Then strength, which moves around a week far more than runs do: a gym
+    # session anywhere in the same week is that session, moved. Only after
+    # every session has had first call on the activities near its own day, so
+    # Thursday's own gym session is never taken to cover Monday's.
+    for i, session in enumerate(due):
+        if i in hits or session.sport != "strength":
+            continue
+        best = pick(session, lambda c, drift: monday_of(c.day) == monday_of(session.day) and c.day <= today)
+        if best is not None:
+            taken.add(best)
+            hits[i] = best
+
+    for i, session in enumerate(due):
+        if i not in hits:
             result.missed.append({
                 "date": session.day.isoformat(),
                 "name": session.name,
@@ -134,9 +157,7 @@ def match(
                 "planned_seconds": session.seconds or None,
             })
             continue
-
-        taken.add(best)
-        hit = unused[best]
+        hit = unused[hits[i]]
         result.done.append({
             "date": session.day.isoformat(),
             "name": session.name,
