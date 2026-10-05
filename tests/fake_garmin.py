@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-PROFILE = {"displayName": "bart-7f3a", "fullName": "Bart T"}
+PROFILE = {"displayName": "bart-7f3a", "fullName": "Bart T", "userData": {"weight": 70000.0}}
 
 DAILY = {
     "totalSteps": 12345,
@@ -110,6 +110,18 @@ ACTIVITIES = [
         "calories": 610,
         "elevationGain": 210.0,
         "averageBikingCadenceInRevPerMinute": 82.0,
+        "maxSpeed": 12.0,
+        "avgPower": 180.0,
+        "normPower": 195.0,
+        "maxPower": 650.0,
+        "max20MinPower": 210.0,
+        "maxAvgPower_5": 600.0,
+        "maxAvgPower_60": 340.0,
+        "maxAvgPower_300": 260.0,
+        "maxAvgPower_1200": 210.0,
+        "maxAvgPower_3600": 190.0,
+        "intensityFactor": 0.78,
+        "trainingStressScore": 72.0,
     },
     {
         "activityId": 3333,
@@ -354,6 +366,10 @@ class FakeGarmin:
         return list(ACTIVITIES)
 
     def get_activity(self, activity_id: int) -> dict[str, Any]:
+        if int(activity_id) == 2222:
+            ride = dict(ACTIVITIES[1])
+            return {"activityId": 2222, "activityName": ride["activityName"],
+                    "activityTypeDTO": {"typeKey": "road_biking"}, "summaryDTO": ride}
         if int(activity_id) == HILLY_ID:
             return {
                 "activityId": activity_id,
@@ -388,6 +404,14 @@ class FakeGarmin:
         return HILLY if int(activity_id) == HILLY_ID else RECORDING
 
     # -- around a run --------------------------------------------------------
+
+    def get_cycling_ftp(self) -> dict[str, Any]:
+        return {"functionalThresholdPower": 250, "calendarDate": "2026-08-01", "origin": "AUTO_DETECTED"}
+
+    def get_activity_power_in_timezones(self, activity_id: Any) -> list[dict[str, Any]]:
+        return [{"zoneNumber": 1, "secsInZone": 900.0, "zoneLowBoundary": 0},
+                {"zoneNumber": 2, "secsInZone": 2100.0, "zoneLowBoundary": 138},
+                {"zoneNumber": 3, "secsInZone": 900.0, "zoneLowBoundary": 188}]
 
     def get_activity_weather(self, activity_id: Any) -> dict[str, Any]:
         return dict(WEATHER)

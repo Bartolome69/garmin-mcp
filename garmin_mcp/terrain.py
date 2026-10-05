@@ -34,6 +34,9 @@ CLIMB_MIN_GRADE = 3.0
 CLIMB_END_DROP = 5.0
 CLIMB_EDGE_GRADE = 1.5
 MAX_CLIMBS = 5
+RIDE_CLIMB_MIN_GAIN = 25.0
+RIDE_CLIMB_END_DROP = 10.0
+MAX_RIDE_CLIMBS = 8
 
 # Decoupling and fade only mean something on a run long and steady enough.
 STEADY_MIN_SECONDS = 1800
@@ -84,9 +87,10 @@ def _points(columns: Mapping[str, Sequence[float | None]]) -> list[dict[str, Any
     elevation = _smooth(elevation)
     hr = columns.get("directHeartRate") or []
     gap = columns.get("directGradeAdjustedSpeed") or []
+    watts = columns.get("directPower") or []
 
     points: list[dict[str, Any]] = []
-    moving = hr_sum = hr_time = gap_dist = 0.0
+    moving = hr_sum = hr_time = gap_dist = pw_sum = pw_time = 0.0
     prev_t = prev_d = None
     for i, (d, t, e) in enumerate(zip(distance, seconds, elevation)):
         if d is None or t is None or e is None:
@@ -102,9 +106,15 @@ def _points(columns: Mapping[str, Sequence[float | None]]) -> list[dict[str, Any
                 g = gap[i] if i < len(gap) else None
                 if g is not None:
                     gap_dist += g * dt
+                w = watts[i] if i < len(watts) else None
+                if w is not None:
+                    # Zeros count: coasting is part of a ride's average power.
+                    pw_sum += w * dt
+                    pw_time += dt
         prev_t, prev_d = t, d
         if not points or d - points[-1]["d"] >= SEGMENT_M:
-            points.append({"d": d, "t": moving, "e": e, "hr_sum": hr_sum, "hr_time": hr_time, "gap_dist": gap_dist})
+            points.append({"d": d, "t": moving, "e": e, "hr_sum": hr_sum, "hr_time": hr_time,
+                           "gap_dist": gap_dist, "pw_sum": pw_sum, "pw_time": pw_time})
     return points
 
 
@@ -120,18 +130,24 @@ def _segments(points: list[dict[str, Any]], garmin_gap: bool) -> list[dict[str, 
         out.append({
             "d0": a["d"], "d1": b["d"], "dist": dist, "secs": secs, "grade": grade,
             "rise": b["e"] - a["e"], "hr_sum": b["hr_sum"] - a["hr_sum"], "hr_time": hr_time,
+            "pw_sum": b["pw_sum"] - a["pw_sum"], "pw_time": b["pw_time"] - a["pw_time"],
             "flat_dist": flat_dist if flat_dist > 0 else dist,
         })
     return out
 
 
 def _sum(segments: Sequence[Mapping[str, Any]]) -> dict[str, float]:
-    total = {k: sum(s[k] for s in segments) for k in ("dist", "secs", "hr_sum", "hr_time", "flat_dist")}
+    total = {k: sum(s[k] for s in segments) for k in ("dist", "secs", "hr_sum", "hr_time", "flat_dist", "pw_sum", "pw_time")}
     total["hr"] = total["hr_sum"] / total["hr_time"] if total["hr_time"] else None
+    total["power"] = total["pw_sum"] / total["pw_time"] if total["pw_time"] else None
     return total
 
 
-def _bands(segments: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _speed(t: Mapping[str, float]) -> float | None:
+    return round(t["dist"] / t["secs"] * 3.6, 1) if t["secs"] else None
+
+
+def _bands(segments: list[dict[str, Any]], ride: bool = False) -> dict[str, Any] | None:
     groups = {"uphill": [], "flat": [], "downhill": []}
     for s in segments:
         name = "uphill" if s["grade"] >= FLAT_GRADE else "downhill" if s["grade"] <= -FLAT_GRADE else "flat"
@@ -143,21 +159,27 @@ def _bands(segments: list[dict[str, Any]]) -> dict[str, Any] | None:
         t = _sum(group)
         out[name] = drop_empty({
             "km": km(t["dist"]),
-            "pace_per_km": pace_per_km(t["dist"], t["secs"]),
-            "flat_equivalent_pace": pace_per_km(t["flat_dist"], t["secs"]) if name != "flat" else None,
+            "avg_speed_kmh": _speed(t) if ride else None,
+            "pace_per_km": None if ride else pace_per_km(t["dist"], t["secs"]),
+            "flat_equivalent_pace": None if ride or name == "flat" else pace_per_km(t["flat_dist"], t["secs"]),
+            "avg_power_w": rounded(t["power"], 0),
             "avg_hr": rounded(t["hr"], 0),
         })
     return out if len(out) > 1 else None
 
 
-def _climbs(points: list[dict[str, Any]], segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _climbs(points: list[dict[str, Any]], segments: list[dict[str, Any]], ride: bool = False) -> list[dict[str, Any]]:
+    # On a bike a dip of a few metres is a false flat, not the top, and a
+    # 10 m rise is nothing worth naming.
+    end_drop = RIDE_CLIMB_END_DROP if ride else CLIMB_END_DROP
+    min_gain = RIDE_CLIMB_MIN_GAIN if ride else CLIMB_MIN_GAIN
     found: list[tuple[int, int]] = []
     low = top = 0
     for j in range(1, len(points)):
         e = points[j]["e"]
         if e > points[top]["e"]:
             top = j
-        if points[top]["e"] - e >= CLIMB_END_DROP:
+        if points[top]["e"] - e >= end_drop:
             found.append((low, top))
             low = top = j
         elif e < points[low]["e"]:
@@ -174,7 +196,7 @@ def _climbs(points: list[dict[str, Any]], segments: list[dict[str, Any]]) -> lis
             continue
         gain = points[b]["e"] - points[a]["e"]
         length = points[b]["d"] - points[a]["d"]
-        if gain < CLIMB_MIN_GAIN or length <= 0 or gain / length * 100 < CLIMB_MIN_GRADE:
+        if gain < min_gain or length <= 0 or gain / length * 100 < CLIMB_MIN_GRADE:
             continue
         t = _sum(segments[a:b])
         climbs.append({
@@ -185,12 +207,15 @@ def _climbs(points: list[dict[str, Any]], segments: list[dict[str, Any]]) -> lis
                 "gain_m": round(gain),
                 "avg_grade_pct": round(gain / length * 100, 1),
                 "time_s": round(t["secs"]),
-                "pace_per_km": pace_per_km(t["dist"], t["secs"]),
-                "flat_equivalent_pace": pace_per_km(t["flat_dist"], t["secs"]),
+                "avg_speed_kmh": _speed(t) if ride else None,
+                "vam_m_per_h": round(gain / t["secs"] * 3600) if ride and t["secs"] else None,
+                "pace_per_km": None if ride else pace_per_km(t["dist"], t["secs"]),
+                "flat_equivalent_pace": None if ride else pace_per_km(t["flat_dist"], t["secs"]),
+                "avg_power_w": rounded(t["power"], 0),
                 "avg_hr": rounded(t["hr"], 0),
             }),
         })
-    biggest = sorted(climbs, key=lambda c: -c["gain"])[:MAX_CLIMBS]
+    biggest = sorted(climbs, key=lambda c: -c["gain"])[:MAX_RIDE_CLIMBS if ride else MAX_CLIMBS]
     return [c["summary"] for c in sorted(biggest, key=lambda c: c["summary"].get("starts_at_km") or 0)]
 
 
@@ -240,6 +265,26 @@ def _effort(segments: list[dict[str, Any]]) -> dict[str, Any] | None:
     return drop_empty(out)
 
 
+def _ride_effort(segments: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Power per heartbeat across the two halves: a ride's decoupling."""
+    total = _sum(segments)
+    if total["secs"] < STEADY_MIN_SECONDS or not total["power"] or not total["hr"]:
+        return None
+    half, elapsed, first, second = total["secs"] / 2, 0.0, [], []
+    for s in segments:
+        (first if elapsed < half else second).append(s)
+        elapsed += s["secs"]
+    a, b = _sum(first), _sum(second)
+    if not (a["power"] and a["hr"] and b["power"] and b["hr"]):
+        return None
+    eff_a, eff_b = a["power"] / a["hr"], b["power"] / b["hr"]
+    return {
+        "decoupling_pct": round((eff_a - eff_b) / eff_a * 100, 1),
+        "first_half": drop_empty({"avg_power_w": round(a["power"]), "avg_hr": round(a["hr"]), "avg_speed_kmh": _speed(a)}),
+        "second_half": drop_empty({"avg_power_w": round(b["power"]), "avg_hr": round(b["hr"]), "avg_speed_kmh": _speed(b)}),
+    }
+
+
 def _shape(columns: Mapping[str, Sequence[float | None]]) -> dict[str, Any] | None:
     lat, lon = columns.get("directLatitude"), columns.get("directLongitude")
     distance = columns.get("sumDistance")
@@ -272,8 +317,13 @@ def _shape(columns: Mapping[str, Sequence[float | None]]) -> dict[str, Any] | No
     })
 
 
-def analyse(columns: Mapping[str, Sequence[float | None]]) -> dict[str, Any] | None:
-    """Hills, flat-equivalent pace, drift and the route's shape, from parsed columns."""
+def analyse(columns: Mapping[str, Sequence[float | None]], ride: bool = False) -> dict[str, Any] | None:
+    """Hills, flat-equivalent pace, drift and the route's shape, from parsed columns.
+
+    A ride gets speed, climbing rate and power instead of the running paces.
+    """
+    if ride:
+        return _analyse_ride(columns)
     garmin_gap = any(v for v in (columns.get("directGradeAdjustedSpeed") or []))
     points = _points(columns)
     segments = _segments(points, garmin_gap) if len(points) > 2 else []
@@ -298,6 +348,32 @@ def analyse(columns: Mapping[str, Sequence[float | None]]) -> dict[str, Any] | N
         "good aerobic durability on a steady run, over 10 means the effort "
         "cost more as it went on (heat, fuel, fatigue or going out too fast). "
         "slowed_from_km is where hill-adjusted pace dropped and stayed down."
+    )
+    return result
+
+
+def _analyse_ride(columns: Mapping[str, Sequence[float | None]]) -> dict[str, Any] | None:
+    points = _points(columns)
+    segments = _segments(points, False) if len(points) > 2 else []
+    if not segments:
+        return None
+    elevations = [p["e"] for p in points]
+    result = drop_empty({
+        "lowest_m": round(min(elevations)),
+        "highest_m": round(max(elevations)),
+        "by_gradient": _bands(segments, ride=True),
+        "climbs": _climbs(points, segments, ride=True),
+        "effort": _ride_effort(segments),
+        "route": _shape(columns),
+    })
+    result["how_to_read"] = (
+        "Climbs are the biggest, in order, with speed, VAM (metres climbed per "
+        "hour: 700-900 is steady club riding, over 1000 strong) and average "
+        "power where a power meter recorded it. decoupling_pct compares power "
+        "per heartbeat across the two halves: under 5 is good endurance, over "
+        "10 means the second half cost more (heat, fuel, fatigue or pacing). "
+        "Speed on a bike follows the road and wind, so read effort from power "
+        "and heart rate."
     )
     return result
 

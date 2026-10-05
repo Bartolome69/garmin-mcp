@@ -720,6 +720,17 @@ async def main() -> int:
                   and first["running_dynamics"]["vertical_oscillation_cm"] == 9.5)
             check("running power surfaced", first["power"]["normalized_w"] == 400)
 
+            spin = payload(await sess.call_tool("get_activities", {"limit": 3}))["activities"][1]
+            check("a ride reads by speed and rpm, not pace and steps",
+                  spin.get("avg_speed_kmh") == 22.7 and "pace_per_km" not in spin
+                  and spin.get("avg_cadence_rpm") == 82 and "avg_cadence_spm" not in spin, str(spin))
+            check("a ride's power has normalised, max, IF, TSS and best efforts",
+                  spin["power"].get("normalized_w") == 195 and spin["power"].get("max_w") == 650
+                  and spin["power"].get("intensity_factor") == 0.78
+                  and spin["power"].get("training_stress_score") == 72
+                  and spin["power"].get("best_efforts_w", {}).get("20min") == 210
+                  and spin["power"].get("variability_index") == 1.08, str(spin.get("power")))
+
             ranged = payload(
                 await sess.call_tool(
                     "get_activities",
@@ -1200,6 +1211,20 @@ async def main() -> int:
             check("an earlier run of the same route is found and ranked",
                   same.get("earlier_runs") == 1 and same.get("this_run_rank") == "1 of 2 by pace"
                   and same["recent"][0]["activity_id"] == 1111, str(same))
+
+            print("\npreview account, a ride")
+            ride = payload(await sess.call_tool("get_activity_details", {"activity_id": 2222}))
+            print("   ", json.dumps({k: ride.get(k) for k in ("ftp", "power_zones")}, indent=2)[:500])
+            check("a ride's details carry the FTP set in Garmin, with watts per kilo",
+                  ride.get("ftp", {}).get("watts") == 250 and ride["ftp"].get("w_per_kg") == 3.57, str(ride.get("ftp")))
+            check("and its power per kilo",
+                  ride["summary"]["power"].get("normalized_w_per_kg") == 2.79, str(ride["summary"].get("power")))
+            check("time in power zones", [z["zone"] for z in ride.get("power_zones") or []] == [1, 2, 3]
+                  and ride["power_zones"][1]["percent"] == 53.8, str(ride.get("power_zones")))
+            check("ride splits read by speed", "pace_per_km" not in ride["splits"][0]
+                  and ride["splits"][0].get("avg_speed_kmh") == 12.0, str(ride["splits"][0]))
+            fit = payload(await sess.call_tool("get_fitness", {}))
+            check("get_fitness has the cycling FTP", fit.get("cycling_ftp", {}).get("watts") == 250, str(fit.get("cycling_ftp")))
 
             print("\npreview account, shoes")
             shoes = payload(await sess.call_tool("get_shoes", {}))

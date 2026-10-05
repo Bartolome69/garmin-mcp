@@ -35,7 +35,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, gear, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
+from . import conditions, cycling, gear, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -133,13 +133,20 @@ _PREVIEW_DESCRIPTIONS = {
 
 # Added to a tool's own description, for preview accounts.
 _PREVIEW_NOTES = {
+    "get_fitness": (
+        "\n\nAlso returns the cycling FTP set in Garmin, with watts per kilo "
+        "when the user's weight is set."
+    ),
     "get_activity_details": (
         "\n\nAlso returns the weather during it (temperature, dew point, wind, "
         "and what that does to pace), the shoes worn, the terrain (climbs, "
         "pace on uphill, flat and downhill, the pace the effort was worth on "
         "the flat, heart-rate decoupling and where it faded) and earlier runs "
         "of the same route with their pace and heart rate. Use these to "
-        "explain a run rather than guessing why it was slow or hard."
+        "explain a run rather than guessing why it was slow or hard. For a "
+        "ride: normalised, average and max power, intensity factor and "
+        "training stress against FTP, best efforts from 5 seconds to an hour, "
+        "variability, time in power zones, and climbs with speed, VAM and power."
     ),
     "get_progress": (
         "\n\nFetch it fresh each time it is asked for; runs sync through the "
@@ -590,15 +597,7 @@ def _running_dynamics(data: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _power(data: Mapping[str, Any]) -> dict[str, Any]:
-    return drop_empty(
-        {
-            "average_w": rounded(first_present(data, "avgPower", "averagePower"), 0),
-            "max_w": rounded(data.get("maxPower"), 0),
-            "normalized_w": rounded(
-                first_present(data, "normPower", "normalizedPower"), 0
-            ),
-        }
-    )
+    return cycling.power(data)
 
 
 def _inline_hr_zones(activity: dict[str, Any]) -> list[dict[str, Any]] | None:
@@ -614,6 +613,8 @@ def _inline_hr_zones(activity: dict[str, Any]) -> list[dict[str, Any]] | None:
 def _summarise_activity(activity: dict[str, Any]) -> dict[str, Any]:
     distance = activity.get("distance")
     secs = first_present(activity, "duration", "elapsedDuration", "movingDuration")
+    if cycling.is_ride((activity.get("activityType") or {}).get("typeKey")):
+        return _summarise_ride(activity, distance, secs)
     return drop_empty(
         {
             "activity_id": activity.get("activityId"),
@@ -662,6 +663,50 @@ def _summarise_activity(activity: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _summarise_ride(activity: dict[str, Any], distance: Any, secs: Any) -> dict[str, Any]:
+    """A ride by speed, cadence in rpm and power, rather than a run's pace and steps."""
+    return drop_empty(
+        {
+            "activity_id": activity.get("activityId"),
+            "name": activity.get("activityName"),
+            "type": (activity.get("activityType") or {}).get("typeKey"),
+            "start_local": activity.get("startTimeLocal"),
+            "location": activity.get("locationName"),
+            "distance_km": km(distance),
+            "duration": duration(secs),
+            "duration_seconds": rounded(secs, 0),
+            "moving_time": duration(activity.get("movingDuration")),
+            "avg_speed_kmh": rounded((activity.get("averageSpeed") or 0) * 3.6 or None, 1),
+            "max_speed_kmh": rounded((activity.get("maxSpeed") or 0) * 3.6 or None, 1),
+            "heart_rate": drop_empty(
+                {
+                    "average_bpm": rounded(activity.get("averageHR"), 0),
+                    "max_bpm": rounded(activity.get("maxHR"), 0),
+                }
+            ),
+            "hr_zones": _inline_hr_zones(activity),
+            "power": cycling.power(activity),
+            "avg_cadence_rpm": rounded(
+                first_present(activity, "averageBikingCadenceInRevPerMinute", "averageBikeCadence"), 0
+            ),
+            "max_cadence_rpm": rounded(
+                first_present(activity, "maxBikingCadenceInRevPerMinute", "maxBikeCadence"), 0
+            ),
+            "calories": rounded(activity.get("calories"), 0),
+            "elevation_gain_m": rounded(activity.get("elevationGain"), 0),
+            "elevation_loss_m": rounded(activity.get("elevationLoss"), 0),
+            "training_effect": drop_empty(
+                {
+                    "aerobic": rounded(activity.get("aerobicTrainingEffect"), 1),
+                    "anaerobic": rounded(activity.get("anaerobicTrainingEffect"), 1),
+                }
+            ),
+            "training_load": rounded(activity.get("activityTrainingLoad"), 0),
+            "vo2max": rounded(activity.get("vO2MaxValue"), 1),
+        }
+    )
+
+
 @mcp.tool()
 @tool_errors
 async def get_activities(
@@ -705,9 +750,23 @@ async def get_activities(
     )
 
 
-def _summarise_lap(lap: dict[str, Any], index: int) -> dict[str, Any]:
+def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[str, Any]:
     distance = lap.get("distance")
     secs = first_present(lap, "duration", "movingDuration", "elapsedDuration")
+    if ride:
+        return drop_empty({
+            "split": lap.get("lapIndex") or index,
+            "distance_km": km(distance),
+            "duration": duration(secs),
+            "avg_speed_kmh": rounded(distance / secs * 3.6, 1) if distance and secs else None,
+            "avg_hr": rounded(lap.get("averageHR"), 0),
+            "max_hr": rounded(lap.get("maxHR"), 0),
+            "elevation_gain_m": rounded(lap.get("elevationGain"), 0),
+            "avg_cadence_rpm": rounded(
+                first_present(lap, "averageBikeCadence", "averageBikingCadenceInRevPerMinute"), 0
+            ),
+            "power": _power(lap),
+        })
     return drop_empty(
         {
             "split": lap.get("lapIndex") or index,
@@ -798,17 +857,20 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         inside = None
         warnings.append(f"recording could not be analysed ({type(exc).__name__})")
 
+    ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
     around = await _around_the_run(activity_id, flat, recording, _optional, warnings) if preview.enabled() else {}
+    if ride and preview.enabled():
+        around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 
     return drop_empty(
         {
             "activity_id": activity_id,
-            "summary": _summarise_activity(flat) or None,
+            "summary": _with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)) or None,
             **around.get("first", {}),
             "hr_zones": hr_zones(zones),
             "splits_count": len(laps) or None,
             "splits": [
-                _summarise_lap(lap, i) for i, lap in enumerate(laps, start=1)
+                _summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)
             ]
             or None,
             "inside": inside,
@@ -819,6 +881,30 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
 
 
 SAME_ROUTE_LOOKBACK = timedelta(weeks=26)
+
+
+def _with_power(summary: dict[str, Any], richer: dict[str, Any] | None) -> dict[str, Any]:
+    if richer:
+        summary["power"] = richer
+    return summary
+
+
+async def _ride_power(activity_id: int, flat: dict[str, Any], optional: Callable[..., Any]) -> dict[str, Any]:
+    """FTP, weight and power zones beside a ride's power, for preview accounts."""
+    ftp_raw = await optional("ftp", lambda c: c.get_cycling_ftp())
+    profile = await optional("weight", lambda c: c.get_user_profile())
+    kg = cycling.weight_kg(profile)
+    ftp = cycling.shape_ftp(ftp_raw, kg)
+    zones = await optional("power zones", lambda c: c.get_activity_power_in_timezones(activity_id))
+    watts = cycling.power(flat, (ftp or {}).get("watts"), kg)
+    if not watts:
+        return drop_empty({"ftp": ftp})
+    return drop_empty({
+        "power": watts,
+        "ftp": ftp,
+        "power_zones": cycling.power_zones(zones),
+        "power_how_to_read": cycling.how_to_read(),
+    })
 
 
 async def _around_the_run(activity_id: int, flat: dict[str, Any], recording: Any,
@@ -835,7 +921,8 @@ async def _around_the_run(activity_id: int, flat: dict[str, Any], recording: Any
 
     columns = stream.parse_stream(recording)
     try:
-        ground = terrain.analyse(columns) if columns else None
+        ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
+        ground = terrain.analyse(columns, ride=ride) if columns else None
     except Exception as exc:  # noqa: BLE001 - an odd recording must not lose the rest
         ground = None
         warnings.append(f"terrain could not be analysed ({type(exc).__name__})")
@@ -1804,9 +1891,17 @@ async def get_fitness() -> dict[str, Any]:
             ("running tolerance", lambda c: c.get_running_tolerance(month_ago, today)),
         ]
     )
-    if all(x is None for x in (vo2, race, lactate, endurance, hill, tolerance)):
+    ride = None
+    if preview.enabled():
+        (ftp_raw, profile), more = await _gather(
+            [("cycling ftp", lambda c: c.get_cycling_ftp()), ("weight", lambda c: c.get_user_profile())]
+        )
+        ftp = cycling.shape_ftp(ftp_raw, cycling.weight_kg(profile))
+        ride = {"cycling_ftp": ftp} if ftp else None
+        warnings = warnings + [w for w in more if not w.startswith("weight")]
+    if all(x is None for x in (vo2, race, lactate, endurance, hill, tolerance)) and not ride:
         return {"error": "Garmin returned no fitness data.", "warnings": warnings}
-    return metrics.shape_fitness(vo2, race, lactate, endurance, hill, tolerance, warnings)
+    return {**metrics.shape_fitness(vo2, race, lactate, endurance, hill, tolerance, warnings), **(ride or {})}
 
 
 RECOVERY_WEEKS = 4
