@@ -10,7 +10,8 @@ sessions around — a friend wants to train on Thursday, so the runs shuffle —
 and a matcher that insists on the scheduled day reports a week of failures in
 a week where nothing was missed. That is the failure that makes somebody stop
 opening the page, so a session counts if it happened within a day either side,
-and a strength session if it happened any day that week.
+a strength session if it happened any day that week, and any session started
+from its workout on the watch wherever in the week it landed.
 
 It is deliberately generous about intensity and strict about existence. Whether
 a session was run at the right effort is a coaching judgement, made in the
@@ -47,6 +48,9 @@ class Planned:
     seconds: float = 0.0
     metres: float = 0.0
     workout_id: Any = None
+    # The workout's name as scheduled, when name differs from it (get_plan
+    # keys sessions by schedule id). Used only as a hint for matching.
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,20 @@ def _why(planned: Planned, actual: Actual) -> str:
     return f"{actual.name} on {when}, {abs(delta)} {days} {'late' if delta > 0 else 'early'}."
 
 
+def _same_name(planned: Planned, actual: Actual) -> bool:
+    """Whether the activity was started from this workout on the watch.
+
+    Garmin names an activity after the workout it was started from, often with
+    the place in front ("Alcudia - 14km long run easy"). A name is only ever a
+    hint: a session started some other way still counts by sport and day.
+    """
+    title = (planned.title or "").split(" · ")[0].strip().lower()
+    name = (actual.name or "").strip().lower()
+    if len(title) < 4 or not name:
+        return False
+    return name == title or name.endswith(" - " + title) or name.endswith(title)
+
+
 def match(
     planned: Iterable[Planned],
     actual: Iterable[Actual],
@@ -90,85 +108,98 @@ def match(
     shift_days: int = SHIFT_DAYS,
     min_fraction: float = MIN_FRACTION,
 ) -> Result:
-    """Pair each planned session with the activity that satisfied it."""
+    """Pair each planned session with the activity that satisfied it.
+
+    In three passes, strongest evidence first:
+
+    1. An activity named after the workout, any day of the same week: it was
+       that session, wherever it landed.
+    2. The same sport within a day either side (a strength session only
+       within its own week, so Monday's gym never covers last Sunday's).
+    3. Strength by sport alone, any day of the same week, including a session
+       still ahead this week: done early is done.
+    """
     result = Result()
     unused = sorted(actual, key=lambda a: (a.day, str(a.activity_id)))
     taken: set[int] = set()
-    due = []
+    sessions = sorted(planned, key=lambda p: (p.day, p.name))
+    this_week = monday_of(today)
+
+    def long_enough(session: Planned, candidate: Actual) -> bool:
+        # With no estimate on the planned session there is nothing to be
+        # short of, so existence is the whole test. Strength is always
+        # existence alone: a gym session runs as long as the gym allows, and
+        # Garmin's estimate for one counts every rest to the second.
+        return (not session.seconds or session.sport == "strength"
+                or candidate.seconds >= session.seconds * min_fraction)
 
     def pick(session: Planned, allowed) -> int | None:
         best, best_rank = None, None
         for index, candidate in enumerate(unused):
-            if index in taken or candidate.sport != session.sport:
+            if index in taken or candidate.sport != session.sport or candidate.day > today:
                 continue
-            drift = (candidate.day - session.day).days
-            if not allowed(candidate, drift):
-                continue
-            # With no estimate on the planned session there is nothing to be
-            # short of, so existence is the whole test. Strength is always
-            # existence alone: a gym session runs as long as the gym allows, and
-            # Garmin's estimate for one counts every rest to the second.
-            if (session.seconds and session.sport != "strength"
-                    and candidate.seconds < session.seconds * min_fraction):
+            if not allowed(candidate) or not long_enough(session, candidate):
                 continue
             # Nearest day wins; then the closest length, so two runs a day apart
             # land on the sessions they most resemble.
-            rank = (abs(drift), abs(candidate.seconds - session.seconds))
+            rank = (abs((candidate.day - session.day).days), abs(candidate.seconds - session.seconds))
             if best_rank is None or rank < best_rank:
                 best, best_rank = index, rank
         return best
 
-    # Earliest first, so a session that could satisfy two planned workouts goes
-    # to the one it was scheduled for rather than whichever came up first.
+    def same_week(session: Planned):
+        return lambda c: monday_of(c.day) == monday_of(session.day)
+
+    def near(session: Planned):
+        def allowed(c: Actual) -> bool:
+            if abs((c.day - session.day).days) > shift_days:
+                return False
+            return session.sport != "strength" or monday_of(c.day) == monday_of(session.day)
+        return allowed
+
+    # Which sessions can still be matched: everything up to today, and anything
+    # later this week, which only an activity already done can tick off early.
+    def open_to_early(session: Planned) -> bool:
+        return session.day <= today or monday_of(session.day) == this_week
+
     hits: dict[int, int] = {}
-    for session in sorted(planned, key=lambda p: (p.day, p.name)):
-        if session.day > today:
-            result.upcoming.append({
+
+    def run_pass(eligible, allowed_for) -> None:
+        for i, session in enumerate(sessions):
+            if i in hits or not eligible(session):
+                continue
+            best = pick(session, allowed_for(session))
+            if best is not None:
+                taken.add(best)
+                hits[i] = best
+
+    run_pass(open_to_early,
+             lambda s: (lambda c: same_week(s)(c) and _same_name(s, c)))
+    run_pass(lambda s: s.day <= today, near)
+    run_pass(lambda s: s.sport == "strength" and open_to_early(s), same_week)
+
+    for i, session in enumerate(sessions):
+        if i in hits:
+            hit = unused[hits[i]]
+            result.done.append({
                 "date": session.day.isoformat(),
                 "name": session.name,
                 "sport": session.sport,
                 "planned_seconds": session.seconds or None,
+                "actual_seconds": hit.seconds or None,
+                "actual_km": round(hit.metres / 1000, 2) if hit.metres else None,
+                "done_on": hit.day.isoformat(),
+                "activity_id": hit.activity_id,
+                "why": _why(session, hit),
             })
             continue
-        due.append(session)
-        best = pick(session, lambda c, drift: abs(drift) <= shift_days)
-        if best is not None:
-            taken.add(best)
-            hits[len(due) - 1] = best
-
-    # Then strength, which moves around a week far more than runs do: a gym
-    # session anywhere in the same week is that session, moved. Only after
-    # every session has had first call on the activities near its own day, so
-    # Thursday's own gym session is never taken to cover Monday's.
-    for i, session in enumerate(due):
-        if i in hits or session.sport != "strength":
-            continue
-        best = pick(session, lambda c, drift: monday_of(c.day) == monday_of(session.day) and c.day <= today)
-        if best is not None:
-            taken.add(best)
-            hits[i] = best
-
-    for i, session in enumerate(due):
-        if i not in hits:
-            result.missed.append({
-                "date": session.day.isoformat(),
-                "name": session.name,
-                "sport": session.sport,
-                "planned_seconds": session.seconds or None,
-            })
-            continue
-        hit = unused[hits[i]]
-        result.done.append({
+        row = {
             "date": session.day.isoformat(),
             "name": session.name,
             "sport": session.sport,
             "planned_seconds": session.seconds or None,
-            "actual_seconds": hit.seconds or None,
-            "actual_km": round(hit.metres / 1000, 2) if hit.metres else None,
-            "done_on": hit.day.isoformat(),
-            "activity_id": hit.activity_id,
-            "why": _why(session, hit),
-        })
+        }
+        (result.upcoming if session.day > today else result.missed).append(row)
 
     for index, leftover in enumerate(unused):
         if index in taken or leftover.day > today:
@@ -241,6 +272,7 @@ def from_collected(data: dict[str, Any]) -> tuple[list[Planned], list[Actual]]:
                 seconds=float((data.get("planned_duration") or {}).get(workout_id, 0.0)),
                 metres=float((data.get("planned_distance") or {}).get(workout_id, 0.0)),
                 workout_id=workout_id,
+                title=item.get("title") or item.get("workoutName") or "",
             )
         )
 
