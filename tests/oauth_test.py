@@ -429,6 +429,85 @@ async def main() -> int:
         )
         check("a valid token is not refused", status != 401, f"got {status} {body[:90]}")
 
+        # -- 10. a second app does not disconnect the first --------------
+        # Connecting ChatGPT, or Claude on a second account, signs in to
+        # Garmin again. That used to retire the first app's connection.
+        def subject_of(token: str) -> str:
+            row = store.load_oauth_token(token, "access")
+            return row["subject"] if row else ""
+
+        first_subject = subject_of(fresh)
+        code, body, _ = await run(lambda: http("POST", "/register", {
+            "client_name": "Second App", "redirect_uris": [REDIRECT],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"], "token_endpoint_auth_method": "none",
+        }, as_json=True))
+        second_client = json.loads(body).get("client_id", "") if code in (200, 201) else ""
+        verifier2 = secrets.token_urlsafe(48)
+        challenge2 = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier2.encode()).digest()
+        ).decode().rstrip("=")
+        query2 = urllib.parse.urlencode({
+            "response_type": "code", "client_id": second_client, "redirect_uri": REDIRECT,
+            "code_challenge": challenge2, "code_challenge_method": "S256", "state": "s2",
+        })
+        _, _, headers = await run(lambda: http("GET", f"/authorize?{query2}"))
+        flow2 = urllib.parse.parse_qs(
+            urllib.parse.urlparse(headers.get("location", "")).query
+        ).get("flow", [""])[0]
+        _, body, _ = await run(lambda: http("POST", "/connect", {
+            "email": "oauth@example.com", "password": "pw", "flow": flow2,
+        }))
+        consent2 = re.search(r'name=consent value="([^"]+)"', body)
+        _, _, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent2.group(1) if consent2 else "", "decision": "allow",
+        }))
+        code2 = urllib.parse.parse_qs(
+            urllib.parse.urlparse(headers.get("location", "")).query
+        ).get("code", [""])[0]
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code", "code": code2, "redirect_uri": REDIRECT,
+            "client_id": second_client, "code_verifier": verifier2,
+        }))
+        second_access = json.loads(body).get("access_token", "") if code == 200 else ""
+        check("a second app connects", bool(second_access), f"status {code} {body[:120]}")
+        check("both apps share one identity", subject_of(second_access) == first_subject != "")
+        for label, bearer in (("the first app", fresh), ("the second app", second_access)):
+            head = {"accept": accept, "Authorization": f"Bearer {bearer}"}
+            status, body, _ = await run(
+                lambda h=head: http("POST", "/mcp", probe, headers=h, as_json=True)
+            )
+            check(f"{label} still works after the second connects", status == 200,
+                  f"got {status} {body[:90]}")
+
+        # -- 11. a connection whose Garmin session is gone asks to reconnect
+        # A 401 is what Claude turns into a Reconnect button; a 404 read as a
+        # broken server.
+        store.delete_user(first_subject)
+        head = {"accept": accept, "Authorization": f"Bearer {fresh}"}
+        status, body, _ = await run(
+            lambda: http("POST", "/mcp", probe, headers=head, as_json=True)
+        )
+        check("a connection with no Garmin session behind it gets 401", status == 401,
+              f"got {status} {body[:90]}")
+
+        # -- 12. expired rows are cleared, live ones are not ---------------
+        now = int(time.time())
+        with __import__("sqlite3").connect(DB) as conn:
+            conn.executemany(
+                "INSERT INTO oauth_tokens (token_hash, kind, client_id, subject, scopes, "
+                "resource, expires_at, created_at) VALUES (?, 'access', 'c', 's', '', NULL, ?, ?)",
+                [("stale", now - 10, now - 3700), ("live", now + 3600, now)],
+            )
+        removed = store.sweep_expired_oauth()
+        with __import__("sqlite3").connect(DB) as conn:
+            left = dict(conn.execute(
+                "SELECT token_hash, COUNT(*) FROM oauth_tokens "
+                "WHERE token_hash IN ('stale', 'live') GROUP BY token_hash"
+            ).fetchall())
+        check("expired tokens are swept", removed >= 1 and "stale" not in left, str(removed))
+        check("a live token survives the sweep", left.get("live") == 1)
+
     finally:
         server.should_exit = True
         thread.join(timeout=10)

@@ -179,6 +179,47 @@ def base_url(request: Request) -> str:
     return configured or str(request.base_url).rstrip("/")
 
 
+RECONNECT_HINT = (
+    "Garmin has signed this connection out, which happens after a Garmin "
+    "password change or when Garmin ends a session itself. Nothing is lost. "
+    "Daash will ask to be reconnected: choose Connect (in Claude, Settings > "
+    "Connectors > Daash) and sign in to Garmin again."
+)
+# One report per person per day, however many tool calls hit the dead session.
+_LAPSE_REPORTED: dict[str, str] = {}
+
+
+def report_lapsed(user_token: str, *, source: str) -> None:
+    """Tell the analytics a Garmin session is gone, so someone can reach out."""
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    if _LAPSE_REPORTED.get(user_token) == today:
+        return
+    _LAPSE_REPORTED[user_token] = today
+    user = store.get_user(user_token)
+    if user is None:
+        return
+    email = store.email_for(user_token)
+    analytics.capture(
+        "garmin_session_lapsed",
+        user.email_hash or user_token,
+        {"account": user.email_masked, "source": source, **({"email": email} if email else {})},
+    )
+
+
+def _lapsed_in_use(user_token: str) -> None:
+    """Garmin refused the stored session: resuming from it failed.
+
+    Revoking the app's tokens turns the next request into a 401, which Claude
+    shows as a Reconnect button, rather than every tool failing with text the
+    person has to read. The Garmin row stays, so reconnecting resumes it under
+    the same identity. The keep-alive never does this: an idle failure might
+    be Garmin having a bad hour, and nobody is waiting on it.
+    """
+    report_lapsed(user_token, source="in_use")
+    if OAUTH_ENABLED:
+        store.delete_tokens_for_subject(user_token)
+
+
 def session_for(user_token: str) -> GarminSession:
     existing = _SESSIONS.get(user_token)
     if existing is not None:
@@ -186,6 +227,8 @@ def session_for(user_token: str) -> GarminSession:
     created = GarminSession(
         tokenstore=lambda: store.load_blob(user_token),
         on_refresh=lambda blob: store.update_blob(user_token, blob),
+        reconnect_hint=RECONNECT_HINT,
+        on_lapsed=lambda: _lapsed_in_use(user_token),
     )
     _SESSIONS[user_token] = created
     return created
@@ -222,12 +265,7 @@ def keep_alive_once(spacing: float = KEEP_ALIVE_SPACING) -> dict[str, int]:
         except Exception as exc:  # noqa: BLE001
             counts["lapsed"] += 1
             log.info("Keep-alive could not renew a session (%s)", type(exc).__name__)
-            email = store.email_for(user_token)
-            analytics.capture(
-                "garmin_session_lapsed",
-                user.email_hash or user_token,
-                {"account": user.email_masked, **({"email": email} if email else {})},
-            )
+            report_lapsed(user_token, source="keep_alive")
         finally:
             store.mark_kept_alive(user_token)
             _SESSIONS.pop(user_token, None)
@@ -238,6 +276,8 @@ def keep_alive_once(spacing: float = KEEP_ALIVE_SPACING) -> dict[str, int]:
 
 def _keep_alive_forever() -> None:
     while True:
+        with contextlib.suppress(Exception):
+            store.sweep_expired_oauth()
         try:
             counts = keep_alive_once()
             if counts["renewed"] or counts["lapsed"]:
@@ -568,7 +608,15 @@ def _finish(
     for stale in previous:
         _SESSIONS.pop(stale, None)
     masked = mask_email(email) or "hidden"
-    user_token = store.save_user(masked, blob, email_hash=fingerprint, email=email)
+    # Through OAuth, a person keeps one identity however many apps they connect.
+    # Minting a new one here retired the old, so connecting ChatGPT, or Claude
+    # on a second account, silently disconnected the first. The fresh Garmin
+    # session replaces the stored one; every app's tokens keep pointing at it.
+    # A lost URL is not a risk in this mode: there is no URL to lose.
+    keep = previous[-1] if (OAUTH_ENABLED and flow and previous) else None
+    user_token = store.save_user(
+        masked, blob, user_token=keep, email_hash=fingerprint, email=email
+    )
     # The address goes along, so the report says who connected and whoever
     # runs this can get in touch if their connection goes wrong.
     analytics.capture(
@@ -914,6 +962,12 @@ class SessionBinding:
             # signed in again. The token outlived what it pointed at.
             store.delete_tokens_for_subject(user_token)
             _SESSIONS.pop(user_token, None)
+            if OAUTH_ENABLED:
+                # With its token now gone the SDK answers 401 invalid_token,
+                # which Claude turns into a Reconnect button. A 404 here read
+                # as a broken server instead.
+                await self.app(scope, receive, send)
+                return
             await Response("Unknown connector URL", status_code=404)(scope, receive, send)
             return
 

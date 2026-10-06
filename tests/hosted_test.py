@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import threading
+import contextlib
 import time
 from pathlib import Path
 
@@ -610,6 +611,37 @@ async def main() -> int:
         check("a lapsed Garmin session is reported with who it was",
               any(e["properties"].get("email") == "idle@example.com" for e in lapsed), str(lapsed)[:200])
         check("a lapsed session is kept, not deleted", store.get_user(idle) is not None)
+
+        # In use, a session Garmin refuses says how to fix it from the phone,
+        # not "sign in again in a terminal".
+        def refusing_client(*, prompt_mfa, email=None, password=None):
+            class Dead(FakeGarmin):
+                def login(self, tokenstore=None):
+                    raise GarminConnectAuthenticationError("401 Unauthorized")
+            return Dead()
+
+        real_build = session_mod.build_client
+        session_mod.build_client = refusing_client
+        hosted._SESSIONS.pop(idle, None)
+        hosted._LAPSE_REPORTED.clear()
+        before = len(SENT)
+        try:
+            message = ""
+            try:
+                hosted.session_for(idle).run(lambda c: c.get_user_profile())
+            except Exception as exc:  # noqa: BLE001
+                message = str(exc)
+            # A second call the same day must not report again.
+            with contextlib.suppress(Exception):
+                hosted.session_for(idle).run(lambda c: c.get_user_profile())
+        finally:
+            session_mod.build_client = real_build
+            hosted._SESSIONS.pop(idle, None)
+        check("a refused session explains how to reconnect",
+              "Connect" in message and "terminal" not in message, message[:120])
+        in_use = [e for e in SENT[before:] if e["event"] == "garmin_session_lapsed"]
+        check("a session refused in use is reported once",
+              len(in_use) == 1 and in_use[0]["properties"].get("source") == "in_use", str(len(in_use)))
 
     finally:
         server.should_exit = True

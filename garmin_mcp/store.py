@@ -435,6 +435,22 @@ def expire_oauth_token_by(token: str, at: int) -> None:
         )
 
 
+def sweep_expired_oauth() -> int:
+    """Delete expired tokens and codes. They are refused already; this is space.
+
+    An hour's access token and a rotated refresh token are only deleted when
+    presented again, and most never are, so without this every renewal left
+    two rows behind for ever.
+    """
+    now = int(time.time())
+    with _connect() as conn:
+        removed = conn.execute(
+            "DELETE FROM oauth_tokens WHERE expires_at IS NOT NULL AND expires_at < ?", (now,)
+        ).rowcount
+        conn.execute("DELETE FROM oauth_codes WHERE expires_at < ?", (now,))
+    return removed
+
+
 def delete_oauth_token(token: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(token),))

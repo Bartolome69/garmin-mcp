@@ -207,6 +207,8 @@ class GarminSession:
         self,
         tokenstore: str | Callable[[], str | None] | None = None,
         on_refresh: Callable[[str], None] | None = None,
+        reconnect_hint: str | None = None,
+        on_lapsed: Callable[[], None] | None = None,
     ) -> None:
         """
         tokenstore: where the Garmin session comes from. None means the local
@@ -216,6 +218,10 @@ class GarminSession:
         on_refresh: called with a fresh token blob after a password login, for
             callers storing it themselves. Unused here, where garminconnect
             writes the file.
+        reconnect_hint: when hosted there is no terminal and no password, so a
+            session Garmin has refused is fixed by connecting again in Claude.
+            This replaces the local-install advice in that one case.
+        on_lapsed: called when Garmin has refused the stored session for good.
         """
         self._lock = threading.RLock()
         self._memo: dict[Any, tuple[float, Any]] = {}
@@ -225,6 +231,8 @@ class GarminSession:
         self._tokenstore = tokenstore
         self._on_refresh = on_refresh
         self._saved_blob: str | None = None
+        self._reconnect_hint = reconnect_hint
+        self._on_lapsed = on_lapsed
 
     def _resolve_tokenstore(self) -> tuple[str | None, bool]:
         """Return (what to hand garminconnect, whether a session already existed)."""
@@ -236,6 +244,9 @@ class GarminSession:
     def _connect(self) -> Any:
         email, password = credentials()
         tokenstore, had_session = self._resolve_tokenstore()
+        if not had_session and self._reconnect_hint:
+            self._lapsed()
+            raise GarminAuthError(self._reconnect_hint)
         if not had_session and not (email and password):
             raise GarminAuthError(
                 "Not signed in to Garmin yet. Sign in once in a terminal:\n"
@@ -255,6 +266,9 @@ class GarminSession:
         except GarminMFARequired:
             raise
         except Exception as exc:
+            if self._reconnect_hint and _is_auth_failure(exc) and "429" not in str(exc):
+                self._lapsed()
+                raise GarminAuthError(self._reconnect_hint) from exc
             raise login_error(exc, had_cache=had_session) from exc
 
         after = _token_mtime()
@@ -297,6 +311,11 @@ class GarminSession:
             result = self._call(fn)
             self._save_if_renewed()
             return result
+
+    def _lapsed(self) -> None:
+        if self._on_lapsed is not None:
+            with contextlib.suppress(Exception):
+                self._on_lapsed()
 
     def _save_if_renewed(self) -> None:
         """Store the Garmin tokens again if a call renewed them.
