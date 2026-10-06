@@ -50,6 +50,7 @@ from garmin_mcp import analytics  # noqa: E402
 SENT: list[dict] = []
 analytics._post = SENT.append
 from garmin_mcp import store  # noqa: E402
+from garmin_mcp.session import GarminSession  # noqa: E402
 
 # Each stub reports which account it belongs to, so we can prove one person's
 # URL never reaches another person's session.
@@ -548,6 +549,68 @@ async def main() -> int:
                   setattr(analytics, "KEY", ""), analytics.capture("x", None, {}),
                   setattr(analytics, "KEY", "phc_test_key"), True))()[-1]
               and not any(e["event"] == "x" for e in SENT))
+
+        # -- connect once means it stays connected ------------------------
+        # garminconnect renews its token in place mid-session; the renewed one
+        # must reach the store, or a restart resumes from a retired token.
+        saved: list[str] = []
+        renewing = GarminSession(
+            tokenstore=json.dumps({"di_token": "renew-token"}), on_refresh=saved.append,
+        )
+        renewing.run(lambda c: c.get_user_profile())
+        after_login = len(saved)
+        renewing.run(lambda c: c.get_user_profile())
+        check("an unchanged token is not saved again", len(saved) == after_login, str(len(saved)))
+        renewing._client._marker = "renewed-token"
+        renewing.run(lambda c: c.get_user_profile())
+        check("a token renewed mid-session is saved",
+              bool(saved) and "renewed-token" in saved[-1], str(saved[-1:]))
+
+        # Someone away for weeks keeps their Garmin session: the keep-alive
+        # renews it without counting them as having used the connector.
+        idle = store.save_user(
+            "i***@example.com", json.dumps({"di_token": "idle-token"}),
+            email_hash=store.email_fingerprint("idle@example.com"), email="idle@example.com",
+        )
+        month_ago = int(time.time()) - 30 * 86400
+        with __import__("sqlite3").connect(DB) as conn:
+            conn.execute("UPDATE users SET created_at = ?, last_seen_at = ? WHERE user_token = ?",
+                         (month_ago, month_ago, idle))
+        due = store.idle_users(hosted.KEEP_ALIVE_AFTER)
+        check("an idle connection is due a keep-alive", idle in due, str(len(due)))
+        check("a connection in use is not", alice not in due)
+        counts = await anyio_run(lambda: hosted.keep_alive_once(spacing=0))
+        check("the keep-alive renews idle sessions", counts["renewed"] >= 1 and counts["lapsed"] == 0, str(counts))
+        with __import__("sqlite3").connect(DB) as conn:
+            seen, kept = conn.execute(
+                "SELECT last_seen_at, kept_alive_at FROM users WHERE user_token = ?", (idle,)
+            ).fetchone()
+        check("a keep-alive does not count as use", seen == month_ago, str(seen))
+        check("a keep-alive is recorded", kept is not None and kept > month_ago)
+        check("a kept-alive connection is not due again for a week",
+              idle not in store.idle_users(hosted.KEEP_ALIVE_AFTER))
+
+        # When Garmin refuses, say so: that person will need to sign in again.
+        with __import__("sqlite3").connect(DB) as conn:
+            conn.execute("UPDATE users SET kept_alive_at = 0 WHERE user_token = ?", (idle,))
+        real_session = hosted.GarminSession
+
+        class Refused(real_session):
+            def run(self, fn):
+                raise GarminConnectAuthenticationError("401")
+
+        hosted.GarminSession = Refused
+        try:
+            before = len(SENT)
+            counts = await anyio_run(lambda: hosted.keep_alive_once(spacing=0))
+        finally:
+            hosted.GarminSession = real_session
+        lapsed = [e for e in SENT[before:] if e["event"] == "garmin_session_lapsed"]
+        check("a lapsed Garmin session is counted", counts["lapsed"] >= 1, str(counts))
+        check("a lapsed Garmin session is reported with who it was",
+              any(e["properties"].get("email") == "idle@example.com" for e in lapsed), str(lapsed)[:200])
+        check("a lapsed session is kept, not deleted", store.get_user(idle) is not None)
+
     finally:
         server.should_exit = True
         thread.join(timeout=10)

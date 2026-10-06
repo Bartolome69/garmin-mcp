@@ -46,7 +46,12 @@ from . import analytics, store
 # Long enough to sign in to Garmin and fetch a code from email, no longer.
 CODE_TTL = 600
 ACCESS_TTL = 3600
-REFRESH_TTL = 60 * 60 * 24 * 30
+# A year, counted from the last renewal rather than from sign-in: every refresh
+# issues a new token with a new year. Connecting is meant to be done once, so a
+# break for injury or an off-season must not end it. Only a connection nobody
+# has touched in a year lapses, and Disconnect or a fresh sign-in still ends
+# one immediately.
+REFRESH_TTL = 60 * 60 * 24 * 365
 # How long a refresh token still works after it has been exchanged. Claude can
 # send the same refresh twice, from two requests that both found the access
 # token expired, or retry one whose answer it never received. With no grace

@@ -317,7 +317,9 @@
       <li>
         <span><strong>The access token Garmin issued you</strong>, encrypted at
         rest. This is the part that does the work: it is what lets the
-        connector read your training without asking you to sign in again.</span>
+        connector read your training without asking you to sign in again.
+        If you go a week without using it, the server renews this token itself,
+        reading nothing, so a long break does not end your connection.</span>
       </li>
       <li>
         <span><strong>Your email address</strong>, so we can get in touch if
@@ -330,8 +332,8 @@
         address.</span>
       </li>
       <li>
-        <span><strong>Two timestamps</strong>, for when the connection was made
-        and last used.</span>
+        <span><strong>Three timestamps</strong>, for when the connection was made,
+        last used, and last renewed by the server.</span>
       </li>
     </ul>
     <div class="stack">
@@ -420,7 +422,8 @@
         The server reports a few moments the same way: a sign-in that worked,
         a sign-in that failed and roughly why, the first time a new connection
         is used, once a day that it was used that day, and when a
-        connection could not be renewed, so Claude would show it as expired. Each carries a few yes-or-no flags and your email
+        connection could not be renewed, by Claude or by Garmin, so it would
+        need connecting again. Each carries a few yes-or-no flags and your email
         address, so I can see who is using it and help if something breaks.
       </p>
       <p class="small">

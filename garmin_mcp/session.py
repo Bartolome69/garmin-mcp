@@ -224,6 +224,7 @@ class GarminSession:
         self._connected_at: float | None = None
         self._tokenstore = tokenstore
         self._on_refresh = on_refresh
+        self._saved_blob: str | None = None
 
     def _resolve_tokenstore(self) -> tuple[str | None, bool]:
         """Return (what to hand garminconnect, whether a session already existed)."""
@@ -267,7 +268,9 @@ class GarminSession:
 
         if self._on_refresh is not None:
             with contextlib.suppress(Exception):
-                self._on_refresh(client.client.dumps())
+                blob = client.client.dumps()
+                self._on_refresh(blob)
+                self._saved_blob = blob
         self._connected_at = time.time()
         log.info("Garmin session established via %s", self._source)
         return client
@@ -290,6 +293,29 @@ class GarminSession:
         Garmin expires sessions server-side without warning, so one auth failure
         means "reauthenticate", not "report an error".
         """
+        with self._lock:
+            result = self._call(fn)
+            self._save_if_renewed()
+            return result
+
+    def _save_if_renewed(self) -> None:
+        """Store the Garmin tokens again if a call renewed them.
+
+        garminconnect renews its access token in place when it nears expiry, and
+        Garmin can hand back a new refresh token with it. Saving only at sign-in
+        left the stored copy holding the old one, so the next restart resumed
+        from a token Garmin had already retired and the person had to sign in
+        again. Comparing first keeps this to one write per renewal.
+        """
+        if self._on_refresh is None or self._client is None:
+            return
+        with contextlib.suppress(Exception):
+            blob = self._client.client.dumps()
+            if blob != self._saved_blob:
+                self._on_refresh(blob)
+                self._saved_blob = blob
+
+    def _call(self, fn: Callable[[Any], Any]) -> Any:
         with self._lock:
             client = self.client()
             try:

@@ -40,6 +40,10 @@ MIGRATIONS = (
     # The address itself, encrypted like the token, so whoever runs this can
     # get in touch about a connection. Rows from before this column are NULL.
     "ALTER TABLE users ADD COLUMN email_enc BLOB",
+    # When the server last renewed this Garmin session on its own, for someone
+    # who had not used it in a while. Kept apart from last_seen_at, which
+    # counts people actually using the connector.
+    "ALTER TABLE users ADD COLUMN kept_alive_at INTEGER",
 )
 
 # OAuth state. Separate from `users`: a person is one row there however many
@@ -204,13 +208,44 @@ def load_blob(user_token: str) -> str | None:
         return None
 
 
-def update_blob(user_token: str, token_blob: str) -> None:
-    """Persist a refreshed token so the next request resumes from it."""
+def update_blob(user_token: str, token_blob: str, *, in_use: bool = True) -> None:
+    """Persist a refreshed token so the next request resumes from it.
+
+    in_use=False is the keep-alive renewing an idle session: the token is
+    saved but the person is not counted as having used the connector.
+    """
     encrypted = _cipher().encrypt(token_blob.encode())
     with _connect() as conn:
+        if in_use:
+            conn.execute(
+                "UPDATE users SET token_blob = ?, last_seen_at = ? WHERE user_token = ?",
+                (encrypted, int(time.time()), user_token),
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET token_blob = ? WHERE user_token = ?",
+                (encrypted, user_token),
+            )
+
+
+def idle_users(idle_for: int) -> list[str]:
+    """Connections neither used nor kept alive in the last `idle_for` seconds."""
+    cutoff = int(time.time()) - idle_for
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT user_token FROM users "
+            "WHERE COALESCE(last_seen_at, created_at) < ? AND COALESCE(kept_alive_at, 0) < ? "
+            "ORDER BY COALESCE(kept_alive_at, 0)",
+            (cutoff, cutoff),
+        ).fetchall()
+    return [row[0] for row in rows]
+
+
+def mark_kept_alive(user_token: str) -> None:
+    with _connect() as conn:
         conn.execute(
-            "UPDATE users SET token_blob = ?, last_seen_at = ? WHERE user_token = ?",
-            (encrypted, int(time.time()), user_token),
+            "UPDATE users SET kept_alive_at = ? WHERE user_token = ?",
+            (int(time.time()), user_token),
         )
 
 

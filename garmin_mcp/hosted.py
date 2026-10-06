@@ -191,6 +191,62 @@ def session_for(user_token: str) -> GarminSession:
     return created
 
 
+# A connection is meant to be made once. Garmin's own sign-in lapses if it goes
+# unused for long enough, and when hosted there is no password to fall back
+# on, so a long break would quietly cost someone their connection. Anyone idle
+# for a week has their Garmin session renewed on a timer instead: one cheap
+# read, nothing kept from it, the renewed token saved.
+KEEP_ALIVE_AFTER = 7 * 86400
+KEEP_ALIVE_EVERY = 6 * 3600
+# Between people, so a backlog after downtime is a trickle to Garmin, not a burst.
+KEEP_ALIVE_SPACING = 5.0
+
+
+def keep_alive_once(spacing: float = KEEP_ALIVE_SPACING) -> dict[str, int]:
+    """Renew the Garmin session of everyone idle for a week. Returns counts."""
+    counts = {"renewed": 0, "lapsed": 0}
+    for user_token in store.idle_users(KEEP_ALIVE_AFTER):
+        user = store.get_user(user_token)
+        if user is None:
+            continue
+        # Its own session, not the cached one: saving here must not count the
+        # person as active, and a cached client would hold the token this
+        # replaces. The cached one is dropped so the next real use reloads.
+        session = GarminSession(
+            tokenstore=lambda t=user_token: store.load_blob(t),
+            on_refresh=lambda blob, t=user_token: store.update_blob(t, blob, in_use=False),
+        )
+        try:
+            session.run(lambda c: c.get_user_profile())
+            counts["renewed"] += 1
+        except Exception as exc:  # noqa: BLE001
+            counts["lapsed"] += 1
+            log.info("Keep-alive could not renew a session (%s)", type(exc).__name__)
+            email = store.email_for(user_token)
+            analytics.capture(
+                "garmin_session_lapsed",
+                user.email_hash or user_token,
+                {"account": user.email_masked, **({"email": email} if email else {})},
+            )
+        finally:
+            store.mark_kept_alive(user_token)
+            _SESSIONS.pop(user_token, None)
+        if spacing:
+            time.sleep(spacing)
+    return counts
+
+
+def _keep_alive_forever() -> None:
+    while True:
+        try:
+            counts = keep_alive_once()
+            if counts["renewed"] or counts["lapsed"]:
+                log.info("Keep-alive: %(renewed)d renewed, %(lapsed)d lapsed", counts)
+        except Exception:  # noqa: BLE001
+            log.exception("Keep-alive pass failed")
+        time.sleep(KEEP_ALIVE_EVERY)
+
+
 def _sweep_pending() -> None:
     cutoff = time.time() - _PENDING_TTL
     for key, value in list(_PENDING.items()):
@@ -973,6 +1029,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     for handler in logging.getLogger().handlers:
         handler.addFilter(RedactUserTokens())
+
+    threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
 
     uvicorn.run(
         build_app(),
