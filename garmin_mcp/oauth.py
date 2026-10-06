@@ -41,12 +41,19 @@ from mcp.server.auth.provider import (
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-from . import store
+from . import analytics, store
 
 # Long enough to sign in to Garmin and fetch a code from email, no longer.
 CODE_TTL = 600
 ACCESS_TTL = 3600
 REFRESH_TTL = 60 * 60 * 24 * 30
+# How long a refresh token still works after it has been exchanged. Claude can
+# send the same refresh twice, from two requests that both found the access
+# token expired, or retry one whose answer it never received. With no grace
+# the second exchange fails and Claude reports the connection as expired,
+# which only signing in again fixes. Two minutes covers that and keeps a
+# stolen token worth no more than it was.
+REFRESH_REUSE_GRACE = 120
 
 # Authorization requests waiting for someone to finish signing in. In memory on
 # purpose: a restart just means starting the sign-in again, and nothing here
@@ -302,8 +309,11 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> RefreshToken | None:
+        # Looked at first: load_oauth_token deletes an expired row as it reads it.
+        seen = store.peek_oauth_token(refresh_token, "refresh")
         row = store.load_oauth_token(refresh_token, "refresh")
         if not row or row["client_id"] != client.client_id:
+            _refresh_refused(seen, client.client_id)
             return None
         return RefreshToken(
             token=refresh_token,
@@ -320,9 +330,10 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        # One use: the old refresh token dies with the exchange, so a stolen one
-        # is worth a single request and then stops working.
-        store.delete_oauth_token(refresh_token.token)
+        # One use, give or take a moment: the old refresh token stops working
+        # REFRESH_REUSE_GRACE after the exchange, so a duplicate request from
+        # Claude still lands but a stolen one is soon worth nothing.
+        store.expire_oauth_token_by(refresh_token.token, int(time.time()) + REFRESH_REUSE_GRACE)
         return self._issue(
             client_id=client.client_id,
             subject=refresh_token.subject or "",
@@ -345,3 +356,32 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         store.delete_oauth_token(token.token)
+
+
+def _refresh_refused(seen: dict | None, client_id: str) -> None:
+    """Report a refused refresh: to Claude it is a connection that has expired.
+
+    Nothing else shows it. The person sees "connection expired" in Claude and
+    the server only answered 400, so this is how a broken link gets noticed
+    before someone has to message about it.
+    """
+    if not seen:
+        reason = "unknown"
+    elif seen["client_id"] != client_id:
+        reason = "other_client"
+    elif seen["expires_at"] is not None and seen["expires_at"] < (seen["created_at"] or 0) + REFRESH_TTL - 60:
+        reason = "reused_after_rotation"
+    else:
+        reason = "expired"
+    user = store.get_user(seen["subject"]) if seen and seen.get("subject") else None
+    props: dict[str, Any] = {"reason": reason}
+    if user:
+        props["account"] = user.email_masked
+        email = store.email_for(user.user_token)
+        if email:
+            props["email"] = email
+    analytics.capture(
+        "connection_refresh_refused",
+        (user.email_hash or user.user_token) if user else None,
+        props,
+    )

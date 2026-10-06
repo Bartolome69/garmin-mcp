@@ -352,11 +352,29 @@ async def main() -> int:
         refreshed = json.loads(body) if code == 200 else {}
         check("refresh token yields a new access token",
               bool(refreshed.get("access_token")), f"status {code} {body[:120]}")
+        # Claude can send the same refresh twice, from two requests that both
+        # found the access token expired. The second must not end the session.
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "refresh_token", "refresh_token": refresh,
+            "client_id": client_id,
+        }))
+        check("a duplicate refresh moments later still works",
+              code == 200 and bool(json.loads(body).get("access_token")), f"status {code} {body[:120]}")
+        with __import__("sqlite3").connect(DB) as conn:
+            remaining = conn.execute(
+                "SELECT expires_at FROM oauth_tokens WHERE token_hash = ?",
+                (hashlib.sha256(refresh.encode()).hexdigest(),),
+            ).fetchone()
+        check("an exchanged refresh token expires within minutes, not a month",
+              remaining is not None and remaining[0] <= time.time() + 180, str(remaining))
+        with __import__("sqlite3").connect(DB) as conn:
+            conn.execute("UPDATE oauth_tokens SET expires_at = ? WHERE token_hash = ?",
+                         (int(time.time()) - 1, hashlib.sha256(refresh.encode()).hexdigest()))
         code, _, _ = await run(lambda: http("POST", "/token", {
             "grant_type": "refresh_token", "refresh_token": refresh,
             "client_id": client_id,
         }))
-        check("the used refresh token is dead", code != 200, f"status {code}")
+        check("the used refresh token is dead once the grace has passed", code != 200, f"status {code}")
 
         # -- 9. the token actually gates the MCP endpoint ----------------
         # The point of all of the above: /mcp is one public path, and who is

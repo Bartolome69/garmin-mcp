@@ -373,6 +373,33 @@ def load_oauth_token(token: str, kind: str) -> dict | None:
     }
 
 
+def peek_oauth_token(token: str, kind: str) -> dict | None:
+    """A token's row even if it has expired, for saying why it was refused.
+
+    Reads only: load_oauth_token is still what decides whether a token works.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT client_id, subject, expires_at, created_at FROM oauth_tokens "
+            "WHERE token_hash = ? AND kind = ?",
+            (token_hash(token), kind),
+        ).fetchone()
+    if not row:
+        return None
+    client_id, subject, expires_at, created_at = row
+    return {"client_id": client_id, "subject": subject, "expires_at": expires_at, "created_at": created_at}
+
+
+def expire_oauth_token_by(token: str, at: int) -> None:
+    """Bring a token's expiry forward to `at`, never push it back."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE oauth_tokens SET expires_at = ? "
+            "WHERE token_hash = ? AND (expires_at IS NULL OR expires_at > ?)",
+            (at, token_hash(token), at),
+        )
+
+
 def delete_oauth_token(token: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(token),))
