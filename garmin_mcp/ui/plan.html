@@ -23,7 +23,11 @@
     --done-bg: var(--color-background-success, #E3EFE7);
     --miss: var(--color-text-danger, #B4492A);
     --miss-bg: var(--color-background-danger, #F6E6DE);
-    --ring: var(--color-ring-primary, #2F6B4F);
+    --ring: var(--brand);
+    /* Daash: its red for accents and running, its navy for riding. */
+    --brand: #E63023;
+    --run: #E63023;
+    --ride: #2B3A4E;
     --easy: #6E9C82;
     --long: #3F6E9E;
     --quality: #C2612F;
@@ -48,7 +52,8 @@
       --done-bg: var(--color-background-success, #17301F);
       --miss: var(--color-text-danger, #E08A5A);
       --miss-bg: var(--color-background-danger, #33201A);
-      --ring: var(--color-ring-primary, #63BC8E);
+      --ring: var(--brand);
+      --brand: #FF5A4E; --run: #FF5A4E; --ride: #9DB2CF;
       --easy: #7FB597; --long: #6E9CCB; --quality: #E08A5A; --race: #D4B04A; --strength: #A694D1;
     }
   }
@@ -65,7 +70,8 @@
     --done-bg: var(--color-background-success, #17301F);
     --miss: var(--color-text-danger, #E08A5A);
     --miss-bg: var(--color-background-danger, #33201A);
-    --ring: var(--color-ring-primary, #63BC8E);
+    --ring: var(--brand);
+    --brand: #FF5A4E; --run: #FF5A4E; --ride: #9DB2CF;
     --easy: #7FB597; --long: #6E9CCB; --quality: #E08A5A; --race: #D4B04A; --strength: #A694D1;
   }
 
@@ -92,7 +98,10 @@
   }
   .upcoming { margin-top: 8px; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .code { background: var(--sunk); color: var(--ink); padding: 2px 7px; border-radius: 999px; letter-spacing: 0.08em; }
-  h1 { margin: 4px 0 0; font-size: 21px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+  h1 { margin: 4px 0 0; font-family: "Inter Tight", var(--sans); font-size: 22px; line-height: 1.15; font-weight: 700;
+    letter-spacing: -0.025em; text-wrap: balance; }
+  .wordmark { font-family: "Inter Tight", var(--sans); font-style: italic; font-weight: 900; font-size: 13px;
+    letter-spacing: -0.01em; text-transform: none; color: var(--brand); }
   .sub { color: var(--muted); font-size: 13px; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .icon-btn {
     flex: none; width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--line);
@@ -119,13 +128,13 @@
   .tcol { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
   .tval { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .tbar-wrap { flex: 1; width: 100%; max-width: 44px; display: flex; align-items: flex-end; }
-  .tbar { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: color-mix(in srgb, var(--done) 55%, var(--sunk)); }
-  .tcol.current .tbar { background: var(--done); }
+  .tbar { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: var(--sunk); }
   .tstack { display: flex; flex-direction: column; width: 100%; border-radius: 6px 6px 3px 3px; overflow: hidden; opacity: 0.72; }
   .tcol.current .tstack { opacity: 1; }
   .tstack i { display: block; }
-  .ride-c { background: var(--long); }
-  .run-c { background: var(--easy); }
+  .ride-c { background: var(--ride); }
+  .run-c { background: var(--run); }
+  .other-c { background: var(--faint); }
   .tlab { font-size: 11px; color: var(--muted); white-space: nowrap; }
   .tcol.current .tlab { color: var(--ink); font-weight: 600; }
   .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -158,7 +167,7 @@
     padding: 7px 13px; font-size: 13px; font-weight: 550; cursor: pointer;
   }
   .act:hover { background: var(--sunk); }
-  .act.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .act.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
   .act.primary:hover { opacity: 0.88; }
   .sent { font-size: 12.5px; color: var(--done); margin-top: 8px; }
 
@@ -469,24 +478,12 @@
         .sort(function (a, b) { return secs(a) / a.actual_km - secs(b) / b.actual_km; })[0] || null,
     };
   }
-  // Plenty of both: the smaller takes a fifth of their time, over two or more sessions each.
-  function isMixed(run, ride) {
-    return run.count >= 2 && ride.count >= 2 && Math.min(run.secs, ride.secs) >= 0.2 * (run.secs + ride.secs);
-  }
   function hrs(secs) {
     var h = secs / 3600;
     return (h >= 10 ? String(Math.round(h)) : String(Math.round(h * 10) / 10)) + "h";
   }
   function weekSecs(w, sport) {
     return w.sessions.reduce(function (t, r) { return t + (r.sport === sport ? (r.secs || 0) : 0); }, 0);
-  }
-  // Which sport leads a log: the one that took more of the time.
-  function lead(plan) {
-    return plan.primary === "ride"
-      ? { km: "ride_km", count: "rides", one: " ride", many: " rides", done: " km ridden",
-          other: "runs", otherOne: " run", otherMany: " runs" }
-      : { km: "run_km", count: "runs", one: " run", many: " runs", done: " km run",
-          other: "rides", otherOne: " ride", otherMany: " rides" };
   }
   function paceText(secondsPerKm) {
     var t = Math.round(secondsPerKm), m = Math.floor(t / 60);
@@ -629,8 +626,8 @@
     var planCode = running ? running.label : plan.label;
     app.appendChild(el("div", { class: "top" }, [
       el("div", {}, [
-        el("div", { class: "kicker" }, fromCalendar && !running ? ["Your calendar"]
-          : [el("span", { class: "code", text: planCode }), "Training plan"]),
+        el("div", { class: "kicker" }, fromCalendar && !running ? [el("span", { class: "wordmark", text: "Daash" }), "Your calendar"]
+          : [el("span", { class: "wordmark", text: "Daash" }), el("span", { class: "code", text: planCode }), "Training plan"]),
         el("h1", { text: (running ? running.goal : plan.goal) || (fromCalendar ? "Your training" : "Your plan") }),
         el("div", { class: "sub", text: weekLine + " · " + short(running ? running.starts : plan.starts) + " to " + short(running ? running.ends : plan.ends) }),
         plan.upcoming_plan ? el("div", { class: "upcoming" }, [
@@ -762,7 +759,7 @@
     app.textContent = "";
     app.appendChild(el("div", { class: "top" }, [
       el("div", {}, [
-        el("div", { class: "kicker" }, ["Your training log"]),
+        el("div", { class: "kicker" }, [el("span", { class: "wordmark", text: "Daash" }), "Your training log"]),
         el("h1", { text: "Last " + plan.weeks.length + " weeks" }),
         el("div", { class: "sub", text: "Nothing scheduled on Garmin · " + short(plan.starts) + " to " + short(plan.ends) }),
       ]),
@@ -770,76 +767,67 @@
         [svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')]),
     ]));
 
-    var L = lead(plan);
+    // One summary of everything: each sport done gets its own totals and
+    // highlights. With both, the weeks are drawn in time, split by sport,
+    // because kilometres don't add across a bike and two feet.
     var run = sportStats(plan, "run"), ride = sportStats(plan, "ride");
-    var mixed = isMixed(run, ride);
+    var S = [];
+    if (run.count) S.push({ key: "run", st: run, cls: "run-c", did: " km run", one: " run", many: " runs", label: "run" });
+    if (ride.count) S.push({ key: "ride", st: ride, cls: "ride-c", did: " km ridden", one: " ride", many: " rides", label: "ride" });
+    var both = S.length > 1;
+    var weeksN = plan.weeks.length || 1;
+    var allSecs = function (w) { return w.sessions.reduce(function (t, r) { return t + (r.secs || 0); }, 0); };
+    var weekKm = function (w, sport) {
+      return Math.round(w.sessions.reduce(function (t, r) { return t + (r.sport === sport ? (r.actual_km || 0) : 0); }, 0) * 10) / 10; };
+    var others = plan.weeks.reduce(function (t, w) {
+      return t + w.sessions.filter(function (r) { return r.sport !== "run" && r.sport !== "ride"; }).length; }, 0);
     var hl = [];
-    if (mixed) {
-      // Both sports, side by side. Kilometres don't add across a bike and two
-      // feet, so the weeks are drawn in time, split by sport.
-      var weeksN = plan.weeks.length || 1;
-      app.appendChild(el("div", { class: "legend" }, [
-        el("span", {}, [el("i", { class: "dot ride-c" }), el("b", { text: fmtKm(ride.km) }), " km ridden · ",
-          el("b", { text: String(ride.count) }), ride.count === 1 ? " ride" : " rides"]),
-        el("span", {}, [el("i", { class: "dot run-c" }), el("b", { text: fmtKm(run.km) }), " km run · ",
-          el("b", { text: String(run.count) }), run.count === 1 ? " run" : " runs"]),
-        el("span", {}, [el("b", { text: hrs((run.secs + ride.secs) / weeksN) }), " a week"]),
-      ]));
-      var totals = plan.weeks.map(function (w) { return weekSecs(w, "ride") + weekSecs(w, "run"); });
-      var top = Math.max.apply(null, totals.concat([1]));
-      app.appendChild(el("div", { class: "trend", role: "img",
-        "aria-label": plan.weeks.map(function (w) {
-          return short(w.starts) + ": " + hrs(weekSecs(w, "ride")) + " riding, " + hrs(weekSecs(w, "run")) + " running"; }).join(", ") },
-        plan.weeks.map(function (w, i) {
-          var rs = weekSecs(w, "ride"), us = weekSecs(w, "run");
-          return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
-            el("div", { class: "tval", text: totals[i] ? hrs(totals[i]) : "0" }),
-            el("div", { class: "tbar-wrap" }, [
-              totals[i] ? el("div", { class: "tstack", style: "height:" + Math.max(3, 100 * totals[i] / top) + "%" }, [
-                rs ? el("i", { class: "ride-c", style: "flex:" + rs }) : null,
-                us ? el("i", { class: "run-c", style: "flex:" + us }) : null,
-              ]) : el("i", { class: "tbar", style: "height:3%" }),
-            ]),
-            el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
-          ]);
-        })));
-      if (ride.longest) hl.push(highlight("Longest ride", ride.longest));
-      if (ride.fastest) hl.push(highlight("Fastest ride", ride.fastest));
-      if (run.longest) hl.push(highlight("Longest run", run.longest));
-      if (run.fastest) hl.push(highlight("Fastest run", run.fastest));
-    } else {
-      var count = plan[L.count] || 0, others = plan[L.other] || 0;
-      app.appendChild(el("div", { class: "legend" }, [
-        el("span", {}, [el("b", { text: fmtKm(plan[L.km] || 0) }), L.done]),
-        el("span", {}, [el("b", { text: String(count) }), count === 1 ? L.one : L.many]),
-        el("span", {}, [el("b", { text: fmtKm(plan.average_week_km || 0) }), " km a week"]),
-        others ? el("span", {}, ["+ ", el("b", { text: String(others) }), others === 1 ? L.otherOne : L.otherMany]) : null,
-      ]));
 
-      var max = Math.max.apply(null, plan.weeks.map(function (w) { return w[L.km] || 0; }).concat([1]));
-      app.appendChild(el("div", { class: "trend", role: "img",
-        "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + fmtKm(w[L.km] || 0) + " km"; }).join(", ") },
-        plan.weeks.map(function (w) {
-          return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
-            el("div", { class: "tval", text: fmtKm(w[L.km] || 0) }),
-            el("div", { class: "tbar-wrap" }, [el("i", { class: "tbar", style: "height:" + Math.max(3, 100 * (w[L.km] || 0) / max) + "%" })]),
-            el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
-          ]);
-        })));
-      if (plan.longest) hl.push(highlight("Longest", plan.longest));
-      if (plan.fastest) hl.push(highlight("Fastest", plan.fastest));
-    }
+    var legend = S.map(function (x) {
+      return el("span", {}, [el("i", { class: "dot " + x.cls }), el("b", { text: fmtKm(x.st.km) }), x.did + " · ",
+        el("b", { text: String(x.st.count) }), x.st.count === 1 ? x.one : x.many]);
+    });
+    if (both || !S.length) legend.push(el("span", {}, [el("b", { text: hrs(plan.weeks.reduce(function (t, w) { return t + allSecs(w); }, 0) / weeksN) }), " a week"]));
+    else legend.push(el("span", {}, [el("b", { text: fmtKm(S[0].st.km / weeksN) }), " km a week"]));
+    if (others) legend.push(el("span", {}, ["+ ", el("b", { text: String(others) }), " other"]));
+    app.appendChild(el("div", { class: "legend" }, legend));
+
+    // Each week's bar: time for both sports or for neither, kilometres for one.
+    var value = function (w) { return both || !S.length ? allSecs(w) : weekKm(w, S[0].key); };
+    var label = function (v) { return both || !S.length ? (v ? hrs(v) : "0") : fmtKm(v); };
+    var top = Math.max.apply(null, plan.weeks.map(value).concat([1]));
+    app.appendChild(el("div", { class: "trend", role: "img",
+      "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + label(value(w)) + (both || !S.length ? "" : " km"); }).join(", ") },
+      plan.weeks.map(function (w) {
+        var v = value(w);
+        var parts = both
+          ? S.map(function (x) { var t = weekSecs(w, x.key); return t ? el("i", { class: x.cls, style: "flex:" + t }) : null; })
+          : [el("i", { class: S.length ? S[0].cls : "other-c", style: "flex:1" })];
+        return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
+          el("div", { class: "tval", text: label(v) }),
+          el("div", { class: "tbar-wrap" }, [
+            v ? el("div", { class: "tstack", style: "height:" + Math.max(3, 100 * v / top) + "%" }, parts)
+              : el("i", { class: "tbar", style: "height:3%" }),
+          ]),
+          el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
+        ]);
+      })));
+
+    S.forEach(function (x) {
+      if (x.st.longest) hl.push(highlight("Longest " + x.label, x.st.longest));
+      if (x.st.fastest) hl.push(highlight("Fastest " + x.label, x.st.fastest));
+    });
     if (hl.length) app.appendChild(el("div", { class: "highlights" }, hl));
 
     app.appendChild(el("div", { class: "next" }, [
-      el("div", { class: "stripe", style: "background:var(--ring)" }),
+      el("div", { class: "stripe", style: "background:var(--brand)" }),
       el("div", {}, [
         el("div", { class: "next-label", text: "No plan yet" }),
         el("div", { class: "next-name", text: "Turn this into a plan" }),
         el("div", { class: "next-meta", text: "Claude builds it from these weeks and puts it on your Garmin calendar and watch." }),
         el("div", { class: "actions" }, [
           el("button", { class: "act primary", text: "Build me a plan", onclick: function (e) {
-            ask("Build me a training plan from my last few weeks of " + (mixed ? "riding and running" : plan.primary === "ride" ? "riding" : "running") + ". Ask me my goal and event date first, then put it on my Garmin calendar.", e.currentTarget); } }),
+            ask("Build me a training plan from my last few weeks of " + (both ? "running and riding" : S.length && S[0].key === "ride" ? "riding" : "training") + ". Ask me my goal and event date first, then put it on my Garmin calendar.", e.currentTarget); } }),
         ]),
       ]),
     ]));
@@ -852,18 +840,17 @@
         state.open["log" + w.week] = !box.classList.contains("open"); renderLog(state.plan); } }, [
         el("div", { class: "wk" }, [weekName(w), el("small", { text: short(w.starts) })]),
         el("span", { class: "pips" }),
-        mixed
-          ? el("span", { class: "count" }, [el("span", { class: "km", text: hrs(weekSecs(w, "ride") + weekSecs(w, "run")) }),
-              el("span", { class: "sessions", text: [w.rides ? w.rides + (w.rides === 1 ? " ride" : " rides") : null,
-                w.runs ? w.runs + (w.runs === 1 ? " run" : " runs") : null].filter(Boolean).join(" · ") })])
-          : el("span", { class: "count" }, [el("span", { class: "km", text: fmtKm(w[L.km] || 0) + " km" }),
-              el("span", { class: "sessions", text: (w[L.count] || 0) + (w[L.count] === 1 ? L.one : L.many) })]),
+        el("span", { class: "count" }, [
+          el("span", { class: "km", text: both || !S.length ? hrs(allSecs(w)) : fmtKm(weekKm(w, S[0].key)) + " km" }),
+          el("span", { class: "sessions", text: S.map(function (x) {
+            var n = w.sessions.filter(function (r) { return r.sport === x.key && r.actual_km; }).length;
+            return n ? n + (n === 1 ? x.one : x.many) : null; }).filter(Boolean).join(" · ") })]),
         svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
       ]));
       var list = el("div", { class: "loglist" });
       if (!w.sessions.length) list.appendChild(el("div", { class: "logrow empty-week", text: "Nothing recorded" }));
       w.sessions.forEach(function (r) {
-        var k = mixed && r.sport === "ride" ? { c: "var(--long)" } : mixed && r.sport === "run" ? { c: "var(--easy)" } : kind(r.name, r.sport);
+        var k = { c: r.sport === "ride" ? "var(--ride)" : r.sport === "run" ? "var(--run)" : r.sport === "strength" ? "var(--strength)" : "var(--faint)" };
         list.appendChild(el("div", { class: "logrow", style: "--t:" + k.c }, [
           el("span", { class: "lday", text: r.day }),
           el("span", { class: "lname", text: r.name }),

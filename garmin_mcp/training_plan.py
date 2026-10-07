@@ -256,9 +256,6 @@ LOG_WEEKS = 4
 FASTEST_MIN_METRES = 3000
 # A ride under this is a commute or a spin, not a fair "fastest".
 FASTEST_MIN_RIDE_METRES = 15000
-# The smaller of running and riding must take at least this share of their
-# combined time, over two or more sessions each, for the log to show both.
-MIXED_SHARE = 0.2
 
 
 def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: int = LOG_WEEKS) -> dict[str, Any]:
@@ -268,9 +265,10 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
     the trend skipping over it. The same shape the plan view already draws
     weeks from, marked as a log.
 
-    Runs and rides are totalled apart. Whichever took more of the time leads
-    the card (its "primary"), so a cyclist sees kilometres ridden rather than
-    a row of zeros for running.
+    Runs and rides are totalled apart, each with its own longest and fastest,
+    so a cyclist sees kilometres ridden rather than a row of zeros for running,
+    and someone who does both sees both. "primary" is whichever took more of
+    the time; the top-level longest and fastest are its.
     """
     monday = monday_of(today)
     first = monday - timedelta(weeks=weeks - 1)
@@ -328,8 +326,8 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
     rides = [r for r in rows if r["sport"] == "ride" and r["_metres"] > 0]
     run_secs, ride_secs = sum(r["_seconds"] for r in runs), sum(r["_seconds"] for r in rides)
     primary = "ride" if ride_secs > run_secs else "run"
-    # Someone who does plenty of both gets both, side by side, by time.
-    mixed = len(runs) >= 2 and len(rides) >= 2 and min(run_secs, ride_secs) >= MIXED_SHARE * (run_secs + ride_secs)
+    # Both sports done: the card shows both, side by side, by time.
+    mixed = bool(runs) and bool(rides)
     lead = rides if primary == "ride" else runs
     longest = max(lead, key=lambda r: r["_metres"], default=None)
     if primary == "ride":

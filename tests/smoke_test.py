@@ -218,7 +218,7 @@ def check_ride_led_log(check) -> None:
           str({k: this_week.get(k) for k in ("ride_km", "rides")}))
     runner = tp.summarise_log([r for r in rides if r["activityType"]["typeKey"] == "running"], today)
     check("a runner's log is still led by running", runner.get("primary") == "run" and runner.get("runs") == 1)
-    check("one jog beside the rides is not a runner-and-cyclist", not log.get("mixed"))
+    check("a jog beside the rides puts both on the card", log.get("mixed") is True)
     both = rides + [
         {"activityId": 90 + i, "startTimeLocal": f"2026-10-0{d} 18:00:00", "activityName": "Run",
          "activityType": {"typeKey": "running"}, "distance": km * 1000, "duration": secs, "movingDuration": secs}
