@@ -651,6 +651,74 @@ async def main() -> int:
         check("a session refused in use is reported once",
               len(in_use) == 1 and in_use[0]["properties"].get("source") == "in_use", str(len(in_use)))
 
+        # What's new: said once per person, on a good answer, and counted.
+        news_user = store.save_user(
+            "n***@example.com", json.dumps({"di_token": "news-token"}),
+            email_hash=store.email_fingerprint("news@example.com"), email="news@example.com",
+        )
+        hosted._TOOL_REPORTED.clear()
+        before = len(SENT)
+        first_answer = await call(news_user, "get_connection_status")
+        second_answer = await call(news_user, "get_connection_status")
+        await call(news_user, "get_daily_summary", {"date": "2026-09-22"})
+        await asyncio.sleep(0.3)  # events go out on their own threads
+        events = SENT[before:]
+        check("the what's-new note rides along with the first answer",
+              hosted.NEWS in str(first_answer.get("whats_new")), str(first_answer)[:120])
+        check("and is not said twice", "whats_new" not in second_answer)
+        shown = [e for e in events if e["event"] == "whats_new_shown"]
+        check("showing it is counted once, with who it was",
+              len(shown) == 1 and shown[0]["properties"].get("email") == "news@example.com"
+              and shown[0]["properties"].get("version") == hosted.NEWS_VERSION, str(shown)[:200])
+        used = [e["properties"]["tool"] for e in events if e["event"] == "tool_used"]
+        check("each tool is counted once a day, not once a call",
+              sorted(used) == ["get_connection_status", "get_daily_summary"], str(used))
+        check("tool counts carry no Garmin data",
+              all("12345" not in json.dumps(e) for e in events if e["event"] == "tool_used"))
+        check("a new version is said again",
+              store.claim_news(news_user, hosted.NEWS_VERSION + 1)
+              and not store.claim_news(news_user, hosted.NEWS_VERSION + 1))
+        with store._connect() as conn:
+            conn.execute("UPDATE users SET news_seen = 0 WHERE user_token = ?", (news_user,))
+        check("a failed answer doesn't use the note up",
+              hosted._after_tool_for(news_user, store.get_user(news_user))("x", {"error": "no"})
+              == {"error": "no"} and store.claim_news(news_user, hosted.NEWS_VERSION))
+
+        # Someone connecting for the first time hears nothing about what's new.
+        hosted._ATTEMPTS.clear()
+        code, body = await anyio_run(signin, "brandnew@example.com")
+        fresh = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
+        check("a first sign-in skips the what's-new note",
+              bool(fresh) and "whats_new" not in await call(fresh.group(1), "get_connection_status"))
+
+        # Update emails: only to people who haven't opted out, and one click
+        # (plus a confirm, so a mail scanner can't do it) stops them.
+        fingerprint = store.email_fingerprint("news@example.com")
+        check("people with an address kept can be emailed",
+              ("news@example.com", fingerprint) in store.emailable())
+        link = hosted.unsubscribe_url(base, fingerprint)
+        code, body = await anyio_run(fetch, link[len(base):])
+        check("the unsubscribe link asks before acting",
+              code == 200 and "Stop update emails" in body
+              and ("news@example.com", fingerprint) in store.emailable(), str(code))
+        code, body = await anyio_run(post, "/email/unsubscribe", {"u": fingerprint, "s": "0" * 24})
+        check("a forged unsubscribe is refused",
+              code == 400 and ("news@example.com", fingerprint) in store.emailable(), str(code))
+        before = len(SENT)
+        sig = store.unsubscribe_signature(fingerprint)
+        code, body = await anyio_run(post, "/email/unsubscribe", {"u": fingerprint, "s": sig})
+        await asyncio.sleep(0.3)
+        check("confirming unsubscribes",
+              code == 200 and "unsubscribed" in body
+              and all(fp != fingerprint for _, fp in store.emailable()), str(code))
+        check("unsubscribing is counted",
+              any(e["event"] == "email_unsubscribed" for e in SENT[before:]))
+        store.save_user("n***@example.com", json.dumps({"di_token": "news-2"}),
+                        email_hash=fingerprint, email="news@example.com")
+        check("signing in again keeps the opt-out and the note seen",
+              all(fp != fingerprint for _, fp in store.emailable())
+              and not store.claim_news(store.tokens_for(fingerprint)[-1], hosted.NEWS_VERSION))
+
     finally:
         server.should_exit = True
         thread.join(timeout=10)

@@ -35,7 +35,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, cycling, gear, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
+from . import conditions, cycling, gear, hooks, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -370,6 +370,9 @@ def tool_errors(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
+        return hooks.after_tool(fn.__name__, await answer(*args, **kwargs))
+
+    async def answer(*args, **kwargs):
         try:
             if fn.__name__ in WRITES:
                 try:

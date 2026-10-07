@@ -44,6 +44,10 @@ MIGRATIONS = (
     # who had not used it in a while. Kept apart from last_seen_at, which
     # counts people actually using the connector.
     "ALTER TABLE users ADD COLUMN kept_alive_at INTEGER",
+    # The latest what's-new note this person has been shown in a chat.
+    "ALTER TABLE users ADD COLUMN news_seen INTEGER",
+    # Set when someone asks for no more update emails.
+    "ALTER TABLE users ADD COLUMN email_opt_out INTEGER",
 )
 
 # OAuth state. Separate from `users`: a person is one row there however many
@@ -157,19 +161,27 @@ def save_user(
     email_enc = _cipher().encrypt(email.strip().encode()) if email and email.strip() else None
     now = int(time.time())
     with _connect() as conn:
+        news_seen = opted_out = None
         if email_hash:
+            # The person is the same, so what they have been told and what they
+            # asked for outlives the row being replaced.
+            news_seen, opted_out = conn.execute(
+                "SELECT MAX(news_seen), MAX(email_opt_out) FROM users WHERE email_hash = ?",
+                (email_hash,),
+            ).fetchone()
             conn.execute(
                 "DELETE FROM users WHERE email_hash = ? AND user_token != ?",
                 (email_hash, user_token),
             )
         conn.execute(
-            "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash, email_enc) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash, email_enc, "
+            "news_seen, email_opt_out) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
             "  email_hash = excluded.email_hash, "
             "  email_enc = COALESCE(excluded.email_enc, users.email_enc)",
-            (user_token, email_masked, encrypted, now, email_hash, email_enc),
+            (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out),
         )
     return user_token
 
@@ -239,6 +251,49 @@ def idle_users(idle_for: int) -> list[str]:
             (cutoff, cutoff),
         ).fetchall()
     return [row[0] for row in rows]
+
+
+def claim_news(user_token: str, version: int) -> bool:
+    """True once per person per version: the caller shows the note, nobody else.
+
+    One UPDATE that only matches while the note is still unseen, so two tool
+    calls landing together can't both show it.
+    """
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE users SET news_seen = ? WHERE user_token = ? AND COALESCE(news_seen, 0) < ?",
+            (version, user_token, version),
+        ).rowcount > 0
+
+
+def unsubscribe_signature(email_hash: str) -> str:
+    """What makes an unsubscribe link genuine: only this server can sign one."""
+    key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
+    return hmac.new(key, f"unsubscribe:{email_hash}".encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def opt_out_of_email(email_hash: str) -> bool:
+    """Stop update emails to this person. True if they were connected."""
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE users SET email_opt_out = 1 WHERE email_hash = ?", (email_hash,)
+        ).rowcount > 0
+
+
+def emailable() -> list[tuple[str, str]]:
+    """(email, email_hash) for everyone with an address kept who hasn't opted out."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT email_enc, email_hash FROM users "
+            "WHERE email_enc IS NOT NULL AND email_hash IS NOT NULL AND COALESCE(email_opt_out, 0) = 0"
+        ).fetchall()
+    out = []
+    for enc, fingerprint in rows:
+        try:
+            out.append((_cipher().decrypt(enc).decode(), fingerprint))
+        except InvalidToken:
+            continue
+    return out
 
 
 def mark_kept_alive(user_token: str) -> None:
