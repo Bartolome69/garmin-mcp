@@ -198,9 +198,21 @@ async def main() -> int:
         async with streamable_http_client(f"{base}/u/{alice}/mcp") as (r, w):
             async with ClientSession(r, w) as sess:
                 await sess.initialize()
-                tools_seen = {t.name for t in (await sess.list_tools()).tools}
+                listed = (await sess.list_tools()).tools
+                tools_seen = {t.name for t in listed}
         check("tools served over http", "get_daily_summary" in (tools_seen or set()),
               f"{len(tools_seen or [])} tools")
+        # Claude groups read-only tools apart from writing ones, so a person
+        # can allow every read at once and still be asked before a change.
+        hints = {t.name: t.annotations for t in listed}
+        check("every tool says whether it only reads",
+              all(a is not None and a.read_only_hint is not None for a in hints.values()))
+        check("reads are marked read-only, writes are not",
+              hints["get_daily_summary"].read_only_hint and hints["get_plan"].read_only_hint
+              and not hints["schedule_workout"].read_only_hint
+              and not hints["create_plan"].read_only_hint)
+        check("deleting is marked destructive, creating is not",
+              hints["delete_workout"].destructive_hint and not hints["create_workout"].destructive_hint)
 
         # Preview features, per account. Alice is on the list (written the way
         # a person types it); Bob is not. The plan view is everyone's now; the

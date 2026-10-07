@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 import anyio
+from mcp.types import ToolAnnotations
 
 try:  # mcp >= 2.0
     from mcp.server.mcpserver import MCPServer
@@ -174,7 +175,26 @@ def _with_description(tool, *, preview_on: bool):
         text = (tool.description or "").rstrip() + _NOTES[tool.name]
     if preview_on and tool.name in _PREVIEW_NOTES:
         text = (text or tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]
-    return tool.model_copy(update={"description": text}) if text else tool
+    update = {"annotations": _annotations(tool.name)}
+    if text:
+        update["description"] = text
+    return tool.model_copy(update=update)
+
+
+# Tools that take something away: a workout, a plan, a date on the calendar,
+# or a workout's old steps.
+DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout"}
+
+
+def _annotations(name: str) -> ToolAnnotations:
+    """Say which tools only read. Claude groups those apart from the ones that
+    write, so a person can allow every read at once and still be asked before
+    anything changes in their Garmin account."""
+    return ToolAnnotations(
+        readOnlyHint=name not in WRITES,
+        destructiveHint=name in DESTRUCTIVE,
+        openWorldHint=True,
+    )
 
 
 def _server() -> MCPServer:
