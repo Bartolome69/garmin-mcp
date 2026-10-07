@@ -208,11 +208,6 @@
   .mark.ahead, .mark.today { border: 1.5px solid color-mix(in srgb, var(--faint) 70%, transparent); }
   .sday.today .mark.ahead, .sday.today .mark.today { border-color: var(--brand); background: var(--brand); }
 
-  /* ---- How did it feel? ---- */
-  .feel .feel-q { font-size: 13px; font-weight: 600; margin-top: 10px; }
-  .feel .actions { margin-top: 8px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .act.feel-btn { padding: 8px 0; text-align: center; }
-
   /* ---- The next session's steps ---- */
   .steps { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
   .step { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; background: var(--bg);
@@ -730,39 +725,6 @@
       ]);
     }));
   }
-  // The latest run done in the last few days, and a one-tap answer to how it
-  // felt. The answer goes to Claude, which reads the run and adjusts what's next.
-  function feelBlock(plan) {
-    var today = iso(new Date()), since = iso(addDays(new Date(), -3)), last = null;
-    (plan.weeks || []).forEach(function (w) { w.sessions.forEach(function (x) {
-      var on = x.done_on || x.date;
-      if (x.status.indexOf("done") === 0 && on <= today && on >= since && (!last || on >= (last.done_on || last.date))) last = x;
-    }); });
-    if (!last) return null;
-    var on = last.done_on || last.date;
-    var when = on === today ? "today" : on === iso(addDays(new Date(), -1)) ? "yesterday" : "on " + long(on);
-    var myPlan = plan.label ? "my " + plan.label + " plan" : (plan.current_plan ? "my " + plan.current_plan.label + " plan" : "my plan");
-    var answers = [
-      ["Easy", "felt easy", "Look at it against what was planned and tell me whether my next sessions could be a little harder."],
-      ["Good", "felt good", "Look at it against what was planned and tell me how it went."],
-      ["Hard", "felt hard", "Look at it against what was planned, check my readiness, and adjust my next sessions in " + myPlan + " if they should change."],
-      ["Wrecked", "left me wrecked", "Check my recovery and readiness, and ease off the next sessions in " + myPlan + " if I need to."],
-    ];
-    var facts = [last.actual_km ? fmtKm(last.actual_km) + " km" : null, last.actual].filter(Boolean).join(" · ");
-    return el("div", { class: "next feel" }, [
-      el("div", { class: "stripe", style: "background:var(--done)" }),
-      el("div", {}, [
-        el("div", { class: "next-label", text: "Done · " + (when.charAt(0).toUpperCase() + when.slice(1)) }),
-        el("div", { class: "next-name", text: last.name }),
-        facts ? el("div", { class: "next-meta", text: facts }) : null,
-        el("div", { class: "feel-q", text: "How did it feel?" }),
-        el("div", { class: "actions" }, answers.map(function (a) {
-          return el("button", { class: "act feel-btn", text: a[0], onclick: function (e) {
-            ask("My " + last.name + " " + when + " " + a[1] + ". " + a[2], e.currentTarget); } });
-        })),
-      ]),
-    ]);
-  }
   function stepRow(st) {
     return el("div", { class: "step" }, [
       el("span", { class: "what" }, [el("b", { text: st.label }), st.amount ? el("span", { text: " · " + st.amount }) : null]),
@@ -843,9 +805,6 @@
 
     // The block
     if (!fromCalendar) { var chart = blockChart(plan); if (chart) app.appendChild(chart); }
-
-    // The last run, and how it felt
-    var felt = feelBlock(plan); if (felt) app.appendChild(felt);
 
     // Next session
     var nx = plan.next_session;
