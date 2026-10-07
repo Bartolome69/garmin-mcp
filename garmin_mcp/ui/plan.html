@@ -171,6 +171,34 @@
   .act.primary:hover { opacity: 0.88; }
   .sent { font-size: 12.5px; color: var(--done); margin-top: 8px; }
 
+  /* ---- Countdown, phase and the shape of the block ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--sunk); color: var(--ink);
+    font-variant-numeric: tabular-nums; }
+  .chip.brand { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
+  .block { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px 10px; }
+  .block-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; color: var(--muted); }
+  .block-head b { color: var(--ink); font-weight: 600; }
+  .bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; align-items: end; height: 64px; margin-top: 10px; }
+  .bcol { position: relative; height: 100%; display: flex; align-items: flex-end; }
+  .bplan { position: relative; width: 100%; border-radius: 3px 3px 2px 2px; overflow: hidden;
+    background: color-mix(in srgb, var(--faint) 30%, var(--sunk)); }
+  .bdone { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--brand) 60%, var(--sunk)); }
+  .bcol.current .bplan { box-shadow: 0 0 0 1.5px var(--brand); }
+  .bcol.current .bdone { background: var(--brand); }
+  .bcol.taper .bplan { background: color-mix(in srgb, var(--faint) 16%, var(--sunk)); }
+  .blabels { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); margin-top: 4px; font-family: var(--mono); letter-spacing: 0.04em; }
+
+  /* ---- The next session's steps ---- */
+  .steps { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+  .step { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; }
+  .step .what b { font-weight: 600; }
+  .step .what span { color: var(--muted); }
+  .step .tgt { color: var(--brand); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rep { border-left: 2px solid var(--brand); padding-left: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .rep-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brand); font-weight: 600; }
+
   /* ---- Weeks ---- */
   .weeks { display: flex; flex-direction: column; gap: 8px; }
   .week { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
@@ -596,6 +624,80 @@
     return el("div", { class: "actions" }, row);
   }
 
+  // ------------------------------------------------- countdown and phase
+  // Where a block stands: days to its last session, and which part of the
+  // block this is. The phase is read off position, the way a coach divides a
+  // block: a base, a build, a peak, then a taper of about a sixth of it.
+  function phaseOf(week, total) {
+    if (!week || !total || total < 5) return null;
+    if (week === total) return "Race week";
+    var taper = Math.max(1, Math.round(total / 6));
+    if (week > total - taper) return "Taper";
+    var base = Math.max(1, Math.round(total * 0.3));
+    if (week <= base) return "Base";
+    if (week > total - taper - 2) return "Peak";
+    return "Build";
+  }
+  function isRace(name) { return /race|parkrun|marathon|half|\b5k\b|\b10k\b/i.test(name || "") && !/pace|tempo|easy|long run/i.test(name || ""); }
+  function countdown(plan, running) {
+    var end = running ? running.ends : plan.ends;
+    if (!end || plan.finished) return [];
+    var days = Math.round((parse(end) - parse(iso(new Date()))) / 86400000);
+    if (days < 0) return [];
+    var last = null;
+    plan.weeks.forEach(function (w) { w.sessions.forEach(function (x) { if (x.date === end) last = x; }); });
+    var race = last && isRace(last.name);
+    var chips = [el("span", { class: "chip brand", text: days === 0 ? (race ? "Race day" : "Last day") : days === 1 ? (race ? "Race tomorrow" : "1 day to go")
+      : days + (race ? " days to race day" : " days to go") })];
+    var phase = running ? phaseOf(running.week, running.weeks_total) : phaseOf(plan.current_week, plan.weeks_total);
+    if (phase) chips.push(el("span", { class: "chip", text: phase === "Race week" ? phase : phase + " phase" }));
+    return chips;
+  }
+  // The whole block as one picture: a bar per week, its planned distance (or
+  // sessions), filled with what was done; the taper shows as the bars fall.
+  function blockChart(plan) {
+    var weeks = plan.weeks || [];
+    if (weeks.length < 4) return null;
+    var byKm = weeks.some(function (w) { return w.planned_km; });
+    var plan_ = function (w) { return byKm ? (w.planned_km || 0) : (w.planned || 0); };
+    var done_ = function (w) { return byKm ? (w.run_km || 0) : (w.done || 0); };
+    var top = Math.max.apply(null, weeks.map(function (w) { return Math.max(plan_(w), done_(w)); }).concat([1]));
+    var taper = Math.max(1, Math.round(weeks.length / 6));
+    var peak = weeks.reduce(function (m, w) { return Math.max(m, plan_(w)); }, 0);
+    var today = iso(new Date());
+    return el("div", { class: "block" }, [
+      el("div", { class: "block-head" }, [
+        el("span", {}, ["The block · ", el("b", { text: weeks.length + " weeks" })]),
+        el("span", {}, byKm ? ["Peak ", el("b", { text: fmtKm(peak) + " km" })] : ["Sessions a week"]),
+      ]),
+      el("div", { class: "bars", role: "img", "aria-label": weeks.map(function (w) {
+        return "Week " + w.week + ": " + (byKm ? fmtKm(done_(w)) + " of " + fmtKm(plan_(w)) + " km" : done_(w) + " of " + plan_(w) + " sessions"); }).join(", ") },
+        weeks.map(function (w, i) {
+          var past = w.starts <= today;
+          var h = Math.max(6, 100 * plan_(w) / top);
+          var fill = past && plan_(w) ? Math.min(100, 100 * done_(w) / plan_(w)) : 0;
+          return el("div", { class: "bcol" + (w.current ? " current" : "") + (i >= weeks.length - taper ? " taper" : "") }, [
+            el("div", { class: "bplan", style: "height:" + h + "%" }, [el("i", { class: "bdone", style: "height:" + fill + "%" })]),
+          ]);
+        })),
+      el("div", { class: "blabels" }, [el("span", { text: short(weeks[0].starts) }), el("span", { text: short(plan.ends) })]),
+    ]);
+  }
+  function stepRow(st) {
+    return el("div", { class: "step" }, [
+      el("span", { class: "what" }, [el("b", { text: st.label }), st.amount ? el("span", { text: " · " + st.amount }) : null]),
+      st.target ? el("span", { class: "tgt", text: st.target }) : null,
+    ]);
+  }
+  function stepList(steps) {
+    return el("div", { class: "steps" }, steps.map(function (st) {
+      if (st.kind === "repeat") {
+        return el("div", { class: "rep" }, [el("div", { class: "rep-head", text: st.times + " ×" })].concat(st.steps.map(stepRow)));
+      }
+      return stepRow(st);
+    }));
+  }
+
   // ---------------------------------------------------------------- render
   var state = { plan: null, open: {}, selected: null };
 
@@ -630,6 +732,7 @@
           : [el("span", { class: "wordmark", text: "Daash" }), el("span", { class: "code", text: planCode }), "Training plan"]),
         el("h1", { text: (running ? running.goal : plan.goal) || (fromCalendar ? "Your training" : "Your plan") }),
         el("div", { class: "sub", text: weekLine + " · " + short(running ? running.starts : plan.starts) + " to " + short(running ? running.ends : plan.ends) }),
+        (!fromCalendar || running) && countdown(plan, running).length ? el("div", { class: "chips" }, countdown(plan, running)) : null,
         plan.upcoming_plan ? el("div", { class: "upcoming" }, [
           el("span", { class: "code", text: plan.upcoming_plan.label }),
           "Plan starts " + long(plan.upcoming_plan.starts) + (plan.upcoming_plan.goal ? ": " + plan.upcoming_plan.goal : ""),
@@ -655,6 +758,9 @@
       ]),
     ]));
 
+    // The block
+    if (!fromCalendar) { var chart = blockChart(plan); if (chart) app.appendChild(chart); }
+
     // Next session
     var nx = plan.next_session;
     if (nx) {
@@ -666,7 +772,8 @@
         el("div", {}, [
           el("div", { class: "next-label", text: "Next · " + label }),
           el("div", { class: "next-name", text: nx.name }),
-          el("div", { class: "next-meta", text: k.label + (missedNote ? " · " + missedNote + " missed this past week" : "") }),
+          el("div", { class: "next-meta", text: k.label + (nx.planned_km ? " · " + fmtKm(nx.planned_km) + " km" : "") + (missedNote ? " · " + missedNote + " missed this past week" : "") }),
+          nx.steps && nx.steps.length ? stepList(nx.steps) : null,
           actionsFor(nx, plan.label || (plan.current_plan && plan.current_plan.label)),
         ]),
       ]));

@@ -108,7 +108,8 @@ _DESCRIPTIONS = {
         "the plan came from: a coach, an app, Garmin Coach or create_plan. With "
         "no plan made by create_plan it reads the workouts scheduled on the "
         "Garmin calendar around this week. Each session carries its workout_id "
-        "and schedule_id so it can be moved or retuned. A session counts as "
+        "and schedule_id so it can be moved or retuned, and the next one its "
+        "steps with their target paces. A session counts as "
         "done if it was run within a day either side of its date, or any day "
         "that week if it was started from its workout on the watch. A strength "
         "session counts if any strength activity was recorded in its own week, "
@@ -1733,21 +1734,41 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
             goal = goal or training_plan.goal_from_description(detail.get("description"), goal_code)
 
     if code is None:
-        result = training_plan.summarise_calendar(
+        result = await _with_next_steps(training_plan.summarise_calendar(
             sessions, activities, today, planned_seconds=seconds,
             planned_metres=metres, weekly_km=weekly_km,
-        )
+        ))
         if context:
             key = "current_plan" if context.pop("running") else "upcoming_plan"
             result[key] = drop_empty({**context, "goal": goal})
         return result
     others = sorted(p for p in plans if p != code)
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
-    result = training_plan.summarise(
+    result = await _with_next_steps(training_plan.summarise(
         code, sessions, activities, today, goal=goal, planned_seconds=seconds, **extra
-    )
+    ))
     if others:
         result["other_plans"] = others
+    return result
+
+
+async def _with_next_steps(result: dict[str, Any]) -> dict[str, Any]:
+    """The next session with its steps, so the card can show the workout itself.
+
+    One lookup, kept in memory with the rest of the workouts; a session whose
+    workout can't be read is shown without its steps rather than not at all.
+    """
+    nxt = result.get("next_session")
+    wid = (nxt or {}).get("workout_id")
+    if not wid:
+        return result
+    try:
+        detail = await _read(("workout", wid), WORKOUT_MEMORY, lambda c: c.get_workout_by_id(wid)) or {}
+    except Exception:  # noqa: BLE001 - the plan matters more than its next step list
+        return result
+    steps = training_plan.workout_steps(detail)
+    if steps:
+        nxt["steps"] = steps
     return result
 
 

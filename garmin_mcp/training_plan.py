@@ -26,7 +26,7 @@ from .cycling import is_ride
 from .formatting import DateError, drop_empty, duration, pace_per_km, parse_date
 from .plan import category, monday_of, planned_distance_m
 from .progress import Actual, Planned, match
-from .workouts import WorkoutError, build_workout
+from .workouts import WorkoutError, build_workout, format_pace
 
 TAG_SEP = " · "
 LABEL_RE = re.compile(r"^[A-Z0-9]{2,8}$")
@@ -87,6 +87,87 @@ def describe(goal: str, label: str, first: date, last: date, note: str | None) -
     """What each workout carries in its description, readable in Garmin Connect."""
     line = f"Plan {label}: {goal.strip()}, {first.isoformat()} to {last.isoformat()}."
     return f"{note.strip()}\n\n{line}" if note and note.strip() else line
+
+
+_STEP_LABELS = {
+    "warmup": "Warm up", "cooldown": "Cool down", "interval": "Run", "recovery": "Recover",
+    "rest": "Rest", "other": "Run",
+}
+
+
+def _amount(step: Mapping[str, Any]) -> str | None:
+    """How long a step lasts, as the watch counts it."""
+    kind = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
+    value = float(step.get("endConditionValue") or 0)
+    if kind == "time" and value:
+        minutes, secs = divmod(int(round(value)), 60)
+        if not secs:
+            return f"{minutes} min"
+        return f"{int(round(value))} s" if value < 120 else f"{minutes}:{secs:02d}"
+    if kind == "distance" and value:
+        return f"{value / 1000:g} km" if value >= 1000 else f"{value:.0f} m"
+    if kind == "reps" and value:
+        return f"{value:.0f} reps"
+    if kind in ("lap.button", "lap_button"):
+        return "until lap"
+    return None
+
+
+def _target(step: Mapping[str, Any]) -> str | None:
+    """The step's target, the way a runner reads it: pace per km or heart rate."""
+    key = ((step.get("targetType") or {}).get("workoutTargetTypeKey") or "").lower()
+    one, two = step.get("targetValueOne"), step.get("targetValueTwo")
+    if key == "pace.zone" and one and two:
+        # Stored as speeds in m/s: the faster speed is the quicker pace.
+        quick, slow = sorted((1000.0 / float(one), 1000.0 / float(two)))
+        return f"{format_pace(quick)[:-3]}\u2013{format_pace(slow)}"
+    if key == "heart.rate.zone" and one and two:
+        low, high = sorted((float(one), float(two)))
+        return f"{low:.0f}\u2013{high:.0f} bpm"
+    if key == "heart.rate.zone" and step.get("zoneNumber"):
+        return f"HR zone {step['zoneNumber']}"
+    if key == "power.zone" and one and two:
+        low, high = sorted((float(one), float(two)))
+        return f"{low:.0f}\u2013{high:.0f} W"
+    return None
+
+
+def workout_steps(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | None:
+    """A workout's steps, readable at a glance: what, how long, at what target.
+
+    Repeats keep their structure (6 x [800 m, 90 s recover]), because that is
+    how a session is understood and how the watch runs it. Strength steps name
+    the exercise. None when the workout has no steps worth showing.
+    """
+    sport = ((workout or {}).get("sportType") or {}).get("sportTypeKey") or ""
+    work = "Ride" if "cycl" in sport or "bik" in sport else "Swim" if "swim" in sport else "Run"
+
+    def read(steps: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for step in sorted(steps or [], key=lambda s: s.get("stepOrder") or 0):
+            if step.get("type") == "RepeatGroupDTO" or step.get("numberOfIterations"):
+                inner = read(step.get("workoutSteps") or [])
+                times = int(step.get("numberOfIterations") or step.get("endConditionValue") or 1)
+                if inner:
+                    out.append({"kind": "repeat", "times": times, "steps": inner})
+                continue
+            kind = ((step.get("stepType") or {}).get("stepTypeKey") or "other").lower()
+            exercise = step.get("exerciseName") or step.get("category")
+            label = (str(exercise).replace("_", " ").capitalize() if exercise
+                     else work if kind in ("interval", "other") else _STEP_LABELS.get(kind, work))
+            out.append(drop_empty({
+                "kind": kind,
+                "label": label,
+                "amount": _amount(step),
+                "target": _target(step),
+                "note": (step.get("description") or "").strip() or None,
+            }))
+        return out
+
+    steps: list[dict[str, Any]] = []
+    for segment in (workout or {}).get("workoutSegments") or []:
+        steps.extend(read(segment.get("workoutSteps") or []))
+    return steps or None
 
 
 def goal_from_description(text: str | None, label: str) -> str | None:

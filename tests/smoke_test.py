@@ -187,6 +187,33 @@ def check_terrain_ignores_stops(check) -> None:
     check("a stop doesn't read as surging", "decoupling_pct" in (r.get("effort") or {}), str(r.get("effort")))
 
 
+def check_workout_steps(check) -> None:
+    """The next session's steps read the way the watch runs them."""
+    import json as _json
+    from garmin_mcp import training_plan as tp
+    from garmin_mcp.workouts import build_workout
+
+    w, _, _ = build_workout("Intervals 6x800", "running", [
+        {"type": "warmup", "duration_seconds": 600},
+        {"type": "repeat", "times": 6, "steps": [
+            {"type": "interval", "distance_meters": 800, "pace": ["4:05", "4:15"]},
+            {"type": "recovery", "duration_seconds": 90}]},
+        {"type": "cooldown", "duration_seconds": 600, "hr": [120, 140]}])
+    steps = tp.workout_steps(_json.loads(w.model_dump_json(by_alias=True)))
+    check("a workout reads as warm up, repeats, cool down",
+          [x["kind"] for x in steps] == ["warmup", "repeat", "cooldown"], str(steps)[:200])
+    reps = steps[1]
+    check("a repeat keeps its count and its steps",
+          reps["times"] == 6 and [x["amount"] for x in reps["steps"]] == ["800 m", "90 s"], str(reps))
+    check("a pace target reads as a pace range, quick end first",
+          reps["steps"][0]["target"] == "4:05\u20134:15/km", str(reps["steps"][0]))
+    check("a heart-rate target reads in bpm", steps[2].get("target") == "120\u2013140 bpm", str(steps[2]))
+    ride, _, _ = build_workout("Sweet spot", "cycling", [{"type": "interval", "duration_seconds": 1200}])
+    check("a ride's work step says ride",
+          tp.workout_steps(_json.loads(ride.model_dump_json(by_alias=True)))[0]["label"] == "Ride")
+    check("no steps, nothing shown", tp.workout_steps({}) is None)
+
+
 def check_ride_led_log(check) -> None:
     """A cyclist with nothing scheduled sees kilometres ridden, not zeros for running."""
     from datetime import date as _date
@@ -835,6 +862,7 @@ async def main() -> int:
             check_terrain_ignores_stops(check)
             check_shoes_and_nights(check)
             check_ride_led_log(check)
+            check_workout_steps(check)
 
             print("\nworkouts")
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))
@@ -974,6 +1002,9 @@ async def main() -> int:
             check("every session carries the ids needed to move or retune it",
                   all(s.get("workout_id") and s.get("schedule_id")
                       for w in got.get("weeks", []) for s in w["sessions"]))
+            check("the next session comes with its steps",
+                  bool((got.get("next_session") or {}).get("steps")),
+                  str((got.get("next_session") or {}).get("steps"))[:160])
             check("nothing is done or missed yet",
                   got.get("completed") == 0 and got.get("missed") == 0 and got.get("remaining") == 4)
 
