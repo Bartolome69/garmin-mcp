@@ -278,12 +278,12 @@
       list, in the order you would think of them, with what each one never
       touches.
     </p>
-    <p class="stamp">Last updated 30 September 2026</p>
+    <p class="stamp">Last updated 7 October 2026</p>
 
     <dl class="facts">
-      <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, your plan</dd></div>
+      <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, shoes, your plan</dd></div>
       <div><dt>Writes</dt><dd>The workout library, and only that</dd></div>
-      <div><dt>Never</dt><dd>Your recorded runs, your route maps, your body composition</dd></div>
+      <div><dt>Never</dt><dd>Edits to your recorded activities, your route map, your body composition</dd></div>
     </dl>
   </header>
 
@@ -333,7 +333,19 @@
         laps. For any lap longer than five minutes: heart rate across the first
         third against the last, at the paces run, which is how cardiac drift and
         fitness show up. Kilometre splits derived for you when the watch did
-        not lap by kilometre. The GPS route is deliberately not requested.</span></li>
+        not lap by kilometre. The recording includes its GPS points. They are
+        used only while answering, to tell an out-and-back from a loop and to
+        find earlier runs or rides of the same route, and are never returned to
+        the assistant or stored. Garmin&rsquo;s route map itself is not
+        requested.</span></li>
+      <li><span><strong>Around it.</strong> The weather during it, from Garmin, and what
+        heat, humidity and wind did to pace; the shoes worn; the terrain:
+        climbs, pace or speed uphill, on the flat and downhill, and heart-rate
+        drift; earlier runs or rides of the same route. For a ride, power
+        against your FTP: normalised power, intensity factor, training stress,
+        best efforts and time in each power zone.</span></li>
+      <li><span><strong>Your shoes.</strong> Each pair&rsquo;s name and distance from
+        Garmin&rsquo;s gear list, to say how much life it has left.</span></li>
     </ul>
   </section>
 
@@ -358,6 +370,10 @@
         load your body currently handles.</span></li>
       <li><span><strong>Personal records</strong>, with the caveat that Garmin only knows
         races it timed itself.</span></li>
+      <li><span><strong>Cycling FTP</strong>, with watts per kilo. That reads the weight
+        set in your Garmin profile, for this and nothing else.</span></li>
+      <li><span><strong>Recovery trends</strong>, week by week over up to twelve weeks:
+        overnight HRV, sleep, resting heart rate and body battery.</span></li>
     </ul>
   </section>
 
@@ -380,8 +396,10 @@
         week. A session counts if it was run within a day either side of its
         date, because people move things and a plan that calls that a failure
         gets closed.</span></li>
-      <li><span><strong>The plan chart</strong>, drawn as an image for the conversation:
-        each day&rsquo;s sessions beside what was planned.</span></li>
+      <li><span><strong>The plan card</strong>, drawn in the chat where the app supports
+        it: each week&rsquo;s sessions, what was done, moved or missed, and
+        what&rsquo;s next. It reads every workout scheduled on your Garmin
+        calendar, whoever put it there.</span></li>
     </ul>
   </section>
 
@@ -425,11 +443,15 @@
       </p>
     </div>
     <ul class="plain" style="margin-top:16px">
-      <li><span><strong>Where you were.</strong> GPS routes and maps are excluded from every
-        request, including the per-second recording.</span></li>
-      <li><span><strong>Your body.</strong> Weight, body composition, blood pressure,
-        hydration, nutrition, menstrual and pregnancy tracking.</span></li>
-      <li><span><strong>Your things and your people.</strong> Devices, gear, badges,
+      <li><span><strong>Where you were, kept.</strong> GPS points are read only inside a
+        recording, as above, and are never returned or stored. Route maps,
+        saved courses and location history are not requested.</span></li>
+      <li><span><strong>Your body.</strong> Body composition, blood pressure, hydration,
+        nutrition, menstrual and pregnancy tracking. Your profile weight is read
+        only for FTP in watts per kilo.</span></li>
+      <li><span><strong>Your things and your people.</strong> Devices, gear other than
+        shoes (an activity&rsquo;s gear is read to find the shoes, and the rest
+        is dropped), badges,
         challenges, connections and anything social.</span></li>
     </ul>
     <div class="stack" style="margin-top:16px">
