@@ -5,12 +5,21 @@
 <title>Daash: Connect Garmin to Claude &amp; ChatGPT</title>
 <meta name="robots" content="noindex">
 <link rel="canonical" href="https://daash.run/">
+<script>
+// Redirecting drops the referrer, so pass on where the visit came from:
+// the referring site's name only, never its full address, or "direct" for a
+// link opened from an app such as WhatsApp. Without script, the meta refresh
+// below still gets them there.
+var from = "direct";
+try { if (document.referrer) from = new URL(document.referrer).hostname || from; } catch (e) {}
+location.replace("https://daash.run/?utm_source=" + encodeURIComponent(from) +
+  "&utm_medium=old-link&utm_campaign=garmin.daash.run");
+</script>
 <meta http-equiv="refresh" content="0; url=https://daash.run/">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{font:16px/1.5 system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f9fafb;color:#1c2128}a{color:#e74026}</style>
 </head>
 <body>
 <p>Daash has moved to <a href="https://daash.run/">daash.run</a>.</p>
-<script>location.replace("https://daash.run/")</script>
 </body>
 </html>
