@@ -203,9 +203,9 @@ async def main() -> int:
               f"{len(tools_seen or [])} tools")
 
         # Preview features, per account. Alice is on the list (written the way
-        # a person types it); Bob is not, and must see exactly what he did
-        # before views existed.
-        async def plan_view_for(user_token: str):
+        # a person types it); Bob is not. The plan view is everyone's now; the
+        # preview-only tools are what the list still decides.
+        async def offered(user_token: str):
             async with streamable_http_client(f"{base}/u/{user_token}/mcp") as (r, w):
                 async with ClientSession(r, w) as sess:
                     await sess.initialize()
@@ -214,22 +214,25 @@ async def main() -> int:
             plan_tool = next(t for t in tools if t.name == "get_plan")
             view = ((getattr(plan_tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
             listed = [str(r.uri) for r in resources if str(r.uri).startswith("ui://")]
-            return view, listed
+            return view, listed, {t.name for t in tools}
 
         os.environ["GARMIN_MCP_PREVIEW"] = " Alice@Example.com , carol@example.com"
         try:
-            view_a, listed_a = await plan_view_for(alice)
-            view_b, listed_b = await plan_view_for(bob)
-            check("an account on the preview list gets the plan view",
-                  bool(view_a) and view_a in listed_a, f"{view_a} {listed_a}")
-            check("an account not on it gets no view and no ui resource",
-                  view_b is None and not listed_b, f"{view_b} {listed_b}")
+            view_a, listed_a, names_a = await offered(alice)
+            view_b, listed_b, names_b = await offered(bob)
+            check("everyone gets the plan view",
+                  bool(view_a) and view_a in listed_a and bool(view_b) and view_b in listed_b,
+                  f"{view_a} {view_b}")
+            check("an account on the preview list gets the preview tools",
+                  {"get_shoes", "get_recovery_trends"} <= names_a, str(sorted(names_a)))
+            check("an account not on it does not",
+                  not ({"get_shoes", "get_recovery_trends"} & names_b), str(sorted(names_b)))
             os.environ["GARMIN_MCP_PREVIEW"] = "on"
-            view_b_on, _ = await plan_view_for(bob)
-            check("'on' switches it on for everyone", bool(view_b_on), str(view_b_on))
+            _, _, names_b_on = await offered(bob)
+            check("'on' switches it on for everyone", "get_shoes" in names_b_on)
             os.environ.pop("GARMIN_MCP_PREVIEW")
-            view_a_off, listed_a_off = await plan_view_for(alice)
-            check("unset, nobody gets it", view_a_off is None and not listed_a_off)
+            _, _, names_a_off = await offered(alice)
+            check("unset, nobody gets it", "get_shoes" not in names_a_off)
         finally:
             os.environ.pop("GARMIN_MCP_PREVIEW", None)
 

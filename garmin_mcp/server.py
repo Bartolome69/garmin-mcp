@@ -65,7 +65,7 @@ _INSTRUCTIONS = (
 
 
 class _Server(MCPServer):
-    """The SDK's server, with preview features hidden from whoever isn't trying them.
+    """The SDK's server, with the preview-only tools hidden from whoever isn't trying them.
 
     Only the listings change. A host that has not been told a tool has a view
     never asks for it, so nothing else needs gating.
@@ -73,21 +73,18 @@ class _Server(MCPServer):
 
     async def list_tools(self):
         tools = await super().list_tools()
-        if preview.enabled():
-            return [_with_preview_description(tool) for tool in tools if tool.name not in _REPLACED_BY_VIEWS]
-        return [_without_view(tool) for tool in tools if tool.name not in _PREVIEW_ONLY]
+        on = preview.enabled()
+        return [
+            _with_description(tool, preview_on=on)
+            for tool in tools
+            if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
+        ]
 
     async def list_resources(self):
-        resources = await super().list_resources()
-        if preview.enabled():
-            return resources
-        return [r for r in resources if not str(r.uri).startswith("ui://")]
+        return await super().list_resources()
 
     async def list_resource_templates(self):
-        templates = await super().list_resource_templates()
-        if preview.enabled():
-            return templates
-        return [t for t in templates if not str(t.uri_template).startswith("ui://")]
+        return await super().list_resource_templates()
 
 
 # Tools a preview account doesn't see, because a view does the job better and
@@ -98,10 +95,10 @@ _REPLACED_BY_VIEWS = {"get_plan_chart"}
 _PREVIEW_ONLY = {"get_shoes", "get_recovery_trends"}
 
 
-# What a tool is for, as a preview account's model should read it. The model
-# chooses a tool by its description, and get_plan's everyday one reads as if
-# it were only for plans made with create_plan.
-_PREVIEW_DESCRIPTIONS = {
+# What a tool is for, as the model should read it. The model chooses a tool by
+# its description, and get_plan's docstring reads as if it were only for plans
+# made with create_plan. Once a preview feature, now everyone's.
+_DESCRIPTIONS = {
     "get_plan": (
         "The user's training plan, week by week: every session marked done, "
         "missed or ahead, with the next one.\n\n"
@@ -135,22 +132,18 @@ _PREVIEW_DESCRIPTIONS = {
     ),
 }
 
-# Added to a tool's own description, for preview accounts.
-_PREVIEW_NOTES = {
+# Added to a tool's own description, for everyone.
+_NOTES = {
     "get_fitness": (
         "\n\nAlso returns the cycling FTP set in Garmin, with watts per kilo "
         "when the user's weight is set."
     ),
     "get_activity_details": (
-        "\n\nAlso returns the weather during it (temperature, dew point, wind, "
-        "and what that does to pace), the shoes worn, the terrain (climbs, "
-        "pace on uphill, flat and downhill, the pace the effort was worth on "
-        "the flat, heart-rate decoupling and where it faded) and earlier runs "
-        "of the same route with their pace and heart rate. Use these to "
-        "explain a run rather than guessing why it was slow or hard. For a "
-        "ride: normalised, average and max power, intensity factor and "
-        "training stress against FTP, best efforts from 5 seconds to an hour, "
-        "variability, time in power zones, and climbs with speed, VAM and power."
+        "\n\nFor a ride, also returns normalised, average and max power, "
+        "intensity factor and training stress against FTP, best efforts from 5 "
+        "seconds to an hour, variability, time in power zones, climbs with "
+        "speed, VAM and power, the weather during it, and earlier rides of the "
+        "same route."
     ),
     "get_progress": (
         "\n\nFetch it fresh each time it is asked for; runs sync through the "
@@ -161,19 +154,27 @@ _PREVIEW_NOTES = {
 }
 
 
-def _with_preview_description(tool):
-    text = _PREVIEW_DESCRIPTIONS.get(tool.name)
-    if text is None and tool.name in _PREVIEW_NOTES:
-        text = (tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]
+# Added after those, for preview accounts only: what a run gets that a ride
+# already has.
+_PREVIEW_NOTES = {
+    "get_activity_details": (
+        "\n\nFor a run, also returns the weather during it (temperature, dew "
+        "point, wind, and what that does to pace), the shoes worn, the terrain "
+        "(climbs, pace on uphill, flat and downhill, the pace the effort was "
+        "worth on the flat, heart-rate decoupling and where it faded) and "
+        "earlier runs of the same route with their pace and heart rate. Use "
+        "these to explain a run rather than guessing why it was slow or hard."
+    ),
+}
+
+
+def _with_description(tool, *, preview_on: bool):
+    text = _DESCRIPTIONS.get(tool.name)
+    if text is None and tool.name in _NOTES:
+        text = (tool.description or "").rstrip() + _NOTES[tool.name]
+    if preview_on and tool.name in _PREVIEW_NOTES:
+        text = (text or tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]
     return tool.model_copy(update={"description": text}) if text else tool
-
-
-def _without_view(tool):
-    meta = getattr(tool, "meta", None)
-    if not meta or not ({"ui", "ui/resourceUri"} & set(meta)):
-        return tool
-    rest = {k: v for k, v in meta.items() if k not in ("ui", "ui/resourceUri")}
-    return tool.model_copy(update={"meta": rest or None})
 
 
 def _server() -> MCPServer:
@@ -228,7 +229,7 @@ except Exception:  # noqa: BLE001 - an SDK without custom routes still serves to
 # Hosts that support MCP Apps (Claude, ChatGPT, VS Code) read the resource a
 # tool points at and render it in a sandboxed frame, handing it the tool's
 # result. Every other host ignores the pointer and shows the JSON, so the text
-# answer stays complete on its own. Views are a preview feature: see preview.py.
+# answer stays complete on its own.
 
 APP_MIME = "text/html;profile=mcp-app"
 _UI = Path(__file__).parent / "ui"
@@ -263,13 +264,13 @@ VIEW_NOTE = (
 
 
 def _for_view(result: Any) -> Any:
-    """A tool's result with the note to the model as its first field, for preview accounts.
+    """A tool's result with the note to the model as its first field.
 
     In the data itself rather than a separate text block, because some hosts
     hand the model the structured content and others the text: this way the
     note reaches it either way. The view ignores the field.
     """
-    if not preview.enabled() or not isinstance(result, dict) or "error" in result:
+    if not isinstance(result, dict) or "error" in result:
         return result
     return {"for_the_assistant": VIEW_NOTE, **result}
 
@@ -863,8 +864,13 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         inside = None
         warnings.append(f"recording could not be analysed ({type(exc).__name__})")
 
-    around = await _around_the_run(activity_id, flat, recording, _optional, warnings) if preview.enabled() else {}
-    if ride and preview.enabled():
+    # A ride's power, climbs, weather and route are for everyone; a run's
+    # weather, shoes, terrain and route are still a preview feature.
+    around = (
+        await _around_the_run(activity_id, flat, recording, _optional, warnings)
+        if ride or preview.enabled() else {}
+    )
+    if ride:
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 
     return drop_empty(
@@ -914,7 +920,7 @@ async def _ride_power(activity_id: int, flat: dict[str, Any], optional: Callable
 
 async def _around_the_run(activity_id: int, flat: dict[str, Any], recording: Any,
                           optional: Callable[..., Any], warnings: list[str]) -> dict[str, dict[str, Any]]:
-    """Weather, shoes, terrain and earlier runs of the same route, for preview accounts."""
+    """Weather, shoes, terrain and earlier outings of the same route."""
     found = await optional(
         "weather",
         lambda c: (c.get_activity_weather(activity_id), getattr(c, "unit_system", None)),
@@ -1666,10 +1672,10 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     plans = training_plan.plans_in(items)
     code: str | None = None
     context: dict[str, Any] | None = None
-    calendar_first = not label and preview.enabled()
+    calendar_first = not label
     window = training_plan.around(items, today) if calendar_first else []
     if window:
-        # For preview accounts the calendar is the plan: everything scheduled,
+        # The calendar is the plan: everything scheduled,
         # from a coach, an app, Garmin Coach or create_plan, so nothing that is
         # on the watch is missing from the card. A plan made here is named on
         # it, as running or coming up, rather than shown in place of it.
@@ -1693,9 +1699,9 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         sessions = plans[code]
     first = min(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
     last = max(date_cls.fromisoformat(i["date"][:10]) for i in sessions)
-    # Weekly distance, planned against run, is a preview feature. It needs every
-    # run in each week, and a lookup for the sessions ahead as well as behind.
-    weekly_km = preview.enabled()
+    # Weekly distance, planned against run. It needs every run in each week, and
+    # a lookup for the sessions ahead as well as behind.
+    weekly_km = True
     since = training_plan.monday_of(first) if weekly_km else first - timedelta(days=1)
 
     activities: list[dict[str, Any]] = []
@@ -1901,14 +1907,12 @@ async def get_fitness() -> dict[str, Any]:
             ("running tolerance", lambda c: c.get_running_tolerance(month_ago, today)),
         ]
     )
-    ride = None
-    if preview.enabled():
-        (ftp_raw, profile), more = await _gather(
-            [("cycling ftp", lambda c: c.get_cycling_ftp()), ("weight", lambda c: c.get_user_profile())]
-        )
-        ftp = cycling.shape_ftp(ftp_raw, cycling.weight_kg(profile))
-        ride = {"cycling_ftp": ftp} if ftp else None
-        warnings = warnings + [w for w in more if not w.startswith("weight")]
+    (ftp_raw, profile), more = await _gather(
+        [("cycling ftp", lambda c: c.get_cycling_ftp()), ("weight", lambda c: c.get_user_profile())]
+    )
+    ftp = cycling.shape_ftp(ftp_raw, cycling.weight_kg(profile))
+    ride = {"cycling_ftp": ftp} if ftp else None
+    warnings = warnings + [w for w in more if not w.startswith("weight")]
     if all(x is None for x in (vo2, race, lactate, endurance, hill, tolerance)) and not ride:
         return {"error": "Garmin returned no fitness data.", "warnings": warnings}
     return {**metrics.shape_fitness(vo2, race, lactate, endurance, hill, tolerance, warnings), **(ride or {})}

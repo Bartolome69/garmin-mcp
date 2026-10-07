@@ -32,7 +32,6 @@ EXPECTED_TOOLS = {
     "create_workout",
     "schedule_workout",
     "get_profile",
-    "get_plan_chart",
     "find_exercises",
     "create_strength_workout",
     "unschedule_workout",
@@ -203,7 +202,7 @@ def check_shoes_and_nights(check) -> None:
 
 
 async def check_preview_gate(check) -> None:
-    """Views are a preview: listed only where it is switched on."""
+    """Views and ride features are everyone's; preview adds two tools and a run's extras."""
     from garmin_mcp import preview, server
 
     def view_of(tools):
@@ -214,28 +213,38 @@ async def check_preview_gate(check) -> None:
     try:
         tools = await server.mcp.list_tools()
         resources = await server.mcp.list_resources()
-        check("without preview, get_plan has no view", view_of(tools) is None)
-        check("without preview, no tool has a view",
-              not any(((getattr(t, "meta", None) or {}).get("ui")) for t in tools))
-        check("without preview, no view is listed",
-              not any(str(r.uri).startswith("ui://") for r in resources))
+        names = {t.name for t in tools}
+        check("without preview, get_plan has its view", view_of(tools) is not None)
+        check("without preview, the view is listed",
+              any(str(r.uri).startswith("ui://") for r in resources))
         check("without preview, get_plan still has its output schema",
               next(t for t in tools if t.name == "get_plan").output_schema is not None)
-        check("without preview, no view template is listed",
-              not any(str(t.uri_template).startswith("ui://") for t in await server.mcp.list_resource_templates()))
-        plain_description = next(t for t in tools if t.name == "get_plan").description
+        check("without preview, the chart tool the view replaces is not offered", "get_plan_chart" not in names)
+        check("without preview, the preview-only tools are hidden",
+              not ({"get_shoes", "get_recovery_trends"} & names), str(sorted(names)))
+        plain_details = next(t for t in tools if t.name == "get_activity_details").description
+        check("without preview, activity details describe a ride's power and climbs",
+              "intensity factor" in plain_details and "VAM" in plain_details)
+        check("without preview, activity details don't promise a run's weather and shoes",
+              "shoes worn" not in plain_details)
+        check("without preview, get_fitness mentions FTP",
+              "FTP" in next(t for t in tools if t.name == "get_fitness").description)
     finally:
         preview.reset(token)
     token = preview.use(True)
     try:
         listed = await server.mcp.list_tools()
         check("with preview, get_plan has its view", view_of(listed) is not None)
+        check("with preview, the preview-only tools are offered",
+              {"get_shoes", "get_recovery_trends"} <= {t.name for t in listed})
+        check("with preview, activity details describe a run's extras too",
+              "shoes worn" in next(t for t in listed if t.name == "get_activity_details").description)
         preview_description = next(t for t in listed if t.name == "get_plan").description
-        check("with preview, get_plan says it covers any plan on the calendar",
-              preview_description != plain_description and "coach" in preview_description, preview_description[:80])
-        check("with preview, get_plan asks to be called fresh and says it draws a card",
+        check("get_plan says it covers any plan on the calendar", "coach" in preview_description,
+              preview_description[:80])
+        check("get_plan asks to be called fresh and says it draws a card",
               "earlier answer goes stale" in preview_description and "plan card" in preview_description)
-        check("with preview, get_plan says to check before saying a session isn't in Garmin",
+        check("get_plan says to check before saying a session isn't in Garmin",
               "don't guess" in preview_description and "gym app" in preview_description
               and "sets and weights aren't needed" in preview_description)
         progress_description = next(t for t in listed if t.name == "get_progress").description
@@ -306,7 +315,7 @@ async def check_calendar_fallback(check) -> None:
             status_off = await server.get_connection_status()
         finally:
             preview.reset(token)
-        check("without preview, no plan is still an error", "No plan found" in str(off.get("error")), str(off)[:120])
+        check("without preview, get_plan reads the calendar too", "error" not in off, str(off)[:120])
         check("without preview, status is unchanged", "preview_features" not in status_off, str(status_off)[:120])
 
         token = preview.use(True)
@@ -377,8 +386,8 @@ async def check_calendar_fallback(check) -> None:
               str(mixed.get("upcoming_plan")))
         check("asked for by code, the plan alone is shown",
               by_code.get("label") == "BASE" and by_code.get("sessions_total") == 2, str(by_code)[:120])
-        check("without preview, the plan alone is shown as before",
-              plain.get("label") == "BASE" and "upcoming_plan" not in plain and "source" not in plain,
+        check("without preview, the calendar is the plan too",
+              plain.get("source") == "calendar" and (plain.get("upcoming_plan") or {}).get("label") == "BASE",
               str(plain)[:120])
 
         async def scenario(entries):
@@ -466,8 +475,8 @@ async def check_calendar_fallback(check) -> None:
             plain_empty = await server.get_plan()
         finally:
             preview.reset(token)
-        check("without preview, nothing scheduled is still the plain error",
-              "No plan found" in str(plain_empty.get("error")), str(plain_empty)[:100])
+        check("without preview, nothing scheduled gets the training log too",
+              plain_empty.get("source") == "log", str(plain_empty)[:100])
 
         # Only next week scheduled, by anyone: still a card.
         nxt = await scenario([row(41, 8, "Easy 10k"), row(42, 10, "Intervals 6x800")])
@@ -670,11 +679,23 @@ async def main() -> int:
                 all(t.description for t in tools.tools),
             )
 
-            check("an ordinary account is offered no view",
-                  not any(((t.meta or {}).get("ui")) for t in tools.tools))
+            check("an ordinary account is offered the plan view",
+                  any(((t.meta or {}).get("ui")) for t in tools.tools if t.name == "get_plan"))
             plain_plan = await sess.call_tool("get_progress", {"weeks": 2})
-            check("an ordinary account's answer carries no card note",
-                  "for_the_assistant" not in plain_plan.content[0].text)
+            check("an ordinary account's answer carries the card note",
+                  "for_the_assistant" in plain_plan.content[0].text)
+
+            # Ride features are everyone's now; a run's extras are still preview.
+            plain_ride = payload(await sess.call_tool("get_activity_details", {"activity_id": 2222}))
+            check("an ordinary account's ride has FTP, power zones and work",
+                  (plain_ride.get("ftp") or {}).get("watts") == 250 and plain_ride.get("power_zones")
+                  and plain_ride["summary"]["power"].get("work_kj") == 684, str({k: plain_ride.get(k) for k in ("ftp", "power_zones")})[:200])
+            plain_run = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
+            check("an ordinary account's run has no weather, shoes or route yet",
+                  not ({"weather", "shoes", "same_route", "terrain"} & set(plain_run)), str(sorted(plain_run)))
+            plain_fit = payload(await sess.call_tool("get_fitness", {}))
+            check("an ordinary account's fitness has the cycling FTP",
+                  (plain_fit.get("cycling_ftp") or {}).get("watts") == 250, str(plain_fit.get("cycling_ftp")))
 
             # The picture chart, end to end: it used to fail on the hosted
             # server before drawing anything.
@@ -891,9 +912,9 @@ async def main() -> int:
             check("the same code in the same window is refused",
                   "error" in again and "already" in again["error"], str(again)[:160])
 
-            got = payload(await sess.call_tool("get_plan", {}))
+            got = payload(await sess.call_tool("get_plan", {"label": "HM"}))
             print("   ", json.dumps(got, indent=2)[:700])
-            check("get_plan finds the running plan without being told",
+            check("get_plan finds the plan by its code",
                   got.get("label") == "HM" and got.get("sessions_total") == 4, str(got)[:200])
             check("the goal is read back from Garmin",
                   got.get("goal") == "Half marathon, 1:40, mid November", str(got.get("goal")))
