@@ -1,0 +1,27 @@
+name: Check Fly config
+
+# Says which optional settings the hosted server has, without printing any
+# value: only whether each secret is set. Run by hand when sign-ins misbehave,
+# to see whether the sign-in proxy is in place.
+
+on:
+  workflow_dispatch:
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Which secrets are set
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # Names only; flyctl never prints secret values.
+          names="$(flyctl secrets list --app "$FLY_APP" --json | jq -r '.[].Name // .[].name')"
+          for name in GARMIN_MCP_LOGIN_PROXY GARMIN_MCP_SECRET GARMIN_MCP_POSTHOG_KEY GARMIN_MCP_BASE_URL GARMIN_MCP_PREVIEW; do
+            if grep -qx "$name" <<<"$names"; then echo "$name: set"; else echo "$name: NOT SET"; fi
+          done
