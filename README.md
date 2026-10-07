@@ -14,8 +14,8 @@ Thursday?" ends up on your wrist instead of in a chat log.
 server holding your credentials, no network exposure. That is the rest of this
 README, and it takes a Mac and a Terminal window.
 
-**Or don't run anything.** [garmin.daash.run](https://garmin.daash.run) is the
-same tools hosted behind OAuth 2.1 — paste one address into Claude or ChatGPT,
+**Or don't run anything.** [Daash's hosted Garmin MCP server](https://daash.run/garmin-mcp-server)
+is the same tools behind OAuth 2.1 — paste one address into Claude or ChatGPT,
 sign in to Garmin once, and it works on your phone as well as your laptop with
 nothing installed. The trade is that a server holds your Garmin session,
 encrypted; [the privacy policy](https://garmin.daash.run/privacy/) sets out
