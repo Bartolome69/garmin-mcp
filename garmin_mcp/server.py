@@ -91,8 +91,9 @@ class _Server(MCPServer):
 # offering both lets the model pick the weaker one.
 _REPLACED_BY_VIEWS = {"get_plan_chart"}
 
-# Tools only preview accounts are offered yet.
-_PREVIEW_ONLY = {"get_shoes", "get_recovery_trends"}
+# Tools only preview accounts are offered yet. None at the moment: everything
+# built so far is everyone's. The mechanism stays for the next new thing.
+_PREVIEW_ONLY: set[str] = set()
 
 
 # What a tool is for, as the model should read it. The model chooses a tool by
@@ -139,11 +140,16 @@ _NOTES = {
         "when the user's weight is set."
     ),
     "get_activity_details": (
-        "\n\nFor a ride, also returns normalised, average and max power, "
-        "intensity factor and training stress against FTP, best efforts from 5 "
-        "seconds to an hour, variability, time in power zones, climbs with "
-        "speed, VAM and power, the weather during it, and earlier rides of the "
-        "same route."
+        "\n\nFor a run, also returns the weather during it (temperature, dew "
+        "point, wind, and what that does to pace), the shoes worn, the terrain "
+        "(climbs, pace on uphill, flat and downhill, the pace the effort was "
+        "worth on the flat, heart-rate decoupling and where it faded) and "
+        "earlier runs of the same route with their pace and heart rate. Use "
+        "these to explain a run rather than guessing why it was slow or hard. "
+        "For a ride: normalised, average and max power, intensity factor and "
+        "training stress against FTP, best efforts from 5 seconds to an hour, "
+        "variability, time in power zones, climbs with speed, VAM and power, "
+        "the weather during it, and earlier rides of the same route."
     ),
     "get_progress": (
         "\n\nFetch it fresh each time it is asked for; runs sync through the "
@@ -154,18 +160,8 @@ _NOTES = {
 }
 
 
-# Added after those, for preview accounts only: what a run gets that a ride
-# already has.
-_PREVIEW_NOTES = {
-    "get_activity_details": (
-        "\n\nFor a run, also returns the weather during it (temperature, dew "
-        "point, wind, and what that does to pace), the shoes worn, the terrain "
-        "(climbs, pace on uphill, flat and downhill, the pace the effort was "
-        "worth on the flat, heart-rate decoupling and where it faded) and "
-        "earlier runs of the same route with their pace and heart rate. Use "
-        "these to explain a run rather than guessing why it was slow or hard."
-    ),
-}
+# Added after those, for preview accounts only. Empty while nothing is in preview.
+_PREVIEW_NOTES: dict[str, str] = {}
 
 
 def _with_description(tool, *, preview_on: bool):
@@ -341,7 +337,7 @@ async def _call(fn: Callable[[Any], Any]) -> Any:
     return await anyio.to_thread.run_sync(functools.partial(session.run, fn))
 
 
-# How long a read may be answered from memory, for preview accounts. Anything
+# How long a read may be answered from memory. Anything
 # changed through these tools clears it at once; something changed in the
 # Garmin app shows after this long at most.
 CALENDAR_MEMORY = 90
@@ -349,9 +345,7 @@ WORKOUT_MEMORY = 600
 
 
 async def _read(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
-    """_call, answered from the session's memory where preview allows it."""
-    if not preview.enabled():
-        return await _call(fn)
+    """_call, answered from the session's memory where it is fresh enough."""
     return await anyio.to_thread.run_sync(functools.partial(session.remembered, key, ttl, fn))
 
 
@@ -864,12 +858,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         inside = None
         warnings.append(f"recording could not be analysed ({type(exc).__name__})")
 
-    # A ride's power, climbs, weather and route are for everyone; a run's
-    # weather, shoes, terrain and route are still a preview feature.
-    around = (
-        await _around_the_run(activity_id, flat, recording, _optional, warnings)
-        if ride or preview.enabled() else {}
-    )
+    around = await _around_the_run(activity_id, flat, recording, _optional, warnings)
     if ride:
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 

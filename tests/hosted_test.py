@@ -223,16 +223,21 @@ async def main() -> int:
             check("everyone gets the plan view",
                   bool(view_a) and view_a in listed_a and bool(view_b) and view_b in listed_b,
                   f"{view_a} {view_b}")
-            check("an account on the preview list gets the preview tools",
-                  {"get_shoes", "get_recovery_trends"} <= names_a, str(sorted(names_a)))
-            check("an account not on it does not",
-                  not ({"get_shoes", "get_recovery_trends"} & names_b), str(sorted(names_b)))
+            check("everyone gets shoes and recovery trends, list or not",
+                  {"get_shoes", "get_recovery_trends"} <= names_a & names_b, str(sorted(names_b)))
+            # Nothing is in preview now, but the list must still be read right
+            # for the next thing that is.
+            status_a_on = await call(alice, "get_connection_status")
+            status_b_on = await call(bob, "get_connection_status")
+            check("an account on the preview list is still recognised",
+                  status_a_on.get("preview_features") == "on" and "preview_features" not in status_b_on,
+                  f"{status_a_on.get('preview_features')} {status_b_on.get('preview_features')}")
             os.environ["GARMIN_MCP_PREVIEW"] = "on"
-            _, _, names_b_on = await offered(bob)
-            check("'on' switches it on for everyone", "get_shoes" in names_b_on)
+            check("'on' switches it on for everyone",
+                  (await call(bob, "get_connection_status")).get("preview_features") == "on")
             os.environ.pop("GARMIN_MCP_PREVIEW")
-            _, _, names_a_off = await offered(alice)
-            check("unset, nobody gets it", "get_shoes" not in names_a_off)
+            check("unset, nobody gets it",
+                  "preview_features" not in await call(alice, "get_connection_status"))
         finally:
             os.environ.pop("GARMIN_MCP_PREVIEW", None)
 

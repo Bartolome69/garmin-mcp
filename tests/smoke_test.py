@@ -33,6 +33,8 @@ EXPECTED_TOOLS = {
     "schedule_workout",
     "get_profile",
     "find_exercises",
+    "get_shoes",
+    "get_recovery_trends",
     "create_strength_workout",
     "unschedule_workout",
     "delete_workout",
@@ -220,13 +222,13 @@ async def check_preview_gate(check) -> None:
         check("without preview, get_plan still has its output schema",
               next(t for t in tools if t.name == "get_plan").output_schema is not None)
         check("without preview, the chart tool the view replaces is not offered", "get_plan_chart" not in names)
-        check("without preview, the preview-only tools are hidden",
-              not ({"get_shoes", "get_recovery_trends"} & names), str(sorted(names)))
+        check("without preview, shoes and recovery trends are offered",
+              {"get_shoes", "get_recovery_trends"} <= names, str(sorted(names)))
         plain_details = next(t for t in tools if t.name == "get_activity_details").description
         check("without preview, activity details describe a ride's power and climbs",
               "intensity factor" in plain_details and "VAM" in plain_details)
-        check("without preview, activity details don't promise a run's weather and shoes",
-              "shoes worn" not in plain_details)
+        check("without preview, activity details describe a run's weather and shoes",
+              "shoes worn" in plain_details)
         check("without preview, get_fitness mentions FTP",
               "FTP" in next(t for t in tools if t.name == "get_fitness").description)
     finally:
@@ -691,8 +693,8 @@ async def main() -> int:
                   (plain_ride.get("ftp") or {}).get("watts") == 250 and plain_ride.get("power_zones")
                   and plain_ride["summary"]["power"].get("work_kj") == 684, str({k: plain_ride.get(k) for k in ("ftp", "power_zones")})[:200])
             plain_run = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
-            check("an ordinary account's run has no weather, shoes or route yet",
-                  not ({"weather", "shoes", "same_route", "terrain"} & set(plain_run)), str(sorted(plain_run)))
+            check("an ordinary account's run has its weather, shoes, terrain and route",
+                  {"weather", "shoes", "same_route", "terrain"} <= set(plain_run), str(sorted(plain_run)))
             plain_fit = payload(await sess.call_tool("get_fitness", {}))
             check("an ordinary account's fitness has the cycling FTP",
                   (plain_fit.get("cycling_ftp") or {}).get("watts") == 250, str(plain_fit.get("cycling_ftp")))
@@ -782,8 +784,8 @@ async def main() -> int:
                   str(lap1))
             check("no km splits when the watch already lapped by km",
                   "km_splits" not in inside, str(list(inside)))
-            check("an ordinary account's run details are as before: no weather, shoes or terrain",
-                  not ({"weather", "shoes", "terrain", "same_route"} & set(detail)), str(list(detail)))
+            check("an ordinary account's run details carry the weather and shoes",
+                  {"weather", "shoes"} <= set(detail), str(list(detail)))
             check_stream_km_splits(check)
             check_conditions(check)
             check_terrain_ignores_stops(check)
