@@ -121,6 +121,11 @@
   .tbar-wrap { flex: 1; width: 100%; max-width: 44px; display: flex; align-items: flex-end; }
   .tbar { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: color-mix(in srgb, var(--done) 55%, var(--sunk)); }
   .tcol.current .tbar { background: var(--done); }
+  .tstack { display: flex; flex-direction: column; width: 100%; border-radius: 6px 6px 3px 3px; overflow: hidden; opacity: 0.72; }
+  .tcol.current .tstack { opacity: 1; }
+  .tstack i { display: block; }
+  .ride-c { background: var(--long); }
+  .run-c { background: var(--easy); }
   .tlab { font-size: 11px; color: var(--muted); white-space: nowrap; }
   .tcol.current .tlab { color: var(--ink); font-weight: 600; }
   .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -421,6 +426,7 @@
       var speed = sport === "ride" && r.actual_km && r.actual_seconds ? (r.actual_km / r.actual_seconds * 3600).toFixed(1) + " km/h" : null;
       return { date: r.date, day: DAYS[(parse(r.date).getDay() + 6) % 7], name: r.name, sport: sport, status: "logged",
         actual_km: r.actual_km, actual: r.actual_seconds ? duration(r.actual_seconds) : null, pace: pace, speed: speed,
+        secs: r.actual_seconds || null,
         _m: (r.actual_km || 0) * 1000, _s: r.actual_seconds || 0 };
     });
     if (!all.length) return null;
@@ -446,6 +452,33 @@
     return { source: "log", primary: primary, starts: p.weeks[0].week_of, ends: today, weeks: weeks,
       runs: runs.length, run_km: sumKm(runs), rides: rides.length, ride_km: sumKm(rides),
       average_week_km: Math.round(total / weeks.length * 10) / 10, longest: longest, fastest: fastest };
+  }
+  // One sport's totals across a log, read from its sessions, so a log from
+  // get_plan and one built here from get_progress are summed the same way.
+  function sportStats(plan, sport) {
+    var rows = [];
+    plan.weeks.forEach(function (w) { w.sessions.forEach(function (r) { if (r.sport === sport && r.actual_km) rows.push(r); }); });
+    var secs = function (r) { return r.secs || 0; };
+    var min = sport === "ride" ? 15 : 3;
+    return {
+      count: rows.length,
+      km: Math.round(rows.reduce(function (t, r) { return t + r.actual_km; }, 0) * 10) / 10,
+      secs: rows.reduce(function (t, r) { return t + secs(r); }, 0),
+      longest: rows.slice().sort(function (a, b) { return b.actual_km - a.actual_km; })[0] || null,
+      fastest: rows.filter(function (r) { return r.actual_km >= min && secs(r) > 0; })
+        .sort(function (a, b) { return secs(a) / a.actual_km - secs(b) / b.actual_km; })[0] || null,
+    };
+  }
+  // Plenty of both: the smaller takes a fifth of their time, over two or more sessions each.
+  function isMixed(run, ride) {
+    return run.count >= 2 && ride.count >= 2 && Math.min(run.secs, ride.secs) >= 0.2 * (run.secs + ride.secs);
+  }
+  function hrs(secs) {
+    var h = secs / 3600;
+    return (h >= 10 ? String(Math.round(h)) : String(Math.round(h * 10) / 10)) + "h";
+  }
+  function weekSecs(w, sport) {
+    return w.sessions.reduce(function (t, r) { return t + (r.sport === sport ? (r.secs || 0) : 0); }, 0);
   }
   // Which sport leads a log: the one that took more of the time.
   function lead(plan) {
@@ -738,28 +771,64 @@
     ]));
 
     var L = lead(plan);
-    var count = plan[L.count] || 0, others = plan[L.other] || 0;
-    app.appendChild(el("div", { class: "legend" }, [
-      el("span", {}, [el("b", { text: fmtKm(plan[L.km] || 0) }), L.done]),
-      el("span", {}, [el("b", { text: String(count) }), count === 1 ? L.one : L.many]),
-      el("span", {}, [el("b", { text: fmtKm(plan.average_week_km || 0) }), " km a week"]),
-      others ? el("span", {}, ["+ ", el("b", { text: String(others) }), others === 1 ? L.otherOne : L.otherMany]) : null,
-    ]));
-
-    var max = Math.max.apply(null, plan.weeks.map(function (w) { return w[L.km] || 0; }).concat([1]));
-    app.appendChild(el("div", { class: "trend", role: "img",
-      "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + fmtKm(w[L.km] || 0) + " km"; }).join(", ") },
-      plan.weeks.map(function (w) {
-        return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
-          el("div", { class: "tval", text: fmtKm(w[L.km] || 0) }),
-          el("div", { class: "tbar-wrap" }, [el("i", { class: "tbar", style: "height:" + Math.max(3, 100 * (w[L.km] || 0) / max) + "%" })]),
-          el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
-        ]);
-      })));
-
+    var run = sportStats(plan, "run"), ride = sportStats(plan, "ride");
+    var mixed = isMixed(run, ride);
     var hl = [];
-    if (plan.longest) hl.push(highlight("Longest", plan.longest));
-    if (plan.fastest) hl.push(highlight("Fastest", plan.fastest));
+    if (mixed) {
+      // Both sports, side by side. Kilometres don't add across a bike and two
+      // feet, so the weeks are drawn in time, split by sport.
+      var weeksN = plan.weeks.length || 1;
+      app.appendChild(el("div", { class: "legend" }, [
+        el("span", {}, [el("i", { class: "dot ride-c" }), el("b", { text: fmtKm(ride.km) }), " km ridden · ",
+          el("b", { text: String(ride.count) }), ride.count === 1 ? " ride" : " rides"]),
+        el("span", {}, [el("i", { class: "dot run-c" }), el("b", { text: fmtKm(run.km) }), " km run · ",
+          el("b", { text: String(run.count) }), run.count === 1 ? " run" : " runs"]),
+        el("span", {}, [el("b", { text: hrs((run.secs + ride.secs) / weeksN) }), " a week"]),
+      ]));
+      var totals = plan.weeks.map(function (w) { return weekSecs(w, "ride") + weekSecs(w, "run"); });
+      var top = Math.max.apply(null, totals.concat([1]));
+      app.appendChild(el("div", { class: "trend", role: "img",
+        "aria-label": plan.weeks.map(function (w) {
+          return short(w.starts) + ": " + hrs(weekSecs(w, "ride")) + " riding, " + hrs(weekSecs(w, "run")) + " running"; }).join(", ") },
+        plan.weeks.map(function (w, i) {
+          var rs = weekSecs(w, "ride"), us = weekSecs(w, "run");
+          return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
+            el("div", { class: "tval", text: totals[i] ? hrs(totals[i]) : "0" }),
+            el("div", { class: "tbar-wrap" }, [
+              totals[i] ? el("div", { class: "tstack", style: "height:" + Math.max(3, 100 * totals[i] / top) + "%" }, [
+                rs ? el("i", { class: "ride-c", style: "flex:" + rs }) : null,
+                us ? el("i", { class: "run-c", style: "flex:" + us }) : null,
+              ]) : el("i", { class: "tbar", style: "height:3%" }),
+            ]),
+            el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
+          ]);
+        })));
+      if (ride.longest) hl.push(highlight("Longest ride", ride.longest));
+      if (ride.fastest) hl.push(highlight("Fastest ride", ride.fastest));
+      if (run.longest) hl.push(highlight("Longest run", run.longest));
+      if (run.fastest) hl.push(highlight("Fastest run", run.fastest));
+    } else {
+      var count = plan[L.count] || 0, others = plan[L.other] || 0;
+      app.appendChild(el("div", { class: "legend" }, [
+        el("span", {}, [el("b", { text: fmtKm(plan[L.km] || 0) }), L.done]),
+        el("span", {}, [el("b", { text: String(count) }), count === 1 ? L.one : L.many]),
+        el("span", {}, [el("b", { text: fmtKm(plan.average_week_km || 0) }), " km a week"]),
+        others ? el("span", {}, ["+ ", el("b", { text: String(others) }), others === 1 ? L.otherOne : L.otherMany]) : null,
+      ]));
+
+      var max = Math.max.apply(null, plan.weeks.map(function (w) { return w[L.km] || 0; }).concat([1]));
+      app.appendChild(el("div", { class: "trend", role: "img",
+        "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + fmtKm(w[L.km] || 0) + " km"; }).join(", ") },
+        plan.weeks.map(function (w) {
+          return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
+            el("div", { class: "tval", text: fmtKm(w[L.km] || 0) }),
+            el("div", { class: "tbar-wrap" }, [el("i", { class: "tbar", style: "height:" + Math.max(3, 100 * (w[L.km] || 0) / max) + "%" })]),
+            el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
+          ]);
+        })));
+      if (plan.longest) hl.push(highlight("Longest", plan.longest));
+      if (plan.fastest) hl.push(highlight("Fastest", plan.fastest));
+    }
     if (hl.length) app.appendChild(el("div", { class: "highlights" }, hl));
 
     app.appendChild(el("div", { class: "next" }, [
@@ -770,7 +839,7 @@
         el("div", { class: "next-meta", text: "Claude builds it from these weeks and puts it on your Garmin calendar and watch." }),
         el("div", { class: "actions" }, [
           el("button", { class: "act primary", text: "Build me a plan", onclick: function (e) {
-            ask("Build me a training plan from my last few weeks of " + (plan.primary === "ride" ? "riding" : "running") + ". Ask me my goal and event date first, then put it on my Garmin calendar.", e.currentTarget); } }),
+            ask("Build me a training plan from my last few weeks of " + (mixed ? "riding and running" : plan.primary === "ride" ? "riding" : "running") + ". Ask me my goal and event date first, then put it on my Garmin calendar.", e.currentTarget); } }),
         ]),
       ]),
     ]));
@@ -783,14 +852,18 @@
         state.open["log" + w.week] = !box.classList.contains("open"); renderLog(state.plan); } }, [
         el("div", { class: "wk" }, [weekName(w), el("small", { text: short(w.starts) })]),
         el("span", { class: "pips" }),
-        el("span", { class: "count" }, [el("span", { class: "km", text: fmtKm(w[L.km] || 0) + " km" }),
-          el("span", { class: "sessions", text: (w[L.count] || 0) + (w[L.count] === 1 ? L.one : L.many) })]),
+        mixed
+          ? el("span", { class: "count" }, [el("span", { class: "km", text: hrs(weekSecs(w, "ride") + weekSecs(w, "run")) }),
+              el("span", { class: "sessions", text: [w.rides ? w.rides + (w.rides === 1 ? " ride" : " rides") : null,
+                w.runs ? w.runs + (w.runs === 1 ? " run" : " runs") : null].filter(Boolean).join(" · ") })])
+          : el("span", { class: "count" }, [el("span", { class: "km", text: fmtKm(w[L.km] || 0) + " km" }),
+              el("span", { class: "sessions", text: (w[L.count] || 0) + (w[L.count] === 1 ? L.one : L.many) })]),
         svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
       ]));
       var list = el("div", { class: "loglist" });
       if (!w.sessions.length) list.appendChild(el("div", { class: "logrow empty-week", text: "Nothing recorded" }));
       w.sessions.forEach(function (r) {
-        var k = kind(r.name, r.sport);
+        var k = mixed && r.sport === "ride" ? { c: "var(--long)" } : mixed && r.sport === "run" ? { c: "var(--easy)" } : kind(r.name, r.sport);
         list.appendChild(el("div", { class: "logrow", style: "--t:" + k.c }, [
           el("span", { class: "lday", text: r.day }),
           el("span", { class: "lname", text: r.name }),

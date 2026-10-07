@@ -218,6 +218,17 @@ def check_ride_led_log(check) -> None:
           str({k: this_week.get(k) for k in ("ride_km", "rides")}))
     runner = tp.summarise_log([r for r in rides if r["activityType"]["typeKey"] == "running"], today)
     check("a runner's log is still led by running", runner.get("primary") == "run" and runner.get("runs") == 1)
+    check("one jog beside the rides is not a runner-and-cyclist", not log.get("mixed"))
+    both = rides + [
+        {"activityId": 90 + i, "startTimeLocal": f"2026-10-0{d} 18:00:00", "activityName": "Run",
+         "activityType": {"typeKey": "running"}, "distance": km * 1000, "duration": secs, "movingDuration": secs}
+        for i, (d, km, secs) in enumerate([(1, 12.0, 3600), (3, 15.0, 4800), (7, 10.0, 3000)])
+    ]
+    mixed = tp.summarise_log(both, today)
+    check("plenty of both is shown as both", mixed.get("mixed") is True and mixed.get("hours_a_week"),
+          str({k: mixed.get(k) for k in ("mixed", "hours_a_week", "primary")}))
+    check("every session carries its time, for the card's weekly hours",
+          all(r.get("secs") for w in mixed["weeks"] for r in w["sessions"] if r.get("actual_km")))
 
 
 def check_shoes_and_nights(check) -> None:

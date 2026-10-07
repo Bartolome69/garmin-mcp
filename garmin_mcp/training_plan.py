@@ -256,6 +256,9 @@ LOG_WEEKS = 4
 FASTEST_MIN_METRES = 3000
 # A ride under this is a commute or a spin, not a fair "fastest".
 FASTEST_MIN_RIDE_METRES = 15000
+# The smaller of running and riding must take at least this share of their
+# combined time, over two or more sessions each, for the log to show both.
+MIXED_SHARE = 0.2
 
 
 def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: int = LOG_WEEKS) -> dict[str, Any]:
@@ -294,6 +297,7 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
             "pace": pace_per_km(metres, moving) if sport == "run" else None,
             "speed": f"{metres / moving * 3.6:.1f} km/h" if sport == "ride" and metres and moving else None,
             "activity_id": a.get("activityId"),
+            "secs": round(moving) or None,
             "_metres": metres,
             "_seconds": moving,
         }))
@@ -322,7 +326,10 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
 
     runs = [r for r in rows if r["sport"] == "run" and r["_metres"] > 0]
     rides = [r for r in rows if r["sport"] == "ride" and r["_metres"] > 0]
-    primary = "ride" if sum(r["_seconds"] for r in rides) > sum(r["_seconds"] for r in runs) else "run"
+    run_secs, ride_secs = sum(r["_seconds"] for r in runs), sum(r["_seconds"] for r in rides)
+    primary = "ride" if ride_secs > run_secs else "run"
+    # Someone who does plenty of both gets both, side by side, by time.
+    mixed = len(runs) >= 2 and len(rides) >= 2 and min(run_secs, ride_secs) >= MIXED_SHARE * (run_secs + ride_secs)
     lead = rides if primary == "ride" else runs
     longest = max(lead, key=lambda r: r["_metres"], default=None)
     if primary == "ride":
@@ -336,6 +343,8 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
         "starts": first.isoformat(),
         "ends": today.isoformat(),
         "primary": primary,
+        "mixed": mixed or None,
+        "hours_a_week": round((run_secs + ride_secs) / 3600 / weeks, 1) if mixed else None,
         "weeks": out_weeks,
         "run_km": km(runs),
         "runs": len(runs),
@@ -346,7 +355,8 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
         "fastest": clean(fastest),
         "note": (
             "Nothing is scheduled on the Garmin calendar, so this is what was done "
-            f"over the last {weeks} weeks, led by {'riding' if primary == 'ride' else 'running'}. "
+            f"over the last {weeks} weeks, "
+            f"{'riding and running alike' if mixed else 'led by riding' if primary == 'ride' else 'led by running'}. "
             "create_plan builds a plan from here; ask the user's goal and the date "
             "of their race or event first."
         ),
