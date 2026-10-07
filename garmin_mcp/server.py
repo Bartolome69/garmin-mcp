@@ -36,7 +36,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, cycling, gear, hooks, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
+from . import conditions, cycling, fitness_trends, gear, hooks, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -67,8 +67,9 @@ _INSTRUCTIONS = (
     "after it only when the question calls for them. A specific question "
     "goes to its own tool without the card: a run to get_activity_details, "
     "whether to go hard today to get_readiness, recovery to "
-    "get_recovery_trends, fitness and whether it is improving or race "
-    "predictions to get_fitness, shoes to get_shoes. Answer those in "
+    "get_recovery_trends, today's fitness markers or race predictions to "
+    "get_fitness, whether fitness is improving to get_fitness_trends, shoes "
+    "to get_shoes. Answer those in "
     "writing. Dates are YYYY-MM-DD and "
     "also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
@@ -164,7 +165,8 @@ _NOTES = {
     "get_fitness": (
         "\n\nAlso returns the cycling FTP set in Garmin, with watts per kilo "
         "when the user's weight is set. For a general \"how's my training "
-        "going\", get_plan is the first call; this adds the fitness markers."
+        "going\", get_plan is the first call; this adds the fitness markers. "
+        "For whether they are improving over months, get_fitness_trends."
     ),
     "get_recovery_trends": (
         "\n\nFor a general \"how's my training going\", get_plan is the first "
@@ -1986,6 +1988,54 @@ async def get_fitness() -> dict[str, Any]:
     if all(x is None for x in (vo2, race, lactate, endurance, hill, tolerance)) and not ride:
         return {"error": "Garmin returned no fitness data.", "warnings": warnings}
     return {**metrics.shape_fitness(vo2, race, lactate, endurance, hill, tolerance, warnings), **(ride or {})}
+
+
+FITNESS_TREND_MONTHS = 6
+MAX_FITNESS_TREND_MONTHS = 12
+
+
+@mcp.tool()
+@tool_errors
+async def get_fitness_trends(months: int = FITNESS_TREND_MONTHS) -> dict[str, Any]:
+    """Whether the user is getting fitter: Garmin's fitness markers month by month.
+
+    VO2 max, predicted 5k, 10k, half and marathon times, lactate threshold
+    pace and heart rate, endurance and hill score, and cycling FTP, each as a
+    value per month with the change from the first month to now and whether
+    that is improving, steady or declining. Use it for "am I getting fitter",
+    "how's my fitness trending", "is my VO2 max going up" or "has my half
+    prediction come down", and answer in writing: name the markers that moved
+    and by how much, in plain terms. For where they stand today, get_fitness
+    is enough; for whether recovery is keeping up, get_recovery_trends.
+
+    Args:
+        months: Months to look back, including this one (1-12). Defaults to 6.
+    """
+    months = max(1, min(int(months), MAX_FITNESS_TREND_MONTHS))
+    end = parse_date("today")
+    end_day = date_cls.fromisoformat(end)
+    # Garmin's race predictor refuses a range over a year.
+    start = (end_day - timedelta(days=months * 30)).isoformat()
+    month_starts = date_cls.fromisoformat(start)
+    (vo2, race, lactate, endurance, hill, ftp), warnings = await _gather(
+        [
+            ("vo2 max", _chunked(lambda c, lo, hi: c.get_max_metrics_range(lo, hi), month_starts, end_day)),
+            ("race predictions", lambda c: c.get_race_predictions(start, end, "monthly")),
+            ("lactate threshold", lambda c: c.get_lactate_threshold(
+                latest=False, start_date=start, end_date=end, aggregation="monthly")),
+            ("endurance score", lambda c: c.get_endurance_score(start, end)),
+            ("hill score", lambda c: c.get_hill_score(start, end)),
+            ("cycling ftp", lambda c: c.get_functional_threshold_power_range(
+                start, end, sport="CYCLING", aggregation="monthly")),
+        ]
+    )
+    shaped = fitness_trends.shape(
+        vo2=vo2, race=race, lactate=lactate, endurance=endurance, hill=hill, ftp=ftp,
+        start=start, end=end, warnings=warnings,
+    )
+    if not set(shaped) - {"period", "how_to_read", "warnings"}:
+        return {"error": "Garmin returned no fitness history for that period.", "warnings": warnings}
+    return shaped
 
 
 RECOVERY_WEEKS = 4

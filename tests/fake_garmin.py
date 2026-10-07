@@ -209,6 +209,31 @@ HRV = {"hrvSummary": {"weeklyAvg": 58, "lastNightAvg": 61, "lastNight5MinHigh": 
                       "baseline": {"lowUpper": 50, "balancedLow": 53, "balancedUpper": 66},
                       "status": "BALANCED"}}
 
+# Fitness history, in the different shapes Garmin's range endpoints answer in:
+# rows with a date, rows nested a level down, and a map keyed by date.
+FITNESS_MONTHS = ["2026-05-15", "2026-06-15", "2026-07-15", "2026-08-15", "2026-09-15", "2026-10-05"]
+VO2_HISTORY = [
+    {"generic": {"calendarDate": d, "vo2MaxPreciseValue": v},
+     "cycling": {"calendarDate": d, "vo2MaxPreciseValue": 55.0}}
+    for d, v in zip(FITNESS_MONTHS, [57.8, 58.4, 59.1, 59.9, 60.4, 60.9])
+]
+RACE_HISTORY = [
+    {"fromCalendarDate": d[:8] + "01", "time5K": t5, "time10K": t5 * 2.1,
+     "timeHalfMarathon": half, "timeMarathon": half * 2.1}
+    for d, t5, half in zip(FITNESS_MONTHS, [1140, 1128, 1110, 1098, 1090, 1080],
+                           [5400, 5340, 5260, 5190, 5130, 5100])
+]
+LACTATE_HISTORY = {
+    "speed": [{"from": d, "value": v} for d, v in zip(FITNESS_MONTHS, [3.6, 3.62, 3.68, 3.72, 3.76, 3.8])],
+    "heart_rate": [{"from": d, "value": 171} for d in FITNESS_MONTHS],
+    "power": [],
+}
+ENDURANCE_HISTORY = {"groupMap": {d: {"groupAverage": v} for d, v in
+                                  zip(FITNESS_MONTHS, [6100, 6200, 6300, 6400, 6480, 6512])}}
+HILL_HISTORY = {"hillScoreDTOList": [{"calendarDate": d, "overallScore": 46} for d in FITNESS_MONTHS]}
+FTP_HISTORY = [{"calendarDate": d, "functionalThresholdPower": w}
+               for d, w in zip(FITNESS_MONTHS, [262, 260, 255, 252, 250, 250])]
+
 RACE_PREDICTIONS = {"calendarDate": "2026-09-30", "time5K": 1080, "time10K": 2280,
                     "timeHalfMarathon": 5100, "timeMarathon": 10800}
 
@@ -487,17 +512,22 @@ class FakeGarmin:
     def get_hrv_data(self, day: str) -> dict[str, Any]:
         return HRV
 
-    def get_race_predictions(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def get_race_predictions(self, *args: Any, **kwargs: Any) -> Any:
+        if args or kwargs:
+            return [dict(r) for r in RACE_HISTORY]
         return dict(RACE_PREDICTIONS)
 
     def get_lactate_threshold(self, **kwargs: Any) -> dict[str, Any]:
-        return LACTATE
+        return LACTATE if kwargs.get("latest", True) else LACTATE_HISTORY
 
     def get_endurance_score(self, start: str, end: str | None = None) -> dict[str, Any]:
-        return dict(ENDURANCE)
+        return dict(ENDURANCE_HISTORY if end else ENDURANCE)
 
     def get_hill_score(self, start: str, end: str | None = None) -> dict[str, Any]:
-        return dict(HILL)
+        return dict(HILL_HISTORY if end else HILL)
+
+    def get_functional_threshold_power_range(self, start: str, end: str, **kwargs: Any) -> list[dict[str, Any]]:
+        return [dict(r) for r in FTP_HISTORY]
 
     def get_running_tolerance(self, start: str, end: str, aggregation: str = "weekly") -> list[dict[str, Any]]:
         return [dict(t) for t in TOLERANCE]
@@ -577,6 +607,9 @@ class FakeGarmin:
 
     def get_max_metrics(self, day: str) -> list[dict[str, Any]]:
         return [{"generic": {"vo2MaxPreciseValue": 60.9, "fitnessAge": None}}]
+
+    def get_max_metrics_range(self, start: str, end: str) -> list[dict[str, Any]]:
+        return [r for r in VO2_HISTORY if start <= r["generic"]["calendarDate"] <= end]
 
     def get_personal_record(self) -> list[dict[str, Any]]:
         return [

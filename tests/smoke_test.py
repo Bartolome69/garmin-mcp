@@ -41,6 +41,7 @@ EXPECTED_TOOLS = {
     "get_progress",
     "get_readiness",
     "get_fitness",
+    "get_fitness_trends",
     "update_workout",
     "create_plan",
     "get_plan",
@@ -1170,6 +1171,38 @@ async def main() -> int:
                   fit["running_tolerance"].get("toleranceLimit") == 61.0
                   and "userProfilePK" not in fit["running_tolerance"], str(fit.get("running_tolerance")))
             check("vo2max on fitness too", fit.get("vo2max") == 60.9)
+
+            print("\nfitness trends")
+            trend = payload(await sess.call_tool("get_fitness_trends", {"months": 6}))
+            print("   ", json.dumps(trend, indent=2)[:700])
+            check("vo2 max month by month, improving",
+                  trend["vo2max"]["now"] == 60.9 and trend["vo2max"]["then"] == 57.8
+                  and trend["vo2max"]["change"] == 3.1 and trend["vo2max"]["direction"] == "improving"
+                  and len(trend["vo2max"]["by_month"]) == 6, str(trend.get("vo2max")))
+            check("a race prediction coming down reads as improving, in time",
+                  trend["race_predictions"]["half_marathon"]["now"] == "1h 25m 00s"
+                  and trend["race_predictions"]["half_marathon"]["change"] == "-5m 00s"
+                  and trend["race_predictions"]["half_marathon"]["direction"] == "improving",
+                  str(trend.get("race_predictions", {}).get("half_marathon")))
+            check("threshold as pace, faster reads as improving",
+                  trend["lactate_threshold"]["pace"]["now"] == "4:23 /km"
+                  and trend["lactate_threshold"]["pace"]["change"] == "-15s/km"
+                  and trend["lactate_threshold"]["pace"]["direction"] == "improving",
+                  str(trend.get("lactate_threshold")))
+            check("threshold heart rate isn't judged better or worse",
+                  "direction" not in trend["lactate_threshold"]["heart_rate_bpm"])
+            check("a score read from a map keyed by date",
+                  trend["endurance_score"]["now"] == 6512 and trend["endurance_score"]["direction"] == "improving",
+                  str(trend.get("endurance_score")))
+            check("an unchanged score reads as steady",
+                  trend["hill_score"]["direction"] == "steady", str(trend.get("hill_score")))
+            check("FTP falling reads as declining",
+                  trend["cycling_ftp_watts"]["change"] == -12
+                  and trend["cycling_ftp_watts"]["direction"] == "declining", str(trend.get("cycling_ftp_watts")))
+            short = payload(await sess.call_tool("get_fitness_trends", {"months": 99}))
+            check("a long look-back is capped at a year",
+                  short["period"]["from"] >= str(__import__("datetime").date.today().replace(
+                      year=__import__("datetime").date.today().year - 1)), str(short.get("period")))
 
             print("\nprofile")
             prof = payload(await sess.call_tool("get_profile", {}))
