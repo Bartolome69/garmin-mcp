@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Iterable
 
+from .cycling import is_ride
 from .plan import category, monday_of
 
 # How far a session may drift from its scheduled day and still count.
@@ -61,6 +62,9 @@ class Actual:
     seconds: float = 0.0
     metres: float = 0.0
     activity_id: Any = None
+    # Rides sit in "other" for matching; the training log still needs to tell
+    # them apart, to total a cyclist's kilometres.
+    ride: bool = False
 
 
 @dataclass
@@ -210,6 +214,7 @@ def match(
             "sport": leftover.sport,
             "actual_seconds": leftover.seconds or None,
             "actual_km": round(leftover.metres / 1000, 2) if leftover.metres else None,
+            **({"ride": True} if leftover.ride else {}),
         })
 
     return result
@@ -289,6 +294,7 @@ def from_collected(data: dict[str, Any]) -> tuple[list[Planned], list[Actual]]:
                 seconds=float(item.get("duration") or 0),
                 metres=float(item.get("distance") or 0),
                 activity_id=item.get("activityId"),
+                ride=is_ride((item.get("activityType") or {}).get("typeKey")),
             )
         )
     return planned, actual

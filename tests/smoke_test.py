@@ -187,6 +187,39 @@ def check_terrain_ignores_stops(check) -> None:
     check("a stop doesn't read as surging", "decoupling_pct" in (r.get("effort") or {}), str(r.get("effort")))
 
 
+def check_ride_led_log(check) -> None:
+    """A cyclist with nothing scheduled sees kilometres ridden, not zeros for running."""
+    from datetime import date as _date
+    from garmin_mcp import training_plan as tp
+
+    today = _date(2026, 10, 8)
+    rides = [
+        {"activityId": i, "startTimeLocal": f"2026-10-0{d} 07:00:00", "activityName": name,
+         "activityType": {"typeKey": key}, "distance": km * 1000, "duration": secs, "movingDuration": secs}
+        for i, (d, name, key, km, secs) in enumerate([
+            (4, "Box Hill loop", "road_biking", 82.0, 3 * 3600 + 600),
+            (6, "Zwift sweet spot", "virtual_ride", 34.0, 3600),
+            (7, "Commute", "cycling", 9.0, 1500),
+            (5, "Easy jog", "running", 6.0, 2100),
+        ])
+    ]
+    log = tp.summarise_log(rides, today)
+    check("a log of mostly rides is led by riding", log.get("primary") == "ride", str(log.get("primary")))
+    check("rides are totalled apart from runs",
+          log.get("rides") == 3 and log.get("ride_km") == 125.0 and log.get("runs") == 1 and log.get("run_km") == 6.0,
+          str({k: log.get(k) for k in ("rides", "ride_km", "runs", "run_km")}))
+    check("the longest is the longest ride, with its speed",
+          (log.get("longest") or {}).get("name") == "Box Hill loop" and "km/h" in (log["longest"].get("speed") or ""),
+          str(log.get("longest")))
+    check("a short commute can't be the fastest ride",
+          (log.get("fastest") or {}).get("name") == "Zwift sweet spot", str(log.get("fastest")))
+    this_week = next(w for w in log["weeks"] if w["current"])
+    check("each week has its ride total", this_week.get("ride_km") == 43.0 and this_week.get("rides") == 2,
+          str({k: this_week.get(k) for k in ("ride_km", "rides")}))
+    runner = tp.summarise_log([r for r in rides if r["activityType"]["typeKey"] == "running"], today)
+    check("a runner's log is still led by running", runner.get("primary") == "run" and runner.get("runs") == 1)
+
+
 def check_shoes_and_nights(check) -> None:
     """What a real account showed: unnamed models, worn-out pairs, no watch at night."""
     from datetime import date as _d
@@ -790,6 +823,7 @@ async def main() -> int:
             check_conditions(check)
             check_terrain_ignores_stops(check)
             check_shoes_and_nights(check)
+            check_ride_led_log(check)
 
             print("\nworkouts")
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))

@@ -22,6 +22,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Iterable, Mapping, Sequence
 
+from .cycling import is_ride
 from .formatting import DateError, drop_empty, duration, pace_per_km, parse_date
 from .plan import category, monday_of, planned_distance_m
 from .progress import Actual, Planned, match
@@ -253,14 +254,20 @@ LOG_WEEKS = 4
 # A run shorter than this doesn't count for "fastest": a 1 km jog to the
 # shop would otherwise win.
 FASTEST_MIN_METRES = 3000
+# A ride under this is a commute or a spin, not a fair "fastest".
+FASTEST_MIN_RIDE_METRES = 15000
 
 
 def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: int = LOG_WEEKS) -> dict[str, Any]:
-    """What was run over the last few weeks, for someone with nothing scheduled.
+    """What was done over the last few weeks, for someone with nothing scheduled.
 
     Every week is listed, empty ones too, so a gap shows as a gap rather than
     the trend skipping over it. The same shape the plan view already draws
     weeks from, marked as a log.
+
+    Runs and rides are totalled apart. Whichever took more of the time leads
+    the card (its "primary"), so a cyclist sees kilometres ridden rather than
+    a row of zeros for running.
     """
     monday = monday_of(today)
     first = monday - timedelta(weeks=weeks - 1)
@@ -269,7 +276,8 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
         day = _day(a.get("startTimeLocal"))
         if not day or not first <= day <= today:
             continue
-        sport = category((a.get("activityType") or {}).get("typeKey"))
+        key = (a.get("activityType") or {}).get("typeKey")
+        sport = "ride" if is_ride(key) else category(key)
         metres = float(a.get("distance") or 0)
         seconds = float(a.get("duration") or 0)
         # Pace from moving time, as Garmin shows it; a stop at a crossing
@@ -284,11 +292,15 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
             "actual_km": round(metres / 1000, 2) if metres else None,
             "actual": duration(seconds) if seconds else None,
             "pace": pace_per_km(metres, moving) if sport == "run" else None,
+            "speed": f"{metres / moving * 3.6:.1f} km/h" if sport == "ride" and metres and moving else None,
             "activity_id": a.get("activityId"),
             "_metres": metres,
             "_seconds": moving,
         }))
     rows.sort(key=lambda r: (r["date"], str(r.get("activity_id"))))
+
+    def km(rs: list[dict[str, Any]]) -> float:
+        return round(sum(r["_metres"] for r in rs) / 1000, 1)
 
     out_weeks = []
     for n in range(weeks):
@@ -296,35 +308,47 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
         end = start + timedelta(days=7)
         here = [r for r in rows if start.isoformat() <= r["date"] < end.isoformat()]
         runs = [r for r in here if r["sport"] == "run"]
+        rides = [r for r in here if r["sport"] == "ride"]
         out_weeks.append({
             "week": n + 1,
             "starts": start.isoformat(),
             "current": start == monday,
-            "run_km": round(sum(r["_metres"] for r in runs) / 1000, 1),
+            "run_km": km(runs),
             "runs": len(runs),
+            "ride_km": km(rides),
+            "rides": len(rides),
             "sessions": [{k: v for k, v in r.items() if not k.startswith("_")} for r in here],
         })
 
     runs = [r for r in rows if r["sport"] == "run" and r["_metres"] > 0]
-    longest = max(runs, key=lambda r: r["_metres"], default=None)
-    paced = [r for r in runs if r["_metres"] >= FASTEST_MIN_METRES and r["_seconds"] > 0]
-    fastest = min(paced, key=lambda r: r["_seconds"] / r["_metres"], default=None)
+    rides = [r for r in rows if r["sport"] == "ride" and r["_metres"] > 0]
+    primary = "ride" if sum(r["_seconds"] for r in rides) > sum(r["_seconds"] for r in runs) else "run"
+    lead = rides if primary == "ride" else runs
+    longest = max(lead, key=lambda r: r["_metres"], default=None)
+    if primary == "ride":
+        timed = [r for r in rides if r["_metres"] >= FASTEST_MIN_RIDE_METRES and r["_seconds"] > 0]
+    else:
+        timed = [r for r in runs if r["_metres"] >= FASTEST_MIN_METRES and r["_seconds"] > 0]
+    fastest = min(timed, key=lambda r: r["_seconds"] / r["_metres"], default=None)
     clean = lambda r: {k: v for k, v in r.items() if not k.startswith("_")} if r else None
-    total = sum(r["_metres"] for r in runs) / 1000
     return drop_empty({
         "source": "log",
         "starts": first.isoformat(),
         "ends": today.isoformat(),
+        "primary": primary,
         "weeks": out_weeks,
-        "run_km": round(total, 1),
+        "run_km": km(runs),
         "runs": len(runs),
-        "average_week_km": round(total / weeks, 1),
+        "ride_km": km(rides),
+        "rides": len(rides),
+        "average_week_km": round(km(lead) / weeks, 1),
         "longest": clean(longest),
         "fastest": clean(fastest),
         "note": (
-            "Nothing is scheduled on the Garmin calendar, so this is what was run "
-            f"over the last {weeks} weeks. create_plan builds a plan from here; ask "
-            "the user's goal and race date first."
+            "Nothing is scheduled on the Garmin calendar, so this is what was done "
+            f"over the last {weeks} weeks, led by {'riding' if primary == 'ride' else 'running'}. "
+            "create_plan builds a plan from here; ask the user's goal and the date "
+            "of their race or event first."
         ),
     })
 

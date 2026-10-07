@@ -416,27 +416,44 @@
     var today = iso(new Date());
     var thisMonday = iso(mondayOf(new Date()));
     var all = (p.unplanned || []).map(function (r) {
-      var pace = r.sport === "run" && r.actual_km && r.actual_seconds ? paceText(r.actual_seconds / r.actual_km) : null;
-      return { date: r.date, day: DAYS[(parse(r.date).getDay() + 6) % 7], name: r.name, sport: r.sport, status: "logged",
-        actual_km: r.actual_km, actual: r.actual_seconds ? duration(r.actual_seconds) : null, pace: pace,
+      var sport = r.ride ? "ride" : r.sport;
+      var pace = sport === "run" && r.actual_km && r.actual_seconds ? paceText(r.actual_seconds / r.actual_km) : null;
+      var speed = sport === "ride" && r.actual_km && r.actual_seconds ? (r.actual_km / r.actual_seconds * 3600).toFixed(1) + " km/h" : null;
+      return { date: r.date, day: DAYS[(parse(r.date).getDay() + 6) % 7], name: r.name, sport: sport, status: "logged",
+        actual_km: r.actual_km, actual: r.actual_seconds ? duration(r.actual_seconds) : null, pace: pace, speed: speed,
         _m: (r.actual_km || 0) * 1000, _s: r.actual_seconds || 0 };
     });
     if (!all.length) return null;
+    var sumKm = function (rs) { return Math.round(rs.reduce(function (t, r) { return t + (r.actual_km || 0); }, 0) * 10) / 10; };
     var weeks = p.weeks.map(function (w, i) {
       var end = iso(addDays(parse(w.week_of), 7));
       var here = all.filter(function (r) { return r.date >= w.week_of && r.date < end; });
       var runs = here.filter(function (r) { return r.sport === "run"; });
-      return { week: i + 1, starts: w.week_of, current: w.week_of === thisMonday, sessions: here, runs: runs.length,
-        run_km: Math.round(runs.reduce(function (t, r) { return t + (r.actual_km || 0); }, 0) * 10) / 10 };
+      var rides = here.filter(function (r) { return r.sport === "ride"; });
+      return { week: i + 1, starts: w.week_of, current: w.week_of === thisMonday, sessions: here,
+        runs: runs.length, run_km: sumKm(runs), rides: rides.length, ride_km: sumKm(rides) };
     });
     var runs = all.filter(function (r) { return r.sport === "run" && r._m > 0; });
-    var total = runs.reduce(function (t, r) { return t + r._m; }, 0) / 1000;
-    var longest = runs.slice().sort(function (a, b) { return b._m - a._m; })[0] || null;
-    var fastest = runs.filter(function (r) { return r._m >= 3000 && r._s > 0; })
+    var rides = all.filter(function (r) { return r.sport === "ride" && r._m > 0; });
+    var secs = function (rs) { return rs.reduce(function (t, r) { return t + r._s; }, 0); };
+    var primary = secs(rides) > secs(runs) ? "ride" : "run";
+    var lead = primary === "ride" ? rides : runs;
+    var total = lead.reduce(function (t, r) { return t + r._m; }, 0) / 1000;
+    var longest = lead.slice().sort(function (a, b) { return b._m - a._m; })[0] || null;
+    var minM = primary === "ride" ? 15000 : 3000;
+    var fastest = lead.filter(function (r) { return r._m >= minM && r._s > 0; })
       .sort(function (a, b) { return a._s / a._m - b._s / b._m; })[0] || null;
-    return { source: "log", starts: p.weeks[0].week_of, ends: today, weeks: weeks, runs: runs.length,
-      run_km: Math.round(total * 10) / 10, average_week_km: Math.round(total / weeks.length * 10) / 10,
-      longest: longest, fastest: fastest };
+    return { source: "log", primary: primary, starts: p.weeks[0].week_of, ends: today, weeks: weeks,
+      runs: runs.length, run_km: sumKm(runs), rides: rides.length, ride_km: sumKm(rides),
+      average_week_km: Math.round(total / weeks.length * 10) / 10, longest: longest, fastest: fastest };
+  }
+  // Which sport leads a log: the one that took more of the time.
+  function lead(plan) {
+    return plan.primary === "ride"
+      ? { km: "ride_km", count: "rides", one: " ride", many: " rides", done: " km ridden",
+          other: "runs", otherOne: " run", otherMany: " runs" }
+      : { km: "run_km", count: "runs", one: " run", many: " runs", done: " km run",
+          other: "rides", otherOne: " ride", otherMany: " rides" };
   }
   function paceText(secondsPerKm) {
     var t = Math.round(secondsPerKm), m = Math.floor(t / 60);
@@ -703,8 +720,9 @@
   }
 
   // ---------------------------------------------------------------- log
-  // Nothing scheduled: what was run over the last few weeks, and the way to a
-  // plan. A week with no running stays in the trend as a gap.
+  // Nothing scheduled: what was done over the last few weeks, and the way to a
+  // plan. Led by running or riding, whichever took more of the time. A week
+  // with none stays in the trend as a gap.
   function renderLog(plan) {
     state.plan = plan;
     var app = document.getElementById("app");
@@ -719,19 +737,22 @@
         [svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')]),
     ]));
 
+    var L = lead(plan);
+    var count = plan[L.count] || 0, others = plan[L.other] || 0;
     app.appendChild(el("div", { class: "legend" }, [
-      el("span", {}, [el("b", { text: fmtKm(plan.run_km || 0) }), " km run"]),
-      el("span", {}, [el("b", { text: String(plan.runs || 0) }), plan.runs === 1 ? " run" : " runs"]),
+      el("span", {}, [el("b", { text: fmtKm(plan[L.km] || 0) }), L.done]),
+      el("span", {}, [el("b", { text: String(count) }), count === 1 ? L.one : L.many]),
       el("span", {}, [el("b", { text: fmtKm(plan.average_week_km || 0) }), " km a week"]),
+      others ? el("span", {}, ["+ ", el("b", { text: String(others) }), others === 1 ? L.otherOne : L.otherMany]) : null,
     ]));
 
-    var max = Math.max.apply(null, plan.weeks.map(function (w) { return w.run_km || 0; }).concat([1]));
+    var max = Math.max.apply(null, plan.weeks.map(function (w) { return w[L.km] || 0; }).concat([1]));
     app.appendChild(el("div", { class: "trend", role: "img",
-      "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + fmtKm(w.run_km || 0) + " km"; }).join(", ") },
+      "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + fmtKm(w[L.km] || 0) + " km"; }).join(", ") },
       plan.weeks.map(function (w) {
         return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
-          el("div", { class: "tval", text: fmtKm(w.run_km || 0) }),
-          el("div", { class: "tbar-wrap" }, [el("i", { class: "tbar", style: "height:" + Math.max(3, 100 * (w.run_km || 0) / max) + "%" })]),
+          el("div", { class: "tval", text: fmtKm(w[L.km] || 0) }),
+          el("div", { class: "tbar-wrap" }, [el("i", { class: "tbar", style: "height:" + Math.max(3, 100 * (w[L.km] || 0) / max) + "%" })]),
           el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
         ]);
       })));
@@ -749,7 +770,7 @@
         el("div", { class: "next-meta", text: "Claude builds it from these weeks and puts it on your Garmin calendar and watch." }),
         el("div", { class: "actions" }, [
           el("button", { class: "act primary", text: "Build me a plan", onclick: function (e) {
-            ask("Build me a training plan from my last few weeks of running. Ask me my goal and race date first, then put it on my Garmin calendar.", e.currentTarget); } }),
+            ask("Build me a training plan from my last few weeks of " + (plan.primary === "ride" ? "riding" : "running") + ". Ask me my goal and event date first, then put it on my Garmin calendar.", e.currentTarget); } }),
         ]),
       ]),
     ]));
@@ -762,8 +783,8 @@
         state.open["log" + w.week] = !box.classList.contains("open"); renderLog(state.plan); } }, [
         el("div", { class: "wk" }, [weekName(w), el("small", { text: short(w.starts) })]),
         el("span", { class: "pips" }),
-        el("span", { class: "count" }, [el("span", { class: "km", text: fmtKm(w.run_km || 0) + " km" }),
-          el("span", { class: "sessions", text: (w.runs || 0) + (w.runs === 1 ? " run" : " runs") })]),
+        el("span", { class: "count" }, [el("span", { class: "km", text: fmtKm(w[L.km] || 0) + " km" }),
+          el("span", { class: "sessions", text: (w[L.count] || 0) + (w[L.count] === 1 ? L.one : L.many) })]),
         svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
       ]));
       var list = el("div", { class: "loglist" });
@@ -773,7 +794,7 @@
         list.appendChild(el("div", { class: "logrow", style: "--t:" + k.c }, [
           el("span", { class: "lday", text: r.day }),
           el("span", { class: "lname", text: r.name }),
-          el("span", { class: "lval", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : r.actual, r.pace].filter(Boolean).join(" · ") }),
+          el("span", { class: "lval", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : r.actual, r.pace || r.speed].filter(Boolean).join(" · ") }),
         ]));
       });
       box.appendChild(list);
@@ -784,7 +805,7 @@
   function highlight(label, r) {
     return el("div", { class: "hl" }, [
       el("div", { class: "hl-label", text: label }),
-      el("div", { class: "hl-val", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : null, r.pace && r.pace.replace(" /km", "/km")].filter(Boolean).join(" · ") }),
+      el("div", { class: "hl-val", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : null, r.pace ? r.pace.replace(" /km", "/km") : r.speed].filter(Boolean).join(" · ") }),
       el("div", { class: "hl-meta", text: r.name + " · " + long(r.date) }),
     ]);
   }
