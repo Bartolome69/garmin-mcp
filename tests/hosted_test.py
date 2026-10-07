@@ -211,6 +211,14 @@ async def main() -> int:
               hints["get_daily_summary"].read_only_hint and hints["get_plan"].read_only_hint
               and not hints["schedule_workout"].read_only_hint
               and not hints["create_plan"].read_only_hint)
+        # "How's my training going" once went to recovery and fitness: Claude
+        # searches tools by wording, so get_plan has to carry the words.
+        plan_tool = next(t for t in listed if t.name == "get_plan")
+        check("a general training question routes to the plan card",
+              "how's my training going" in plan_tool.description
+              and "get_plan first" in hosted.mcp.instructions
+              and plan_tool.title == "Training plan and progress",
+              str(plan_tool.title))
         check("deleting is marked destructive, creating is not",
               hints["delete_workout"].destructive_hint and not hints["create_workout"].destructive_hint)
 

@@ -59,7 +59,13 @@ _INSTRUCTIONS = (
     "(get_fitness). Writes only to the workout library: create, update, "
     "schedule, unschedule and delete structured workouts; scheduling is what "
     "sends one to the watch. A whole training block is create_plan, read back "
-    "with get_plan. Dates are YYYY-MM-DD and also accept 'today', "
+    "with get_plan. For any general question about how training is going "
+    "(\"how's my training going\", \"how am I doing\", \"how's this week\", "
+    "\"show my plan\", \"what's next\", \"am I on track\"), call get_plan "
+    "first: it draws the user's plan, or with nothing scheduled their recent "
+    "running and riding, as a card. Add readiness, recovery trends or fitness "
+    "after it only when the question calls for them. Dates are YYYY-MM-DD and "
+    "also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
     "'error' key, show it to the user rather than retrying blindly."
 )
@@ -102,11 +108,16 @@ _PREVIEW_ONLY: set[str] = set()
 # made with create_plan. Once a preview feature, now everyone's.
 _DESCRIPTIONS = {
     "get_plan": (
-        "The user's training plan, week by week: every session marked done, "
-        "missed or ahead, with the next one.\n\n"
-        "Use this first for any question about how their plan or training is "
-        "going, what's next this week, or whether they're keeping up, wherever "
-        "the plan came from: a coach, an app, Garmin Coach or create_plan. With "
+        "How the user's training is going, drawn as a card: their training "
+        "plan week by week, every session marked done, missed or ahead, with "
+        "the next one; or, with nothing scheduled, their recent weeks of "
+        "running and riding.\n\n"
+        "Use this first for any question about how their training or plan is "
+        "going: \"how's my training going\", \"how am I doing\", \"how's this "
+        "week looking\", \"show my plan\", \"what's next\", \"what's today's "
+        "session\", \"am I on track for my race\", \"am I keeping up\". That "
+        "holds wherever the plan came from: a coach, an app, Garmin Coach or "
+        "create_plan. Recovery, readiness or fitness can follow when asked. With "
         "no plan made by create_plan it reads the workouts scheduled on the "
         "Garmin calendar around this week. Each session carries its workout_id "
         "and schedule_id so it can be moved or retuned, and the next one its "
@@ -142,7 +153,12 @@ _DESCRIPTIONS = {
 _NOTES = {
     "get_fitness": (
         "\n\nAlso returns the cycling FTP set in Garmin, with watts per kilo "
-        "when the user's weight is set."
+        "when the user's weight is set. For a general \"how's my training "
+        "going\", get_plan is the first call; this adds the fitness markers."
+    ),
+    "get_recovery_trends": (
+        "\n\nFor a general \"how's my training going\", get_plan is the first "
+        "call; this adds how recovery is keeping up with it."
     ),
     "get_activity_details": (
         "\n\nFor a run, also returns the weather during it (temperature, dew "
@@ -176,9 +192,16 @@ def _with_description(tool, *, preview_on: bool):
     if preview_on and tool.name in _PREVIEW_NOTES:
         text = (text or tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]
     update = {"annotations": _annotations(tool.name)}
+    if tool.name in _TITLES:
+        update["title"] = _TITLES[tool.name]
     if text:
         update["description"] = text
     return tool.model_copy(update=update)
+
+
+# What a person sees for a tool in Claude's list of steps, where the bare name
+# "Get plan" undersells it.
+_TITLES = {"get_plan": "Training plan and progress"}
 
 
 # Tools that take something away: a workout, a plan, a date on the calendar,
