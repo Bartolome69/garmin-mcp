@@ -317,6 +317,9 @@ async def check_preview_gate(check) -> None:
               preview_description[:80])
         check("get_plan asks to be called fresh and says it draws a card",
               "earlier answer goes stale" in preview_description and "plan card" in preview_description)
+        check("get_plan doesn't redraw the card for every follow-up",
+              "answer follow-ups from that result" in preview_description
+              and "specific question" in preview_description)
         check("get_plan says to check before saying a session isn't in Garmin",
               "don't guess" in preview_description and "gym app" in preview_description
               and "sets and weights aren't needed" in preview_description)
