@@ -325,42 +325,71 @@ def _too_many_attempts(address: str) -> bool:
 # Pages
 # --------------------------------------------------------------------------
 
+# The same look as daash.run: its colours, its type, its wordmark, light only.
+# This is the page that asks for a Garmin password, so it has to look like the
+# site that sent people here. No web fonts and no outside requests: a sign-in
+# page loads nothing it does not need.
 _STYLE = """
-:root { color-scheme: light; --ground:#F4F6F3; --surface:#fff; --ink:#17211B;
-  --muted:#55655B; --line:#D3DBD3; --accent:#2F6B4F; --clay:#BC5A2A; }
-@media (prefers-color-scheme: dark) { :root { color-scheme: dark;
-  --ground:#0E1512; --surface:#16201A; --ink:#E3ECE5; --muted:#9AAC9F;
-  --line:#27352C; --accent:#63BC8E; --clay:#E08A5A; } }
+:root { color-scheme: light; --ground:#F8F9FA; --surface:#fff; --ink:#1C212B;
+  --muted:#6A7180; --line:#E2E4E9; --accent:#E63023; --accent-ink:#B8261C; }
 * { box-sizing:border-box }
 body { margin:0; background:var(--ground); color:var(--ink); font:16px/1.6
-  ui-sans-serif, system-ui, -apple-system, sans-serif; }
-.wrap { max-width:600px; margin:0 auto; padding:48px 20px 72px; }
-h1 { font-size:2rem; line-height:1.1; margin:0 0 12px; letter-spacing:-0.02em }
-h2 { font-size:1.2rem; margin:32px 0 8px }
+  Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing:antialiased; }
+.top { border-bottom:1px solid var(--line); background:var(--surface) }
+.top div { max-width:480px; margin:0 auto; padding:14px 20px }
+.logo { font:italic 900 22px/1 "Inter Tight", Inter, ui-sans-serif, system-ui,
+  -apple-system, sans-serif; color:var(--accent); text-decoration:none;
+  letter-spacing:-0.02em }
+.wrap { max-width:480px; margin:0 auto; padding:36px 20px 64px; }
+.card { background:var(--surface); border:1px solid var(--line); border-radius:16px;
+  padding:28px 24px; box-shadow:0 1px 2px rgba(16,24,40,0.04) }
+h1 { font:600 1.75rem/1.15 "Inter Tight", Inter, ui-sans-serif, system-ui,
+  -apple-system, sans-serif; letter-spacing:-0.025em; margin:0 0 10px }
+h2 { font-size:1.15rem; margin:28px 0 8px }
 p { margin:0 0 14px; color:var(--muted) }
-label { display:block; font-weight:600; color:var(--ink); margin:16px 0 6px }
-input { width:100%; padding:11px 12px; font-size:1rem; border:1px solid var(--line);
-  border-radius:8px; background:var(--surface); color:var(--ink) }
+p strong { color:var(--ink) }
+.secure { display:flex; gap:10px; align-items:flex-start; background:var(--ground);
+  border:1px solid var(--line); border-radius:10px; padding:10px 12px;
+  font-size:0.92rem; color:var(--ink); margin:14px 0 6px }
+.secure svg { flex:none; margin-top:3px; color:#16A34A }
+label { display:block; font-weight:600; font-size:0.92rem; color:var(--ink); margin:18px 0 6px }
+input { width:100%; padding:12px 14px; font-size:1rem; border:1px solid var(--line);
+  border-radius:10px; background:var(--surface); color:var(--ink) }
+input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(230,48,35,0.15) }
+button { margin-top:22px; width:100%; padding:13px; font-size:1rem; font-weight:600;
+  border:0; border-radius:999px; background:var(--accent); color:#fff; cursor:pointer }
+button:hover { background:var(--accent-ink) }
 button.secondary { background:var(--surface); color:var(--ink);
   border:1px solid var(--line); margin-top:10px }
-button { margin-top:20px; width:100%; padding:12px; font-size:1rem; font-weight:600;
-  border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer }
-.err { border-left:3px solid var(--clay); background:var(--surface);
-  padding:12px 14px; border-radius:0 8px 8px 0; color:var(--ink); margin:16px 0 }
-code, .url { font-family:ui-monospace, monospace; font-size:0.85rem;
-  background:var(--surface); border:1px solid var(--line); border-radius:8px;
+button.secondary:hover { background:var(--ground) }
+.err { border:1px solid #F5C2BE; border-left:3px solid var(--accent); background:#FEF3F2;
+  padding:12px 14px; border-radius:10px; color:var(--ink); margin:16px 0 }
+code, .url { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.85rem;
+  background:var(--ground); border:1px solid var(--line); border-radius:10px;
   padding:12px; display:block; word-break:break-all; color:var(--ink) }
 .note { font-size:0.9rem }
-a { color:var(--accent); text-underline-offset:2px }
+.foot { text-align:center; margin-top:18px; font-size:0.85rem }
+a { color:var(--ink); text-decoration:underline; text-decoration-color:var(--line);
+  text-underline-offset:3px }
+a:hover { text-decoration-color:var(--ink) }
 """
+
+_LOCK = (
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+)
 
 
 def page(title: str, body: str, status: int = 200) -> HTMLResponse:
     return HTMLResponse(
         f"<!doctype html><html lang=en><head><meta charset=utf-8>"
         f'<meta name=viewport content="width=device-width,initial-scale=1">'
-        f"<title>{title}</title><style>{_STYLE}</style></head>"
-        f"<body><div class=wrap>{body}</div></body></html>",
+        f'<meta name=theme-color content="#ffffff">'
+        f"<title>{title} · Daash</title><style>{_STYLE}</style></head>"
+        f'<body><header class=top><div><a class=logo href="https://daash.run/">Daash</a></div></header>'
+        f"<main class=wrap><div class=card>{body}</div></main></body></html>",
         status_code=status,
     )
 
@@ -432,7 +461,7 @@ async def connect_form(request: Request) -> Response:
         "Sign in to Garmin",
         f"""
         <h1>Sign in to Garmin</h1>
-        <p>These go straight to Garmin. Your password is never stored.</p>
+        <p class=secure>{_LOCK}<span>These go straight to Garmin. Your password is never stored.</span></p>
         <form method=post action=/connect>
           <input type=hidden name=flow value="{flow}">
           {_INVITE_FIELD if INVITE_CODE else ""}
