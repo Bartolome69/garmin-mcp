@@ -219,6 +219,10 @@ async def main() -> int:
               and "get_plan first" in hosted.mcp.instructions
               and plan_tool.title == "Training plan and progress",
               str(plan_tool.title))
+        workout_tool = next(t for t in listed if t.name == "create_workout")
+        check("only the work reps carry a target by default",
+              "only the work reps carry a target" in workout_tool.description
+              and "heart-rate ceiling" not in workout_tool.description)
         check("deleting is marked destructive, creating is not",
               hints["delete_workout"].destructive_hint and not hints["create_workout"].destructive_hint)
 

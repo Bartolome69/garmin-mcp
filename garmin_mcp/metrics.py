@@ -244,11 +244,6 @@ RACE_METRES = {"5k": 5000, "10k": 10000, "half_marathon": 21097.5, "marathon": 4
 # under it is taken as that and scaled up.
 MIN_THRESHOLD_SPEED_MPS = 1.5
 
-# Easy running sits below roughly this share of threshold heart rate, which is
-# the ceiling given for warm-ups, cool-downs and easy runs.
-EASY_SHARE_OF_THRESHOLD_HR = 0.85
-
-
 def threshold_speed(speed: Any) -> float | None:
     """Garmin's lactate threshold speed in metres per second, put right if it came a tenth too small."""
     if not isinstance(speed, (int, float)) or isinstance(speed, bool) or speed <= 0:
@@ -315,9 +310,6 @@ def shape_fitness(
             {
                 "heart_rate_bpm": rounded(hr, 0),
                 "pace_per_km": pace_per_km(1000.0, 1000.0 / speed) if speed else None,
-                # The top of easy running: the ceiling for warm-ups, cool-downs and easy runs.
-                "easy_ceiling_bpm": round(hr * EASY_SHARE_OF_THRESHOLD_HR)
-                if isinstance(hr, (int, float)) and hr > 0 else None,
                 "as_of": shr.get("calendarDate"),
             }
         )
@@ -371,9 +363,7 @@ def shape_fitness(
                 "training, for a flat course in good conditions; treat them as a "
                 "fitness marker, not a promise. Lactate threshold pace is roughly "
                 "the effort sustainable for an hour, the anchor for tempo and "
-                "threshold sessions. easy_ceiling_bpm, 85% of threshold heart "
-                "rate, is the top of easy running: the heart-rate ceiling for "
-                "warm-ups, cool-downs and easy runs."
+                "threshold sessions."
             ),
             "warnings": list(warnings) or None if warnings else None,
         }

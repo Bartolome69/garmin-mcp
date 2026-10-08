@@ -1180,14 +1180,11 @@ async def main() -> int:
                   fit["running_tolerance"].get("toleranceLimit") == 61.0
                   and "userProfilePK" not in fit["running_tolerance"], str(fit.get("running_tolerance")))
             check("vo2max on fitness too", fit.get("vo2max") == 60.9)
-            check("an easy heart-rate ceiling comes with the threshold",
-                  fit["lactate_threshold"].get("easy_ceiling_bpm") == 146, str(fit.get("lactate_threshold")))
             from garmin_mcp import metrics as _metrics
             tenth = _metrics.shape_fitness(None, None, {"speed_and_heart_rate": {"speed": 0.43, "heartRate": 170}},
                                            None, None, None)
             check("a threshold speed sent a tenth too small is put right",
-                  tenth["lactate_threshold"]["pace_per_km"] == "3:53 /km"
-                  and tenth["lactate_threshold"]["easy_ceiling_bpm"] == 144, str(tenth.get("lactate_threshold")))
+                  tenth["lactate_threshold"]["pace_per_km"] == "3:53 /km", str(tenth.get("lactate_threshold")))
 
             print("\nfitness trends")
             trend = payload(await sess.call_tool("get_fitness_trends", {"months": 6}))
