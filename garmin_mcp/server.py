@@ -36,7 +36,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, cycling, fitness_trends, gear, hooks, metrics, plan, preview, progress, recovery, stream, terrain, training_plan
+from . import conditions, cycling, fitness_trends, gear, hooks, metrics, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -182,7 +182,10 @@ _NOTES = {
         "For a ride: normalised, average and max power, intensity factor and "
         "training stress against FTP, best efforts from 5 seconds to an hour, "
         "variability, time in power zones, climbs with speed, VAM and power, "
-        "the weather during it, and earlier rides of the same route."
+        "the weather during it, and earlier rides of the same route. For a "
+        "swim: pace per 100 m, pool length, SWOLF, stroke rate and strokes, and "
+        "the set as swum, each interval with its pace, stroke and the rest after "
+        "it. Talk about a swim in those terms, never pace per km."
     ),
     "get_progress": (
         "\n\nIts result is drawn for the user as an interactive plan card, so "
@@ -677,6 +680,8 @@ def _summarise_activity(activity: dict[str, Any]) -> dict[str, Any]:
     secs = first_present(activity, "duration", "elapsedDuration", "movingDuration")
     if cycling.is_ride((activity.get("activityType") or {}).get("typeKey")):
         return _summarise_ride(activity, distance, secs)
+    if swimming.is_swim((activity.get("activityType") or {}).get("typeKey")):
+        return swimming.summarise_swim(activity, distance, secs)
     return drop_empty(
         {
             "activity_id": activity.get("activityId"),
@@ -776,7 +781,10 @@ async def get_activities(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, Any]:
-    """List recent runs and workouts with distance, duration, pace and HR zones.
+    """List recent runs, rides, swims and workouts with distance, duration, pace and HR zones.
+
+    Swims come with pace per 100 m, pool length, SWOLF and stroke rate instead
+    of pace per km.
 
     Args:
         limit: Maximum activities to return (1-50). Defaults to 10.
@@ -913,7 +921,23 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
     if isinstance(summary.get("activityTypeDTO"), dict):
         flat["activityType"] = {"typeKey": summary["activityTypeDTO"].get("typeKey")}
 
-    ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
+    type_key = (flat.get("activityType") or {}).get("typeKey")
+    if swimming.is_swim(type_key):
+        # A swim is read as its set: intervals by pace per 100, stroke and SWOLF.
+        # Shoes, terrain and same-route runs don't apply in the water.
+        found = swimming.pool(flat) if swimming.is_pool(type_key) else None
+        sets = swimming.intervals(laps, found[1] if found else "m")
+        return drop_empty({
+            "activity_id": activity_id,
+            "summary": _summarise_activity(flat) or None,
+            "hr_zones": hr_zones(zones),
+            "intervals_count": len(sets) or None,
+            "intervals": sets or None,
+            "how_to_read": swimming.HOW_TO_READ,
+            "warnings": warnings or None,
+        })
+
+    ride = cycling.is_ride(type_key)
     try:
         # Per-km pace and lap drift are a run's questions; a ride's are in terrain.
         inside = None if ride else stream.analyse(recording, laps)
@@ -1063,6 +1087,7 @@ async def create_workout(
     steps: list[dict[str, Any]],
     sport: str = "running",
     description: str | None = None,
+    pool_length_meters: float | None = None,
 ) -> dict[str, Any]:
     """Create a structured workout in Garmin Connect.
 
@@ -1099,8 +1124,26 @@ async def create_workout(
                  {"type": "cooldown", "duration_seconds": 600}]
         sport: running, cycling, swimming, walking or hiking. Defaults to running.
         description: Optional note stored with the workout.
+        pool_length_meters: For swimming, the pool length (25 by default, or 50).
+            The watch counts lengths with it.
+
+    Swimming works differently. Steps are distances in whole pool lengths
+    (100, 200...), each with an optional "stroke": freestyle, backstroke,
+    breaststroke, butterfly, im, drill or any. "pace" is per 100 m ("1:45")
+    and is shown on the watch as a note on the step, not as a target that
+    beeps. A "rest" with no duration waits for the lap button, the way swimmers
+    rest at the wall; give "duration_seconds" for a fixed rest. A free-text
+    "note" (e.g. "kick with board") also shows on the step. Example, 8 x 100
+    free at 1:45 with 15 s rest:
+        [{"type": "warmup", "distance_meters": 400, "stroke": "any"},
+         {"type": "repeat", "times": 8, "steps": [
+             {"type": "interval", "distance_meters": 100, "stroke": "freestyle", "pace": "1:45"},
+             {"type": "rest", "duration_seconds": 15}]},
+         {"type": "cooldown", "distance_meters": 200, "stroke": "any"}]
+    Set swim paces from the swimmer's recent swims (get_activities shows pace
+    per 100 m) or their CSS if they know it.
     """
-    workout, summary, estimated = build_workout(name, sport, steps, description)
+    workout, summary, estimated = build_workout(name, sport, steps, description, pool_length_meters)
     payload = workout.to_dict()
 
     result = await _call(lambda c: c.upload_workout(payload)) or {}
@@ -1132,6 +1175,7 @@ async def update_workout(
     steps: list[dict[str, Any]] | None = None,
     sport: str | None = None,
     description: str | None = None,
+    pool_length_meters: float | None = None,
 ) -> dict[str, Any]:
     """Change an existing workout in place: its name, its steps, or both.
 
@@ -1147,6 +1191,7 @@ async def update_workout(
         steps: New step list, replacing the old one entirely. Omit to keep it.
         sport: Only needed with steps, and only to change the sport.
         description: New note. Omit to keep the current one.
+        pool_length_meters: For a swim, a new pool length. Omit to keep it.
     """
     try:
         workout_id = int(str(workout_id).strip())
@@ -1170,11 +1215,17 @@ async def update_workout(
     summary = None
     if steps is not None:
         new_name = (name or current_name).strip()
+        new_sport = sport or current_sport
+        pool = pool_length_meters
+        if pool is None and new_sport == "swimming":
+            kept = swimming.pool(existing)
+            pool = kept[0] if kept and kept[1] == "m" else None
         workout, summary, estimated = build_workout(
             new_name,
-            sport or current_sport,
+            new_sport,
             steps,
             description if description is not None else existing.get("description"),
+            pool,
         )
         payload = workout.to_dict()
     else:
@@ -1642,6 +1693,7 @@ async def create_plan(
             - "name": short, as it should read on the watch, e.g. "Long run 18k"
             - "steps": exactly as for create_workout
             - optional "sport" (running by default) and "description"
+            - for a swim, optional "pool_length_meters" (25 by default)
             Rest days are simply days with no session. At most 150 sessions.
         label: 2 to 8 letters or digits used as the plan code, e.g. "HM" or
             "MARA26". Derived from the goal when omitted.

@@ -218,6 +218,85 @@ def check_workout_steps(check) -> None:
           f'{pace_of(["3:58", "4:02"])} {pace_of(["4:00", "4:00"])}')
     check("a range already wide enough is left alone", pace_of(["5:00", "5:30"]) == "5:00\u20135:30/km",
           pace_of(["5:00", "5:30"]))
+    # ---- swimming -------------------------------------------------------
+    from garmin_mcp import swimming as sw
+    from garmin_mcp.server import _summarise_activity
+    from garmin_mcp.workouts import WorkoutError as _WE
+
+    swim_row = {"activityId": 77, "activityName": "Pool swim", "activityType": {"typeKey": "lap_swimming"},
+                "distance": 2000.0, "duration": 2700.0, "movingDuration": 2100.0,
+                "poolLength": 2500.0, "unitOfPoolLength": {"unitKey": "meter", "factor": 100.0},
+                "averageSwolf": 38.0, "averageSwimCadenceInStrokesPerMinute": 28.0, "avgStrokes": 17.4,
+                "strokes": 1392.0, "activeLengths": 80, "averageHR": 131}
+    swum = _summarise_activity(swim_row)
+    check("a swim reads by pace per 100 m on swimming time, not per km",
+          swum.get("pace_per_100") == "1:45 /100m" and "pace_per_km" not in swum, str(swum))
+    check("a swim carries its pool, SWOLF, stroke rate and strokes",
+          swum.get("pool") == "25 m" and swum.get("swolf") == 38 and swum.get("stroke_rate_spm") == 28
+          and swum.get("strokes_per_length") == 17.4 and swum.get("lengths") == 80, str(swum))
+    yard = sw.summarise_swim(dict(swim_row, poolLength=2500.0,
+                                  unitOfPoolLength={"unitKey": "yard", "factor": 100.0}), 2000.0, 2700.0)
+    check("a yard pool paces per 100 yd", yard.get("pace_per_100", "").endswith("/100yd") and yard.get("pool") == "25 yd",
+          str(yard.get("pace_per_100")))
+    check("a workout's pool length reads too (25.0 with a factor of 100)",
+          sw.pool({"poolLength": 25.0, "poolLengthUnit": {"unitKey": "meter", "factor": 100.0}}) == (25.0, "m"))
+    open_water = _summarise_activity(dict(swim_row, activityType={"typeKey": "open_water_swimming"}))
+    check("an open-water swim has no pool", "pool" not in open_water and open_water.get("pace_per_100"))
+    laps = [
+        {"distance": 100.0, "duration": 102.0, "numberOfActiveLengths": 4, "averageSwolf": 37.0,
+         "lengthDTOs": [{"swimStroke": "FREESTYLE"}] * 4},
+        {"distance": 0.0, "duration": 15.0, "numberOfActiveLengths": 0},
+        {"distance": 100.0, "duration": 104.0, "numberOfActiveLengths": 4,
+         "lengthDTOs": [{"swimStroke": "FREESTYLE"}, {"swimStroke": "BACKSTROKE"}] * 2},
+        {"distance": 50.0, "duration": 60.0, "swimStroke": "BREASTSTROKE"},
+    ]
+    sets = sw.intervals(laps)
+    check("a pool set reads as intervals, each with pace, stroke and the rest after it",
+          [x["distance_m"] for x in sets] == [100, 100, 50]
+          and sets[0]["pace_per_100"] == "1:42 /100m" and sets[0]["stroke"] == "freestyle"
+          and sets[0]["swolf"] == 37 and sets[0]["rest_after"] == "15s"
+          and sets[1]["stroke"] == "mixed" and sets[2]["stroke"] == "breaststroke", str(sets))
+    check("an unfamiliar swim shape leaves values out rather than guessing",
+          sw.summarise_swim({"activityType": {"typeKey": "lap_swimming"}, "poolLength": 3}, None, None)
+          == {"type": "lap_swimming"})
+
+    css, css_summary, _ = build_workout("CSS 8x100", "swimming", [
+        {"type": "warmup", "distance_meters": 400, "stroke": "any"},
+        {"type": "repeat", "times": 8, "steps": [
+            {"type": "interval", "distance_meters": 100, "stroke": "free", "pace": "1:45"},
+            {"type": "rest", "duration_seconds": 15}]},
+        {"type": "rest"},
+        {"type": "cooldown", "distance_meters": 200, "stroke": "back", "note": "easy"}], pool_length_meters=25)
+    css_json = _json.loads(css.model_dump_json(by_alias=True))
+    rep = css_json["workoutSegments"][0]["workoutSteps"][1]["workoutSteps"][0]
+    check("a swim workout carries its pool length",
+          css_json.get("poolLength") == 25.0 and css_json["poolLengthUnit"]["unitKey"] == "meter",
+          str({k: css_json.get(k) for k in ("poolLength", "poolLengthUnit")}))
+    check("a swim step carries its stroke, and its pace as a note, not a beeping target",
+          rep["strokeType"]["strokeTypeKey"] == "free" and rep["description"] == "1:45 /100m"
+          and rep["targetType"]["workoutTargetTypeKey"] == "no.target", str(rep))
+    open_rest = css_json["workoutSegments"][0]["workoutSteps"][2]
+    check("a rest with no time waits for the lap button",
+          open_rest["endCondition"]["conditionTypeKey"] == "lap.button", str(open_rest["endCondition"]))
+    css_steps = tp.workout_steps(css_json)
+    check("a swim set reads back by stroke, with its pace note",
+          css_steps[1]["steps"][0]["label"] == "Freestyle" and css_steps[1]["steps"][0]["note"] == "1:45 /100m"
+          and css_steps[2]["amount"] == "until lap", str(css_steps))
+    for bad, why in ((dict(distance_meters=110), "lengths"), (dict(distance_meters=100, stroke="doggy"), "stroke"),
+                     (dict(distance_meters=100, pace="0:20"), "pace")):
+        try:
+            build_workout("Bad", "swimming", [dict(type="interval", **bad)])
+            refused = False
+        except _WE:
+            refused = True
+        check(f"a swim step with an impossible {why} is refused", refused)
+    try:
+        build_workout("Run", "running", [{"type": "interval", "distance_meters": 1000}], pool_length_meters=25)
+        refused = False
+    except _WE:
+        refused = True
+    check("a pool length on a run is refused", refused)
+
     ride, _, _ = build_workout("Sweet spot", "cycling", [{"type": "interval", "duration_seconds": 1200}])
     check("a ride's work step says ride",
           tp.workout_steps(_json.loads(ride.model_dump_json(by_alias=True)))[0]["label"] == "Ride")

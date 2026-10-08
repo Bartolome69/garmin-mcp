@@ -132,6 +132,13 @@ def _target(step: Mapping[str, Any]) -> str | None:
     return None
 
 
+# A swim's work steps are labelled by stroke, as a swimmer reads a set.
+_STROKE_LABELS = {
+    "free": "Freestyle", "backstroke": "Backstroke", "breaststroke": "Breaststroke",
+    "fly": "Butterfly", "individual_medley": "IM", "drill": "Drill",
+}
+
+
 def workout_steps(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | None:
     """A workout's steps, readable at a glance: what, how long, at what target.
 
@@ -153,7 +160,9 @@ def workout_steps(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
                 continue
             kind = ((step.get("stepType") or {}).get("stepTypeKey") or "other").lower()
             exercise = step.get("exerciseName") or step.get("category")
+            stroke = _STROKE_LABELS.get(((step.get("strokeType") or {}).get("strokeTypeKey") or "").lower())
             label = (str(exercise).replace("_", " ").capitalize() if exercise
+                     else stroke if stroke and kind in ("interval", "other")
                      else work if kind in ("interval", "other") else _STEP_LABELS.get(kind, work))
             out.append(drop_empty({
                 "kind": kind,
@@ -215,7 +224,8 @@ def prepare(
             raise PlanError(f"Session {index} needs a name.")
         try:
             workout, summary, estimated = build_workout(
-                tagged(name, code), raw.get("sport") or "running", raw.get("steps") or [], None
+                tagged(name, code), raw.get("sport") or "running", raw.get("steps") or [], None,
+                raw.get("pool_length_meters"),
             )
         except WorkoutError as exc:
             raise PlanError(f"Session {index} ({name}): {exc}") from exc
