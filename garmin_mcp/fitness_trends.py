@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from typing import Any, Iterable
 
 from .formatting import drop_empty, duration, pace_per_km, rounded
-from .metrics import RACE_KEYS, RACE_METRES
+from .metrics import RACE_KEYS, RACE_METRES, threshold_speed
 
 DATE_KEYS = ("calendarDate", "fromCalendarDate", "from", "startDate", "date")
 # A first-to-last change smaller than this is "steady": Garmin's estimates
@@ -150,7 +150,8 @@ def shape(
 
     lt = lactate if isinstance(lactate, Mapping) else {}
     threshold = drop_empty({
-        "pace": _trend(series(lt.get("speed"), ("value", "speed")), _pace, STEADY["threshold_pace"],
+        "pace": _trend([(d, threshold_speed(v)) for d, v in series(lt.get("speed"), ("value", "speed"))],
+                       _pace, STEADY["threshold_pace"],
                        higher_is_better=True, relative=True, change=_signed_pace),
         "heart_rate_bpm": _trend(series(lt.get("heart_rate"), ("value", "heartRate", "hearRate")),
                                  lambda v: rounded(v, 0), STEADY["threshold_hr"],

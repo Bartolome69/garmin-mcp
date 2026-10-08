@@ -1082,6 +1082,13 @@ async def create_workout(
             middle. Give steadier work more room: about 5 s/km either side
             for reps and intervals, 10 for tempo and threshold, 15-20 for
             steady and long runs, or a heart-rate target for easy running.
+            By default: warm-ups and cool-downs get a heart-rate ceiling, a
+            low floor to the user's easy ceiling (e.g. [90, 145]; get_fitness
+            gives easy_ceiling_bpm), or no target; recoveries between reps get
+            no target, just their time or distance, because heart rate is
+            still falling and pace makes people rush them; the work reps get
+            pace. Heart rate lags effort by up to a minute, so it suits steady
+            running, not short reps.
             A repeat looks like {"type": "repeat", "times": 5, "steps": [...]}
             and cannot contain another repeat.
             Example — 15 min warmup, 5x1km at 4:05 with 90s recoveries, 10 min
