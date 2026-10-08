@@ -29,8 +29,10 @@ STEP_TYPES = {
     "rest": (gw.StepType.REST, "rest", 5),
 }
 
-# A single pace is widened into a window this many seconds per km either side,
-# because Garmin alerts on a range and an exact target would beep constantly.
+# A pace target is never narrower than this many seconds per km either side of
+# its centre: a single pace is widened into that window, and a tighter range is
+# widened to it. Garmin alerts whenever the pace leaves the range, and anything
+# tighter beeps constantly on a GPS pace that wobbles by a few seconds anyway.
 PACE_WINDOW_SECONDS = 5.0
 
 
@@ -83,6 +85,9 @@ def _pace_target(pace: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
                 "A pace range needs exactly two values, e.g. ['4:00','4:10']."
             )
         bounds = sorted(parse_pace(p) for p in pace)
+        if bounds[1] - bounds[0] < 2 * PACE_WINDOW_SECONDS:
+            centre = (bounds[0] + bounds[1]) / 2
+            bounds = [centre - PACE_WINDOW_SECONDS, centre + PACE_WINDOW_SECONDS]
     else:
         centre = parse_pace(pace)
         bounds = [centre - PACE_WINDOW_SECONDS, centre + PACE_WINDOW_SECONDS]

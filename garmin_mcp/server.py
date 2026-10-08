@@ -1076,6 +1076,12 @@ async def create_workout(
             - exactly one of "duration_seconds" or "distance_meters"
             - optional target, either "pace" ("4:05", or ["4:00","4:10"] for a
               range, minutes per km) or "hr" ([150, 165] in bpm)
+            The watch beeps whenever pace leaves the target, so a pace target
+            is never narrower than 5 s/km either side: "4:00" becomes
+            3:55-4:05, and a tighter range is widened to that around its
+            middle. Give steadier work more room: about 5 s/km either side
+            for reps and intervals, 10 for tempo and threshold, 15-20 for
+            steady and long runs, or a heart-rate target for easy running.
             A repeat looks like {"type": "repeat", "times": 5, "steps": [...]}
             and cannot contain another repeat.
             Example — 15 min warmup, 5x1km at 4:05 with 90s recoveries, 10 min

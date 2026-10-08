@@ -209,6 +209,15 @@ def check_workout_steps(check) -> None:
     check("a pace target reads as a pace range, quick end first",
           reps["steps"][0]["target"] == "4:05\u20134:15/km", str(reps["steps"][0]))
     check("a heart-rate target reads in bpm", steps[2].get("target") == "120\u2013140 bpm", str(steps[2]))
+    def pace_of(pace):
+        built, _, _ = build_workout("Pace", "running", [{"type": "interval", "distance_meters": 1000, "pace": pace}])
+        return tp.workout_steps(_json.loads(built.model_dump_json(by_alias=True)))[0].get("target")
+    check("a single pace gets 5 s/km either side", pace_of("4:00") == "3:55\u20134:05/km", pace_of("4:00"))
+    check("a range tighter than 10 s/km is widened around its middle",
+          pace_of(["3:58", "4:02"]) == "3:55\u20134:05/km" and pace_of(["4:00", "4:00"]) == "3:55\u20134:05/km",
+          f'{pace_of(["3:58", "4:02"])} {pace_of(["4:00", "4:00"])}')
+    check("a range already wide enough is left alone", pace_of(["5:00", "5:30"]) == "5:00\u20135:30/km",
+          pace_of(["5:00", "5:30"]))
     ride, _, _ = build_workout("Sweet spot", "cycling", [{"type": "interval", "duration_seconds": 1200}])
     check("a ride's work step says ride",
           tp.workout_steps(_json.loads(ride.model_dump_json(by_alias=True)))[0]["label"] == "Ride")
