@@ -14,8 +14,10 @@ the tokens are stored, encrypted.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
+import hashlib
 import hmac
 import html
 import json
@@ -407,6 +409,13 @@ input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgb
 button { margin-top:22px; width:100%; padding:13px; font-size:1rem; font-weight:600;
   border:0; border-radius:999px; background:var(--accent); color:#fff; cursor:pointer }
 button:hover { background:var(--accent-ink) }
+button.busy, button.busy:hover { background:var(--accent-ink); cursor:progress }
+.spin { display:inline-block; width:1em; height:1em; margin-right:9px; vertical-align:-2px;
+  border:2px solid rgba(255,255,255,0.45); border-top-color:#fff; border-radius:50%;
+  animation:spin 0.8s linear infinite }
+@keyframes spin { to { transform:rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration:2.4s } }
+.wait { margin:12px 0 0; font-size:0.9rem; text-align:center }
 button.secondary { background:var(--surface); color:var(--ink);
   border:1px solid var(--line); margin-top:10px }
 button.secondary:hover { background:var(--ground) }
@@ -429,6 +438,35 @@ _LOCK = (
 )
 
 
+# A sign-in takes Garmin ten seconds or more, and a button that looks idle for
+# that long gets pressed again, each press another login Garmin counts against
+# its rate limit. A form marked data-wait says it's working after the first
+# press and ignores the rest; coming back with the back button resets it.
+_BUSY_SCRIPT = """<script>
+document.querySelectorAll("form[data-wait]").forEach(function (f) {
+  var b = f.querySelector("button"), label = b ? b.innerHTML : "";
+  f.addEventListener("submit", function (e) {
+    if (f.dataset.sent) { e.preventDefault(); return; }
+    f.dataset.sent = "1";
+    if (b) {
+      b.classList.add("busy");
+      b.setAttribute("aria-disabled", "true");
+      b.innerHTML = '<span class=spin aria-hidden=true></span>' + f.dataset.wait;
+    }
+    var n = f.querySelector(".wait");
+    if (n) n.hidden = false;
+  });
+  window.addEventListener("pageshow", function (e) {
+    if (!e.persisted) return;
+    delete f.dataset.sent;
+    if (b) { b.classList.remove("busy"); b.removeAttribute("aria-disabled"); b.innerHTML = label; }
+    var n = f.querySelector(".wait");
+    if (n) n.hidden = true;
+  });
+});
+</script>"""
+
+
 def page(title: str, body: str, status: int = 200) -> HTMLResponse:
     return HTMLResponse(
         f"<!doctype html><html lang=en><head><meta charset=utf-8>"
@@ -436,7 +474,7 @@ def page(title: str, body: str, status: int = 200) -> HTMLResponse:
         f'<meta name=theme-color content="#ffffff">'
         f"<title>{title} · Daash</title><style>{_STYLE}</style></head>"
         f'<body><header class=top><div><a class=logo href="https://daash.run/">Daash</a></div></header>'
-        f"<main class=wrap><div class=card>{body}</div></main></body></html>",
+        f"<main class=wrap><div class=card>{body}</div></main>{_BUSY_SCRIPT}</body></html>",
         status_code=status,
     )
 
@@ -509,7 +547,7 @@ async def connect_form(request: Request) -> Response:
         f"""
         <h1>Sign in to Garmin</h1>
         <p class=secure>{_LOCK}<span>These go straight to Garmin. Your password is never stored.</span></p>
-        <form method=post action=/connect>
+        <form method=post action=/connect data-wait="Connecting to Garmin&hellip;">
           <input type=hidden name=flow value="{flow}">
           {_INVITE_FIELD if INVITE_CODE else ""}
           <label for=email>Garmin email</label>
@@ -518,6 +556,9 @@ async def connect_form(request: Request) -> Response:
           <input id=password name=password type=password required
                  autocomplete=current-password>
           <button>Connect</button>
+          <p class="note wait" role=status hidden>Signing you in to Garmin. This can
+          take up to half a minute, so please don&rsquo;t press again or leave
+          this page.</p>
         </form>
         <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
         target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
@@ -841,6 +882,22 @@ async def disconnect(request: Request) -> Response:
     )
 
 
+# Sign-ins running now, keyed by a keyed hash of what was typed. A second press
+# of Connect, an Enter held down, or a phone resending the form arrives while
+# the first login is still with Garmin. It waits for that login and gets the
+# same answer, rather than sending Garmin another one and counting against the
+# rate limit and the per-address throttle. The browser only shows the last
+# response it asked for, so that one has to carry the result. Nothing is kept
+# once the login finishes: pressing again after an answer is a fresh attempt.
+_IN_FLIGHT: dict[str, asyncio.Future[Response]] = {}
+_IN_FLIGHT_KEY = secrets.token_bytes(32)
+
+
+def _attempt_key(email: str, password: str, flow: str) -> str:
+    material = f"{email.strip().lower()}\0{password}\0{flow}".encode()
+    return hmac.new(_IN_FLIGHT_KEY, material, hashlib.sha256).hexdigest()
+
+
 @mcp.custom_route("/connect", methods=["POST"])
 async def connect_submit(request: Request) -> Response:
     form = await request.form()
@@ -848,6 +905,19 @@ async def connect_submit(request: Request) -> Response:
     password = str(form.get("password", ""))
     flow = str(form.get("flow", ""))
 
+    key = _attempt_key(email, password, flow)
+    running = _IN_FLIGHT.get(key)
+    if running is not None:
+        return await asyncio.shield(running)
+    task = asyncio.ensure_future(_connect_attempt(request, form, email, password, flow))
+    _IN_FLIGHT[key] = task
+    task.add_done_callback(lambda _: _IN_FLIGHT.pop(key, None))
+    # Shielded so the login carries on for the press that's still waiting when
+    # the browser abandons this one.
+    return await asyncio.shield(task)
+
+
+async def _connect_attempt(request: Request, form: Any, email: str, password: str, flow: str) -> Response:
     if _too_many_attempts(_client_address(request)):
         _failed("throttled", email)
         return page(
@@ -932,11 +1002,13 @@ async def connect_submit(request: Request) -> Response:
             f"""
             <h1>Enter your code</h1>
             <p>Garmin sent a multi-factor code to your email or authenticator app.</p>
-            <form method=post action=/mfa>
+            <form method=post action=/mfa data-wait="Checking your code&hellip;">
               <input type=hidden name=pending value="{pending_id}">
               <label for=code>Code</label>
               <input id=code name=code inputmode=numeric autocomplete=one-time-code required>
               <button>Continue</button>
+              <p class="note wait" role=status hidden>Checking with Garmin. Please
+              don&rsquo;t press again.</p>
             </form>
             """,
         )

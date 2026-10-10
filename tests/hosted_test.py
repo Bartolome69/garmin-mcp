@@ -61,6 +61,8 @@ SECRET = "never-show-this-blob-value"
 # Signing in as this address makes the stub demand a multi-factor code, which is
 # the path where the password used to survive in memory.
 MFA_EMAIL = "mfa@example.com"
+# Garmin taking its time, the way a real sign-in does.
+SLOW_EMAIL = "slow@example.com"
 # Addresses the fake refuses, each the way the real library would: the
 # exception class is what the server classifies on first.
 WRONG_PASSWORD_EMAIL = "wrongpw@example.com"
@@ -113,6 +115,8 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
                     "Login failed: 403 Client Error: Forbidden for url: "
                     "https://sso.garmin.com/sso/signin"
                 )
+            if email == SLOW_EMAIL:
+                time.sleep(1.5)
             if email == MFA_EMAIL:
                 # The real library returns early here, before the line that
                 # drops the plaintext password.
@@ -412,6 +416,35 @@ async def main() -> int:
             code, body = await anyio_run(post, "/disconnect", {"t": second.group(1)})
             check("disconnect deletes the stored session",
                   code == 200 and store.get_user(second.group(1)) is None)
+
+        # Connect pressed three times while Garmin is still answering the first:
+        # one login, and every press gets the same result.
+        hosted._ATTEMPTS.clear()
+        before = len(SIGNIN_CREDS)
+        import concurrent.futures as _cf
+
+        def press(_):
+            return signin(SLOW_EMAIL)
+
+        with _cf.ThreadPoolExecutor(3) as pool:
+            futures = []
+            for i in range(3):
+                futures.append(pool.submit(press, i))
+                time.sleep(0.2)
+            presses = [f.result() for f in futures]
+        urls = {m.group(1) for _, b in presses if (m := re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", b))}
+        check("pressing Connect again while signing in sends Garmin one login",
+              len(SIGNIN_CREDS) - before == 1, str(SIGNIN_CREDS[before:]))
+        check("every press gets the same connector URL",
+              all(c == 200 for c, _ in presses) and len(urls) == 1, str([c for c, _ in presses]))
+        check("nothing is held once the sign-in finishes", not hosted._IN_FLIGHT)
+        code, _ = await anyio_run(signin, SLOW_EMAIL)
+        check("pressing again after an answer is a fresh sign-in",
+              code == 200 and len(SIGNIN_CREDS) - before == 2)
+        code, body = await anyio_run(fetch, "/connect")
+        check("the sign-in form says it's working once pressed",
+              'data-wait="Connecting to Garmin' in body and "please don&rsquo;t press again" in body
+              and "f.dataset.sent" in body)
 
         # A sign-in that stops for a code parks the client in memory for ten
         # minutes. garminconnect only drops the password on the clean path, so
