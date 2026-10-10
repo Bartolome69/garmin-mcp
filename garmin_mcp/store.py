@@ -48,6 +48,9 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN news_seen INTEGER",
     # Set when someone asks for no more update emails.
     "ALTER TABLE users ADD COLUMN email_opt_out INTEGER",
+    # Set once this person has been told how to stop Claude asking permission
+    # for every read.
+    "ALTER TABLE users ADD COLUMN tip_seen INTEGER",
 )
 
 # OAuth state. Separate from `users`: a person is one row there however many
@@ -161,12 +164,12 @@ def save_user(
     email_enc = _cipher().encrypt(email.strip().encode()) if email and email.strip() else None
     now = int(time.time())
     with _connect() as conn:
-        news_seen = opted_out = None
+        news_seen = opted_out = tip_seen = None
         if email_hash:
             # The person is the same, so what they have been told and what they
             # asked for outlives the row being replaced.
-            news_seen, opted_out = conn.execute(
-                "SELECT MAX(news_seen), MAX(email_opt_out) FROM users WHERE email_hash = ?",
+            news_seen, opted_out, tip_seen = conn.execute(
+                "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen) FROM users WHERE email_hash = ?",
                 (email_hash,),
             ).fetchone()
             conn.execute(
@@ -175,13 +178,13 @@ def save_user(
             )
         conn.execute(
             "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash, email_enc, "
-            "news_seen, email_opt_out) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "news_seen, email_opt_out, tip_seen) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
             "  email_hash = excluded.email_hash, "
             "  email_enc = COALESCE(excluded.email_enc, users.email_enc)",
-            (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out),
+            (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out, tip_seen),
         )
     return user_token
 
@@ -263,6 +266,15 @@ def claim_news(user_token: str, version: int) -> bool:
         return conn.execute(
             "UPDATE users SET news_seen = ? WHERE user_token = ? AND COALESCE(news_seen, 0) < ?",
             (version, user_token, version),
+        ).rowcount > 0
+
+
+def claim_tip(user_token: str) -> bool:
+    """True the first time for each person, like claim_news, for the one-off tip."""
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE users SET tip_seen = 1 WHERE user_token = ? AND COALESCE(tip_seen, 0) = 0",
+            (user_token,),
         ).rowcount > 0
 
 

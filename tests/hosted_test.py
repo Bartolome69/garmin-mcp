@@ -723,6 +723,11 @@ async def main() -> int:
         check("the what's-new note rides along with the first answer",
               hosted.NEWS in str(first_answer.get("whats_new")), str(first_answer)[:120])
         check("and is not said twice", "whats_new" not in second_answer)
+        check("the permission tip waits for an answer without the what's-new note",
+              "tip" not in first_answer and hosted.PERMISSION_TIP in str(second_answer.get("tip")),
+              str(second_answer)[:120])
+        third_answer = await call(news_user, "get_connection_status")
+        check("and the tip is said once", "tip" not in third_answer)
         shown = [e for e in events if e["event"] == "whats_new_shown"]
         check("showing it is counted once, with who it was",
               len(shown) == 1 and shown[0]["properties"].get("email") == "news@example.com"
@@ -730,6 +735,8 @@ async def main() -> int:
         used = [e["properties"]["tool"] for e in events if e["event"] == "tool_used"]
         check("each tool is counted once a day, not once a call",
               sorted(used) == ["get_connection_status", "get_daily_summary"], str(used))
+        tips = [e for e in events if e["event"] == "permission_tip_shown"]
+        check("showing the tip is counted once", len(tips) == 1, str(len(tips)))
         check("tool counts carry no Garmin data",
               all("12345" not in json.dumps(e) for e in events if e["event"] == "tool_used"))
         check("a new version is said again",
@@ -745,8 +752,15 @@ async def main() -> int:
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, "brandnew@example.com")
         fresh = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
-        check("a first sign-in skips the what's-new note",
-              bool(fresh) and "whats_new" not in await call(fresh.group(1), "get_connection_status"))
+        fresh_answer = await call(fresh.group(1), "get_connection_status") if fresh else {}
+        check("a first sign-in skips the what's-new note", bool(fresh) and "whats_new" not in fresh_answer)
+        check("but hears how to stop the permission prompts",
+              hosted.PERMISSION_TIP in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
+        hosted._ATTEMPTS.clear()
+        code, body = await anyio_run(signin, "brandnew@example.com")
+        again = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
+        check("signing in again doesn't repeat the tip",
+              bool(again) and "tip" not in await call(again.group(1), "get_connection_status"))
 
         # Update emails: only to people who haven't opted out, and one click
         # (plus a confirm, so a mail scanner can't do it) stops them.

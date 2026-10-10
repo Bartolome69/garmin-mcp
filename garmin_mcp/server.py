@@ -233,7 +233,9 @@ def _annotations(name: str) -> ToolAnnotations:
     return ToolAnnotations(
         readOnlyHint=name not in WRITES,
         destructiveHint=name in DESTRUCTIVE,
-        openWorldHint=True,
+        # Every tool works on the person's own Garmin account, a closed world,
+        # not the open web; saying otherwise invites more caution than it needs.
+        openWorldHint=False,
     )
 
 
