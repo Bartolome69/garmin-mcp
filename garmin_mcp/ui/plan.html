@@ -531,7 +531,7 @@
       weeks.forEach(function (w, i) { w.n = i + 1; });
     }
     if (!weeks.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
-    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null }, p);
+    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null, upcoming: p.label ? null : (p.upcoming_plan || null) }, p);
     var ci = weeks.findIndex(function (w) { return w.current; });
     if (ci < 0) ci = Math.max(0, weeks.findIndex(function (w) { return w.starts > today; }) - 1);
     if (ci < 0) ci = weeks.length - 1;
@@ -761,9 +761,11 @@
     if (m.next && m.nextWeek < 0 && isWeek && !w.rows.some(function (s) { return s === m.next; })) rows.push(nextCard(m.next, m));
     if (!rows.length) rows.push(el("div", { class: "row", style: "grid-template-columns:1fr" }, [el("span", { class: "meta", style: "padding:0", text: m.mode === "log" ? "Nothing recorded yet this week." : "A rest week: nothing scheduled." })]));
     var foot = null;
-    if (isWeek) {
-      if (m.upcoming) foot = el("div", { class: "foot" }, [el("span", { text: "Your " + (m.upcoming.name || m.upcoming.label || "next") + " block starts " + short(m.upcoming.starts) + "." })]);
-      else if (!m.moreAhead) foot = el("div", { class: "foot" }, [
+    // The block after this one, named once on the week it ends.
+    if (m.upcoming && (isWeek || w.starts < m.upcoming.starts && iso(addDays(parse(w.starts), 7)) >= m.upcoming.starts)) {
+      foot = el("div", { class: "foot" }, [el("span", { text: "Your " + (m.upcoming.name || m.upcoming.label || "next") + " block starts " + short(m.upcoming.starts) + "." })]);
+    } else if (isWeek) {
+      if (!m.moreAhead) foot = el("div", { class: "foot" }, [
         el("span", { text: "Next week isn\u2019t planned yet." }),
         el("button", { class: "act", onclick: function (e) { ask("Plan next week for me from how my training has gone lately, and put it on my Garmin calendar.", e.currentTarget); } }, ["Plan next week"]),
       ]);

@@ -680,6 +680,17 @@ async def check_calendar_fallback(check) -> None:
               and running["current_plan"].get("week") == 1 and running["current_plan"].get("weeks_total") == 2,
               f"{names} {running.get('current_plan')}")
 
+        # A one-week block ending this Sunday, and the next block from Monday:
+        # the running one heads the card and the next one is named after it.
+        handover = await scenario([row(41, 1, "Easy 8k · BA"), row(42, 5, "Long 14k · BA"),
+                                   row(43, 7, "Easy 10k · B1"), row(44, 9, "Sub-T 6x1k · B1"), row(45, 13, "Long 17k · B1")])
+        check("a block ending this week doesn't hide the one starting next week",
+              (handover.get("current_plan") or {}).get("label") == "BA"
+              and (handover.get("upcoming_plan") or {}).get("label") == "B1"
+              and handover["upcoming_plan"].get("starts") == (monday + _td(days=7)).isoformat()
+              and handover["upcoming_plan"].get("weeks_total") == 1,
+              f"{handover.get('current_plan')} {handover.get('upcoming_plan')}")
+
         # A plan that finished a fortnight ago, and a coach's session next week.
         after = await scenario([row(31, -13, "Easy 8k · OLD"), row(32, -11, "Long 16k · OLD"),
                                 row(33, 8, "Coach easy 10k")])

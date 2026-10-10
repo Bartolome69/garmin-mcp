@@ -647,16 +647,25 @@ def plan_context(
         code = min(ahead, key=lambda c: min(i["date"][:10] for i in ahead[c]))
     else:
         return None
-    days = sorted(d for i in plans[code] if (d := _day(i.get("date"))))
-    first, last = days[0], days[-1]
-    return drop_empty({
-        "label": code,
-        "starts": first.isoformat(),
-        "ends": last.isoformat(),
-        "week": (monday_of(today) - monday_of(first)).days // 7 + 1 if code in running else None,
-        "weeks_total": (monday_of(last) - monday_of(first)).days // 7 + 1,
-        "running": code in running,
-    }) | {"running": code in running}
+    def span(label: str) -> dict[str, Any]:
+        days = sorted(d for i in plans[label] if (d := _day(i.get("date"))))
+        first, last = days[0], days[-1]
+        return {
+            "label": label,
+            "starts": first.isoformat(),
+            "ends": last.isoformat(),
+            "weeks_total": (monday_of(last) - monday_of(first)).days // 7 + 1,
+        }
+
+    context = span(code)
+    if code in running:
+        context["week"] = (monday_of(today) - monday_of(date.fromisoformat(context["starts"]))).days // 7 + 1
+        # A block that starts once this one is over is named too, so a
+        # one-week block ending on Sunday doesn't hide the one from Monday.
+        following = {c: s for c, s in ahead.items() if c != code}
+        if following:
+            context["upcoming"] = span(min(following, key=lambda c: min(i["date"][:10] for i in following[c])))
+    return drop_empty(context) | {"running": code in running}
 
 
 LOG_WEEKS = 4

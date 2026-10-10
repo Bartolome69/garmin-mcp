@@ -1926,6 +1926,10 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     phases: dict[Any, str] = {}
     meta: dict[str, Any] = {}
     goal_code = code or (context or {}).get("label")
+    # The block after a running one: its name and goal come from its own
+    # workouts, which the nearest-first lookups reach once it starts soon.
+    following = (context or {}).pop("upcoming", None)
+    following_meta: dict[str, Any] = {}
     for wid in lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]:
         try:
             detail = await _read(("workout", wid), WORKOUT_MEMORY, lambda c, w=wid: c.get_workout_by_id(w)) or {}
@@ -1950,6 +1954,11 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
                     **training_plan.block_from_description(text),
                     "milestones": training_plan.milestones_from_description(text) or None,
                 })
+        elif following and not following_meta and f"Plan {following['label']}:" in (text or ""):
+            following_meta = drop_empty({
+                "goal": training_plan.goal_from_description(text, following["label"]),
+                **training_plan.block_from_description(text),
+            })
 
     if code is None:
         result = await _with_next_steps(training_plan.summarise_calendar(
@@ -1959,6 +1968,8 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         if context:
             key = "current_plan" if context.pop("running") else "upcoming_plan"
             result[key] = drop_empty({**context, "goal": goal, **meta})
+            if following:
+                result["upcoming_plan"] = drop_empty({**following, **following_meta})
         if week_mode:
             result["history"] = training_plan.weekly_run_km(
                 activities, training_plan.monday_of(today), HISTORY_WEEKS
