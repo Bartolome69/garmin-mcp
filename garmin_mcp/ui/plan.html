@@ -283,8 +283,20 @@
     }
   }
 
+  // The host sizes the frame; without being told, it boxes the card into a
+  // short one that scrolls inside the chat. So the card reports its height
+  // whenever it changes.
+  var lastHeight = 0;
+  function reportSize() {
+    if (!host) return;
+    var h = Math.ceil(document.documentElement.scrollHeight);
+    if (h && h !== lastHeight) { lastHeight = h; notify("ui/notifications/size-changed", { height: h }); }
+  }
+  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
+
   function onResult(result) {
     try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
+    reportSize();
   }
   function showResult(result) {
     if (!result) { D.fail("empty result"); return; }
@@ -487,13 +499,16 @@
     app.textContent = "";
     app.appendChild(header(model));
     app.appendChild(el("div", { class: "body" }, [chart(model), week(model)]));
+    reportSize();
   }
 
   function header(m) {
     var b = m.block, title, sub;
     if (m.mode === "block") {
       title = b.name || shortGoal(b.goal) || "Training plan";
-      sub = [b.method, range(b.starts, b.ends)].filter(Boolean).join(" \u00b7 ");
+      var first = m.weeks[0], last = m.weeks[m.weeks.length - 1];
+      var span = b === raw ? range(b.starts, b.ends) : range(first.starts, iso(addDays(parse(last.starts), 6)));
+      sub = [b.method, span].filter(Boolean).join(" \u00b7 ");
     } else {
       var w = m.weeks[0];
       title = "This week";
@@ -534,7 +549,9 @@
     var marks = (b.milestones || []).slice(0, 4);
     if (marks.length) {
       marks.forEach(function (x) { nodes.push({ a: x.label, b: x.target || (x.date ? short(x.date) : "") }); });
-    } else if (b.goal) {
+    } else if (b.goal && b.name) {
+      // Without milestones the goal is the one point after the block; with
+      // no name either, the title already says it, so no timeline.
       var parts = String(b.goal).split(","), head = shortGoal(b.goal), tail = parts.slice(1).join(",").trim();
       if (tail.length > 20) tail = tail.slice(0, 19).replace(/\s+\S*$/, "") + "\u2026";
       nodes.push({ a: head, b: tail });
