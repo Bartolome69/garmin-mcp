@@ -497,6 +497,40 @@ async def check_preview_gate(check) -> None:
         preview.reset(token)
 
 
+async def check_tool_list_nudge(check) -> None:
+    """A changed card asks the host to re-list tools, once per person per version."""
+    from garmin_mcp import server
+
+    listed = await server.mcp.list_tools()
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def send_tool_list_changed(self) -> None:
+            self.calls.append("tools")
+
+        async def send_resource_list_changed(self) -> None:
+            self.calls.append("resources")
+
+    class FakeCtx:
+        session = FakeSession()
+
+    server._TOLD.clear()
+    await server._refresh_tool_list(FakeCtx, "ui://garmin/plan/aaa")
+    await server._refresh_tool_list(FakeCtx, "ui://garmin/plan/aaa")
+    check("the host is asked to re-list tools once per view version",
+          FakeCtx.session.calls == ["tools", "resources"], str(FakeCtx.session.calls))
+    await server._refresh_tool_list(FakeCtx, "ui://garmin/plan/bbb")
+    check("and again when the view changes", len(FakeCtx.session.calls) == 4)
+    await server._refresh_tool_list(None, "ui://garmin/plan/ccc")
+    check("no context, no nudge", len(FakeCtx.session.calls) == 4)
+    plan_tool = next(t for t in listed if t.name == "get_plan")
+    schema = json.dumps(getattr(plan_tool, "input_schema", None) or getattr(plan_tool, "inputSchema", None))
+    check("the hidden context keyword stays out of the tool's schema",
+          "view_ctx" not in schema and "label" in schema, schema[:160])
+
+
 async def check_calendar_fallback(check) -> None:
     """With no plan made here, a preview account sees its calendar as the plan.
 
@@ -1222,6 +1256,7 @@ async def main() -> int:
             check_chart_config_read_only(check)
             await check_preview_gate(check)
             await check_calendar_fallback(check)
+            await check_tool_list_nudge(check)
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout

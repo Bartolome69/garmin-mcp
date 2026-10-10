@@ -7,6 +7,7 @@ password or the cached token.
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import hashlib
 import logging
@@ -16,6 +17,14 @@ from typing import Any, Callable, Mapping
 
 import anyio
 from mcp.types import ToolAnnotations
+
+try:
+    from mcp.server.mcpserver import Context as _Context
+except ImportError:  # older SDK
+    try:
+        from mcp.server.fastmcp import Context as _Context  # type: ignore[no-redef]
+    except ImportError:
+        _Context = None  # type: ignore[assignment,misc]
 
 try:  # mcp >= 2.0
     from mcp.server.mcpserver import MCPServer
@@ -37,6 +46,7 @@ from .formatting import (
     rounded,
 )
 from . import conditions, cycling, fitness_trends, gear, hooks, metrics, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
+from . import session as session_mod
 from .session import GarminError, session
 from .workouts import (
     SPORTS,
@@ -337,18 +347,56 @@ def _for_view(result: Any) -> Any:
     return {"for_the_assistant": VIEW_NOTE, **result}
 
 
+# Who has been told which view version: a host keeps the tool list it fetched,
+# and with it the address of the view, and keeps the view it fetched at that
+# address. A changed view lives at a new address, so the host has to re-list
+# the tools to see it. tools/list_changed asks it to, once per person per
+# version; the memory empties on deploy, which is when the version changes.
+_TOLD: dict[int, str] = {}
+
+
+async def _refresh_tool_list(ctx: Any, view: str) -> None:
+    if ctx is None:
+        return
+    key = id(session_mod.current_session())
+    if _TOLD.get(key) == view:
+        return
+    _TOLD[key] = view
+    if len(_TOLD) > 20000:
+        _TOLD.clear()
+    try:
+        await ctx.session.send_tool_list_changed()
+        await ctx.session.send_resource_list_changed()
+    except Exception:  # noqa: BLE001 - a host that won't take the hint still gets its answer
+        log.debug("could not ask the host to re-list tools", exc_info=True)
+
+
 def _app_tool(view: str):
     """mcp.tool() that also names a view, on SDKs that know about tool meta.
 
     The function stays importable as written, returning its plain dict; what
-    the server registers adds the note to the model in front of it.
+    the server registers adds the note to the model in front of it, and asks
+    the host to re-list tools when the view has changed since it last looked.
+    The request context arrives in a hidden keyword the SDK fills and leaves
+    out of the tool's schema.
     """
     meta = {"ui": {"resourceUri": view}, "ui/resourceUri": view}
 
     def register(fn):
         @functools.wraps(fn)
         async def answered(*args, **kwargs):
-            return _for_view(await fn(*args, **kwargs))
+            ctx = kwargs.pop("view_ctx", None)
+            result = await fn(*args, **kwargs)
+            await _refresh_tool_list(ctx, view)
+            return _for_view(result)
+
+        if _Context is not None:
+            # Evaluated, since a set signature is taken as is and a string
+            # return type would have the SDK wrap the result in {"result": ...}.
+            sig = inspect.signature(fn, eval_str=True)
+            hidden = inspect.Parameter("view_ctx", inspect.Parameter.KEYWORD_ONLY, default=None, annotation=_Context)
+            answered.__signature__ = sig.replace(parameters=list(sig.parameters.values()) + [hidden])  # type: ignore[attr-defined]
+            answered.__annotations__ = {**getattr(fn, "__annotations__", {}), "view_ctx": _Context}
 
         try:
             mcp.tool(meta=meta)(answered)

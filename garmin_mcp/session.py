@@ -440,6 +440,11 @@ def reset_session(token) -> None:
     _current_session.reset(token)
 
 
+def current_session() -> "GarminSession":
+    """The request's session, or the local one."""
+    return _current_session.get() or _local_session
+
+
 class _ActiveSession:
     """Delegates to the request's session, or the local one."""
 
