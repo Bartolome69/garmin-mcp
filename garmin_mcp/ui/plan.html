@@ -357,7 +357,7 @@
   };
   function typeOf(s) { return TYPES[s.type] || TYPES[s.sport] || TYPES.other; }
   var TYPE_WORDS = {
-    easy: ["easy"], long: ["long run", "long"], race: [],
+    easy: ["easy"], long: ["long run", "long", "easy"], race: [],
     sub: ["threshold", "tempo", "intervals?", "sub-?threshold", "sub-?t"],
     strength: ["strength"], ride: ["ride", "bike"], swim: ["swim"],
   };
@@ -404,9 +404,11 @@
       return finish({ mode: "log", weeks: [cur], history: hist, next: null, note: p.note }, p);
     }
     if (block && !p.label) {
-      var a = iso(mondayOf(parse(block.starts))), b = iso(mondayOf(parse(block.ends)));
-      weeks = weeks.filter(function (w) { return w.starts >= a && w.starts <= b; });
-      weeks.forEach(function (w) { w.n = Math.round(between(a, w.starts) / 7) + 1; });
+      // The calendar is the plan: a block running alongside sessions it
+      // didn't tag still shows every week around now, numbered from the
+      // first week shown.
+      weeks = weeks.filter(function (w) { return w.sessions.length || w.current; });
+      weeks.forEach(function (w, i) { w.n = i + 1; });
     }
     if (!weeks.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
     if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null }, p);
@@ -423,7 +425,10 @@
     var all = [];
     (p.weeks || []).forEach(function (w) {
       (w.sessions || []).forEach(function (s) { all.push(s); });
-      (w.extra || []).forEach(function (s) { all.push(Object.assign({ extra: true, status: "done", type: s.sport || "run" }, s)); });
+      (w.extra || []).forEach(function (s) {
+        var type = /cycl|ride|bike/i.test(s.name || "") ? "ride" : s.sport === "other" ? "other" : (s.sport || "run");
+        all.push(Object.assign({ extra: true, status: "done" }, s, { type: type }));
+      });
     });
     m.weeks.forEach(function (w) {
       var end = iso(addDays(parse(w.starts), 7));
@@ -716,6 +721,10 @@
   // still, each as wide as its distance. A run without steps is one bar.
   function shapeBar(s, big) {
     var t = typeOf(s), segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
+    // A race or a steady sub-T run with one step is all work: draw it so.
+    if ((s.type === "race" || s.type === "sub") && !segs.some(function (g) { return g.k === "work"; })) {
+      segs = segs.map(function (g) { return g.k === "easy" ? { k: "work", km: g.km } : g; });
+    }
     var scale = big ? 1 : 0.7;
     var easyColour = s.type === "long" ? TYPES.long.v : s.type === "easy" || !TYPES[s.type] || s.type === "sub" ? TYPES.easy.v : t.v;
     return el("div", { class: "shape" + (big ? " big" : ""), "aria-hidden": "true" }, segs.map(function (g) {

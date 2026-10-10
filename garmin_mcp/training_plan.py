@@ -476,7 +476,13 @@ def session_type(name: str | None, sport_key: str | None, shape: Sequence[Mappin
     if re.search(r"\blong\b", n, re.IGNORECASE):
         return "long"
     if shape:
-        return "sub" if any(seg.get("k") == "work" for seg in shape) else "easy"
+        # Strides are repeats too, so work has to amount to something before
+        # a run reads as sub-threshold: 600 m and a tenth of the distance.
+        work = sum(float(seg.get("km") or 0) for seg in shape if seg.get("k") == "work")
+        total = sum(float(seg.get("km") or 0) for seg in shape)
+        if work >= 0.6 and total and work / total >= 0.1:
+            return "sub"
+    # One steady step at a pace has no structure to read; its name says.
     return "sub" if QUALITY_RE.search(n) else "easy"
 
 
