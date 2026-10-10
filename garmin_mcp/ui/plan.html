@@ -58,9 +58,23 @@
   .brand { display: flex; align-items: center; gap: 8px; }
   .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); font-size: 15px; }
   .kicker { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
-  .refresh { margin-left: auto; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border);
+  .tools { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+  .refresh, .expand { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border);
     background: transparent; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+  .expand[hidden] { display: none; }
   .refresh.spin svg { animation: spin 0.9s linear infinite; }
+  /* A host that keeps the frame shorter than the card: the header and chart
+     stay put and the week's list scrolls, so the next session is reachable
+     without scrolling the whole chat. Only side by side; stacked, the host
+     grows the frame. */
+  html.fit, html.fit body { height: 100%; }
+  html.fit .card { height: 100%; display: flex; flex-direction: column; }
+  html.fit .head { flex: none; }
+  /* One line, so the panes stretch to the frame and the list can scroll;
+     wrapped, the row would size to its content and get cut off instead. */
+  html.fit .body { flex: 1; min-height: 0; flex-wrap: nowrap; }
+  html.fit .pane { min-height: 0; }
+  html.fit .week { overflow-y: auto; overscroll-behavior: contain; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
   .sub { font-size: 14px; color: var(--muted); }
@@ -275,6 +289,7 @@
   function applyContext(ctx) {
     Object.assign(hostContext, ctx);
     if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
+    if (ctx.containerDimensions || ctx.displayMode) { reportSize(); setExpandIcon(); }
     // Nothing is fetched from outside the frame; the host's own font faces
     // are the only way Geist arrives, system fonts otherwise.
     var fonts = ctx.styles && ctx.styles.css && ctx.styles.css.fonts;
@@ -283,16 +298,107 @@
     }
   }
 
+  // ---------------------------------------------------------------- sizing
   // The host sizes the frame; without being told, it boxes the card into a
-  // short one that scrolls inside the chat. So the card reports its height
-  // whenever it changes.
-  var lastHeight = 0;
-  function reportSize() {
-    if (!host) return;
-    var h = Math.ceil(document.documentElement.scrollHeight);
-    if (h && h !== lastHeight) { lastHeight = h; notify("ui/notifications/size-changed", { height: h }); }
+  // short one that scrolls inside the chat. The card reports its natural
+  // size the way the Apps SDK does: measured at max-content inside an
+  // animation frame, width and height together, whenever either changes.
+  var sent = { w: 0, h: 0 }, natural = 0, measuring = false, fitTimer, scrolledToNext = false, root = document.documentElement;
+  window.__sizeRuns = 0;
+  function naturalHeight() {
+    // Fitted, the card is as tall as the frame, so its natural height is
+    // read off the panes' contents instead; toggling the fit off to measure
+    // would reset the list's scroll and change the page size, which would
+    // trigger another measurement, without end.
+    if (root.classList.contains("fit")) {
+      var head = document.querySelector(".head"), chart = document.querySelector(".chart"), week = document.querySelector(".week");
+      if (head && chart && week) return Math.ceil(head.offsetHeight + 1 + Math.max(chart.scrollHeight, week.scrollHeight) + 2);
+    }
+    var was = root.style.height;
+    root.style.height = "max-content";
+    var h = Math.ceil(root.getBoundingClientRect().height);
+    root.style.height = was;
+    return h;
   }
-  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
+  function reportSize() {
+    if (measuring) return;
+    measuring = true;
+    requestAnimationFrame(function () {
+      measuring = false;
+      window.__sizeRuns++;
+      natural = naturalHeight();
+      var w = Math.ceil(window.innerWidth);
+      if (host && natural && (w !== sent.w || natural !== sent.h)) {
+        sent = { w: w, h: natural };
+        notify("ui/notifications/size-changed", { width: w, height: natural });
+      }
+      clearTimeout(fitTimer);
+      fitTimer = setTimeout(checkFit, 500);
+    });
+  }
+  // Side by side and still shorter than the card half a second after asking:
+  // the host isn't going to grow the frame, so fit the card to it.
+  function checkFit() {
+    var wide = window.innerWidth >= 600, short = window.innerHeight < natural - 4;
+    var fit = wide && short && hostContext.displayMode !== "fullscreen";
+    root.classList.toggle("fit", fit);
+    var btn = document.getElementById("expand");
+    if (btn) btn.hidden = !((fit || hostContext.displayMode === "fullscreen") && canFullscreen());
+    // Once per drawing, bring the next session into view; after that the
+    // scroll position is the user's.
+    if (fit && !scrolledToNext) {
+      scrolledToNext = true;
+      // The card, not the day circle in the strip that shares the class.
+      var pane = document.querySelector(".week"), card = document.querySelector(".rows .next");
+      if (pane && card) {
+        var top = card.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+        var bottom = top + card.offsetHeight;
+        if (bottom > pane.scrollTop + pane.clientHeight || top < pane.scrollTop) pane.scrollTop = Math.max(0, top - 12);
+      }
+    }
+  }
+  function canFullscreen() {
+    var modes = hostContext.availableDisplayModes || [];
+    return modes.indexOf("fullscreen") >= 0;
+  }
+  function toggleFullscreen() {
+    if (!host) return;
+    var want = hostContext.displayMode === "fullscreen" ? "inline" : "fullscreen";
+    request("ui/request-display-mode", { mode: want }).then(function (r) {
+      if (r && r.mode) { hostContext.displayMode = r.mode; checkFit(); setExpandIcon(); }
+    }).catch(function () {});
+  }
+  function setExpandIcon() {
+    var btn = document.getElementById("expand");
+    if (!btn) return;
+    var full = hostContext.displayMode === "fullscreen";
+    btn.textContent = "";
+    btn.appendChild(svg(full ? ICON.shrink : ICON.grow, 14));
+    btn.setAttribute("aria-label", full ? "Back to the chat" : "Expand");
+  }
+  if (window.ResizeObserver) { var ro = new ResizeObserver(reportSize); ro.observe(root); ro.observe(document.body); }
+  window.addEventListener("resize", function () { clearTimeout(fitTimer); fitTimer = setTimeout(checkFit, 150); });
+
+  // Three quick clicks on "TRAINING PLAN" show what the host told the card
+  // and how big the frame is, for when it comes out the wrong size.
+  var clicks = [];
+  function debugTap() {
+    var now = Date.now();
+    clicks = clicks.filter(function (t) { return now - t < 900; }).concat([now]);
+    if (clicks.length < 3) return;
+    clicks = [];
+    var box = document.getElementById("diag");
+    if (!box) return;
+    if (!box.hidden && box.getAttribute("data-debug")) { box.hidden = true; box.removeAttribute("data-debug"); return; }
+    var ctx = { displayMode: hostContext.displayMode, availableDisplayModes: hostContext.availableDisplayModes,
+      containerDimensions: hostContext.containerDimensions, platform: hostContext.platform, theme: hostContext.theme };
+    box.className = "diag waiting"; box.setAttribute("data-debug", "1"); box.textContent = "";
+    box.appendChild(el("strong", { text: "Card size" }));
+    box.appendChild(el("div", { class: "diag-tech", text:
+      "frame " + window.innerWidth + "\u00d7" + window.innerHeight + " | card " + natural + " | sent " + sent.w + "\u00d7" + sent.h +
+      " | fit " + root.classList.contains("fit") + " | host " + (D.host || "?") + " | " + JSON.stringify(ctx) }));
+    box.hidden = false;
+  }
 
   function onResult(result) {
     try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
@@ -357,6 +463,8 @@
     heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
     gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
     watch: '<circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/>',
+    grow: '<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>',
+    shrink: '<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>',
     arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   };
 
@@ -499,6 +607,7 @@
     app.textContent = "";
     app.appendChild(header(model));
     app.appendChild(el("div", { class: "body" }, [chart(model), week(model)]));
+    scrolledToNext = false;
     reportSize();
   }
 
@@ -517,8 +626,11 @@
     var left = el("div", { class: "head-l" }, [
       el("div", { class: "brand" }, [
         el("span", { class: "wordmark", text: "Daash" }),
-        el("span", { class: "kicker mono", text: "TRAINING PLAN" }),
-        el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
+        el("span", { class: "kicker mono", text: "TRAINING PLAN", onclick: debugTap }),
+        el("span", { class: "tools" }, [
+          el("button", { class: "expand", id: "expand", hidden: true, "aria-label": "Expand", onclick: toggleFullscreen }, [svg(ICON.grow, 14)]),
+          el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
+        ]),
       ]),
       el("div", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" }, [
         el("h3", { class: "title", text: title }),
@@ -840,7 +952,7 @@
     protocolVersion: "2026-01-26",
     appInfo: { name: "garmin-plan", version: "2.0.0" },
     clientInfo: { name: "garmin-plan", version: "2.0.0" },
-    appCapabilities: { availableDisplayModes: ["inline"] },
+    appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
   }).then(function (result) {
     var info = (result && (result.hostInfo || result.serverInfo)) || {};
     var ctx = (result && result.hostContext) || {};
