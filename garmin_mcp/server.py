@@ -1650,6 +1650,8 @@ PLAN_SCAN_AHEAD = timedelta(weeks=training_plan.MAX_WEEKS_AHEAD + 1)
 # Past sessions whose planned length is looked up for matching; beyond this a
 # session counts on existence alone, which is the matcher's fallback anyway.
 PLAN_LOOKUPS = 40
+# Weeks of running shown before this one when no block is running.
+HISTORY_WEEKS = 4
 
 
 async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]:
@@ -1673,6 +1675,9 @@ async def create_plan(
     goal: str,
     sessions: list[dict[str, Any]],
     label: str | None = None,
+    name: str | None = None,
+    method: str | None = None,
+    milestones: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Create a whole training block at once: every session built and put on its date.
 
@@ -1697,13 +1702,27 @@ async def create_plan(
             - "steps": exactly as for create_workout
             - optional "sport" (running by default) and "description"
             - for a swim, optional "pool_length_meters" (25 by default)
+            - optional "phase": the block's phase this session belongs to,
+              one short word such as "Base", "Build", "Peak" or "Taper", the
+              same for every session in that phase. The card bands the
+              weeks by it.
             Rest days are simply days with no session. At most 150 sessions.
         label: 2 or 3 letters or digits used as the plan code, kept short
             because it ends every workout name: "HM", "10K", "MAR", or "B1"
             for a base block. Derived from the goal when omitted.
+        name: A short name for the block, as its card's title: "Base block",
+            "Marathon build". Two or three words, not the goal.
+        method: The methodology in a few words, shown under the name:
+            "Norwegian singles", "80/20", "Pfitzinger 18/55".
+        milestones: Up to 4 points on the way to the goal, drawn as a timeline
+            on the card after this block: each {"label": "Half check",
+            "date": "2026-11-29", "target": "1:22"}; date and target optional.
+            The goal race is usually the last one.
     """
     today = date_cls.today()
-    code, prepared = training_plan.prepare(goal, sessions, label, today)
+    code, prepared = training_plan.prepare(
+        goal, sessions, label, today, name=name, method=method, milestones=milestones,
+    )
     first, last = prepared[0]["date"], prepared[-1]["date"]
 
     existing = training_plan.plans_in(await _plan_calendar(first, last))
@@ -1757,6 +1776,7 @@ async def create_plan(
     return {
         "label": code,
         "goal": goal.strip(),
+        **training_plan.block_from_description(prepared[0]["workout"].description),
         "starts": first.isoformat(),
         "ends": last.isoformat(),
         "weeks": weeks,
@@ -1823,6 +1843,11 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     # a lookup for the sessions ahead as well as behind.
     weekly_km = True
     since = training_plan.monday_of(first) if weekly_km else first - timedelta(days=1)
+    # With no block running, the card shows the last four weeks' running
+    # beside this week, so the one activities call reaches back that far.
+    week_mode = code is None and not (context or {}).get("running")
+    if week_mode:
+        since = min(since, training_plan.monday_of(today) - timedelta(weeks=HISTORY_WEEKS))
 
     activities: list[dict[str, Any]] = []
     if first <= today:
@@ -1849,6 +1874,9 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
             if item["date"][:10] <= today.isoformat() and wid and wid not in lookup_ids:
                 lookup_ids.append(wid)
     goal, seconds, metres = None, {}, {}
+    shapes: dict[Any, list[dict[str, Any]]] = {}
+    phases: dict[Any, str] = {}
+    meta: dict[str, Any] = {}
     goal_code = code or (context or {}).get("label")
     for wid in lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]:
         try:
@@ -1860,23 +1888,41 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         seconds[wid] = float(detail.get("estimatedDurationInSecs") or 0)
         if weekly_km:
             metres[wid] = training_plan.planned_metres(detail)
-        if goal_code:
-            goal = goal or training_plan.goal_from_description(detail.get("description"), goal_code)
+        shape = training_plan.workout_shape(detail)
+        if shape:
+            shapes[wid] = shape
+        text = detail.get("description")
+        if goal_code and f"Plan {goal_code}:" in (text or ""):
+            goal = goal or training_plan.goal_from_description(text, goal_code)
+            phase = training_plan.phase_from_description(text)
+            if phase:
+                phases[wid] = phase
+            if not meta:
+                meta = drop_empty({
+                    **training_plan.block_from_description(text),
+                    "milestones": training_plan.milestones_from_description(text) or None,
+                })
 
     if code is None:
         result = await _with_next_steps(training_plan.summarise_calendar(
             sessions, activities, today, planned_seconds=seconds,
-            planned_metres=metres, weekly_km=weekly_km,
+            planned_metres=metres, weekly_km=weekly_km, shapes=shapes, phases=phases,
         ))
         if context:
             key = "current_plan" if context.pop("running") else "upcoming_plan"
-            result[key] = drop_empty({**context, "goal": goal})
+            result[key] = drop_empty({**context, "goal": goal, **meta})
+        if week_mode:
+            result["history"] = training_plan.weekly_run_km(
+                activities, training_plan.monday_of(today), HISTORY_WEEKS
+            )
         return result
     others = sorted(p for p in plans if p != code)
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
     result = await _with_next_steps(training_plan.summarise(
-        code, sessions, activities, today, goal=goal, planned_seconds=seconds, **extra
+        code, sessions, activities, today, goal=goal, planned_seconds=seconds,
+        shapes=shapes, phases=phases, **extra
     ))
+    result.update(meta)
     if others:
         result["other_plans"] = others
     return result
@@ -1899,6 +1945,9 @@ async def _with_next_steps(result: dict[str, Any]) -> dict[str, Any]:
     steps = training_plan.workout_steps(detail)
     if steps:
         nxt["steps"] = steps
+        target = training_plan.main_target(steps)
+        if target:
+            nxt["target"] = target
     return result
 
 

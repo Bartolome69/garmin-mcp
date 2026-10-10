@@ -5,285 +5,175 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Training plan</title>
 <style>
-  /* Plan view for the get_plan tool, rendered inside the chat by hosts that
-     support MCP Apps. Colours and type come from the host's theme variables
-     where it passes them, so the view looks like part of Claude or ChatGPT;
-     the fallbacks are the site's own palette. Status and session type are the
-     only two things colour encodes. */
+  /* The plan card get_plan draws inside the chat. Three jobs, in order: make
+     the next session unmissable, show this week at a glance, and show the
+     shape of the whole block with a chart that doubles as the week picker.
+     The host says light or dark; the layout is fluid, so one set of rules
+     stacks on a phone and goes two-column on a desktop. */
   :root {
     color-scheme: light;
-    --bg: var(--color-background-primary, #F4F6F3);
-    --card: var(--color-background-secondary, #FFFFFF);
-    --sunk: var(--color-background-tertiary, #E8EDE8);
-    --ink: var(--color-text-primary, #17211B);
-    --muted: var(--color-text-secondary, #55655B);
-    --faint: var(--color-text-tertiary, #7A897F);
-    --line: var(--color-border-secondary, #D3DBD3);
-    --done: var(--color-text-success, #2F6B4F);
-    --done-bg: var(--color-background-success, #E3EFE7);
-    --miss: var(--color-text-danger, #B4492A);
-    --miss-bg: var(--color-background-danger, #F6E6DE);
-    --ring: var(--brand);
-    /* Daash: its red for accents and running, its navy for riding. */
-    --brand: #E63023;
-    --run: #E63023;
-    --ride: #2B3A4E;
-    --easy: #6E9C82;
-    --long: #3F6E9E;
-    --quality: #C2612F;
-    --race: #B08A1E;
-    --strength: #7C6BA6;
-    --radius: var(--border-radius-lg, 12px);
-    --radius-sm: var(--border-radius-sm, 6px);
-    --sans: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
-    --mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+    --card: #FFFFFF; --border: #E6E4DD; --text: #1F1E1B; --muted: #6B6A64; --faint: #9A9993;
+    --soft: #4A4944; --line: #D9D7CF; --bar-off: #E6E4DD; --bar-past: #EEECE6; --row-line: #EEECE6;
+    --btn-border: #D9D7CF; --red: #E0312A; --red-text: #C8261F; --red-soft: rgba(224,49,42,0.28);
+    --bar-done: #A9A7A0; --next-bg: #FDF4F2; --next-border: #F2C9C4; --rec: #D9D7CF;
+    --easy: #3F8A47; --sub: #B8651C; --long: #2F68B0; --strength: #7E57C2; --swim: #1F8A93;
+    --on-red: #FFFFFF;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --bg: var(--color-background-primary, #0E1512);
-      --card: var(--color-background-secondary, #16201A);
-      --sunk: var(--color-background-tertiary, #1D2922);
-      --ink: var(--color-text-primary, #E3ECE5);
-      --muted: var(--color-text-secondary, #9AAC9F);
-      --faint: var(--color-text-tertiary, #6F8176);
-      --line: var(--color-border-secondary, #27352C);
-      --done: var(--color-text-success, #63BC8E);
-      --done-bg: var(--color-background-success, #17301F);
-      --miss: var(--color-text-danger, #E08A5A);
-      --miss-bg: var(--color-background-danger, #33201A);
-      --ring: var(--brand);
-      --brand: #FF5A4E; --run: #FF5A4E; --ride: #9DB2CF;
-      --easy: #7FB597; --long: #6E9CCB; --quality: #E08A5A; --race: #D4B04A; --strength: #A694D1;
+      --card: #30302E; --border: #42423F; --text: #F4F3EE; --muted: #A6A59F; --faint: #75746F;
+      --soft: #C9C8C2; --line: #4A4A46; --bar-off: #4A4A46; --bar-past: #3E3E3B; --row-line: #3C3C39;
+      --btn-border: #55544F; --red: #E8322B; --red-text: #FF6A61; --red-soft: rgba(232,50,43,0.38);
+      --bar-done: #8A8984; --next-bg: #3B3B38; --next-border: #6B3530; --rec: #5A5954;
+      --easy: #8CC08F; --sub: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
     }
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: var(--color-background-primary, #0E1512);
-    --card: var(--color-background-secondary, #16201A);
-    --sunk: var(--color-background-tertiary, #1D2922);
-    --ink: var(--color-text-primary, #E3ECE5);
-    --muted: var(--color-text-secondary, #9AAC9F);
-    --faint: var(--color-text-tertiary, #6F8176);
-    --line: var(--color-border-secondary, #27352C);
-    --done: var(--color-text-success, #63BC8E);
-    --done-bg: var(--color-background-success, #17301F);
-    --miss: var(--color-text-danger, #E08A5A);
-    --miss-bg: var(--color-background-danger, #33201A);
-    --ring: var(--brand);
-    --brand: #FF5A4E; --run: #FF5A4E; --ride: #9DB2CF;
-    --easy: #7FB597; --long: #6E9CCB; --quality: #E08A5A; --race: #D4B04A; --strength: #A694D1;
+    --card: #30302E; --border: #42423F; --text: #F4F3EE; --muted: #A6A59F; --faint: #75746F;
+    --soft: #C9C8C2; --line: #4A4A46; --bar-off: #4A4A46; --bar-past: #3E3E3B; --row-line: #3C3C39;
+    --btn-border: #55544F; --red: #E8322B; --red-text: #FF6A61; --red-soft: rgba(232,50,43,0.38);
+    --bar-done: #8A8984; --next-bg: #3B3B38; --next-border: #6B3530; --rec: #5A5954;
+    --easy: #8CC08F; --sub: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
   }
-
   * { box-sizing: border-box; }
-  html, body { margin: 0; }
-  /* If the host's theme variables fail to apply, the page still has a
-     background and a readable text colour of its own. */
-  html { background: Canvas; color: CanvasText; }
+  html, body { margin: 0; background: transparent; }
   body {
-    background: var(--bg); color: var(--ink);
-    font-family: var(--sans); font-size: 15px; line-height: 1.45;
-    -webkit-font-smoothing: antialiased;
+    color: var(--text);
+    font: 14px/1.4 Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01";
   }
-  .app { padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; }
-  button { font: inherit; color: inherit; }
-  button:focus-visible, .cell:focus-visible, .week-head:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-  .mono { font-family: var(--mono); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  .mono { font-family: "Geist Mono", ui-monospace, Menlo, monospace; }
 
-  /* ---- Header ---- */
-  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .kicker {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--muted); display: flex; gap: 8px; align-items: center;
-  }
-  .upcoming { margin-top: 8px; font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  .code { background: var(--sunk); color: var(--ink); padding: 2px 7px; border-radius: 999px; letter-spacing: 0.08em; }
-  h1 { margin: 4px 0 0; font-family: "Inter Tight", var(--sans); font-size: 22px; line-height: 1.15; font-weight: 700;
-    letter-spacing: -0.025em; text-wrap: balance; }
-  .wordmark { font-family: "Inter Tight", var(--sans); font-style: italic; font-weight: 900; font-size: 13px;
-    letter-spacing: -0.01em; text-transform: none; color: var(--brand); }
-  .sub { color: var(--muted); font-size: 13px; margin-top: 3px; font-variant-numeric: tabular-nums; }
-  .icon-btn {
-    flex: none; width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--line);
-    background: var(--card); cursor: pointer; display: grid; place-items: center; color: var(--muted);
-  }
-  .icon-btn:hover { color: var(--ink); }
-  .icon-btn svg { width: 16px; height: 16px; }
-  .spin svg { animation: spin 0.9s linear infinite; }
+  .card { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
+  .empty { padding: 28px 20px; color: var(--muted); font-size: 14px; }
+
+  /* ---- header */
+  .head { padding: 16px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 12px 28px; border-bottom: 1px solid var(--border); }
+  .head-l { flex: 1 1 220px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 8px; }
+  .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); font-size: 15px; }
+  .kicker { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
+  .refresh { margin-left: auto; width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border);
+    background: transparent; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+  .refresh.spin svg { animation: spin 0.9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
+  .sub { font-size: 14px; color: var(--muted); }
+  .tl { flex: 1 1 300px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .tl-line { flex: 1; height: 1px; background: var(--line); min-width: 10px; }
+  .tl-node { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .tl-dot { width: 8px; height: 8px; border-radius: 999px; border: 1.5px solid var(--muted); flex-shrink: 0; }
+  .tl-dot.cur { background: var(--red); border-color: var(--red); }
+  .tl-a { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .tl-b { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 
-  /* ---- Progress ---- */
-  .progress { display: flex; flex-direction: column; gap: 6px; }
-  .bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--sunk); }
-  .bar i { display: block; height: 100%; }
-  .bar .d { background: var(--done); }
-  .bar .m { background: var(--miss); }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .legend b { color: var(--ink); font-weight: 600; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+  /* ---- body: a 1px gap on the border colour draws the divider either way */
+  .body { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); }
+  .pane { background: var(--card); min-width: 0; }
+  .chart { flex: 1 1 220px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .week { flex: 999 1 340px; padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 12px; }
 
-  /* ---- Next session ---- */
-  /* ---- Training log ---- */
-  .trend { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; align-items: end; height: 132px; padding: 4px 2px 0; }
-  .tcol { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
-  .tval { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .tbar-wrap { flex: 1; width: 100%; max-width: 44px; display: flex; align-items: flex-end; }
-  .tbar { display: block; width: 100%; border-radius: 6px 6px 3px 3px; background: var(--sunk); }
-  .tstack { display: flex; flex-direction: column; width: 100%; border-radius: 6px 6px 3px 3px; overflow: hidden; opacity: 0.72; }
-  .tcol.current .tstack { opacity: 1; }
-  .tstack i { display: block; }
-  .ride-c { background: var(--ride); }
-  .run-c { background: var(--run); }
-  .other-c { background: var(--faint); }
-  .tlab { font-size: 11px; color: var(--muted); white-space: nowrap; }
-  .tcol.current .tlab { color: var(--ink); font-weight: 600; }
-  .highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .hl { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
-  .hl-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
-  .hl-val { font-size: 18px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
-  .hl-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-  .loglist { display: none; padding: 0 8px 10px; flex-direction: column; gap: 4px; }
-  .week.open .loglist { display: flex; }
-  .logrow { position: relative; display: grid; grid-template-columns: 38px 1fr auto; gap: 8px; align-items: baseline;
-    background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 9px 10px 9px 12px; font-size: 13.5px; }
-  .logrow::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--t, var(--easy)); border-radius: 3px 0 0 3px; }
-  .lday { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
-  .lname { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-  .lval { color: var(--muted); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .logrow.empty-week { display: block; color: var(--faint); font-style: italic; }
-  .logrow.empty-week::before { display: none; }
-  .next {
-    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 14px; display: grid; grid-template-columns: 4px 1fr; gap: 12px;
-  }
-  .next > .sent { grid-column: 2; margin-top: -4px; }
-  .stripe { border-radius: 999px; background: var(--easy); }
-  .next-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-  .next-name { font-size: 17px; font-weight: 650; margin-top: 2px; }
-  .next-meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .act {
-    border: 1px solid var(--line); background: var(--bg); border-radius: 999px;
-    padding: 7px 13px; font-size: 13px; font-weight: 550; cursor: pointer;
-  }
-  .act:hover { background: var(--sunk); }
-  .act.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
-  .act.primary:hover { opacity: 0.88; }
-  .sent { font-size: 12.5px; color: var(--done); margin-top: 8px; }
+  .stats { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; font-size: 13px; color: var(--muted); }
+  .stats span { white-space: nowrap; }
+  .stats strong { color: var(--text); font-weight: 600; }
+  .bars { display: grid; align-items: end; }
+  .bar { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; }
+  .bar.still { cursor: default; }
+  .bar:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; border-radius: 6px; }
+  .bar-km { font-size: 11px; text-align: center; color: var(--muted); min-height: 13px; }
+  .bar-km.on { color: var(--text); }
+  .bar-box { position: relative; overflow: hidden; background: var(--bar-off); border-radius: 6px; }
+  .bar-box.r4 { border-radius: 4px; }
+  .bar-box.on { background: var(--red); }
+  .bar-box.on.started { background: var(--red-soft); }
+  .bar-box.past { background: var(--bar-past); }
+  .bar-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bar-done); }
+  .bar-box.on .bar-fill { background: var(--red); }
+  .bar-dot { position: absolute; left: 50%; bottom: 6px; margin-left: -3px; width: 6px; height: 6px; border-radius: 999px; background: var(--red); }
+  .bar-box.on .bar-dot { background: var(--on-red); }
+  .bar-lbl { font-size: 11px; text-align: center; white-space: nowrap; color: var(--muted); letter-spacing: -0.02em; min-height: 13px; }
+  /* Week mode's labels are words, not numbers: let them take two lines. */
+  .bar-lbl.wrap { white-space: normal; line-height: 1.15; min-height: 26px; font-size: 10.5px; }
+  .bar-lbl.on { color: var(--text); }
+  .bar-lbl.faint { color: var(--faint); }
+  .phases { display: grid; }
+  .phase { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .phase-line { height: 2px; border-radius: 2px; background: var(--line); }
+  .phase-lbl { font-size: 10px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+  .phase.on .phase-line { background: var(--red); }
+  .phase.on .phase-lbl { color: var(--text); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: auto; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .sw { width: 8px; height: 8px; border-radius: 2px; }
 
-  /* ---- Countdown, phase and the shape of the block ---- */
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--sunk); color: var(--ink);
-    font-variant-numeric: tabular-nums; }
-  .chip.brand { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
-  .block { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px 10px; }
-  .block-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; color: var(--muted); }
-  .block-head b { color: var(--ink); font-weight: 600; }
-  .bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; align-items: end; height: 64px; margin-top: 10px; }
-  .bcol { position: relative; height: 100%; display: flex; align-items: flex-end; }
-  .bplan { position: relative; width: 100%; border-radius: 3px 3px 2px 2px; overflow: hidden;
-    background: color-mix(in srgb, var(--faint) 30%, var(--sunk)); }
-  .bdone { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--brand) 60%, var(--sunk)); }
-  .bcol.current .bplan { box-shadow: 0 0 0 1.5px var(--brand); }
-  .bcol.current .bdone { background: var(--brand); }
-  .bcol.taper .bplan { background: color-mix(in srgb, var(--faint) 16%, var(--sunk)); }
-  .blabels { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); margin-top: 4px; font-family: var(--mono); letter-spacing: 0.04em; }
+  .week-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .week-title { font-size: 16px; font-weight: 600; }
+  .week-meta { font-weight: 400; font-size: 13px; color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px; border: 0;
+    background: var(--red); color: var(--on-red); font-size: 12px; font-weight: 500; flex-shrink: 0; }
 
-  /* ---- This week, at a glance ---- */
   .strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .sday { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0 8px; border-radius: 12px;
-    background: none; border: 1px solid transparent; cursor: pointer; }
-  .sday:hover { background: var(--sunk); }
-  .sday[disabled] { cursor: default; }
-  .sday[disabled]:hover { background: none; }
-  .sday .sl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--faint); }
-  .sday .sn { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .sday.today { background: color-mix(in srgb, var(--brand) 12%, transparent); }
-  .sday.today .sn, .sday.today .sl { color: var(--brand); }
-  .sday.sel { border-color: var(--brand); }
-  .marks { display: flex; gap: 3px; height: 8px; }
-  .mark { width: 8px; height: 8px; border-radius: 50%; }
-  .mark.done { background: var(--done); }
-  .mark.missed { background: var(--miss); }
-  .mark.ahead, .mark.today { border: 1.5px solid color-mix(in srgb, var(--faint) 70%, transparent); }
-  .sday.today .mark.ahead, .sday.today .mark.today { border-color: var(--brand); background: var(--brand); }
+  .day { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .day-l { font-size: 10.5px; color: var(--faint); }
+  .day-n { width: 30px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    font-size: 13.5px; font-weight: 600; color: var(--text); }
+  .day-n.faint { color: var(--faint); }
+  .day-n.next { background: var(--red); color: var(--on-red); }
+  .day-m { height: 10px; display: flex; align-items: center; justify-content: center; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; }
+  .ring { width: 7px; height: 7px; border-radius: 999px; border: 1.5px solid var(--red-text); }
+  .ghost { width: 7px; height: 7px; border-radius: 999px; border: 1.5px dashed var(--faint); }
 
-  /* ---- The next session's steps ---- */
-  .steps { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
-  .step { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; background: var(--bg);
-    border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; }
-  .step .what b { font-weight: 600; }
-  .step .what span { color: var(--muted); }
-  .step .tgt { color: var(--brand); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .rep { border-left: 2px solid var(--brand); padding-left: 8px; display: flex; flex-direction: column; gap: 4px; }
-  .rep-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brand); font-weight: 600; }
+  .rows { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; padding: 11px 0; border-top: 1px solid var(--row-line); align-items: center; }
+  .row-day { font-size: 11px; color: var(--muted); }
+  .row-day.faint { color: var(--faint); }
+  .row-mid { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .row-mid.tight { gap: 4px; }
+  .row-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .type { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .name { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+  .name.soft { color: var(--soft); }
+  .name.muted { color: var(--muted); font-weight: 500; }
+  .check { width: 16px; height: 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .miss { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid var(--red-text); flex-shrink: 0; }
+  .meta { font-size: 12.5px; color: var(--muted); padding-left: 23px; }
+  .meta.missed { color: var(--red-text); }
+  .moved { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+  .km { font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+  .km.soft { color: var(--soft); }
+  .km.struck { color: var(--faint); text-decoration: line-through; font-weight: 400; }
+  .shape { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
+  .shape span { border-radius: 2px; min-width: 2px; }
+  .shape.big { height: 30px; }
+  .shape.big span { border-radius: 5px; height: 30px; }
 
-  /* ---- Weeks ---- */
-  .weeks { display: flex; flex-direction: column; gap: 8px; }
-  .week { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .week.current { border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring) inset; }
-  .week-head {
-    width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-    background: none; border: 0; cursor: pointer; text-align: left;
-  }
-  .wk { font-weight: 650; font-size: 14px; min-width: 64px; }
-  .wk small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-  .pips { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
-  .pip { width: 10px; height: 10px; border-radius: 3px; background: var(--sunk); border: 1px solid color-mix(in srgb, var(--faint) 50%, var(--line)); }
-  .pip.done { background: var(--done); border-color: var(--done); }
-  .pip.missed { background: var(--miss); border-color: var(--miss); }
-  .pip.today { border: 2px solid var(--ring); background: transparent; }
-  .count { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; display: flex; gap: 10px; }
-  .count .km { color: var(--ink); font-weight: 600; }
-  .chev { color: var(--faint); transition: transform 0.15s ease; flex: none; }
-  .week.open .chev { transform: rotate(90deg); }
+  .next { margin: 4px -8px 8px; padding: 14px; border-radius: 14px; background: var(--next-bg); border: 1px solid var(--next-border);
+    display: flex; flex-direction: column; gap: 11px; }
+  .next-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .next-k { font-size: 11px; letter-spacing: 0.12em; color: var(--red-text); }
+  .next-when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .next-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .next-type { font-size: 14px; font-weight: 600; }
+  .next-name { font-size: 30px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; overflow-wrap: anywhere; }
+  .next-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--soft); }
+  .next-meta span { display: flex; align-items: center; gap: 6px; }
+  .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; max-width: 420px; }
+  .act { height: 36px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; font-size: 13px; font-weight: 500; padding: 0 6px; }
+  .act:hover { border-color: var(--muted); }
+  .sent { font-size: 12.5px; color: var(--muted); }
 
-  .grid { display: none; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 0 8px 10px; }
-  .week.open .grid { display: grid; }
-  .day { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .dname { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); text-align: center; }
-  .dname.is-today { color: var(--ring); font-weight: 600; }
-  .cell {
-    position: relative; border: 1px solid var(--line); border-radius: var(--radius-sm);
-    background: var(--bg); padding: 6px 5px 6px 8px; min-height: 58px; cursor: pointer;
-    display: flex; flex-direction: column; gap: 2px; text-align: left; overflow: hidden;
-  }
-  .cell::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--t, var(--easy)); }
-  .cell .n { font-size: 11.5px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
-  .cell .s { font-size: 10.5px; color: var(--muted); }
-  .cell.done { background: var(--done-bg); border-color: transparent; }
-  .cell.done .s { color: var(--done); font-weight: 600; }
-  .cell.missed { background: var(--miss-bg); border-color: transparent; }
-  .cell.missed .s { color: var(--miss); font-weight: 600; }
-  .cell.missed .n { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--miss) 60%, transparent); }
-  .cell.today { border: 2px solid var(--ring); }
-  .cell[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
-  .cell.extra { background: transparent; border: 1px dashed var(--line); cursor: default; }
-  .cell.extra::before { background: var(--faint); opacity: 0.5; }
-  .cell.extra .n { font-weight: 500; color: var(--muted); }
-  .rest { min-height: 58px; border-radius: var(--radius-sm); border: 1px dashed var(--line); opacity: 0.55; }
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 10px; border-top: 1px solid var(--row-line); }
+  .foot span { font-size: 13px; color: var(--muted); }
+  .foot .act { height: 34px; padding: 0 14px; flex-shrink: 0; }
 
-  /* ---- Detail ---- */
-  .detail { margin: 0 8px 10px; padding: 12px; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--line); }
-  .detail h3 { margin: 0; font-size: 15px; }
-  .detail p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 
-  .foot { color: var(--faint); font-size: 12px; text-align: center; padding: 2px 0 4px; }
-  .empty { padding: 28px 12px; text-align: center; color: var(--muted); }
-
-  /* A phone has no room for seven columns: the week becomes a list of the
-     days that have something on them. */
-  @media (max-width: 520px) {
-    .app { padding: 12px; }
-    .week.open .grid { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 10px; }
-    .day { flex-direction: row; align-items: stretch; gap: 8px; }
-    .day:has(> .rest) { display: none; }
-    .dname { width: 34px; flex: none; text-align: left; align-self: center; }
-    .cell { flex: 1; min-height: 0; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; padding: 9px 10px 9px 12px; }
-    .cell .n { font-size: 13.5px; overflow-wrap: normal; }
-    .cell .s { font-size: 12px; white-space: nowrap; }
-    .count .sessions { display: none; }
-  }
   /* The status box: fixed colours, nothing from the theme, so it is readable
      whatever went wrong. */
   .diag { margin: 12px; padding: 12px 14px; border-radius: 10px; background: #FFF3CD; color: #3D2C00;
@@ -291,11 +181,10 @@
   .diag.waiting { background: #EEF2EE; color: #1F2A23; border-color: #C9D3CB; }
   .diag[hidden] { display: none; }
   .diag-tech { margin-top: 6px; font: 12px/1.4 ui-monospace, Menlo, monospace; opacity: 0.85; word-break: break-word; }
-  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="app" id="app"><div class="empty">Loading your plan&hellip;</div></div>
+<div class="card" id="app"><div class="empty">Loading your plan&hellip;</div></div>
 <div class="diag" id="diag" hidden></div>
 
 <script>
@@ -363,8 +252,6 @@
 
   window.addEventListener("message", function (event) {
     var data = event.data;
-    // Anything that isn't JSON-RPC is noted, not ignored silently: a host on
-    // an older version of the protocol speaks a different shape.
     if (data && data.jsonrpc !== "2.0") { D.step("other msg " + String(data.type || typeof data).slice(0, 40)); return; }
     if (!data) return;
     if (data.id != null && !data.method && pending[data.id]) {
@@ -376,7 +263,7 @@
       case "ui/notifications/tool-input": D.step("input"); break;
       case "ui/notifications/tool-result": D.step("result"); D.gotResult = true; onResult(data.params); break;
       case "ui/notifications/host-context-changed": applyContext(data.params || {}); break;
-      case "ui/notifications/tool-cancelled": D.step("cancelled"); render(null, "The plan could not be loaded."); D.done(); break;
+      case "ui/notifications/tool-cancelled": D.step("cancelled"); fail("The plan could not be loaded."); D.done(); break;
       case "ui/resource-teardown": case "ping":
         if (data.id != null) send({ id: data.id, result: {} });
         break;
@@ -388,11 +275,11 @@
   function applyContext(ctx) {
     Object.assign(hostContext, ctx);
     if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
-    var vars = ctx.styles && ctx.styles.variables;
-    if (vars) Object.keys(vars).forEach(function (k) { if (vars[k]) document.documentElement.style.setProperty(k, vars[k]); });
+    // Nothing is fetched from outside the frame; the host's own font faces
+    // are the only way Geist arrives, system fonts otherwise.
     var fonts = ctx.styles && ctx.styles.css && ctx.styles.css.fonts;
     if (fonts && !document.getElementById("host-fonts")) {
-      var s = document.createElement("style"); s.id = "host-fonts"; s.textContent = fonts; document.head.appendChild(s);
+      var st = document.createElement("style"); st.id = "host-fonts"; st.textContent = fonts; document.head.appendChild(st);
     }
   }
 
@@ -408,213 +295,464 @@
         if (c.type === "text") { try { plan = JSON.parse(c.text); break; } catch (e) {} }
       }
     }
+    raw = plan;
+    state.sel = null;
     render(isProgress(plan) ? fromProgress(plan) : plan);
     D.done();
   }
 
-  // get_progress answers "how's my plan going" too, with the same sessions in
-  // three lists. Drawn as the calendar version of the plan.
-  function isProgress(p) {
-    return !!(p && !p.error && Array.isArray(p.upcoming) && Array.isArray(p.sessions) && p.weeks && p.weeks.length && "week_of" in p.weeks[0]);
-  }
-  var WEEKS_AHEAD = 3;
-  function fromProgress(p) {
-    var today = iso(new Date()), thisMonday = iso(mondayOf(new Date()));
-    var horizon = iso(addDays(mondayOf(new Date()), 7 * (WEEKS_AHEAD + 1)));
-    var earliest = p.weeks[0].week_of;
-    var rows = [];
-    (p.sessions || []).forEach(function (r) {
-      rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.done_on && r.done_on !== r.date ? "done, moved" : "done",
-        done_on: r.done_on !== r.date ? r.done_on : undefined, activity_id: r.activity_id, actual_km: r.actual_km,
-        actual: r.actual_seconds ? duration(r.actual_seconds) : undefined });
-    });
-    (p.missed || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "missed" }); });
-    (p.upcoming || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "ahead" }); });
-    rows = rows.filter(function (r) { return r.date >= earliest && r.date < horizon; })
-      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-    if (!rows.length) return logFromProgress(p) || { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
-    rows.forEach(function (r) { r.day = DAYS[(parse(r.date).getDay() + 6) % 7]; });
-
-    var weeks = {}, order = [];
-    rows.forEach(function (r) {
-      var start = iso(mondayOf(parse(r.date)));
-      if (!weeks[start]) { weeks[start] = { starts: start, sessions: [], current: start === thisMonday }; order.push(start); }
-      weeks[start].sessions.push(r);
-    });
-    var extras = (p.unplanned || []).filter(function (r) { return r.date >= earliest && r.date <= today; });
-    var list = order.map(function (start, i) {
-      var w = weeks[start];
-      var end = iso(addDays(parse(start), 7));
-      var inWeek = function (r) { return r.date >= start && r.date < end; };
-      w.week = i + 1;
-      w.extra = extras.filter(inWeek).map(function (r) {
-        return { date: r.date, name: r.name, sport: r.sport, actual_km: r.actual_km };
-      });
-      var ran = w.sessions.concat(w.extra).filter(function (r) { return r.sport === "run" && r.actual_km; });
-      w.run_km = Math.round(10 * ran.reduce(function (t, r) { return t + r.actual_km; }, 0)) / 10;
-      w.done = w.sessions.filter(function (s) { return s.status.indexOf("done") === 0; }).length;
-      w.missed = w.sessions.filter(function (s) { return s.status === "missed"; }).length;
-      w.planned = w.sessions.length;
-      return w;
-    });
-    var done = rows.filter(function (r) { return r.status.indexOf("done") === 0; }).length;
-    var missed = rows.filter(function (r) { return r.status === "missed"; }).length;
-    var ahead = rows.filter(function (r) { return r.status === "today" || r.status === "ahead"; });
-    var weekAgo = iso(addDays(new Date(), -7));
-    var recent = rows.filter(function (r) { return r.status === "missed" && r.date >= weekAgo; });
-    return {
-      source: "calendar", starts: rows[0].date, ends: rows[rows.length - 1].date,
-      sessions_total: rows.length, completed: done, missed: missed, remaining: ahead.length,
-      completion_percent: done + missed ? Math.round(100 * done / (done + missed)) : null,
-      next_session: ahead[0] || null,
-      review: recent.length ? { missed_last_7_days: recent } : null,
-      weeks: list,
-    };
-  }
-  // get_progress's unplanned list, drawn as a training log when nothing at all
-  // was planned. The same shape get_plan sends.
-  function logFromProgress(p) {
-    var today = iso(new Date());
-    var thisMonday = iso(mondayOf(new Date()));
-    var all = (p.unplanned || []).map(function (r) {
-      var sport = r.ride ? "ride" : r.sport;
-      var pace = sport === "run" && r.actual_km && r.actual_seconds ? paceText(r.actual_seconds / r.actual_km) : null;
-      var speed = sport === "ride" && r.actual_km && r.actual_seconds ? (r.actual_km / r.actual_seconds * 3600).toFixed(1) + " km/h" : null;
-      return { date: r.date, day: DAYS[(parse(r.date).getDay() + 6) % 7], name: r.name, sport: sport, status: "logged",
-        actual_km: r.actual_km, actual: r.actual_seconds ? duration(r.actual_seconds) : null, pace: pace, speed: speed,
-        secs: r.actual_seconds || null,
-        _m: (r.actual_km || 0) * 1000, _s: r.actual_seconds || 0 };
-    });
-    if (!all.length) return null;
-    var sumKm = function (rs) { return Math.round(rs.reduce(function (t, r) { return t + (r.actual_km || 0); }, 0) * 10) / 10; };
-    var weeks = p.weeks.map(function (w, i) {
-      var end = iso(addDays(parse(w.week_of), 7));
-      var here = all.filter(function (r) { return r.date >= w.week_of && r.date < end; });
-      var runs = here.filter(function (r) { return r.sport === "run"; });
-      var rides = here.filter(function (r) { return r.sport === "ride"; });
-      return { week: i + 1, starts: w.week_of, current: w.week_of === thisMonday, sessions: here,
-        runs: runs.length, run_km: sumKm(runs), rides: rides.length, ride_km: sumKm(rides) };
-    });
-    var runs = all.filter(function (r) { return r.sport === "run" && r._m > 0; });
-    var rides = all.filter(function (r) { return r.sport === "ride" && r._m > 0; });
-    var secs = function (rs) { return rs.reduce(function (t, r) { return t + r._s; }, 0); };
-    var primary = secs(rides) > secs(runs) ? "ride" : "run";
-    var lead = primary === "ride" ? rides : runs;
-    var total = lead.reduce(function (t, r) { return t + r._m; }, 0) / 1000;
-    var longest = lead.slice().sort(function (a, b) { return b._m - a._m; })[0] || null;
-    var minM = primary === "ride" ? 15000 : 3000;
-    var fastest = lead.filter(function (r) { return r._m >= minM && r._s > 0; })
-      .sort(function (a, b) { return a._s / a._m - b._s / b._m; })[0] || null;
-    return { source: "log", primary: primary, starts: p.weeks[0].week_of, ends: today, weeks: weeks,
-      runs: runs.length, run_km: sumKm(runs), rides: rides.length, ride_km: sumKm(rides),
-      average_week_km: Math.round(total / weeks.length * 10) / 10, longest: longest, fastest: fastest };
-  }
-  // One sport's totals across a log, read from its sessions, so a log from
-  // get_plan and one built here from get_progress are summed the same way.
-  function sportStats(plan, sport) {
-    var rows = [];
-    plan.weeks.forEach(function (w) { w.sessions.forEach(function (r) { if (r.sport === sport && r.actual_km) rows.push(r); }); });
-    var secs = function (r) { return r.secs || 0; };
-    var min = sport === "ride" ? 15 : 3;
-    return {
-      count: rows.length,
-      km: Math.round(rows.reduce(function (t, r) { return t + r.actual_km; }, 0) * 10) / 10,
-      secs: rows.reduce(function (t, r) { return t + secs(r); }, 0),
-      longest: rows.slice().sort(function (a, b) { return b.actual_km - a.actual_km; })[0] || null,
-      fastest: rows.filter(function (r) { return r.actual_km >= min && secs(r) > 0; })
-        .sort(function (a, b) { return secs(a) / a.actual_km - secs(b) / b.actual_km; })[0] || null,
-    };
-  }
-  function hrs(secs) {
-    var h = secs / 3600;
-    return (h >= 10 ? String(Math.round(h)) : String(Math.round(h * 10) / 10)) + "h";
-  }
-  function weekSecs(w, sport) {
-    return w.sessions.reduce(function (t, r) { return t + (r.sport === sport ? (r.secs || 0) : 0); }, 0);
-  }
-  function paceText(secondsPerKm) {
-    var t = Math.round(secondsPerKm), m = Math.floor(t / 60);
-    return m + ":" + String(t % 60).padStart(2, "0") + " /km";
-  }
-  function duration(seconds) {
-    var m = Math.round(seconds / 60), h = Math.floor(m / 60);
-    return h ? h + "h " + String(m % 60).padStart(2, "0") + "m" : m + "m";
-  }
-
-  // Tell the host how tall the view is, so the chat gives it exactly that.
-  if (host && "ResizeObserver" in window) {
-    var last = 0;
-    new ResizeObserver(function () {
-      var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
-      if (h !== last) { last = h; notify("ui/notifications/size-changed", { width: document.documentElement.clientWidth, height: h }); }
-    }).observe(document.documentElement);
-  }
-
   // ---------------------------------------------------------------- helpers
   var DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  function el(tag, attrs, kids) {
-    var n = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (k) {
-      if (attrs[k] == null) return;  // an attribute left out, not set to "null"
-      if (k === "class") n.className = attrs[k];
-      else if (k === "text") n.textContent = attrs[k];
-      else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), attrs[k]);
-      else if (k === "style") n.setAttribute("style", attrs[k]);
-      else n.setAttribute(k, attrs[k]);
-    });
-    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
-    return n;
-  }
-  function parse(d) { var p = d.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  var LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function parse(s) { var p = String(s).slice(0, 10).split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
   function iso(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
-  function addDays(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
-  function short(d) { return parse(d).toLocaleDateString(undefined, { day: "numeric", month: "short" }); }
-  function long(d) { return parse(d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
-
-  // Session type from its name: what a runner would call it, not Garmin's enum.
-  function kind(name, sport) {
-    var n = (name || "").toLowerCase();
-    if (/race|parkrun/.test(n)) return { t: "race", c: "var(--race)", label: "Race" };
-    if (sport === "strength" || /strength|gym|core|push|pull|legs|full body/.test(n)) return { t: "strength", c: "var(--strength)", label: "Strength" };
-    if (/long/.test(n)) return { t: "long", c: "var(--long)", label: "Long run" };
-    if (/threshold|tempo|interval|reps|x\s?\d|\d\s?x|hill|vo2|fartlek|progression|marathon pace|mp\b|steady|test\b|race pace/.test(n))
-      return { t: "quality", c: "var(--quality)", label: "Quality" };
-    return { t: "easy", c: "var(--easy)", label: "Easy" };
-  }
-  // Distance: whole kilometres read best at a glance, tenths only when short.
-  function fmtKm(v) { return v >= 20 ? String(Math.round(v)) : String(Math.round(v * 10) / 10); }
-  function kmText(w) {
-    return w.planned_km ? fmtKm(w.run_km || 0) + " / " + fmtKm(w.planned_km) + " km" : fmtKm(w.run_km || 0) + " km";
-  }
-  function thisWeekKm(plan) {
-    var w = (plan.weeks || []).filter(function (x) { return x.current; })[0];
-    if (!w || w.run_km == null) return null;
-    return el("span", {}, [el("b", { text: fmtKm(w.run_km || 0) }),
-      w.planned_km ? " of " + fmtKm(w.planned_km) + " km this week" : " km this week"]);
-  }
-  // A calendar week is named by where it sits from today, not by a number.
-  function weekName(w) {
-    var gap = Math.round((parse(w.starts) - parse(iso(mondayOf(new Date())))) / 604800000);
-    if (gap === 0) return "This week";
-    if (gap === -1) return "Last week";
-    if (gap === 1) return "Next week";
-    return gap < 0 ? -gap + " weeks ago" : "In " + gap + " weeks";
-  }
+  function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
   function mondayOf(d) { return addDays(d, -((d.getDay() + 6) % 7)); }
-  function statusText(s) {
-    if (s.status === "done") return "Done";
-    if (s.status === "done, moved") return "Done " + DAYS[(parse(s.done_on).getDay() + 6) % 7];
-    if (s.status === "missed") return "Missed";
-    if (s.status === "today") return "Today";
-    return "";
+  function between(a, b) { return Math.round((parse(b) - parse(a)) / 864e5); }
+  function dow(s) { return (parse(s).getDay() + 6) % 7; }
+  function short(s) { var d = parse(s); return d.getDate() + " " + MONTHS[d.getMonth()]; }
+  function range(a, b) {
+    var x = parse(a), y = parse(b);
+    if (x.getMonth() === y.getMonth()) return x.getDate() + "\u2013" + y.getDate() + " " + MONTHS[y.getMonth()];
+    return short(a) + " \u2013 " + short(b);
   }
-  function cls(s) { return s.status.indexOf("done") === 0 ? "done" : s.status; }
+  function fmtKm(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function sum(list, f) { return list.reduce(function (t, x) { return t + (f(x) || 0); }, 0); }
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "text") node.textContent = attrs[k];
+      else if (k === "html") node.innerHTML = attrs[k];
+      else if (k === "onclick") node.addEventListener("click", attrs[k]);
+      else if (k === "style") node.setAttribute("style", attrs[k]);
+      else if (attrs[k] != null && attrs[k] !== false) node.setAttribute(k, attrs[k] === true ? "" : attrs[k]);
+    });
+    (children || []).forEach(function (c) { if (c == null || c === false) return; node.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return node;
+  }
+  function svg(path, size, stroke, width) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("width", size); s.setAttribute("height", size); s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", stroke || "currentColor");
+    s.setAttribute("stroke-width", width || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+    s.setAttribute("aria-hidden", "true"); s.innerHTML = path; return s;
+  }
+  var ICON = {
+    refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+    back: '<path d="m15 18-6-6 6-6"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+    gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+    watch: '<circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/>',
+    arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  };
+
+  // Session types: colour and the short label beside a title. Easy, sub-T,
+  // long and race are the run types; the rest are other sports.
+  var TYPES = {
+    easy: { l: "Easy", v: "var(--easy)" }, sub: { l: "Sub-T", v: "var(--sub)" }, long: { l: "Long", v: "var(--long)" },
+    race: { l: "Race", v: "var(--red-text)" }, ride: { l: "Ride", v: "var(--long)" }, swim: { l: "Swim", v: "var(--swim)" },
+    strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
+  };
+  function typeOf(s) { return TYPES[s.type] || TYPES[s.sport] || TYPES.other; }
+  var TYPE_WORDS = {
+    easy: ["easy"], long: ["long run", "long"], race: [],
+    sub: ["threshold", "tempo", "intervals?", "sub-?threshold", "sub-?t"],
+    strength: ["strength"], ride: ["ride", "bike"], swim: ["swim"],
+  };
+  // The title without what the row already says: its type and, when that is
+  // all that's left, the distance. "Long run 16k" with the Long label reads
+  // "16 km"; "Threshold 5x1k" reads "5 × 1 km".
+  function cleanTitle(s) {
+    var n = String(s.name || "").trim();
+    // A recorded activity keeps Garmin's name: "Morning Run" is what it was.
+    if (s.status === "logged" || s.extra) return n || "Run";
+    n = n.replace(/(\d+(?:[.,]\d+)?)\s*k(?:m)?\b/gi, "$1 km").replace(/(\d)\s*[x\u00d7]\s*(\d)/gi, "$1 \u00d7 $2");
+    (TYPE_WORDS[s.type] || []).forEach(function (w) { n = n.replace(new RegExp("(^|\\s)" + w + "(?=\\s|$|[,:\u00b7-])", "gi"), "$1"); });
+    n = n.replace(/^\s*(run|session|workout)\b/i, "").replace(/\b(run|session|workout)\s*$/i, "");
+    n = n.replace(/\s{2,}/g, " ").replace(/^[\s,:\u00b7-]+|[\s,:\u00b7-]+$/g, "");
+    if (!n) { var km = s.planned_km || s.actual_km; n = km ? fmtKm(km) + " km" : String(s.name || "Session"); }
+    return n.charAt(0).toUpperCase() + n.slice(1);
+  }
+  function shortGoal(goal) {
+    var head = String(goal || "").split(",")[0].trim();
+    if (head.length > 28) head = head.slice(0, 27).replace(/\s+\S*$/, "") + "\u2026";
+    return head ? head.charAt(0).toUpperCase() + head.slice(1) : "";
+  }
+  function effDate(s) { return s.done_on && s.status === "done, moved" ? s.done_on : s.date; }
+  function isDone(s) { return String(s.status || "").indexOf("done") === 0 || s.status === "logged" || s.extra; }
+
+  // ---------------------------------------------------------------- model
+  // get_plan answers in three shapes: a plan by code, the calendar around now
+  // (with a plan running or not), and a log of the last weeks when nothing is
+  // scheduled. All three become one model: weeks, their sessions placed on
+  // the day they were done, and the next session.
+  function normalise(p) {
+    if (!p || p.error) return { error: (p && p.error) || "The plan could not be loaded." };
+    var today = iso(new Date());
+    var thisMonday = iso(mondayOf(new Date()));
+    var block = p.label ? p : (p.current_plan || null);
+    var weeks = (p.weeks || []).map(function (w, i) {
+      return { n: w.week || i + 1, starts: w.starts, sessions: (w.sessions || []).slice(), extra: (w.extra || []).slice(),
+        planned: w.planned_km, run_km: w.run_km || 0, current: !!w.current || w.starts === thisMonday };
+    });
+    if (p.source === "log") {
+      var cur = weeks.filter(function (w) { return w.current; })[0] || weeks[weeks.length - 1];
+      var hist = weeks.filter(function (w) { return w !== cur; }).map(function (w) { return { starts: w.starts, run_km: w.run_km }; });
+      cur.sessions.forEach(function (s) { s.status = "logged"; });
+      return finish({ mode: "log", weeks: [cur], history: hist, next: null, note: p.note }, p);
+    }
+    if (block && !p.label) {
+      var a = iso(mondayOf(parse(block.starts))), b = iso(mondayOf(parse(block.ends)));
+      weeks = weeks.filter(function (w) { return w.starts >= a && w.starts <= b; });
+      weeks.forEach(function (w) { w.n = Math.round(between(a, w.starts) / 7) + 1; });
+    }
+    if (!weeks.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
+    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null }, p);
+    var ci = weeks.findIndex(function (w) { return w.current; });
+    if (ci < 0) ci = Math.max(0, weeks.findIndex(function (w) { return w.starts > today; }) - 1);
+    if (ci < 0) ci = weeks.length - 1;
+    var ahead = weeks.slice(ci + 1).some(function (w) { return w.sessions.length; });
+    return finish({ mode: "week", weeks: [weeks[ci]], history: p.history || [], next: p.next_session || null,
+      upcoming: p.upcoming_plan || null, moreAhead: ahead }, p);
+  }
+  function finish(m, p) {
+    // Every session, placed on the day it happened if it was done on another
+    // day; a session moved into another week shows there, and km follow it.
+    var all = [];
+    (p.weeks || []).forEach(function (w) {
+      (w.sessions || []).forEach(function (s) { all.push(s); });
+      (w.extra || []).forEach(function (s) { all.push(Object.assign({ extra: true, status: "done", type: s.sport || "run" }, s)); });
+    });
+    m.weeks.forEach(function (w) {
+      var end = iso(addDays(parse(w.starts), 7));
+      w.rows = all.filter(function (s) { var d = effDate(s); return d >= w.starts && d < end; })
+        .sort(function (x, y) { var a = effDate(x), b = effDate(y); return a < b ? -1 : a > b ? 1 : 0; });
+      w.ghosts = all.filter(function (s) { return s.status === "done, moved" && s.date >= w.starts && s.date < end && effDate(s) !== s.date; });
+      var planned = w.rows.filter(function (s) { return !s.extra; });
+      w.plannedKm = w.planned != null ? w.planned : Math.round(10 * sum(planned, function (s) { return s.planned_km; })) / 10;
+      w.doneKm = Math.round(10 * sum(w.rows.filter(isDone), function (s) { return s.actual_km; })) / 10;
+      w.done = planned.filter(isDone).length;
+      w.missed = planned.filter(function (s) { return s.status === "missed"; }).length;
+      w.total = planned.length;
+    });
+    m.nextWeek = -1;
+    if (m.next) {
+      m.weeks.forEach(function (w, i) { if (m.next.date >= w.starts && m.next.date < iso(addDays(parse(w.starts), 7))) m.nextWeek = i; });
+    }
+    m.today = iso(new Date());
+    return m;
+  }
+
+  // Phase bands from the phase each session carries: a week takes the phase
+  // most of its sessions have, and a week without one stays in its neighbours'.
+  function phaseSpans(weeks) {
+    var labels = weeks.map(function (w) {
+      var counts = {};
+      w.rows.forEach(function (s) { if (s.phase && !s.extra) counts[s.phase] = (counts[s.phase] || 0) + 1; });
+      var best = null; Object.keys(counts).forEach(function (k) { if (best == null || counts[k] > counts[best]) best = k; });
+      return best;
+    });
+    if (!labels.some(Boolean)) return null;
+    for (var i = 1; i < labels.length; i++) labels[i] = labels[i] || labels[i - 1];
+    for (var j = labels.length - 2; j >= 0; j--) labels[j] = labels[j] || labels[j + 1];
+    var spans = [];
+    labels.forEach(function (l, k) {
+      if (spans.length && spans[spans.length - 1].label === l) spans[spans.length - 1].span++;
+      else spans.push({ label: l, span: 1, from: k });
+    });
+    return spans;
+  }
+
+  // ---------------------------------------------------------------- render
+  var state = { sel: null }, raw = null, model = null;
+
+  function fail(message) {
+    var app = document.getElementById("app");
+    app.textContent = "";
+    app.appendChild(el("div", { class: "empty", text: message }));
+  }
+
+  function render(plan) {
+    model = normalise(plan);
+    if (model.error) { fail(model.error); return; }
+    if (state.sel == null) state.sel = model.nextWeek >= 0 ? model.nextWeek : Math.max(0, model.weeks.findIndex(function (w) { return w.current; }));
+    var app = document.getElementById("app");
+    app.textContent = "";
+    app.appendChild(header(model));
+    app.appendChild(el("div", { class: "body" }, [chart(model), week(model)]));
+  }
+
+  function header(m) {
+    var b = m.block, title, sub;
+    if (m.mode === "block") {
+      title = b.name || shortGoal(b.goal) || "Training plan";
+      sub = [b.method, range(b.starts, b.ends)].filter(Boolean).join(" \u00b7 ");
+    } else {
+      var w = m.weeks[0];
+      title = "This week";
+      sub = (m.mode === "log" ? "Nothing scheduled" : "Planned week by week") + " \u00b7 " + range(w.starts, iso(addDays(parse(w.starts), 6)));
+    }
+    var left = el("div", { class: "head-l" }, [
+      el("div", { class: "brand" }, [
+        el("span", { class: "wordmark", text: "Daash" }),
+        el("span", { class: "kicker mono", text: "TRAINING PLAN" }),
+        el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
+      ]),
+      el("div", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" }, [
+        el("h3", { class: "title", text: title }),
+        el("span", { class: "sub", text: sub }),
+      ]),
+    ]);
+    var nodes = timeline(m);
+    var tl = nodes.length ? el("div", { class: "tl", "aria-label": "Goal timeline" }, nodes.reduce(function (acc, n, i) {
+      if (i) acc.push(el("span", { class: "tl-line" }));
+      acc.push(el("div", { class: "tl-node" }, [
+        el("span", { class: "tl-dot" + (n.cur ? " cur" : "") }),
+        el("div", { style: "display:flex;flex-direction:column;min-width:0" }, [
+          el("span", { class: "tl-a", text: n.a }), n.b ? el("span", { class: "tl-b", text: n.b }) : null,
+        ]),
+      ]));
+      return acc;
+    }, [])) : null;
+    return el("div", { class: "head" }, [left, tl]);
+  }
+
+  // This block, then the milestones on the way to the goal. Without
+  // milestones the goal itself is the one point after the block.
+  function timeline(m) {
+    if (m.mode !== "block") return [];
+    var b = m.block, many = m.weeks.length > 6;
+    var total = Math.round(sum(m.weeks, function (w) { return w.plannedKm; }));
+    var nodes = [{ a: "This block", b: many ? m.weeks.length + " weeks" : (total ? total + " km" : ""), cur: true }];
+    var marks = (b.milestones || []).slice(0, 4);
+    if (marks.length) {
+      marks.forEach(function (x) { nodes.push({ a: x.label, b: x.target || (x.date ? short(x.date) : "") }); });
+    } else if (b.goal) {
+      var parts = String(b.goal).split(","), head = shortGoal(b.goal), tail = parts.slice(1).join(",").trim();
+      if (tail.length > 20) tail = tail.slice(0, 19).replace(/\s+\S*$/, "") + "\u2026";
+      nodes.push({ a: head, b: tail });
+    }
+    return nodes.length > 1 ? nodes : [];
+  }
+
+  function chart(m) {
+    var isWeek = m.mode !== "block";
+    var kms = m.weeks.map(function (w) { return w.plannedKm || 0; });
+    var sel = state.sel, many = m.weeks.length > 6, gap = many ? 3 : 6;
+    var bars = [], stats, cols;
+    var MAX = 64;
+    if (isWeek) {
+      var w0 = m.weeks[0];
+      var hist = m.history || [];
+      var thisKm = m.mode === "log" ? w0.run_km : (w0.plannedKm || 0);
+      var peak = Math.max.apply(null, hist.map(function (h) { return h.run_km || 0; }).concat([thisKm, 1]));
+      var avg = hist.length ? sum(hist, function (h) { return h.run_km; }) / hist.length : 0;
+      hist.forEach(function (h, i) {
+        bars.push(barEl({ km: fmtKm(h.run_km || 0), h: Math.round((h.run_km || 0) / peak * MAX), cls: "past", lbl: i === 0 ? (hist.length - i) + " wks ago" : (i === hist.length - 1 ? "Last" : ""), faint: true, still: true, wrap: true, aria: fmtKm(h.run_km || 0) + " km run, week of " + short(h.starts) }));
+      });
+      bars.push(barEl({ km: fmtKm(thisKm), h: Math.round(thisKm / peak * MAX), cls: "on", on: true, lbl: "This week", dot: m.nextWeek === 0, still: true, wrap: true, aria: "This week, " + fmtKm(thisKm) + " km" }));
+      cols = bars.length;
+      var right = "";
+      // A week in progress isn't compared with finished ones.
+      if (avg > 0 && thisKm > 0 && m.mode !== "log") { var pct = Math.round((thisKm / avg - 1) * 100); right = (pct >= 0 ? "+" : "") + pct + "% on your " + hist.length + "-week average"; }
+      else if (avg > 0) right = fmtKm(Math.round(avg)) + " km a week lately";
+      stats = { lead: fmtKm(thisKm) + " km", left: m.mode === "log" ? "so far this week" : "planned", right: right };
+    } else {
+      var peakKm = Math.max.apply(null, kms.concat([1]));
+      var started = m.today >= m.block.starts;
+      m.weeks.forEach(function (w, i) {
+        var on = i === sel, h = Math.round((w.plannedKm || 0) / peakKm * MAX);
+        var fill = w.plannedKm ? Math.round(h * Math.min(1, w.doneKm / w.plannedKm)) : 0;
+        bars.push(barEl({ km: many && !on ? "" : fmtKm(w.plannedKm || 0), h: h, cls: on ? "on" + (started && fill < h ? " started" : "") : "", on: on,
+          fill: started ? fill : 0, lbl: many ? String(w.n) : "W" + w.n, dot: i === m.nextWeek, r4: many,
+          aria: "Week " + w.n + ", " + fmtKm(w.plannedKm || 0) + " km", onclick: function () { state.sel = i; render(raw); } }));
+      });
+      cols = bars.length;
+      var done = sum(m.weeks, function (w) { return w.done; }), total = sum(m.weeks, function (w) { return w.total; });
+      var missed = sum(m.weeks, function (w) { return w.missed; });
+      var totalKm = Math.round(sum(kms, function (k) { return k; }));
+      var doneKm = Math.round(sum(m.weeks, function (w) { return w.doneKm; }));
+      var firstDay = m.weeks[0].rows.length ? effDate(m.weeks[0].rows[0]) : m.block.starts;
+      var rightTxt = !started ? "Starts " + DAYS[dow(firstDay)] + (between(m.today, firstDay) > 6 ? " " + short(firstDay) : "")
+        : many ? totalKm + " km \u00b7 peak " + Math.round(peakKm) : doneKm + " of " + totalKm + " km";
+      stats = { lead: done + " of " + total, left: "done" + (missed ? " \u00b7 " + missed + " missed" : ""), right: rightTxt };
+    }
+    var grid = el("div", { class: "bars", style: "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px" }, bars);
+    var spans = isWeek ? null : phaseSpans(m.weeks);
+    var bands = spans ? el("div", { class: "phases", style: "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px" },
+      spans.map(function (p) {
+        var on = sel >= p.from && sel < p.from + p.span;
+        return el("div", { class: "phase" + (on ? " on" : ""), style: "grid-column:span " + p.span }, [
+          el("span", { class: "phase-line" }), el("span", { class: "phase-lbl mono", text: String(p.label).toUpperCase() })]);
+      })) : null;
+    var present = {};
+    m.weeks.forEach(function (w) { w.rows.forEach(function (s) { present[(TYPES[s.type] || TYPES[s.sport]) ? (s.type || s.sport) : "other"] = true; }); });
+    var legend = ["easy", "sub", "long"].concat(Object.keys(present).filter(function (k) { return ["easy", "sub", "long", "run", "other"].indexOf(k) < 0; }));
+    return el("div", { class: "pane chart" }, [
+      el("div", { class: "stats" }, [
+        el("span", {}, [el("strong", { text: stats.lead }), " " + stats.left]),
+        el("span", { text: stats.right }),
+      ]),
+      el("div", { style: "display:flex;flex-direction:column;gap:6px" }, [grid, bands]),
+      el("div", { class: "legend" }, legend.map(function (k) {
+        var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), k === "sub" ? "Sub-threshold" : t.l]);
+      })),
+    ]);
+  }
+  function barEl(o) {
+    return el("button", { class: "bar" + (o.still ? " still" : ""), "aria-label": o.aria, "aria-pressed": o.on ? "true" : null, onclick: o.onclick }, [
+      el("span", { class: "bar-km mono" + (o.on ? " on" : ""), text: o.km }),
+      el("span", { class: "bar-box " + (o.cls || "") + (o.r4 ? " r4" : ""), style: "height:" + Math.max(o.h, 3) + "px" }, [
+        o.fill ? el("span", { class: "bar-fill", style: "height:" + o.fill + "px" }) : null,
+        o.dot ? el("span", { class: "bar-dot" }) : null,
+      ]),
+      el("span", { class: "bar-lbl" + (o.on ? " on" : "") + (o.faint ? " faint" : "") + (o.wrap ? " wrap" : ""), text: o.lbl }),
+    ]);
+  }
+
+  function week(m) {
+    var w = m.weeks[state.sel] || m.weeks[0];
+    var isWeek = m.mode !== "block";
+    var kmTxt = w.doneKm > 0 && w.plannedKm ? fmtKm(w.doneKm) + " of " + fmtKm(w.plannedKm) + " km"
+      : w.plannedKm ? fmtKm(w.plannedKm) + " km" : (w.doneKm ? fmtKm(w.doneKm) + " km" : "");
+    var meta = [range(w.starts, iso(addDays(parse(w.starts), 6))), kmTxt].filter(Boolean).join(" \u00b7 ");
+    var away = !isWeek && m.nextWeek >= 0 && state.sel !== m.nextWeek;
+    var head = el("div", { class: "week-head" }, [
+      el("span", { class: "week-title" }, [isWeek ? "Sessions" : "Week " + w.n, " ", el("span", { class: "week-meta", text: "\u00b7 " + meta })]),
+      away ? el("button", { class: "pill", onclick: function () { state.sel = m.nextWeek; render(raw); } }, [svg(ICON.back, 12, "currentColor", 2.4), "Next: " + DAYS[dow(m.next.date)]]) : null,
+    ]);
+    var rows = w.rows.map(function (s) { return row(s, m, w); });
+    if (m.next && m.nextWeek < 0 && isWeek && !w.rows.some(function (s) { return s === m.next; })) rows.push(nextCard(m.next, m));
+    if (!rows.length) rows.push(el("div", { class: "row", style: "grid-template-columns:1fr" }, [el("span", { class: "meta", style: "padding:0", text: m.mode === "log" ? "Nothing recorded yet this week." : "A rest week: nothing scheduled." })]));
+    var foot = null;
+    if (isWeek) {
+      if (m.upcoming) foot = el("div", { class: "foot" }, [el("span", { text: "Your " + (m.upcoming.name || m.upcoming.label || "next") + " block starts " + short(m.upcoming.starts) + "." })]);
+      else if (!m.moreAhead) foot = el("div", { class: "foot" }, [
+        el("span", { text: "Next week isn\u2019t planned yet." }),
+        el("button", { class: "act", onclick: function (e) { ask("Plan next week for me from how my training has gone lately, and put it on my Garmin calendar.", e.currentTarget); } }, ["Plan next week"]),
+      ]);
+    }
+    return el("div", { class: "pane week" }, [head, strip(w, m), el("div", { class: "rows" }, rows), foot]);
+  }
+
+  function strip(w, m) {
+    var cells = [];
+    for (var d = 0; d < 7; d++) {
+      var date = iso(addDays(parse(w.starts), d));
+      var here = w.rows.filter(function (s) { return effDate(s) === date; });
+      var ghost = !here.length && w.ghosts.some(function (s) { return s.date === date; });
+      var first = here[0], isNext = m.next && m.next.date === date && (m.nextWeek === state.sel || m.mode !== "block");
+      // Reset each day: a hoisted var would carry one day's mark to the next.
+      var mark = null;
+      if (isNext && !isDone(m.next)) mark = first && first !== m.next ? el("span", { class: "dot", style: "background:" + typeOf(first).v }) : el("span", { class: "dot", style: "background:" + typeOf(m.next).v });
+      if (!mark && first) {
+        if (isDone(first)) mark = svg(ICON.check, 11, typeOf(first).v, 3.2);
+        else if (first.status === "missed") mark = el("span", { class: "ring" });
+        else mark = el("span", { class: "dot", style: "background:" + typeOf(first).v });
+      }
+      if (!mark && ghost) mark = el("span", { class: "ghost" });
+      var faint = !first || first.status === "missed";
+      cells.push(el("div", { class: "day" }, [
+        el("span", { class: "day-l mono", text: LETTERS[d] }),
+        el("span", { class: "day-n" + (isNext ? " next" : faint ? " faint" : ""), text: String(parse(date).getDate()) }),
+        el("span", { class: "day-m" }, [mark]),
+      ]));
+    }
+    return el("div", { class: "strip", "aria-hidden": "true" }, cells);
+  }
+
+  function row(s, m, w) {
+    if (m.next && s === m.next) return nextCard(s, m);
+    var t = typeOf(s), day = DAYS[dow(effDate(s))].toUpperCase();
+    if (isDone(s)) {
+      var bits = [];
+      if (s.extra) bits.push("Not on the plan");
+      if (s.actual_pace) bits.push(s.actual_pace.replace(" /km", " /km"));
+      if (s.actual_bpm) bits.push(s.actual_bpm + " bpm");
+      if (!s.actual_pace && s.actual) bits.push(s.actual);
+      if (s.pace && !s.actual_pace) bits.push(s.pace);
+      if (s.speed) bits.push(s.speed);
+      var movedTxt = s.status === "done, moved" ? movedLine(s, w) : null;
+      return el("div", { class: "row" }, [
+        el("span", { class: "row-day mono", text: day }),
+        el("div", { class: "row-mid tight" }, [
+          el("div", { class: "row-top" }, [
+            el("span", { class: "check", style: "background:" + t.v }, [svg(ICON.check, 10, "var(--card)", 3.6)]),
+            el("span", { class: "name soft", text: cleanTitle(s) }),
+          ]),
+          bits.length ? el("span", { class: "meta", text: bits.join(" \u00b7 ") }) : null,
+          movedTxt ? el("span", { class: "meta" }, [el("span", { class: "moved" }, [svg(ICON.arrow, 12), movedTxt])]) : null,
+        ]),
+        el("span", { class: "km soft", text: s.actual_km ? fmtKm(s.actual_km) + " km" : (s.actual || "") }),
+      ]);
+    }
+    if (s.status === "missed") {
+      return el("div", { class: "row" }, [
+        el("span", { class: "row-day mono faint", text: day }),
+        el("div", { class: "row-mid tight" }, [
+          el("div", { class: "row-top" }, [el("span", { class: "miss" }), el("span", { class: "name muted", text: cleanTitle(s) })]),
+          el("span", { class: "meta missed", text: "Missed" }),
+        ]),
+        el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
+      ]);
+    }
+    return el("div", { class: "row" }, [
+      el("span", { class: "row-day mono", text: day }),
+      el("div", { class: "row-mid" }, [
+        el("div", { class: "row-top" }, [el("span", { class: "type", style: "color:" + t.v, text: t.l }), el("span", { class: "name", text: cleanTitle(s) })]),
+        shapeBar(s, false),
+      ]),
+      el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
+    ]);
+  }
+  function movedLine(s, w) {
+    var sameWeek = s.date >= w.starts && s.date < iso(addDays(parse(w.starts), 7));
+    return "Moved from " + DAYS[dow(s.date)] + " " + parse(s.date).getDate() + (sameWeek ? "" : " " + MONTHS[parse(s.date).getMonth()]);
+  }
+
+  // The workout as a bar: easy parts low, work reps high, recoveries lower
+  // still, each as wide as its distance. A run without steps is one bar.
+  function shapeBar(s, big) {
+    var t = typeOf(s), segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
+    var scale = big ? 1 : 0.7;
+    var easyColour = s.type === "long" ? TYPES.long.v : s.type === "easy" || !TYPES[s.type] || s.type === "sub" ? TYPES.easy.v : t.v;
+    return el("div", { class: "shape" + (big ? " big" : ""), "aria-hidden": "true" }, segs.map(function (g) {
+      var h = g.k === "work" ? 26 : g.k === "rec" ? 6 : 12;
+      var c = g.k === "work" ? (s.type === "race" ? TYPES.race.v : TYPES.sub.v) : g.k === "rec" ? "var(--rec)" : easyColour;
+      return el("span", { style: "flex:" + Math.max(g.km, 0.1) + " 1 0;height:" + (big ? 30 : Math.round(h * scale)) + "px;background:" + c });
+    }));
+  }
+
+  function nextCard(s, m) {
+    var t = typeOf(s), d = parse(s.date);
+    var diff = between(m.today, s.date);
+    var when = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : diff > 1 ? "In " + diff + " days" : "Overdue";
+    var meta = [];
+    if (s.target) meta.push(el("span", {}, [svg(/bpm/.test(s.target) ? ICON.heart : ICON.gauge, 13, "var(--red-text)"), s.target]));
+    meta.push(el("span", {}, [svg(ICON.watch, 13), "Ready to sync"]));
+    var name = cleanTitle(s), when2 = DAYS[dow(s.date)] + " " + d.getDate() + " " + MONTHS[d.getMonth()];
+    var card = el("div", { class: "next" }, [
+      el("div", { class: "next-top" }, [
+        el("span", { class: "next-k mono", text: "NEXT \u00b7 " + when2.toUpperCase() }),
+        el("span", { class: "next-when", text: when }),
+      ]),
+      el("div", { class: "next-title" }, [el("span", { class: "next-type", style: "color:" + t.v, text: t.l }), el("span", { class: "next-name", text: name })]),
+      shapeBar(s, true),
+      el("div", { class: "next-meta" }, meta),
+      el("div", { class: "acts" }, [
+        el("button", { class: "act", onclick: function (e) { ask("Move my " + name + " on " + when2 + " to another day that works with the rest of the week.", e.currentTarget); } }, ["Move"]),
+        el("button", { class: "act", onclick: function (e) { ask("Make my " + name + " on " + when2 + " easier. I\u2019m not fresh enough for it as planned.", e.currentTarget); } }, ["Easier"]),
+        el("button", { class: "act", onclick: function (e) { ask("Why is " + name + " on " + when2 + " in my plan this week, and what should it feel like?", e.currentTarget); } }, ["Ask why"]),
+      ]),
+    ]);
+    return card;
+  }
 
   // ---------------------------------------------------------------- actions
   function ask(text, button) {
-    if (!host) { flash(button, "Would ask: “" + text + "”"); return; }
-    // The SDK sends content as a list, the written spec as one block. Hosts
-    // validate against one or the other, so try the list and fall back.
+    if (!host) { flash(button, "Would ask: \u201c" + text + "\u201d"); return; }
     var block = { type: "text", text: text };
     request("ui/message", { role: "user", content: [block] })
       .catch(function () { return request("ui/message", { role: "user", content: block }); })
@@ -622,424 +760,60 @@
       .catch(function () { flash(button, "The chat did not accept that"); });
   }
   function flash(button, msg) {
-    var box = button.closest(".next, .detail"); if (!box) return;
+    var box = button.closest(".next, .foot"); if (!box) return;
     var old = box.querySelector(".sent"); if (old) old.remove();
     box.appendChild(el("div", { class: "sent", text: msg }));
   }
-  function actionsFor(s, planLabel) {
-    var when = long(s.date), n = s.name, row = [];
-    var myPlan = planLabel ? "my " + planLabel + " plan" : "my plan";
-    if (s.status.indexOf("done") === 0) {
-      row.push(el("button", { class: "act primary", text: "How did it go?", onclick: function (e) {
-        ask("Look at my " + n + " from " + when + " against what was planned in " + myPlan + ".", e.currentTarget); } }));
-    } else if (s.status === "missed") {
-      row.push(el("button", { class: "act primary", text: "Fit it back in", onclick: function (e) {
-        ask("I missed " + n + " on " + when + ". Should I fit it back into " + myPlan + ", and where?", e.currentTarget); } }));
-    } else {
-      row.push(el("button", { class: "act primary", text: "Move it", onclick: function (e) {
-        ask("Move my " + n + " on " + when + " to another day that works with the rest of the week.", e.currentTarget); } }));
-      row.push(el("button", { class: "act", text: "Make it easier", onclick: function (e) {
-        ask("Check my readiness, then make " + n + " on " + when + " easier if it should be.", e.currentTarget); } }));
-    }
-    return el("div", { class: "actions" }, row);
-  }
-
-  // ------------------------------------------------- countdown and phase
-  // Where a block stands: days to its last session, and which part of the
-  // block this is. The phase is read off position, the way a coach divides a
-  // block: a base, a build, a peak, then a taper of about a sixth of it.
-  function phaseOf(week, total) {
-    if (!week || !total || total < 5) return null;
-    if (week === total) return "Race week";
-    var taper = Math.max(1, Math.round(total / 6));
-    if (week > total - taper) return "Taper";
-    var base = Math.max(1, Math.round(total * 0.3));
-    if (week <= base) return "Base";
-    if (week > total - taper - 2) return "Peak";
-    return "Build";
-  }
-  function isRace(name) { return /race|parkrun|marathon|half|\b5k\b|\b10k\b/i.test(name || "") && !/pace|tempo|easy|long run/i.test(name || ""); }
-  function countdown(plan, running) {
-    var end = running ? running.ends : plan.ends;
-    if (!end || plan.finished) return [];
-    var days = Math.round((parse(end) - parse(iso(new Date()))) / 86400000);
-    if (days < 0) return [];
-    var last = null;
-    plan.weeks.forEach(function (w) { w.sessions.forEach(function (x) { if (x.date === end) last = x; }); });
-    var race = last && isRace(last.name);
-    var chips = [el("span", { class: "chip brand", text: days === 0 ? (race ? "Race day" : "Last day") : days === 1 ? (race ? "Race tomorrow" : "1 day to go")
-      : days + (race ? " days to race day" : " days to go") })];
-    var phase = running ? phaseOf(running.week, running.weeks_total) : phaseOf(plan.current_week, plan.weeks_total);
-    if (phase) chips.push(el("span", { class: "chip", text: phase === "Race week" ? phase : phase + " phase" }));
-    return chips;
-  }
-  // The whole block as one picture: a bar per week, its planned distance (or
-  // sessions), filled with what was done; the taper shows as the bars fall.
-  function blockChart(plan) {
-    var weeks = plan.weeks || [];
-    if (weeks.length < 4) return null;
-    var byKm = weeks.some(function (w) { return w.planned_km; });
-    var plan_ = function (w) { return byKm ? (w.planned_km || 0) : (w.planned || 0); };
-    var done_ = function (w) { return byKm ? (w.run_km || 0) : (w.done || 0); };
-    var top = Math.max.apply(null, weeks.map(function (w) { return Math.max(plan_(w), done_(w)); }).concat([1]));
-    var taper = Math.max(1, Math.round(weeks.length / 6));
-    var peak = weeks.reduce(function (m, w) { return Math.max(m, plan_(w)); }, 0);
-    var today = iso(new Date());
-    return el("div", { class: "block" }, [
-      el("div", { class: "block-head" }, [
-        el("span", {}, ["The block · ", el("b", { text: weeks.length + " weeks" })]),
-        el("span", {}, byKm ? ["Peak ", el("b", { text: fmtKm(peak) + " km" })] : ["Sessions a week"]),
-      ]),
-      el("div", { class: "bars", role: "img", "aria-label": weeks.map(function (w) {
-        return "Week " + w.week + ": " + (byKm ? fmtKm(done_(w)) + " of " + fmtKm(plan_(w)) + " km" : done_(w) + " of " + plan_(w) + " sessions"); }).join(", ") },
-        weeks.map(function (w, i) {
-          var past = w.starts <= today;
-          var h = Math.max(6, 100 * plan_(w) / top);
-          var fill = past && plan_(w) ? Math.min(100, 100 * done_(w) / plan_(w)) : 0;
-          return el("div", { class: "bcol" + (w.current ? " current" : "") + (i >= weeks.length - taper ? " taper" : "") }, [
-            el("div", { class: "bplan", style: "height:" + h + "%" }, [el("i", { class: "bdone", style: "height:" + fill + "%" })]),
-          ]);
-        })),
-      el("div", { class: "blabels" }, [el("span", { text: short(weeks[0].starts) }), el("span", { text: short(plan.ends) })]),
-    ]);
-  }
-  // Mon to Sun of this week, each day's sessions as dots. Tapping a day opens
-  // that session below, in its week.
-  function weekStrip(plan) {
-    var w = (plan.weeks || []).filter(function (x) { return x.current; })[0];
-    if (!w) return null;
-    var today = iso(new Date()), monday = parse(w.starts);
-    return el("div", { class: "strip", role: "group", "aria-label": "This week" }, DAYS.map(function (name, i) {
-      var d = iso(addDays(monday, i));
-      var ss = w.sessions.filter(function (x) { return x.date === d; });
-      var first = ss[0], key = first ? (first.schedule_id || (first.date + first.name)) : null;
-      return el("button", {
-        class: "sday" + (d === today ? " today" : "") + (key && state.selected === key ? " sel" : ""),
-        disabled: first ? null : "disabled",
-        "aria-label": long(d) + (ss.length ? ": " + ss.map(function (x) { return x.name + ", " + (statusText(x) || "ahead"); }).join("; ") : ": rest"),
-        onclick: first ? function () { state.selected = state.selected === key ? null : key; state.open[w.week] = true; render(state.plan); } : null,
-      }, [
-        el("span", { class: "sl", text: name.charAt(0) }),
-        el("span", { class: "sn", text: String(parse(d).getDate()) }),
-        el("span", { class: "marks" }, ss.slice(0, 3).map(function (x) { return el("i", { class: "mark " + cls(x) }); })),
-      ]);
-    }));
-  }
-  function stepRow(st) {
-    return el("div", { class: "step" }, [
-      el("span", { class: "what" }, [el("b", { text: st.label }), st.amount ? el("span", { text: " · " + st.amount }) : null]),
-      st.target ? el("span", { class: "tgt", text: st.target }) : null,
-    ]);
-  }
-  function stepList(steps) {
-    return el("div", { class: "steps" }, steps.map(function (st) {
-      if (st.kind === "repeat") {
-        return el("div", { class: "rep" }, [el("div", { class: "rep-head", text: st.times + " ×" })].concat(st.steps.map(stepRow)));
-      }
-      return stepRow(st);
-    }));
-  }
-
-  // ---------------------------------------------------------------- render
-  var state = { plan: null, open: {}, selected: null };
-
-  function render(plan, error) {
-    if (plan && plan.source === "log" && plan.weeks) { renderLog(plan); return; }
-    var app = document.getElementById("app");
-    app.textContent = "";
-    if (!plan || plan.error || !plan.weeks) {
-      app.appendChild(el("div", { class: "empty", text: error || (plan && plan.error) || "No plan to show." }));
-      return;
-    }
-    if (state.plan && state.plan.label !== plan.label) state.open = {};
-    state.plan = plan;
-    var today = iso(new Date());
-
-    // Header
-    // A plan made here has a code, a goal and numbered weeks. One read off the
-    // calendar has none of those: it is simply the weeks around this one.
-    // A calendar that a plan made here is running through is headed by that
-    // plan; its other sessions are still all there below.
-    var fromCalendar = plan.source === "calendar";
-    var running = fromCalendar && plan.current_plan;
-    var weekLine = running
-      ? (running.week ? "Week " + running.week + " of " + running.weeks_total : running.weeks_total + " weeks")
-      : fromCalendar ? "Scheduled on Garmin"
-      : plan.current_week ? "Week " + plan.current_week + " of " + plan.weeks_total
-      : plan.finished ? "Finished" : plan.weeks_total + " weeks";
-    var planCode = running ? running.label : plan.label;
-    app.appendChild(el("div", { class: "top" }, [
-      el("div", {}, [
-        el("div", { class: "kicker" }, fromCalendar && !running ? [el("span", { class: "wordmark", text: "Daash" }), "Your calendar"]
-          : [el("span", { class: "wordmark", text: "Daash" }), el("span", { class: "code", text: planCode }), "Training plan"]),
-        el("h1", { text: (running ? running.goal : plan.goal) || (fromCalendar ? "Your training" : "Your plan") }),
-        el("div", { class: "sub", text: weekLine + " · " + short(running ? running.starts : plan.starts) + " to " + short(running ? running.ends : plan.ends) }),
-        (!fromCalendar || running) && countdown(plan, running).length ? el("div", { class: "chips" }, countdown(plan, running)) : null,
-        plan.upcoming_plan ? el("div", { class: "upcoming" }, [
-          el("span", { class: "code", text: plan.upcoming_plan.label }),
-          "Plan starts " + long(plan.upcoming_plan.starts) + (plan.upcoming_plan.goal ? ": " + plan.upcoming_plan.goal : ""),
-        ]) : null,
-      ]),
-      el("button", { class: "icon-btn", title: "Refresh", "aria-label": "Refresh the plan", onclick: refresh },
-        [svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')]),
-    ]));
-
-    // This week
-    var strip = weekStrip(plan); if (strip) app.appendChild(strip);
-
-    // Progress
-    var due = (plan.completed || 0) + (plan.missed || 0), total = plan.sessions_total || 1;
-    app.appendChild(el("div", { class: "progress" }, [
-      el("div", { class: "bar", role: "img", "aria-label": plan.completed + " done, " + plan.missed + " missed, " + plan.remaining + " to go" }, [
-        el("i", { class: "d", style: "width:" + (100 * (plan.completed || 0) / total) + "%" }),
-        el("i", { class: "m", style: "width:" + (100 * (plan.missed || 0) / total) + "%" }),
-      ]),
-      el("div", { class: "legend" }, [
-        el("span", {}, [el("span", { class: "dot", style: "background:var(--done)" }), el("b", { text: String(plan.completed || 0) }), " done"]),
-        el("span", {}, [el("span", { class: "dot", style: "background:var(--miss)" }), el("b", { text: String(plan.missed || 0) }), " missed"]),
-        el("span", {}, [el("span", { class: "dot", style: "background:var(--sunk);border:1px solid color-mix(in srgb, var(--faint) 50%, var(--line))" }), el("b", { text: String(plan.remaining || 0) }), " to go"]),
-        due ? el("span", {}, [el("b", { text: (plan.completion_percent != null ? plan.completion_percent : 0) + "%" }), " of due sessions"]) : null,
-        thisWeekKm(plan),
-      ]),
-    ]));
-
-    // The block
-    if (!fromCalendar) { var chart = blockChart(plan); if (chart) app.appendChild(chart); }
-
-    // Next session
-    var nx = plan.next_session;
-    if (nx) {
-      var k = kind(nx.name, nx.sport);
-      var label = nx.date === today ? "Today" : nx.date === iso(addDays(new Date(), 1)) ? "Tomorrow" : long(nx.date);
-      var missedNote = plan.review && plan.review.missed_last_7_days ? plan.review.missed_last_7_days.length : 0;
-      app.appendChild(el("div", { class: "next" }, [
-        el("div", { class: "stripe", style: "background:" + k.c }),
-        el("div", {}, [
-          el("div", { class: "next-label", text: "Next · " + label }),
-          el("div", { class: "next-name", text: nx.name }),
-          el("div", { class: "next-meta", text: k.label + (nx.planned_km ? " · " + fmtKm(nx.planned_km) + " km" : "") + (missedNote ? " · " + missedNote + " missed this past week" : "") }),
-          nx.steps && nx.steps.length ? stepList(nx.steps) : null,
-          actionsFor(nx, plan.label || (plan.current_plan && plan.current_plan.label)),
-        ]),
-      ]));
-    }
-
-    // Weeks
-    var weeks = el("div", { class: "weeks" });
-    plan.weeks.forEach(function (w) {
-      var isOpen = state.open[w.week] != null ? state.open[w.week] : !!w.current;
-      var box = el("div", { class: "week" + (w.current ? " current" : "") + (isOpen ? " open" : "") });
-      var pips = el("div", { class: "pips", "aria-hidden": "true" },
-        w.sessions.map(function (s) { return el("span", { class: "pip " + cls(s) }); }));
-      var head = el("button", { class: "week-head", "aria-expanded": String(isOpen), onclick: function () {
-        state.open[w.week] = !box.classList.contains("open"); render(state.plan); } }, [
-        el("div", { class: "wk" }, fromCalendar
-          ? [weekName(w), el("small", { text: short(w.starts) })]
-          : ["Week " + w.week, el("small", { text: short(w.starts) })]),
-        pips,
-        el("span", { class: "count" }, [
-          w.run_km != null ? el("span", { class: "km", text: kmText(w) }) : null,
-          el("span", { class: w.run_km != null ? "sessions" : "", text: (w.done || 0) + "/" + w.planned }),
-        ]),
-        svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
-      ]);
-      box.appendChild(head);
-
-      var grid = el("div", { class: "grid" });
-      var monday = parse(w.starts);
-      for (var i = 0; i < 7; i++) {
-        var d = iso(addDays(monday, i));
-        var todays = w.sessions.filter(function (s) { return s.date === d; });
-        var extras = (w.extra || []).filter(function (x) { return x.date === d; });
-        var col = el("div", { class: "day" }, [el("div", { class: "dname" + (d === today ? " is-today" : ""), text: DAYS[i] })]);
-        if (!todays.length && !extras.length) col.appendChild(el("div", { class: "rest", "aria-label": "Rest" }));
-        todays.forEach(function (s) {
-          var k2 = kind(s.name, s.sport), key = s.schedule_id || (s.date + s.name);
-          col.appendChild(el("button", {
-            class: "cell " + cls(s), style: "--t:" + k2.c, "aria-pressed": String(state.selected === key),
-            "aria-label": s.name + ", " + long(s.date) + ", " + (statusText(s) || "ahead"),
-            onclick: function () { state.selected = state.selected === key ? null : key; state.open[w.week] = true; render(state.plan); },
-          }, [el("span", { class: "n", text: s.name }),
-              el("span", { class: "s", text: statusText(s) || (s.planned_km ? fmtKm(s.planned_km) + " km" : "") })]));
-        });
-        // Runs nobody planned still count towards the week, so they are drawn,
-        // quietly, in the day they happened.
-        extras.forEach(function (x) {
-          col.appendChild(el("div", { class: "cell extra", "aria-label": "Unplanned: " + x.name + (x.actual_km ? ", " + x.actual_km + " km" : "") }, [
-            el("span", { class: "n", text: x.name }),
-            el("span", { class: "s", text: x.actual_km ? fmtKm(x.actual_km) + " km, extra" : "Extra" }),
-          ]));
-        });
-        grid.appendChild(col);
-      }
-      box.appendChild(grid);
-
-      var sel = w.sessions.filter(function (s) { return (s.schedule_id || (s.date + s.name)) === state.selected; })[0];
-      if (sel && isOpen) {
-        var lines = [kind(sel.name, sel.sport).label + " · " + long(sel.date)];
-        if (sel.status.indexOf("done") === 0) {
-          var bits = [];
-          if (sel.done_on) bits.push("run on " + long(sel.done_on));
-          if (sel.actual_km) bits.push(sel.actual_km + " km");
-          if (sel.actual) bits.push(sel.actual);
-          if (bits.length) lines.push("Done: " + bits.join(", "));
-        } else if (sel.status === "missed") lines.push("No run found within a day of it.");
-        box.appendChild(el("div", { class: "detail" }, [
-          el("h3", { text: sel.name }),
-        ].concat(lines.map(function (t) { return el("p", { text: t }); })).concat([actionsFor(sel, plan.label || (plan.current_plan && plan.current_plan.label))])));
-      }
-      weeks.appendChild(box);
-    });
-    app.appendChild(weeks);
-    app.appendChild(el("div", { class: "foot", text: "Tap a session to move it or ask about it. Done means run within a day of its date." }));
-  }
-
-  function svg(inner, extra) {
-    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", "16"); s.setAttribute("height", "16");
-    s.setAttribute("aria-hidden", "true"); if (extra) s.setAttribute("class", extra);
-    s.innerHTML = inner; return s;
-  }
-
-  // ---------------------------------------------------------------- log
-  // Nothing scheduled: what was done over the last few weeks, and the way to a
-  // plan. Led by running or riding, whichever took more of the time. A week
-  // with none stays in the trend as a gap.
-  function renderLog(plan) {
-    state.plan = plan;
-    var app = document.getElementById("app");
-    app.textContent = "";
-    app.appendChild(el("div", { class: "top" }, [
-      el("div", {}, [
-        el("div", { class: "kicker" }, [el("span", { class: "wordmark", text: "Daash" }), "Your training log"]),
-        el("h1", { text: "Last " + plan.weeks.length + " weeks" }),
-        el("div", { class: "sub", text: "Nothing scheduled on Garmin · " + short(plan.starts) + " to " + short(plan.ends) }),
-      ]),
-      el("button", { class: "icon-btn", title: "Refresh", "aria-label": "Refresh", onclick: refresh },
-        [svg('<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')]),
-    ]));
-
-    // One summary of everything: each sport done gets its own totals and
-    // highlights. With both, the weeks are drawn in time, split by sport,
-    // because kilometres don't add across a bike and two feet.
-    var run = sportStats(plan, "run"), ride = sportStats(plan, "ride");
-    var S = [];
-    if (run.count) S.push({ key: "run", st: run, cls: "run-c", did: " km run", one: " run", many: " runs", label: "run" });
-    if (ride.count) S.push({ key: "ride", st: ride, cls: "ride-c", did: " km ridden", one: " ride", many: " rides", label: "ride" });
-    var both = S.length > 1;
-    var weeksN = plan.weeks.length || 1;
-    var allSecs = function (w) { return w.sessions.reduce(function (t, r) { return t + (r.secs || 0); }, 0); };
-    var weekKm = function (w, sport) {
-      return Math.round(w.sessions.reduce(function (t, r) { return t + (r.sport === sport ? (r.actual_km || 0) : 0); }, 0) * 10) / 10; };
-    var others = plan.weeks.reduce(function (t, w) {
-      return t + w.sessions.filter(function (r) { return r.sport !== "run" && r.sport !== "ride"; }).length; }, 0);
-    var hl = [];
-
-    var legend = S.map(function (x) {
-      return el("span", {}, [el("i", { class: "dot " + x.cls }), el("b", { text: fmtKm(x.st.km) }), x.did + " · ",
-        el("b", { text: String(x.st.count) }), x.st.count === 1 ? x.one : x.many]);
-    });
-    if (both || !S.length) legend.push(el("span", {}, [el("b", { text: hrs(plan.weeks.reduce(function (t, w) { return t + allSecs(w); }, 0) / weeksN) }), " a week"]));
-    else legend.push(el("span", {}, [el("b", { text: fmtKm(S[0].st.km / weeksN) }), " km a week"]));
-    if (others) legend.push(el("span", {}, ["+ ", el("b", { text: String(others) }), " other"]));
-    app.appendChild(el("div", { class: "legend" }, legend));
-
-    // Each week's bar: time for both sports or for neither, kilometres for one.
-    var value = function (w) { return both || !S.length ? allSecs(w) : weekKm(w, S[0].key); };
-    var label = function (v) { return both || !S.length ? (v ? hrs(v) : "0") : fmtKm(v); };
-    var top = Math.max.apply(null, plan.weeks.map(value).concat([1]));
-    app.appendChild(el("div", { class: "trend", role: "img",
-      "aria-label": plan.weeks.map(function (w) { return short(w.starts) + ": " + label(value(w)) + (both || !S.length ? "" : " km"); }).join(", ") },
-      plan.weeks.map(function (w) {
-        var v = value(w);
-        var parts = both
-          ? S.map(function (x) { var t = weekSecs(w, x.key); return t ? el("i", { class: x.cls, style: "flex:" + t }) : null; })
-          : [el("i", { class: S.length ? S[0].cls : "other-c", style: "flex:1" })];
-        return el("div", { class: "tcol" + (w.current ? " current" : "") }, [
-          el("div", { class: "tval", text: label(v) }),
-          el("div", { class: "tbar-wrap" }, [
-            v ? el("div", { class: "tstack", style: "height:" + Math.max(3, 100 * v / top) + "%" }, parts)
-              : el("i", { class: "tbar", style: "height:3%" }),
-          ]),
-          el("div", { class: "tlab", text: w.current ? "This week" : short(w.starts) }),
-        ]);
-      })));
-
-    S.forEach(function (x) {
-      if (x.st.longest) hl.push(highlight("Longest " + x.label, x.st.longest));
-      if (x.st.fastest) hl.push(highlight("Fastest " + x.label, x.st.fastest));
-    });
-    if (hl.length) app.appendChild(el("div", { class: "highlights" }, hl));
-
-    app.appendChild(el("div", { class: "next" }, [
-      el("div", { class: "stripe", style: "background:var(--brand)" }),
-      el("div", {}, [
-        el("div", { class: "next-label", text: "No plan yet" }),
-        el("div", { class: "next-name", text: "Turn this into a plan" }),
-        el("div", { class: "next-meta", text: "Claude builds it from these weeks and puts it on your Garmin calendar and watch." }),
-        el("div", { class: "actions" }, [
-          el("button", { class: "act primary", text: "Build me a plan", onclick: function (e) {
-            ask("Build me a training plan from my last few weeks of " + (both ? "running and riding" : S.length && S[0].key === "ride" ? "riding" : "training") + ". Ask me my goal and event date first, then put it on my Garmin calendar.", e.currentTarget); } }),
-        ]),
-      ]),
-    ]));
-
-    var weeks = el("div", { class: "weeks" });
-    plan.weeks.slice().reverse().forEach(function (w) {
-      var isOpen = state.open["log" + w.week] != null ? state.open["log" + w.week] : !!w.current;
-      var box = el("div", { class: "week" + (w.current ? " current" : "") + (isOpen ? " open" : "") });
-      box.appendChild(el("button", { class: "week-head", "aria-expanded": String(isOpen), onclick: function () {
-        state.open["log" + w.week] = !box.classList.contains("open"); renderLog(state.plan); } }, [
-        el("div", { class: "wk" }, [weekName(w), el("small", { text: short(w.starts) })]),
-        el("span", { class: "pips" }),
-        el("span", { class: "count" }, [
-          el("span", { class: "km", text: both || !S.length ? hrs(allSecs(w)) : fmtKm(weekKm(w, S[0].key)) + " km" }),
-          el("span", { class: "sessions", text: S.map(function (x) {
-            var n = w.sessions.filter(function (r) { return r.sport === x.key && r.actual_km; }).length;
-            return n ? n + (n === 1 ? x.one : x.many) : null; }).filter(Boolean).join(" · ") })]),
-        svg('<path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', "chev"),
-      ]));
-      var list = el("div", { class: "loglist" });
-      if (!w.sessions.length) list.appendChild(el("div", { class: "logrow empty-week", text: "Nothing recorded" }));
-      w.sessions.forEach(function (r) {
-        var k = { c: r.sport === "ride" ? "var(--ride)" : r.sport === "run" ? "var(--run)" : r.sport === "strength" ? "var(--strength)" : "var(--faint)" };
-        list.appendChild(el("div", { class: "logrow", style: "--t:" + k.c }, [
-          el("span", { class: "lday", text: r.day }),
-          el("span", { class: "lname", text: r.name }),
-          el("span", { class: "lval", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : r.actual, r.pace || r.speed].filter(Boolean).join(" · ") }),
-        ]));
-      });
-      box.appendChild(list);
-      weeks.appendChild(box);
-    });
-    app.appendChild(weeks);
-  }
-  function highlight(label, r) {
-    return el("div", { class: "hl" }, [
-      el("div", { class: "hl-label", text: label }),
-      el("div", { class: "hl-val", text: [r.actual_km ? fmtKm(r.actual_km) + " km" : null, r.pace ? r.pace.replace(" /km", "/km") : r.speed].filter(Boolean).join(" · ") }),
-      el("div", { class: "hl-meta", text: r.name + " · " + long(r.date) }),
-    ]);
-  }
-
   function refresh(event) {
     var btn = event.currentTarget;
     if (!host) return;
     btn.classList.add("spin");
-    request("tools/call", { name: "get_plan", arguments: state.plan ? { label: state.plan.label } : {} })
+    request("tools/call", { name: "get_plan", arguments: raw && raw.label ? { label: raw.label } : {} })
       .then(function (r) { onResult(r); })
       .catch(function () {})
-      .then(function () { btn.classList.remove("spin"); });
+      .then(function () { var b = document.querySelector(".refresh"); if (b) b.classList.remove("spin"); });
+  }
+
+  // ---------------------------------------------------------------- progress
+  // get_progress answers "how's my plan going" too, with the same sessions in
+  // three lists. Drawn as the calendar version of the plan.
+  function isProgress(p) {
+    return !!(p && !p.error && Array.isArray(p.upcoming) && Array.isArray(p.sessions) && p.weeks && p.weeks.length && "week_of" in p.weeks[0]);
+  }
+  function fromProgress(p) {
+    var today = iso(new Date());
+    var earliest = p.weeks[0].week_of;
+    var horizon = iso(addDays(mondayOf(new Date()), 28));
+    var rows = [];
+    (p.sessions || []).forEach(function (r) {
+      rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.done_on && r.done_on !== r.date ? "done, moved" : "done",
+        done_on: r.done_on !== r.date ? r.done_on : undefined, activity_id: r.activity_id, actual_km: r.actual_km });
+    });
+    (p.missed || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "missed" }); });
+    (p.upcoming || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "ahead" }); });
+    rows = rows.filter(function (r) { return r.date >= earliest && r.date < horizon; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    if (!rows.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
+    rows.forEach(function (r) { r.day = DAYS[dow(r.date)]; r.type = r.sport === "run" ? undefined : r.sport; });
+    var weeks = {}, order = [];
+    rows.forEach(function (r) {
+      var start = iso(mondayOf(parse(r.date)));
+      if (!weeks[start]) { weeks[start] = { starts: start, sessions: [], current: start === iso(mondayOf(new Date())) }; order.push(start); }
+      weeks[start].sessions.push(r);
+    });
+    var list = order.map(function (start, i) { var w = weeks[start]; w.week = i + 1; return w; });
+    var ahead = rows.filter(function (r) { return r.status === "today" || r.status === "ahead"; });
+    return { source: "calendar", starts: rows[0].date, ends: rows[rows.length - 1].date, weeks: list, next_session: ahead[0] || null };
   }
 
   // ---------------------------------------------------------------- start
-  if (window.__PLAN_DEMO__) { render(window.__PLAN_DEMO__); D.done(); return; }
-  if (!host) { D.step("no host frame"); render(null, "This view opens inside a chat that supports MCP Apps."); D.done(); return; }
+  if (window.__PLAN_DEMO__) { raw = window.__PLAN_DEMO__; render(raw); D.done(); return; }
+  if (!host) { D.step("no host frame"); fail("This view opens inside a chat that supports MCP Apps."); D.done(); return; }
   D.step("init sent");
   request("ui/initialize", {
     protocolVersion: "2026-01-26",
-    appInfo: { name: "garmin-plan", version: "1.0.0" },
-    clientInfo: { name: "garmin-plan", version: "1.0.0" },
+    appInfo: { name: "garmin-plan", version: "2.0.0" },
+    clientInfo: { name: "garmin-plan", version: "2.0.0" },
     appCapabilities: { availableDisplayModes: ["inline"] },
   }).then(function (result) {
     var info = (result && (result.hostInfo || result.serverInfo)) || {};

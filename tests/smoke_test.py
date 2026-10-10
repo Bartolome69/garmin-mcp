@@ -316,6 +316,59 @@ def check_workout_steps(check) -> None:
           tp.normalise_label("base", "") == "BASE" and tp.label_of("12km easy · BASE") == "BASE")
     check("a short code ends the workout name", tp.tagged("Long run 18k", "B1") == "Long run 18k · B1")
 
+    # The shape of a session, from its steps: easy parts low, reps high.
+    thr_w, _, _ = build_workout("Threshold 5x1k", "running", [
+        {"type": "warmup", "duration_seconds": 900},
+        {"type": "repeat", "times": 3, "steps": [
+            {"type": "interval", "distance_meters": 1000, "pace": "4:05"},
+            {"type": "recovery", "duration_seconds": 90}]},
+        {"type": "cooldown", "duration_seconds": 600}])
+    thr_shape = tp.workout_shape(_json.loads(thr_w.model_dump_json(by_alias=True)))
+    check("a threshold session's shape is warm-up, reps with recoveries, cool-down",
+          [g["k"] for g in thr_shape] == ["easy", "work", "rec", "work", "rec", "work", "rec", "easy"]
+          and thr_shape[1]["km"] == 1.0 and thr_shape[0]["km"] > 2, str(thr_shape))
+    easy_w, _, _ = build_workout("Easy 8k", "running", [{"type": "interval", "distance_meters": 8000, "pace": ["5:20", "5:40"]}])
+    easy_shape = tp.workout_shape(_json.loads(easy_w.model_dump_json(by_alias=True)))
+    check("an easy run is one easy segment, not work",
+          easy_shape == [{"k": "easy", "km": 8.0}], str(easy_shape))
+    long_w, _, _ = build_workout("Long run 16k", "running", [
+        {"type": "interval", "distance_meters": 6000, "pace": ["5:20", "5:40"]},
+        {"type": "interval", "distance_meters": 2000, "pace": "4:15"},
+        {"type": "interval", "distance_meters": 1000, "pace": ["5:20", "5:40"]},
+        {"type": "interval", "distance_meters": 2000, "pace": "4:15"},
+        {"type": "interval", "distance_meters": 5000, "pace": ["5:20", "5:40"]}])
+    long_shape = tp.workout_shape(_json.loads(long_w.model_dump_json(by_alias=True)))
+    check("a long run's faster stretches read as work between easy parts",
+          [g["k"] for g in long_shape] == ["easy", "work", "easy", "work", "easy"], str(long_shape))
+    check("a strength session has no run shape",
+          tp.workout_shape({"sportType": {"sportTypeKey": "strength_training"}, "workoutSegments": [
+              {"workoutSteps": [{"endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 1800}]}]}) is None)
+    check("session types: shape says easy or sub-T, the name says long and race",
+          tp.session_type("Threshold 5x1k", "running", thr_shape) == "sub"
+          and tp.session_type("Easy 8k", "running", easy_shape) == "easy"
+          and tp.session_type("Long run 16k", "running", long_shape) == "long"
+          and tp.session_type("Parkrun", "running", None) == "race"
+          and tp.session_type("Marathon pace 10k", "running", None) == "sub"
+          and tp.session_type("Tempo 6k", "running", None) == "sub"
+          and tp.session_type("Gym", "strength_training", None) == "strength"
+          and tp.session_type("Spin", "cycling", None) == "ride")
+    thr_steps = tp.workout_steps(_json.loads(thr_w.model_dump_json(by_alias=True)))
+    check("the main target is the reps' pace", tp.main_target(thr_steps) == "4:00\u20134:10/km", str(tp.main_target(thr_steps)))
+    check("phase bands follow the sessions, filling weeks without one",
+          tp.phase_spans([
+              {"week": 1, "sessions": [{"phase": "Base"}, {"phase": "Base"}]},
+              {"week": 2, "sessions": [{}]},
+              {"week": 3, "sessions": [{"phase": "Build"}]},
+          ]) == [{"label": "Base", "from_week": 1, "to_week": 2}, {"label": "Build", "from_week": 3, "to_week": 3}])
+    check("no phases, no bands", tp.phase_spans([{"week": 1, "sessions": [{}]}]) is None)
+    from datetime import date as _d
+    runs = [{"startTimeLocal": "2026-09-22 07:00", "activityType": {"typeKey": "running"}, "distance": 10000},
+            {"startTimeLocal": "2026-09-30 07:00", "activityType": {"typeKey": "running"}, "distance": 12000},
+            {"startTimeLocal": "2026-09-30 18:00", "activityType": {"typeKey": "cycling"}, "distance": 30000}]
+    hist = tp.weekly_run_km(runs, _d(2026, 10, 5), 4)
+    check("weekly history counts runs only, oldest first, empty weeks kept",
+          [h["run_km"] for h in hist] == [0, 0, 10.0, 12.0] and hist[0]["starts"] == "2026-09-07", str(hist))
+
 
 def check_ride_led_log(check) -> None:
     """A cyclist with nothing scheduled sees kilometres ridden, not zeros for running."""
@@ -1133,6 +1186,38 @@ async def main() -> int:
             check("confirmed remove takes every future session", removed.get("removed") == 4, str(removed))
             gone_plan = payload(await sess.call_tool("get_plan", {"label": "HM"}))
             check("the plan is gone afterwards", "error" in gone_plan, str(gone_plan)[:140])
+
+            # A block with a name, a method, milestones and phases: all of it
+            # read back from the workouts' notes, nothing kept here.
+            base = [dict(x, phase="Base") for x in block[:2]] + [dict(x, phase="Build") for x in block[2:]]
+            named = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon, 1:22, 29 November", "sessions": base, "label": "B1",
+                "name": "Base block", "method": "Norwegian singles",
+                "milestones": [{"label": "Half check", "date": day(50), "target": "1:22"}, {"label": "London '27", "target": "sub-2:40"}],
+            }))
+            check("a named plan is created with its name and method",
+                  named.get("label") == "B1" and named.get("name") == "Base block"
+                  and named.get("method") == "Norwegian singles", str(named)[:200])
+            card = payload(await sess.call_tool("get_plan", {"label": "B1"}))
+            check("name, method and milestones come back from Garmin",
+                  card.get("name") == "Base block" and card.get("method") == "Norwegian singles"
+                  and card.get("milestones") == [{"label": "Half check", "date": day(50), "target": "1:22"},
+                                                 {"label": "London '27", "target": "sub-2:40"}], str(card.get("milestones")))
+            check("phases band the weeks from the sessions' own phase",
+                  card.get("phases") and card["phases"][0]["label"] == "Base"
+                  and card["phases"][-1]["label"] == "Build", str(card.get("phases")))
+            rows_b1 = [s for w in card["weeks"] for s in w["sessions"]]
+            thr_b1 = next(s for s in rows_b1 if s["name"].startswith("Threshold"))
+            check("each session carries its type and shape",
+                  thr_b1.get("type") == "sub" and [g["k"] for g in thr_b1.get("shape", [])][:3] == ["easy", "work", "rec"]
+                  and next(s for s in rows_b1 if s["name"] == "Easy 8k").get("type") == "easy"
+                  and next(s for s in rows_b1 if s["name"].startswith("Long")).get("type") == "long", str(thr_b1)[:240])
+            check("the next session carries its target",
+                  "/km" in str((card.get("next_session") or {}).get("target")), str(card.get("next_session"))[:200])
+            bad_name = payload(await sess.call_tool("create_plan", {
+                "goal": "10k", "sessions": block, "label": "T1", "milestones": [{"date": day(9)}]}))
+            check("a milestone without a label is refused", "error" in bad_name and "label" in bad_name["error"], str(bad_name)[:160])
+            payload(await sess.call_tool("remove_plan", {"label": "B1", "confirm": "B1"}))
             check_plan_summary(check)
             check_chart_config_read_only(check)
             await check_preview_gate(check)

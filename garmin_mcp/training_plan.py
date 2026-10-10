@@ -24,7 +24,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from .cycling import is_ride
 from .formatting import DateError, drop_empty, duration, pace_per_km, parse_date
-from .plan import category, monday_of, planned_distance_m
+from .plan import DEFAULT_MPS, category, monday_of, planned_distance_m
 from .progress import Actual, Planned, match
 from .workouts import WorkoutError, build_workout, format_pace
 
@@ -93,10 +93,103 @@ def strip_tag(title: str) -> str:
     return TITLE_RE.sub("", title or "")
 
 
-def describe(goal: str, label: str, first: date, last: date, note: str | None) -> str:
-    """What each workout carries in its description, readable in Garmin Connect."""
-    line = f"Plan {label}: {goal.strip()}, {first.isoformat()} to {last.isoformat()}."
-    return f"{note.strip()}\n\n{line}" if note and note.strip() else line
+MAX_NAME = 40
+MAX_METHOD = 60
+MAX_MILESTONES = 4
+MAX_PHASE = 12
+
+
+def describe(
+    goal: str,
+    label: str,
+    first: date,
+    last: date,
+    note: str | None,
+    *,
+    name: str | None = None,
+    method: str | None = None,
+    phase: str | None = None,
+    milestones: Sequence[Mapping[str, Any]] | None = None,
+) -> str:
+    """What each workout carries in its description, readable in Garmin Connect.
+
+    The plan's name, method, this session's phase and the milestones ride
+    along in plain lines, so the card can read them back from Garmin and
+    nothing about the plan is kept anywhere else.
+    """
+    lines = [f"Plan {label}: {goal.strip()}, {first.isoformat()} to {last.isoformat()}."]
+    block = " \u00b7 ".join(x.strip() for x in (name, method) if x and x.strip())
+    if block:
+        lines.append(f"Block: {block}")
+    if phase and phase.strip():
+        lines.append(f"Phase: {phase.strip()}")
+    if milestones:
+        parts = []
+        for m in milestones:
+            bits = [str(m.get("label", "")).strip()]
+            bits += [str(m[k]).strip() for k in ("date", "target") if m.get(k)]
+            parts.append(", ".join(b for b in bits if b))
+        lines.append("Milestones: " + " | ".join(parts))
+    text = "\n".join(lines)
+    return f"{note.strip()}\n\n{text}" if note and note.strip() else text
+
+
+def _line(text: str | None, head: str) -> str | None:
+    found = re.search(rf"^{head}: (.+)$", text or "", re.MULTILINE)
+    return found.group(1).strip() if found else None
+
+
+def block_from_description(text: str | None) -> dict[str, str]:
+    """{name, method} from a workout's notes, whichever of the two it carries."""
+    line = _line(text, "Block")
+    if not line:
+        return {}
+    name, _, method = line.partition(" \u00b7 ")
+    return drop_empty({"name": name.strip() or None, "method": method.strip() or None})
+
+
+def phase_from_description(text: str | None) -> str | None:
+    found = _line(text, "Phase")
+    return found[:MAX_PHASE] if found else None
+
+
+def milestones_from_description(text: str | None) -> list[dict[str, str]]:
+    line = _line(text, "Milestones")
+    out: list[dict[str, str]] = []
+    for part in (line or "").split(" | "):
+        bits = [b.strip() for b in part.split(",") if b.strip()]
+        if not bits:
+            continue
+        m: dict[str, str] = {"label": bits[0]}
+        for bit in bits[1:]:
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", bit):
+                m["date"] = bit
+            else:
+                m["target"] = bit
+        out.append(m)
+    return out
+
+
+def check_milestones(milestones: Any) -> list[dict[str, str]]:
+    """Milestones as given, checked: a label each, an optional date and target."""
+    if not milestones:
+        return []
+    if not isinstance(milestones, (list, tuple)) or len(milestones) > MAX_MILESTONES:
+        raise PlanError(f"Give at most {MAX_MILESTONES} milestones, each with a label and an optional date and target.")
+    out = []
+    for i, m in enumerate(milestones, start=1):
+        if not isinstance(m, Mapping) or not str(m.get("label", "")).strip():
+            raise PlanError(f"Milestone {i} needs a label, like 'Half check' or 'Race day'.")
+        row = {"label": str(m["label"]).strip()[:30].replace("|", "/").replace(",", " ")}
+        if m.get("date"):
+            try:
+                row["date"] = parse_date(m["date"], default_today=False)
+            except DateError as exc:
+                raise PlanError(f"Milestone {i}: {exc}") from exc
+        if m.get("target"):
+            row["target"] = str(m["target"]).strip()[:20].replace("|", "/").replace(",", " ")
+        out.append(row)
+    return out
 
 
 _STEP_LABELS = {
@@ -204,6 +297,10 @@ def prepare(
     sessions: Sequence[Mapping[str, Any]],
     label: str | None,
     today: date,
+    *,
+    name: str | None = None,
+    method: str | None = None,
+    milestones: Any = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Validate every session and build its workout before anything is created.
 
@@ -218,6 +315,10 @@ def prepare(
         raise PlanError(f"{len(sessions)} sessions is more than one plan should hold ({MAX_SESSIONS}).")
 
     code = normalise_label(label, goal, new=True)
+    # Named apart from each session's name below, which used to shadow it.
+    plan_name = str(name).strip()[:MAX_NAME].replace("\n", " ") if name and str(name).strip() else None
+    plan_method = str(method).strip()[:MAX_METHOD].replace("\n", " ") if method and str(method).strip() else None
+    marks = check_milestones(milestones)
     horizon = today + timedelta(weeks=MAX_WEEKS_AHEAD)
     prepared: list[dict[str, Any]] = []
     for index, raw in enumerate(sessions, start=1):
@@ -239,16 +340,217 @@ def prepare(
             )
         except WorkoutError as exc:
             raise PlanError(f"Session {index} ({name}): {exc}") from exc
+        phase = str(raw.get("phase") or "").strip()[:MAX_PHASE].replace("\n", " ") or None
         prepared.append(
             {"date": day, "name": name, "workout": workout, "summary": summary,
-             "estimated": estimated, "note": raw.get("description")}
+             "estimated": estimated, "note": raw.get("description"), "phase": phase}
         )
 
     prepared.sort(key=lambda p: p["date"])
     first, last = prepared[0]["date"], prepared[-1]["date"]
     for item in prepared:
-        item["workout"].description = describe(goal, code, first, last, item["note"])
+        item["workout"].description = describe(
+            goal, code, first, last, item["note"],
+            name=plan_name, method=plan_method, phase=item["phase"], milestones=marks,
+        )
     return code, prepared
+
+
+# --------------------------------------------------------------------------
+# The shape of a session
+# --------------------------------------------------------------------------
+
+SHAPE_MAX_SEGMENTS = 60
+# A body step this much faster than the slowest body step is work, not easy
+# running: about 20 s/km at a 5:00 easy pace.
+WORK_SPEED_RATIO = 1.06
+RACE_RE = re.compile(r"race|parkrun|marathon|\bhalf\b|\b5k\b|\b10k\b", re.IGNORECASE)
+NOT_RACE_RE = re.compile(r"pace|tempo|easy|long run|prep|sim", re.IGNORECASE)
+QUALITY_RE = re.compile(
+    r"threshold|tempo|interval|reps|\d\s?x\s?\d|hill|vo2|fartlek|progression|marathon pace|\bmp\b|steady|race pace|sub-?t",
+    re.IGNORECASE,
+)
+
+
+def _speed(step: Mapping[str, Any]) -> float | None:
+    key = ((step.get("targetType") or {}).get("workoutTargetTypeKey") or "").lower()
+    one, two = step.get("targetValueOne"), step.get("targetValueTwo")
+    if key == "pace.zone" and one and two:
+        return (float(one) + float(two)) / 2
+    return None
+
+
+def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | None:
+    """A run as segments the card draws: easy, work and recovery, each by its distance.
+
+    Built from the structured steps, repeats unrolled, time steps converted at
+    their pace target (an easy pace when they have none). Work is what sits
+    inside a repeat, or a body step clearly faster than the slowest one, so a
+    long run with marathon-pace stretches shows them. Runs only: a strength
+    session or a swim has no shape worth drawing this way.
+    """
+    if not workout:
+        return None
+    sport = ((workout.get("sportType") or {}).get("sportTypeKey") or "running").lower()
+    if category(sport) != "run":
+        return None
+    flat: list[tuple[str, float, float | None, bool]] = []
+
+    def walk(steps: Sequence[Mapping[str, Any]], in_repeat: bool) -> None:
+        for step in sorted(steps or [], key=lambda x: x.get("stepOrder") or 0):
+            if step.get("type") == "RepeatGroupDTO" or step.get("numberOfIterations"):
+                times = int(step.get("numberOfIterations") or step.get("endConditionValue") or 1)
+                before = len(flat)
+                walk(step.get("workoutSteps") or [], True)
+                inner = flat[before:]
+                for _ in range(max(0, times - 1)):
+                    flat.extend(inner)
+                continue
+            kind = ((step.get("stepType") or {}).get("stepTypeKey") or "other").lower()
+            cond = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
+            value = float(step.get("endConditionValue") or 0)
+            speed = _speed(step)
+            if cond == "distance":
+                metres = value
+            elif cond == "time":
+                metres = value * (speed or DEFAULT_MPS)
+            else:
+                metres = 0.0
+            flat.append((kind, metres, speed, in_repeat))
+
+    for segment in workout.get("workoutSegments") or []:
+        walk(segment.get("workoutSteps") or [], False)
+    if not flat:
+        return None
+
+    body = [(k, m, sp, rep) for k, m, sp, rep in flat if k not in ("warmup", "cooldown", "recovery", "rest")]
+    speeds = [sp for _, _, sp, _ in body if sp]
+    slowest = min(speeds) if speeds else None
+    any_repeat = any(rep for _, _, _, rep in body)
+
+    def classify(kind: str, speed: float | None, in_repeat: bool) -> str:
+        if kind in ("warmup", "cooldown"):
+            return "easy"
+        if kind in ("recovery", "rest"):
+            return "rec"
+        if in_repeat:
+            return "work"
+        if len(body) <= 1 and not any_repeat:
+            return "easy"
+        if speed and slowest and speed >= slowest * WORK_SPEED_RATIO:
+            return "work"
+        return "easy"
+
+    segments: list[dict[str, Any]] = []
+    for kind, metres, speed, in_repeat in flat:
+        km = metres / 1000
+        if km < 0.05:
+            continue
+        k = classify(kind, speed, in_repeat)
+        if segments and segments[-1]["k"] == k and k == "easy":
+            segments[-1]["km"] = round(segments[-1]["km"] + km, 2)
+        else:
+            segments.append({"k": k, "km": round(km, 2)})
+    return segments[:SHAPE_MAX_SEGMENTS] or None
+
+
+def session_type(name: str | None, sport_key: str | None, shape: Sequence[Mapping[str, Any]] | None) -> str:
+    """easy, sub, long or race for a run, from its shape and its name; the sport otherwise.
+
+    The shape decides easy against sub-threshold, since that is structural.
+    Long and race have no structural signal, so the name says.
+    """
+    sport = (sport_key or "running").lower()
+    cat = category(sport)
+    if cat == "strength":
+        return "strength"
+    if is_ride(sport):
+        return "ride"
+    if "swim" in sport:
+        return "swim"
+    if cat != "run":
+        return "other"
+    n = name or ""
+    if RACE_RE.search(n) and not NOT_RACE_RE.search(n):
+        return "race"
+    if re.search(r"\blong\b", n, re.IGNORECASE):
+        return "long"
+    if shape:
+        return "sub" if any(seg.get("k") == "work" for seg in shape) else "easy"
+    return "sub" if QUALITY_RE.search(n) else "easy"
+
+
+def main_target(steps: Sequence[Mapping[str, Any]] | None) -> str | None:
+    """The target a session is about: the work reps', else the first step that has one."""
+    def in_repeats(items: Sequence[Mapping[str, Any]]) -> str | None:
+        for s in items or []:
+            if s.get("kind") == "repeat":
+                for inner in s.get("steps") or []:
+                    if inner.get("kind") in ("interval", "other") and inner.get("target"):
+                        return str(inner["target"])
+                hit = in_repeats(s.get("steps") or [])
+                if hit:
+                    return hit
+        return None
+
+    hit = in_repeats(steps or [])
+    if hit:
+        return hit
+    for s in steps or []:
+        if s.get("kind") not in ("warmup", "cooldown", "recovery", "rest", "repeat") and s.get("target"):
+            return str(s["target"])
+    for s in steps or []:
+        if s.get("target"):
+            return str(s["target"])
+    return None
+
+
+def weekly_run_km(activities: Iterable[Mapping[str, Any]], monday: date, weeks: int) -> list[dict[str, Any]]:
+    """Kilometres run in each of the `weeks` weeks before `monday`, oldest first."""
+    first = monday - timedelta(weeks=weeks)
+    totals = [0.0] * weeks
+    counts = [0] * weeks
+    for a in activities:
+        day = _day(a.get("startTimeLocal"))
+        if not day or not first <= day < monday:
+            continue
+        if category((a.get("activityType") or {}).get("typeKey")) != "run":
+            continue
+        i = (day - first).days // 7
+        totals[i] += float(a.get("distance") or 0) / 1000
+        counts[i] += 1
+    return [
+        {"starts": (first + timedelta(weeks=i)).isoformat(), "run_km": round(totals[i], 1), "runs": counts[i]}
+        for i in range(weeks)
+    ]
+
+
+def phase_spans(weeks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]] | None:
+    """Phases as the chart bands them: each phase with the first and last week it covers.
+
+    A week's phase is the one most of its sessions carry; weeks without one
+    take the phase of the week before, so a rest week stays in its phase.
+    """
+    labels: list[str | None] = []
+    for week in weeks:
+        counts: dict[str, int] = defaultdict(int)
+        for s in week.get("sessions") or []:
+            if s.get("phase"):
+                counts[str(s["phase"])] += 1
+        labels.append(max(counts, key=lambda k: counts[k]) if counts else None)
+    if not any(labels):
+        return None
+    for i in range(1, len(labels)):
+        labels[i] = labels[i] or labels[i - 1]
+    for i in range(len(labels) - 2, -1, -1):
+        labels[i] = labels[i] or labels[i + 1]
+    spans: list[dict[str, Any]] = []
+    for week, label in zip(weeks, labels):
+        if spans and spans[-1]["label"] == label:
+            spans[-1]["to_week"] = week["week"]
+        else:
+            spans.append({"label": label, "from_week": week["week"], "to_week": week["week"]})
+    return spans
 
 
 # --------------------------------------------------------------------------
@@ -390,6 +692,7 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
             "day": day.strftime("%a"),
             "name": a.get("activityName") or "Activity",
             "sport": sport,
+            "type": sport,
             "status": "logged",
             "actual_km": round(metres / 1000, 2) if metres else None,
             "actual": duration(seconds) if seconds else None,
@@ -476,6 +779,8 @@ def summarise_calendar(
     planned_seconds: Mapping[Any, float] | None = None,
     planned_metres: Mapping[Any, float] | None = None,
     weekly_km: bool = False,
+    shapes: Mapping[Any, Sequence[Mapping[str, Any]]] | None = None,
+    phases: Mapping[Any, str] | None = None,
 ) -> dict[str, Any]:
     """The calendar read as a plan: what was scheduled around now, against what was run.
 
@@ -484,9 +789,9 @@ def summarise_calendar(
     than numbered, because week 1 would only mean the first week shown.
     """
     result = summarise("", items, activities, today, planned_seconds=planned_seconds,
-                       planned_metres=planned_metres, weekly_km=weekly_km)
+                       planned_metres=planned_metres, weekly_km=weekly_km, shapes=shapes, phases=phases)
     result.pop("label", None)
-    for key in ("current_week", "weeks_total", "finished"):
+    for key in ("current_week", "weeks_total", "finished", "phases"):
         result.pop(key, None)
     result["source"] = "calendar"
     result["note"] = (
@@ -539,6 +844,8 @@ def summarise(
     planned_seconds: Mapping[Any, float] | None = None,
     planned_metres: Mapping[Any, float] | None = None,
     weekly_km: bool = False,
+    shapes: Mapping[Any, Sequence[Mapping[str, Any]]] | None = None,
+    phases: Mapping[Any, str] | None = None,
 ) -> dict[str, Any]:
     """The plan week by week, each session marked done, missed, today or ahead.
 
@@ -548,6 +855,9 @@ def summarise(
     """
     planned_seconds = planned_seconds or {}
     planned_metres = planned_metres or {}
+    shapes = shapes or {}
+    phases = phases or {}
+    by_activity = {a.get("activityId"): a for a in activities if a.get("activityId") is not None}
     sessions = sorted(
         (i for i in items if _day(i.get("date"))), key=lambda i: (i.get("date"), str(i.get("id")))
     )
@@ -598,12 +908,29 @@ def summarise(
         else:
             status = "today" if day == today else "ahead"
         number = (monday_of(day) - week_one).days // 7 + 1
+        wid = item.get("workoutId")
+        sport_key = item.get("sportTypeKey") or "running"
+        shape = shapes.get(wid)
+        name = strip_tag(item.get("title") or item.get("workoutName") or "Workout")
+        done_activity = by_activity.get(hit.get("activity_id")) if hit else None
+        moving = float((done_activity or {}).get("movingDuration") or (done_activity or {}).get("duration") or 0)
         row = drop_empty(
             {
                 "date": day.isoformat(),
                 "day": day.strftime("%a"),
-                "name": strip_tag(item.get("title") or item.get("workoutName") or "Workout"),
+                "name": name,
+                "type": session_type(name, sport_key, shape),
+                "phase": phases.get(wid),
+                "shape": list(shape) if shape else None,
                 "status": status,
+                "actual_pace": (
+                    pace_per_km(float(done_activity.get("distance") or 0), moving)
+                    if done_activity and category(sport_key) == "run" and moving else None
+                ),
+                "actual_bpm": (
+                    round(float(done_activity["averageHR"]))
+                    if done_activity and done_activity.get("averageHR") else None
+                ),
                 "done_on": hit["done_on"] if hit and hit["done_on"] != item["date"][:10] else None,
                 "activity_id": hit.get("activity_id") if hit else None,
                 "actual_km": hit.get("actual_km") if hit else None,
@@ -644,10 +971,12 @@ def summarise(
         if r["status"] == "missed" and _day(r["date"]) >= today - timedelta(days=7)
     ]
 
+    ordered_weeks = [weeks[k] for k in sorted(weeks)]
     return drop_empty(
         {
             "label": code,
             "goal": goal,
+            "phases": phase_spans(ordered_weeks),
             "starts": first.isoformat(),
             "ends": last.isoformat(),
             "weeks_total": (monday_of(last) - week_one).days // 7 + 1,
@@ -678,7 +1007,7 @@ def summarise(
                     ] or None,
                 }
             ) or None,
-            "weeks": [weeks[k] for k in sorted(weeks)],
+            "weeks": ordered_weeks,
             "how_to_adapt": (
                 "To move a session: unschedule_workout with its schedule_id, then "
                 "schedule_workout with its workout_id on the new date. To change "
