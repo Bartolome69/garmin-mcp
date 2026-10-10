@@ -159,7 +159,7 @@
   .meta { font-size: 12.5px; color: var(--muted); padding-left: 23px; }
   .meta.missed { color: var(--red-text); }
   .moved { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
-  .km { font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+  .km { font-size: 13.5px; font-weight: 500; white-space: nowrap; min-width: 54px; text-align: right; }
   .km.soft { color: var(--soft); }
   .km.struck { color: var(--faint); text-decoration: line-through; font-weight: 400; }
   .shape { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
@@ -834,11 +834,15 @@
         el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
       ]);
     }
+    // Bars are to scale within the week, so the long run is the long one;
+    // a session with no distance, strength say, takes the whole width.
+    var most = Math.max.apply(null, w.rows.map(function (x) { return x.extra ? 0 : x.planned_km || 0; }).concat([0]));
+    var share = s.planned_km && most ? Math.max(0.18, s.planned_km / most) : 1;
     return el("div", { class: "row" }, [
       el("span", { class: "row-day mono", text: day }),
       el("div", { class: "row-mid" }, [
         el("div", { class: "row-top" }, [el("span", { class: "type", style: "color:" + t.v, text: t.l }), el("span", { class: "name", text: cleanTitle(s) })]),
-        shapeBar(s, false),
+        shapeBar(s, false, share),
       ]),
       el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
     ]);
@@ -850,7 +854,7 @@
 
   // The workout as a bar: easy parts low, work reps high, recoveries lower
   // still, each as wide as its distance. A run without steps is one bar.
-  function shapeBar(s, big) {
+  function shapeBar(s, big, share) {
     var t = typeOf(s), segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
     // A race or a steady sub-T run with one step is all work: draw it so.
     if ((s.type === "race" || s.type === "sub") && !segs.some(function (g) { return g.k === "work"; })) {
@@ -858,7 +862,8 @@
     }
     var scale = big ? 1 : 0.7;
     var easyColour = s.type === "long" ? TYPES.long.v : s.type === "easy" || !TYPES[s.type] || s.type === "sub" ? TYPES.easy.v : t.v;
-    return el("div", { class: "shape" + (big ? " big" : ""), "aria-hidden": "true" }, segs.map(function (g) {
+    var width = share && share < 1 ? "width:" + Math.round(share * 1000) / 10 + "%" : "";
+    return el("div", { class: "shape" + (big ? " big" : ""), style: width, "aria-hidden": "true" }, segs.map(function (g) {
       var h = g.k === "work" ? 26 : g.k === "rec" ? 6 : 12;
       var c = g.k === "work" ? (s.type === "race" ? TYPES.race.v : TYPES.sub.v) : g.k === "rec" ? "var(--rec)" : easyColour;
       return el("span", { style: "flex:" + Math.max(g.km, 0.1) + " 1 0;height:" + (big ? 30 : Math.round(h * scale)) + "px;background:" + c });
