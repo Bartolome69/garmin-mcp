@@ -30,6 +30,9 @@ from .workouts import WorkoutError, build_workout, format_pace
 
 TAG_SEP = " · "
 LABEL_RE = re.compile(r"^[A-Z0-9]{2,8}$")
+# New plans get a short code, since it sits at the end of every workout name on
+# the calendar and the watch. Plans made with longer codes still read back.
+NEW_LABEL_RE = re.compile(r"^[A-Z0-9]{2,3}$")
 TITLE_RE = re.compile(r" · ([A-Z0-9]{2,8})$")
 
 MAX_SESSIONS = 150
@@ -48,25 +51,32 @@ class PlanError(ValueError):
 # --------------------------------------------------------------------------
 
 
-def normalise_label(label: str | None, goal: str) -> str:
-    """HM, MARA26, 10K: two to eight capitals and digits, from the goal if not given."""
+def normalise_label(label: str | None, goal: str, *, new: bool = False) -> str:
+    """HM, 10K, B1: capitals and digits, from the goal if not given.
+
+    A new plan's code is two or three characters; looking one up accepts the
+    up-to-eight that older plans were made with.
+    """
+    pattern = NEW_LABEL_RE if new else LABEL_RE
     if label:
         cleaned = re.sub(r"[^A-Za-z0-9]", "", str(label)).upper()
-        if not LABEL_RE.match(cleaned):
+        if not pattern.match(cleaned):
             raise PlanError(
-                f"Plan label {label!r} must be 2 to 8 letters or digits, like HM or MARA26."
+                f"Plan label {label!r} must be 2 or 3 letters or digits, like HM, 10K or B1."
+                if new else
+                f"Plan label {label!r} must be 2 to 8 letters or digits, like HM or 10K."
             )
         return cleaned
     words = re.findall(r"[A-Za-z0-9]+", goal or "")
-    known = {"half": "HM", "marathon": "MARA", "10k": "10K", "5k": "5K", "ultra": "ULTRA"}
+    known = {"half": "HM", "marathon": "MAR", "10k": "10K", "5k": "5K", "ultra": "ULT"}
     lowered = [w.lower() for w in words]
     if "half" in lowered:
         return "HM"
     for word in lowered:
         if word in known:
             return known[word]
-    initials = "".join(w[0] for w in words[:4]).upper()
-    return initials if LABEL_RE.match(initials) else "PLAN"
+    initials = "".join(w[0] for w in words[:3]).upper()
+    return initials if NEW_LABEL_RE.match(initials) else "PL"
 
 
 def tagged(name: str, label: str) -> str:
@@ -207,7 +217,7 @@ def prepare(
     if len(sessions) > MAX_SESSIONS:
         raise PlanError(f"{len(sessions)} sessions is more than one plan should hold ({MAX_SESSIONS}).")
 
-    code = normalise_label(label, goal)
+    code = normalise_label(label, goal, new=True)
     horizon = today + timedelta(weeks=MAX_WEEKS_AHEAD)
     prepared: list[dict[str, Any]] = []
     for index, raw in enumerate(sessions, start=1):

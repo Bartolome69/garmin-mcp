@@ -302,6 +302,20 @@ def check_workout_steps(check) -> None:
           tp.workout_steps(_json.loads(ride.model_dump_json(by_alias=True)))[0]["label"] == "Ride")
     check("no steps, nothing shown", tp.workout_steps({}) is None)
 
+    check("new plan codes default short",
+          [tp.normalise_label(None, g, new=True) for g in
+           ("Half marathon 1:20", "Marathon in April", "10k PB", "Spring ultra", "Get back into running")]
+          == ["HM", "MAR", "10K", "ULT", "GBI"])
+    try:
+        tp.normalise_label("BASE", "", new=True)
+        long_refused = False
+    except tp.PlanError as exc:
+        long_refused = "2 or 3" in str(exc)
+    check("a four-letter code is refused for a new plan, with the rule", long_refused)
+    check("an older plan's longer code still looks up",
+          tp.normalise_label("base", "") == "BASE" and tp.label_of("12km easy · BASE") == "BASE")
+    check("a short code ends the workout name", tp.tagged("Long run 18k", "B1") == "Long run 18k · B1")
+
 
 def check_ride_led_log(check) -> None:
     """A cyclist with nothing scheduled sees kilometres ridden, not zeros for running."""

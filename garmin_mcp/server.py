@@ -1696,8 +1696,9 @@ async def create_plan(
             - optional "sport" (running by default) and "description"
             - for a swim, optional "pool_length_meters" (25 by default)
             Rest days are simply days with no session. At most 150 sessions.
-        label: 2 to 8 letters or digits used as the plan code, e.g. "HM" or
-            "MARA26". Derived from the goal when omitted.
+        label: 2 or 3 letters or digits used as the plan code, kept short
+            because it ends every workout name: "HM", "10K", "MAR", or "B1"
+            for a base block. Derived from the goal when omitted.
     """
     today = date_cls.today()
     code, prepared = training_plan.prepare(goal, sessions, label, today)
