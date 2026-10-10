@@ -68,7 +68,8 @@ _INSTRUCTIONS = (
     "goes to its own tool without the card: a run to get_activity_details, "
     "whether to go hard today to get_readiness, recovery to "
     "get_recovery_trends, today's fitness markers or race predictions to "
-    "get_fitness, whether fitness is improving to get_fitness_trends, shoes "
+    "get_fitness, whether fitness is improving or how it moved with weight to "
+    "get_fitness_trends, shoes "
     "to get_shoes. Answer those in "
     "writing. Dates are YYYY-MM-DD and "
     "also accept 'today', "
@@ -2066,10 +2067,15 @@ async def get_fitness_trends(months: int = FITNESS_TREND_MONTHS) -> dict[str, An
     VO2 max, predicted 5k, 10k, half and marathon times, lactate threshold
     pace and heart rate, endurance and hill score, and cycling FTP, each as a
     value per month with the change from the first month to now and whether
-    that is improving, steady or declining. Use it for "am I getting fitter",
-    "how's my fitness trending", "is my VO2 max going up" or "has my half
-    prediction come down", and answer in writing: name the markers that moved
-    and by how much, in plain terms. For where they stand today, get_fitness
+    that is improving, steady or declining. Alongside them, weight by month
+    from the weigh-ins logged in Garmin Connect, with body fat and muscle
+    where a scale records them. Use it for "am I getting fitter", "how's my
+    fitness trending", "is my VO2 max going up", "has my half prediction come
+    down" or "was I faster when I was lighter", and answer in writing: name
+    the markers that moved and by how much, in plain terms. For weight, line
+    the months up and say how the markers moved as weight changed, as a
+    pattern rather than a cause. With no weigh-ins logged, say so and that
+    weighing in through Garmin Connect or a Garmin scale is what fills it. For where they stand today, get_fitness
     is enough; for whether recovery is keeping up, get_recovery_trends.
 
     Args:
@@ -2081,7 +2087,7 @@ async def get_fitness_trends(months: int = FITNESS_TREND_MONTHS) -> dict[str, An
     # Garmin's race predictor refuses a range over a year.
     start = (end_day - timedelta(days=months * 30)).isoformat()
     month_starts = date_cls.fromisoformat(start)
-    (vo2, race, lactate, endurance, hill, ftp), warnings = await _gather(
+    (vo2, race, lactate, endurance, hill, ftp, weight), warnings = await _gather(
         [
             ("vo2 max", _chunked(lambda c, lo, hi: c.get_max_metrics_range(lo, hi), month_starts, end_day)),
             ("race predictions", lambda c: c.get_race_predictions(start, end, "monthly")),
@@ -2091,10 +2097,11 @@ async def get_fitness_trends(months: int = FITNESS_TREND_MONTHS) -> dict[str, An
             ("hill score", lambda c: c.get_hill_score(start, end)),
             ("cycling ftp", lambda c: c.get_functional_threshold_power_range(
                 start, end, sport="CYCLING", aggregation="monthly")),
+            ("weight", lambda c: c.get_body_composition(start, end)),
         ]
     )
     shaped = fitness_trends.shape(
-        vo2=vo2, race=race, lactate=lactate, endurance=endurance, hill=hill, ftp=ftp,
+        vo2=vo2, race=race, lactate=lactate, endurance=endurance, hill=hill, ftp=ftp, weight=weight,
         start=start, end=end, warnings=warnings,
     )
     if not set(shaped) - {"period", "how_to_read", "warnings"}:

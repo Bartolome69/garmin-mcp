@@ -6,6 +6,7 @@ gets exercised the same way it would against the real API.
 
 from __future__ import annotations
 
+import copy
 from datetime import date, timedelta
 from typing import Any
 
@@ -233,6 +234,23 @@ ENDURANCE_HISTORY = {"groupMap": {d: {"groupAverage": v} for d, v in
 HILL_HISTORY = {"hillScoreDTOList": [{"calendarDate": d, "overallScore": 46} for d in FITNESS_MONTHS]}
 FTP_HISTORY = [{"calendarDate": d, "functionalThresholdPower": w}
                for d, w in zip(FITNESS_MONTHS, [262, 260, 255, 252, 250, 250])]
+
+# Garmin's weight list: grams, two weigh-ins in May, none in July, and a period
+# average beside the list that must not pass for a weigh-in on its first day.
+WEIGHT_HISTORY = {
+    "startDate": "2026-04-13",
+    "endDate": "2026-10-10",
+    "dateWeightList": [
+        {"calendarDate": "2026-05-04", "weight": 75200.0, "bodyFat": 17.0, "muscleMass": 34100.0},
+        {"calendarDate": "2026-05-20", "weight": 74800.0, "bodyFat": 16.6, "muscleMass": 34100.0},
+        {"calendarDate": "2026-06-14", "weight": 74100.0, "bodyFat": None, "muscleMass": None},
+        {"calendarDate": "2026-08-10", "weight": 73000.0, "bodyFat": 15.4, "muscleMass": 34300.0},
+        {"calendarDate": "2026-09-12", "weight": 72400.0},
+        {"calendarDate": "2026-10-03", "weight": 72100.0, "bodyFat": 14.9, "muscleMass": 34400.0},
+        {"calendarDate": "2026-10-04", "weight": 0},
+    ],
+    "totalAverage": {"weight": 99000.0, "bodyFat": 40.0},
+}
 
 RACE_PREDICTIONS = {"calendarDate": "2026-09-30", "time5K": 1080, "time10K": 2280,
                     "timeHalfMarathon": 5100, "timeMarathon": 10800}
@@ -528,6 +546,9 @@ class FakeGarmin:
 
     def get_functional_threshold_power_range(self, start: str, end: str, **kwargs: Any) -> list[dict[str, Any]]:
         return [dict(r) for r in FTP_HISTORY]
+
+    def get_body_composition(self, startdate: str, enddate: str | None = None) -> dict[str, Any]:
+        return copy.deepcopy(WEIGHT_HISTORY)
 
     def get_running_tolerance(self, start: str, end: str, aggregation: str = "weekly") -> list[dict[str, Any]]:
         return [dict(t) for t in TOLERANCE]

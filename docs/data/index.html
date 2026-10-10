@@ -281,7 +281,7 @@
     <p class="stamp">Last updated 7 October 2026</p>
 
     <dl class="facts">
-      <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, shoes, your plan</dd></div>
+      <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, weight, shoes, your plan</dd></div>
       <div><dt>Writes</dt><dd>The workout library, and only that</dd></div>
       <div><dt>Never</dt><dd>Edits to your recorded activities, your route map, your body composition</dd></div>
     </dl>
@@ -380,6 +380,11 @@
       <li><span><strong>Fitness trends</strong>, the same markers month by month over up
         to a year: VO2 max, race predictions, lactate threshold, endurance and
         hill score, and cycling FTP, to see whether you are getting fitter.</span></li>
+      <li><span><strong>Weight</strong>, month by month beside those markers: the average
+        of the weigh-ins you log in Garmin Connect, with body fat and muscle
+        mass where a scale records them, so Claude can see how your fitness
+        moved as your weight changed. Read only, never written or
+        deleted.</span></li>
       <li><span><strong>Recovery trends</strong>, week by week over up to twelve weeks:
         overnight HRV, sleep, resting heart rate and body battery.</span></li>
     </ul>
@@ -454,9 +459,10 @@
       <li><span><strong>Where you were, kept.</strong> GPS points are read only inside a
         recording, as above, and are never returned or stored. Route maps,
         saved courses and location history are not requested.</span></li>
-      <li><span><strong>Your body.</strong> Body composition, blood pressure, hydration,
-        nutrition, menstrual and pregnancy tracking. Your profile weight is read
-        only for FTP in watts per kilo.</span></li>
+      <li><span><strong>Your body, beyond weight.</strong> Blood pressure, hydration,
+        nutrition, menstrual and pregnancy tracking. Of what a scale records,
+        only weight, body fat and muscle mass are read, as above; bone mass,
+        body water, visceral fat and metabolic age are dropped.</span></li>
       <li><span><strong>Your things and your people.</strong> Devices, gear other than
         shoes (an activity&rsquo;s gear is read to find the shoes, and the rest
         is dropped), badges,

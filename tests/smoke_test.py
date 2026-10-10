@@ -1298,6 +1298,31 @@ async def main() -> int:
             check("FTP falling reads as declining",
                   trend["cycling_ftp_watts"]["change"] == -12
                   and trend["cycling_ftp_watts"]["direction"] == "declining", str(trend.get("cycling_ftp_watts")))
+            w = trend.get("weight") or {}
+            months_w = {m["month"]: m for m in w.get("by_month", [])}
+            check("weight by month is the average of that month's weigh-ins, in kg",
+                  months_w.get("2026-05", {}).get("kg") == 75.0
+                  and months_w["2026-05"].get("weigh_ins") == 2
+                  and months_w["2026-05"].get("body_fat_pct") == 16.8
+                  and months_w["2026-05"].get("muscle_kg") == 34.1, str(w))
+            check("a month with no weigh-ins is left out, not filled",
+                  "2026-07" not in months_w and len(months_w) == 5, str(list(months_w)))
+            check("the period average and an empty reading don't pass for weigh-ins",
+                  all(m["kg"] < 80 for m in months_w.values())
+                  and months_w["2026-10"]["weigh_ins"] == 1, str(months_w.get("2026-10")))
+            check("weight change first month to last, with no better or worse",
+                  w.get("change_kg") == -2.9 and w.get("since") == "2026-05"
+                  and w.get("latest") == {"day": "2026-10-03", "kg": 72.1}
+                  and w.get("body_fat_change_pct") == -1.9 and "direction" not in w, str(w))
+            check("a month without a scale reading carries weight only",
+                  "body_fat_pct" not in months_w["2026-06"] and months_w["2026-06"]["kg"] == 74.1)
+            check("weight is read as a pattern, not a cause",
+                  "not cause and effect" in trend["how_to_read"])
+            check("kilograms sent as kilograms read the same",
+                  _ft.weight_trend({"dateWeightList": [{"calendarDate": "2026-01-02", "weight": 70.5}]})
+                  ["latest"]["kg"] == 70.5)
+            check("no weigh-ins gives no weight section",
+                  _ft.weight_trend({"dateWeightList": []}) is None and _ft.weight_trend(None) is None)
             short = payload(await sess.call_tool("get_fitness_trends", {"months": 99}))
             check("a long look-back is capped at a year",
                   short["period"]["from"] >= str(__import__("datetime").date.today().replace(

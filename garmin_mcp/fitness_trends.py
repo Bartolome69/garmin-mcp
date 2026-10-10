@@ -2,7 +2,8 @@
 
 get_fitness says where someone is today; this says which way they are going:
 VO2 max, race predictions, lactate threshold, endurance and hill score, and
-cycling FTP, a value per month and the change from first to last.
+cycling FTP, a value per month and the change from first to last, with
+weight by month beside them so the two can be lined up.
 
 Garmin's range endpoints don't share a shape. Some return a list of rows with
 a date and a value, some a map keyed by date, some nest the rows a level down.
@@ -121,6 +122,77 @@ def _signed_pace(first: float, last: float) -> str:
     return f"{'-' if secs < 0 else '+'}{abs(round(secs))}s/km"
 
 
+def _kg(value: Any) -> float | None:
+    """Garmin keeps body masses in grams; take kilograms either way, or nothing implausible."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        return None
+    kg = value / 1000 if value > 1000 else float(value)
+    return kg if 20 <= kg <= 350 else None
+
+
+def weigh_ins(raw: Any) -> list[dict[str, Any]]:
+    """Each weigh-in as {day, kg, body_fat_pct, muscle_kg}, from Garmin's weight list.
+
+    Read from the list itself rather than by walking the whole reply, because
+    the reply also carries an average for the period that would otherwise pass
+    for a weigh-in on its first day.
+    """
+    rows = (raw or {}).get("dateWeightList") if isinstance(raw, Mapping) else None
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, Mapping):
+            continue
+        day = next((row[k] for k in DATE_KEYS if _is_date(row.get(k))), None)
+        kg = _kg(row.get("weight"))
+        if not day or kg is None:
+            continue
+        fat = row.get("bodyFat")
+        out.append({
+            "day": day[:10],
+            "kg": kg,
+            "body_fat_pct": float(fat) if isinstance(fat, (int, float)) and 2 <= fat <= 70 else None,
+            "muscle_kg": _kg(row.get("muscleMass")),
+        })
+    return sorted(out, key=lambda r: r["day"])
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def weight_trend(raw: Any) -> dict[str, Any] | None:
+    """Weight by month: the average of that month's weigh-ins, since one day's reading wobbles."""
+    rows = weigh_ins(raw)
+    if not rows:
+        return None
+    months: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        months.setdefault(row["day"][:7], []).append(row)
+    by_month = []
+    for month, entries in sorted(months.items()):
+        fat = [e["body_fat_pct"] for e in entries if e["body_fat_pct"] is not None]
+        muscle = [e["muscle_kg"] for e in entries if e["muscle_kg"] is not None]
+        by_month.append(drop_empty({
+            "month": month,
+            "kg": rounded(_mean([e["kg"] for e in entries]), 1),
+            "body_fat_pct": rounded(_mean(fat), 1),
+            "muscle_kg": rounded(_mean(muscle), 1),
+            "weigh_ins": len(entries),
+        }))
+    out: dict[str, Any] = {
+        "by_month": by_month,
+        "latest": {"day": rows[-1]["day"], "kg": rounded(rows[-1]["kg"], 1)},
+    }
+    if len(by_month) > 1:
+        first, last = by_month[0], by_month[-1]
+        out["since"] = first["month"]
+        # Lighter isn't better or worse on its own, so no direction.
+        out["change_kg"] = rounded(last["kg"] - first["kg"], 1)
+        if "body_fat_pct" in first and "body_fat_pct" in last:
+            out["body_fat_change_pct"] = rounded(last["body_fat_pct"] - first["body_fat_pct"], 1)
+    return out
+
+
 def shape(
     *,
     vo2: Any = None,
@@ -129,6 +201,7 @@ def shape(
     endurance: Any = None,
     hill: Any = None,
     ftp: Any = None,
+    weight: Any = None,
     start: str,
     end: str,
     warnings: Iterable[str] = (),
@@ -174,6 +247,7 @@ def shape(
                              STEADY["score"], higher_is_better=True, relative=True),
         "cycling_ftp_watts": _trend(series(ftp, ("functionalThresholdPower", "value")), score,
                                     STEADY["ftp"], higher_is_better=True, relative=True),
+        "weight": weight_trend(weight),
         "how_to_read": (
             "Each marker is Garmin's own estimate, one value per month (the last "
             "of the month), with the change from the first month to now. "
@@ -181,7 +255,12 @@ def shape(
             "estimate. Race times and threshold pace improve by getting "
             "shorter. Markers only move when Garmin has qualifying runs or "
             "rides to recompute them from, so a flat line can mean few "
-            "recordings rather than no change."
+            "recordings rather than no change. Weight is the average of the "
+            "month's weigh-ins logged in Garmin Connect, with body fat and "
+            "muscle where a scale records them; set it beside the markers month "
+            "by month to see how they moved together. That is not cause and "
+            "effect: weight usually changes along with training, so don't put "
+            "a figure on what each kilo is worth."
         ),
         "warnings": list(warnings) or None,
     })
