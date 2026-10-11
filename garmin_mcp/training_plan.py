@@ -301,6 +301,7 @@ def prepare(
     name: str | None = None,
     method: str | None = None,
     milestones: Any = None,
+    ftp: float | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Validate every session and build its workout before anything is created.
 
@@ -336,7 +337,7 @@ def prepare(
         try:
             workout, summary, estimated = build_workout(
                 tagged(name, code), raw.get("sport") or "running", raw.get("steps") or [], None,
-                raw.get("pool_length_meters"),
+                raw.get("pool_length_meters"), ftp,
             )
         except WorkoutError as exc:
             raise PlanError(f"Session {index} ({name}): {exc}") from exc

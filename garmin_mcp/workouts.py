@@ -37,6 +37,15 @@ STEP_TYPES = {
 # tighter beeps constantly on a GPS pace that wobbles by a few seconds anyway.
 PACE_WINDOW_SECONDS = 5.0
 
+# A single power target becomes a range this share either side of it, and no
+# range is narrower than POWER_MIN_HALF_WATTS either side. Power wobbles from
+# second to second far more than pace does, and the head unit alerts every
+# time it leaves the range.
+POWER_WINDOW = 0.05
+POWER_MIN_HALF_WATTS = 5.0
+POWER_WATTS = (30.0, 2000.0)
+POWER_PERCENT_FTP = (30.0, 200.0)
+
 
 class WorkoutError(ValueError):
     """Bad workout description; the message is shown to the user."""
@@ -118,6 +127,80 @@ def _hr_target(hr: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
     return target, (low, high), f" @ {low:.0f}-{high:.0f} bpm"
 
 
+def _is_percent(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().endswith("%")
+
+
+def uses_ftp(steps: Sequence[Mapping[str, Any]] | None) -> bool:
+    """Whether any step, repeats included, sets power as a share of FTP."""
+    for step in steps or []:
+        if not isinstance(step, Mapping):
+            continue
+        if str(step.get("type") or "").strip().lower() == "repeat" and uses_ftp(step.get("steps")):
+            return True
+        power = step.get("power")
+        values = power if isinstance(power, (list, tuple)) else [power]
+        if any(_is_percent(v) for v in values):
+            return True
+    return False
+
+
+def parse_power(value: Any, ftp: float | None) -> float:
+    """250, '250', '250 W' -> watts; '95%' -> 95% of the FTP set in Garmin."""
+    if _is_percent(value):
+        try:
+            percent = float(str(value).strip().rstrip("%").strip())
+        except ValueError as exc:
+            raise WorkoutError(f"Could not read {value!r} as a share of FTP, e.g. '95%'.") from exc
+        low, high = POWER_PERCENT_FTP
+        if not low <= percent <= high:
+            raise WorkoutError(f"{value!r} of FTP is outside the plausible {low:.0f}-{high:.0f}%.")
+        if not ftp:
+            raise WorkoutError(
+                "No cycling FTP is set in Garmin Connect, so a power target can't be a "
+                "percentage. Give watts instead, or set FTP in Garmin Connect first."
+            )
+        return ftp * percent / 100
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        watts = float(value)
+    else:
+        text = str(value).strip().lower().replace("watts", "").replace("w", "").strip()
+        try:
+            watts = float(text)
+        except ValueError as exc:
+            raise WorkoutError(
+                f"Could not read {value!r} as power. Use watts (250) or a share of FTP ('95%')."
+            ) from exc
+    low, high = POWER_WATTS
+    if not low <= watts <= high:
+        raise WorkoutError(f"Power {value!r} is outside the plausible {low:.0f}-{high:.0f} W.")
+    return watts
+
+
+def _power_target(power: Any, ftp: float | None) -> tuple[dict[str, Any], tuple[float, float], str]:
+    """Garmin stores a power target as a range in watts."""
+    if isinstance(power, (list, tuple)):
+        if len(power) != 2:
+            raise WorkoutError("A power range needs exactly two values, e.g. [240, 260] or ['88%', '94%'].")
+        low, high = sorted(parse_power(p, ftp) for p in power)
+        if high - low < 2 * POWER_MIN_HALF_WATTS:
+            centre = (low + high) / 2
+            low, high = centre - POWER_MIN_HALF_WATTS, centre + POWER_MIN_HALF_WATTS
+    else:
+        centre = parse_power(power, ftp)
+        half = max(centre * POWER_WINDOW, POWER_MIN_HALF_WATTS)
+        low, high = centre - half, centre + half
+    # Halves round up: round() goes to even, so 250 W ± 5% read 238-262.
+    low, high = float(int(low + 0.5)), float(int(high + 0.5))
+    target = {
+        "workoutTargetTypeId": gw.TargetType.POWER_ZONE,
+        "workoutTargetTypeKey": "power.zone",
+        "displayOrder": 2,
+    }
+    share = f" ({low / ftp * 100:.0f}-{high / ftp * 100:.0f}% FTP)" if ftp else ""
+    return target, (low, high), f" @ {low:.0f}-{high:.0f} W{share}"
+
+
 NO_TARGET = {
     "workoutTargetTypeId": gw.TargetType.NO_TARGET,
     "workoutTargetTypeKey": "no.target",
@@ -157,11 +240,13 @@ def _end_condition(kind: str) -> dict[str, Any]:
 class _Builder:
     """Walks the step list, assigning the sequential order ids Garmin expects."""
 
-    def __init__(self, default_pace: float, pool_metres: float | None = None) -> None:
+    def __init__(self, default_pace: float, pool_metres: float | None = None, ftp: float | None = None) -> None:
         self.order = 0
         self.default_pace = default_pace
         # Set for a swim: steps are then counted in pool lengths, paced per 100 m.
         self.pool = pool_metres
+        # The FTP set in Garmin, for power targets given as a percentage.
+        self.ftp = ftp
         self.estimated_seconds = 0.0
         self.lines: list[str] = []
 
@@ -241,14 +326,17 @@ class _Builder:
         target, described = NO_TARGET, ""
         values: tuple[float, float] | None = None
         pace_for_estimate = self.default_pace
-        if step.get("pace") is not None and step.get("hr") is not None:
-            raise WorkoutError("A step can target pace or heart rate, not both.")
+        given = [k for k in ("pace", "hr", "power") if step.get(k) is not None]
+        if len(given) > 1:
+            raise WorkoutError(f"A step can have one target, not {' and '.join(given)}.")
         if step.get("pace") is not None:
             target, values, described = _pace_target(step["pace"])
             # values are speeds in m/s; convert back for the duration estimate.
             pace_for_estimate = (1000.0 / values[0] + 1000.0 / values[1]) / 2
         elif step.get("hr") is not None:
             target, values, described = _hr_target(step["hr"])
+        elif step.get("power") is not None:
+            target, values, described = _power_target(step["power"], self.ftp)
 
         if distance is not None:
             value = float(distance)
@@ -311,6 +399,8 @@ class _Builder:
             )
         if step.get("pace") is not None and step.get("hr") is not None:
             raise WorkoutError("A step can carry a pace or a heart-rate target, not both.")
+        if step.get("power") is not None:
+            raise WorkoutError("A swim step can't have a power target. Use pace or heart rate.")
 
         notes: list[str] = []
         pace_100 = None
@@ -387,8 +477,13 @@ def build_workout(
     steps: Sequence[Mapping[str, Any]],
     description: str | None = None,
     pool_length_meters: float | None = None,
+    ftp: float | None = None,
 ) -> tuple[Any, str, int]:
-    """Return (workout model, human-readable summary, estimated seconds)."""
+    """Return (workout model, human-readable summary, estimated seconds).
+
+    ftp is the cycling FTP set in Garmin, in watts, for power targets given as
+    a percentage; the caller fetches it only when uses_ftp(steps) says so.
+    """
     if not name or not str(name).strip():
         raise WorkoutError("The workout needs a name.")
     sport_key = str(sport or "running").strip().lower()
@@ -408,7 +503,7 @@ def build_workout(
             raise WorkoutError(f"A {pool:g} m pool is outside the plausible 10-100 m.")
     elif pool_length_meters is not None:
         raise WorkoutError("'pool_length_meters' only applies to swimming workouts.")
-    builder = _Builder(default_pace, pool)
+    builder = _Builder(default_pace, pool, ftp)
     built = builder.build(list(steps))
     estimated = int(round(builder.estimated_seconds))
 

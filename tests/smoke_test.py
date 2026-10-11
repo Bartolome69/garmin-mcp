@@ -103,6 +103,62 @@ def check_target_placement(check) -> None:
     )
 
 
+def check_power_targets(check) -> None:
+    """Rides target power: watts, a range, or a share of the FTP set in Garmin."""
+    from garmin_mcp.training_plan import workout_steps
+    from garmin_mcp.workouts import WorkoutError, build_workout, uses_ftp
+
+    workout, summary, _ = build_workout(
+        "Sweet spot",
+        "cycling",
+        [
+            {"type": "warmup", "duration_seconds": 600},
+            {"type": "repeat", "times": 3, "steps": [
+                {"type": "interval", "duration_seconds": 600, "power": ["88%", "94%"]},
+                {"type": "recovery", "duration_seconds": 300}]},
+            {"type": "interval", "duration_seconds": 300, "power": 250},
+            {"type": "cooldown", "duration_seconds": 600},
+        ],
+        ftp=280,
+    )
+    data = workout.to_dict()
+    steps = data["workoutSegments"][0]["workoutSteps"]
+    rep = steps[1]["workoutSteps"][0]
+    single = steps[2]
+    check("a power range from % of FTP is set in watts on the step",
+          rep["targetType"]["workoutTargetTypeKey"] == "power.zone"
+          and (rep.get("targetValueOne"), rep.get("targetValueTwo")) == (246.0, 263.0),
+          str({k: rep.get(k) for k in ("targetType", "targetValueOne", "targetValueTwo")}))
+    check("a single power becomes 5% either side, halves rounded up",
+          (single.get("targetValueOne"), single.get("targetValueTwo")) == (238.0, 263.0),
+          str((single.get("targetValueOne"), single.get("targetValueTwo"))))
+    check("the summary says watts and the share of FTP",
+          "246-263 W (88-94% FTP)" in summary, summary)
+    check("read back, the step shows its watts",
+          (workout_steps(data) or [{}])[1]["steps"][0].get("target") == "246–263 W",
+          str(workout_steps(data)))
+    check("a percentage asks for FTP; watts don't",
+          uses_ftp([{"type": "Repeat", "times": 2, "steps": [{"power": "95%"}]}])
+          and not uses_ftp([{"power": 250}, {"pace": "4:00"}]))
+
+    def refused(steps, sport="cycling", ftp=None):
+        try:
+            build_workout("x", sport, steps, ftp=ftp)
+        except WorkoutError as exc:
+            return str(exc)
+        return ""
+
+    check("a percentage without an FTP in Garmin is refused, asking for watts",
+          "Give watts" in refused([{"type": "interval", "duration_seconds": 60, "power": "95%"}]))
+    check("power and heart rate on one step is refused",
+          "one target" in refused([{"type": "interval", "duration_seconds": 60, "power": 250, "hr": [140, 150]}]))
+    check("implausible power is refused",
+          "plausible" in refused([{"type": "interval", "duration_seconds": 60, "power": 5000}])
+          and "plausible" in refused([{"type": "interval", "duration_seconds": 60, "power": "400%"}], ftp=250))
+    check("a swim can't target power",
+          "power" in refused([{"type": "interval", "distance_meters": 100, "power": 200}], sport="swimming"))
+
+
 def check_plan_summary(check) -> None:
     """A plan midway through, against real runs: the verdicts that matter.
 
@@ -1234,7 +1290,9 @@ async def main() -> int:
 
             # A block with a name, a method, milestones and phases: all of it
             # read back from the workouts' notes, nothing kept here.
-            base = [dict(x, phase="Base") for x in block[:2]] + [dict(x, phase="Build") for x in block[2:]]
+            # Phased by date, not list order: by position, a Sunday put one Base
+            # and one Build session in each week, and the tie read Base twice.
+            base = [dict(x, phase="Base" if x["date"] <= day(4) else "Build") for x in block]
             named = payload(await sess.call_tool("create_plan", {
                 "goal": "Half marathon, 1:22, 29 November", "sessions": base, "label": "B1",
                 "name": "Base block", "method": "Norwegian singles",
@@ -1485,6 +1543,18 @@ async def main() -> int:
 
             print("\ntarget placement (regression)")
             check_target_placement(check)
+
+            print("\npower targets")
+            check_power_targets(check)
+            ride = payload(await sess.call_tool("create_workout", {
+                "name": "Sweet spot 3x10", "sport": "cycling", "steps": [
+                    {"type": "warmup", "duration_seconds": 600},
+                    {"type": "repeat", "times": 3, "steps": [
+                        {"type": "interval", "duration_seconds": 600, "power": ["88%", "94%"]},
+                        {"type": "recovery", "duration_seconds": 300}]},
+                    {"type": "cooldown", "duration_seconds": 600}]}))
+            check("a ride's % of FTP is worked out from the FTP set in Garmin",
+                  "220-235 W (88-94% FTP)" in ride.get("summary", ""), str(ride)[:240])
 
             print("\nstrength training")
             found = payload(await sess.call_tool("find_exercises", {"query": "bench press"}))

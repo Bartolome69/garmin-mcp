@@ -1,165 +1,190 @@
-<title>What it can see · Garmin for Claude</title>
+<title>What it can see · Daash</title>
 <meta name="description" content="Every kind of Garmin data the connector reads for Claude and ChatGPT, the workouts it can write to your watch, and what it never touches.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap">
 <style>
+  /* The daash.run design: the same tokens, type and chrome as the site. */
   :root {
     color-scheme: light;
-    --ground: #F4F6F3;
-    --surface: #FFFFFF;
-    --sunken: #E8EDE8;
-    --ink: #17211B;
-    --muted: #55655B;
-    --hairline: #D3DBD3;
-    --accent: #2F6B4F;
-    --accent-ink: #235340;
-    --clay: #BC5A2A;
-    --clay-soft: #F6ECE5;
-    --radius: 10px;
-    --measure: 66ch;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --ground: #0E1512;
-      --surface: #16201A;
-      --sunken: #1D2922;
-      --ink: #E3ECE5;
-      --muted: #9AAC9F;
-      --hairline: #27352C;
-      --accent: #63BC8E;
-      --accent-ink: #7FCBA1;
-      --clay: #E08A5A;
-      --clay-soft: #2A1E17;
-    }
-  }
-
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --ground: #0E1512;
-    --surface: #16201A;
-    --sunken: #1D2922;
-    --ink: #E3ECE5;
-    --muted: #9AAC9F;
-    --hairline: #27352C;
-    --accent: #63BC8E;
-    --accent-ink: #7FCBA1;
-    --clay: #E08A5A;
-    --clay-soft: #2A1E17;
+    --bg: #F7F8FA;
+    --card: #FFFFFF;
+    --sunken: #EEF0F3;
+    --text: #161B26;
+    --body: #3A404C;
+    --muted: #5B6270;
+    --faint: #8A909C;
+    --border: #E6E8EC;
+    --row: #EEF0F3;
+    --red: #E0312A;
+    --red-text: #C8261F;
+    --red-hover: #A81E18;
+    --red-soft: #FDF2F1;
+    --outer: 1120px;
+    --measure: 680px;
   }
 
   * { box-sizing: border-box; }
 
   body {
-    background: var(--ground);
-    color: var(--ink);
-    font-family: "Archivo", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 17px;
-    line-height: 1.6;
+    line-height: 1.7;
+    font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     -webkit-text-size-adjust: 100%;
   }
 
+  a { color: var(--red-text); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: var(--red-hover); }
+  a:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
+
+  /* ---- Site nav ---- */
+  .site-nav {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(247, 248, 250, 0.92);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .site-nav .bar {
+    max-width: var(--outer); margin: 0 auto; height: 56px;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    display: flex; align-items: center; gap: 24px;
+  }
+  .wordmark {
+    font-weight: 800; font-style: italic; letter-spacing: -0.03em;
+    color: var(--red); font-size: 22px; line-height: 1; text-decoration: none;
+  }
+  .wordmark:hover { color: var(--red); }
+  .site-nav .links { display: none; align-items: center; gap: 4px; font-size: 14.5px; }
+  .site-nav .links a { color: var(--muted); text-decoration: none; padding: 8px 10px; border-radius: 8px; }
+  .site-nav .links a:hover { color: var(--text); }
+  .pill {
+    margin-left: auto; display: inline-flex; align-items: center; height: 40px; padding: 0 16px;
+    border-radius: 999px; background: var(--red); color: #fff; font-weight: 500; font-size: 15px;
+    text-decoration: none;
+  }
+  .pill:hover { background: var(--red-text); color: #fff; }
+  @media (min-width: 760px) { .site-nav .links { display: flex; } }
+
+  /* ---- The page ---- */
   .wrap {
-    max-width: 800px;
+    max-width: calc(var(--measure) + 32px);
     margin: 0 auto;
-    padding-inline: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
-    padding-block: 48px 72px;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    padding-block: 32px 64px;
   }
 
-  h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; }
-  h1 { font-size: clamp(2.1rem, 7vw, 3rem); font-weight: 800; line-height: 1.04; max-width: 17ch; }
-  h2 { font-size: clamp(1.3rem, 4vw, 1.6rem); font-weight: 700; line-height: 1.15; }
+  h1, h2, h3 { margin: 0; color: var(--text); text-wrap: balance; }
+  h1 { font-size: clamp(32px, 4.6vw, 46px); font-weight: 700; line-height: 1.05; letter-spacing: -0.045em; margin-top: 18px; }
+  h2 { font-size: 24px; font-weight: 700; line-height: 1.2; letter-spacing: -0.03em; }
 
   p { margin: 0; text-wrap: pretty; }
-  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
-  a:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; border-radius: 3px; }
 
-  .kicker {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--accent-ink);
+  .back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13.5px; color: var(--muted); text-decoration: none;
   }
-  /* The back link is the kicker slot, so the page keeps the front page's
-     silhouette while still being escapable in one tap. */
-  .kicker a { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; }
+  .back:hover { color: var(--text); }
 
-  .lede { font-size: 1.15rem; color: var(--muted); max-width: 56ch; margin-top: 18px; }
-  .stamp {
-    margin-top: 14px; font-size: 0.86rem; color: var(--muted);
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-  }
+  .lede { font-size: 19px; line-height: 1.6; color: var(--muted); max-width: 58ch; margin-top: 14px; }
+  .stamp { margin-top: 12px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--muted); }
 
-  section { margin-top: 46px; }
-  .stack { display: flex; flex-direction: column; gap: 14px; max-width: var(--measure); margin-top: 14px; }
-  .small { font-size: 0.94rem; }
-  .muted { color: var(--muted); }
+  section { margin-top: 44px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+  .small { font-size: 16.5px; color: var(--body); }
+  .muted, .small.muted { color: var(--muted); }
+  strong { color: var(--text); font-weight: 600; }
 
-  /* ---- The summary table, same shape as "Before you start" ---- */
+  /* ---- The summary cards ---- */
   .facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: 1px;
-    background: var(--hairline);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 14px;
     overflow: hidden;
-    margin-top: 26px;
+    margin: 26px 0 0;
   }
-  .facts div { background: var(--surface); padding: 15px 17px; }
+  .facts div { background: var(--card); padding: 16px 18px; }
   .facts dt {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: 4px;
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px; line-height: 1.4;
   }
-  .facts dd { margin: 0; font-weight: 500; font-size: 0.95rem; }
+  .facts dd { margin: 0; font-weight: 600; font-size: 15.5px; line-height: 1.4; }
   @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
 
   .note {
-    border-left: 3px solid var(--clay);
-    background: var(--clay-soft);
-    padding: 15px 17px;
-    border-radius: 0 var(--radius) var(--radius) 0;
-    max-width: var(--measure);
-    margin-top: 16px;
+    border-left: 3px solid var(--red);
+    background: var(--red-soft);
+    padding: 16px 18px;
+    border-radius: 0 14px 14px 0;
+    margin-top: 18px;
+    color: var(--body);
   }
   .note p + p { margin-top: 10px; }
 
-  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; max-width: var(--measure); }
+  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   ul.plain li {
-    display: grid; grid-template-columns: 18px 1fr; gap: 11px;
-    align-items: baseline; font-size: 0.95rem;
+    display: grid; grid-template-columns: 14px 1fr; gap: 10px;
+    align-items: baseline; font-size: 16.5px; color: var(--body);
   }
   ul.plain li::before {
-    content: "—";
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    color: var(--accent); font-size: 0.8rem;
+    content: ""; width: 6px; height: 6px; border-radius: 999px;
+    background: var(--red); transform: translateY(-2px);
   }
-  ul.plain strong { color: var(--ink); }
 
   code.inline {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.86em; background: var(--sunken); padding: 1px 5px; border-radius: 4px;
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 0.86em; background: var(--sunken); padding: 1px 6px; border-radius: 5px;
     overflow-wrap: anywhere;
   }
 
-  footer {
-    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--hairline);
-    color: var(--muted); font-size: 0.9rem;
+  .wrap > footer {
+    margin-top: 52px; padding-top: 22px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 15px;
     display: flex; flex-direction: column; gap: 8px;
   }
+
+  /* ---- Site footer ---- */
+  .site-footer { border-top: 1px solid var(--border); }
+  .site-footer .bar {
+    max-width: var(--outer); margin: 0 auto;
+    padding: 28px max(16px, env(safe-area-inset-left), env(safe-area-inset-right)) 32px;
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;
+    gap: 20px 40px; font-size: 14px; color: var(--muted); line-height: 1.5;
+  }
+  .site-footer .about { display: flex; flex-direction: column; gap: 6px; max-width: 36ch; }
+  .site-footer .wordmark { font-size: 18px; }
+  .site-footer nav { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+  .site-footer nav a { color: var(--muted); text-decoration: none; }
+  .site-footer nav a:hover { color: var(--text); }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
+<header class="site-nav">
+  <div class="bar">
+    <a class="wordmark" href="https://daash.run/">Daash</a>
+    <nav class="links" aria-label="Main">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+    </nav>
+    <a class="pill" href="https://daash.run/#connect">Connect</a>
+  </div>
+</header>
+
+
 <div class="wrap">
 
   <header>
-    <p class="kicker"><a href="/">&larr;&nbsp;Garmin for Claude</a></p>
+    <a class="back" href="https://daash.run/how-it-works">&lsaquo;&nbsp;How it works</a>
     <h1>What it can see, and what it can change</h1>
     <p class="lede">
       The connector is a set of questions Claude or ChatGPT can ask your Garmin
@@ -167,7 +192,7 @@
       list, in the order you would think of them, with what each one never
       touches.
     </p>
-    <p class="stamp">Last updated 7 October 2026</p>
+    <p class="stamp">Last updated 11 October 2026</p>
 
     <dl class="facts">
       <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, weight, shoes, your plan</dd></div>
@@ -316,9 +341,10 @@
       </p>
     </div>
     <ul class="plain" style="margin-top:16px">
-      <li><span><strong>Create</strong> a workout from a list of steps with pace or
-        heart-rate targets, or a strength session from Garmin&rsquo;s exercise
-        catalogue.</span></li>
+      <li><span><strong>Create</strong> a workout from a list of steps with pace,
+        heart-rate or power targets, or a strength session from Garmin&rsquo;s
+        exercise catalogue. A power target can be a share of the FTP set in
+        Garmin, which is read to work out the watts.</span></li>
       <li><span><strong>Update</strong> one in place, keeping its id, so the dates it is
         already scheduled on stay put and the watch picks up the new version at
         the next sync. This is how paces get retuned as you get fitter.</span></li>
@@ -386,7 +412,25 @@
       <a href="https://github.com/Bartolome69/garmin-mcp/blob/main/garmin_mcp/server.py" target="_blank" rel="noopener">server.py</a>,
       with its Garmin calls in plain sight. Don&rsquo;t take my word for it.
     </p>
-    <p><a href="/">&larr; Back to setting it up</a></p>
+    <p><a href="https://daash.run/#connect">&larr; Back to setting it up</a></p>
   </footer>
 
 </div>
+
+<footer class="site-footer">
+  <div class="bar">
+    <div class="about">
+      <a class="wordmark" href="https://daash.run/">Daash</a>
+      <span>Free and open source. Not affiliated with Garmin.</span>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="/data/">What it can see</a>
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</footer>

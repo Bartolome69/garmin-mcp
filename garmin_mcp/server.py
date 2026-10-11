@@ -54,6 +54,7 @@ from .workouts import (
     build_strength_workout,
     build_workout,
     find_exercises as search_exercises,
+    uses_ftp,
 )
 
 log = logging.getLogger(__name__)
@@ -1131,6 +1132,14 @@ async def list_workouts(limit: int = 20) -> dict[str, Any]:
     }
 
 
+async def _ftp_for(*step_lists: Any) -> float | None:
+    """The cycling FTP set in Garmin, fetched only when a power target is a percentage."""
+    if not any(uses_ftp(steps) for steps in step_lists):
+        return None
+    shaped = cycling.shape_ftp(await _call(lambda c: c.get_cycling_ftp()))
+    return float(shaped["watts"]) if shaped else None
+
+
 @mcp.tool()
 @tool_errors
 async def create_workout(
@@ -1150,8 +1159,17 @@ async def create_workout(
         steps: Ordered list of steps. Each step is an object:
             - "type": warmup, interval, recovery, rest, cooldown, or repeat
             - exactly one of "duration_seconds" or "distance_meters"
-            - optional target, either "pace" ("4:05", or ["4:00","4:10"] for a
-              range, minutes per km) or "hr" ([150, 165] in bpm)
+            - optional target, one of "pace" ("4:05", or ["4:00","4:10"] for a
+              range, minutes per km), "hr" ([150, 165] in bpm) or "power"
+              (watts: 250 or [240, 260]; or a share of the FTP set in Garmin:
+              "95%" or ["88%", "94%"], worked out in watts when it's built)
+            For a ride, use power on the work steps when the rider has a power
+            meter or smart trainer (get_activities shows power on their rides)
+            and an FTP (get_fitness): sweet spot 88-94%, threshold 95-105%,
+            VO2 max 106-120%, endurance 56-75%. A single power value becomes a
+            range 5% either side, because power swings from second to second
+            and the head unit alerts whenever it leaves the range. Without a
+            power meter, use heart rate.
             The watch beeps whenever pace leaves the target, so a pace target
             is never narrower than 5 s/km either side: "4:00" becomes
             3:55-4:05, and a tighter range is widened to that around its
@@ -1194,7 +1212,8 @@ async def create_workout(
     Set swim paces from the swimmer's recent swims (get_activities shows pace
     per 100 m) or their CSS if they know it.
     """
-    workout, summary, estimated = build_workout(name, sport, steps, description, pool_length_meters)
+    ftp = await _ftp_for(steps)
+    workout, summary, estimated = build_workout(name, sport, steps, description, pool_length_meters, ftp)
     payload = workout.to_dict()
 
     result = await _call(lambda c: c.upload_workout(payload)) or {}
@@ -1277,6 +1296,7 @@ async def update_workout(
             steps,
             description if description is not None else existing.get("description"),
             pool,
+            await _ftp_for(steps),
         )
         payload = workout.to_dict()
     else:
@@ -1768,8 +1788,9 @@ async def create_plan(
             The goal race is usually the last one.
     """
     today = date_cls.today()
+    ftp = await _ftp_for(*[s.get("steps") for s in sessions or [] if isinstance(s, dict)])
     code, prepared = training_plan.prepare(
-        goal, sessions, label, today, name=name, method=method, milestones=milestones,
+        goal, sessions, label, today, name=name, method=method, milestones=milestones, ftp=ftp,
     )
     first, last = prepared[0]["date"], prepared[-1]["date"]
 
