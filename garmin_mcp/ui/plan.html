@@ -146,6 +146,7 @@
   .rows { display: flex; flex-direction: column; }
   .row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; padding: 11px 0; border-top: 1px solid var(--row-line); align-items: center; }
   .row-day { font-size: 11px; color: var(--muted); }
+  .row.rest { padding: 9px 0; }
   .row-day.faint { color: var(--faint); }
   .row-mid { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .row-mid.tight { gap: 4px; }
@@ -757,7 +758,15 @@
       el("span", { class: "week-title" }, [isWeek ? "Sessions" : "Week " + w.n, " ", el("span", { class: "week-meta", text: "\u00b7 " + meta })]),
       away ? el("button", { class: "pill", onclick: function () { state.sel = m.nextWeek; render(raw); } }, [svg(ICON.back, 12, "currentColor", 2.4), "Next: " + DAYS[dow(m.next.date)]]) : null,
     ]);
-    var rows = w.rows.map(function (s) { return row(s, m, w); });
+    // Every day of the week gets a row; a day with nothing on it is a rest
+    // day. Without a plan, only days already gone can be called rest.
+    var rows = [];
+    for (var d = 0; d < 7; d++) {
+      var date = iso(addDays(parse(w.starts), d));
+      var here = w.rows.filter(function (s) { return effDate(s) === date; });
+      if (here.length) here.forEach(function (s) { rows.push(row(s, m, w)); });
+      else if (m.mode !== "log" || date < m.today) rows.push(restRow(d));
+    }
     if (m.next && m.nextWeek < 0 && isWeek && !w.rows.some(function (s) { return s === m.next; })) rows.push(nextCard(m.next, m));
     if (!rows.length) rows.push(el("div", { class: "row", style: "grid-template-columns:1fr" }, [el("span", { class: "meta", style: "padding:0", text: m.mode === "log" ? "Nothing recorded yet this week." : "A rest week: nothing scheduled." })]));
     var foot = null;
@@ -797,6 +806,14 @@
       ]));
     }
     return el("div", { class: "strip", "aria-hidden": "true" }, cells);
+  }
+
+  function restRow(d) {
+    return el("div", { class: "row rest" }, [
+      el("span", { class: "row-day mono faint", text: DAYS[d].toUpperCase() }),
+      el("span", { class: "name muted", text: "Rest" }),
+      el("span"),
+    ]);
   }
 
   function row(s, m, w) {
