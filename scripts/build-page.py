@@ -199,7 +199,7 @@ def structured_data(page: str, path: str) -> str:
             "author": {
                 "@type": "Person",
                 "name": "Bart Etcheverry",
-                "url": "https://www.bartetcheverry.com/",
+                "url": "https://github.com/Bartolome69",
             },
         })
         blocks.append({
