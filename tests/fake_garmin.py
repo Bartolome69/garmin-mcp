@@ -177,7 +177,7 @@ HR_ZONES = [
 READINESS = [{
     "calendarDate": "2026-09-30", "score": 58, "level": "MODERATE",
     "feedbackShort": "MODERATE_READINESS_1", "sleepScore": 82,
-    "sleepScoreFactorFeedback": "GOOD", "recoveryTime": 14,
+    "sleepScoreFactorFeedback": "GOOD", "recoveryTime": 1844,
     "recoveryTimeFactorFeedback": "MODERATE", "acwrFactorFeedback": "OPTIMAL",
     "hrvFactorFeedback": "BALANCED", "stressHistoryFactorFeedback": "LOW",
     "sleepHistoryFactorFeedback": "GOOD", "primaryTrainingDevice": True,

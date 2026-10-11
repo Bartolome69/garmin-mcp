@@ -1431,6 +1431,8 @@ async def main() -> int:
             print("   ", json.dumps(ready, indent=2)[:700])
             check("readiness score and level", ready["readiness"]["score"] == 58
                   and ready["readiness"]["level"] == "Moderate", str(ready.get("readiness")))
+            check("recovery time arrives in minutes and is reported in hours",
+                  ready["readiness"].get("recovery_time_hours") == 31, str(ready.get("readiness")))
             check("training status read off the phrase",
                   ready["training_status"]["status"] == "Productive", str(ready.get("training_status")))
             check("acute:chronic ratio and its verdict",

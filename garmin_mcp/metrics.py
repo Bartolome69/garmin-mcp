@@ -55,6 +55,15 @@ def _latest(rows: Any) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
+def _hours(minutes: Any) -> float | None:
+    """Minutes as hours, to the nearest hour."""
+    try:
+        value = float(minutes)
+    except (TypeError, ValueError):
+        return None
+    return rounded(value / 60, 0) if value >= 0 else None
+
+
 def _readiness_block(raw: Any) -> dict[str, Any] | None:
     row = _latest(raw)
     if not row:
@@ -74,7 +83,8 @@ def _readiness_block(raw: Any) -> dict[str, Any] | None:
             "score": rounded(row.get("score"), 0),
             "level": _phrase(row.get("level")),
             "message": row.get("feedbackShort") if isinstance(row.get("feedbackShort"), str) else None,
-            "recovery_time_hours": rounded(row.get("recoveryTime"), 0),
+            # Garmin sends recovery time in minutes (1844 is the 31 h Connect shows).
+            "recovery_time_hours": _hours(row.get("recoveryTime")),
             "factors": factors or None,
         }
     )
