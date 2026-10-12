@@ -94,7 +94,7 @@ _paused_until = 0.0
 # address, up to this many in all. A failing Garmin sign-in can take a while
 # (the library tries several methods, with pauses between), so no new attempt
 # starts once this many seconds have gone: the person is waiting on the page.
-SIGNIN_TRIES = 3
+SIGNIN_TRIES = 4
 SIGNIN_BUDGET = 25
 
 
@@ -187,6 +187,47 @@ def _egress_proxy() -> str:
     return getattr(_EGRESS, "proxy", "")
 
 
+class _Refused(Exception):
+    """Garmin's sign-in server turned this address away; stop using it."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"Garmin refused this sign-in address (HTTP {status})")
+
+
+# Once Garmin's sign-in server answers a proxied attempt with 403 or 429, that
+# address is spent. garminconnect would carry on through its other sign-in
+# methods regardless, some with 10 to 20 seconds of deliberate waiting, which
+# made one refused attempt take over a minute and left no time to try another
+# address. So the rest of that attempt fails at once and skips its waits, and
+# the retry goes out from a fresh address in seconds. Only proxied attempts:
+# from the server's own address there is no other address to move to.
+def _note_refusal(url: str, status: int) -> None:
+    if status in (403, 429) and _egress_proxy() and "//sso." in str(url):
+        if not getattr(_EGRESS, "refused", None):
+            log.info("sign-in address refused (HTTP %s); moving on", status)
+        _EGRESS.refused = status
+
+
+def _check_refused() -> None:
+    status = getattr(_EGRESS, "refused", None)
+    if status:
+        raise _Refused(status)
+
+
+class _Clock:
+    """garminconnect's `time`, whose sleeps end early once an address is spent."""
+
+    def __init__(self, real: Any) -> None:
+        self._real = real
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+    def sleep(self, seconds: float) -> None:
+        if not getattr(_EGRESS, "refused", None):
+            self._real.sleep(seconds)
+
+
 def _proxied(kwargs: dict[str, Any]) -> dict[str, Any]:
     proxy = _egress_proxy()
     if proxy and not kwargs.get("proxies") and not kwargs.get("proxy"):
@@ -204,11 +245,17 @@ class _Via:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._real, name)
 
-    def get(self, *args: Any, **kwargs: Any) -> Any:
-        return self._real.get(*args, **_proxied(kwargs))
+    def get(self, url: Any, *args: Any, **kwargs: Any) -> Any:
+        _check_refused()
+        r = self._real.get(url, *args, **_proxied(kwargs))
+        _note_refusal(url, getattr(r, "status_code", 0))
+        return r
 
-    def post(self, *args: Any, **kwargs: Any) -> Any:
-        return self._real.post(*args, **_proxied(kwargs))
+    def post(self, url: Any, *args: Any, **kwargs: Any) -> Any:
+        _check_refused()
+        r = self._real.post(url, *args, **_proxied(kwargs))
+        _note_refusal(url, getattr(r, "status_code", 0))
+        return r
 
 
 def _route_garmin_sign_ins() -> None:
@@ -232,13 +279,26 @@ def _route_garmin_sign_ins() -> None:
                 # Otherwise a proxy in the environment would win over this one.
                 self.trust_env = False
 
+        def request(self, method: Any, url: Any, *args: Any, **kwargs: Any) -> Any:
+            _check_refused()
+            r = super().request(method, url, *args, **kwargs)
+            _note_refusal(url, getattr(r, "status_code", 0))
+            return r
+
     gc.requests = _Via(requests, RequestsSession)
+    gc.time = _Clock(time)
 
     real_cffi = getattr(gc, "cffi_requests", None)
     if real_cffi is not None:
         class CffiSession(real_cffi.Session):
             def __init__(self, *args: Any, **kwargs: Any) -> None:
                 super().__init__(*args, **_proxied(kwargs))
+
+            def request(self, method: Any, url: Any, *args: Any, **kwargs: Any) -> Any:
+                _check_refused()
+                r = super().request(method, url, *args, **kwargs)
+                _note_refusal(url, getattr(r, "status_code", 0))
+                return r
 
         gc.cffi_requests = _Via(real_cffi, CffiSession)
 
@@ -274,12 +334,12 @@ def login_egress(proxy: str | None = None):
     """
     if proxy is None:
         proxy = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
-    previous = _egress_proxy()
-    _EGRESS.proxy = proxy
+    previous = (_egress_proxy(), getattr(_EGRESS, "refused", None))
+    _EGRESS.proxy, _EGRESS.refused = proxy, None
     try:
         yield
     finally:
-        _EGRESS.proxy = previous
+        _EGRESS.proxy, _EGRESS.refused = previous
 
 
 def base_url(request: Request) -> str:

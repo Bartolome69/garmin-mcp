@@ -588,10 +588,11 @@ async def main() -> int:
             EGRESS.clear()
             code, body = await anyio_run(signin, BLOCKED_EMAIL)
             tried = [via for e, via in EGRESS if e == BLOCKED_EMAIL]
-            check("refusals are tried from three addresses, then stop",
-                  code == 400 and len(tried) == 3 and len(set(tried)) == 3, f"status {code} {len(tried)}")
+            n = hosted.SIGNIN_TRIES
+            check("refusals are tried from each address allowed, then stop",
+                  code == 400 and len(tried) == n and len(set(tried)) == n, f"status {code} {len(tried)}")
             check("refused every time through the proxy, the page says so and claims no pause",
-                  "turned this sign-in away" in body and "2 other addresses" in body
+                  "turned this sign-in away" in body and f"{n - 1} other addresses" in body
                   and "paused" not in body and hosted._pause_left() == 0)
 
             # The person is waiting on the page: no new attempt once the time is up.
@@ -610,7 +611,7 @@ async def main() -> int:
             code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
             check("a rate limit through the proxy says when to retry, and pauses nobody",
                   code == 400 and "fifteen minutes" in body and "paused" not in body
-                  and hosted._pause_left() == 0 and len(EGRESS) == 3, f"status {code}")
+                  and hosted._pause_left() == 0 and len(EGRESS) == hosted.SIGNIN_TRIES, f"status {code}")
 
             EGRESS.clear()
             code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
@@ -677,6 +678,36 @@ async def main() -> int:
                   len(seen) == 2 and all("geo.example.net" in v for v in seen.values())
                   and seen[SLOW_EMAIL] != seen[SLOW_EMAIL_2], str(seen))
             check("a connection opened elsewhere during sign-ins goes direct", meanwhile == "")
+
+            # Once Garmin's sign-in server refuses an address, the attempt
+            # stops using it: no more requests, no deliberate waits. James's
+            # first sign-in spent 71 seconds on one refused address.
+            import garminconnect.client as gcc
+            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
+                hosted._note_refusal("https://sso.garmin.com/mobile/api/login", 403)
+                began = time.monotonic()
+                gcc.time.sleep(5)
+                slept = time.monotonic() - began
+                try:
+                    gcc.requests.Session().get("http://127.0.0.1:9/never")
+                    stopped = False
+                except hosted._Refused as exc:
+                    stopped = hosted._failure_reason(exc) == "blocked_by_garmin"
+            check("a refused address skips the library's waits", slept < 0.5, f"{slept:.2f}s")
+            check("a refused address makes no more requests, and reads as a refusal", stopped)
+            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
+                fresh = getattr(hosted._EGRESS, "refused", None) is None
+                hosted._note_refusal("https://connectapi.garmin.com/x", 403)
+                other_host = getattr(hosted._EGRESS, "refused", None) is None
+            with hosted.login_egress(""):
+                hosted._note_refusal("https://sso.garmin.com/x", 429)
+                direct = getattr(hosted._EGRESS, "refused", None) is None
+            check("each attempt starts fresh, and only the sign-in server or a proxy counts",
+                  fresh and other_host and direct and getattr(hosted._EGRESS, "refused", None) is None)
+            began = time.monotonic()
+            gcc.time.sleep(0.2)
+            check("outside a refused attempt the library still waits as written",
+                  time.monotonic() - began >= 0.19)
         finally:
             os.environ.pop("GARMIN_MCP_LOGIN_PROXY", None)
             hosted._paused_until = 0.0
@@ -772,7 +803,7 @@ async def main() -> int:
         retried = by_name.get("sign_in_retried", [])
         check("sign-ins report how many attempts they took and how long",
               any(e["properties"].get("attempts") == 2 for e in connected)
-              and any(e["properties"].get("attempts") == 3 for e in failed)
+              and any(e["properties"].get("attempts") == hosted.SIGNIN_TRIES for e in failed)
               and all(isinstance(e["properties"].get("seconds"), float)
                       for e in connected + failed if "attempts" in e["properties"]),
               str([(e["properties"].get("attempts"), e["properties"].get("seconds"))
