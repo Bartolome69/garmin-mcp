@@ -90,6 +90,13 @@ _ATTEMPT_LIMIT = 8
 GARMIN_PAUSE = 1800
 _paused_until = 0.0
 
+# Through the sign-in proxy, a refused sign-in is tried again from another
+# address, up to this many in all. A failing Garmin sign-in can take a while
+# (the library tries several methods, with pauses between), so no new attempt
+# starts once this many seconds have gone: the person is waiting on the page.
+SIGNIN_TRIES = 3
+SIGNIN_BUDGET = 25
+
 
 def _pause_sign_ins(reason: str) -> None:
     global _paused_until
@@ -103,7 +110,7 @@ def _pause_left() -> int:
     return max(0, int(_paused_until - time.time()))
 
 
-def _failed(reason: str, email: str = "") -> None:
+def _failed(reason: str, email: str = "", **extra: Any) -> None:
     """Record a failed sign-in: the reason, and who tried.
 
     The address tried, masked and in full, and the same per-person id a
@@ -115,7 +122,7 @@ def _failed(reason: str, email: str = "") -> None:
     analytics.capture(
         "sign_in_failed",
         store.email_fingerprint(email) if email else None,
-        {"reason": reason, **who},
+        {"reason": reason, **who, **extra},
     )
 
 
@@ -512,7 +519,13 @@ document.querySelectorAll("form[data-wait]").forEach(function (f) {
       b.innerHTML = '<span class=spin aria-hidden=true></span>' + f.dataset.wait;
     }
     var n = f.querySelector(".wait");
-    if (n) n.hidden = false;
+    if (n) {
+      n.hidden = false;
+      // A long wait reads as a hang; say it isn't one before anyone reloads.
+      if (n.dataset.later) setTimeout(function () {
+        if (f.dataset.sent) n.textContent = n.dataset.later;
+      }, 20000);
+    }
   });
   window.addEventListener("pageshow", function (e) {
     if (!e.persisted) return;
@@ -614,8 +627,10 @@ async def connect_form(request: Request) -> Response:
           <input id=password name=password type=password required
                  autocomplete=current-password>
           <button>Connect</button>
-          <p class="note wait" role=status hidden>Signing you in to Garmin. This can
-          take up to half a minute, so please don&rsquo;t press again or leave
+          <p class="note wait" role=status hidden
+             data-later="Still working. Garmin can be slow to answer, and Daash keeps
+             trying for you. Please stay on this page.">Signing you in to Garmin.
+          This can take up to a minute, so please don&rsquo;t press again or leave
           this page.</p>
         </form>
         <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
@@ -676,21 +691,28 @@ def _log_signin_failure(exc: BaseException, reason: str) -> None:
     )
 
 
-def _signin_error(exc: BaseException, flow: str = "", *, paused: bool = True) -> str:
+def _signin_error(
+    exc: BaseException, flow: str = "", *, paused: bool = True, tries: int = 1
+) -> str:
     """Explain a failed sign-in in terms that make sense on a web page.
 
     `paused` says whether this failure paused sign-ins for everyone, which
     only happens when the refused attempt went out from the server's own
-    address; the page must not claim a pause that isn't there.
+    address; the page must not claim a pause that isn't there. `tries` is how
+    many addresses were tried, so the page claims no retry that didn't happen.
     """
     reason = _failure_reason(exc)
     _log_signin_failure(exc, reason)
+    others = tries - 1
+    tried = (
+        f", and Daash tried again from {'another address' if others == 1 else f'{others} other addresses'}"
+        if others > 0 else ""
+    )
     if reason == "rate_limited":
         if not paused:
             return (
                 "<div class=err><strong>Garmin is asking for a pause, sorry.</strong> "
-                "It is not your password. Garmin limits how many sign-ins it takes, "
-                "and Daash already tried a second time from a different address. "
+                f"It is not your password. Garmin limits how many sign-ins it takes{tried}. "
                 "Please try again in fifteen minutes.</div>"
                 + _try_again(flow)
             )
@@ -707,8 +729,7 @@ def _signin_error(exc: BaseException, flow: str = "", *, paused: bool = True) ->
             return (
                 "<div class=err><strong>Garmin turned this sign-in away, sorry.</strong> "
                 "It is not your password: Garmin refused the request before checking "
-                "it, and again when Daash tried from a different address. Please "
-                "try again in a few minutes, or later today.</div>"
+                f"it{tried}. Please try again in a few minutes, or later today.</div>"
                 + _try_again(flow)
             )
         return (
@@ -799,9 +820,14 @@ async def oauth_consent(request: Request) -> Response:
 
 
 def _finish(
-    request: Request, client: Any, email: str, flow: str = "", *, mfa: bool = False
+    request: Request, client: Any, email: str, flow: str = "", *, mfa: bool = False,
+    took: dict[str, Any] | None = None,
 ) -> Response:
-    """Persist the session and show the person their private URL."""
+    """Persist the session and show the person their private URL.
+
+    `took` is how many attempts the sign-in needed and how long it ran, so
+    the report shows retries rescuing sign-ins, or not.
+    """
     blob = client.client.dumps()
     fingerprint = store.email_fingerprint(email)
     # Retires any URL this person was given before, so signing in again is also
@@ -836,6 +862,7 @@ def _finish(
             "via": ("oauth" if flow else "direct") if OAUTH_ENABLED else "url",
             "mfa": mfa,
             "returning": bool(previous),
+            **(took or {}),
         },
     )
 
@@ -1063,22 +1090,35 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             result = client.login()
         return client, result
 
+    started = time.monotonic()
+    tries = 0
+
     def _login() -> tuple[Any, Any]:
-        # One second go, and only through the proxy: from a new address when
-        # Garmin refused this one, or directly when the proxy itself is down.
-        # A wrong password or anything else is final.
-        nonlocal egress
-        try:
-            return _try(egress)
-        except Exception as exc:  # noqa: BLE001
-            reason = _failure_reason(exc)
-            if not egress or reason not in ("rate_limited", "blocked_by_garmin", "proxy_failed"):
-                raise
-            egress = "" if reason == "proxy_failed" else login_proxy()
-            log.warning("sign-in retrying %s after %s",
-                        "directly" if not egress else "from a new address", reason)
-            _retried(reason, "direct" if not egress else "new_address", email)
-        return _try(egress)
+        # Retries only go through the proxy: from a new address when Garmin
+        # refused or stumbled on this one, while there is time left, or
+        # directly, once, when the proxy itself is down. A wrong password is
+        # final, and so is anything from the server's own address.
+        nonlocal egress, tries
+        while True:
+            tries += 1
+            try:
+                return _try(egress)
+            except Exception as exc:  # noqa: BLE001
+                reason = _failure_reason(exc)
+                if not egress or reason == "bad_credentials":
+                    raise
+                if reason == "proxy_failed":
+                    egress, then = "", "direct"
+                elif tries < SIGNIN_TRIES and time.monotonic() - started < SIGNIN_BUDGET:
+                    egress, then = login_proxy(), "new_address"
+                else:
+                    raise
+                log.warning("sign-in retrying %s after %s",
+                            "directly" if not egress else "from a new address", reason)
+                _retried(reason, then, email)
+
+    def took() -> dict[str, Any]:
+        return {"attempts": tries, "seconds": round(time.monotonic() - started, 1)}
 
     try:
         client, result = await anyio.to_thread.run_sync(_login)
@@ -1086,8 +1126,12 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         reason = _failure_reason(exc)
         if not egress:
             _pause_sign_ins(reason)
-        _failed(reason, email)
-        return page("Sign in to Garmin", _signin_error(exc, flow, paused=not egress), 400)
+        _failed(reason, email, **took())
+        return page(
+            "Sign in to Garmin",
+            _signin_error(exc, flow, paused=not egress, tries=tries),
+            400,
+        )
 
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
         _sweep_pending()
@@ -1104,6 +1148,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             "email": email,
             "flow": flow,
             "egress": egress,
+            "took": took(),
             "started": time.time(),
         }
         return page(
@@ -1122,7 +1167,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             """,
         )
 
-    return _finish(request, client, email, flow)
+    return _finish(request, client, email, flow, took=took())
 
 
 @mcp.custom_route("/mfa", methods=["POST"])
@@ -1151,7 +1196,8 @@ async def mfa_submit(request: Request) -> Response:
             "the sign-in page</a>.</div>",
             400,
         )
-    return _finish(request, client, pending["email"], pending.get("flow", ""), mfa=True)
+    return _finish(request, client, pending["email"], pending.get("flow", ""), mfa=True,
+                   took=pending.get("took"))
 
 
 @mcp.custom_route("/health", methods=["GET"])

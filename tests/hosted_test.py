@@ -471,7 +471,7 @@ async def main() -> int:
         code, body = await anyio_run(fetch, "/connect")
         check("the sign-in form says it's working once pressed",
               'data-wait="Connecting to Garmin' in body and "please don&rsquo;t press again" in body
-              and "f.dataset.sent" in body)
+              and "f.dataset.sent" in body and "data-later=" in body)
 
         # A sign-in that stops for a code parks the client in memory for ten
         # minutes. garminconnect only drops the password on the clean path, so
@@ -571,17 +571,29 @@ async def main() -> int:
             EGRESS.clear()
             code, body = await anyio_run(signin, BLOCKED_EMAIL)
             tried = [via for e, via in EGRESS if e == BLOCKED_EMAIL]
-            check("a second refusal is final, after exactly two addresses",
-                  code == 400 and len(tried) == 2 and len(set(tried)) == 2, f"status {code} {len(tried)}")
-            check("refused twice through the proxy, the page claims no pause",
-                  "turned this sign-in away" in body and "different address" in body
+            check("refusals are tried from three addresses, then stop",
+                  code == 400 and len(tried) == 3 and len(set(tried)) == 3, f"status {code} {len(tried)}")
+            check("refused every time through the proxy, the page says so and claims no pause",
+                  "turned this sign-in away" in body and "2 other addresses" in body
                   and "paused" not in body and hosted._pause_left() == 0)
+
+            # The person is waiting on the page: no new attempt once the time is up.
+            budget = hosted.SIGNIN_BUDGET
+            hosted.SIGNIN_BUDGET = 0
+            try:
+                EGRESS.clear()
+                code, body = await anyio_run(signin, BLOCKED_EMAIL)
+                check("no retry starts once the time budget is spent",
+                      code == 400 and len(EGRESS) == 1 and "tried again" not in body,
+                      f"status {code} {len(EGRESS)}")
+            finally:
+                hosted.SIGNIN_BUDGET = budget
 
             EGRESS.clear()
             code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
             check("a rate limit through the proxy says when to retry, and pauses nobody",
                   code == 400 and "fifteen minutes" in body and "paused" not in body
-                  and hosted._pause_left() == 0 and len(EGRESS) == 2, f"status {code}")
+                  and hosted._pause_left() == 0 and len(EGRESS) == 3, f"status {code}")
 
             EGRESS.clear()
             code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
@@ -704,6 +716,13 @@ async def main() -> int:
               and "hunter2" not in blob and "-token" not in without_email
               and "secret_country" not in blob and "geo.example.net" not in blob)
         retried = by_name.get("sign_in_retried", [])
+        check("sign-ins report how many attempts they took and how long",
+              any(e["properties"].get("attempts") == 2 for e in connected)
+              and any(e["properties"].get("attempts") == 3 for e in failed)
+              and all(isinstance(e["properties"].get("seconds"), float)
+                      for e in connected + failed if "attempts" in e["properties"]),
+              str([(e["properties"].get("attempts"), e["properties"].get("seconds"))
+                   for e in connected][-4:]))
         check("a retried sign-in is reported with why and how",
               {(e["properties"].get("reason"), e["properties"].get("then")) for e in retried}
               >= {("blocked_by_garmin", "new_address"), ("proxy_failed", "direct")},

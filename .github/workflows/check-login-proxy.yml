@@ -4,10 +4,15 @@ name: Check sign-in proxy
 # that GARMIN_MCP_LOGIN_PROXY is well-formed, which country and network
 # sign-ins leave from through it, and that Garmin's sign-in page answers
 # through it. Prints no part of the secret, only yes/no answers, the exit
-# country and network, and HTTP status codes. Run by hand after changing it.
+# country and network, and HTTP status codes. Run by hand after changing it,
+# and every six hours on its own: it fails when the proxy is broken or out of
+# credit, and GitHub emails the failure, so a dead proxy is found before the
+# next person trying to sign in finds it.
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
 
 env:
   FLY_APP: garmin-mcp-1b4387
@@ -23,11 +28,11 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           cat > check.py <<'PY'
-          import json, os, urllib.parse, urllib.request
+          import json, os, re, secrets, urllib.parse, urllib.request
           raw = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
           print("set:", bool(raw))
           if not raw:
-              raise SystemExit(0)
+              raise SystemExit(1)
           u = urllib.parse.urlsplit(raw)
           print("scheme is http:", u.scheme == "http")
           print("has username and password:", bool(u.username) and bool(u.password))
@@ -56,6 +61,23 @@ jobs:
               print(f"exit {label}: status {status}, {where}")
           status, _ = get("https://sso.garmin.com/sso/signin", raw)
           print("Garmin sign-in page through proxy: status", status)
+
+          # Sign-ins use a fresh session each, as the server does. Healthy
+          # when any of three fresh addresses reaches Garmin: one refused
+          # address is normal, three in a row is not.
+          fresh = lambda: re.sub(r"(_session-)[A-Za-z0-9]+",
+                                 lambda m: m.group(1) + secrets.token_hex(4), raw, count=1)
+          codes = []
+          for _ in range(3):
+              code, _ = get("https://sso.garmin.com/sso/signin", fresh())
+              codes.append(code)
+              if code == 200:
+                  break
+          print("Garmin sign-in page through fresh addresses:", codes)
+          if 200 not in codes:
+              print("::error::The sign-in proxy cannot reach Garmin. Check the IPRoyal "
+                    "balance and the GARMIN_MCP_LOGIN_PROXY secret.")
+              raise SystemExit(1)
           PY
           flyctl ssh sftp shell --app "$FLY_APP" <<< "put check.py /tmp/check-proxy.py" >/dev/null 2>&1 || true
           flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-proxy.py" \
