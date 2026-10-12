@@ -52,13 +52,16 @@
   .empty { padding: 28px 20px; color: var(--muted); font-size: 14px; }
 
   /* ---- header */
-  .head { padding: 16px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  .head { position: relative; padding: 16px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
     gap: 12px 28px; border-bottom: 1px solid var(--border); }
   .head-l { flex: 1 1 220px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  .brand { display: flex; align-items: center; gap: 8px; }
+  .brand { display: flex; align-items: center; gap: 8px; min-height: 32px; }
   .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); font-size: 15px; }
   .kicker { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
-  .tools { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+  /* The card's own corner, not the end of the title column: on a wide card
+     that column stops halfway across, which left the buttons floating
+     mid-header. The brand row keeps their height, so nothing sits under them. */
+  .tools { position: absolute; top: 16px; right: 16px; display: flex; gap: 6px; }
   .refresh, .expand { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border);
     background: transparent; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
   .expand[hidden] { display: none; }
