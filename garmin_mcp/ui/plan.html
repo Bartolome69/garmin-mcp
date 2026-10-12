@@ -137,11 +137,12 @@
   .day-n { width: 30px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
     font-size: 13.5px; font-weight: 600; color: var(--text); }
   .day-n.faint { color: var(--faint); }
-  .day-n.next { background: var(--red); color: var(--on-red); }
+  .day-n.now { background: var(--red); color: var(--on-red); }
   .day-m { height: 10px; display: flex; align-items: center; justify-content: center; }
   .dot { width: 6px; height: 6px; border-radius: 999px; }
   .ring { width: 7px; height: 7px; border-radius: 999px; border: 1.5px solid var(--red-text); }
   .ghost { width: 7px; height: 7px; border-radius: 999px; border: 1.5px dashed var(--faint); }
+  .rest { width: 8px; height: 1.5px; border-radius: 1px; background: var(--faint); opacity: 0.7; }
 
   .rows { display: flex; flex-direction: column; }
   .row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; padding: 11px 0; border-top: 1px solid var(--row-line); align-items: center; }
@@ -348,7 +349,6 @@
     // scroll position is the user's.
     if (fit && !scrolledToNext) {
       scrolledToNext = true;
-      // The card, not the day circle in the strip that shares the class.
       var pane = document.querySelector(".week"), card = document.querySelector(".rows .next");
       if (pane && card) {
         var top = card.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
@@ -789,10 +789,13 @@
         else mark = el("span", { class: "dot", style: "background:" + typeOf(first).v });
       }
       if (!mark && ghost) mark = el("span", { class: "ghost" });
+      // Nothing on a planned day is a rest day. Without a plan, only a day
+      // already gone can be called one.
+      if (!mark && (m.mode !== "log" || date < m.today)) mark = el("span", { class: "rest" });
       var faint = !first || first.status === "missed";
       cells.push(el("div", { class: "day" }, [
         el("span", { class: "day-l mono", text: LETTERS[d] }),
-        el("span", { class: "day-n" + (isNext ? " next" : faint ? " faint" : ""), text: String(parse(date).getDate()) }),
+        el("span", { class: "day-n" + (isNext ? " now" : faint ? " faint" : ""), text: String(parse(date).getDate()) }),
         el("span", { class: "day-m" }, [mark]),
       ]));
     }
