@@ -650,10 +650,11 @@ def _signin_error(exc: BaseException, flow: str = "") -> str:
         )
     if reason == "blocked_by_garmin":
         return (
-            "<div class=err><strong>Garmin is blocking sign-ins from this "
-            "server's network.</strong> This is not your password — Garmin "
-            "refuses the request before checking it. Tell whoever runs this "
-            "server; it needs a different sign-in route.</div>"
+            "<div class=err><strong>Garmin turned this sign-in away, sorry.</strong> "
+            "It is not your password: Garmin refused the request before checking "
+            "it, because of where Daash connects from, not anything you did. "
+            f"Sign-ins are paused for {GARMIN_PAUSE // 60} minutes; please try "
+            "again after that, or later today.</div>"
             + _try_again(flow)
         )
     if reason == "bad_credentials":

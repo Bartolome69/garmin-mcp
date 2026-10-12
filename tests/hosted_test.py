@@ -509,8 +509,9 @@ async def main() -> int:
               code == 200 and "/mcp" in body, f"status {code}")
 
         code, body = await anyio_run(signin, BLOCKED_EMAIL)
-        check("a network block says to tell the operator",
-              code == 400 and "blocking sign-ins from this" in body, f"status {code}")
+        check("a network block apologises and says when to try again, not to find the operator",
+              code == 400 and "turned this sign-in away" in body and "try again" in body
+              and "whoever runs" not in body, f"status {code}")
         check("a network block pauses sign-ins too", hosted._pause_left() > 0)
         hosted._paused_until = 0.0
 
