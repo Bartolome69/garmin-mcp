@@ -29,6 +29,15 @@ jobs:
         run: |
           cat > check.py <<'PY'
           import json, os, re, secrets, urllib.parse, urllib.request
+          # Sign-ins reach the proxy by swapping the requests and curl_cffi
+          # that garminconnect imports (garmin_mcp/hosted.py); check the
+          # installed release still imports them that way.
+          import types
+          from importlib.metadata import version
+          import garminconnect.client as gc
+          shape = isinstance(getattr(gc, "requests", None), types.ModuleType) and \
+              getattr(gc, "cffi_requests", None) is not None
+          print("garminconnect", version("garminconnect"), "can be routed:", shape)
           raw = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
           print("set:", bool(raw))
           if not raw:
@@ -74,9 +83,9 @@ jobs:
               if code == 200:
                   break
           print("Garmin sign-in page through fresh addresses:", codes)
-          if 200 not in codes:
-              print("::error::The sign-in proxy cannot reach Garmin. Check the IPRoyal "
-                    "balance and the GARMIN_MCP_LOGIN_PROXY secret.")
+          if 200 not in codes or not shape:
+              print("::error::Sign-ins cannot use the proxy. Check the IPRoyal balance, "
+                    "the GARMIN_MCP_LOGIN_PROXY secret, and the garminconnect release.")
               raise SystemExit(1)
           PY
           flyctl ssh sftp shell --app "$FLY_APP" <<< "put check.py /tmp/check-proxy.py" >/dev/null 2>&1 || true
