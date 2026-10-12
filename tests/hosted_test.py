@@ -68,6 +68,11 @@ SLOW_EMAIL = "slow@example.com"
 WRONG_PASSWORD_EMAIL = "wrongpw@example.com"
 RATE_LIMITED_EMAIL = "toomany@example.com"
 BLOCKED_EMAIL = "blocked@example.com"
+# Through the sign-in proxy: refused from the first address it is given, fine
+# from the next.
+REFUSED_ONCE_EMAIL = "refusedonce@example.com"
+# Where each sign-in and code step went out from, as the client saw it.
+EGRESS: list[tuple[str, str]] = []
 
 
 class _Garth:
@@ -100,6 +105,23 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
 
         def login(self, tokenstore=None):
             BUILT.append(tokenstore or "no-token")
+            via = os.environ.get("HTTPS_PROXY", "")
+            if not tokenstore:
+                EGRESS.append((email, via))
+            if "broken-proxy" in via:
+                # How the library reports a proxy that is down: every strategy
+                # fails, and the last one's requests error names the proxy.
+                raise GarminConnectConnectionError(
+                    "All login strategies exhausted: GarminConnectConnectionError: "
+                    "HTTPSConnectionPool(host='sso.garmin.com', port=443): Max retries "
+                    "exceeded (Caused by ProxyError('Unable to connect to proxy', "
+                    "OSError('Tunnel connection failed: 403 Forbidden')))"
+                )
+            if email == REFUSED_ONCE_EMAIL and [e for e, _ in EGRESS].count(email) == 1:
+                raise GarminConnectConnectionError(
+                    "Login failed: 403 Client Error: Forbidden for url: "
+                    "https://sso.garmin.com/sso/signin"
+                )
             if email == WRONG_PASSWORD_EMAIL:
                 raise GarminConnectAuthenticationError(
                     "Authentication failed (401 Unauthorized). Possible causes: ..."
@@ -131,6 +153,11 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
             if tokenstore:
                 self._marker = marker
             self.full_name = f"account:{marker}"
+            return (None, None)
+
+        def resume_login(self, state, code):
+            EGRESS.append((f"code:{email}", os.environ.get("HTTPS_PROXY", "")))
+            self.full_name = f"account:{email}-token"
             return (None, None)
 
         def get_user_profile(self):
@@ -515,6 +542,81 @@ async def main() -> int:
         check("a network block pauses sign-ins too", hosted._pause_left() > 0)
         hosted._paused_until = 0.0
 
+        # Through the sign-in proxy, every attempt gets an address of its own,
+        # a refusal is tried once more from a new one, and a proxy that is
+        # down falls back to the server's own address rather than failing.
+        proxy_user = "http://user:secret_country-gb_session-AAAAAAAA_lifetime-30m"
+        # "Directly" leaves whatever proxy settings the process already had.
+        proxy_keys = ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
+        ambient = {k: os.environ.get(k) for k in proxy_keys}
+        os.environ["GARMIN_MCP_LOGIN_PROXY"] = proxy_user + "@geo.example.net:12321"
+        try:
+            sessions = {re.search(r"_session-(\w+)", hosted.login_proxy()).group(1)
+                        for _ in range(5)}
+            check("each sign-in gets a fresh proxy session",
+                  len(sessions) == 5 and "AAAAAAAA" not in sessions, str(sessions))
+            check("the rest of the proxy address is kept as written",
+                  hosted.login_proxy().endswith("_lifetime-30m@geo.example.net:12321"))
+
+            hosted._ATTEMPTS.clear()
+            EGRESS.clear()
+            code, body = await anyio_run(signin, REFUSED_ONCE_EMAIL)
+            tried = [via for e, via in EGRESS if e == REFUSED_ONCE_EMAIL]
+            check("a refusal through the proxy is retried once from a new address",
+                  code == 200 and "/mcp" in body and len(tried) == 2
+                  and all("geo.example.net" in v for v in tried) and tried[0] != tried[1],
+                  f"status {code} {len(tried)}")
+            check("a refusal through the proxy pauses nobody", hosted._pause_left() == 0)
+
+            EGRESS.clear()
+            code, body = await anyio_run(signin, BLOCKED_EMAIL)
+            tried = [via for e, via in EGRESS if e == BLOCKED_EMAIL]
+            check("a second refusal is final, after exactly two addresses",
+                  code == 400 and len(tried) == 2 and len(set(tried)) == 2, f"status {code} {len(tried)}")
+            check("refused twice through the proxy, the page claims no pause",
+                  "turned this sign-in away" in body and "different address" in body
+                  and "paused" not in body and hosted._pause_left() == 0)
+
+            EGRESS.clear()
+            code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
+            check("a rate limit through the proxy says when to retry, and pauses nobody",
+                  code == 400 and "fifteen minutes" in body and "paused" not in body
+                  and hosted._pause_left() == 0 and len(EGRESS) == 2, f"status {code}")
+
+            EGRESS.clear()
+            code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
+            check("a wrong password is not retried", code == 400 and len(EGRESS) == 1, str(len(EGRESS)))
+
+            # The code step must leave from the address that started the sign-in.
+            hosted._PENDING.clear()
+            EGRESS.clear()
+            code, body = await anyio_run(signin, MFA_EMAIL)
+            pending_id = re.search(r'name=pending value="([^"]+)"', body).group(1)
+            code, body = await anyio_run(post, "/mfa", {"pending": pending_id, "code": "123456"})
+            check("the code step goes out from the same proxy address as the sign-in",
+                  code == 200 and len(EGRESS) == 2 and EGRESS[0][1] == EGRESS[1][1]
+                  and "geo.example.net" in EGRESS[1][1], f"status {code} {EGRESS}")
+
+            os.environ["GARMIN_MCP_LOGIN_PROXY"] = proxy_user + "@broken-proxy.example.net:12321"
+            hosted._ATTEMPTS.clear()
+            EGRESS.clear()
+            code, body = await anyio_run(signin, "someone@example.com")
+            check("a proxy that is down falls back to connecting directly",
+                  code == 200 and "/mcp" in body and len(EGRESS) == 2
+                  and EGRESS[-1][1] == (ambient["HTTPS_PROXY"] or ""),
+                  f"status {code} {EGRESS}")
+            check("a proxy failure is told apart from Garmin refusing",
+                  hosted._failure_reason(GarminConnectConnectionError(
+                      "Caused by ProxyError('Unable to connect to proxy', "
+                      "OSError('Tunnel connection failed: 403 Forbidden'))")) == "proxy_failed"
+                  and hosted._failure_reason(GarminConnectConnectionError(
+                      "curl: (56) CONNECT tunnel failed, response 407")) == "proxy_failed")
+        finally:
+            os.environ.pop("GARMIN_MCP_LOGIN_PROXY", None)
+            hosted._paused_until = 0.0
+        check("the proxy settings are put back as they were after sign-in",
+              {k: os.environ.get(k) for k in proxy_keys} == ambient)
+
         # And repeated attempts from one address get throttled.
         hosted._ATTEMPTS.clear()
         codes = [(await anyio_run(signin, "spray@example.com"))[0] for _ in range(12)]
@@ -579,7 +681,7 @@ async def main() -> int:
         full_addresses = ("someone@example.com", "friend@example.com",
                           "spray@example.com", "gatecrasher@example.com", MFA_EMAIL,
                           "later@example.com", WRONG_PASSWORD_EMAIL, RATE_LIMITED_EMAIL,
-                          BLOCKED_EMAIL)
+                          BLOCKED_EMAIL, REFUSED_ONCE_EMAIL)
         check("a sign-in and a failure each name who, in full",
               all("@" in e["properties"].get("email", "") and "*" not in e["properties"]["email"]
                   for e in connected + failed),
@@ -599,7 +701,13 @@ async def main() -> int:
         check("no token, password or Garmin session ever reaches analytics",
               alice not in blob and bob not in blob
               and SECRET not in blob and "their-own-password" not in blob
-              and "hunter2" not in blob and "-token" not in without_email)
+              and "hunter2" not in blob and "-token" not in without_email
+              and "secret_country" not in blob and "geo.example.net" not in blob)
+        retried = by_name.get("sign_in_retried", [])
+        check("a retried sign-in is reported with why and how",
+              {(e["properties"].get("reason"), e["properties"].get("then")) for e in retried}
+              >= {("blocked_by_garmin", "new_address"), ("proxy_failed", "direct")},
+              str([e["properties"].get("reason") for e in retried]))
 
         # Kept on the server too, so whoever runs it can get in touch, but
         # encrypted like the token: the database file never holds it in clear.

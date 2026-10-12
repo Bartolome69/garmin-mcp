@@ -84,7 +84,9 @@ _ATTEMPT_LIMIT = 8
 # shared, and each retry while it is in force counts against it and pushes it
 # towards a block. During the pause nothing is sent to Garmin; people are told
 # how long to wait instead. In memory: one machine serves this, and a restart
-# that forgets the pause costs at most one more refused attempt.
+# that forgets the pause costs at most one more refused attempt. Only a refusal
+# of the server's own address pauses anything: through the sign-in proxy each
+# attempt has an address of its own, so one refusal says nothing about the next.
 GARMIN_PAUSE = 1800
 _paused_until = 0.0
 
@@ -114,6 +116,21 @@ def _failed(reason: str, email: str = "") -> None:
         "sign_in_failed",
         store.email_fingerprint(email) if email else None,
         {"reason": reason, **who},
+    )
+
+
+def _retried(reason: str, then: str, email: str = "") -> None:
+    """Record a sign-in that failed once and is being tried again.
+
+    `then` is how: "new_address" through a fresh proxy address, or "direct"
+    when the proxy itself failed, which needs looking at.
+    """
+    email = email.strip()
+    who = {"account": mask_email(email), "email": email} if email else {}
+    analytics.capture(
+        "sign_in_retried",
+        store.email_fingerprint(email) if email else None,
+        {"reason": reason, "then": then, **who},
     )
 
 
@@ -154,10 +171,29 @@ _STATS_TTL = 300
 _LOGIN_PROXY_LOCK = threading.Lock()
 
 
-@contextlib.contextmanager
-def login_egress():
-    """Route just this block's requests through the sign-in proxy, if set."""
+# Residential proxies like IPRoyal pick the exit address by a session id in the
+# password ("..._session-ab12cd34_lifetime-30m"): one id, one home address for
+# its lifetime. A fresh id per sign-in means a refusal from Garmin sticks to
+# that one address, not to everyone who signs in over the next half hour, and
+# a retry goes out from somewhere else. A proxy without the marker is used as
+# it is.
+_PROXY_SESSION = re.compile(r"(_session-)[A-Za-z0-9]+")
+
+
+def login_proxy() -> str:
+    """The sign-in proxy with a fresh session id, or "" to connect directly."""
     proxy = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
+    return _PROXY_SESSION.sub(lambda m: m.group(1) + secrets.token_hex(4), proxy, count=1)
+
+
+@contextlib.contextmanager
+def login_egress(proxy: str | None = None):
+    """Route just this block's requests through `proxy`, "" for direct.
+
+    Left out, it is the configured proxy as written, if any.
+    """
+    if proxy is None:
+        proxy = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
     if not proxy:
         yield
         return
@@ -598,7 +634,7 @@ def _http_status(exc: BaseException) -> int | None:
 
 
 def _failure_reason(exc: BaseException) -> str:
-    """Which of the four things that go wrong at sign-in this was.
+    """Which of the things that go wrong at sign-in this was.
 
     Told apart by the library's exception type first, then by status code and
     message. The two network failures need opposite responses: a 429 is a
@@ -612,6 +648,11 @@ def _failure_reason(exc: BaseException) -> str:
     name = type(exc).__name__
     text = str(exc).lower()
     status = _http_status(exc)
+    # The proxy itself failing (down, or refusing its own password) is
+    # neither Garmin nor the person, and is checked first: its message can
+    # carry a 403 or 407 of the proxy's own.
+    if "proxy" in text or "connect tunnel failed" in text:
+        return "proxy_failed"
     if name == "GarminConnectTooManyRequestsError" or status == 429 or "429" in text:
         return "rate_limited"
     if name == "GarminConnectAuthenticationError" or status == 401 or "401" in text:
@@ -635,11 +676,24 @@ def _log_signin_failure(exc: BaseException, reason: str) -> None:
     )
 
 
-def _signin_error(exc: BaseException, flow: str = "") -> str:
-    """Explain a failed sign-in in terms that make sense on a web page."""
+def _signin_error(exc: BaseException, flow: str = "", *, paused: bool = True) -> str:
+    """Explain a failed sign-in in terms that make sense on a web page.
+
+    `paused` says whether this failure paused sign-ins for everyone, which
+    only happens when the refused attempt went out from the server's own
+    address; the page must not claim a pause that isn't there.
+    """
     reason = _failure_reason(exc)
     _log_signin_failure(exc, reason)
     if reason == "rate_limited":
+        if not paused:
+            return (
+                "<div class=err><strong>Garmin is asking for a pause, sorry.</strong> "
+                "It is not your password. Garmin limits how many sign-ins it takes, "
+                "and Daash already tried a second time from a different address. "
+                "Please try again in fifteen minutes.</div>"
+                + _try_again(flow)
+            )
         return (
             "<div class=err><strong>Garmin is asking this server to slow down.</strong> "
             "It is not your password. Garmin limits how many sign-ins it takes "
@@ -649,6 +703,14 @@ def _signin_error(exc: BaseException, flow: str = "") -> str:
             + _try_again(flow)
         )
     if reason == "blocked_by_garmin":
+        if not paused:
+            return (
+                "<div class=err><strong>Garmin turned this sign-in away, sorry.</strong> "
+                "It is not your password: Garmin refused the request before checking "
+                "it, and again when Daash tried from a different address. Please "
+                "try again in a few minutes, or later today.</div>"
+                + _try_again(flow)
+            )
         return (
             "<div class=err><strong>Garmin turned this sign-in away, sorry.</strong> "
             "It is not your password: Garmin refused the request before checking "
@@ -981,7 +1043,12 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             429,
         )
 
-    def _login() -> Any:
+    # Where the last attempt went out from: a proxy address, or "" for the
+    # server's own. The code step has to come from the same place, and only
+    # a refusal of the server's own address is worth pausing everyone for.
+    egress = login_proxy()
+
+    def _try(via: str) -> tuple[Any, Any]:
         client = build_client(
             prompt_mfa=lambda: (_ for _ in ()).throw(
                 RuntimeError("multi-factor code required")
@@ -992,17 +1059,35 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         # return_on_mfa hands the flow back instead of prompting, so the code can
         # be collected over a second request.
         client.return_on_mfa = True
-        with login_egress():
+        with login_egress(via):
             result = client.login()
         return client, result
+
+    def _login() -> tuple[Any, Any]:
+        # One second go, and only through the proxy: from a new address when
+        # Garmin refused this one, or directly when the proxy itself is down.
+        # A wrong password or anything else is final.
+        nonlocal egress
+        try:
+            return _try(egress)
+        except Exception as exc:  # noqa: BLE001
+            reason = _failure_reason(exc)
+            if not egress or reason not in ("rate_limited", "blocked_by_garmin", "proxy_failed"):
+                raise
+            egress = "" if reason == "proxy_failed" else login_proxy()
+            log.warning("sign-in retrying %s after %s",
+                        "directly" if not egress else "from a new address", reason)
+            _retried(reason, "direct" if not egress else "new_address", email)
+        return _try(egress)
 
     try:
         client, result = await anyio.to_thread.run_sync(_login)
     except Exception as exc:  # noqa: BLE001
         reason = _failure_reason(exc)
-        _pause_sign_ins(reason)
+        if not egress:
+            _pause_sign_ins(reason)
         _failed(reason, email)
-        return page("Sign in to Garmin", _signin_error(exc, flow), 400)
+        return page("Sign in to Garmin", _signin_error(exc, flow, paused=not egress), 400)
 
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
         _sweep_pending()
@@ -1018,6 +1103,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             "state": result[1],
             "email": email,
             "flow": flow,
+            "egress": egress,
             "started": time.time(),
         }
         return page(
@@ -1052,7 +1138,7 @@ async def mfa_submit(request: Request) -> Response:
     client = pending["client"]
     try:
         def _resume() -> Any:
-            with login_egress():
+            with login_egress(pending.get("egress")):
                 return client.resume_login(pending["state"], code)
 
         await anyio.to_thread.run_sync(_resume)
