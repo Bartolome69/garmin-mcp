@@ -1,0 +1,62 @@
+name: Check sign-in proxy
+
+# Runs inside the hosted machine and checks the sign-in proxy end to end:
+# that GARMIN_MCP_LOGIN_PROXY is well-formed, which country and network
+# sign-ins leave from through it, and that Garmin's sign-in page answers
+# through it. Prints no part of the secret, only yes/no answers, the exit
+# country and network, and HTTP status codes. Run by hand after changing it.
+
+on:
+  workflow_dispatch:
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Check the proxy from the machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          cat > check.py <<'PY'
+          import json, os, urllib.parse, urllib.request
+          raw = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
+          print("set:", bool(raw))
+          if not raw:
+              raise SystemExit(0)
+          u = urllib.parse.urlsplit(raw)
+          print("scheme is http:", u.scheme == "http")
+          print("has username and password:", bool(u.username) and bool(u.password))
+          print("has host and port:", bool(u.hostname) and bool(u.port))
+          print("no spaces:", " " not in raw)
+
+          def get(url, proxy):
+              handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy} if proxy else {})]
+              opener = urllib.request.build_opener(*handlers)
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              try:
+                  with opener.open(req, timeout=30) as r:
+                      return r.status, r.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, b""
+              except Exception as e:
+                  return type(e).__name__, b""
+
+          for label, proxy in (("direct", None), ("through proxy", raw)):
+              status, body = get("https://ipinfo.io/json", proxy)
+              try:
+                  info = json.loads(body)
+                  where = f"{info.get('country')} / {info.get('org')}"
+              except Exception:
+                  where = "unknown"
+              print(f"exit {label}: status {status}, {where}")
+          status, _ = get("https://sso.garmin.com/sso/signin", raw)
+          print("Garmin sign-in page through proxy: status", status)
+          PY
+          flyctl ssh sftp shell --app "$FLY_APP" <<< "put check.py /tmp/check-proxy.py" >/dev/null 2>&1 || true
+          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-proxy.py" \
+            || flyctl ssh console --app "$FLY_APP" -C "python3 -c \"$(sed 's/"/\\"/g' check.py)\""
