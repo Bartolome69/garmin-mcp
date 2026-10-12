@@ -63,6 +63,7 @@ SECRET = "never-show-this-blob-value"
 MFA_EMAIL = "mfa@example.com"
 # Garmin taking its time, the way a real sign-in does.
 SLOW_EMAIL = "slow@example.com"
+SLOW_EMAIL_2 = "tardy@example.com"
 # Addresses the fake refuses, each the way the real library would: the
 # exception class is what the server classifies on first.
 WRONG_PASSWORD_EMAIL = "wrongpw@example.com"
@@ -73,6 +74,22 @@ BLOCKED_EMAIL = "blocked@example.com"
 REFUSED_ONCE_EMAIL = "refusedonce@example.com"
 # Where each sign-in and code step went out from, as the client saw it.
 EGRESS: list[tuple[str, str]] = []
+
+
+def seen_proxy() -> str:
+    """The proxy a connection opened here by garminconnect would use.
+
+    Asked of both libraries it connects with; they must agree.
+    """
+    import garminconnect.client as gcc
+    plain = gcc.requests.Session()
+    via = plain.proxies.get("https", "") if not plain.trust_env else ""
+    cffi = gcc.cffi_requests.Session()
+    try:
+        assert (cffi.proxies or {}).get("https", "") == via, "curl_cffi and requests disagree"
+    finally:
+        cffi.close()
+    return via
 
 
 class _Garth:
@@ -105,7 +122,7 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
 
         def login(self, tokenstore=None):
             BUILT.append(tokenstore or "no-token")
-            via = os.environ.get("HTTPS_PROXY", "")
+            via = seen_proxy()
             if not tokenstore:
                 EGRESS.append((email, via))
             if "broken-proxy" in via:
@@ -137,7 +154,7 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
                     "Login failed: 403 Client Error: Forbidden for url: "
                     "https://sso.garmin.com/sso/signin"
                 )
-            if email == SLOW_EMAIL:
+            if email in (SLOW_EMAIL, SLOW_EMAIL_2):
                 time.sleep(1.5)
             if email == MFA_EMAIL:
                 # The real library returns early here, before the line that
@@ -156,7 +173,7 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
             return (None, None)
 
         def resume_login(self, state, code):
-            EGRESS.append((f"code:{email}", os.environ.get("HTTPS_PROXY", "")))
+            EGRESS.append((f"code:{email}", seen_proxy()))
             self.full_name = f"account:{email}-token"
             return (None, None)
 
@@ -616,8 +633,7 @@ async def main() -> int:
             check("a proxy that is down gets a second address, then connects directly",
                   code == 200 and "/mcp" in body and len(EGRESS) == 3
                   and "broken-proxy" in EGRESS[0][1] and "broken-proxy" in EGRESS[1][1]
-                  and EGRESS[0][1] != EGRESS[1][1]
-                  and EGRESS[-1][1] == (ambient["HTTPS_PROXY"] or ""),
+                  and EGRESS[0][1] != EGRESS[1][1] and EGRESS[-1][1] == "",
                   f"status {code} {EGRESS}")
 
             # One home connection in the pool being offline is normal: the
@@ -640,10 +656,31 @@ async def main() -> int:
                       "OSError('Tunnel connection failed: 403 Forbidden'))")) == "proxy_failed"
                   and hosted._failure_reason(GarminConnectConnectionError(
                       "curl: (56) CONNECT tunnel failed, response 407")) == "proxy_failed")
+
+            # Sign-ins run side by side, each through its own address, and
+            # nothing else the server opens meanwhile goes through either.
+            os.environ["GARMIN_MCP_LOGIN_PROXY"] = proxy_user + "@geo.example.net:12321"
+            hosted._ATTEMPTS.clear()
+            EGRESS.clear()
+            import concurrent.futures as _cf
+            began = time.monotonic()
+            with _cf.ThreadPoolExecutor(2) as pool:
+                both = [pool.submit(signin, e) for e in (SLOW_EMAIL, SLOW_EMAIL_2)]
+                time.sleep(0.5)
+                meanwhile = seen_proxy()
+                results = [f.result() for f in both]
+            took = time.monotonic() - began
+            seen = dict(EGRESS)
+            check("two sign-ins at once run side by side, not one after the other",
+                  all(c == 200 for c, _ in results) and took < 2.8, f"{took:.1f}s")
+            check("each of two sign-ins at once goes out from its own address",
+                  len(seen) == 2 and all("geo.example.net" in v for v in seen.values())
+                  and seen[SLOW_EMAIL] != seen[SLOW_EMAIL_2], str(seen))
+            check("a connection opened elsewhere during sign-ins goes direct", meanwhile == "")
         finally:
             os.environ.pop("GARMIN_MCP_LOGIN_PROXY", None)
             hosted._paused_until = 0.0
-        check("the proxy settings are put back as they were after sign-in",
+        check("no sign-in ever touches the process's proxy settings",
               {k: os.environ.get(k) for k in proxy_keys} == ambient)
 
         # And repeated attempts from one address get throttled.
@@ -710,7 +747,7 @@ async def main() -> int:
         full_addresses = ("someone@example.com", "friend@example.com",
                           "spray@example.com", "gatecrasher@example.com", MFA_EMAIL,
                           "later@example.com", WRONG_PASSWORD_EMAIL, RATE_LIMITED_EMAIL,
-                          BLOCKED_EMAIL, REFUSED_ONCE_EMAIL)
+                          BLOCKED_EMAIL, REFUSED_ONCE_EMAIL, SLOW_EMAIL_2)
         check("a sign-in and a failure each name who, in full",
               all("@" in e["properties"].get("email", "") and "*" not in e["properties"]["email"]
                   for e in connected + failed),

@@ -172,10 +172,81 @@ _STATS_TTL = 300
 # from a GitHub Actions runner, and reported the same way by other hosted
 # gateways. The data API is unaffected, so only sign-in needs a clean egress.
 #
-# garminconnect exposes no proxy setting, so this goes through curl's
-# environment variables. Those are process-wide, hence the lock: sign-ins are
-# rare, and serialising them costs nothing.
-_LOGIN_PROXY_LOCK = threading.Lock()
+# garminconnect has no proxy setting, so the proxy goes in where it opens its
+# connections: the `requests` and `curl_cffi` it imports are swapped for
+# versions whose sessions, and one-off posts, take the proxy of the sign-in
+# running on that thread. Each sign-in runs on its own worker thread, so
+# sign-ins run side by side, each through its own address, and nothing else
+# the server does (anyone's data calls) is touched. Environment variables did
+# this before, but they are shared by the whole process, so sign-ins had to
+# queue behind a lock.
+_EGRESS = threading.local()
+
+
+def _egress_proxy() -> str:
+    return getattr(_EGRESS, "proxy", "")
+
+
+def _proxied(kwargs: dict[str, Any]) -> dict[str, Any]:
+    proxy = _egress_proxy()
+    if proxy and not kwargs.get("proxies") and not kwargs.get("proxy"):
+        kwargs["proxies"] = {"http": proxy, "https": proxy}
+    return kwargs
+
+
+class _Via:
+    """A stand-in for `requests` or `curl_cffi.requests` inside garminconnect."""
+
+    def __init__(self, real: Any, session: type) -> None:
+        self._real = real
+        self.Session = session
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real, name)
+
+    def get(self, *args: Any, **kwargs: Any) -> Any:
+        return self._real.get(*args, **_proxied(kwargs))
+
+    def post(self, *args: Any, **kwargs: Any) -> Any:
+        return self._real.post(*args, **_proxied(kwargs))
+
+
+def _route_garmin_sign_ins() -> None:
+    import requests
+    from garminconnect import client as gc
+
+    if isinstance(getattr(gc, "requests", None), _Via):
+        return
+    if not isinstance(getattr(gc, "requests", None), type(requests)):
+        # A garminconnect release that opens connections differently: say so
+        # loudly, since sign-ins would then leave from the server's address.
+        log.error("garminconnect has changed; sign-ins will not use the proxy")
+        return
+
+    class RequestsSession(requests.Session):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            proxy = _egress_proxy()
+            if proxy:
+                self.proxies.update({"http": proxy, "https": proxy})
+                # Otherwise a proxy in the environment would win over this one.
+                self.trust_env = False
+
+    gc.requests = _Via(requests, RequestsSession)
+
+    real_cffi = getattr(gc, "cffi_requests", None)
+    if real_cffi is not None:
+        class CffiSession(real_cffi.Session):
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                super().__init__(*args, **_proxied(kwargs))
+
+        gc.cffi_requests = _Via(real_cffi, CffiSession)
+
+
+try:
+    _route_garmin_sign_ins()
+except ImportError:  # pragma: no cover - install problem, reported at sign-in
+    log.error("garminconnect is not installed; sign-ins will fail")
 
 
 # Residential proxies like IPRoyal pick the exit address by a session id in the
@@ -195,28 +266,20 @@ def login_proxy() -> str:
 
 @contextlib.contextmanager
 def login_egress(proxy: str | None = None):
-    """Route just this block's requests through `proxy`, "" for direct.
+    """Send this thread's Garmin connections through `proxy`, "" for direct.
 
-    Left out, it is the configured proxy as written, if any.
+    Left out, it is the configured proxy as written, if any. A client built
+    inside keeps the proxy on its own sessions, so its code step and token
+    checks leave from the same address.
     """
     if proxy is None:
         proxy = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
-    if not proxy:
+    previous = _egress_proxy()
+    _EGRESS.proxy = proxy
+    try:
         yield
-        return
-
-    keys = ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
-    with _LOGIN_PROXY_LOCK:
-        previous = {k: os.environ.get(k) for k in keys}
-        os.environ.update({k: proxy for k in keys})
-        try:
-            yield
-        finally:
-            for key, value in previous.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
+    finally:
+        _EGRESS.proxy = previous
 
 
 def base_url(request: Request) -> str:
@@ -1076,17 +1139,18 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
     egress = login_proxy()
 
     def _try(via: str) -> tuple[Any, Any]:
-        client = build_client(
-            prompt_mfa=lambda: (_ for _ in ()).throw(
-                RuntimeError("multi-factor code required")
-            ),
-            email=email,
-            password=password,
-        )
-        # return_on_mfa hands the flow back instead of prompting, so the code can
-        # be collected over a second request.
-        client.return_on_mfa = True
+        # Built inside, so the client's own sessions carry this address too.
         with login_egress(via):
+            client = build_client(
+                prompt_mfa=lambda: (_ for _ in ()).throw(
+                    RuntimeError("multi-factor code required")
+                ),
+                email=email,
+                password=password,
+            )
+            # return_on_mfa hands the flow back instead of prompting, so the
+            # code can be collected over a second request.
+            client.return_on_mfa = True
             result = client.login()
         return client, result
 
