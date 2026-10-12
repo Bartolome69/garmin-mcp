@@ -613,9 +613,26 @@ async def main() -> int:
             hosted._ATTEMPTS.clear()
             EGRESS.clear()
             code, body = await anyio_run(signin, "someone@example.com")
-            check("a proxy that is down falls back to connecting directly",
-                  code == 200 and "/mcp" in body and len(EGRESS) == 2
+            check("a proxy that is down gets a second address, then connects directly",
+                  code == 200 and "/mcp" in body and len(EGRESS) == 3
+                  and "broken-proxy" in EGRESS[0][1] and "broken-proxy" in EGRESS[1][1]
+                  and EGRESS[0][1] != EGRESS[1][1]
                   and EGRESS[-1][1] == (ambient["HTTPS_PROXY"] or ""),
+                  f"status {code} {EGRESS}")
+
+            # One home connection in the pool being offline is normal: the
+            # next address is tried, and the server's own address stays unused.
+            os.environ["GARMIN_MCP_LOGIN_PROXY"] = proxy_user + "@geo.example.net:12321"
+            real_try_proxy = hosted.login_proxy
+            handed = iter([proxy_user.replace("AAAAAAAA", "dead0001") + "@broken-proxy.example.net:12321"])
+            hosted.login_proxy = lambda: next(handed, None) or real_try_proxy()
+            try:
+                EGRESS.clear()
+                code, body = await anyio_run(signin, "someone@example.com")
+            finally:
+                hosted.login_proxy = real_try_proxy
+            check("one address that doesn't answer is replaced by another, not by going direct",
+                  code == 200 and len(EGRESS) == 2 and "geo.example.net" in EGRESS[1][1],
                   f"status {code} {EGRESS}")
             check("a proxy failure is told apart from Garmin refusing",
                   hosted._failure_reason(GarminConnectConnectionError(
@@ -725,7 +742,8 @@ async def main() -> int:
                    for e in connected][-4:]))
         check("a retried sign-in is reported with why and how",
               {(e["properties"].get("reason"), e["properties"].get("then")) for e in retried}
-              >= {("blocked_by_garmin", "new_address"), ("proxy_failed", "direct")},
+              >= {("blocked_by_garmin", "new_address"), ("proxy_failed", "new_address"),
+                  ("proxy_failed", "direct")},
               str([e["properties"].get("reason") for e in retried]))
 
         # Kept on the server too, so whoever runs it can get in touch, but

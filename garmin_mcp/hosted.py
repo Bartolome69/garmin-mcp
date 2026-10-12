@@ -1095,10 +1095,13 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
 
     def _login() -> tuple[Any, Any]:
         # Retries only go through the proxy: from a new address when Garmin
-        # refused or stumbled on this one, while there is time left, or
-        # directly, once, when the proxy itself is down. A wrong password is
-        # final, and so is anything from the server's own address.
+        # refused or stumbled on this one, or when the address itself didn't
+        # answer (a home connection in the pool can be offline), while there
+        # is time left. Two addresses that don't answer mean the proxy itself
+        # is down, and then it's directly, once. A wrong password is final,
+        # and so is anything from the server's own address.
         nonlocal egress, tries
+        unreachable = 0
         while True:
             tries += 1
             try:
@@ -1107,9 +1110,11 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
                 reason = _failure_reason(exc)
                 if not egress or reason == "bad_credentials":
                     raise
-                if reason == "proxy_failed":
+                unreachable += reason == "proxy_failed"
+                time_left = tries < SIGNIN_TRIES and time.monotonic() - started < SIGNIN_BUDGET
+                if reason == "proxy_failed" and (unreachable >= 2 or not time_left):
                     egress, then = "", "direct"
-                elif tries < SIGNIN_TRIES and time.monotonic() - started < SIGNIN_BUDGET:
+                elif time_left:
                     egress, then = login_proxy(), "new_address"
                 else:
                     raise
