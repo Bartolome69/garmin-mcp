@@ -20,7 +20,6 @@ import importlib.util
 import logging
 import secrets
 import sys
-import threading
 import time
 
 sys.path.insert(0, "/app")  # where the image keeps the server
@@ -65,24 +64,42 @@ for _ in range(3):
             reason = "signed in"
         except Exception as exc:  # noqa: BLE001 - every failure is a result here
             reason = hosted._failure_reason(exc)
-    print(f"{reason} after {time.monotonic() - started:.1f}s, methods tried: {', '.join(steps)}")
+    print(f"{reason} after {time.monotonic() - started:.1f}s, methods tried: {', '.join(steps)}", flush=True)
     reasons.append(reason)
     if reason == "bad_credentials":
         break
 
 ok = "bad_credentials" in reasons
-analytics.capture("sign_in_check", None, {
-    "ok": ok,
-    "reasons": reasons,
-    "tries": len(reasons),
-    "seconds": round(time.monotonic() - began, 1),
-    "code": "candidate" if candidate else "live",
-})
-for t in threading.enumerate():
-    if t is not threading.current_thread() and t.daemon:
-        t.join(10)
+print(f"result: {'ok' if ok else 'failed'}", flush=True)
 
+# Sent here and now rather than on analytics' own background thread, which
+# this short-lived process could leave before the request went out.
+recorded = False
+if analytics.enabled():
+    try:
+        analytics._post({
+            "api_key": analytics.KEY,
+            "event": "sign_in_check",
+            "distinct_id": "daash-sign-in-check",
+            "properties": {
+                "ok": ok,
+                "reasons": reasons,
+                "tries": len(reasons),
+                "seconds": round(time.monotonic() - began, 1),
+                "code": "candidate" if candidate else "live",
+                "$process_person_profile": False,
+                "$lib": "garmin-mcp-hosted",
+            },
+        })
+        recorded = True
+    except Exception as exc:  # noqa: BLE001 - the check's answer matters more
+        print(f"not sent to PostHog: {type(exc).__name__}", flush=True)
+print(f"sent to PostHog: {recorded}", flush=True)
+
+# The workflows look for this exact line rather than trusting the exit code,
+# which `flyctl ssh console` doesn't reliably pass back: a check that dies
+# halfway must never read as a pass.
 if not ok:
-    print("::error::No sign-in reached Garmin's password check. People cannot connect.")
+    print("::error::No sign-in reached Garmin's password check. People cannot connect.", flush=True)
     raise SystemExit(1)
-print("ok: a sign-in reached Garmin's password check")
+print("SIGNIN_CHECK_RESULT=ok", flush=True)
