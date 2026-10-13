@@ -550,6 +550,14 @@ async def main() -> int:
         code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
         check("a wrong password is called a wrong password",
               code == 400 and "didn't accept that email and password" in body, f"status {code}")
+        check("a wrong password shows the email as typed, to make a slip plain",
+              f"Email used: <strong>{WRONG_PASSWORD_EMAIL}</strong>" in body)
+        wrong = [e for e in SENT if e["event"] == "sign_in_failed"
+                 and e["properties"].get("email") == WRONG_PASSWORD_EMAIL]
+        check("a failed sign-in reports what failed, by type, never by message",
+              wrong and wrong[-1]["properties"].get("error_type") == "GarminConnectAuthenticationError"
+              and "Possible causes" not in json.dumps(wrong[-1]),
+              str(wrong[-1]["properties"] if wrong else None))
         hosted._paused_until = 0.0
         code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
         check("a rate limit says to wait, not to worry",
@@ -1056,6 +1064,19 @@ async def main() -> int:
               and not store.claim_news(news_user, hosted.NEWS_VERSION + 1))
         with store._connect() as conn:
             conn.execute("UPDATE users SET news_seen = 0 WHERE user_token = ?", (news_user,))
+        # A tool failing in a way it didn't expect is reported, by type only;
+        # a tool answering "that won't work" is the tool working.
+        hook = hosted._after_tool_for(news_user, store.get_user(news_user))
+        before = len(SENT)
+        hook("get_activities", {"error": "Garmin request failed (KeyError: 'secret-run-name'). "
+                                         "If this persists, check connection status."})
+        hook("schedule_workout", {"error": "workout_id must be numeric, got 'x'."})
+        tool_failures = [e for e in SENT[before:] if e["event"] == "tool_failed"]
+        check("an unexpected tool failure is reported once, by tool and type",
+              len(tool_failures) == 1 and tool_failures[0]["properties"].get("tool") == "get_activities"
+              and tool_failures[0]["properties"].get("error_type") == "KeyError"
+              and "secret-run-name" not in json.dumps(tool_failures[0]),
+              str(tool_failures))
         check("a failed answer doesn't use the note up",
               hosted._after_tool_for(news_user, store.get_user(news_user))("x", {"error": "no"})
               == {"error": "no"} and store.claim_news(news_user, hosted.NEWS_VERSION))

@@ -446,9 +446,28 @@ PERMISSION_TIP = (
 _TOOL_REPORTED: dict[tuple[str, str], str] = {}
 
 
+# How server.tool_errors words an exception it didn't expect: Garmin
+# changing an endpoint, or a bug. Answers like "that date has passed" are
+# the tool working, and are not counted.
+_UNEXPECTED = re.compile(r"Garmin request failed \((\w+)[:)]")
+
+
 def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
     """The hook for one person's request: report the tool, carry any news."""
     def after(name: str, result: Any) -> Any:
+        failed = (
+            _UNEXPECTED.match(result["error"])
+            if isinstance(result, dict) and isinstance(result.get("error"), str) else None
+        )
+        if failed:
+            # The type only: the message can hold the person's own data.
+            email = store.email_for(user_token)
+            analytics.capture(
+                "tool_failed",
+                user.email_hash or user_token,
+                {"tool": name, "error_type": failed.group(1), "account": user.email_masked,
+                 **({"email": email} if email else {})},
+            )
         today = time.strftime("%Y-%m-%d", time.gmtime())
         if _TOOL_REPORTED.get((user_token, name)) != today:
             _TOOL_REPORTED[(user_token, name)] = today
@@ -801,6 +820,23 @@ def _http_status(exc: BaseException) -> int | None:
     return None
 
 
+def _error_detail(exc: BaseException) -> dict[str, Any]:
+    """What went wrong, for the report: exception types and an HTTP status.
+
+    Enough to tell a real password rejection from something misread, without
+    any of the message text, which can carry what Garmin sent back.
+    """
+    detail: dict[str, Any] = {"error_type": type(exc).__name__}
+    status = _http_status(exc)
+    if status:
+        detail["status"] = status
+    # garminconnect sums up its whole chain as "...exhausted: <Type>: ...".
+    last = re.search(r"exhausted: (\w+)", str(exc))
+    if last:
+        detail["last_error_type"] = last.group(1)
+    return detail
+
+
 def _failure_reason(exc: BaseException) -> str:
     """Which of the things that go wrong at sign-in this was.
 
@@ -846,7 +882,7 @@ def _log_signin_failure(exc: BaseException, reason: str) -> None:
 
 def _signin_error(
     exc: BaseException, flow: str = "", *, paused: bool = True, tries: int = 1,
-    account_paused: bool = False,
+    account_paused: bool = False, email: str = "",
 ) -> str:
     """Explain a failed sign-in in terms that make sense on a web page.
 
@@ -857,6 +893,12 @@ def _signin_error(
     """
     reason = _failure_reason(exc)
     _log_signin_failure(exc, reason)
+    # The address as typed, where a password was the problem: a slip such as
+    # ".con" for ".com" (Oct 13) is then plain to see.
+    typed = (
+        f"<p class=note>Email used: <strong>{html.escape(email.strip())}</strong></p>"
+        if email.strip() else ""
+    )
     if account_paused:
         # Refused right after wrong passwords from the same person: Garmin
         # pausing their account, not anything about where Daash connects from.
@@ -866,6 +908,7 @@ def _signin_error(
             "minutes, check your password by signing in at connect.garmin.com (or "
             "reset it there with &ldquo;Forgot password&rdquo;), then try again "
             "here.</div>"
+            + typed
             + _try_again(flow)
         )
     others = tries - 1
@@ -914,6 +957,7 @@ def _signin_error(
             "wrong tries, so it is worth checking there before trying again here. "
             "If Garmin asks you for a code there, you have two-step verification "
             "on, and you'll be asked for the same code here.</div>"
+            + typed
             + _try_again(flow)
         )
     return (
@@ -1311,10 +1355,11 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         paused = not egress and not account_paused
         if paused:
             _pause_sign_ins(reason)
-        _failed(reason, email, **took())
+        _failed(reason, email, **took(), **_error_detail(exc))
         return page(
             "Sign in to Garmin",
-            _signin_error(exc, flow, paused=paused, tries=tries, account_paused=account_paused),
+            _signin_error(exc, flow, paused=paused, tries=tries,
+                          account_paused=account_paused, email=email),
             400,
         )
 
@@ -1375,7 +1420,7 @@ async def mfa_submit(request: Request) -> Response:
 
         await anyio.to_thread.run_sync(_resume)
     except Exception as exc:  # noqa: BLE001
-        _failed("mfa_rejected", pending.get("email", ""))
+        _failed("mfa_rejected", pending.get("email", ""), **_error_detail(exc))
         return page(
             "Enter your code",
             f"<div class=err>That code wasn't accepted ({type(exc).__name__}). "
