@@ -662,6 +662,7 @@ code, .url { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-si
   background:var(--ground); border:1px solid var(--line); border-radius:10px;
   padding:12px; display:block; word-break:break-all; color:var(--ink) }
 .note { font-size:0.9rem }
+.hint { margin:6px 0 0 }
 .foot { text-align:center; margin-top:18px; font-size:0.85rem }
 a { color:var(--ink); text-decoration:underline; text-decoration-color:var(--line);
   text-underline-offset:3px }
@@ -673,6 +674,79 @@ _LOCK = (
     'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
     '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
 )
+
+
+# A slip in the domain still looks like an email address, so the browser's
+# own check passes it: Tom's first try on Oct 13 was "...@gmail.con", and
+# Garmin can only say "wrong email or password". Near a common provider, or
+# with a mistyped ".com", the form offers the likely address. It never blocks
+# sending: a real address can look unusual. A link, not a button: the busy
+# script below takes the form's first button to be the one that submits.
+_EMAIL_HINT_SCRIPT = """<script>
+(function () {
+  var input = document.getElementById("email"), hint = document.getElementById("email-hint");
+  if (!input || !hint) return;
+  // Suggested when an address is a letter or two away from one of these. Only
+  // longer names: short ones (live.com, me.com) sit too close to real domains.
+  var known = ["gmail.com", "googlemail.com", "hotmail.com", "hotmail.co.uk", "outlook.com",
+    "icloud.com", "yahoo.com", "yahoo.co.uk", "live.co.uk", "btinternet.com",
+    "protonmail.com"];
+  // Real providers a letter away from those, never "corrected".
+  var fine = ["email.com", "mail.com", "ymail.com", "gmx.com", "gmx.co.uk", "mac.com", "me.com",
+    "live.com", "aol.com", "msn.com", "sky.com", "proton.me", "hey.com", "fastmail.com",
+    "rocketmail.com", "yahoo.co.in", "hotmail.co.za", "outlook.ie"];
+  var endings = {con: "com", cmo: "com", cim: "com", vom: "com", xom: "com", comm: "com",
+    coom: "com", ocm: "com"};
+  function distance(a, b) {
+    var prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev.push(j);
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) {
+        cur.push(Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)));
+      }
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  function likely(domain) {
+    if (known.indexOf(domain) >= 0 || fine.indexOf(domain) >= 0) return null;
+    var best = null, closest = 3;
+    known.forEach(function (k) {
+      var d = distance(domain, k);
+      if (d > 0 && d <= (k.length > 8 ? 2 : 1) && d < closest) { best = k; closest = d; }
+    });
+    if (best) return best;
+    var parts = domain.split("."), last = parts[parts.length - 1];
+    if (parts.length > 1 && endings[last]) {
+      parts[parts.length - 1] = endings[last];
+      return parts.join(".");
+    }
+    return null;
+  }
+  function check() {
+    var value = input.value.trim(), at = value.lastIndexOf("@");
+    var fix = at > 0 ? likely(value.slice(at + 1).toLowerCase()) : null;
+    if (!fix) { hint.hidden = true; return; }
+    var address = value.slice(0, at + 1) + fix;
+    hint.textContent = "Did you mean ";
+    var a = document.createElement("a");
+    a.href = "#";
+    a.textContent = address;
+    a.addEventListener("click", function (e) {
+      e.preventDefault();
+      input.value = address;
+      hint.hidden = true;
+      input.focus();
+    });
+    hint.appendChild(a);
+    hint.appendChild(document.createTextNode("?"));
+    hint.hidden = false;
+  }
+  input.addEventListener("blur", check);
+  input.addEventListener("input", function () { if (!hint.hidden) check(); });
+})();
+</script>"""
 
 
 # A sign-in takes Garmin ten seconds or more, and a button that looks idle for
@@ -795,6 +869,7 @@ async def connect_form(request: Request) -> Response:
           {_INVITE_FIELD if INVITE_CODE else ""}
           <label for=email>Garmin email</label>
           <input id=email name=email type=email required autocomplete=username>
+          <p class="note hint" id=email-hint role=status hidden></p>
           <label for=password>Garmin password</label>
           <input id=password name=password type=password required
                  autocomplete=current-password>
@@ -807,6 +882,7 @@ async def connect_form(request: Request) -> Response:
         </form>
         <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
         target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
+        {_EMAIL_HINT_SCRIPT}
         """,
     )
 

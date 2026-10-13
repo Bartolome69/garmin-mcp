@@ -402,6 +402,10 @@ async def main() -> int:
         code, body = await anyio_run(fetch, "/connect")
         check("sign-in form serves",
               code == 200 and "type=password" in body.replace('"', ""))
+        # A slip like "@gmail.con" passes the browser's own check; the form
+        # offers the likely address (behaviour checked in a browser by hand).
+        check("the sign-in form can suggest a mistyped email domain",
+              'id=email-hint' in body and '"gmail.com"' in body and "Did you mean" in body)
 
         # Both pages ask for a Garmin password, so both have to say what happens
         # to it. These are f-strings interpolating PRIVACY_URL: a stray brace or
