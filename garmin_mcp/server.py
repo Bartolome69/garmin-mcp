@@ -1158,7 +1158,11 @@ async def create_workout(
         name: Name shown in Garmin Connect and on the watch.
         steps: Ordered list of steps. Each step is an object:
             - "type": warmup, interval, recovery, rest, cooldown, or repeat
-            - exactly one of "duration_seconds" or "distance_meters"
+            - exactly one of "duration_seconds" or "distance_meters", or
+              "until_lap": true for a step that ends when the lap button is
+              pressed: a walk recovery between strides, a warm-up done by
+              feel, a rep run to a landmark. Each such step is still its own
+              lap, so recoveries stay out of the rep splits.
             - optional target, one of "pace" ("4:05", or ["4:00","4:10"] for a
               range, minutes per km), "hr" ([150, 165] in bpm) or "power"
               (watts: 250 or [240, 260]; or a share of the FTP set in Garmin:

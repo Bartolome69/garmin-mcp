@@ -338,6 +338,30 @@ def check_workout_steps(check) -> None:
     check("a swim set reads back by stroke, with its pace note",
           css_steps[1]["steps"][0]["label"] == "Freestyle" and css_steps[1]["steps"][0]["note"] == "1:45 /100m"
           and css_steps[2]["amount"] == "until lap", str(css_steps))
+    # Strides with a walk back to the start: the walk lasts until lap is pressed.
+    strides, strides_text, strides_secs = build_workout("Strides", "running", [
+        {"type": "warmup", "duration_seconds": 600},
+        {"type": "repeat", "times": 6, "steps": [
+            {"type": "interval", "duration_seconds": 20, "pace": "3:40"},
+            {"type": "recovery", "until_lap": True}]},
+        {"type": "cooldown", "until_lap": True}])
+    strides_json = _json.loads(strides.model_dump_json(by_alias=True))
+    walk = strides_json["workoutSegments"][0]["workoutSteps"][1]["workoutSteps"][1]
+    check("a run step can end with the lap button",
+          walk["endCondition"]["conditionTypeKey"] == "lap.button" and walk.get("endConditionValue") is None,
+          str({k: walk.get(k) for k in ("endCondition", "endConditionValue")}))
+    check("a lap-button step reads as one, and still counts toward the time estimate",
+          "until lap pressed" in strides_text and strides_secs >= 600 + 6 * 80 + 300,
+          f"{strides_secs} {strides_text!r}")
+    for bad, why in ((dict(type="recovery"), "a step with no end at all"),
+                     (dict(type="recovery", until_lap=True, duration_seconds=60), "both lap and a time"),
+                     (dict(type="recovery", until_lap="yes"), "until_lap that isn't true")):
+        try:
+            build_workout("Bad", "running", [bad])
+            refused = False
+        except _WE:
+            refused = True
+        check(f"a run step with {why} is refused", refused)
     for bad, why in ((dict(distance_meters=110), "lengths"), (dict(distance_meters=100, stroke="doggy"), "stroke"),
                      (dict(distance_meters=100, pace="0:20"), "pace")):
         try:

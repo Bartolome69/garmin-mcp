@@ -313,9 +313,18 @@ class _Builder:
             return self._build_swim_step(kind, step, depth)
         distance = step.get("distance_meters")
         duration = step.get("duration_seconds")
-        if distance is None and duration is None:
+        # Asked for, never assumed: a step left open by mistake would run
+        # until someone thought to press lap.
+        until_lap = step.get("until_lap") is True
+        if until_lap and (distance is not None or duration is not None):
             raise WorkoutError(
-                f"Step {kind!r} needs either 'duration_seconds' or 'distance_meters'."
+                f"Step {kind!r} ends either at the lap button or after a time or "
+                "distance, not both."
+            )
+        if distance is None and duration is None and not until_lap:
+            raise WorkoutError(
+                f"Step {kind!r} needs either 'duration_seconds' or 'distance_meters', "
+                'or "until_lap": true to end it with the lap button.'
             )
         if distance is not None and duration is not None:
             raise WorkoutError(
@@ -338,7 +347,13 @@ class _Builder:
         elif step.get("power") is not None:
             target, values, described = _power_target(step["power"], self.ftp)
 
-        if distance is not None:
+        value: float | None
+        if until_lap:
+            # Walk or jog until ready, then press lap: a typical minute for a
+            # recovery, a few for anything longer, for the time estimate.
+            value, condition, amount = None, "lap", "until lap pressed"
+            self.estimated_seconds += 60 if kind in ("recovery", "rest") else 300
+        elif distance is not None:
             value = float(distance)
             if value <= 0:
                 raise WorkoutError("'distance_meters' must be positive.")
