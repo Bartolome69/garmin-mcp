@@ -679,50 +679,51 @@ async def main() -> int:
                   and seen[SLOW_EMAIL] != seen[SLOW_EMAIL_2], str(seen))
             check("a connection opened elsewhere during sign-ins goes direct", meanwhile == "")
 
-            # Once Garmin's sign-in server refuses an address, the attempt
-            # stops using it: no more requests, no deliberate waits. James's
-            # first sign-in spent 71 seconds on one refused address.
+            # Garmin answering 429 or 403 part-way through never stops an
+            # attempt: garminconnect goes on to its next sign-in method, with
+            # its own waits. Stopping at the mobile sign-in's routine 429 kept
+            # everyone out on Oct 12 and 13. A local stand-in proxy answers
+            # 429 for the mobile sign-in and 200 for the web one; both requests
+            # must reach it, from both libraries, through the proxy given.
             import garminconnect.client as gcc
-            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
-                hosted._note_refusal("https://sso.garmin.com/sso/signin", 403)
-                began = time.monotonic()
-                gcc.time.sleep(5)
-                slept = time.monotonic() - began
-                try:
-                    gcc.requests.Session().get("http://127.0.0.1:9/never")
-                    stopped = False
-                except hosted._Refused as exc:
-                    stopped = hosted._failure_reason(exc) == "blocked_by_garmin"
-            check("a refused address skips the library's waits", slept < 0.5, f"{slept:.2f}s")
-            check("a refused address makes no more requests, and reads as a refusal", stopped)
-            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
-                fresh = getattr(hosted._EGRESS, "refused", None) is None
-                hosted._note_refusal("https://connectapi.garmin.com/x", 403)
-                other_host = getattr(hosted._EGRESS, "refused", None) is None
-            with hosted.login_egress(""):
-                hosted._note_refusal("https://sso.garmin.com/x", 429)
-                direct = getattr(hosted._EGRESS, "refused", None) is None
-            check("each attempt starts fresh, and only the sign-in server or a proxy counts",
-                  fresh and other_host and direct and getattr(hosted._EGRESS, "refused", None) is None)
-            # The mobile sign-in is limited by Garmin per app, not per address,
-            # and the library falls through to the web sign-in after it. Treating
-            # its 429 as a refusal stopped every sign-in on Oct 12 and 13.
-            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
-                hosted._note_refusal("https://sso.garmin.com/mobile/api/login", 429)
-                hosted._note_refusal("https://sso.garmin.com/mobile/api/login", 403)
-                mobile_ok = getattr(hosted._EGRESS, "refused", None) is None
-                try:
-                    hosted._check_refused()
-                except hosted._Refused:
-                    mobile_ok = False
-                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 429)
-                portal_counts = getattr(hosted._EGRESS, "refused", None) == 429
-            check("a mobile sign-in limit lets the library go on to the web sign-in", mobile_ok)
-            check("a refusal from the web sign-in still counts", portal_counts)
-            began = time.monotonic()
-            gcc.time.sleep(0.2)
-            check("outside a refused attempt the library still waits as written",
-                  time.monotonic() - began >= 0.19)
+            from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+            reached: list[str] = []
+
+            class StandIn(BaseHTTPRequestHandler):
+                def _answer(self) -> None:
+                    reached.append(self.path)
+                    self.send_response(429 if "/mobile/" in self.path else 200)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+
+                do_GET = do_POST = _answer
+
+                def log_message(self, *args: object) -> None:
+                    pass
+
+            stand_in = ThreadingHTTPServer(("127.0.0.1", 0), StandIn)
+            threading.Thread(target=stand_in.serve_forever, daemon=True).start()
+            try:
+                with hosted.login_egress(f"http://127.0.0.1:{stand_in.server_port}"):
+                    codes = [
+                        gcc.requests.Session().post("http://sso.garmin.com/mobile/api/login").status_code,
+                        gcc.requests.Session().get("http://sso.garmin.com/portal/sso/en-US/sign-in").status_code,
+                    ]
+                    cffi = gcc.cffi_requests.Session()
+                    try:
+                        codes += [
+                            cffi.post("http://sso.garmin.com/mobile/api/login").status_code,
+                            cffi.get("http://sso.garmin.com/sso/embed").status_code,
+                        ]
+                    finally:
+                        cffi.close()
+            finally:
+                stand_in.shutdown()
+            check("a 429 part-way through never stops the sign-in's next method",
+                  codes == [429, 200, 429, 200] and len(reached) == 4
+                  and all(p.startswith("http://sso.garmin.com/") for p in reached),
+                  f"{codes} {reached}")
+            check("garminconnect keeps its own waits", gcc.time is time)
         finally:
             os.environ.pop("GARMIN_MCP_LOGIN_PROXY", None)
             hosted._paused_until = 0.0

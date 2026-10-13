@@ -121,6 +121,16 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: scripts/run_signin_check.sh candidate
 
+      # And the spare test account all the way, with the new code: the
+      # session it stores and a tool call made with it (check-full-signin.yml).
+      - name: Connect the test account with the new code before shipping it
+        if: ${{ !inputs.skip_signin_check }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
+          GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
+        run: scripts/run_signin_check.sh full candidate
+
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -183,3 +193,10 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: scripts/run_signin_check.sh
+
+      - name: Connect the test account with what is now live
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
+          GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
+        run: scripts/run_signin_check.sh full
