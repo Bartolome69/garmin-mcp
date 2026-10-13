@@ -5,21 +5,22 @@ name: Check sign-in proxy
 # sign-ins leave from through it, and that Garmin's sign-in page answers
 # through it. Prints no part of the secret, only yes/no answers, the exit
 # country and network, and HTTP status codes. Run by hand after changing it,
-# and every six hours on its own: it fails when the proxy is broken or out of
+# and every hour on its own: it fails when the proxy is broken or out of
 # credit, and GitHub emails the failure, so a dead proxy is found before the
 # next person trying to sign in finds it.
 #
 # Reaching the sign-in page is not enough, though: on Oct 12 a change to how
-# refusals were counted stopped every sign-in while the page still answered.
-# So the second step signs in for real, as an account that doesn't exist,
-# with this commit's sign-in code: healthy is Garmin saying the email and
-# password are wrong, which only its last step can say. Dispatched on a
-# branch, it tests that branch's code before it is deployed.
+# refusals were counted stopped every sign-in for 18 hours while the page
+# still answered. So the second step signs in for real, as an account that
+# doesn't exist, with this commit's sign-in code (scripts/check_signin.py):
+# healthy is Garmin saying the email and password are wrong, which only its
+# last step can say. Every hour, so a broken sign-in is found within the hour,
+# and dispatched on a branch it tests that branch's code before it ships.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 * * * *"
 
 env:
   FLY_APP: garmin-mcp-1b4387
@@ -104,50 +105,8 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          cat > signin.py <<'PY'
-          import importlib.util, logging, os, secrets, sys, time
-          sys.path.insert(0, "/app")  # where the image keeps the server
-          import garmin_mcp
-          # This commit's hosted.py, loaded in place of the installed one.
-          spec = importlib.util.spec_from_file_location("garmin_mcp.hosted", "/tmp/hosted-under-test.py")
-          hosted = importlib.util.module_from_spec(spec)
-          sys.modules["garmin_mcp.hosted"] = hosted
-          spec.loader.exec_module(hosted)
-          from garminconnect import Garmin
-
-          # How far each try got: the library names each method as it starts it.
-          steps = []
-          class Steps(logging.Handler):
-              def emit(self, record):
-                  msg = record.getMessage()
-                  if msg.startswith("Trying login strategy:"):
-                      steps.append(msg.split(":", 1)[1].strip())
-          lib = logging.getLogger("garminconnect.client")
-          lib.setLevel(logging.DEBUG)
-          lib.addHandler(Steps())
-          lib.propagate = False  # only the summary below reaches the log
-
-          email = f"daash-check-{secrets.token_hex(4)}@example.com"
-          reasons = []
-          for _ in range(3):
-              steps.clear()
-              began = time.monotonic()
-              with hosted.login_egress(hosted.login_proxy()):
-                  try:
-                      Garmin(email, secrets.token_urlsafe(12)).login()
-                      reason = "signed in"
-                  except Exception as exc:
-                      reason = hosted._failure_reason(exc)
-              print(f"{reason} after {time.monotonic() - began:.1f}s, methods tried: {', '.join(steps)}")
-              reasons.append(reason)
-              if reason == "bad_credentials":
-                  break
-          if "bad_credentials" not in reasons:
-              print("::error::No sign-in reached Garmin's password check. People cannot connect.")
-              raise SystemExit(1)
-          PY
           flyctl ssh sftp shell --app "$FLY_APP" <<EOF
-          put signin.py /tmp/check-signin.py
+          put scripts/check_signin.py /tmp/check-signin.py
           put garmin_mcp/hosted.py /tmp/hosted-under-test.py
           EOF
-          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-signin.py"
+          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-signin.py /tmp/hosted-under-test.py"

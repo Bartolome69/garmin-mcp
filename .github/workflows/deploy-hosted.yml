@@ -29,6 +29,11 @@ on:
       - "requirements-hosted.txt"
       - ".github/workflows/deploy-hosted.yml"
   workflow_dispatch:
+    inputs:
+      skip_signin_check:
+        description: "Deploy even if the new code can't sign in to Garmin (only when Garmin itself is down and this deploy is the fix)"
+        type: boolean
+        default: false
 
 # The app name is public — it is the connector address people paste into
 # Claude. fly.toml deliberately carries a placeholder so a self-hoster does not
@@ -105,6 +110,22 @@ jobs:
             exit 1
           fi
 
+      # The tests above run against a fake Garmin, and on Oct 12 they passed
+      # for a change that stopped every real sign-in for 18 hours. So before
+      # anything ships, this commit's sign-in code signs in for real from the
+      # live machine, as an account that doesn't exist, and must get as far as
+      # Garmin saying the password is wrong (scripts/check_signin.py).
+      - name: Sign in to Garmin with the new code before shipping it
+        if: ${{ !inputs.skip_signin_check }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl ssh sftp shell --app "$FLY_APP" <<EOF
+          put scripts/check_signin.py /tmp/check-signin.py
+          put garmin_mcp/hosted.py /tmp/hosted-under-test.py
+          EOF
+          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-signin.py /tmp/hosted-under-test.py"
+
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -161,3 +182,13 @@ jobs:
             "$public"|"$public/") echo "    ok: issuer is $issuer" ;;
             *) echo "    FAIL: issuer is '$issuer', expected $public"; exit 1 ;;
           esac
+
+      # And once more with what is now live, the whole image this time.
+      - name: Sign in to Garmin with what is now live
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl ssh sftp shell --app "$FLY_APP" <<EOF
+          put scripts/check_signin.py /tmp/check-signin.py
+          EOF
+          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-signin.py"
