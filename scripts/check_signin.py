@@ -10,6 +10,8 @@ stopped every sign-in for 18 hours while the page answered fine.
     python3 check_signin.py                    # the sign-in code that is live
     python3 check_signin.py /tmp/hosted.py     # a candidate hosted.py, before it ships
 
+scripts/run_signin_check.sh runs it there from a workflow.
+
 A candidate replaces only hosted.py, where the sign-in code lives; the rest is
 what the machine already runs. Each run is recorded in PostHog as
 `sign_in_check`, so the connection alert sees a failing one too. Prints only
@@ -96,10 +98,10 @@ if analytics.enabled():
         print(f"not sent to PostHog: {type(exc).__name__}", flush=True)
 print(f"sent to PostHog: {recorded}", flush=True)
 
-# The workflows look for this exact line rather than trusting the exit code,
-# which `flyctl ssh console` doesn't reliably pass back: a check that dies
-# halfway must never read as a pass.
+# scripts/run_signin_check.sh looks for this exact line rather than trusting
+# an exit code, so a check that dies halfway never reads as a pass.
 if not ok:
     print("::error::No sign-in reached Garmin's password check. People cannot connect.", flush=True)
+    print("SIGNIN_CHECK_RESULT=failed", flush=True)
     raise SystemExit(1)
 print("SIGNIN_CHECK_RESULT=ok", flush=True)

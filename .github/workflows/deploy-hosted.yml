@@ -119,15 +119,7 @@ jobs:
         if: ${{ !inputs.skip_signin_check }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          flyctl ssh sftp shell --app "$FLY_APP" <<EOF
-          put scripts/check_signin.py /tmp/check-signin.py
-          put garmin_mcp/hosted.py /tmp/hosted-under-test.py
-          EOF
-          # Passes on the script's last line, not the exit code, which flyctl
-          # doesn't reliably pass back; 2>&1 so an error shows in the log.
-          flyctl ssh console --app "$FLY_APP" -C "sh -c 'python3 /tmp/check-signin.py /tmp/hosted-under-test.py 2>&1'" | tee signin.out || true
-          grep -q "^SIGNIN_CHECK_RESULT=ok" signin.out || { echo "::error::The sign-in check did not pass"; exit 1; }
+        run: scripts/run_signin_check.sh candidate
 
       - name: Deploy
         env:
@@ -190,11 +182,4 @@ jobs:
       - name: Sign in to Garmin with what is now live
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          flyctl ssh sftp shell --app "$FLY_APP" <<EOF
-          put scripts/check_signin.py /tmp/check-signin.py
-          EOF
-          # Passes on the script's last line, not the exit code, which flyctl
-          # doesn't reliably pass back; 2>&1 so an error shows in the log.
-          flyctl ssh console --app "$FLY_APP" -C "sh -c 'python3 /tmp/check-signin.py 2>&1'" | tee signin.out || true
-          grep -q "^SIGNIN_CHECK_RESULT=ok" signin.out || { echo "::error::The sign-in check did not pass"; exit 1; }
+        run: scripts/run_signin_check.sh

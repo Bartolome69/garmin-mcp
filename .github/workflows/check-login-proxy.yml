@@ -97,19 +97,11 @@ jobs:
                     "the GARMIN_MCP_LOGIN_PROXY secret, and the garminconnect release.")
               raise SystemExit(1)
           PY
-          flyctl ssh sftp shell --app "$FLY_APP" <<< "put check.py /tmp/check-proxy.py" >/dev/null 2>&1 || true
-          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-proxy.py" \
+          flyctl ssh sftp shell --app "$FLY_APP" <<< "put check.py /tmp/check-proxy-$GITHUB_RUN_ID.py" >/dev/null 2>&1 || true
+          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-proxy-$GITHUB_RUN_ID.py" \
             || flyctl ssh console --app "$FLY_APP" -C "python3 -c \"$(sed 's/"/\\"/g' check.py)\""
 
       - name: Sign in through the proxy as an account that doesn't exist
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          flyctl ssh sftp shell --app "$FLY_APP" <<EOF
-          put scripts/check_signin.py /tmp/check-signin.py
-          put garmin_mcp/hosted.py /tmp/hosted-under-test.py
-          EOF
-          # Passes on the script's last line, not the exit code, which flyctl
-          # doesn't reliably pass back; 2>&1 so an error shows in the log.
-          flyctl ssh console --app "$FLY_APP" -C "sh -c 'python3 /tmp/check-signin.py /tmp/hosted-under-test.py 2>&1'" | tee signin.out || true
-          grep -q "^SIGNIN_CHECK_RESULT=ok" signin.out || { echo "::error::The sign-in check did not pass"; exit 1; }
+        run: scripts/run_signin_check.sh candidate
