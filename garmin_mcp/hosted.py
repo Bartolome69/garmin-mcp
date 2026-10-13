@@ -110,6 +110,29 @@ def _pause_left() -> int:
     return max(0, int(_paused_until - time.time()))
 
 
+# When Garmin last said each person's password was wrong, by email
+# fingerprint. Garmin pauses an account after a few wrong passwords, and the
+# refusal that follows looks like any other refusal; within this window it is
+# read as that pause. Telling that person "it is not your password" (Oct 13)
+# sent them straight back to try the same password again.
+_WRONG_PASSWORD: dict[str, float] = {}
+WRONG_PASSWORD_WINDOW = 30 * 60
+
+
+def _note_wrong_password(email: str) -> None:
+    now = time.time()
+    _WRONG_PASSWORD[store.email_fingerprint(email)] = now
+    if len(_WRONG_PASSWORD) > 5000:
+        for key, at in list(_WRONG_PASSWORD.items()):
+            if at < now - WRONG_PASSWORD_WINDOW:
+                _WRONG_PASSWORD.pop(key, None)
+
+
+def _recent_wrong_password(email: str) -> bool:
+    at = _WRONG_PASSWORD.get(store.email_fingerprint(email)) if email else None
+    return at is not None and at > time.time() - WRONG_PASSWORD_WINDOW
+
+
 def _failed(reason: str, email: str = "", **extra: Any) -> None:
     """Record a failed sign-in: the reason, and who tried.
 
@@ -822,7 +845,8 @@ def _log_signin_failure(exc: BaseException, reason: str) -> None:
 
 
 def _signin_error(
-    exc: BaseException, flow: str = "", *, paused: bool = True, tries: int = 1
+    exc: BaseException, flow: str = "", *, paused: bool = True, tries: int = 1,
+    account_paused: bool = False,
 ) -> str:
     """Explain a failed sign-in in terms that make sense on a web page.
 
@@ -833,6 +857,17 @@ def _signin_error(
     """
     reason = _failure_reason(exc)
     _log_signin_failure(exc, reason)
+    if account_paused:
+        # Refused right after wrong passwords from the same person: Garmin
+        # pausing their account, not anything about where Daash connects from.
+        return (
+            "<div class=err><strong>Garmin has paused sign-ins to your account for "
+            "now.</strong> That happens after a few wrong passwords. Wait about 30 "
+            "minutes, check your password by signing in at connect.garmin.com (or "
+            "reset it there with &ldquo;Forgot password&rdquo;), then try again "
+            "here.</div>"
+            + _try_again(flow)
+        )
     others = tries - 1
     tried = (
         f", and Daash tried again from {'another address' if others == 1 else f'{others} other addresses'}"
@@ -874,7 +909,10 @@ def _signin_error(
         return (
             "<div class=err><strong>Garmin didn't accept that email and password.</strong> "
             "Check them by signing in at connect.garmin.com, then come back and "
-            "try again. If Garmin asks you for a code there, you have two-factor "
+            "try again. Not sure of your Garmin password? Reset it there with "
+            "&ldquo;Forgot password&rdquo;. Garmin pauses an account after a few "
+            "wrong tries, so it is worth checking there before trying again here. "
+            "If Garmin asks you for a code there, you have two-step verification "
             "on, and you'll be asked for the same code here.</div>"
             + _try_again(flow)
         )
@@ -1223,6 +1261,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
 
     started = time.monotonic()
     tries = 0
+    wrong_before = _recent_wrong_password(email)
 
     def _login() -> tuple[Any, Any]:
         # Retries only go through the proxy: from a new address when Garmin
@@ -1240,6 +1279,10 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             except Exception as exc:  # noqa: BLE001
                 reason = _failure_reason(exc)
                 if not egress or reason == "bad_credentials":
+                    raise
+                if wrong_before and reason in ("blocked_by_garmin", "rate_limited"):
+                    # Their account is paused; another address can't help, and
+                    # more tries only keep the pause going.
                     raise
                 unreachable += reason == "proxy_failed"
                 time_left = tries < SIGNIN_TRIES and time.monotonic() - started < SIGNIN_BUDGET
@@ -1260,12 +1303,18 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         client, result = await anyio.to_thread.run_sync(_login)
     except Exception as exc:  # noqa: BLE001
         reason = _failure_reason(exc)
-        if not egress:
+        account_paused = wrong_before and reason in ("blocked_by_garmin", "rate_limited")
+        if reason == "bad_credentials":
+            _note_wrong_password(email)
+        elif account_paused:
+            reason = "account_paused"
+        paused = not egress and not account_paused
+        if paused:
             _pause_sign_ins(reason)
         _failed(reason, email, **took())
         return page(
             "Sign in to Garmin",
-            _signin_error(exc, flow, paused=not egress, tries=tries),
+            _signin_error(exc, flow, paused=paused, tries=tries, account_paused=account_paused),
             400,
         )
 

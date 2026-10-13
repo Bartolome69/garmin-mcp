@@ -69,6 +69,10 @@ SLOW_EMAIL_2 = "tardy@example.com"
 WRONG_PASSWORD_EMAIL = "wrongpw@example.com"
 RATE_LIMITED_EMAIL = "toomany@example.com"
 BLOCKED_EMAIL = "blocked@example.com"
+# A wrong password, then Garmin pausing the account: refused outright from
+# then on, wherever the attempt comes from (Tom, Oct 13).
+LOCKED_EMAIL = "lockedout@example.com"
+LOCKED_TRIES: list[str] = []
 # Through the sign-in proxy: refused from the first address it is given, fine
 # from the next.
 REFUSED_ONCE_EMAIL = "refusedonce@example.com"
@@ -135,6 +139,16 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
                     "OSError('Tunnel connection failed: 403 Forbidden')))"
                 )
             if email == REFUSED_ONCE_EMAIL and [e for e, _ in EGRESS].count(email) == 1:
+                raise GarminConnectConnectionError(
+                    "Login failed: 403 Client Error: Forbidden for url: "
+                    "https://sso.garmin.com/sso/signin"
+                )
+            if email == LOCKED_EMAIL:
+                LOCKED_TRIES.append(via)
+                if len(LOCKED_TRIES) == 1:
+                    raise GarminConnectAuthenticationError(
+                        "Authentication failed (401 Unauthorized). Possible causes: ..."
+                    )
                 raise GarminConnectConnectionError(
                     "Login failed: 403 Client Error: Forbidden for url: "
                     "https://sso.garmin.com/sso/signin"
@@ -617,6 +631,31 @@ async def main() -> int:
             EGRESS.clear()
             code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
             check("a wrong password is not retried", code == 400 and len(EGRESS) == 1, str(len(EGRESS)))
+            check("a wrong password says how to check or reset it",
+                  "Forgot password" in body and "pauses an account" in body)
+
+            # After wrong passwords Garmin pauses the account, and its refusal
+            # must read as that: not "it is not your password", not a retry
+            # from other addresses (which only prolongs the pause), and not a
+            # pause for everyone else.
+            LOCKED_TRIES.clear()
+            sent_before = len(SENT)
+            code, body = await anyio_run(signin, LOCKED_EMAIL)
+            code, body = await anyio_run(signin, LOCKED_EMAIL)
+            reasons = [e["properties"].get("reason") for e in SENT[sent_before:]
+                       if e["event"] == "sign_in_failed"]
+            check("a refusal right after a wrong password reads as the account paused",
+                  code == 400 and "paused sign-ins to your account" in body
+                  and "not your password" not in body.lower(), f"status {code}")
+            check("a paused account is not retried from other addresses, and pauses nobody",
+                  len(LOCKED_TRIES) == 2 and hosted._pause_left() == 0, str(LOCKED_TRIES))
+            check("a paused account is reported as such",
+                  reasons == ["bad_credentials", "account_paused"], str(reasons))
+            hosted._WRONG_PASSWORD.clear()
+            code, body = await anyio_run(signin, BLOCKED_EMAIL)
+            check("without a recent wrong password, a refusal still reads as a refusal",
+                  "turned this sign-in away" in body)
+            hosted._ATTEMPTS.clear()
 
             # The code step must leave from the address that started the sign-in.
             hosted._PENDING.clear()
@@ -818,7 +857,8 @@ async def main() -> int:
         check("failed sign-ins carry the right one-word reason",
               {"throttled", "bad_credentials", "rate_limited", "blocked_by_garmin", "paused"} <= reasons
               and reasons <= {"throttled", "blocked_by_garmin", "rate_limited",
-                              "bad_credentials", "other", "mfa_rejected", "paused"},
+                              "bad_credentials", "other", "mfa_rejected", "paused",
+                              "account_paused"},
               str(reasons))
         check("failed sign-ins carry the masked address that was tried",
               all(e["properties"].get("account", "").count("*") >= 1 for e in failed),
