@@ -498,7 +498,8 @@ async def main() -> int:
         hosted._PENDING.clear()
         code, body = await anyio_run(signin, MFA_EMAIL)
         check("a sign-in needing a code asks for one",
-              code == 200 and "multi-factor" in body, f"status {code}")
+              code == 200 and "action=/mfa" in body and "text message or email" in body,
+              f"status {code}")
         check("the pending sign-in was parked", len(hosted._PENDING) == 1)
         check("no plaintext password survives in the pending sign-in",
               all(p["client"].password is None for p in hosted._PENDING.values()),

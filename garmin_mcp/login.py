@@ -15,7 +15,7 @@ from .session import TOKEN_FILE, GarminError, build_client, login_error, mask_em
 
 
 def _prompt_mfa() -> str:
-    return input("Garmin multi-factor code (check email/authenticator): ").strip()
+    return input("Garmin code (sent to you by text message or email): ").strip()
 
 
 class _NoInput(Exception):

@@ -1291,7 +1291,9 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             "Enter your code",
             f"""
             <h1>Enter your code</h1>
-            <p>Garmin sent a multi-factor code to your email or authenticator app.</p>
+            <p>Garmin has sent you a code by text message or email, whichever you
+            chose when you turned on two-step verification. It can take a minute to
+            arrive. If it went to email, check your spam folder too.</p>
             <form method=post action=/mfa data-wait="Checking your code&hellip;">
               <input type=hidden name=pending value="{pending_id}">
               <label for=code>Code</label>
