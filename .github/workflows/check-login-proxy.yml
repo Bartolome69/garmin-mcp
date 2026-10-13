@@ -12,13 +12,19 @@ name: Check sign-in proxy
 # Reaching the sign-in page is not enough, though: on Oct 12 a change to how
 # refusals were counted stopped every sign-in for 18 hours while the page
 # still answered. So the second step signs in for real, as an account that
-# doesn't exist, with this commit's sign-in code (scripts/check_signin.py):
+# doesn't exist, with the live sign-in code (scripts/check_signin.py):
 # healthy is Garmin saying the email and password are wrong, which only its
 # last step can say. Every hour, so a broken sign-in is found within the hour,
-# and dispatched on a branch it tests that branch's code before it ships.
+# and dispatched with code=this-branch it tests a branch's code before it ships.
 
 on:
   workflow_dispatch:
+    inputs:
+      code:
+        description: "Sign-in code to check: what is live, or this branch's garmin_mcp/hosted.py before it ships"
+        type: choice
+        options: [live, this-branch]
+        default: live
   schedule:
     - cron: "17 * * * *"
 
@@ -104,4 +110,5 @@ jobs:
       - name: Sign in through the proxy as an account that doesn't exist
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: scripts/run_signin_check.sh candidate
+        # The hourly run checks what people are signing in with right now.
+        run: scripts/run_signin_check.sh ${{ inputs.code == 'this-branch' && 'candidate' || '' }}
