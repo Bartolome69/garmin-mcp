@@ -684,7 +684,7 @@ async def main() -> int:
             # first sign-in spent 71 seconds on one refused address.
             import garminconnect.client as gcc
             with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
-                hosted._note_refusal("https://sso.garmin.com/mobile/api/login", 403)
+                hosted._note_refusal("https://sso.garmin.com/sso/signin", 403)
                 began = time.monotonic()
                 gcc.time.sleep(5)
                 slept = time.monotonic() - began
@@ -704,6 +704,21 @@ async def main() -> int:
                 direct = getattr(hosted._EGRESS, "refused", None) is None
             check("each attempt starts fresh, and only the sign-in server or a proxy counts",
                   fresh and other_host and direct and getattr(hosted._EGRESS, "refused", None) is None)
+            # The mobile sign-in is limited by Garmin per app, not per address,
+            # and the library falls through to the web sign-in after it. Treating
+            # its 429 as a refusal stopped every sign-in on Oct 12 and 13.
+            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
+                hosted._note_refusal("https://sso.garmin.com/mobile/api/login", 429)
+                hosted._note_refusal("https://sso.garmin.com/mobile/api/login", 403)
+                mobile_ok = getattr(hosted._EGRESS, "refused", None) is None
+                try:
+                    hosted._check_refused()
+                except hosted._Refused:
+                    mobile_ok = False
+                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 429)
+                portal_counts = getattr(hosted._EGRESS, "refused", None) == 429
+            check("a mobile sign-in limit lets the library go on to the web sign-in", mobile_ok)
+            check("a refusal from the web sign-in still counts", portal_counts)
             began = time.monotonic()
             gcc.time.sleep(0.2)
             check("outside a refused attempt the library still waits as written",

@@ -201,8 +201,15 @@ class _Refused(Exception):
 # address. So the rest of that attempt fails at once and skips its waits, and
 # the retry goes out from a fresh address in seconds. Only proxied attempts:
 # from the server's own address there is no other address to move to.
+#
+# The library's first method, the mobile app's sign-in (/mobile/), is often
+# turned away for reasons that have nothing to do with the address: Garmin
+# limits the app's client ID as a whole. The library expects that and moves on
+# to the web sign-in, which is what usually gets people in. So only a refusal
+# from the web sign-in counts; counting the mobile one stopped every sign-in.
 def _note_refusal(url: str, status: int) -> None:
-    if status in (403, 429) and _egress_proxy() and "//sso." in str(url):
+    url = str(url)
+    if status in (403, 429) and _egress_proxy() and "//sso." in url and "/mobile/" not in url:
         if not getattr(_EGRESS, "refused", None):
             log.info("sign-in address refused (HTTP %s); moving on", status)
         _EGRESS.refused = status
