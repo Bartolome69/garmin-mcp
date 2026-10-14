@@ -573,6 +573,67 @@ def _keep_alive_forever() -> None:
         time.sleep(KEEP_ALIVE_EVERY)
 
 
+# The hourly test sign-in, run by the server on its own clock. It ran from
+# GitHub's scheduler at first, which on the night of Oct 13 started it three
+# times in nine hours, so the alert for checks going quiet woke Bart up while
+# sign-in was fine. It signs in as an account that doesn't exist, through the
+# proxy like anyone connecting, and passes when Garmin answers that the email
+# and password are wrong: the last step of a sign-in, so everything before it
+# works. Reported as sign_in_check, which the connection alert reads. Only
+# where reports go somewhere: a copy run for one person has no one to tell.
+SIGNIN_CHECK_EVERY = 3600
+# After a restart, long enough for a deploy's own checks to finish first.
+SIGNIN_CHECK_FIRST = 600
+_ADDRESS_REASONS = ("rate_limited", "blocked_by_garmin", "proxy_failed", "other")
+
+
+def signin_check_once(email: str | None = None) -> dict[str, Any]:
+    """One test sign-in, from up to three addresses. Reports and returns it."""
+    email = email or f"daash-check-{secrets.token_hex(4)}@example.com"
+    began = time.monotonic()
+    reasons: list[str] = []
+    for _ in range(3):
+        with login_egress(login_proxy()):
+            try:
+                client = build_client(
+                    prompt_mfa=lambda: (_ for _ in ()).throw(RuntimeError("no code")),
+                    email=email,
+                    password=secrets.token_urlsafe(12),
+                )
+                client.return_on_mfa = True
+                client.login()
+                reason = "signed in"
+            except Exception as exc:  # noqa: BLE001 - every failure is a result here
+                reason = _failure_reason(exc)
+        reasons.append(reason)
+        # Only an answer about the address is worth another address.
+        if reason not in _ADDRESS_REASONS:
+            break
+    result = {
+        "ok": "bad_credentials" in reasons,
+        "kind": "unknown_account",
+        "reasons": reasons,
+        "tries": len(reasons),
+        "seconds": round(time.monotonic() - began, 1),
+        "code": "live",
+        "source": "server",
+    }
+    analytics.capture("sign_in_check", None, result)
+    if not result["ok"]:
+        log.warning("Test sign-in failed: %s", ", ".join(reasons))
+    return result
+
+
+def _signin_check_forever() -> None:
+    time.sleep(SIGNIN_CHECK_FIRST)
+    while True:
+        try:
+            signin_check_once()
+        except Exception:  # noqa: BLE001
+            log.exception("Test sign-in could not run")
+        time.sleep(SIGNIN_CHECK_EVERY)
+
+
 def _sweep_pending() -> None:
     cutoff = time.time() - _PENDING_TTL
     for key, value in list(_PENDING.items()):
@@ -1744,6 +1805,8 @@ def main() -> None:
         handler.addFilter(RedactUserTokens())
 
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
+    if analytics.enabled():
+        threading.Thread(target=_signin_check_forever, name="signin-check", daemon=True).start()
 
     uvicorn.run(
         build_app(),

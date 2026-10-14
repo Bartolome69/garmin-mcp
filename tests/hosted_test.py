@@ -1081,6 +1081,21 @@ async def main() -> int:
               and tool_failures[0]["properties"].get("error_type") == "KeyError"
               and "secret-run-name" not in json.dumps(tool_failures[0]),
               str(tool_failures))
+        # The hourly test sign-in the server runs on its own clock: passes on
+        # Garmin's "wrong email or password", fails otherwise, reported either
+        # way, and never by anything but reasons and timings.
+        before = len(SENT)
+        passed = hosted.signin_check_once(WRONG_PASSWORD_EMAIL)
+        refused = hosted.signin_check_once(BLOCKED_EMAIL)
+        checks = [e for e in SENT[before:] if e["event"] == "sign_in_check"]
+        check("the server's test sign-in passes on Garmin's password answer",
+              passed["ok"] and passed["reasons"] == ["bad_credentials"], str(passed))
+        check("the server's test sign-in fails, after three addresses, when Garmin refuses",
+              not refused["ok"] and refused["tries"] == 3, str(refused))
+        check("each test sign-in is reported, as live, and names no one",
+              [e["properties"]["ok"] for e in checks] == [True, False]
+              and all(e["properties"]["code"] == "live" for e in checks)
+              and WRONG_PASSWORD_EMAIL not in json.dumps(checks), str(checks))
         check("a failed answer doesn't use the note up",
               hosted._after_tool_for(news_user, store.get_user(news_user))("x", {"error": "no"})
               == {"error": "no"} and store.claim_news(news_user, hosted.NEWS_VERSION))

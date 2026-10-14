@@ -5,17 +5,21 @@ name: Check sign-in proxy
 # sign-ins leave from through it, and that Garmin's sign-in page answers
 # through it. Prints no part of the secret, only yes/no answers, the exit
 # country and network, and HTTP status codes. Run by hand after changing it,
-# and every hour on its own: it fails when the proxy is broken or out of
-# credit, and GitHub emails the failure, so a dead proxy is found before the
-# next person trying to sign in finds it.
+# and every six hours or so on its own: it fails when the proxy is broken or
+# out of credit, and GitHub emails the failure.
 #
 # Reaching the sign-in page is not enough, though: on Oct 12 a change to how
 # refusals were counted stopped every sign-in for 18 hours while the page
 # still answered. So the second step signs in for real, as an account that
 # doesn't exist, with the live sign-in code (scripts/check_signin.py):
 # healthy is Garmin saying the email and password are wrong, which only its
-# last step can say. Every hour, so a broken sign-in is found within the hour,
-# and dispatched with code=this-branch it tests a branch's code before it ships.
+# last step can say. Dispatched with code=this-branch it tests a branch's code
+# before it ships.
+#
+# The hourly test sign-in is the server's own (signin_check_once in
+# garmin_mcp/hosted.py): GitHub starts scheduled runs late or not at all when
+# it is busy, three times in nine hours on the night of Oct 13, which is no
+# way to keep an hourly check.
 
 on:
   workflow_dispatch:
@@ -26,7 +30,7 @@ on:
         options: [live, this-branch]
         default: live
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17 */6 * * *"
 
 env:
   FLY_APP: garmin-mcp-1b4387
