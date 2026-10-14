@@ -584,6 +584,10 @@ def _keep_alive_forever() -> None:
 SIGNIN_CHECK_EVERY = 3600
 # After a restart, long enough for a deploy's own checks to finish first.
 SIGNIN_CHECK_FIRST = 600
+# A failure is checked again this soon, once. Garmin's throttling of a check
+# has cleared within minutes (Oct 13: failed 11:43, passed 11:51), so a second
+# failure means sign-in is really down, and the alert emails on two in a row.
+SIGNIN_CHECK_RECHECK = 900
 _ADDRESS_REASONS = ("rate_limited", "blocked_by_garmin", "proxy_failed", "other")
 
 
@@ -624,14 +628,24 @@ def signin_check_once(email: str | None = None) -> dict[str, Any]:
     return result
 
 
+def _signin_check_wait(ok: bool, rechecking: bool) -> int:
+    """Seconds to the next test sign-in: soon after a failure, but only once,
+    so a long outage means two checks an hour against Garmin, not four."""
+    return SIGNIN_CHECK_RECHECK if not ok and not rechecking else SIGNIN_CHECK_EVERY
+
+
 def _signin_check_forever() -> None:
     time.sleep(SIGNIN_CHECK_FIRST)
+    rechecking = False
     while True:
+        ok = True  # a check that couldn't run has nothing to confirm
         try:
-            signin_check_once()
+            ok = signin_check_once()["ok"]
         except Exception:  # noqa: BLE001
             log.exception("Test sign-in could not run")
-        time.sleep(SIGNIN_CHECK_EVERY)
+        wait = _signin_check_wait(ok, rechecking)
+        rechecking = wait == SIGNIN_CHECK_RECHECK
+        time.sleep(wait)
 
 
 def _sweep_pending() -> None:

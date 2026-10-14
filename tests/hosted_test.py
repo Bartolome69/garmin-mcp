@@ -1096,6 +1096,11 @@ async def main() -> int:
               [e["properties"]["ok"] for e in checks] == [True, False]
               and all(e["properties"]["code"] == "live" for e in checks)
               and WRONG_PASSWORD_EMAIL not in json.dumps(checks), str(checks))
+        # A failure is checked again in 15 minutes, once; then hourly again.
+        waits = [hosted._signin_check_wait(True, False), hosted._signin_check_wait(False, False),
+                 hosted._signin_check_wait(False, True), hosted._signin_check_wait(True, True)]
+        check("a failed test sign-in is checked again soon, but only once",
+              waits == [3600, 900, 3600, 3600], str(waits))
         check("a failed answer doesn't use the note up",
               hosted._after_tool_for(news_user, store.get_user(news_user))("x", {"error": "no"})
               == {"error": "no"} and store.claim_news(news_user, hosted.NEWS_VERSION))
