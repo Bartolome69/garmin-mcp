@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import time
 from typing import Any
@@ -74,6 +75,10 @@ _AWAITING_CONSENT: dict[str, dict[str, Any]] = {}
 # refusing an unrecognised client would break ChatGPT and whatever comes next,
 # but the consent page says loudly where it is going.
 CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
+# ChatGPT sends each person's connection back to its own address: this fixed
+# part, then an ID for that one connector (seen Oct 14: .../oauth/FEJSMEKkIk6j).
+# Matched exactly apart from the ID, so no other path on chatgpt.com counts.
+CHATGPT_CALLBACK = re.compile(r"https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}")
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
@@ -146,7 +151,7 @@ def recognised_redirect(uri: str) -> bool:
     from urllib.parse import urlparse
 
     uri = str(uri)
-    if uri == CLAUDE_CALLBACK or uri in _extra_redirects():
+    if uri == CLAUDE_CALLBACK or CHATGPT_CALLBACK.fullmatch(uri) or uri in _extra_redirects():
         return True
     parsed = urlparse(uri)
     return parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS

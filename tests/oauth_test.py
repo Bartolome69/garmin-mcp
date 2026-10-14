@@ -146,6 +146,42 @@ async def main() -> int:
           list(apps.values()) == ["Claude", "ChatGPT", "Desktop or command line", "Other", "Other"],
           str(apps))
 
+    # ChatGPT's return address carries an ID per connection; only that exact
+    # shape is recognised, nothing else on its domain and nothing like it.
+    recognised = {u: hosted.oauth.recognised_redirect(u) for u in (
+        "https://chatgpt.com/connector/oauth/FEJSMEKkIk6j",
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://chatgpt.com/connector/oauth/FEJSMEKkIk6j/more",
+        "https://chatgpt.com/connector/oauth/",
+        "https://chatgpt.com/somewhere/else",
+        "http://chatgpt.com/connector/oauth/FEJSMEKkIk6j",
+        "https://chatgpt.com.evil.example/connector/oauth/FEJSMEKkIk6j",
+        "https://evil.example/?next=https://chatgpt.com/connector/oauth/x",
+    )}
+    check("ChatGPT's connector address is recognised, and only that shape",
+          list(recognised.values()) == [True, True, False, False, False, False, False, False],
+          str(recognised))
+
+    # The page that asks before handing access over: calm for Claude and
+    # ChatGPT, which the person just came from; a warning for anything else.
+    from types import SimpleNamespace
+
+    def consent_body(redirect: str, name: str) -> str:
+        parked = {"params": SimpleNamespace(redirect_uri=redirect), "client_name": name, "client_id": "c"}
+        return bytes(hosted._consent_page("tok", parked).body).decode()
+
+    chatgpt_page = consent_body("https://chatgpt.com/connector/oauth/FEJSMEKkIk6j", "ChatGPT")
+    check("ChatGPT gets a calm page that names it, with no warning",
+          "Connect Daash to ChatGPT?" in chatgpt_page and "You started this from ChatGPT" in chatgpt_page
+          and "not an app we recognise" not in chatgpt_page and "goes back to chatgpt.com only" in chatgpt_page,
+          chatgpt_page[:200])
+    claude_page = consent_body("https://claude.ai/api/mcp/auth_callback", "Claude")
+    check("so does Claude", "Connect Daash to Claude?" in claude_page and "not an app we recognise" not in claude_page)
+    stranger = consent_body("https://evil.example/cb", "ChatGPT")
+    check("an app claiming a familiar name at a strange address is still warned about",
+          "not an app we recognise" in stranger and "Connect Daash to" not in stranger
+          and "https://evil.example/cb" in stranger)
+
     app = hosted.build_app()
     routes = sorted({getattr(r, "path", "") for r in app.routes})
     for needed in ("/authorize", "/token", "/register", "/revoke", "/mcp"):

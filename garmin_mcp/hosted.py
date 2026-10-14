@@ -28,7 +28,7 @@ import secrets
 import threading
 import time
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import anyio
 from starlette.requests import Request
@@ -1138,6 +1138,33 @@ def _consent_page(consent_token: str, parked: dict[str, Any]) -> Response:
     destination = str(params.redirect_uri)
     name = parked.get("client_name") or parked["client_id"]
     known = oauth.recognised_redirect(destination)
+    form = f"""
+        <form method=post action=/oauth/consent style="margin-top:8px">
+          <input type=hidden name=consent value="{html.escape(consent_token)}">
+          <button name=decision value=allow>Allow</button>
+          <button name=decision value=deny class=secondary>Cancel</button>
+        </form>
+        <p class=note style="margin-top:20px">You stay signed in to Garmin
+        either way. Cancelling refuses this app, it does not disconnect you.</p>
+    """
+
+    # Claude or ChatGPT, known by the exact address the access goes back to.
+    # The person started this from that app a minute ago, so the page says so
+    # plainly instead of showing them a raw address to inspect.
+    app = oauth.app_for_redirect(destination) if known else None
+    if app in ("Claude", "ChatGPT"):
+        host = urlparse(destination).hostname or ""
+        body = f"""
+        <h1>Connect Daash to {app}?</h1>
+        <p class=secure>{_LOCK}<span>You started this from {app}. It will be able
+        to read your Garmin data and add or change workouts on your watch.</span></p>
+        <p class=note>Access goes back to {html.escape(host)} only.</p>
+        {form}
+        """
+        response = page(f"Connect Daash to {app}?", body)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        return response
 
     warning = (
         ""
@@ -1154,13 +1181,7 @@ def _consent_page(consent_token: str, parked: dict[str, Any]) -> Response:
         {warning}
         <p class=note>It will be sent to:</p>
         <div class=url>{html.escape(destination)}</div>
-        <form method=post action=/oauth/consent style="margin-top:8px">
-          <input type=hidden name=consent value="{html.escape(consent_token)}">
-          <button name=decision value=allow>Allow</button>
-          <button name=decision value=deny class=secondary>Cancel</button>
-        </form>
-        <p class=note style="margin-top:20px">You stay signed in to Garmin
-        either way. Cancelling refuses this app, it does not disconnect you.</p>
+        {form}
     """
     response = page("Allow access?", body)
     # A consent page that can be framed can be clicked through invisibly.
