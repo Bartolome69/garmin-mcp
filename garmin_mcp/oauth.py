@@ -92,6 +92,51 @@ def strict_redirects() -> bool:
     return os.environ.get("GARMIN_MCP_STRICT_REDIRECTS", "").strip() == "1"
 
 
+def app_for_redirect(uri: str) -> str:
+    """Which app a sign-in is for, read from where its code is sent.
+
+    For the reports: whether people use Daash from Claude, ChatGPT or
+    something else. The redirect decides where the code goes, so unlike the
+    name an app declares about itself at registration, it can't be dressed up.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(str(uri))
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "http" and host in LOOPBACK_HOSTS:
+        return "Desktop or command line"
+    for app, domains in (("Claude", ("claude.ai", "claude.com")), ("ChatGPT", ("chatgpt.com", "openai.com"))):
+        if any(host == d or host.endswith("." + d) for d in domains):
+            return app
+    return "Other"
+
+
+def app_for_flow(flow: str) -> str | None:
+    """The app a sign-in in progress is for, while its request is parked."""
+    entry = _PENDING_AUTH.get(flow)
+    if not entry:
+        return None
+    return app_for_redirect(entry["params"].redirect_uri)
+
+
+_APP_FOR_CLIENT: dict[str, str] = {}
+
+
+def app_for_client(client_id: str) -> str:
+    """The app a registered client is, from the redirects it registered."""
+    if client_id not in _APP_FOR_CLIENT:
+        raw = store.load_oauth_client(client_id)
+        uris: list[str] = []
+        if raw:
+            try:
+                uris = json.loads(raw).get("redirect_uris") or []
+            except (ValueError, AttributeError):
+                uris = []
+        apps = {app_for_redirect(u) for u in uris}
+        _APP_FOR_CLIENT[client_id] = apps.pop() if len(apps) == 1 else ("Other" if apps else "Unknown")
+    return _APP_FOR_CLIENT[client_id]
+
+
 def recognised_redirect(uri: str) -> bool:
     """Whether a code going here is business as usual.
 

@@ -130,6 +130,22 @@ async def main() -> int:
         if not ok:
             failures.append(name)
 
+    # Reports are recorded here rather than sent, to check what they say.
+    reported: list[tuple[str, dict]] = []
+    hosted.analytics.capture = lambda event, subject=None, props=None: reported.append((event, props or {}))
+
+    # Which app a sign-in is for, from where its code goes back to.
+    apps = {u: hosted.oauth.app_for_redirect(u) for u in (
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://chatgpt.com/connector_platform_oauth_redirect",
+        "http://localhost:9999/callback",
+        "https://claude.ai.evil.example/cb",
+        "https://example.com/cb",
+    )}
+    check("sign-ins are told apart by the app they go back to",
+          list(apps.values()) == ["Claude", "ChatGPT", "Desktop or command line", "Other", "Other"],
+          str(apps))
+
     app = hosted.build_app()
     routes = sorted({getattr(r, "path", "") for r in app.routes})
     for needed in ("/authorize", "/token", "/register", "/revoke", "/mcp"):
@@ -224,6 +240,10 @@ async def main() -> int:
         code, body, headers = await run(lambda: http("POST", "/connect", {
             "email": "oauth@example.com", "password": "pw", "flow": flow,
         }))
+        connected = [p for e, p in reported if e == "connector_connected"]
+        check("the connection report names the app",
+              bool(connected) and connected[-1].get("app") == "Desktop or command line",
+              str(connected[-1:]))
         check("sign-in asks before handing anything over",
               code == 200 and "Allow access?" in body and "location" not in headers,
               f"{code} {body[:120]}")
@@ -428,6 +448,9 @@ async def main() -> int:
             lambda: http("POST", "/mcp", probe, headers=head, as_json=True)
         )
         check("a valid token is not refused", status != 401, f"got {status} {body[:90]}")
+        used = [p for e, p in reported if e == "connector_used"]
+        check("the daily use report names the app",
+              bool(used) and used[-1].get("app") == "Desktop or command line", str(used[-1:]))
 
         # -- 10. a second app does not disconnect the first --------------
         # Connecting ChatGPT, or Claude on a second account, signs in to

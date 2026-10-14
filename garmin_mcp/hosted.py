@@ -1234,6 +1234,8 @@ def _finish(
             # "direct" is someone who reached the form without Claude's request
             # attached; the page below sends them back to start from Claude.
             "via": ("oauth" if flow else "direct") if OAUTH_ENABLED else "url",
+            # Claude, ChatGPT or another app, from where the sign-in goes back to.
+            **({"app": app} if (app := (oauth.app_for_flow(flow) if OAUTH_ENABLED and flow else None)) else {}),
             "mfa": mfa,
             "returning": bool(previous),
             **(took or {}),
@@ -1689,6 +1691,7 @@ class SessionBinding:
                 return
             row = store.load_oauth_token(header[7:].strip(), "access")
             user_token = row["subject"] if row else None
+            app = oauth.app_for_client(row["client_id"]) if row else None
             if not user_token:
                 await self.app(scope, receive, send)
                 return
@@ -1698,6 +1701,7 @@ class SessionBinding:
                 await self.app(scope, receive, send)
                 return
             user_token = match.group("token")
+            app = "Connector URL"
 
         user = store.get_user(user_token)
         if user is None:
@@ -1732,7 +1736,8 @@ class SessionBinding:
             analytics.capture(
                 "connector_used",
                 user.email_hash or user_token,
-                {"account": user.email_masked, "day": today, **({"email": email} if email else {})},
+                {"account": user.email_masked, "day": today, **({"app": app} if app else {}),
+                 **({"email": email} if email else {})},
             )
 
         token = use_session(session_for(user_token))
