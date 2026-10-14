@@ -60,6 +60,14 @@ PRIVACY_URL = (
     or "https://garmin.daash.run/privacy/"
 )
 
+# What to ask, by sport, for people who were only ever sent the connector
+# address and have never seen the website. Linked from the sign-in page and
+# given once in the first reply. Overridable for the same reason as above.
+GUIDE_URL = (
+    os.environ.get("GARMIN_MCP_GUIDE_URL", "").strip()
+    or "https://daash.run/guide"
+)
+
 # Sign-up is closed when this is set: friends get the code along with the link.
 # Without it the page is an open door to anyone who finds the host, who can then
 # use it to test Garmin credentials and burn the server's IP on Garmin's rate
@@ -435,11 +443,12 @@ NEWS = (
 # tool at a time, so with twenty-odd tools it feels like asking every time.
 # Claude's connector settings allow the read-only ones in one go.
 PERMISSION_TIP = (
-    "Tell the user this once, in a sentence or two at the end of your reply, "
-    "then carry on as normal: if Claude keeps asking permission before it "
-    "uses Daash, they can stop that in Claude's Settings, Connectors, Daash, "
-    "by setting the read-only tools to Always allow. Anything that changes "
-    "their Garmin calendar or workouts will still ask first."
+    "Tell the user this once, in two or three sentences at the end of your "
+    "reply, then carry on as normal: if Claude keeps asking permission before "
+    "it uses Daash, they can stop that in Claude's Settings, Connectors, "
+    "Daash, by setting the read-only tools to Always allow. Anything that "
+    "changes their Garmin calendar or workouts will still ask first. For "
+    f"ideas of what to ask, by sport, there is a short guide at {GUIDE_URL}."
 )
 # One report per person per tool per day: enough to see which features are
 # used, without a row for every call.
@@ -956,7 +965,9 @@ async def connect_form(request: Request) -> Response:
           this page.</p>
         </form>
         <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
-        target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
+        target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a>
+        &middot; <a href="{GUIDE_URL}" target=_blank rel=noopener>New to Daash?
+        See what you can ask it</a></p>
         {_EMAIL_HINT_SCRIPT}
         """,
     )

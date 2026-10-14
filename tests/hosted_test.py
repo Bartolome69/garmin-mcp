@@ -414,6 +414,9 @@ async def main() -> int:
         for label, page_body in (("landing page", landing), ("sign-in form", body)):
             check(f"{label} links the privacy policy",
                   hosted.PRIVACY_URL in page_body and "{PRIVACY_URL}" not in page_body)
+        # Someone sent only the connector address has never seen the website.
+        check("the sign-in form links the guide to what to ask",
+              hosted.GUIDE_URL in body and "{GUIDE_URL}" not in body)
 
         # The submitted credentials must reach Garmin. They previously did not:
         # build_client read the environment, so a hosted sign-in used the
@@ -1113,6 +1116,8 @@ async def main() -> int:
         check("a first sign-in skips the what's-new note", bool(fresh) and "whats_new" not in fresh_answer)
         check("but hears how to stop the permission prompts",
               hosted.PERMISSION_TIP in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
+        check("and where to find ideas of what to ask",
+              hosted.GUIDE_URL in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, "brandnew@example.com")
         again = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
