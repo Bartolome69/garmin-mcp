@@ -1314,11 +1314,13 @@ async def main() -> int:
             made = payload(await sess.call_tool("create_plan", {
                 "goal": "Half marathon, 1:40, mid November", "sessions": block}))
             print("   ", json.dumps(made, indent=2)[:500])
-            check("plan created with a code from the goal",
-                  made.get("label") == "HM" and made.get("sessions_created") == 4, str(made)[:200])
+            made_info = made.get("created") or {}
+            check("plan created with a code from the goal, answered as its card",
+                  made.get("label") == "HM" and made_info.get("sessions_created") == 4
+                  and isinstance(made.get("weeks"), list), str(made)[:200])
             check("sessions come back in date order",
-                  [s["date"] for s in made.get("first_sessions", [])] == sorted(s["date"] for s in block),
-                  str(made.get("first_sessions"))[:200])
+                  [s["date"] for s in made_info.get("first_sessions", [])] == sorted(s["date"] for s in block),
+                  str(made_info.get("first_sessions"))[:200])
             again = payload(await sess.call_tool("create_plan", {
                 "goal": "Half marathon", "sessions": block}))
             check("the same code in the same window is refused",
@@ -1378,9 +1380,10 @@ async def main() -> int:
             check("a named plan is created with its name and method",
                   named.get("label") == "B1" and named.get("name") == "Base block"
                   and named.get("method") == "Norwegian singles", str(named)[:200])
-            check("a new plan asks Claude to show it as a card straight away",
-                  "call get_plan with label B1, before you reply" in str(named.get("next_step")),
-                  str(named.get("next_step")))
+            check("a new plan answers as its card: the block's weeks, and what was made",
+                  isinstance(named.get("weeks"), list) and named["weeks"]
+                  and (named.get("created") or {}).get("sessions_created") == len(base)
+                  and named.get("next_session") is not None, str(named)[:300])
             card = payload(await sess.call_tool("get_plan", {"label": "B1"}))
             check("name, method and milestones come back from Garmin",
                   card.get("name") == "Base block" and card.get("method") == "Norwegian singles"

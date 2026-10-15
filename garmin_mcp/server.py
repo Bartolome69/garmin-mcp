@@ -1741,7 +1741,7 @@ async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]
     return training_plan.calendar_items(payloads)
 
 
-@mcp.tool()
+@_app_tool(PLAN_VIEW)
 @tool_errors
 async def create_plan(
     goal: str,
@@ -1766,9 +1766,8 @@ async def create_plan(
     Every session is validated before anything is created, so a mistake in
     session 40 fails the call without leaving half a plan behind.
 
-    Once it succeeds, call get_plan with the plan's label straight away,
-    before replying: that draws the new block as a card, which is how the
-    user sees what they agreed to.
+    It answers with the new block drawn as a card, the same as get_plan, so
+    the user sees what they agreed to without another call.
 
     Args:
         goal: What the block is for, e.g. "Half marathon, 1:40, 15 November".
@@ -1850,7 +1849,7 @@ async def create_plan(
         )
 
     weeks = (plan.monday_of(last) - plan.monday_of(first)).days // 7 + 1
-    return {
+    summary = {
         "label": code,
         "goal": goal.strip(),
         **training_plan.block_from_description(prepared[0]["workout"].description),
@@ -1861,10 +1860,36 @@ async def create_plan(
         "first_sessions": created[:7],
         "next_step": (
             "Every session is on the Garmin calendar and syncs to the watch. "
-            f"Now call get_plan with label {code}, before you reply, so the user "
-            "sees the new block as a card; then sum it up in a sentence or two."
+            f"Call get_plan with label {code} to show the user the new block as a card."
         ),
     }
+    # Answer with the block as get_plan draws it, so the card shows the new
+    # plan whether or not the model asks for it: told to, it sometimes
+    # didn't. The calendar read above, before anything was created, is stale
+    # now. If the read fails the plan still exists, so the summary stands,
+    # and the card fetches the plan itself.
+    session.forget()
+    try:
+        card = await get_plan.__wrapped__(label=code)
+    except GarminError:
+        card = None
+    except Exception:  # noqa: BLE001 - the plan is made; showing it is a bonus
+        log.warning("create_plan: reading the new plan back failed", exc_info=True)
+        card = None
+    if isinstance(card, dict) and "error" not in card and isinstance(card.get("weeks"), list):
+        return {
+            **card,
+            "created": {
+                "sessions_created": len(created),
+                "weeks": weeks,
+                "first_sessions": created[:7],
+            },
+            "next_step": (
+                "Every session is on the Garmin calendar and syncs to the watch. "
+                "The user sees the new block as a card above: sum it up in a sentence or two."
+            ),
+        }
+    return summary
 
 
 @_app_tool(PLAN_VIEW)

@@ -423,6 +423,18 @@
   function showResult(result) {
     if (!result) { D.fail("empty result"); return; }
     var plan = planOf(result);
+    // create_plan answers with the new block as get_plan draws it; when it
+    // couldn't read the block back it answers with a summary instead, and
+    // the card fetches the block itself.
+    if (isCreatedSummary(plan) && host && !upgraded) {
+      upgraded = true;
+      fail("Your new plan is on the Garmin calendar. Loading it\u2026");
+      D.done();
+      request("tools/call", { name: "get_plan", arguments: { label: plan.label } })
+        .then(function (r) { var p = planOf(r); if (p && !p.error) onResult(r); })
+        .catch(function () {});
+      return;
+    }
     raw = plan;
     state.sel = null;
     render(isProgress(plan) ? fromProgress(plan) : plan);
@@ -1004,6 +1016,9 @@
   // ---------------------------------------------------------------- progress
   // get_progress answers "how's my plan going" too, with the same sessions in
   // three lists. Drawn as the calendar version of the plan.
+  function isCreatedSummary(p) {
+    return !!(p && !p.error && p.sessions_created != null && p.label && !Array.isArray(p.weeks));
+  }
   function isProgress(p) {
     return !!(p && !p.error && Array.isArray(p.upcoming) && Array.isArray(p.sessions) && p.weeks && p.weeks.length && "week_of" in p.weeks[0]);
   }
