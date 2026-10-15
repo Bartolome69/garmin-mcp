@@ -1378,6 +1378,9 @@ async def main() -> int:
             check("a named plan is created with its name and method",
                   named.get("label") == "B1" and named.get("name") == "Base block"
                   and named.get("method") == "Norwegian singles", str(named)[:200])
+            check("a new plan asks Claude to show it as a card straight away",
+                  "call get_plan with label B1, before you reply" in str(named.get("next_step")),
+                  str(named.get("next_step")))
             card = payload(await sess.call_tool("get_plan", {"label": "B1"}))
             check("name, method and milestones come back from Garmin",
                   card.get("name") == "Base block" and card.get("method") == "Norwegian singles"

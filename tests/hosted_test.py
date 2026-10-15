@@ -1118,6 +1118,8 @@ async def main() -> int:
               hosted.PERMISSION_TIP in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
         check("and where to find ideas of what to ask",
               hosted.GUIDE_URL in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
+        check("and how to see their training as a card",
+              "How's my training going?" in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, "brandnew@example.com")
         again = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)

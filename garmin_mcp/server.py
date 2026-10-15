@@ -1766,6 +1766,10 @@ async def create_plan(
     Every session is validated before anything is created, so a mistake in
     session 40 fails the call without leaving half a plan behind.
 
+    Once it succeeds, call get_plan with the plan's label straight away,
+    before replying: that draws the new block as a card, which is how the
+    user sees what they agreed to.
+
     Args:
         goal: What the block is for, e.g. "Half marathon, 1:40, 15 November".
         sessions: One object per session, in any order:
@@ -1857,7 +1861,8 @@ async def create_plan(
         "first_sessions": created[:7],
         "next_step": (
             "Every session is on the Garmin calendar and syncs to the watch. "
-            f"Use get_plan (label {code}) to see the block and how it is going."
+            f"Now call get_plan with label {code}, before you reply, so the user "
+            "sees the new block as a card; then sum it up in a sentence or two."
         ),
     }
 
