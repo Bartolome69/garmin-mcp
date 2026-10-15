@@ -409,19 +409,33 @@
     try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
     reportSize();
   }
-  function showResult(result) {
-    if (!result) { D.fail("empty result"); return; }
-    var plan = result.structuredContent;
-    if (!plan && result.content) {
+  function planOf(result) {
+    var plan = result && result.structuredContent;
+    if (!plan && result && result.content) {
       for (var i = 0; i < result.content.length; i++) {
         var c = result.content[i];
         if (c.type === "text") { try { plan = JSON.parse(c.text); break; } catch (e) {} }
       }
     }
+    return plan;
+  }
+  var upgraded = false;
+  function showResult(result) {
+    if (!result) { D.fail("empty result"); return; }
+    var plan = planOf(result);
     raw = plan;
     state.sel = null;
     render(isProgress(plan) ? fromProgress(plan) : plan);
     D.done();
+    // get_progress knows which sessions happened, not what they are: no
+    // types, no steps, so every run is a plain green bar. Draw it straight
+    // away, then fetch the plan itself once and redraw with the real thing.
+    if (isProgress(plan) && host && !upgraded) {
+      upgraded = true;
+      request("tools/call", { name: "get_plan", arguments: {} })
+        .then(function (r) { var p = planOf(r); if (p && !p.error && !isProgress(p)) onResult(r); })
+        .catch(function () {});
+    }
   }
 
   // ---------------------------------------------------------------- helpers
