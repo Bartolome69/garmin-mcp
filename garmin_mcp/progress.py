@@ -65,6 +65,8 @@ class Actual:
     # Rides sit in "other" for matching; the training log still needs to tell
     # them apart, to total a cyclist's kilometres.
     ride: bool = False
+    # The sport as the plan card's icon shows it: yoga, a hike, a swim.
+    kind: str = ""
 
 
 @dataclass
@@ -215,6 +217,7 @@ def match(
             "actual_seconds": leftover.seconds or None,
             "actual_km": round(leftover.metres / 1000, 2) if leftover.metres else None,
             **({"ride": True} if leftover.ride else {}),
+            **({"kind": leftover.kind} if leftover.kind else {}),
         })
 
     return result

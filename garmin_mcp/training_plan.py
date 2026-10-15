@@ -489,6 +489,23 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
     return segments[:SHAPE_MAX_SEGMENTS] or None
 
 
+# The sport as the card's small icon shows it, from Garmin's type key. Order
+# matters: "trail_running" is a run, "cardio_training" isn't strength.
+_KINDS = (
+    ("swim", "swim"), ("yoga", "yoga"), ("pilates", "pilates"), ("mobility", "yoga"), ("breath", "yoga"),
+    ("hiit", "hiit"), ("cardio", "cardio"), ("strength", "strength"), ("hik", "hike"), ("walk", "walk"),
+    ("run", "run"),
+)
+
+
+def activity_kind(type_key: Any) -> str:
+    """run, ride, strength, swim, yoga, pilates, hiit, cardio, hike, walk or other."""
+    key = str(type_key or "").lower()
+    if is_ride(key):
+        return "ride"
+    return next((kind for word, kind in _KINDS if word in key), "other")
+
+
 def _level(step: Mapping[str, Any]) -> tuple[str, float] | None:
     """How hard a step's target asks for, as (kind, value): higher is harder."""
     key = ((step.get("targetType") or {}).get("workoutTargetTypeKey") or "").lower()
@@ -639,14 +656,12 @@ def session_type(name: str | None, sport_key: str | None, effort: str | None = N
     says race and long, and the kind of hard session when it names one; the
     steps (effort, from workout_effort) say it otherwise.
     """
-    sport = (sport_key or "running").lower()
-    cat = category(sport)
-    if cat == "strength":
-        return "strength"
-    ride = is_ride(sport)
-    if "swim" in sport:
-        return "swim"
-    if cat != "run" and not ride:
+    kind = activity_kind(sport_key or "running")
+    if kind in ("strength", "swim"):
+        return kind
+    ride = kind == "ride"
+    # Yoga, cardio, a hike: the card names these by their sport.
+    if kind != "run" and not ride:
         return "other"
     base = "ride" if ride else "easy"
     n = name or ""
@@ -885,6 +900,7 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
             "day": day.strftime("%a"),
             "name": a.get("activityName") or "Activity",
             "sport": sport,
+            "kind": activity_kind(key),
             "type": sport,
             "status": "logged",
             "actual_km": round(metres / 1000, 2) if metres else None,
@@ -1018,6 +1034,7 @@ def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequenc
             "day": date.fromisoformat(row["date"]).strftime("%a"),
             "name": row["name"],
             "sport": row.get("sport"),
+            "kind": row.get("kind"),
             "actual_km": row.get("actual_km"),
             "actual": duration(row.get("actual_seconds")),
         })
@@ -1078,6 +1095,7 @@ def summarise(
             day=_day(a.get("startTimeLocal")),
             name=a.get("activityName") or "Activity",
             sport=category((a.get("activityType") or {}).get("typeKey")),
+            kind=activity_kind((a.get("activityType") or {}).get("typeKey")),
             seconds=float(a.get("duration") or 0),
             metres=float(a.get("distance") or 0),
             activity_id=a.get("activityId"),
@@ -1118,6 +1136,7 @@ def summarise(
                 "name": name,
                 "type": session_type(name, sport_key, efforts.get(wid)),
                 "sport": "ride" if is_ride(sport_key) else category(sport_key),
+                "kind": activity_kind(sport_key),
                 "phase": phases.get(wid),
                 "shape": list(shape) if shape else None,
                 "status": status,

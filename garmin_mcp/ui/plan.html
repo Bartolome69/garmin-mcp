@@ -155,6 +155,8 @@
   .row-mid.tight { gap: 4px; }
   .row-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
   .type { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .sport { display: inline-flex; flex-shrink: 0; opacity: 0.85; }
+  .next-title .sport { align-self: center; }
   .name { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
   .name.soft { color: var(--soft); }
   .name.muted { color: var(--muted); font-weight: 500; }
@@ -471,6 +473,35 @@
     arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   };
 
+  // The sport as a small grey line icon before each session (Lucide's set,
+  // like the icons above), so the colour can say the effort. Pilates and
+  // mobility share yoga's lotus.
+  var SPORT_ICON = {
+    run: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
+    ride: '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+    strength: '<path d="M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z"/><path d="m2.5 21.5 1.4-1.4"/><path d="m20.1 3.9 1.4-1.4"/><path d="M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z"/><path d="m9.6 14.4 4.8-4.8"/>',
+    swim: '<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
+    hike: '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>',
+    walk: '<circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/>',
+    yoga: '<path d="M12 5a3 3 0 1 1 3 3m-3-3a3 3 0 1 0-3 3m3-3v1M9 8a3 3 0 1 0 3 3M9 8h1m5 0a3 3 0 1 1-3 3m3-3h-1m-2 3v-1"/><circle cx="12" cy="8" r="2"/><path d="M12 10v12"/><path d="M12 22c4.2 0 7-1.667 7-5-4.2 0-7 1.667-7 5Z"/><path d="M12 22c-4.2 0-7-1.667-7-5 4.2 0 7 1.667 7 5Z"/>',
+    hiit: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+    cardio: '<path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/><path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+    other: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  };
+  SPORT_ICON.pilates = SPORT_ICON.yoga;
+  var SPORT_NAME = { run: "Run", ride: "Ride", strength: "Strength", swim: "Swim", hike: "Hike", walk: "Walk", yoga: "Yoga", hiit: "HIIT", cardio: "Cardio", other: "Activity", pilates: "Pilates" };
+  function kindOf(s) {
+    if (s.kind && SPORT_ICON[s.kind]) return s.kind;
+    if (s.sport === "ride" || s.type === "ride") return "ride";
+    if (s.sport === "strength" || s.type === "strength") return "strength";
+    if (s.type === "swim") return "swim";
+    return s.sport === "other" ? "other" : "run";
+  }
+  function sportIcon(s, size) {
+    var k = kindOf(s);
+    return el("span", { class: "sport", role: "img", "aria-label": SPORT_NAME[k], title: SPORT_NAME[k] }, [svg(SPORT_ICON[k], size || 13, "var(--muted)", 2)]);
+  }
+
   // Session types: colour and the short label beside a title. Runs and
   // rides are coloured by effort, hotter for harder: easy, threshold,
   // intervals, race, with long its own. An easy ride is easy. Strength and
@@ -483,11 +514,14 @@
   };
   // Plans read before threshold and intervals were told apart said sub.
   TYPES.sub = TYPES.threshold;
-  // A hard or long ride says it's a ride, since the colour is the effort's.
-  var RIDE_LABELS = { threshold: "Threshold ride", intervals: "Interval ride", long: "Long ride" };
+  // A hard ride's label is the effort's; its icon says it's a ride. Yoga, a
+  // hike and the rest are named for their sport rather than "Session".
   function typeOf(s) {
     var t = TYPES[s.type] || TYPES[s.sport] || TYPES.other;
-    return s.sport === "ride" && RIDE_LABELS[s.type] ? { l: RIDE_LABELS[s.type], v: t.v, t: t.t } : t;
+    if (t !== TYPES.other || !s.kind || s.kind === "other" || !SPORT_NAME[s.kind]) return t;
+    // "Yoga flow 30 min" already says yoga: the icon is enough.
+    var said = new RegExp("\\b" + SPORT_NAME[s.kind] + "\\b", "i").test(s.name || "");
+    return { l: said ? "" : SPORT_NAME[s.kind], v: t.v };
   }
   var TYPE_WORDS = {
     easy: ["easy"], long: ["long run", "long ride", "long", "easy"], race: [],
@@ -576,6 +610,15 @@
       w.missed = planned.filter(function (s) { return s.status === "missed"; }).length;
       w.total = planned.length;
     });
+    // The next session arrives as its own copy, with its steps; it takes the
+    // place of its row (by schedule id, else day and name) so the row draws
+    // as the next-session card.
+    if (m.next) {
+      var nx = m.next, same = all.filter(function (s) {
+        return !s.extra && (nx.schedule_id != null ? s.schedule_id === nx.schedule_id : s.date === nx.date && s.name === nx.name);
+      })[0];
+      if (same) m.next = Object.assign(same, nx, { type: nx.type || same.type, kind: nx.kind || same.kind, sport: nx.sport || same.sport, shape: nx.shape || same.shape });
+    }
     m.nextWeek = -1;
     if (m.next) {
       m.weeks.forEach(function (w, i) { if (m.next.date >= w.starts && m.next.date < iso(addDays(parse(w.starts), 7))) m.nextWeek = i; });
@@ -836,6 +879,7 @@
         el("div", { class: "row-mid tight" }, [
           el("div", { class: "row-top" }, [
             el("span", { class: "check", style: "background:" + t.v }, [svg(ICON.check, 10, "var(--card)", 3.6)]),
+            sportIcon(s),
             el("span", { class: "name soft", text: cleanTitle(s) }),
           ]),
           bits.length ? el("span", { class: "meta", text: bits.join(" \u00b7 ") }) : null,
@@ -848,7 +892,7 @@
       return el("div", { class: "row" }, [
         el("span", { class: "row-day mono faint", text: day }),
         el("div", { class: "row-mid tight" }, [
-          el("div", { class: "row-top" }, [el("span", { class: "miss" }), el("span", { class: "name muted", text: cleanTitle(s) })]),
+          el("div", { class: "row-top" }, [el("span", { class: "miss" }), sportIcon(s), el("span", { class: "name muted", text: cleanTitle(s) })]),
           el("span", { class: "meta missed", text: "Missed" }),
         ]),
         el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
@@ -861,7 +905,7 @@
     return el("div", { class: "row" }, [
       el("span", { class: "row-day mono", text: day }),
       el("div", { class: "row-mid" }, [
-        el("div", { class: "row-top" }, [el("span", { class: "type", style: "color:" + (t.t || t.v), text: t.l }), el("span", { class: "name", text: cleanTitle(s) })]),
+        el("div", { class: "row-top" }, [sportIcon(s), t.l ? el("span", { class: "type", style: "color:" + (t.t || t.v), text: t.l }) : null, el("span", { class: "name", text: cleanTitle(s) })]),
         shapeBar(s, false, share),
       ]),
       el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
@@ -907,7 +951,7 @@
         el("span", { class: "next-k mono", text: "NEXT \u00b7 " + when2.toUpperCase() }),
         el("span", { class: "next-when", text: when }),
       ]),
-      el("div", { class: "next-title" }, [el("span", { class: "next-type", style: "color:" + (t.t || t.v), text: t.l }), el("span", { class: "next-name", text: name })]),
+      el("div", { class: "next-title" }, [sportIcon(s, 15), t.l ? el("span", { class: "next-type", style: "color:" + (t.t || t.v), text: t.l }) : null, el("span", { class: "next-name", text: name })]),
       shapeBar(s, true),
       el("div", { class: "next-meta" }, meta),
       el("div", { class: "acts" }, [

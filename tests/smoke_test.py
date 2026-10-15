@@ -478,7 +478,13 @@ def check_workout_steps(check) -> None:
           and tp.session_type("Long ride 3h", "cycling") == "long"
           and tp.session_type("Spin", "cycling") == "ride"
           and tp.session_type("Gym", "strength_training", "threshold") == "strength"
-          and tp.session_type("Pool", "lap_swimming") == "swim")
+          and tp.session_type("Pool", "lap_swimming") == "swim"
+          and tp.session_type("Circuits", "cardio_training") == "other")
+    check("each session's sport for its icon, from Garmin's type key",
+          [tp.activity_kind(k) for k in ("trail_running", "indoor_cycling", "strength_training", "cardio_training",
+                                         "open_water_swimming", "yoga", "pilates", "hiit", "hiking", "walking",
+                                         "indoor_rowing", None)]
+          == ["run", "ride", "strength", "cardio", "swim", "yoga", "pilates", "hiit", "hike", "walk", "other", "other"])
     thr_steps = tp.workout_steps(_json.loads(thr_w.model_dump_json(by_alias=True)))
     check("the main target is the reps' pace", tp.main_target(thr_steps) == "4:00\u20134:10/km", str(tp.main_target(thr_steps)))
     check("phase bands follow the sessions, filling weeks without one",
@@ -1383,7 +1389,7 @@ async def main() -> int:
             rows_b1 = [s for w in card["weeks"] for s in w["sessions"]]
             thr_b1 = next(s for s in rows_b1 if s["name"].startswith("Threshold"))
             check("each session carries its type and shape",
-                  thr_b1.get("type") == "threshold" and thr_b1.get("sport") == "run" and [g["k"] for g in thr_b1.get("shape", [])][:3] == ["easy", "work", "rec"]
+                  thr_b1.get("type") == "threshold" and thr_b1.get("sport") == "run" and thr_b1.get("kind") == "run" and [g["k"] for g in thr_b1.get("shape", [])][:3] == ["easy", "work", "rec"]
                   and next(s for s in rows_b1 if s["name"] == "Easy 8k").get("type") == "easy"
                   and next(s for s in rows_b1 if s["name"].startswith("Long")).get("type") == "long", str(thr_b1)[:240])
             check("the next session carries its target",
