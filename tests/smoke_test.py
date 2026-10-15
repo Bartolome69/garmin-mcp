@@ -423,15 +423,62 @@ def check_workout_steps(check) -> None:
     check("a strength session has no run shape",
           tp.workout_shape({"sportType": {"sportTypeKey": "strength_training"}, "workoutSegments": [
               {"workoutSteps": [{"endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 1800}]}]}) is None)
-    check("session types: shape says easy or sub-T, the name says long and race",
-          tp.session_type("Threshold 5x1k", "running", thr_shape) == "sub"
-          and tp.session_type("Easy 8k", "running", easy_shape) == "easy"
-          and tp.session_type("Long run 16k", "running", long_shape) == "long"
-          and tp.session_type("Parkrun", "running", None) == "race"
-          and tp.session_type("Marathon pace 10k", "running", None) == "sub"
-          and tp.session_type("Tempo 6k", "running", None) == "sub"
-          and tp.session_type("Gym", "strength_training", None) == "strength"
-          and tp.session_type("Spin", "cycling", None) == "ride")
+    def effort_of(name, sport, steps):
+        built, _, _ = build_workout(name, sport, steps, ftp=250) if sport == "cycling" else build_workout(name, sport, steps)
+        return tp.workout_effort(_json.loads(built.model_dump_json(by_alias=True)))
+    wu, cd = {"type": "warmup", "duration_seconds": 900}, {"type": "cooldown", "duration_seconds": 600}
+
+    def reps(times, rep, rest, **target):
+        return [wu, {"type": "repeat", "times": times, "steps": [
+            {"type": "interval", **rep, **target}, {"type": "recovery", **rest}]}, cd]
+    check("the steps tell threshold from intervals, the same for runs and rides",
+          effort_of("A", "running", reps(10, {"distance_meters": 1000}, {"duration_seconds": 60}, pace="3:50")) == "threshold"
+          and effort_of("B", "running", reps(5, {"duration_seconds": 180}, {"duration_seconds": 150}, pace="3:30")) == "intervals"
+          and effort_of("C", "running", reps(8, {"distance_meters": 400}, {"distance_meters": 200}, pace="3:20")) == "intervals"
+          and effort_of("D", "running", reps(3, {"duration_seconds": 480}, {"duration_seconds": 120}, pace="3:55")) == "threshold"
+          and effort_of("E", "running", [
+              {"type": "warmup", "distance_meters": 2000, "pace": ["5:20", "5:40"]},
+              {"type": "interval", "distance_meters": 6000, "pace": "4:10"},
+              {"type": "cooldown", "distance_meters": 2000, "pace": ["5:20", "5:40"]}]) == "threshold"
+          and effort_of("F", "cycling", reps(3, {"duration_seconds": 720}, {"duration_seconds": 300}, power="90%")) == "threshold"
+          and effort_of("G", "cycling", reps(5, {"duration_seconds": 240}, {"duration_seconds": 240}, power="115%")) == "intervals"
+          and effort_of("H", "cycling", reps(12, {"duration_seconds": 30}, {"duration_seconds": 30}, power="130%")) == "intervals")
+    check("easy running stays easy: a slow warm-up, strides, a run-walk, one steady ride",
+          effort_of("I", "running", [
+              {"type": "warmup", "distance_meters": 1000, "pace": ["6:00", "6:10"]},
+              {"type": "interval", "distance_meters": 8000, "pace": ["5:25", "5:40"]},
+              {"type": "cooldown", "distance_meters": 1000, "pace": ["6:00", "6:10"]}]) is None
+          and effort_of("J", "running", [{"type": "interval", "distance_meters": 8000, "pace": ["5:20", "5:40"]},
+                                         {"type": "repeat", "times": 6, "steps": [
+                                             {"type": "interval", "duration_seconds": 20},
+                                             {"type": "recovery", "duration_seconds": 60}]}]) is None
+          and effort_of("K", "running", [{"type": "repeat", "times": 8, "steps": [
+              {"type": "interval", "duration_seconds": 240}, {"type": "recovery", "duration_seconds": 60}]}]) is None
+          and effort_of("L", "cycling", [{"type": "interval", "duration_seconds": 5400, "power": "65%"}]) is None
+          and tp.workout_effort({"sportType": {"sportTypeKey": "strength_training"}}) is None)
+    check("session types: the name says race, long and the kind of hard session; the steps say the rest",
+          tp.session_type("Threshold 5x1k", "running") == "threshold"
+          and tp.session_type("Session", "running", "intervals") == "intervals"
+          and tp.session_type("Session", "running") == "easy"
+          and tp.session_type("Easy 8k", "running", "threshold") == "easy"
+          and tp.session_type("Long run 16k", "running", "threshold") == "long"
+          and tp.session_type("Parkrun", "running") == "race"
+          and tp.session_type("Marathon pace 10k", "running") == "threshold"
+          and tp.session_type("Tempo 6k", "running") == "threshold"
+          and tp.session_type("Sub-T 25x400", "running", "intervals") == "threshold"
+          and tp.session_type("VO2 max 5x3min", "running") == "intervals"
+          and tp.session_type("Hill reps", "running") == "intervals"
+          and tp.session_type("6x800", "running") == "intervals"
+          and tp.session_type("Easy 8k + 6x20s strides", "running") == "easy"
+          and tp.session_type("Easy run, 4x30s hill sprints", "running", "intervals") == "easy"
+          and tp.session_type("Hill sprints 10x10s", "running") == "intervals"
+          and tp.session_type("Easy 10k with tempo finish", "running") == "threshold"
+          and tp.session_type("Sweet spot 3x12", "cycling") == "threshold"
+          and tp.session_type("Ride", "cycling", "intervals") == "intervals"
+          and tp.session_type("Long ride 3h", "cycling") == "long"
+          and tp.session_type("Spin", "cycling") == "ride"
+          and tp.session_type("Gym", "strength_training", "threshold") == "strength"
+          and tp.session_type("Pool", "lap_swimming") == "swim")
     thr_steps = tp.workout_steps(_json.loads(thr_w.model_dump_json(by_alias=True)))
     check("the main target is the reps' pace", tp.main_target(thr_steps) == "4:00\u20134:10/km", str(tp.main_target(thr_steps)))
     check("phase bands follow the sessions, filling weeks without one",
@@ -1336,7 +1383,7 @@ async def main() -> int:
             rows_b1 = [s for w in card["weeks"] for s in w["sessions"]]
             thr_b1 = next(s for s in rows_b1 if s["name"].startswith("Threshold"))
             check("each session carries its type and shape",
-                  thr_b1.get("type") == "sub" and [g["k"] for g in thr_b1.get("shape", [])][:3] == ["easy", "work", "rec"]
+                  thr_b1.get("type") == "threshold" and thr_b1.get("sport") == "run" and [g["k"] for g in thr_b1.get("shape", [])][:3] == ["easy", "work", "rec"]
                   and next(s for s in rows_b1 if s["name"] == "Easy 8k").get("type") == "easy"
                   and next(s for s in rows_b1 if s["name"].startswith("Long")).get("type") == "long", str(thr_b1)[:240])
             check("the next session carries its target",

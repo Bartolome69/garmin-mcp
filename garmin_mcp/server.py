@@ -1948,6 +1948,7 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
                 lookup_ids.append(wid)
     goal, seconds, metres = None, {}, {}
     shapes: dict[Any, list[dict[str, Any]]] = {}
+    efforts: dict[Any, str | None] = {}
     phases: dict[Any, str] = {}
     meta: dict[str, Any] = {}
     goal_code = code or (context or {}).get("label")
@@ -1968,6 +1969,7 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         shape = training_plan.workout_shape(detail)
         if shape:
             shapes[wid] = shape
+        efforts[wid] = training_plan.workout_effort(detail)
         text = detail.get("description")
         if goal_code and f"Plan {goal_code}:" in (text or ""):
             goal = goal or training_plan.goal_from_description(text, goal_code)
@@ -1988,7 +1990,7 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     if code is None:
         result = await _with_next_steps(training_plan.summarise_calendar(
             sessions, activities, today, planned_seconds=seconds,
-            planned_metres=metres, weekly_km=weekly_km, shapes=shapes, phases=phases,
+            planned_metres=metres, weekly_km=weekly_km, shapes=shapes, phases=phases, efforts=efforts,
         ))
         if context:
             key = "current_plan" if context.pop("running") else "upcoming_plan"
@@ -2004,7 +2006,7 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
     result = await _with_next_steps(training_plan.summarise(
         code, sessions, activities, today, goal=goal, planned_seconds=seconds,
-        shapes=shapes, phases=phases, **extra
+        shapes=shapes, phases=phases, efforts=efforts, **extra
     ))
     result.update(meta)
     if others:

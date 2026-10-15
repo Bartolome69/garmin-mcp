@@ -16,7 +16,7 @@
     --soft: #4A4944; --line: #D9D7CF; --bar-off: #E6E4DD; --bar-past: #EEECE6; --row-line: #EEECE6;
     --btn-border: #D9D7CF; --red: #E0312A; --red-text: #C8261F; --red-soft: rgba(224,49,42,0.28);
     --bar-done: #A9A7A0; --next-bg: #FDF4F2; --next-border: #F2C9C4; --rec: #D9D7CF;
-    --easy: #3F8A47; --sub: #B8651C; --long: #2F68B0; --strength: #7E57C2; --swim: #1F8A93;
+    --easy: #3F8A47; --threshold: #D19B00; --threshold-text: #8F6A00; --intervals: #C25A12; --long: #2F68B0; --strength: #7E57C2; --swim: #1F8A93;
     --on-red: #FFFFFF;
   }
   @media (prefers-color-scheme: dark) {
@@ -26,7 +26,7 @@
       --soft: #C9C8C2; --line: #4A4A46; --bar-off: #4A4A46; --bar-past: #3E3E3B; --row-line: #3C3C39;
       --btn-border: #55544F; --red: #E8322B; --red-text: #FF6A61; --red-soft: rgba(232,50,43,0.38);
       --bar-done: #8A8984; --next-bg: #3B3B38; --next-border: #6B3530; --rec: #5A5954;
-      --easy: #8CC08F; --sub: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
+      --easy: #8CC08F; --threshold: #E3BF4F; --threshold-text: #E3BF4F; --intervals: #F2924A; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
     }
   }
   :root[data-theme="dark"] {
@@ -35,7 +35,7 @@
     --soft: #C9C8C2; --line: #4A4A46; --bar-off: #4A4A46; --bar-past: #3E3E3B; --row-line: #3C3C39;
     --btn-border: #55544F; --red: #E8322B; --red-text: #FF6A61; --red-soft: rgba(232,50,43,0.38);
     --bar-done: #8A8984; --next-bg: #3B3B38; --next-border: #6B3530; --rec: #5A5954;
-    --easy: #8CC08F; --sub: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
+    --easy: #8CC08F; --threshold: #E3BF4F; --threshold-text: #E3BF4F; --intervals: #F2924A; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: transparent; }
@@ -471,19 +471,30 @@
     arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
   };
 
-  // Session types: colour and the short label beside a title. Easy, sub-T,
-  // long and race are the run types; the rest are other sports.
+  // Session types: colour and the short label beside a title. Runs and
+  // rides are coloured by effort, hotter for harder: easy, threshold,
+  // intervals, race, with long its own. An easy ride is easy. Strength and
+  // swims keep their sport's colour.
   var TYPES = {
-    easy: { l: "Easy", v: "var(--easy)" }, sub: { l: "Sub-T", v: "var(--sub)" }, long: { l: "Long", v: "var(--long)" },
-    race: { l: "Race", v: "var(--red-text)" }, ride: { l: "Ride", v: "var(--long)" }, swim: { l: "Swim", v: "var(--swim)" },
+    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Threshold", v: "var(--threshold)", t: "var(--threshold-text)" },
+    intervals: { l: "Intervals", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
+    race: { l: "Race", v: "var(--red-text)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
     strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
   };
-  function typeOf(s) { return TYPES[s.type] || TYPES[s.sport] || TYPES.other; }
+  // Plans read before threshold and intervals were told apart said sub.
+  TYPES.sub = TYPES.threshold;
+  // A hard or long ride says it's a ride, since the colour is the effort's.
+  var RIDE_LABELS = { threshold: "Threshold ride", intervals: "Interval ride", long: "Long ride" };
+  function typeOf(s) {
+    var t = TYPES[s.type] || TYPES[s.sport] || TYPES.other;
+    return s.sport === "ride" && RIDE_LABELS[s.type] ? { l: RIDE_LABELS[s.type], v: t.v, t: t.t } : t;
+  }
   var TYPE_WORDS = {
-    easy: ["easy"], long: ["long run", "long", "easy"], race: [],
-    sub: ["threshold", "tempo", "intervals?", "sub-?threshold", "sub-?t"],
+    easy: ["easy"], long: ["long run", "long ride", "long", "easy"], race: [],
+    threshold: ["threshold", "tempo", "sub-?threshold", "sub-?t"], intervals: ["intervals?"],
     strength: ["strength"], ride: ["ride", "bike"], swim: ["swim"],
   };
+  TYPE_WORDS.sub = TYPE_WORDS.threshold;
   // The title without what the row already says: its type and, when that is
   // all that's left, the distance. "Long run 16k" with the Long label reads
   // "16 km"; "Threshold 5x1k" reads "5 × 1 km".
@@ -491,8 +502,8 @@
     var n = String(s.name || "").trim();
     // A recorded activity keeps Garmin's name: "Morning Run" is what it was.
     if (s.status === "logged" || s.extra) return n || "Run";
-    n = n.replace(/(\d+(?:[.,]\d+)?)\s*k(?:m)?\b/gi, "$1 km").replace(/(\d)\s*[x\u00d7]\s*(\d)/gi, "$1 \u00d7 $2");
-    (TYPE_WORDS[s.type] || []).forEach(function (w) { n = n.replace(new RegExp("(^|\\s)" + w + "(?=\\s|$|[,:\u00b7-])", "gi"), "$1"); });
+    n = n.replace(/(\d+(?:[.,]\d+)?)\s*k(?:m)?\b/gi, "$1 km").replace(/(\d)\s*[x\u00d7]\s*(\d)/gi, "$1\u00a0\u00d7\u00a0$2");
+    (TYPE_WORDS[s.type] || []).concat(s.sport === "ride" && s.type !== "ride" ? TYPE_WORDS.ride : []).forEach(function (w) { n = n.replace(new RegExp("(^|\\s)" + w + "(?=\\s|$|[,:\u00b7-])", "gi"), "$1"); });
     n = n.replace(/^\s*(run|session|workout)\b/i, "").replace(/\b(run|session|workout)\s*$/i, "");
     n = n.replace(/\s{2,}/g, " ").replace(/^[\s,:\u00b7-]+|[\s,:\u00b7-]+$/g, "");
     if (!n) { var km = s.planned_km || s.actual_km; n = km ? fmtKm(km) + " km" : String(s.name || "Session"); }
@@ -726,7 +737,10 @@
       })) : null;
     var present = {};
     m.weeks.forEach(function (w) { w.rows.forEach(function (s) { present[(TYPES[s.type] || TYPES[s.sport]) ? (s.type || s.sport) : "other"] = true; }); });
-    var legend = ["easy", "sub", "long"].concat(Object.keys(present).filter(function (k) { return ["easy", "sub", "long", "run", "other"].indexOf(k) < 0; }));
+    // Easy always, then the rest in order of effort as they appear; an easy
+    // ride or a plain run is easy, and an old sub is threshold.
+    if (present.sub) present.threshold = true;
+    var legend = ["easy", "threshold", "intervals", "race", "long", "strength", "swim"].filter(function (k) { return k === "easy" || present[k]; });
     return el("div", { class: "pane chart" }, [
       el("div", { class: "stats" }, [
         el("span", {}, [el("strong", { text: stats.lead }), " " + stats.left]),
@@ -734,7 +748,7 @@
       ]),
       el("div", { style: "display:flex;flex-direction:column;gap:6px" }, [grid, bands]),
       el("div", { class: "legend" }, legend.map(function (k) {
-        var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), k === "sub" ? "Sub-threshold" : t.l]);
+        var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), t.l]);
       })),
     ]);
   }
@@ -847,7 +861,7 @@
     return el("div", { class: "row" }, [
       el("span", { class: "row-day mono", text: day }),
       el("div", { class: "row-mid" }, [
-        el("div", { class: "row-top" }, [el("span", { class: "type", style: "color:" + t.v, text: t.l }), el("span", { class: "name", text: cleanTitle(s) })]),
+        el("div", { class: "row-top" }, [el("span", { class: "type", style: "color:" + (t.t || t.v), text: t.l }), el("span", { class: "name", text: cleanTitle(s) })]),
         shapeBar(s, false, share),
       ]),
       el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
@@ -862,16 +876,20 @@
   // still, each as wide as its distance. A run without steps is one bar.
   function shapeBar(s, big, share) {
     var t = typeOf(s), segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
-    // A race or a steady sub-T run with one step is all work: draw it so.
-    if ((s.type === "race" || s.type === "sub") && !segs.some(function (g) { return g.k === "work"; })) {
+    // A race, or a hard session with one step, is all work: draw it so.
+    var hard = s.type === "threshold" || s.type === "intervals" || s.type === "sub";
+    if ((s.type === "race" || hard) && !segs.some(function (g) { return g.k === "work"; })) {
       segs = segs.map(function (g) { return g.k === "easy" ? { k: "work", km: g.km } : g; });
     }
     var scale = big ? 1 : 0.7;
-    var easyColour = s.type === "long" ? TYPES.long.v : s.type === "easy" || !TYPES[s.type] || s.type === "sub" ? TYPES.easy.v : t.v;
+    var easyColour = s.type === "long" ? TYPES.long.v : s.type === "easy" || !TYPES[s.type] || hard ? TYPES.easy.v : t.v;
+    // Work in a hard session takes its colour; faster stretches of a long
+    // or easy run are threshold work.
+    var workColour = s.type === "race" ? TYPES.race.v : hard ? t.v : TYPES.threshold.v;
     var width = share && share < 1 ? "width:" + Math.round(share * 1000) / 10 + "%" : "";
     return el("div", { class: "shape" + (big ? " big" : ""), style: width, "aria-hidden": "true" }, segs.map(function (g) {
       var h = g.k === "work" ? 26 : g.k === "rec" ? 6 : 12;
-      var c = g.k === "work" ? (s.type === "race" ? TYPES.race.v : TYPES.sub.v) : g.k === "rec" ? "var(--rec)" : easyColour;
+      var c = g.k === "work" ? workColour : g.k === "rec" ? "var(--rec)" : easyColour;
       return el("span", { style: "flex:" + Math.max(g.km, 0.1) + " 1 0;height:" + (big ? 30 : Math.round(h * scale)) + "px;background:" + c });
     }));
   }
@@ -889,7 +907,7 @@
         el("span", { class: "next-k mono", text: "NEXT \u00b7 " + when2.toUpperCase() }),
         el("span", { class: "next-when", text: when }),
       ]),
-      el("div", { class: "next-title" }, [el("span", { class: "next-type", style: "color:" + t.v, text: t.l }), el("span", { class: "next-name", text: name })]),
+      el("div", { class: "next-title" }, [el("span", { class: "next-type", style: "color:" + (t.t || t.v), text: t.l }), el("span", { class: "next-name", text: name })]),
       shapeBar(s, true),
       el("div", { class: "next-meta" }, meta),
       el("div", { class: "acts" }, [

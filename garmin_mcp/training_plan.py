@@ -367,10 +367,44 @@ SHAPE_MAX_SEGMENTS = 60
 WORK_SPEED_RATIO = 1.06
 RACE_RE = re.compile(r"race|parkrun|marathon|\bhalf\b|\b5k\b|\b10k\b", re.IGNORECASE)
 NOT_RACE_RE = re.compile(r"pace|tempo|easy|long run|prep|sim", re.IGNORECASE)
-QUALITY_RE = re.compile(
-    r"threshold|tempo|interval|reps|\d\s?x\s?\d|hill|vo2|fartlek|progression|marathon pace|\bmp\b|steady|race pace|sub-?t",
+
+# A hard session is one of two kinds, the same for a run or a ride, so the
+# card reads by effort whatever the sport: threshold (tempo, threshold,
+# sub-threshold, sweet spot, steady and marathon-pace work) or intervals
+# (VO2 max, speed, hills and short reps). The name says it when it can.
+VO2_NAME_RE = re.compile(r"vo2|v02|anaerobic|tabata|track|\bspeed\b|\bmax\b", re.IGNORECASE)
+SPRINT_NAME_RE = re.compile(r"sprint", re.IGNORECASE)
+THRESHOLD_NAME_RE = re.compile(
+    r"threshold|tempo|sub-?t\b|cruise|sweet ?spot|\bss\b|\bftp\b|over-?unders?|marathon pace|\bmp\b|\bhmp\b"
+    r"|steady|progression|race pace|\blt\b|lactate|norwegian|singles",
     re.IGNORECASE,
 )
+INTERVALS_NAME_RE = re.compile(
+    r"hills?\b|fartlek|\b[2-8]00s\b|\b[2-8]00 ?m\b|\b[35]k pace|mile pace|\b(?:15|20|30|40|45)\s?/\s?(?:15|20|30)\b",
+    re.IGNORECASE,
+)
+REPS_NAME_RE = re.compile(r"intervals?|reps|\d\s?[x\u00d7]\s?\d", re.IGNORECASE)
+# Said to be gentle, so no structure makes it hard: run-walks above all,
+# and an easy run with strides or a few sprints, "Easy 8k + 6x20s strides".
+GENTLE_NAME_RE = re.compile(r"easy|recovery|shake-?out|walk|strides|aerobic|endurance|zone ?[12]\b|\bz[12]\b", re.IGNORECASE)
+
+# Read from the steps when the name doesn't say. Work has to amount to
+# something, so strides or a few sprints don't make a run hard.
+EFFORT_MIN_WORK_S = 240
+EFFORT_MIN_WORK_SHARE = 0.1
+# Reps this short with recoveries this long are intervals: 5 x 3 min with
+# 2-3 min jogs. Longer reps or short recoveries are threshold, which keeps
+# Norwegian singles (10 x 1 km, 60 s jogs) as threshold. A ride's VO2 max
+# reps run longer than a run's.
+INTERVAL_REP_S = {"run": 300, "ride": 480}
+INTERVAL_REST_RATIO = 0.5
+SHORT_REP_S = 120
+SHORT_REP_REST_RATIO = 0.4
+# A body step this much above the gentlest one is work, by target kind.
+WORK_LEVEL_RATIO = {"pace": WORK_SPEED_RATIO, "power": 1.12, "hr": 1.06}
+WARMUP_LEVEL_RATIO = {"pace": 1.15, "power": 1.25, "hr": 1.12}
+# Distance steps without a pace target are timed at these speeds.
+RIDE_MPS = 8.0
 
 
 def _speed(step: Mapping[str, Any]) -> float | None:
@@ -455,36 +489,179 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
     return segments[:SHAPE_MAX_SEGMENTS] or None
 
 
-def session_type(name: str | None, sport_key: str | None, shape: Sequence[Mapping[str, Any]] | None) -> str:
-    """easy, sub, long or race for a run, from its shape and its name; the sport otherwise.
+def _level(step: Mapping[str, Any]) -> tuple[str, float] | None:
+    """How hard a step's target asks for, as (kind, value): higher is harder."""
+    key = ((step.get("targetType") or {}).get("workoutTargetTypeKey") or "").lower()
+    one, two = step.get("targetValueOne"), step.get("targetValueTwo")
+    if key == "pace.zone" and one and two:
+        return "pace", (float(one) + float(two)) / 2
+    if key == "power.zone" and one and two:
+        return "power", (float(one) + float(two)) / 2
+    if key == "heart.rate.zone" and one and two:
+        return "hr", (float(one) + float(two)) / 2
+    if key == "heart.rate.zone" and step.get("zoneNumber"):
+        return "zone", float(step["zoneNumber"])
+    return None
 
-    The shape decides easy against sub-threshold, since that is structural.
-    Long and race have no structural signal, so the name says.
+
+def workout_effort(workout: Mapping[str, Any] | None) -> str | None:
+    """threshold or intervals for a hard run or ride, from its steps; None when it isn't one.
+
+    Work is what sits inside a repeat, or a body step clearly harder than the
+    gentlest one. Enough of it makes the session hard; then the reps decide
+    the kind: short reps with long recoveries are intervals, the rest threshold.
+    """
+    if not workout:
+        return None
+    sport = ((workout.get("sportType") or {}).get("sportTypeKey") or "running").lower()
+    kind_of_sport = "run" if category(sport) == "run" else "ride" if is_ride(sport) else None
+    if not kind_of_sport:
+        return None
+    mps = DEFAULT_MPS if kind_of_sport == "run" else RIDE_MPS
+    flat: list[tuple[str, float, tuple[str, float] | None, bool]] = []
+
+    def walk(steps: Sequence[Mapping[str, Any]], in_repeat: bool) -> None:
+        for step in sorted(steps or [], key=lambda x: x.get("stepOrder") or 0):
+            if step.get("type") == "RepeatGroupDTO" or step.get("numberOfIterations"):
+                times = int(step.get("numberOfIterations") or step.get("endConditionValue") or 1)
+                before = len(flat)
+                walk(step.get("workoutSteps") or [], True)
+                inner = flat[before:]
+                for _ in range(max(0, times - 1)):
+                    flat.extend(inner)
+                continue
+            kind = ((step.get("stepType") or {}).get("stepTypeKey") or "other").lower()
+            cond = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
+            value = float(step.get("endConditionValue") or 0)
+            level = _level(step)
+            if cond == "time":
+                seconds = value
+            elif cond == "distance":
+                speed = level[1] if level and level[0] == "pace" else mps
+                seconds = value / speed if speed else 0.0
+            else:
+                seconds = 0.0
+            flat.append((kind, seconds, level, in_repeat))
+
+    for segment in workout.get("workoutSegments") or []:
+        walk(segment.get("workoutSteps") or [], False)
+    gentle = ("warmup", "cooldown", "recovery", "rest")
+    body = [f for f in flat if f[0] not in gentle]
+    if not body:
+        return None
+    # The gentlest target among the body steps, and among the warm-up and
+    # cool-down, so one tempo block between them reads as work. A warm-up is
+    # often slower than easy running, so beating it takes more.
+    lowest: dict[str, float] = {}
+    lowest_gentle: dict[str, float] = {}
+    for kind, _, level, _ in flat:
+        if level and level[0] in WORK_LEVEL_RATIO:
+            into = lowest_gentle if kind in ("warmup", "cooldown") else lowest if kind not in gentle else None
+            if into is not None:
+                into[level[0]] = min(into.get(level[0], level[1]), level[1])
+
+    def is_work(step: tuple[str, float, tuple[str, float] | None, bool]) -> bool:
+        kind, _, level, in_repeat = step
+        if kind in gentle:
+            return False
+        if level and level[0] == "zone" and level[1] <= 2:
+            return False
+        if in_repeat:
+            # Reps without any target are a run-walk or drills, not a session.
+            return level is not None
+        if not level or level[0] not in WORK_LEVEL_RATIO:
+            return False
+        unit, value = level
+        return value >= lowest[unit] * WORK_LEVEL_RATIO[unit] or (
+            unit in lowest_gentle and value >= lowest_gentle[unit] * WARMUP_LEVEL_RATIO[unit]
+        )
+
+    work = [is_work(f) for f in flat]
+    total = sum(f[1] for f in flat)
+    work_s = sum(f[1] for f, w in zip(flat, work) if w)
+    if work_s < EFFORT_MIN_WORK_S or not total or work_s / total < EFFORT_MIN_WORK_SHARE:
+        return None
+
+    # Reps: runs of work steps, each with the recovery that follows it up to
+    # the next rep. A warm-up or cool-down isn't a recovery.
+    reps: list[tuple[float, float, bool]] = []
+    repeated = False
+    i = 0
+    while i < len(flat):
+        if not work[i]:
+            i += 1
+            continue
+        rep, j = 0.0, i
+        while j < len(flat) and work[j]:
+            rep += flat[j][1]
+            repeated = repeated or flat[j][3]
+            j += 1
+        rest, k, known = 0.0, j, True
+        while k < len(flat) and not work[k] and flat[k][0] not in ("warmup", "cooldown"):
+            rest += flat[k][1]
+            known = known and flat[k][1] > 0
+            k += 1
+        reps.append((rep, rest, known))
+        i = j
+    if not repeated or len(reps) < 2:
+        return "threshold"
+    rep_s = sorted(r for r, _, _ in reps)[len(reps) // 2]
+    ratios = sorted(rest / rep for rep, rest, known in reps if rep and known and rest > 0)
+    ratio = ratios[len(ratios) // 2] if ratios else None
+    if rep_s <= SHORT_REP_S and (ratio is None or ratio >= SHORT_REP_REST_RATIO):
+        return "intervals"
+    if rep_s <= INTERVAL_REP_S[kind_of_sport] and (ratio is None or ratio >= INTERVAL_REST_RATIO):
+        return "intervals"
+    return "threshold"
+
+
+def effort_from_name(name: str | None) -> str | None:
+    """What a session's name says about its effort: intervals, threshold, reps, gentle, or nothing."""
+    n = name or ""
+    if GENTLE_NAME_RE.search(n) and not (VO2_NAME_RE.search(n) or THRESHOLD_NAME_RE.search(n)):
+        return "gentle"
+    if VO2_NAME_RE.search(n) or SPRINT_NAME_RE.search(n):
+        return "intervals"
+    if THRESHOLD_NAME_RE.search(n):
+        return "threshold"
+    if INTERVALS_NAME_RE.search(n):
+        return "intervals"
+    if REPS_NAME_RE.search(n):
+        return "reps"
+    return None
+
+
+def session_type(name: str | None, sport_key: str | None, effort: str | None = None) -> str:
+    """What a session is, for its colour: by effort for runs and rides, the sport otherwise.
+
+    easy, long, threshold, intervals or race for a run; the same for a ride,
+    with ride for an easy one; strength, swim or other for the rest. The name
+    says race and long, and the kind of hard session when it names one; the
+    steps (effort, from workout_effort) say it otherwise.
     """
     sport = (sport_key or "running").lower()
     cat = category(sport)
     if cat == "strength":
         return "strength"
-    if is_ride(sport):
-        return "ride"
+    ride = is_ride(sport)
     if "swim" in sport:
         return "swim"
-    if cat != "run":
+    if cat != "run" and not ride:
         return "other"
+    base = "ride" if ride else "easy"
     n = name or ""
     if RACE_RE.search(n) and not NOT_RACE_RE.search(n):
         return "race"
     if re.search(r"\blong\b", n, re.IGNORECASE):
         return "long"
-    if shape:
-        # Strides are repeats too, so work has to amount to something before
-        # a run reads as sub-threshold: 600 m and a tenth of the distance.
-        work = sum(float(seg.get("km") or 0) for seg in shape if seg.get("k") == "work")
-        total = sum(float(seg.get("km") or 0) for seg in shape)
-        if work >= 0.6 and total and work / total >= 0.1:
-            return "sub"
-    # One steady step at a pace has no structure to read; its name says.
-    return "sub" if QUALITY_RE.search(n) else "easy"
+    named = effort_from_name(n)
+    if named in ("intervals", "threshold"):
+        return named
+    if named == "gentle":
+        return base
+    if effort:
+        return effort
+    return "intervals" if named == "reps" else base
 
 
 def main_target(steps: Sequence[Mapping[str, Any]] | None) -> str | None:
@@ -797,6 +974,7 @@ def summarise_calendar(
     weekly_km: bool = False,
     shapes: Mapping[Any, Sequence[Mapping[str, Any]]] | None = None,
     phases: Mapping[Any, str] | None = None,
+    efforts: Mapping[Any, str | None] | None = None,
 ) -> dict[str, Any]:
     """The calendar read as a plan: what was scheduled around now, against what was run.
 
@@ -805,7 +983,8 @@ def summarise_calendar(
     than numbered, because week 1 would only mean the first week shown.
     """
     result = summarise("", items, activities, today, planned_seconds=planned_seconds,
-                       planned_metres=planned_metres, weekly_km=weekly_km, shapes=shapes, phases=phases)
+                       planned_metres=planned_metres, weekly_km=weekly_km, shapes=shapes, phases=phases,
+                       efforts=efforts)
     result.pop("label", None)
     for key in ("current_week", "weeks_total", "finished", "phases"):
         result.pop(key, None)
@@ -862,6 +1041,7 @@ def summarise(
     weekly_km: bool = False,
     shapes: Mapping[Any, Sequence[Mapping[str, Any]]] | None = None,
     phases: Mapping[Any, str] | None = None,
+    efforts: Mapping[Any, str | None] | None = None,
 ) -> dict[str, Any]:
     """The plan week by week, each session marked done, missed, today or ahead.
 
@@ -873,6 +1053,7 @@ def summarise(
     planned_metres = planned_metres or {}
     shapes = shapes or {}
     phases = phases or {}
+    efforts = efforts or {}
     by_activity = {a.get("activityId"): a for a in activities if a.get("activityId") is not None}
     sessions = sorted(
         (i for i in items if _day(i.get("date"))), key=lambda i: (i.get("date"), str(i.get("id")))
@@ -935,7 +1116,8 @@ def summarise(
                 "date": day.isoformat(),
                 "day": day.strftime("%a"),
                 "name": name,
-                "type": session_type(name, sport_key, shape),
+                "type": session_type(name, sport_key, efforts.get(wid)),
+                "sport": "ride" if is_ride(sport_key) else category(sport_key),
                 "phase": phases.get(wid),
                 "shape": list(shape) if shape else None,
                 "status": status,
