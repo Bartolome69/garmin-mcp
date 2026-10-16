@@ -380,6 +380,13 @@ class GarminSession:
         """Drop everything remembered, after anything that writes to Garmin."""
         self._memo.clear()
 
+    def remember(self, key: Any, value: Any) -> None:
+        """Keep an answer already in hand, such as a workout just written, so
+        the next read of it doesn't go back to Garmin for the same thing."""
+        if len(self._memo) >= MEMO_LIMIT:
+            self._memo.clear()
+        self._memo[key] = (time.monotonic(), value)
+
     def status(self) -> dict[str, Any]:
         """Describe the connection without touching the password or the token."""
         email, password = credentials()
@@ -468,6 +475,9 @@ class _ActiveSession:
 
     def forget(self) -> None:
         self._target().forget()
+
+    def remember(self, key: Any, value: Any) -> None:
+        self._target().remember(key, value)
 
 
 session = _ActiveSession()

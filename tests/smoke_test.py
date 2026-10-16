@@ -1337,6 +1337,12 @@ async def main() -> int:
             print("   ", json.dumps(got, indent=2)[:700])
             check("get_plan finds the plan by its code",
                   got.get("label") == "HM" and got.get("sessions_total") == 4, str(got)[:200])
+            # create_plan draws its card from the workouts it just wrote rather
+            # than reading each back from Garmin; the card has to be the same.
+            check("the card create_plan answers with matches the plan read back",
+                  made.get("weeks") == got.get("weeks")
+                  and made.get("next_session") == got.get("next_session"),
+                  json.dumps([made.get("weeks"), got.get("weeks")])[:300])
             check("the goal is read back from Garmin",
                   got.get("goal") == "Half marathon, 1:40, mid November", str(got.get("goal")))
             check("the next session is the earliest ahead",

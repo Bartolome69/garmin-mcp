@@ -1868,6 +1868,7 @@ async def create_plan(
         }
 
     created: list[dict[str, Any]] = []
+    written: dict[Any, dict[str, Any]] = {}
     for item in prepared:
         payload = item["workout"].to_dict()
         try:
@@ -1878,6 +1879,7 @@ async def create_plan(
             scheduled = await _call(
                 lambda c, w=workout_id, d=item["date"].isoformat(): c.schedule_workout(w, d)
             ) or {}
+            written[workout_id] = {**payload, **(uploaded if isinstance(uploaded, dict) else {})}
         except GarminError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -1925,6 +1927,12 @@ async def create_plan(
     # now. If the read fails the plan still exists, so the summary stands,
     # and the card fetches the plan itself.
     session.forget()
+    # The card reads each session's workout for its shape and effort. They
+    # were written a moment ago, so what was sent stands in for that read:
+    # a block of 30 sessions is 30 fewer round trips to Garmin before the
+    # card shows. The calendar is read again, for the new schedule entries.
+    for workout_id, detail in written.items():
+        session.remember(("workout", workout_id), detail)
     try:
         card = await get_plan.__wrapped__(label=code)
     except GarminError:
