@@ -251,12 +251,14 @@ class _Refused(Exception):
 # in the portal alone. Each counts as a refusal here, so that wait comes once.
 def _note_refusal(url: str, status: int, response: Any = None) -> None:
     url = str(url)
-    if status == 200 and response is not None and "/portal/api/" in url:
+    # Whatever the HTTP status: Garmin answers a wrong password with a 401
+    # and its JSON, so a CAPTCHA demand may not come with a 200 either.
+    if response is not None and "/portal/api/" in url:
         answer = _portal_answer(response)
         trace = getattr(_EGRESS, "trace", None)
         if trace is not None:
-            trace["answer"] = answer
-        if answer in ("429", "CAPTCHA_REQUIRED", "not_json"):
+            trace["answer"] = f"{answer}@{status}"
+        if status not in (403, 429) and answer in ("429", "CAPTCHA_REQUIRED", "not_json"):
             status = 429 if answer == "429" else 403
     if status in (403, 429) and _egress_proxy() and "//sso." in url and "/mobile/" not in url:
         if not getattr(_EGRESS, "refused", None):

@@ -807,6 +807,18 @@ async def main() -> int:
                     challenged.append(getattr(hosted._EGRESS, "refused", None))
             check("a CAPTCHA demand or a challenge page from the portal is a refusal",
                   challenged == [403, 403], str(challenged))
+            # Garmin answers a wrong password with a 401, so the status alone
+            # says nothing: a CAPTCHA demand with a 400 still counts, and the
+            # wrong password still doesn't.
+            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
+                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 401,
+                                     Answer(json.dumps({"responseStatus": {"type": "INVALID_USERNAME_PASSWORD"}})))
+                wrong_401_ok = getattr(hosted._EGRESS, "refused", None) is None
+                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 400,
+                                     Answer(json.dumps({"responseStatus": {"type": "CAPTCHA_REQUIRED"}})))
+                captcha_400 = getattr(hosted._EGRESS, "refused", None) == 403
+            check("the portal's answer counts whatever its HTTP status",
+                  wrong_401_ok and captcha_400, f"{wrong_401_ok} {captcha_400}")
             answers = [hosted._portal_answer(Answer(b)) for b in (
                 json.dumps({"responseStatus": {"type": "CAPTCHA_REQUIRED"}}), "<html>",
                 json.dumps({"responseStatus": {"type": "secret@example.com"}}), json.dumps([1]))]
@@ -841,7 +853,7 @@ async def main() -> int:
             outcomes = [step.rsplit(":", 1)[0] for step in trace["steps"]]
             traced = hosted._traced([trace])
             check("each attempt's trace says how each method ended, once each",
-                  outcomes == ["widget:429", "portal:ok", "portal_try:other/CAPTCHA_REQUIRED"], str(trace))
+                  outcomes == ["widget:429", "portal:ok", "portal_try:other/CAPTCHA_REQUIRED@200"], str(trace))
             check("the trace counts the library's waits, and carries nothing typed",
                   0.04 <= trace["waited"] < 0.5 and traced["waited_s"] == [round(trace["waited"], 1)]
                   and "secret" not in json.dumps(traced), str(traced))
