@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 import anyio
-from mcp.types import ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations
 
 try:
     from mcp.server.mcpserver import Context as _Context
@@ -107,6 +107,58 @@ class _Server(MCPServer):
 
     async def list_resources(self):
         return await super().list_resources()
+
+    async def call_tool(self, *args, **kwargs):
+        return _for_model(await super().call_tool(*args, **kwargs))
+
+
+# What the model reads of a tool's answer counts against the person's usage
+# limit, and every later message in the chat carries it again: a free plan
+# can run out after one good session. The SDK writes the text copy indented,
+# about twice the size of the data, so it is rewritten here without the
+# spacing. And a plan's per-session detail that only the card draws (each
+# session's shape and icon) is left out of the model's copy: the card reads
+# the structured copy, which keeps everything. Measured on a 12-week block,
+# the text went from about 12,000 tokens to about 3,000.
+_CARD_ONLY = {"shape", "kind"}
+
+
+def _slim_rows(rows: Any) -> Any:
+    if not isinstance(rows, list):
+        return rows
+    return [
+        {k: v for k, v in row.items() if k not in _CARD_ONLY and not (k == "sport" and v == "run")}
+        if isinstance(row, dict) else row
+        for row in rows
+    ]
+
+
+def model_copy(result: Any) -> Any:
+    """A plan-shaped answer without what only the card draws; anything else as it is."""
+    if not isinstance(result, dict) or not isinstance(result.get("weeks"), list):
+        return result
+    slim = dict(result)
+    slim["weeks"] = [
+        {**week, **{key: _slim_rows(week[key]) for key in ("sessions", "extra") if key in week}}
+        if isinstance(week, dict) else week
+        for week in result["weeks"]
+    ]
+    if isinstance(result.get("next_session"), dict):
+        slim["next_session"] = {k: v for k, v in result["next_session"].items() if k not in _CARD_ONLY}
+    return slim
+
+
+def _for_model(result: Any) -> Any:
+    """The SDK's result with its text copy compact, and slimmed for a plan."""
+    structured = getattr(result, "structured_content", None)
+    content = getattr(result, "content", None)
+    if (
+        not isinstance(structured, dict) or getattr(result, "is_error", False)
+        or not content or len(content) != 1 or getattr(content[0], "type", None) != "text"
+    ):
+        return result
+    text = json.dumps(model_copy(structured), ensure_ascii=False, separators=(",", ":"), default=str)
+    return result.model_copy(update={"content": [TextContent(type="text", text=text)]})
 
     async def list_resource_templates(self):
         return await super().list_resource_templates()

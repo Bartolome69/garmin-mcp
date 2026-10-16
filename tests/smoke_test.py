@@ -59,9 +59,10 @@ def field(obj, *names):
 
 
 def payload(result) -> dict:
-    """Pull the JSON body out of a CallToolResult."""
-    if getattr(result, "structuredContent", None):
-        return result.structuredContent
+    """Pull the JSON body out of a CallToolResult: the structured copy, as the card reads it."""
+    structured = getattr(result, "structuredContent", None) or getattr(result, "structured_content", None)
+    if structured:
+        return structured
     text = result.content[0].text
     try:
         return json.loads(text)
@@ -1385,6 +1386,20 @@ async def main() -> int:
                   and (named.get("created") or {}).get("sessions_created") == len(base)
                   and named.get("next_session") is not None, str(named)[:300])
             card = payload(await sess.call_tool("get_plan", {"label": "B1"}))
+            raw_card = await sess.call_tool("get_plan", {"label": "B1"})
+            card_text = raw_card.content[0].text
+            card_struct = getattr(raw_card, "structuredContent", None) or getattr(raw_card, "structured_content", None) or {}
+            check("the model's copy of a plan is compact and leaves out what only the card draws",
+                  "\n" not in card_text and '"shape"' not in card_text
+                  and '"schedule_id"' in card_text and '"for_the_assistant"' in card_text,
+                  card_text[:160])
+            check("while the card's copy keeps every session's shape",
+                  any(s.get("shape") for w in card_struct.get("weeks", []) for s in w.get("sessions", [])))
+            raw_acts = await sess.call_tool("get_activities", {"limit": 2})
+            check("every answer's text is compact JSON with the same data",
+                  "\n" not in raw_acts.content[0].text
+                  and json.loads(raw_acts.content[0].text) == (getattr(raw_acts, "structuredContent", None)
+                                                              or getattr(raw_acts, "structured_content", None)))
             check("name, method and milestones come back from Garmin",
                   card.get("name") == "Base block" and card.get("method") == "Norwegian singles"
                   and card.get("milestones") == [{"label": "Half check", "date": day(50), "target": "1:22"},
@@ -1822,8 +1837,17 @@ async def main() -> int:
             raw_plan = await sess.call_tool("get_plan", {})
             structured = field(raw_plan, "structured_content", "structuredContent")
             texts = [c.text for c in raw_plan.content if getattr(c, "type", "") == "text"]
-            check("get_plan hands the view structured content",
-                  isinstance(structured, dict) and structured == json.loads(texts[-1]), str(structured)[:120])
+            slim = json.loads(texts[-1])
+
+            def without_card_only(weeks):
+                return [[{k: v for k, v in x.items() if k not in ("shape", "kind") and not (k == "sport" and v == "run")}
+                         for x in w.get("sessions", [])] for w in weeks or []]
+            check("get_plan hands the view structured content, and the model the same less the card's detail",
+                  isinstance(structured, dict)
+                  and without_card_only(structured.get("weeks")) == [w.get("sessions", []) for w in slim.get("weeks") or []]
+                  and {k: v for k, v in structured.items() if k not in ("weeks", "next_session")}
+                  == {k: v for k, v in slim.items() if k not in ("weeks", "next_session")},
+                  str(structured)[:120])
             if "error" not in (structured or {}):
                 check("the model is told the card is on screen, first, in text and data alike",
                       next(iter(structured)) == "for_the_assistant"
