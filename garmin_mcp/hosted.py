@@ -244,29 +244,47 @@ class _Refused(Exception):
 # to the web sign-in, which is what usually gets people in. So only a refusal
 # from the web sign-in counts; counting the mobile one stopped every sign-in.
 #
-# The web sign-in's API can also say 429 inside a 200 answer, as JSON. The
-# library reads that as a refusal too, but it reached it only after waiting 10
-# to 20 seconds once per method and browser it tries, so it counts here too.
+# The web sign-in's API can also turn an address away inside a 200 answer:
+# a 429 in its JSON, a CAPTCHA demand, or a challenge page where JSON should
+# be. The library falls through to its next browser profile on each, after
+# another 10 to 20 second wait, so one turned-away address took 44 seconds
+# in the portal alone. Each counts as a refusal here, so that wait comes once.
 def _note_refusal(url: str, status: int, response: Any = None) -> None:
     url = str(url)
-    if status == 200 and response is not None and "/api/" in url and _body_status(response) == 429:
-        status = 429
+    if status == 200 and response is not None and "/portal/api/" in url:
+        answer = _portal_answer(response)
+        trace = getattr(_EGRESS, "trace", None)
+        if trace is not None:
+            trace["answer"] = answer
+        if answer in ("429", "CAPTCHA_REQUIRED", "not_json"):
+            status = 429 if answer == "429" else 403
     if status in (403, 429) and _egress_proxy() and "//sso." in url and "/mobile/" not in url:
         if not getattr(_EGRESS, "refused", None):
             log.info("sign-in address refused (HTTP %s); moving on", status)
         _EGRESS.refused = status
 
 
-def _body_status(response: Any) -> int:
-    """The HTTP status Garmin's sign-in API put inside a JSON answer, if any."""
+_ANSWER_TYPE = re.compile(r"[A-Z_]{1,40}")
+
+
+def _portal_answer(response: Any) -> str:
+    """What the web sign-in's API said, as one word: "429" for a limit in its
+    JSON, Garmin's own response type (SUCCESSFUL, MFA_REQUIRED,
+    INVALID_USERNAME_PASSWORD, CAPTCHA_REQUIRED...), "not_json" for a page
+    where an answer should be. Only Garmin's capitalised codes get through,
+    never anything else from the answer."""
     try:
-        text = response.text
-        if '"status-code"' not in text:
-            return 0
-        error = json.loads(text).get("error") or {}
-        return int(error.get("status-code") or 0)
-    except Exception:  # noqa: BLE001 - not JSON, or not that shape
-        return 0
+        body = json.loads(response.text)
+    except Exception:  # noqa: BLE001 - a challenge page, or nothing
+        return "not_json"
+    if not isinstance(body, dict):
+        return "not_json"
+    error = body.get("error") if isinstance(body.get("error"), dict) else {}
+    if str(error.get("status-code") or "") == "429":
+        return "429"
+    status = body.get("responseStatus") if isinstance(body.get("responseStatus"), dict) else {}
+    kind = str(status.get("type") or "")
+    return kind if _ANSWER_TYPE.fullmatch(kind) else "unknown"
 
 
 def _check_refused() -> None:
@@ -371,12 +389,15 @@ def _route_garmin_sign_ins() -> None:
 
 
 # garminconnect's sign-in methods, by the short name a sign-in's trace uses.
+# portal_try is one browser profile's go inside the portal method, which
+# tries several; its outcome carries what Garmin answered ("other/CAPTCHA_REQUIRED").
 _METHODS = {
     "_mobile_login_cffi": "mobile",
     "_mobile_login_requests": "mobile_plain",
     "_widget_web_login": "widget",
     "_portal_web_login_cffi": "portal",
     "_portal_web_login_requests": "portal_plain",
+    "_do_portal_web_login": "portal_try",
 }
 
 
@@ -410,6 +431,8 @@ def _trace_methods(cls: Any) -> None:
 
         def traced(self: Any, *args: Any, _real: Any = real, _short: str = short, **kwargs: Any) -> Any:
             trace = getattr(_EGRESS, "trace", None)
+            if trace is not None:
+                trace.pop("answer", None)
             began = time.monotonic()
             try:
                 result = _real(self, *args, **kwargs)
@@ -420,7 +443,12 @@ def _trace_methods(cls: Any) -> None:
                 raise
             finally:
                 if trace is not None:
-                    trace["steps"].append(f"{_short}:{outcome}:{time.monotonic() - began:.1f}")
+                    answer = trace.pop("answer", None) if _short == "portal_try" else None
+                    if answer:
+                        outcome = f"{outcome}/{answer}"
+                    # Browser profiles skipped once the address is spent say nothing new.
+                    if not (_short == "portal_try" and outcome == "refused"):
+                        trace["steps"].append(f"{_short}:{outcome}:{time.monotonic() - began:.1f}")
 
         traced._traced = True  # type: ignore[attr-defined]
         setattr(cls, attr, functools.wraps(real)(traced))

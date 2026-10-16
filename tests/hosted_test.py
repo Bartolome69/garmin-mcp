@@ -788,13 +788,30 @@ async def main() -> int:
                 hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200,
                                      Answer(json.dumps({"responseStatus": {"type": "INVALID_USERNAME_PASSWORD"},
                                                         "error": {"status-code": "401"}})))
-                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200, Answer("<html>"))
+                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200,
+                                     Answer(json.dumps({"responseStatus": {"type": "MFA_REQUIRED"}})))
+                hosted._note_refusal("https://sso.garmin.com/sso/signin", 200, Answer("<html>"))
                 wrong_password_ok = getattr(hosted._EGRESS, "refused", None) is None
                 hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200, limited)
                 body_counts = getattr(hosted._EGRESS, "refused", None) == 429
             check("a 429 inside the web sign-in's answer counts as a refusal",
                   body_counts and mobile_body_ok)
-            check("a wrong password or a page in the answer is not a refusal", wrong_password_ok)
+            check("a wrong password, a code request or the widget's own page is not a refusal",
+                  wrong_password_ok)
+            # A CAPTCHA demand or a challenge page where the portal's JSON
+            # should be turns the address away too: one cost 44 seconds.
+            challenged = []
+            for body in (json.dumps({"responseStatus": {"type": "CAPTCHA_REQUIRED"}}), "<html>Just a moment</html>"):
+                with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
+                    hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200, Answer(body))
+                    challenged.append(getattr(hosted._EGRESS, "refused", None))
+            check("a CAPTCHA demand or a challenge page from the portal is a refusal",
+                  challenged == [403, 403], str(challenged))
+            answers = [hosted._portal_answer(Answer(b)) for b in (
+                json.dumps({"responseStatus": {"type": "CAPTCHA_REQUIRED"}}), "<html>",
+                json.dumps({"responseStatus": {"type": "secret@example.com"}}), json.dumps([1]))]
+            check("the portal's answer is read as Garmin's own code and nothing else",
+                  answers == ["CAPTCHA_REQUIRED", "not_json", "unknown", "not_json"], str(answers))
             # Each attempt keeps a trace: how each sign-in method ended and how
             # long it took, and how long the library waited on purpose.
             class Methods:
@@ -804,6 +821,11 @@ async def main() -> int:
                 def _portal_web_login_cffi(self, email: str, password: str) -> None:
                     gcc.time.sleep(0.05)
 
+                def _do_portal_web_login(self, sess: object, email: str, password: str) -> None:
+                    hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200,
+                                         Answer(json.dumps({"responseStatus": {"type": "CAPTCHA_REQUIRED"}})))
+                    raise sys.modules["garminconnect"].GarminConnectConnectionError("Portal login: CAPTCHA required")
+
             hosted._trace_methods(Methods)
             hosted._trace_methods(Methods)
             with hosted.login_egress(proxy_user + "@geo.example.net:12321") as trace:
@@ -812,10 +834,14 @@ async def main() -> int:
                 except Exception:
                     pass
                 Methods()._portal_web_login_cffi("secret@example.com", "pw")
+                try:
+                    Methods()._do_portal_web_login(None, "secret@example.com", "pw")
+                except Exception:
+                    pass
             outcomes = [step.rsplit(":", 1)[0] for step in trace["steps"]]
             traced = hosted._traced([trace])
             check("each attempt's trace says how each method ended, once each",
-                  outcomes == ["widget:429", "portal:ok"], str(trace))
+                  outcomes == ["widget:429", "portal:ok", "portal_try:other/CAPTCHA_REQUIRED"], str(trace))
             check("the trace counts the library's waits, and carries nothing typed",
                   0.04 <= trace["waited"] < 0.5 and traced["waited_s"] == [round(trace["waited"], 1)]
                   and "secret" not in json.dumps(traced), str(traced))
