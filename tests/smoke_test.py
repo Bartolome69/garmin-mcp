@@ -1089,6 +1089,12 @@ async def main() -> int:
                 "every tool documented",
                 all(t.description for t in tools.tools),
             )
+            listed_json = [t.model_dump(exclude_none=True, by_alias=True) for t in tools.tools]
+            check("the tool list goes out compact: no docstring indent, no schema titles",
+                  not any("\n        " in (d.get("description") or "") for d in listed_json)
+                  and not any('"title"' in json.dumps(d.get("inputSchema")) for d in listed_json)
+                  and sum(len(json.dumps(d)) for d in listed_json) < 30000,
+                  str(sum(len(json.dumps(d)) for d in listed_json)))
 
             check("an ordinary account is offered the plan view",
                   any(((t.meta or {}).get("ui")) for t in tools.tools if t.name == "get_plan"))

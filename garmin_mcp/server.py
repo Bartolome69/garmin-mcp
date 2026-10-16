@@ -178,48 +178,40 @@ _PREVIEW_ONLY: set[str] = set()
 # made with create_plan. Once a preview feature, now everyone's.
 _DESCRIPTIONS = {
     "get_plan": (
-        "How the user's training is going, drawn as a card: their training "
-        "plan week by week, every session marked done, missed or ahead, with "
-        "the next one; or, with nothing scheduled, their recent weeks of "
-        "running and riding.\n\n"
-        "Use this first for any question about how their training or plan is "
-        "going: \"how's my training going\", \"how am I doing\", \"how's this "
-        "week looking\", \"show my plan\", \"what's next\", \"what's today's "
-        "session\", \"am I on track for my race\", \"am I keeping up\". That "
-        "holds wherever the plan came from: a coach, an app, Garmin Coach or "
-        "create_plan. Recovery, readiness or fitness can follow when asked. With "
-        "no plan made by create_plan it reads the workouts scheduled on the "
-        "Garmin calendar around this week. Each session carries its workout_id "
-        "and schedule_id so it can be moved or retuned, and the next one its "
-        "steps with their target paces. A session counts as "
-        "done if it was run within a day either side of its date, or any day "
-        "that week if it was started from its workout on the watch. A strength "
-        "session counts if any strength activity was recorded in its own week, "
-        "whatever its length or name, done early included; it never covers "
-        "another week's. Off its own day it shows as moved.\n\n"
+        "How the user's training is going, drawn as an interactive plan card: their plan week by "
+        "week, each session done, missed or ahead, and the next one; with "
+        "nothing scheduled, their recent weeks of running and riding.\n\n"
+        "Call it first for any general question about training or a plan "
+        "(\"how's my training going\", \"how am I doing\", \"this week\", "
+        "\"show my plan\", \"what's next\", \"today's session\", \"am I on "
+        "track\"), wherever the plan came from: a coach, an app, Garmin Coach or "
+        "create_plan. Recovery, readiness or fitness can follow when asked. "
+        "Without a create_plan plan it reads the calendar around this week. "
+        "Sessions carry workout_id and schedule_id for moving or retuning; the "
+        "next one carries its steps and target paces.\n\n"
+        "Done means run within a day either side of its date, or any day that "
+        "week if started from its workout on the watch. A strength session "
+        "counts if any strength activity is recorded in its own week, early "
+        "included, never another week's. Off its own day it shows as moved.\n\n"
         "When the user says they have just done a session, call this before "
-        "saying whether Garmin has it: don't guess. A strength activity in "
-        "Garmin is the session done, even when its exercises were logged in a "
-        "gym app rather than on the watch; the sets and weights aren't needed "
-        "to count it. If the user hasn't said what they did and it matters for "
-        "what comes next, ask for a line. If a session isn't in Garmin at all "
-        "but the user says they did it, trust them rather than calling it "
-        "missed, and suggest recording it on the watch next time.\n\n"
-        "If a hard or long session was done in the last two days, ask in one "
-        "short line how it felt, and use the answer to shape what comes next. "
-        "Don't ask after an easy run, and don't ask twice in a conversation.\n\n"
-        "Its result is drawn for the user as an interactive plan card, so "
-        "there is no need to draw the plan yourself; add what the card can't "
-        "say, such as how the week is going. Every call draws the card again, "
-        "so once it has been shown in a conversation, answer follow-ups from "
-        "that result. Call it again only when something may have changed "
-        "since (a session done, a workout moved or added, a new day) or the "
-        "user asks to see the plan again: runs sync through the day, so after "
-        "any of those the earlier answer goes stale. Don't call it for a "
-        "specific question about a run, sleep, readiness, recovery, fitness "
-        "and whether it is improving, or shoes.\n\n"
+        "saying whether Garmin has it: don't guess. A strength activity is the "
+        "session done even if it was logged in a gym app; the sets and weights "
+        "aren't needed to count it. If a session "
+        "isn't in Garmin but the user says they did it, trust them and suggest "
+        "recording it on the watch next time. If what they did matters for "
+        "what comes next and they haven't said, ask for a line. After a hard "
+        "or long session in the last two days, ask once, in one short line, how "
+        "it felt, and use the answer; not after an easy run.\n\n"
+        "The card draws the plan, so don't list it: add what it can't say, such "
+        "as how the week is going. Each call draws it again, so answer "
+        "follow-ups from that result; call again only when something may have "
+        "changed (a session done, a workout moved or added, a new day) or the "
+        "user asks to see it again: runs sync through the day, so after any of "
+        "those the earlier answer goes stale. Don't call it for a "
+        "specific question about a run, sleep, readiness, recovery, fitness or "
+        "shoes.\n\n"
         "Args:\n"
-        "    label: The code of a plan made with create_plan, e.g. \"HM\". Omit "
+        "  label: The code of a plan made with create_plan, e.g. \"HM\". Omit "
         "it for the plan running now, or the calendar."
     ),
 }
@@ -265,13 +257,44 @@ _NOTES = {
 _PREVIEW_NOTES: dict[str, str] = {}
 
 
+def _untitled(schema: Any, in_properties: bool = False) -> Any:
+    """A JSON schema without the titles the SDK writes on every field.
+
+    "title": "Date" beside a field named date tells the model nothing and is
+    sent with every message. A parameter that is itself called title stays.
+    """
+    if isinstance(schema, list):
+        return [_untitled(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    return {
+        key: _untitled(value, in_properties=key == "properties" and not in_properties)
+        for key, value in schema.items()
+        if in_properties or not (key == "title" and isinstance(value, str))
+    }
+
+
+def _compact_doc(text: str) -> str:
+    """A description without the indentation it has as a docstring.
+
+    The tool list goes to the model with every message, so its spacing counts
+    against the person's usage limit. Nesting keeps half its indent.
+    """
+    lines = inspect.cleandoc(text).splitlines()
+    return "\n".join(" " * ((len(line) - len(line.lstrip(" "))) // 2) + line.strip() for line in lines)
+
+
 def _with_description(tool, *, preview_on: bool):
     text = _DESCRIPTIONS.get(tool.name)
     if text is None and tool.name in _NOTES:
         text = (tool.description or "").rstrip() + _NOTES[tool.name]
     if preview_on and tool.name in _PREVIEW_NOTES:
         text = (text or tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]
+    text = _compact_doc(text or tool.description or "")
     update = {"annotations": _annotations(tool.name)}
+    for field in ("input_schema", "output_schema", "inputSchema", "outputSchema"):
+        if isinstance(getattr(tool, field, None), dict):
+            update[field] = _untitled(getattr(tool, field))
     if tool.name in _TITLES:
         update["title"] = _TITLES[tool.name]
     if text:
@@ -1201,72 +1224,58 @@ async def create_workout(
     description: str | None = None,
     pool_length_meters: float | None = None,
 ) -> dict[str, Any]:
-    """Create a structured workout in Garmin Connect.
+    """Create a structured workout in Garmin Connect: always a new one, never an edit.
 
-    Adds a new workout; it never edits or replaces an existing one. Use
-    schedule_workout afterwards to put it on a date so it syncs to the watch.
+    schedule_workout then puts it on a date so it syncs to the watch.
 
     Args:
-        name: Name shown in Garmin Connect and on the watch.
-        steps: Ordered list of steps. Each step is an object:
-            - "type": warmup, interval, recovery, rest, cooldown, or repeat
-            - exactly one of "duration_seconds" or "distance_meters", or
-              "until_lap": true for a step that ends when the lap button is
-              pressed: a walk recovery between strides, a warm-up done by
-              feel, a rep run to a landmark. Each such step is still its own
-              lap, so recoveries stay out of the rep splits.
-            - optional target, one of "pace" ("4:05", or ["4:00","4:10"] for a
-              range, minutes per km), "hr" ([150, 165] in bpm) or "power"
-              (watts: 250 or [240, 260]; or a share of the FTP set in Garmin:
-              "95%" or ["88%", "94%"], worked out in watts when it's built)
-            For a ride, use power on the work steps when the rider has a power
-            meter or smart trainer (get_activities shows power on their rides)
-            and an FTP (get_fitness): sweet spot 88-94%, threshold 95-105%,
-            VO2 max 106-120%, endurance 56-75%. A single power value becomes a
-            range 5% either side, because power swings from second to second
-            and the head unit alerts whenever it leaves the range. Without a
-            power meter, use heart rate.
-            The watch beeps whenever pace leaves the target, so a pace target
-            is never narrower than 5 s/km either side: "4:00" becomes
-            3:55-4:05, and a tighter range is widened to that around its
-            middle. Give steadier work more room: about 5 s/km either side
-            for reps and intervals, 10 for tempo and threshold, 15-20 for
-            steady and long runs, or a heart-rate target for easy running.
-            By default only the work reps carry a target, and it is pace.
-            Warm-ups, cool-downs and recoveries carry none, just their time or
-            distance, so the watch stays quiet outside the hard parts. Say in
-            the chat, and in the workout's description, what easy pace to run
-            them at, worked out from the user's current fitness (get_fitness):
-            roughly marathon pace plus 45-75 s/km.
-            A repeat looks like {"type": "repeat", "times": 5, "steps": [...]}
-            and cannot contain another repeat.
-            Example — 15 min warmup, 5x1km at 4:05 with 90s recoveries, 10 min
-            cooldown:
-                [{"type": "warmup", "duration_seconds": 900},
-                 {"type": "repeat", "times": 5, "steps": [
-                     {"type": "interval", "distance_meters": 1000, "pace": "4:05"},
-                     {"type": "recovery", "duration_seconds": 90}]},
-                 {"type": "cooldown", "duration_seconds": 600}]
-        sport: running, cycling, swimming, walking or hiking. Defaults to running.
+        name: Shown in Garmin Connect and on the watch.
+        steps: Ordered steps, each with "type" (warmup, interval, recovery,
+            rest, cooldown or repeat) and exactly one of "duration_seconds",
+            "distance_meters" or "until_lap": true (ends on the lap button: a
+            walk recovery between strides, a warm-up by feel, a rep to a
+            landmark; still its own lap, so recoveries stay out of the rep
+            splits). A repeat is {"type": "repeat", "times": 5, "steps": [...]}
+            and can't contain another repeat.
+            Optional target: "pace" ("4:05" or ["4:00", "4:10"], min/km), "hr"
+            ([150, 165] bpm) or "power" (watts, 250 or [240, 260]; or a share
+            of the FTP set in Garmin, "95%" or ["88%", "94%"]).
+            By default only the work reps carry a target, pace for a run;
+            warm-ups, cool-downs and recoveries carry none, so the watch stays
+            quiet, and the chat and the workout's description say what easy
+            pace to run them at: marathon pace plus 45-75 s/km, from
+            get_fitness. The watch beeps off target, so a pace target is never
+            narrower than 5 s/km either side ("4:00" becomes 3:55-4:05;
+            tighter is widened around its middle): about 5 either side for
+            reps, 10 for tempo and threshold, 15-20 for steady and long runs,
+            or heart rate for easy running.
+            A ride uses power on the work steps when the rider has a power
+            meter or smart trainer (power shows on rides in get_activities)
+            and an FTP (get_fitness): sweet spot 88-94%, threshold 95-105%, VO2
+            max 106-120%, endurance 56-75%. One value becomes a range 5% either
+            side. Without a power meter, heart rate.
+            Example, 15 min warm-up, 5 x 1 km at 4:05 with 90 s recoveries, 10
+            min cool-down: [{"type": "warmup", "duration_seconds": 900},
+            {"type": "repeat", "times": 5, "steps": [{"type": "interval",
+            "distance_meters": 1000, "pace": "4:05"}, {"type": "recovery",
+            "duration_seconds": 90}]}, {"type": "cooldown", "duration_seconds": 600}]
+        sport: running (default), cycling, swimming, walking or hiking.
         description: Optional note stored with the workout.
-        pool_length_meters: For swimming, the pool length (25 by default, or 50).
-            The watch counts lengths with it.
+        pool_length_meters: For a swim, 25 (default) or 50; the watch counts
+            lengths with it.
 
-    Swimming works differently. Steps are distances in whole pool lengths
-    (100, 200...), each with an optional "stroke": freestyle, backstroke,
-    breaststroke, butterfly, im, drill or any. "pace" is per 100 m ("1:45")
-    and is shown on the watch as a note on the step, not as a target that
-    beeps. A "rest" with no duration waits for the lap button, the way swimmers
-    rest at the wall; give "duration_seconds" for a fixed rest. A free-text
-    "note" (e.g. "kick with board") also shows on the step. Example, 8 x 100
-    free at 1:45 with 15 s rest:
-        [{"type": "warmup", "distance_meters": 400, "stroke": "any"},
-         {"type": "repeat", "times": 8, "steps": [
-             {"type": "interval", "distance_meters": 100, "stroke": "freestyle", "pace": "1:45"},
-             {"type": "rest", "duration_seconds": 15}]},
-         {"type": "cooldown", "distance_meters": 200, "stroke": "any"}]
-    Set swim paces from the swimmer's recent swims (get_activities shows pace
-    per 100 m) or their CSS if they know it.
+    A swim's steps are whole pool lengths (100, 200...), each with an optional
+    "stroke": freestyle, backstroke, breaststroke, butterfly, im, drill or any.
+    "pace" is per 100 m ("1:45") and shows on the step as a note, not a
+    beeping target. A "rest" with no duration waits for the lap button, as
+    swimmers rest at the wall; "duration_seconds" fixes it. A "note" (e.g.
+    "kick with board") shows on the step. Set paces from recent swims
+    (get_activities, per 100 m) or their CSS. Example, 8 x 100 free at 1:45
+    with 15 s rest: [{"type": "warmup", "distance_meters": 400, "stroke":
+    "any"}, {"type": "repeat", "times": 8, "steps": [{"type": "interval",
+    "distance_meters": 100, "stroke": "freestyle", "pace": "1:45"}, {"type":
+    "rest", "duration_seconds": 15}]}, {"type": "cooldown", "distance_meters":
+    200, "stroke": "any"}]
     """
     ftp = await _ftp_for(steps)
     workout, summary, estimated = build_workout(name, sport, steps, description, pool_length_meters, ftp)
@@ -1805,46 +1814,38 @@ async def create_plan(
 ) -> dict[str, Any]:
     """Create a whole training block at once: every session built and put on its date.
 
-    You design the plan, from the user's goal, their current fitness
-    (get_fitness), their readiness and history, and a methodology; this builds
-    each session as a structured workout and schedules it, so the whole block is
-    on the watch in one go. Show the user the plan and get their agreement
-    before calling this, because it writes to their real calendar.
+    You design the plan, from the user's goal, current fitness (get_fitness),
+    readiness, history and a methodology; this builds each session as a
+    structured workout and schedules it, so the whole block is on the watch
+    in one go. Show the user the plan and get their agreement first: it
+    writes to their real calendar. It answers with the new block drawn as a
+    card, the same as get_plan, so no other call is needed to show it.
 
-    Every workout is named with a short plan code after a middle dot, like
-    "Threshold 5x1k · HM", which is how get_plan finds the block again. Nothing
-    about the plan is stored anywhere but Garmin.
-
-    Every session is validated before anything is created, so a mistake in
-    session 40 fails the call without leaving half a plan behind.
-
-    It answers with the new block drawn as a card, the same as get_plan, so
-    the user sees what they agreed to without another call.
+    Each workout is named with a short plan code after a middle dot,
+    "Threshold 5x1k · HM", which is how get_plan finds the block; nothing is
+    stored outside Garmin. Every session is checked before anything is
+    created, so a mistake in session 40 leaves no half plan behind.
 
     Args:
         goal: What the block is for, e.g. "Half marathon, 1:40, 15 November".
-        sessions: One object per session, in any order:
-            - "date": YYYY-MM-DD (today or later, at most 30 weeks out)
-            - "name": short, as it should read on the watch, e.g. "Long run 18k"
-            - "steps": exactly as for create_workout
-            - optional "sport" (running by default) and "description"
-            - for a swim, optional "pool_length_meters" (25 by default)
-            - optional "phase": the block's phase this session belongs to,
-              one short word such as "Base", "Build", "Peak" or "Taper", the
-              same for every session in that phase. The card bands the
-              weeks by it.
-            Rest days are simply days with no session. At most 150 sessions.
-        label: 2 or 3 letters or digits used as the plan code, kept short
-            because it ends every workout name: "HM", "10K", "MAR", or "B1"
-            for a base block. Derived from the goal when omitted.
-        name: A short name for the block, as its card's title: "Base block",
+        sessions: One per session, any order: "date" (YYYY-MM-DD, today to
+            30 weeks out), "name" (short, as on the watch: "Long run 18k"),
+            "steps" (as for create_workout), and optional "sport" (running by
+            default), "description", "pool_length_meters" for a swim (25 by
+            default) and "phase": one short word such as "Base", "Build",
+            "Peak" or "Taper", the same for every session in that phase; the
+            card bands the weeks by it. Rest days are days with no session.
+            At most 150.
+        label: 2 or 3 letters or digits for the plan code, short because it
+            ends every workout name: "HM", "10K", "MAR", "B1" for a base
+            block. From the goal when omitted.
+        name: A short name for the block, as the card's title: "Base block",
             "Marathon build". Two or three words, not the goal.
         method: The methodology in a few words, shown under the name:
             "Norwegian singles", "80/20", "Pfitzinger 18/55".
-        milestones: Up to 4 points on the way to the goal, drawn as a timeline
-            on the card after this block: each {"label": "Half check",
-            "date": "2026-11-29", "target": "1:22"}; date and target optional.
-            The goal race is usually the last one.
+        milestones: Up to 4 points on the way to the goal, drawn as a
+            timeline: {"label": "Half check", "date": "2026-11-29", "target":
+            "1:22"}, date and target optional. The goal race is usually last.
     """
     today = date_cls.today()
     ftp = await _ftp_for(*[s.get("steps") for s in sessions or [] if isinstance(s, dict)])
