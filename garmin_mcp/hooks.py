@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 Hook = Callable[[str, Any], Any]
 
 _hook: ContextVar["Hook | None"] = ContextVar("garmin_tool_hook", default=None)
+# How long the tool being reported took, for the hook to read.
+_seconds: ContextVar["float | None"] = ContextVar("garmin_tool_seconds", default=None)
 
 
 def use(hook: Hook | None):
@@ -29,11 +31,17 @@ def reset(token) -> None:
     _hook.reset(token)
 
 
-def after_tool(name: str, result: Any) -> Any:
+def seconds() -> float | None:
+    """How long the tool now passing through the hook took, where it was timed."""
+    return _seconds.get()
+
+
+def after_tool(name: str, result: Any, seconds: float | None = None) -> Any:
     """Pass a tool's result through the hook, if one is set. Never fails the tool."""
     hook = _hook.get()
     if hook is None:
         return result
+    _seconds.set(seconds)
     try:
         return hook(name, result)
     except Exception:  # noqa: BLE001 - a reporting hiccup must not lose an answer

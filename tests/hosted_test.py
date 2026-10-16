@@ -45,7 +45,7 @@ from garminconnect import (  # noqa: E402
 from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
 
 import garmin_mcp.hosted as hosted  # noqa: E402
-from garmin_mcp import analytics  # noqa: E402
+from garmin_mcp import analytics, hooks  # noqa: E402
 
 # Every event the server would have sent to PostHog, kept for inspection.
 SENT: list[dict] = []
@@ -1062,6 +1062,36 @@ async def main() -> int:
         used = [e["properties"]["tool"] for e in events if e["event"] == "tool_used"]
         check("each tool is counted once a day, not once a call",
               sorted(used) == ["get_connection_status", "get_daily_summary"], str(used))
+        timed = [e["properties"] for e in events if e["event"] == "tool_used"]
+        check("each tool count says how long the tool took, and whether it was the first since a start",
+              timed and all(isinstance(t.get("seconds"), float) and t["seconds"] >= 0
+                            and isinstance(t.get("first_since_start"), bool) for t in timed)
+              and [t["first_since_start"] for t in timed].count(True) == 1, str(timed))
+        # The hour's timings go out once the hour is over, one row per tool,
+        # with no one's id or address on them.
+        hosted._TIMINGS.clear()
+        hosted._TIMING_HOUR[0] = "2000-01-01T00"
+        timing_hook = hooks.use(hosted._after_tool_for(news_user, store.get_user(news_user)))
+        try:
+            for took in (0.5, 1.5, 9.0):
+                hooks.after_tool("get_plan", {"ok": 1}, took)
+            hosted._TIMING_HOUR[0] = "2000-01-01T01"
+            before = len(SENT)
+            hooks.after_tool("get_readiness", {"ok": 1}, 0.2)
+        finally:
+            hooks.reset(timing_hook)
+        for _ in range(40):
+            rows = [e for e in SENT[before:] if e["event"] == "tool_timing"]
+            if rows:
+                break
+            time.sleep(0.05)
+        check("an hour's timings are sent once it is over, per tool, naming no one",
+              len(rows) == 1 and rows[0]["properties"]["tool"] == "get_plan"
+              and rows[0]["properties"]["calls"] == 3 and rows[0]["properties"]["median_s"] == 1.5
+              and rows[0]["properties"]["max_s"] == 9.0 and rows[0]["distinct_id"] == "anonymous"
+              and "@" not in json.dumps(rows[0]), str(rows))
+        check("the next hour starts with only its own calls",
+              list(hosted._TIMINGS) == ["get_readiness"], str(hosted._TIMINGS))
         tips = [e for e in events if e["event"] == "permission_tip_shown"]
         check("showing the tip is counted once", len(tips) == 1, str(len(tips)))
         check("tool counts carry no Garmin data",

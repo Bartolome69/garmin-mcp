@@ -453,6 +453,43 @@ PERMISSION_TIP = (
 # One report per person per tool per day: enough to see which features are
 # used, without a row for every call.
 _TOOL_REPORTED: dict[tuple[str, str], str] = {}
+# Who has had a tool answer since the server started. The first answer after a
+# restart or deploy signs in to Garmin again, so it is slower, and is marked.
+_WARM: set[str] = set()
+# How long each tool took this hour, sent once the hour is over as one
+# anonymous row per tool: how many calls, how long they took, and how many
+# were someone's first since a restart. No person, nothing they asked.
+_TIMINGS: dict[str, list[tuple[float, bool]]] = {}
+_TIMING_HOUR = [""]
+
+
+def _quantile(values: list[float], q: float) -> float:
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
+
+
+def _note_timing(name: str, seconds: float, cold: bool) -> None:
+    """Add one call to this hour's timings, sending the last hour's first."""
+    hour = time.strftime("%Y-%m-%dT%H", time.gmtime())
+    if _TIMING_HOUR[0] != hour:
+        _send_timings(_TIMING_HOUR[0])
+        _TIMING_HOUR[0] = hour
+    _TIMINGS.setdefault(name, []).append((seconds, cold))
+
+
+def _send_timings(hour: str) -> None:
+    for tool, calls in _TIMINGS.items():
+        took = [s for s, _ in calls]
+        analytics.capture(
+            "tool_timing",
+            None,
+            {"tool": tool, "hour": hour, "calls": len(took),
+             "median_s": round(_quantile(took, 0.5), 2),
+             "p90_s": round(_quantile(took, 0.9), 2),
+             "max_s": round(max(took), 2),
+             "cold_calls": sum(1 for _, cold in calls if cold)},
+        )
+    _TIMINGS.clear()
 
 
 # How server.tool_errors words an exception it didn't expect: Garmin
@@ -477,6 +514,15 @@ def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
                 {"tool": name, "error_type": failed.group(1), "account": user.email_masked,
                  **({"email": email} if email else {})},
             )
+        seconds = hooks.seconds()
+        cold = user_token not in _WARM
+        _WARM.add(user_token)
+        if seconds is not None:
+            _note_timing(name, seconds, cold)
+        timing = (
+            {"seconds": round(seconds, 2), "first_since_start": cold}
+            if seconds is not None else {}
+        )
         today = time.strftime("%Y-%m-%d", time.gmtime())
         if _TOOL_REPORTED.get((user_token, name)) != today:
             _TOOL_REPORTED[(user_token, name)] = today
@@ -486,7 +532,8 @@ def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
             analytics.capture(
                 "tool_used",
                 user.email_hash or user_token,
-                {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+                {"tool": name, "account": user.email_masked, **timing,
+                 **({"email": email} if email else {})},
             )
         if (
             isinstance(result, dict) and "error" not in result

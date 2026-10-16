@@ -11,6 +11,7 @@ import inspect
 import json
 import hashlib
 import logging
+import time
 from datetime import date as date_cls, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -556,7 +557,9 @@ def tool_errors(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
-        return hooks.after_tool(fn.__name__, await answer(*args, **kwargs))
+        started = time.monotonic()
+        result = await answer(*args, **kwargs)
+        return hooks.after_tool(fn.__name__, result, time.monotonic() - started)
 
     async def answer(*args, **kwargs):
         try:
