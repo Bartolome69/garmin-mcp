@@ -102,8 +102,13 @@ _paused_until = 0.0
 # address, up to this many in all. A failing Garmin sign-in can take a while
 # (the library tries several methods, with pauses between), so no new attempt
 # starts once this many seconds have gone: the person is waiting on the page.
+# A refused address still costs one of the library's 10 to 20 second waits
+# before the refusal shows, so a refusal arrives after 25 to 35 seconds; the
+# budget lets one more address follow it (the server's test sign-ins get a
+# proper answer from the second address more often than not), where a
+# refusal used to be the end.
 SIGNIN_TRIES = 4
-SIGNIN_BUDGET = 25
+SIGNIN_BUDGET = 35
 
 
 def _pause_sign_ins(reason: str) -> None:
@@ -238,12 +243,30 @@ class _Refused(Exception):
 # limits the app's client ID as a whole. The library expects that and moves on
 # to the web sign-in, which is what usually gets people in. So only a refusal
 # from the web sign-in counts; counting the mobile one stopped every sign-in.
-def _note_refusal(url: str, status: int) -> None:
+#
+# The web sign-in's API can also say 429 inside a 200 answer, as JSON. The
+# library reads that as a refusal too, but it reached it only after waiting 10
+# to 20 seconds once per method and browser it tries, so it counts here too.
+def _note_refusal(url: str, status: int, response: Any = None) -> None:
     url = str(url)
+    if status == 200 and response is not None and "/api/" in url and _body_status(response) == 429:
+        status = 429
     if status in (403, 429) and _egress_proxy() and "//sso." in url and "/mobile/" not in url:
         if not getattr(_EGRESS, "refused", None):
             log.info("sign-in address refused (HTTP %s); moving on", status)
         _EGRESS.refused = status
+
+
+def _body_status(response: Any) -> int:
+    """The HTTP status Garmin's sign-in API put inside a JSON answer, if any."""
+    try:
+        text = response.text
+        if '"status-code"' not in text:
+            return 0
+        error = json.loads(text).get("error") or {}
+        return int(error.get("status-code") or 0)
+    except Exception:  # noqa: BLE001 - not JSON, or not that shape
+        return 0
 
 
 def _check_refused() -> None:
@@ -263,6 +286,9 @@ class _Clock:
 
     def sleep(self, seconds: float) -> None:
         if not getattr(_EGRESS, "refused", None):
+            trace = getattr(_EGRESS, "trace", None)
+            if trace is not None:
+                trace["waited"] += seconds
             self._real.sleep(seconds)
 
 
@@ -286,13 +312,13 @@ class _Via:
     def get(self, url: Any, *args: Any, **kwargs: Any) -> Any:
         _check_refused()
         r = self._real.get(url, *args, **_proxied(kwargs))
-        _note_refusal(url, getattr(r, "status_code", 0))
+        _note_refusal(url, getattr(r, "status_code", 0), r)
         return r
 
     def post(self, url: Any, *args: Any, **kwargs: Any) -> Any:
         _check_refused()
         r = self._real.post(url, *args, **_proxied(kwargs))
-        _note_refusal(url, getattr(r, "status_code", 0))
+        _note_refusal(url, getattr(r, "status_code", 0), r)
         return r
 
 
@@ -320,7 +346,7 @@ def _route_garmin_sign_ins() -> None:
         def request(self, method: Any, url: Any, *args: Any, **kwargs: Any) -> Any:
             _check_refused()
             r = super().request(method, url, *args, **kwargs)
-            _note_refusal(url, getattr(r, "status_code", 0))
+            _note_refusal(url, getattr(r, "status_code", 0), r)
             return r
 
     gc.requests = _Via(requests, RequestsSession)
@@ -335,10 +361,69 @@ def _route_garmin_sign_ins() -> None:
             def request(self, method: Any, url: Any, *args: Any, **kwargs: Any) -> Any:
                 _check_refused()
                 r = super().request(method, url, *args, **kwargs)
-                _note_refusal(url, getattr(r, "status_code", 0))
+                _note_refusal(url, getattr(r, "status_code", 0), r)
                 return r
 
         gc.cffi_requests = _Via(real_cffi, CffiSession)
+
+    if getattr(gc, "Client", None) is not None:
+        _trace_methods(gc.Client)
+
+
+# garminconnect's sign-in methods, by the short name a sign-in's trace uses.
+_METHODS = {
+    "_mobile_login_cffi": "mobile",
+    "_mobile_login_requests": "mobile_plain",
+    "_widget_web_login": "widget",
+    "_portal_web_login_cffi": "portal",
+    "_portal_web_login_requests": "portal_plain",
+}
+
+
+def _outcome(exc: BaseException) -> str:
+    """One word for how a sign-in method ended: its kind, never its message."""
+    name = type(exc).__name__
+    if isinstance(exc, _Refused):
+        return "refused"
+    if name == "GarminConnectTooManyRequestsError":
+        return "429"
+    if name == "GarminConnectAuthenticationError":
+        return "wrong_password"
+    if name == "_MFARequired":
+        return "code"
+    if name == "GarminConnectConnectionError":
+        return "other"
+    return name
+
+
+def _trace_methods(cls: Any) -> None:
+    """Note how each sign-in method ended and how long it took, per sign-in.
+
+    Where a refused sign-in spends its minute is otherwise invisible: the
+    library tries five methods in turn and only the last one's error comes
+    out. Names and timings only, kept on the sign-in's own trace.
+    """
+    for attr, short in _METHODS.items():
+        real = getattr(cls, attr, None)
+        if real is None or getattr(real, "_traced", False):
+            continue
+
+        def traced(self: Any, *args: Any, _real: Any = real, _short: str = short, **kwargs: Any) -> Any:
+            trace = getattr(_EGRESS, "trace", None)
+            began = time.monotonic()
+            try:
+                result = _real(self, *args, **kwargs)
+                outcome = "ok"
+                return result
+            except BaseException as exc:
+                outcome = _outcome(exc)
+                raise
+            finally:
+                if trace is not None:
+                    trace["steps"].append(f"{_short}:{outcome}:{time.monotonic() - began:.1f}")
+
+        traced._traced = True  # type: ignore[attr-defined]
+        setattr(cls, attr, functools.wraps(real)(traced))
 
 
 try:
@@ -372,12 +457,15 @@ def login_egress(proxy: str | None = None):
     """
     if proxy is None:
         proxy = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
-    previous = (_egress_proxy(), getattr(_EGRESS, "refused", None))
-    _EGRESS.proxy, _EGRESS.refused = proxy, None
+    previous = (_egress_proxy(), getattr(_EGRESS, "refused", None), getattr(_EGRESS, "trace", None))
+    # What this attempt did: each sign-in method's outcome and time, and how
+    # long the library spent waiting on purpose.
+    trace: dict[str, Any] = {"steps": [], "waited": 0.0}
+    _EGRESS.proxy, _EGRESS.refused, _EGRESS.trace = proxy, None, trace
     try:
-        yield
+        yield trace
     finally:
-        _EGRESS.proxy, _EGRESS.refused = previous
+        _EGRESS.proxy, _EGRESS.refused, _EGRESS.trace = previous
 
 
 def base_url(request: Request) -> str:
@@ -652,8 +740,10 @@ def signin_check_once(email: str | None = None) -> dict[str, Any]:
     email = email or f"daash-check-{secrets.token_hex(4)}@example.com"
     began = time.monotonic()
     reasons: list[str] = []
+    traces: list[dict[str, Any]] = []
     for _ in range(3):
-        with login_egress(login_proxy()):
+        with login_egress(login_proxy()) as trace:
+            traces.append(trace)
             try:
                 client = build_client(
                     prompt_mfa=lambda: (_ for _ in ()).throw(RuntimeError("no code")),
@@ -677,11 +767,24 @@ def signin_check_once(email: str | None = None) -> dict[str, Any]:
         "seconds": round(time.monotonic() - began, 1),
         "code": "live",
         "source": "server",
+        **_traced(traces),
     }
     analytics.capture("sign_in_check", None, result)
     if not result["ok"]:
         log.warning("Test sign-in failed: %s", ", ".join(reasons))
     return result
+
+
+def _traced(traces: list[dict[str, Any]]) -> dict[str, Any]:
+    """A sign-in's attempts as event properties: per address, each method's
+    outcome and seconds ("widget:429:4.1 portal:refused:0.0"), and how long
+    the library waited on purpose. Method names and timings, nothing typed."""
+    if not traces:
+        return {}
+    return {
+        "steps": [" ".join(t["steps"]) for t in traces],
+        "waited_s": [round(t["waited"], 1) for t in traces],
+    }
 
 
 def _signin_check_wait(ok: bool, rechecking: bool) -> int:
@@ -1519,9 +1622,12 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
     # a refusal of the server's own address is worth pausing everyone for.
     egress = login_proxy()
 
+    traces: list[dict[str, Any]] = []
+
     def _try(via: str) -> tuple[Any, Any]:
         # Built inside, so the client's own sessions carry this address too.
-        with login_egress(via):
+        with login_egress(via) as trace:
+            traces.append(trace)
             client = build_client(
                 prompt_mfa=lambda: (_ for _ in ()).throw(
                     RuntimeError("multi-factor code required")
@@ -1573,7 +1679,8 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
                 _retried(reason, then, email)
 
     def took() -> dict[str, Any]:
-        return {"attempts": tries, "seconds": round(time.monotonic() - started, 1)}
+        return {"attempts": tries, "seconds": round(time.monotonic() - started, 1),
+                **_traced(traces)}
 
     try:
         client, result = await anyio.to_thread.run_sync(_login)

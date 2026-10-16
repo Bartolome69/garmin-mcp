@@ -774,6 +774,51 @@ async def main() -> int:
                 portal_counts = getattr(hosted._EGRESS, "refused", None) == 429
             check("a mobile sign-in limit lets the library go on to the web sign-in", mobile_ok)
             check("a refusal from the web sign-in still counts", portal_counts)
+            # The web sign-in can also say 429 inside a 200 answer. The library
+            # treats that as a refusal only after a 10 to 20 second wait per
+            # method and browser, which is how a refused sign-in took a minute.
+            class Answer:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            limited = Answer(json.dumps({"error": {"status-code": "429"}}))
+            with hosted.login_egress(proxy_user + "@geo.example.net:12321"):
+                hosted._note_refusal("https://sso.garmin.com/mobile/api/login", 200, limited)
+                mobile_body_ok = getattr(hosted._EGRESS, "refused", None) is None
+                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200,
+                                     Answer(json.dumps({"responseStatus": {"type": "INVALID_USERNAME_PASSWORD"},
+                                                        "error": {"status-code": "401"}})))
+                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200, Answer("<html>"))
+                wrong_password_ok = getattr(hosted._EGRESS, "refused", None) is None
+                hosted._note_refusal("https://sso.garmin.com/portal/api/login", 200, limited)
+                body_counts = getattr(hosted._EGRESS, "refused", None) == 429
+            check("a 429 inside the web sign-in's answer counts as a refusal",
+                  body_counts and mobile_body_ok)
+            check("a wrong password or a page in the answer is not a refusal", wrong_password_ok)
+            # Each attempt keeps a trace: how each sign-in method ended and how
+            # long it took, and how long the library waited on purpose.
+            class Methods:
+                def _widget_web_login(self, email: str, password: str) -> None:
+                    raise sys.modules["garminconnect"].GarminConnectTooManyRequestsError("Widget 429 secret@example.com")
+
+                def _portal_web_login_cffi(self, email: str, password: str) -> None:
+                    gcc.time.sleep(0.05)
+
+            hosted._trace_methods(Methods)
+            hosted._trace_methods(Methods)
+            with hosted.login_egress(proxy_user + "@geo.example.net:12321") as trace:
+                try:
+                    Methods()._widget_web_login("secret@example.com", "pw")
+                except Exception:
+                    pass
+                Methods()._portal_web_login_cffi("secret@example.com", "pw")
+            outcomes = [step.rsplit(":", 1)[0] for step in trace["steps"]]
+            traced = hosted._traced([trace])
+            check("each attempt's trace says how each method ended, once each",
+                  outcomes == ["widget:429", "portal:ok"], str(trace))
+            check("the trace counts the library's waits, and carries nothing typed",
+                  0.04 <= trace["waited"] < 0.5 and traced["waited_s"] == [round(trace["waited"], 1)]
+                  and "secret" not in json.dumps(traced), str(traced))
             # The same through both libraries garminconnect connects with: a
             # local stand-in proxy answers 429 for the mobile sign-in and 200
             # for the web one. The mobile 429 must not stop the next method;
