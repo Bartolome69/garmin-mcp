@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Share your week · Daash</title>
+<meta name="description" content="Turn your week of training into an image to post or send.">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@500&display=swap">
+<style>
+  /* The page the plan card's Share button opens. It reads the week from the
+     part of its own address after the #, which browsers never send to a
+     server, and draws it as an image here in the browser. No analytics, no
+     storage: there is nothing on this page that could send the week anywhere. */
+  :root {
+    color-scheme: light;
+    --bg: #F7F8FA; --card: #FFFFFF; --sunken: #EEF0F3; --text: #161B26; --body: #3A404C;
+    --muted: #5B6270; --faint: #8A909C; --border: #E6E8EC; --red: #E0312A; --red-text: #C8261F; --red-hover: #A81E18;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.6 "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
+  }
+  a { color: var(--red-text); text-underline-offset: 3px; }
+  a:hover { color: var(--red-hover); }
+  button { font: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+  .nav { border-bottom: 1px solid var(--border); background: rgba(247, 248, 250, 0.92); }
+  .nav .bar { max-width: 1040px; margin: 0 auto; height: 56px; padding: 0 16px; display: flex; align-items: center; }
+  .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red); font-size: 22px; line-height: 1; text-decoration: none; }
+  .wordmark:hover { color: var(--red); }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 56px; display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 860px) { main { grid-template-columns: minmax(0, 440px) minmax(0, 1fr); align-items: start; padding-top: 48px; } }
+  h1 { margin: 0; font-size: 34px; line-height: 1.1; letter-spacing: -0.035em; }
+  .lead { margin: 10px 0 0; color: var(--body); font-size: 17px; }
+  .preview { margin: 0; background: var(--sunken); border: 1px solid var(--border); border-radius: 20px; padding: 16px;
+    display: flex; justify-content: center; }
+  .preview img { display: block; width: 100%; max-width: 420px; height: auto; border-radius: 10px; box-shadow: 0 1px 2px rgba(22, 27, 38, 0.08), 0 8px 24px rgba(22, 27, 38, 0.08); }
+  .preview.story img { max-width: 300px; }
+  .side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  .group { display: flex; flex-direction: column; gap: 8px; }
+  .label { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--sunken); border-radius: 999px; align-self: flex-start; }
+  .seg button { border: 0; background: transparent; color: var(--muted); height: 34px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 500; }
+  .seg button[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(22, 27, 38, 0.12); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn { height: 44px; padding: 0 20px; border-radius: 999px; font-size: 15px; font-weight: 600; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+  .btn:hover { border-color: var(--faint); color: var(--text); }
+  .btn.primary { background: var(--red); border-color: var(--red); color: #FFFFFF; }
+  .btn.primary:hover { background: var(--red-hover); border-color: var(--red-hover); color: #FFFFFF; }
+  .btn[hidden] { display: none; }
+  .hint { margin: 0; font-size: 14px; color: var(--muted); }
+  .friend { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .friend h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+  .friend p { margin: 0; color: var(--body); font-size: 15px; }
+  .status { min-height: 1.6em; font-size: 14px; color: var(--muted); }
+  .small { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.55; }
+  .empty { grid-column: 1 / -1; max-width: 560px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header class="nav"><div class="bar"><a class="wordmark" href="https://daash.run/">Daash</a></div></header>
+
+<main id="ready" hidden>
+  <figure class="preview" id="preview"><img id="img" alt=""></figure>
+  <div class="side">
+    <div>
+      <h1 id="heading">Share your week</h1>
+      <p class="lead">Post it, send it to your club, or keep it.</p>
+    </div>
+    <div class="group">
+      <span class="label" id="look-l">Look</span>
+      <div class="seg" role="group" aria-labelledby="look-l">
+        <button type="button" data-theme="light" aria-pressed="true">Light</button>
+        <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
+    <div class="group">
+      <span class="label" id="size-l">Size</span>
+      <div class="seg" role="group" aria-labelledby="size-l">
+        <button type="button" data-size="post" aria-pressed="true">Post</button>
+        <button type="button" data-size="story" aria-pressed="false">Story</button>
+      </div>
+    </div>
+    <div class="group">
+      <div class="row">
+        <button type="button" class="btn primary" id="share" hidden>Share image</button>
+        <a class="btn" id="save" download="daash-week.png">Save image</a>
+      </div>
+      <p class="hint" id="hold">On a phone you can also press and hold the image to save it.</p>
+      <div class="status" id="status" role="status"></div>
+    </div>
+    <div class="friend">
+      <h2>Know someone who runs with a Garmin?</h2>
+      <p>Daash plans their training in ChatGPT or Claude and puts every session on their watch. Send them the link.</p>
+      <div class="row"><button type="button" class="btn" id="friend">Send Daash to a friend</button></div>
+      <div class="status" id="friend-status" role="status"></div>
+    </div>
+    <p class="small">
+      This image was made on your device. Your week reached this page in the part
+      of its address after the #, which browsers never send to a server, and the
+      page has no analytics and stores nothing. <a href="/privacy/">Privacy</a>
+    </p>
+  </div>
+</main>
+
+<main id="nothing" hidden>
+  <div class="empty">
+    <h1>Nothing to share yet</h1>
+    <p class="lead">Open this from the <strong>Share</strong> button on your Daash plan card in ChatGPT or Claude, and your week appears here as an image.</p>
+    <p class="lead"><a href="https://daash.run/">What is Daash?</a></p>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- the week
+  // The card sends { v, k, t, s, w, a, r, h, u } as base64url JSON: the kind
+  // of week, title, subtitle, its Monday, the headline [figure, words], the
+  // sessions and, without a plan, the km of the weeks before and how many
+  // days of this one are over (the rest haven't happened, so aren't rest). Anyone can
+  // write such a link, so everything is checked and cut to length here, and
+  // only ever drawn as text.
+  function decode(hash) {
+    try {
+      var b = hash.replace(/-/g, "+").replace(/_/g, "/");
+      while (b.length % 4) b += "=";
+      return JSON.parse(decodeURIComponent(escape(atob(b))));
+    } catch (e) { return null; }
+  }
+  var COLOURS = ["easy", "threshold", "intervals", "long", "race", "swim", "strength", "other", "rec"];
+  function str(x, n) { return typeof x === "string" ? x.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, n) : ""; }
+  function num(x, lo, hi) { return typeof x === "number" && isFinite(x) && x >= lo && x <= hi ? x : null; }
+  function clean(d) {
+    if (!d || d.v !== 1 || !Array.isArray(d.r)) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.w || "")) return null;
+    var rows = d.r.slice(0, 14).map(function (r) {
+      var day = num(r && r.d, 0, 6);
+      if (day == null) return null;
+      var st = r.st === "d" || r.st === "m" ? r.st : "p";
+      var sh = Array.isArray(r.sh) ? r.sh.slice(0, 40).map(function (g) {
+        return Array.isArray(g) && num(g[1], 0.01, 500) != null ? { k: g[0] === "w" || g[0] === "r" ? g[0] : "e", km: g[1], c: COLOURS.indexOf(g[2]) >= 0 ? g[2] : "easy" } : null;
+      }).filter(Boolean) : [];
+      return { d: day, c: COLOURS.indexOf(r.c) >= 0 ? r.c : "other", l: str(r.l, 16), n: str(r.n, 48) || "Session",
+        st: st, km: num(r.km, 0, 1000), p: str(r.p, 40), sh: sh };
+    }).filter(Boolean).sort(function (a, b) { return a.d - b.d; });
+    var h = Array.isArray(d.h) ? d.h.slice(-9).map(function (x) { return num(x, 0, 2000) || 0; }) : [];
+    var a = Array.isArray(d.a) ? d.a : [];
+    var upTo = num(d.u, 0, 7);
+    return { u: upTo == null ? 7 : upTo, k: d.k === "recap" || d.k === "ahead" ? d.k : "now", t: str(d.t, 60) || "My week", s: str(d.s, 60), w: d.w,
+      lead: str(a[0], 24), words: str(a[1], 60), rows: rows, h: h.length > 1 ? h : [] };
+  }
+
+  // ---------------------------------------------------------------- drawing
+  // The plan card's own palette, so the image looks like the card it came from.
+  var THEMES = {
+    light: { bg: "#FFFFFF", text: "#1F1E1B", soft: "#4A4944", muted: "#6B6A64", faint: "#9A9993", line: "#E6E4DD",
+      red: "#E0312A", redText: "#C8261F", past: "#E6E4DD", onRed: "#FFFFFF",
+      c: { easy: "#3F8A47", threshold: "#D19B00", intervals: "#C25A12", long: "#2F68B0", race: "#C8261F", swim: "#1F8A93", strength: "#7E57C2", other: "#6B6A64", rec: "#D9D7CF" },
+      label: { threshold: "#8F6A00" } },
+    dark: { bg: "#262624", text: "#F4F3EE", soft: "#C9C8C2", muted: "#A6A59F", faint: "#75746F", line: "#3C3C39",
+      red: "#E8322B", redText: "#FF6A61", past: "#4A4A46", onRed: "#FFFFFF",
+      c: { easy: "#8CC08F", threshold: "#E3BF4F", intervals: "#F2924A", long: "#74A3DB", race: "#FF6A61", swim: "#6FC2C9", strength: "#B39DDB", other: "#A6A59F", rec: "#5A5954" },
+      label: {} },
+  };
+  var SIZES = { post: { w: 1080, h: 1350, top: 84, bottom: 72 }, story: { w: 1080, h: 1920, top: 230, bottom: 270 } };
+  var DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+  var KICKER = { ahead: "WEEK AHEAD", now: "THIS WEEK", recap: "WEEK RECAP" };
+  var SANS = '"Geist", system-ui, -apple-system, "Segoe UI", sans-serif', MONO = '"Geist Mono", ui-monospace, Menlo, monospace';
+
+  function font(ctx, weight, size, mono, italic) { ctx.font = (italic ? "italic " : "") + weight + " " + size + "px " + (mono ? MONO : SANS); }
+  function fit(ctx, text, max) {
+    if (ctx.measureText(text).width <= max) return text;
+    while (text.length > 1 && ctx.measureText(text + "…").width > max) text = text.slice(0, -1);
+    return text.replace(/\s+$/, "") + "…";
+  }
+  function wrap(ctx, text, max, lines) {
+    var words = text.split(/\s+/), out = [], cur = "";
+    words.forEach(function (w) {
+      var next = cur ? cur + " " + w : w;
+      if (ctx.measureText(next).width <= max || !cur) cur = next; else { out.push(cur); cur = w; }
+    });
+    if (cur) out.push(cur);
+    if (out.length > lines) { out = out.slice(0, lines); out[lines - 1] = fit(ctx, out[lines - 1] + "…", max); }
+    return out.map(function (l) { return fit(ctx, l, max); });
+  }
+  // Letter-spaced text drawn a letter at a time: canvas letterSpacing isn't
+  // in every browser yet.
+  function spaced(ctx, text, x, y, gap, align) {
+    var width = 0, i;
+    for (i = 0; i < text.length; i++) width += ctx.measureText(text[i]).width + (i < text.length - 1 ? gap : 0);
+    var cx = align === "right" ? x - width : x;
+    ctx.textAlign = "left";
+    for (i = 0; i < text.length; i++) { ctx.fillText(text[i], cx, y); cx += ctx.measureText(text[i]).width + gap; }
+    return width;
+  }
+  function rrect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function fmtKm(n) { var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function dayDate(monday, d) { var p = monday.split("-"); return new Date(+p[0], +p[1] - 1, +p[2] + d).getDate(); }
+
+  function draw(canvas, wk, themeName, sizeName) {
+    var T = THEMES[themeName], S = SIZES[sizeName], W = S.w, H = S.h, P = 80;
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext("2d");
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
+    var story = sizeName === "story";
+
+    // Brand row: the wordmark, and what kind of week it is.
+    var y = S.top + 40;
+    font(ctx, 800, 46, false, true); ctx.fillStyle = T.redText; ctx.textAlign = "left"; ctx.fillText("Daash", P, y);
+    font(ctx, 500, 24, true); ctx.fillStyle = T.muted; spaced(ctx, KICKER[wk.k], W - P, y - 6, 3.4, "right");
+
+    // Title and dates.
+    y += story ? 116 : 104;
+    font(ctx, 700, 74); ctx.fillStyle = T.text;
+    var title = wrap(ctx, wk.t, W - 2 * P, 2);
+    title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 80); });
+    y += (title.length - 1) * 80;
+    if (wk.s) { y += 54; font(ctx, 400, 34); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, wk.s, W - 2 * P), P, y); }
+
+    // The headline figure, and without a plan the weeks before it as bars.
+    y += story ? 140 : 124;
+    var chartW = wk.h.length ? 300 : 0, leadMax = W - 2 * P - (chartW ? chartW + 40 : 0), size = 104;
+    font(ctx, 700, size);
+    while (size > 56 && ctx.measureText(wk.lead).width > leadMax) { size -= 4; font(ctx, 700, size); }
+    ctx.fillStyle = T.text; ctx.fillText(wk.lead, P, y);
+    font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, wk.words, W - 2 * P - (chartW ? chartW + 40 : 0)), P, y + 50);
+    if (chartW) {
+      var peak = Math.max.apply(null, wk.h.concat([1])), n = wk.h.length, gap = 10, bw = (chartW - gap * (n - 1)) / n, base = y + 50, maxH = 130;
+      wk.h.forEach(function (km, i) {
+        var bh = Math.max(6, Math.round(km / peak * maxH)), x = W - P - chartW + i * (bw + gap);
+        ctx.fillStyle = i === n - 1 ? T.red : T.past; rrect(ctx, x, base - bh, bw, bh, 8); ctx.fill();
+      });
+      font(ctx, 500, 20, true); ctx.fillStyle = T.faint;
+      spaced(ctx, "LAST " + n + " WEEKS", W - P, base + 36, 2, "right");
+    }
+    y += (story ? 116 : 96) + (chartW ? 18 : 0);
+
+    // The week: each session on its day, and the days with nothing as rest.
+    var footY = H - S.bottom - 64;
+    var entries = [];
+    for (var d = 0; d < 7; d++) {
+      var here = wk.rows.filter(function (r) { return r.d === d; });
+      if (here.length) here.forEach(function (r, i) { entries.push({ d: d, r: r, first: i === 0 }); });
+      else entries.push({ d: d, rest: true, first: true, blank: d >= wk.u });
+    }
+    var weight = function (e) { return e.rest ? 0.55 : 1; };
+    var units = entries.reduce(function (t, e) { return t + weight(e); }, 0);
+    var unit = Math.min(story ? 150 : 128, (footY - 40 - y) / units);
+    var k = Math.max(0.62, Math.min(1, unit / 112));
+    var most = Math.max.apply(null, wk.rows.map(function (r) { return r.st === "p" ? r.km || 0 : 0; }).concat([0]));
+    var midX = P + Math.round(132 * Math.max(k, 0.8)), kmX = W - P;
+    ctx.fillStyle = T.line; ctx.fillRect(P, y, W - 2 * P, 2);
+    entries.forEach(function (e) {
+      var h = unit * weight(e), cy = y + h / 2;
+      if (e.first) {
+        font(ctx, 500, Math.round(24 * k), true); ctx.fillStyle = e.rest ? T.faint : T.muted;
+        ctx.fillText(DAYS[e.d], P, cy - (e.rest ? -8 * k : 4 * k));
+        if (!e.rest) { font(ctx, 600, Math.round(34 * k)); ctx.fillStyle = T.text; ctx.fillText(String(dayDate(wk.w, e.d)), P, cy + 34 * k); }
+      }
+      if (e.rest) {
+        font(ctx, 400, Math.round(30 * k)); ctx.fillStyle = T.faint; if (!e.blank) ctx.fillText("Rest", midX, cy + 10 * k);
+      } else {
+        drawSession(ctx, T, e.r, midX, kmX, cy, k, most);
+      }
+      y += h;
+      ctx.fillStyle = T.line; ctx.fillRect(P, y, W - 2 * P, 2);
+    });
+
+    // Footer: where it came from, for anyone who wants their own.
+    font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
+    font(ctx, 400, 28); ctx.fillStyle = T.muted; ctx.textAlign = "right";
+    ctx.fillText("Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.textAlign = "left";
+  }
+
+  function drawSession(ctx, T, r, x, kmX, cy, k, most) {
+    var c = T.c[r.c] || T.c.other, kmW = Math.round(170 * k), maxW = kmX - kmW - 24 - x;
+    var nameSize = Math.round(38 * k), small = Math.round(26 * k);
+    var km = r.km ? fmtKm(r.km) + " km" : "";
+    if (r.st === "d") {
+      // Done: a tick in the session's colour, the name, and how it went.
+      var rad = Math.round(16 * k), top = r.p ? cy - 6 * k : cy + 12 * k;
+      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x + rad, top - nameSize * 0.34, rad, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = T.bg; ctx.lineWidth = 4.2 * k; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      var tx = x + rad, ty = top - nameSize * 0.34;
+      ctx.beginPath(); ctx.moveTo(tx - 7 * k, ty); ctx.lineTo(tx - 2 * k, ty + 5 * k); ctx.lineTo(tx + 7.5 * k, ty - 5.5 * k); ctx.stroke();
+      font(ctx, 600, nameSize); ctx.fillStyle = T.soft;
+      ctx.fillText(fit(ctx, r.n, maxW - rad * 2 - 16), x + rad * 2 + 16, top);
+      if (r.p) { font(ctx, 400, small); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, r.p, maxW - rad * 2 - 16), x + rad * 2 + 16, top + 40 * k); }
+      font(ctx, 500, Math.round(34 * k)); ctx.fillStyle = T.soft; ctx.textAlign = "right"; ctx.fillText(km, kmX, cy + 10 * k); ctx.textAlign = "left";
+      return;
+    }
+    if (r.st === "m") {
+      // Missed: an empty ring, the name in grey, and the distance struck out.
+      var rr = Math.round(15 * k), my = cy - 12 * k;
+      ctx.strokeStyle = T.redText; ctx.lineWidth = 3 * k; ctx.beginPath(); ctx.arc(x + rr + 1, my - nameSize * 0.34, rr, 0, Math.PI * 2); ctx.stroke();
+      font(ctx, 500, nameSize); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, r.n, maxW - rr * 2 - 18), x + rr * 2 + 18, my);
+      font(ctx, 500, small); ctx.fillStyle = T.redText; ctx.fillText("Missed", x + rr * 2 + 18, my + 40 * k);
+      if (km) {
+        font(ctx, 400, Math.round(34 * k)); ctx.fillStyle = T.faint; ctx.textAlign = "right"; ctx.fillText(km, kmX, cy + 10 * k); ctx.textAlign = "left";
+        var w = ctx.measureText(km).width; ctx.fillRect(kmX - w, cy + 10 * k - 11 * k, w, 2.5 * k);
+      }
+      return;
+    }
+    // Planned: the type in its colour, the name, and the workout's shape
+    // to scale within the week, as on the card.
+    var ny = cy - 6 * k, nx = x;
+    if (r.l) {
+      font(ctx, 600, small); ctx.fillStyle = (T.label[r.c]) || c;
+      ctx.fillText(r.l, nx, ny); nx += ctx.measureText(r.l).width + 14 * k;
+    }
+    font(ctx, 600, nameSize); ctx.fillStyle = T.text; ctx.fillText(fit(ctx, r.n, Math.max(40, maxW - (nx - x))), nx, ny);
+    var segs = r.sh.length ? r.sh : [{ k: "e", km: r.km || 1, c: r.c === "race" ? "race" : r.c === "strength" || r.c === "swim" || r.c === "long" ? r.c : "easy" }];
+    var share = r.km && most ? Math.max(0.18, r.km / most) : 1, barW = maxW * share;
+    var total = segs.reduce(function (t, g) { return t + g.km; }, 0), gap = 3, free = barW - gap * (segs.length - 1), bx = x, base = cy + 34 * k;
+    segs.forEach(function (g) {
+      var w = Math.max(3, free * g.km / total), h = (g.k === "w" ? 26 : g.k === "r" ? 7 : 13) * k;
+      ctx.fillStyle = T.c[g.c] || c; rrect(ctx, bx, base - h, w, h, 3 * k); ctx.fill(); bx += w + gap;
+    });
+    font(ctx, 500, Math.round(34 * k)); ctx.fillStyle = T.text; ctx.textAlign = "right"; ctx.fillText(km, kmX, cy + 10 * k); ctx.textAlign = "left";
+  }
+
+  // ---------------------------------------------------------------- page
+  var wk = clean(decode(location.hash.slice(1)));
+  if (!wk) { document.getElementById("nothing").hidden = false; return; }
+  document.getElementById("ready").hidden = false;
+  document.getElementById("heading").textContent = wk.k === "recap" ? "Share your week" : wk.k === "ahead" ? "Share your week ahead" : "Share this week";
+
+  var look = "light", size = "post", canvas = document.createElement("canvas"), blob = null, url = null;
+  var img = document.getElementById("img"), save = document.getElementById("save"), shareBtn = document.getElementById("share");
+  var status = document.getElementById("status");
+  var fileName = "daash-week-" + wk.w + ".png";
+  save.setAttribute("download", fileName);
+  img.alt = [KICKER[wk.k].charAt(0) + KICKER[wk.k].slice(1).toLowerCase(), wk.t, wk.s, wk.lead + " " + wk.words].filter(Boolean).join(". ");
+
+  function render() {
+    draw(canvas, wk, look, size);
+    document.getElementById("preview").className = "preview" + (size === "story" ? " story" : "");
+    canvas.toBlob(function (b) {
+      blob = b;
+      if (url) URL.revokeObjectURL(url);
+      url = URL.createObjectURL(b);
+      img.src = url; save.href = url;
+      var file = new File([b], fileName, { type: "image/png" });
+      shareBtn.hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+    }, "image/png");
+  }
+  function pick(attr, value) {
+    document.querySelectorAll("[data-" + attr + "]").forEach(function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-" + attr) === value ? "true" : "false"); });
+  }
+  document.querySelectorAll("[data-theme]").forEach(function (b) { b.addEventListener("click", function () { look = b.getAttribute("data-theme"); pick("theme", look); render(); }); });
+  document.querySelectorAll("[data-size]").forEach(function (b) { b.addEventListener("click", function () { size = b.getAttribute("data-size"); pick("size", size); render(); }); });
+  shareBtn.addEventListener("click", function () {
+    if (!blob) return;
+    navigator.share({ files: [new File([blob], fileName, { type: "image/png" })] })
+      .then(function () { status.textContent = ""; })
+      .catch(function (e) { if (!e || e.name !== "AbortError") status.textContent = "Sharing didn’t work here. Save the image instead."; });
+  });
+
+  // The friend link: the front page, marked as having come from a share so
+  // the site can tell these visits apart. Nothing about this week is in it.
+  var FRIEND = "https://daash.run/?utm_source=share&utm_medium=friend&utm_campaign=week-image";
+  var friendStatus = document.getElementById("friend-status");
+  document.getElementById("friend").addEventListener("click", function () {
+    var text = "I plan my running with Daash. It connects Garmin to ChatGPT or Claude and puts the sessions on your watch.";
+    if (navigator.share) {
+      navigator.share({ title: "Daash", text: text, url: FRIEND }).catch(function (e) {
+        if (!e || e.name !== "AbortError") copyFriend();
+      });
+    } else copyFriend();
+  });
+  function copyFriend() {
+    var done = function () { friendStatus.textContent = "Link copied. Paste it into a message."; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(FRIEND).then(done, function () { friendStatus.textContent = FRIEND; });
+    else friendStatus.textContent = FRIEND;
+  }
+
+  // Draw once with whatever font is there, and again once Geist has loaded.
+  render();
+  if (document.fonts && document.fonts.load) {
+    Promise.all(["italic 800 46px Geist", "700 74px Geist", "600 38px Geist", "400 32px Geist", "500 24px \"Geist Mono\""].map(function (f) { return document.fonts.load(f); }))
+      .then(render, function () {});
+  }
+})();
+</script>
+</body>
+</html>

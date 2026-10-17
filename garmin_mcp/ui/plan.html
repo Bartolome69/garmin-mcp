@@ -66,6 +66,10 @@
     background: transparent; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
   .expand[hidden] { display: none; }
   .refresh.spin svg { animation: spin 0.9s linear infinite; }
+  .share { height: 32px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent;
+    display: flex; align-items: center; gap: 6px; padding: 0 12px 0 10px; font-size: 13px; font-weight: 500; flex-shrink: 0; }
+  .share:hover, .refresh:hover, .expand:hover { border-color: var(--muted); }
+  .head .sent { margin-top: -4px; }
   /* A host that keeps the frame shorter than the card: the header and chart
      stay put and the week's list scrolls, so the next session is reachable
      without scrolling the whole chat. Only side by side; stacked, the host
@@ -257,7 +261,7 @@
   // The host speaks JSON-RPC over postMessage. Only the handful of messages
   // this view needs are implemented, so there is no SDK to load.
   var host = window.parent !== window ? window.parent : null;
-  var nextId = 1, pending = {}, hostContext = {};
+  var nextId = 1, pending = {}, hostContext = {}, hostCaps = null;
 
   function send(msg) { if (host) host.postMessage(Object.assign({ jsonrpc: "2.0" }, msg), "*"); }
   function request(method, params) {
@@ -497,6 +501,7 @@
     grow: '<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>',
     shrink: '<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>',
     arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    share: '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>',
   };
 
   // The sport as a small grey line icon before each session (Lucide's set,
@@ -712,6 +717,7 @@
         // With nothing scheduled the card is a log of what was done, not a plan.
         el("span", { class: "kicker mono", text: m.mode === "log" ? "TRAINING LOG" : "TRAINING PLAN", onclick: debugTap }),
         el("span", { class: "tools" }, [
+          canShare() ? el("button", { class: "share", "aria-label": "Share this week as an image", onclick: share }, [svg(ICON.share, 14), "Share"]) : null,
           el("button", { class: "expand", id: "expand", hidden: true, "aria-label": "Expand", onclick: toggleFullscreen }, [svg(ICON.grow, 14)]),
           el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
         ]),
@@ -945,23 +951,34 @@
 
   // The workout as a bar: easy parts low, work reps high, recoveries lower
   // still, each as wide as its distance. A run without steps is one bar.
-  function shapeBar(s, big, share) {
-    var t = typeOf(s), segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
+  // The parts and their colours come from shapeOf, which the shared image
+  // draws from too, so the two always agree.
+  var COLOUR = { easy: "var(--easy)", threshold: "var(--threshold)", intervals: "var(--intervals)", long: "var(--long)",
+    race: "var(--red-text)", swim: "var(--swim)", strength: "var(--strength)", other: "var(--muted)", rec: "var(--rec)" };
+  // The colour a session's type takes, by name: TYPES says the same in CSS.
+  function colourOf(s) {
+    var k = TYPES[s.type] ? s.type : TYPES[s.sport] ? s.sport : "other";
+    return k === "sub" ? "threshold" : k === "run" || k === "ride" ? "easy" : k;
+  }
+  function shapeOf(s) {
+    var segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
     // A race, or a hard session with one step, is all work: draw it so.
     var hard = s.type === "threshold" || s.type === "intervals" || s.type === "sub";
     if ((s.type === "race" || hard) && !segs.some(function (g) { return g.k === "work"; })) {
       segs = segs.map(function (g) { return g.k === "easy" ? { k: "work", km: g.km } : g; });
     }
-    var scale = big ? 1 : 0.7;
-    var easyColour = s.type === "long" ? TYPES.long.v : s.type === "easy" || !TYPES[s.type] || hard ? TYPES.easy.v : t.v;
+    var easy = s.type === "long" ? "long" : s.type === "easy" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
     // Work in a hard session takes its colour; faster stretches of a long
     // or easy run are threshold work.
-    var workColour = s.type === "race" ? TYPES.race.v : hard ? t.v : TYPES.threshold.v;
+    var work = s.type === "race" ? "race" : hard ? colourOf(s) : "threshold";
+    return segs.map(function (g) { return { k: g.k, km: Math.max(g.km, 0.1), c: g.k === "work" ? work : g.k === "rec" ? "rec" : easy }; });
+  }
+  function shapeBar(s, big, share) {
+    var scale = big ? 1 : 0.7;
     var width = share && share < 1 ? "width:" + Math.round(share * 1000) / 10 + "%" : "";
-    return el("div", { class: "shape" + (big ? " big" : ""), style: width, "aria-hidden": "true" }, segs.map(function (g) {
+    return el("div", { class: "shape" + (big ? " big" : ""), style: width, "aria-hidden": "true" }, shapeOf(s).map(function (g) {
       var h = g.k === "work" ? 26 : g.k === "rec" ? 6 : 12;
-      var c = g.k === "work" ? workColour : g.k === "rec" ? "var(--rec)" : easyColour;
-      return el("span", { style: "flex:" + Math.max(g.km, 0.1) + " 1 0;height:" + (big ? 30 : Math.round(h * scale)) + "px;background:" + c });
+      return el("span", { style: "flex:" + g.km + " 1 0;height:" + (big ? 30 : Math.round(h * scale)) + "px;background:" + COLOUR[g.c] });
     }));
   }
 
@@ -1004,6 +1021,84 @@
     var old = box.querySelector(".sent"); if (old) old.remove();
     box.appendChild(el("div", { class: "sent", text: msg }));
   }
+  // ---------------------------------------------------------------- share
+  // Share opens a page on garmin.daash.run that draws the week as an image
+  // for the person to post or send. The week travels in the link after the
+  // #, which browsers keep to themselves: it never reaches that server or
+  // any other, and the page counts nothing. Only what the image shows is
+  // sent: the plan's name, the dates, and each session's day, type, name,
+  // distance and shape, with pace once it's done.
+  var SHARE_PAGE = window.__SHARE_PAGE__ || "https://garmin.daash.run/share/";
+  function canShare() {
+    if (!host || (window.openai && typeof window.openai.openExternal === "function")) return true;
+    // A host that lists what it can do and leaves out opening links gets no
+    // button; one that lists nothing is asked, and says so if it can't.
+    return !hostCaps || !!hostCaps.openLinks;
+  }
+  function sharePayload(m) {
+    var w = m.weeks[state.sel] || m.weeks[0];
+    var end = iso(addDays(parse(w.starts), 6));
+    var kind = end < m.today ? "recap" : w.starts > m.today ? "ahead" : "now";
+    var title = "My week", sub = range(w.starts, end), lead, label;
+    // "Week 3 of 10" only for a block drawn whole: the calendar around now
+    // numbers its weeks from the first one shown, not from the plan's start.
+    if (m.mode === "block") {
+      title = m.block.name || shortGoal(m.block.goal) || "Training plan";
+      if (m.block === raw) sub = "Week " + w.n + " of " + m.weeks.length + " \u00b7 " + sub;
+    }
+    if (m.mode === "log") {
+      lead = fmtKm(w.run_km) + " km"; label = kind === "now" ? "run so far this week" : "run";
+    } else if (kind === "ahead" || kind === "now" && !w.done && !w.doneKm) {
+      lead = fmtKm(w.plannedKm) + " km"; label = "planned \u00b7 " + w.total + (w.total === 1 ? " session" : " sessions");
+    } else {
+      lead = (w.plannedKm ? fmtKm(w.doneKm) + " of " + fmtKm(w.plannedKm) : fmtKm(w.doneKm)) + " km";
+      label = w.done + " of " + w.total + " sessions done" + (w.missed ? " \u00b7 " + w.missed + " missed" : "");
+    }
+    var rows = w.rows.map(function (s) {
+      var done = isDone(s), r = { d: dow(effDate(s)), c: colourOf(s), l: typeOf(s).l, n: cleanTitle(s) };
+      if (done) {
+        r.st = "d"; r.km = s.actual_km || null;
+        var bits = [];
+        if (s.extra) bits.push("Not on the plan");
+        if (s.actual_pace || s.pace) bits.push(s.actual_pace || s.pace); else if (s.speed) bits.push(s.speed); else if (s.actual) bits.push(s.actual);
+        if (bits.length) r.p = bits.join(" \u00b7 ");
+      } else {
+        r.st = s.status === "missed" ? "m" : "p"; r.km = s.planned_km || null;
+        if (r.st === "p") r.sh = shapeOf(s).map(function (g) { return [g.k === "work" ? "w" : g.k === "rec" ? "r" : "e", Math.round(g.km * 100) / 100, g.c]; });
+      }
+      return r;
+    });
+    var data = { v: 1, k: kind, t: title, s: sub, w: w.starts, a: [lead, label], r: rows };
+    // Without a plan, only a day already gone can be called a rest day.
+    if (m.mode === "log" && kind === "now") data.u = dow(m.today);
+    if (m.mode !== "block" && m.history && m.history.length) data.h = m.history.map(function (h) { return Math.round((h.run_km || 0) * 10) / 10; }).concat([Math.round((m.mode === "log" ? w.run_km : w.plannedKm || 0) * 10) / 10]);
+    return data;
+  }
+  function shareLink(data) {
+    var text = unescape(encodeURIComponent(JSON.stringify(data)));
+    return SHARE_PAGE + "#" + btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function share(event) {
+    var btn = event.currentTarget, url = shareLink(sharePayload(model));
+    var said = function (msg) {
+      var box = document.querySelector(".head-l"); if (!box) return;
+      var old = box.querySelector(".sent"); if (old) old.remove();
+      box.appendChild(el("div", { class: "sent", text: msg }));
+    };
+    var opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    btn.disabled = true;
+    opened.then(function () { said("Your week opens in the browser, ready to save or send."); })
+      .catch(function () { said("This chat app didn\u2019t open the link, so the image can\u2019t be made here."); })
+      .then(function () { btn.disabled = false; });
+  }
+
   function refresh(event) {
     var btn = event.currentTarget;
     if (!host) return;
@@ -1063,6 +1158,7 @@
     var ctx = (result && result.hostContext) || {};
     D.initOk = true;
     D.host = [info.name, info.version, ctx.platform, ctx.theme, ctx.displayMode].filter(Boolean).join(" ") || "unnamed";
+    hostCaps = (result && result.hostCapabilities) || null;
     D.step("init ok");
     applyContext(ctx);
     notify("ui/notifications/initialized", {});

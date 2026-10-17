@@ -1827,6 +1827,18 @@ async def main() -> int:
                   and "ui/initialize" in html and "tool-result" in html, str(view.contents[0])[:120])
             check("the view loads nothing from outside the frame",
                   not re.search(r"""(src|href)=["']?https?:""", html) and "@import" not in html)
+            # Share hands the week to a page on garmin.daash.run in the link's
+            # #fragment, which never reaches a server; that page must have no
+            # way to send it on: no analytics, no script from anywhere else.
+            check("the view's only address is the share page",
+                  set(re.findall(r"https?://[^\s\"'#]+", html)) - {"http://www.w3.org/2000/svg"} == {"https://garmin.daash.run/share/"},
+                  str(set(re.findall(r"https?://[^\s\"'#]+", html))))
+            share_page = (Path(__file__).resolve().parent.parent / "docs" / "share" / "index.html").read_text()
+            check("the share page sends the week nowhere",
+                  "posthog" not in share_page.lower() and not re.search(r"<script[^>]+src=", share_page)
+                  and not re.search(r"\b(fetch|XMLHttpRequest|sendBeacon|localStorage|sessionStorage|indexedDB)\b",
+                                    share_page)
+                  and 'name="robots" content="noindex"' in share_page)
 
             preview_names = {t.name for t in tools.tools}
             check("a preview account is offered shoes and recovery trends",
