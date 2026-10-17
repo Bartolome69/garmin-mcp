@@ -62,14 +62,18 @@
      that column stops halfway across, which left the buttons floating
      mid-header. The brand row keeps their height, so nothing sits under them. */
   .tools { position: absolute; top: 16px; right: 16px; display: flex; gap: 6px; }
-  .refresh, .expand { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border);
+  .refresh, .expand, .share { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border);
     background: transparent; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
   .expand[hidden] { display: none; }
   .refresh.spin svg { animation: spin 0.9s linear infinite; }
-  .share { height: 32px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent;
-    display: flex; align-items: center; gap: 6px; padding: 0 12px 0 10px; font-size: 13px; font-weight: 500; flex-shrink: 0; }
-  .share:hover, .refresh:hover, .expand:hover { border-color: var(--muted); }
-  .head .sent { margin-top: -4px; }
+  .share { color: var(--muted); }
+  .share:hover, .refresh:hover, .expand:hover { border-color: var(--muted); color: var(--text); }
+  /* What Share did, said over the header for a few seconds and gone: it
+     never moves anything on the card. */
+  .note { position: absolute; top: 54px; right: 16px; z-index: 2; max-width: 260px; padding: 8px 12px; border-radius: 10px;
+    background: var(--text); color: var(--card); font-size: 12.5px; line-height: 1.35; pointer-events: none;
+    opacity: 0; transition: opacity 0.2s; }
+  .note.on { opacity: 1; }
   /* A host that keeps the frame shorter than the card: the header and chart
      stay put and the week's list scrolls, so the next session is reachable
      without scrolling the whole chat. Only side by side; stacked, the host
@@ -717,7 +721,7 @@
         // With nothing scheduled the card is a log of what was done, not a plan.
         el("span", { class: "kicker mono", text: m.mode === "log" ? "TRAINING LOG" : "TRAINING PLAN", onclick: debugTap }),
         el("span", { class: "tools" }, [
-          canShare() ? el("button", { class: "share", "aria-label": "Share this week as an image", onclick: share }, [svg(ICON.share, 14), "Share"]) : null,
+          canShare() ? el("button", { class: "share", "aria-label": "Share this week as an image", title: "Share this week as an image", onclick: share }, [svg(ICON.share, 14)]) : null,
           el("button", { class: "expand", id: "expand", hidden: true, "aria-label": "Expand", onclick: toggleFullscreen }, [svg(ICON.grow, 14)]),
           el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
         ]),
@@ -1081,9 +1085,11 @@
   function share(event) {
     var btn = event.currentTarget, url = shareLink(sharePayload(model));
     var said = function (msg) {
-      var box = document.querySelector(".head-l"); if (!box) return;
-      var old = box.querySelector(".sent"); if (old) old.remove();
-      box.appendChild(el("div", { class: "sent", text: msg }));
+      var head = document.querySelector(".head"); if (!head) return;
+      var note = head.querySelector(".note") || head.appendChild(el("div", { class: "note", role: "status" }));
+      note.textContent = msg;
+      requestAnimationFrame(function () { note.classList.add("on"); });
+      clearTimeout(said.t); said.t = setTimeout(function () { note.classList.remove("on"); }, 4000);
     };
     var opened;
     if (window.openai && typeof window.openai.openExternal === "function") {
@@ -1094,8 +1100,8 @@
       opened = request("ui/open-link", { url: url });
     }
     btn.disabled = true;
-    opened.then(function () { said("Your week opens in the browser, ready to save or send."); })
-      .catch(function () { said("This chat app didn\u2019t open the link, so the image can\u2019t be made here."); })
+    opened.then(function () { said("Your week opens in the browser as an image."); })
+      .catch(function () { said("This chat app didn\u2019t open the link."); })
       .then(function () { btn.disabled = false; });
   }
 
