@@ -384,7 +384,7 @@
   if (window.ResizeObserver) { var ro = new ResizeObserver(reportSize); ro.observe(root); ro.observe(document.body); }
   window.addEventListener("resize", function () { clearTimeout(fitTimer); fitTimer = setTimeout(checkFit, 150); });
 
-  // Three quick clicks on "TRAINING PLAN" show what the host told the card
+  // Three quick clicks on the kicker ("TRAINING PLAN") show what the host told the card
   // and how big the frame is, for when it comes out the wrong size.
   var clicks = [];
   function debugTap() {
@@ -709,7 +709,8 @@
     var left = el("div", { class: "head-l" }, [
       el("div", { class: "brand" }, [
         el("span", { class: "wordmark", text: "Daash" }),
-        el("span", { class: "kicker mono", text: "TRAINING PLAN", onclick: debugTap }),
+        // With nothing scheduled the card is a log of what was done, not a plan.
+        el("span", { class: "kicker mono", text: m.mode === "log" ? "TRAINING LOG" : "TRAINING PLAN", onclick: debugTap }),
         el("span", { class: "tools" }, [
           el("button", { class: "expand", id: "expand", hidden: true, "aria-label": "Expand", onclick: toggleFullscreen }, [svg(ICON.grow, 14)]),
           el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
@@ -767,7 +768,7 @@
       var peak = Math.max.apply(null, hist.map(function (h) { return h.run_km || 0; }).concat([thisKm, 1]));
       var avg = hist.length ? sum(hist, function (h) { return h.run_km; }) / hist.length : 0;
       hist.forEach(function (h, i) {
-        bars.push(barEl({ km: fmtKm(h.run_km || 0), h: Math.round((h.run_km || 0) / peak * MAX), cls: "past", lbl: i === 0 ? (hist.length - i) + " wks ago" : (i === hist.length - 1 ? "Last" : ""), faint: true, still: true, wrap: true, aria: fmtKm(h.run_km || 0) + " km run, week of " + short(h.starts) }));
+        bars.push(barEl({ km: fmtKm(h.run_km || 0), h: Math.round((h.run_km || 0) / peak * MAX), cls: "past", lbl: i === hist.length - 1 ? "Last" : (hist.length - i) + " wks ago", faint: true, still: true, wrap: true, aria: fmtKm(h.run_km || 0) + " km run, week of " + short(h.starts) }));
       });
       bars.push(barEl({ km: fmtKm(thisKm), h: Math.round(thisKm / peak * MAX), cls: "on", on: true, lbl: "This week", dot: m.nextWeek === 0, still: true, wrap: true, aria: "This week, " + fmtKm(thisKm) + " km" }));
       cols = bars.length;
