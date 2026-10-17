@@ -87,7 +87,9 @@
   html.fit .pane { min-height: 0; }
   html.fit .week { overflow-y: auto; overscroll-behavior: contain; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
+  .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; text-wrap: balance; }
+  /* A long name a size down, so it takes two lines at most on a phone. */
+  .title.long { font-size: 21px; line-height: 1.15; }
   .sub { font-size: 14px; color: var(--muted); }
   .tl { flex: 1 1 300px; display: flex; align-items: center; gap: 8px; min-width: 0; }
   .tl-line { flex: 1; height: 1px; background: var(--line); min-width: 10px; }
@@ -578,10 +580,30 @@
     if (!n) { var km = s.planned_km || s.actual_km; n = km ? fmtKm(km) + " km" : String(s.name || "Session"); }
     return n.charAt(0).toUpperCase() + n.slice(1);
   }
+  // A goal reads "what, the rest": "Base block (Norwegian singles), 6
+  // weeks". The part before the first comma outside brackets is its name.
+  function splitGoal(goal) {
+    var g = String(goal || ""), depth = 0;
+    for (var i = 0; i < g.length; i++) {
+      if (g[i] === "(") depth++;
+      else if (g[i] === ")") depth = Math.max(0, depth - 1);
+      else if (g[i] === "," && !depth) return [g.slice(0, i).trim(), g.slice(i + 1).trim()];
+    }
+    return [g.trim(), ""];
+  }
+  function cap(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : ""; }
+  // The title takes the whole name, over two lines if need be; only past
+  // 60 characters is it cut, at a word.
+  function goalTitle(goal) {
+    var head = splitGoal(goal)[0];
+    if (head.length > 60) head = head.slice(0, 59).replace(/\s+\S*$/, "") + "\u2026";
+    return cap(head);
+  }
+  // The timeline has room for a few words only.
   function shortGoal(goal) {
-    var head = String(goal || "").split(",")[0].trim();
+    var head = splitGoal(goal)[0];
     if (head.length > 28) head = head.slice(0, 27).replace(/\s+\S*$/, "") + "\u2026";
-    return head ? head.charAt(0).toUpperCase() + head.slice(1) : "";
+    return cap(head);
   }
   function effDate(s) { return s.done_on && s.status === "done, moved" ? s.done_on : s.date; }
   function isDone(s) { return String(s.status || "").indexOf("done") === 0 || s.status === "logged" || s.extra; }
@@ -706,7 +728,7 @@
   function header(m) {
     var b = m.block, title, sub;
     if (m.mode === "block") {
-      title = b.name || shortGoal(b.goal) || "Training plan";
+      title = b.name || goalTitle(b.goal) || "Training plan";
       var first = m.weeks[0], last = m.weeks[m.weeks.length - 1];
       var span = b === raw ? range(b.starts, b.ends) : range(first.starts, iso(addDays(parse(last.starts), 6)));
       sub = [b.method, span].filter(Boolean).join(" \u00b7 ");
@@ -727,7 +749,7 @@
         ]),
       ]),
       el("div", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" }, [
-        el("h3", { class: "title", text: title }),
+        el("h3", { class: "title" + (title.length > 24 ? " long" : ""), text: title }),
         el("span", { class: "sub", text: sub }),
       ]),
     ]);
@@ -758,7 +780,7 @@
     } else if (b.goal && b.name) {
       // Without milestones the goal is the one point after the block; with
       // no name either, the title already says it, so no timeline.
-      var parts = String(b.goal).split(","), head = shortGoal(b.goal), tail = parts.slice(1).join(",").trim();
+      var head = shortGoal(b.goal), tail = splitGoal(b.goal)[1];
       if (tail.length > 20) tail = tail.slice(0, 19).replace(/\s+\S*$/, "") + "\u2026";
       nodes.push({ a: head, b: tail });
     }
@@ -1047,7 +1069,7 @@
     // "Week 3 of 10" only for a block drawn whole: the calendar around now
     // numbers its weeks from the first one shown, not from the plan's start.
     if (m.mode === "block") {
-      title = m.block.name || shortGoal(m.block.goal) || "Training plan";
+      title = m.block.name || goalTitle(m.block.goal) || "Training plan";
       if (m.block === raw) sub = "Week " + w.n + " of " + m.weeks.length + " \u00b7 " + sub;
     }
     if (m.mode === "log") {
