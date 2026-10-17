@@ -12,6 +12,7 @@ import json
 import hashlib
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date as date_cls, timedelta
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -1791,17 +1792,25 @@ HISTORY_WEEKS = 4
 
 
 async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]:
+    # Every month at once: a plan scan reads a dozen, which one after another
+    # was most of the card's wait.
+    months = training_plan.months_between(start, end)
+    answers = await _together([
+        functools.partial(
+            _read, ("calendar", year, month), CALENDAR_MEMORY,
+            lambda c, y=year, m=month: c.get_scheduled_workouts(y, m),
+        )
+        for year, month in months
+    ])
     payloads = []
-    for year, month in training_plan.months_between(start, end):
-        try:
-            payloads.append(await _read(
-                ("calendar", year, month), CALENDAR_MEMORY,
-                lambda c, y=year, m=month: c.get_scheduled_workouts(y, m),
-            ))
-        except GarminError:
-            raise
-        except Exception:  # noqa: BLE001 - one missing month should not hide the plan
-            log.debug("calendar %s-%s unavailable", year, month, exc_info=True)
+    for (year, month), answer in zip(months, answers):
+        if isinstance(answer, GarminError):
+            raise answer
+        if isinstance(answer, Exception):
+            # One missing month should not hide the plan.
+            log.debug("calendar %s-%s unavailable (%s)", year, month, type(answer).__name__)
+            continue
+        payloads.append(answer)
     return training_plan.calendar_items(payloads)
 
 
@@ -2050,13 +2059,19 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
     # workouts, which the nearest-first lookups reach once it starts soon.
     following = (context or {}).pop("upcoming", None)
     following_meta: dict[str, Any] = {}
-    for wid in lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]:
-        try:
-            detail = await _read(("workout", wid), WORKOUT_MEMORY, lambda c, w=wid: c.get_workout_by_id(w)) or {}
-        except GarminError:
-            raise
-        except Exception:  # noqa: BLE001
+    # Every workout is read at once, then taken in the same nearest-first
+    # order as before, so the goal and block notes still come from the first.
+    wanted = lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]
+    details = await _together([
+        functools.partial(_read, ("workout", wid), WORKOUT_MEMORY, lambda c, w=wid: c.get_workout_by_id(w))
+        for wid in wanted
+    ])
+    for wid, detail in zip(wanted, details):
+        if isinstance(detail, GarminError):
+            raise detail
+        if isinstance(detail, Exception):
             continue
+        detail = detail or {}
         seconds[wid] = float(detail.get("estimatedDurationInSecs") or 0)
         if weekly_km:
             metres[wid] = training_plan.planned_metres(detail)
@@ -2208,18 +2223,43 @@ async def remove_plan(label: str, confirm: str = "") -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
+# How many of one tool's reads go to Garmin at once. Each waits on Garmin,
+# not on this server, so six at once take about as long as the slowest one.
+READS_AT_ONCE = 6
+
+
+async def _together(calls: list[Callable[[], Any]]) -> list[Any]:
+    """Await several coroutine factories at once, at most READS_AT_ONCE in
+    flight, keeping their order. Each result is its value or its exception."""
+    results: list[Any] = [None] * len(calls)
+    limiter = anyio.CapacityLimiter(READS_AT_ONCE)
+
+    async def one(i: int, make: Callable[[], Any]) -> None:
+        async with limiter:
+            try:
+                results[i] = await make()
+            except Exception as exc:  # noqa: BLE001 - handed back to the caller
+                results[i] = exc
+
+    async with anyio.create_task_group() as group:
+        for i, make in enumerate(calls):
+            group.start_soon(one, i, make)
+    return results
+
+
 async def _gather(labels_and_calls: list[tuple[str, Callable[[Any], Any]]]) -> tuple[list[Any], list[str]]:
-    """Run several Garmin reads; one weak endpoint degrades the answer, not the tool."""
+    """Run several Garmin reads at once; one weak endpoint degrades the answer, not the tool."""
+    answers = await _together([functools.partial(_call, fn) for _, fn in labels_and_calls])
     results: list[Any] = []
     warnings: list[str] = []
-    for label, fn in labels_and_calls:
-        try:
-            results.append(await _call(fn))
-        except GarminError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            warnings.append(f"{label} unavailable ({type(exc).__name__})")
+    for (label, _), answer in zip(labels_and_calls, answers):
+        if isinstance(answer, GarminError):
+            raise answer
+        if isinstance(answer, Exception):
+            warnings.append(f"{label} unavailable ({type(answer).__name__})")
             results.append(None)
+        else:
+            results.append(answer)
     return results, warnings
 
 
@@ -2348,16 +2388,23 @@ RANGE_CHUNK_DAYS = 28
 
 
 def _chunked(fetch: Callable[[Any, str, str], Any], start: date_cls, end: date_cls) -> Callable[[Any], list[Any]]:
+    """One read of a long range, as the 28-day pieces Garmin allows, fetched
+    side by side: six months of VO2 max was seven reads one after another."""
+    spans: list[tuple[str, str]] = []
+    lo = start
+    while lo <= end:
+        hi = min(lo + timedelta(days=RANGE_CHUNK_DAYS - 1), end)
+        spans.append((lo.isoformat(), hi.isoformat()))
+        lo = hi + timedelta(days=1)
+
     def run(c: Any) -> list[Any]:
+        with ThreadPoolExecutor(max_workers=min(READS_AT_ONCE, len(spans) or 1)) as pool:
+            pieces = list(pool.map(lambda span: fetch(c, *span), spans))
         rows: list[Any] = []
-        lo = start
-        while lo <= end:
-            hi = min(lo + timedelta(days=RANGE_CHUNK_DAYS - 1), end)
-            got = fetch(c, lo.isoformat(), hi.isoformat())
+        for got in pieces:
             if isinstance(got, dict):
                 got = got.get("hrvSummaries") or []
             rows.extend(got or [])
-            lo = hi + timedelta(days=1)
         return rows
 
     return run

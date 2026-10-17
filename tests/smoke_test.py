@@ -9,6 +9,7 @@ checks the wiring and the response shaping, not Garmin itself.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import os
 import re
@@ -898,6 +899,69 @@ async def check_calendar_fallback(check) -> None:
         server._plan_calendar, session_mod.build_client = saved
 
 
+async def check_reads_at_once(check) -> None:
+    """A tool's reads go to Garmin side by side, keep their order, and a session
+    Garmin refuses mid-burst is signed in again once, not once per read."""
+    import time as _t
+    from garmin_mcp import server
+    from garmin_mcp import session as session_mod
+    from garminconnect import GarminConnectAuthenticationError
+    from tests.fake_garmin import FakeGarmin
+
+    builds: list[int] = []
+
+    class Slow(FakeGarmin):
+        """Every read takes 0.2 s, like a round trip to Garmin."""
+
+        def __getattribute__(self, name):
+            attr = object.__getattribute__(self, name)
+            if callable(attr) and name.startswith("get_"):
+                def slow(*a, **k):
+                    _t.sleep(0.2)
+                    return attr(*a, **k)
+                return slow
+            return attr
+
+    saved = session_mod.build_client
+    os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
+    os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
+    session_mod.build_client = lambda **_: (builds.append(1), Slow())[1]
+    session_mod.session.reset()
+    try:
+        session_mod.session.client()
+        session_mod.session.forget()
+        began = _t.monotonic()
+        ready = await server.get_readiness()
+        took = _t.monotonic() - began
+        check("a tool's five reads go to Garmin side by side",
+              took < 0.6 and "error" not in ready, f"{took:.2f}s")
+        answers = await server._together([
+            functools.partial(asyncio.sleep, 0.05 * (3 - i), result=i) for i in range(3)
+        ])
+        check("reads at once come back in the order asked", answers == [0, 1, 2], str(answers))
+
+        # Garmin refuses the stored session while several reads are in flight:
+        # one fresh sign-in, then every read goes through.
+        class Refused(Slow):
+            def get_stats(self, *a, **k):
+                _t.sleep(0.1)
+                raise GarminConnectAuthenticationError("401 Unauthorized")
+
+        builds.clear()
+        session_mod.build_client = lambda **_: (builds.append(1), Refused() if not builds[:-1] else Slow())[1]
+        session_mod.session.reset()
+        session_mod.session.client()
+        results = await server._together([
+            functools.partial(server._call, lambda c: c.get_stats("2026-10-01")) for _ in range(4)
+        ])
+        check("a session refused mid-burst signs in again once, and every read then works",
+              len(builds) == 2 and all(isinstance(r, dict) for r in results),
+              f"builds={len(builds)} {[type(r).__name__ for r in results]}")
+    finally:
+        session_mod.build_client = saved
+        session_mod.session.reset()
+
+
 def check_chart_config_read_only(check) -> None:
     """The chart's settings are read, never written: hosted, the folder is read-only."""
     import stat
@@ -1435,6 +1499,7 @@ async def main() -> int:
             check_chart_config_read_only(check)
             await check_preview_gate(check)
             await check_calendar_fallback(check)
+            await check_reads_at_once(check)
             await check_tool_list_nudge(check)
 
             # -- removal ------------------------------------------------

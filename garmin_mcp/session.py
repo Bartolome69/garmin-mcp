@@ -306,11 +306,15 @@ class GarminSession:
 
         Garmin expires sessions server-side without warning, so one auth failure
         means "reauthenticate", not "report an error".
+
+        The lock covers connecting and reconnecting, not the request itself, so
+        a tool's several reads can be in flight at once: garminconnect keeps a
+        pool of connections and its own lock around renewing its token.
         """
+        result = self._call(fn)
         with self._lock:
-            result = self._call(fn)
             self._save_if_renewed()
-            return result
+        return result
 
     def _lapsed(self) -> None:
         if self._on_lapsed is not None:
@@ -335,29 +339,32 @@ class GarminSession:
                 self._saved_blob = blob
 
     def _call(self, fn: Callable[[Any], Any]) -> Any:
-        with self._lock:
-            client = self.client()
-            try:
-                return fn(client)
-            except _auth_error_types() as exc:
-                if _is_mfa(exc):
-                    raise GarminMFARequired(MFA_MESSAGE) from exc
-                if not _is_auth_failure(exc):
-                    # A connection problem, not a rejected session. Try once more
-                    # on the same client rather than throwing the session away.
-                    log.info("Call failed (%s); retrying", type(exc).__name__)
-                    try:
-                        return fn(client)
-                    except Exception as retry_exc:  # noqa: BLE001
-                        raise GarminError(
-                            "Could not reach Garmin Connect. This looks like a "
-                            f"network problem rather than a sign-in one "
-                            f"({type(retry_exc).__name__}). Try again shortly."
-                        ) from retry_exc
-                log.info("Session rejected (%s); re-authenticating", type(exc).__name__)
-                self.reset()
+        client = self.client()
+        try:
+            return fn(client)
+        except _auth_error_types() as exc:
+            if _is_mfa(exc):
+                raise GarminMFARequired(MFA_MESSAGE) from exc
+            if not _is_auth_failure(exc):
+                # A connection problem, not a rejected session. Try once more
+                # on the same client rather than throwing the session away.
+                log.info("Call failed (%s); retrying", type(exc).__name__)
+                try:
+                    return fn(client)
+                except Exception as retry_exc:  # noqa: BLE001
+                    raise GarminError(
+                        "Could not reach Garmin Connect. This looks like a "
+                        f"network problem rather than a sign-in one "
+                        f"({type(retry_exc).__name__}). Try again shortly."
+                    ) from retry_exc
+            log.info("Session rejected (%s); re-authenticating", type(exc).__name__)
+            with self._lock:
+                # Several reads in flight can be refused together; only the
+                # first replaces the client, the rest use the one it made.
+                if self._client is client:
+                    self.reset()
                 client = self.client()
-                return fn(client)
+            return fn(client)
 
     def remembered(self, key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
         """run(fn), keeping the answer for ttl seconds under key.
