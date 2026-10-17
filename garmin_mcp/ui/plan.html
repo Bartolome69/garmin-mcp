@@ -827,7 +827,13 @@
       var firstDay = m.weeks[0].rows.length ? effDate(m.weeks[0].rows[0]) : m.block.starts;
       var rightTxt = !started ? "Starts " + DAYS[dow(firstDay)] + (between(m.today, firstDay) > 6 ? " " + short(firstDay) : "")
         : many ? totalKm + " km \u00b7 peak " + Math.round(peakKm) : doneKm + " of " + totalKm + " km";
-      stats = { lead: done + " of " + total, left: "done" + (missed ? " \u00b7 " + missed + " missed" : ""), right: rightTxt };
+      // Done against what was due by now, not against the whole block: 17 of
+      // 42 read as behind when it was 17 of the 18 so far. A session done
+      // early was due the day it was done.
+      var due = 0;
+      m.weeks.forEach(function (w) { w.rows.forEach(function (s) { if (!s.extra && (isDone(s) || s.status === "missed" || s.date < m.today)) due++; }); });
+      stats = due ? { lead: done + " of " + due, left: "done so far" + (missed ? " \u00b7 " + missed + " missed" : ""), right: rightTxt }
+        : { lead: total + (total === 1 ? " session" : " sessions"), left: "planned", right: rightTxt };
     }
     var grid = el("div", { class: "bars", style: "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px" }, bars);
     var spans = isWeek ? null : phaseSpans(m.weeks);
