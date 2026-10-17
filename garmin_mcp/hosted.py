@@ -32,7 +32,7 @@ from urllib.parse import quote, urlparse
 
 import anyio
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
 from . import analytics, hooks, oauth, preview, store
 from .server import mcp
@@ -103,12 +103,12 @@ _paused_until = 0.0
 # (the library tries several methods, with pauses between), so no new attempt
 # starts once this many seconds have gone: the person is waiting on the page.
 # A refused address still costs one of the library's 10 to 20 second waits
-# before the refusal shows, so a refusal arrives after 25 to 35 seconds; the
-# budget lets one more address follow it (the server's test sign-ins get a
-# proper answer from the second address more often than not), where a
-# refusal used to be the end.
+# before the refusal shows, so a refusal arrives after about 25 seconds. The
+# budget lets two more addresses follow it: on CAPTCHA-heavy evenings the
+# server's test sign-ins have needed the third. The page is kept open past
+# Fly's 60 second limit by _answer_in_time.
 SIGNIN_TRIES = 4
-SIGNIN_BUDGET = 35
+SIGNIN_BUDGET = 60
 
 
 def _pause_sign_ins(reason: str) -> None:
@@ -1141,7 +1141,7 @@ async def connect_form(request: Request) -> Response:
           <p class="note wait" role=status hidden
              data-later="Still working. Garmin can be slow to answer, and Daash keeps
              trying for you. Please stay on this page.">Signing you in to Garmin.
-          This can take up to a minute, so please don&rsquo;t press again or leave
+          This can take a minute or more, so please don&rsquo;t press again or leave
           this page.</p>
         </form>
         <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
@@ -1597,13 +1597,60 @@ async def connect_submit(request: Request) -> Response:
     key = _attempt_key(email, password, flow)
     running = _IN_FLIGHT.get(key)
     if running is not None:
-        return await asyncio.shield(running)
+        return await _answer_in_time(running, flow)
     task = asyncio.ensure_future(_connect_attempt(request, form, email, password, flow))
     _IN_FLIGHT[key] = task
     task.add_done_callback(lambda _: _IN_FLIGHT.pop(key, None))
-    # Shielded so the login carries on for the press that's still waiting when
-    # the browser abandons this one.
-    return await asyncio.shield(task)
+    return await _answer_in_time(task, flow)
+
+
+# Fly's proxy closes a connection that has carried nothing for 60 seconds, and
+# a sign-in that tries three addresses can take longer than that. A sign-in
+# that answers within SIGNIN_HOLD seconds is sent as it always was. A longer
+# one starts the page early and sends a space every SIGNIN_KEEPALIVE seconds,
+# which the browser ignores before the page, until Garmin answers. Its status
+# is then 200 whatever the outcome, since the status goes out first.
+SIGNIN_HOLD = 20
+SIGNIN_KEEPALIVE = 15
+
+
+async def _answer_in_time(task: "asyncio.Future[Response]", flow: str) -> Response:
+    # Shielded throughout, so the login carries on for the press that's still
+    # waiting when the browser abandons this one.
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), SIGNIN_HOLD)
+    except asyncio.TimeoutError:
+        pass
+
+    async def body() -> Any:
+        yield b" "
+        while True:
+            try:
+                response = await asyncio.wait_for(asyncio.shield(task), SIGNIN_KEEPALIVE)
+                break
+            except asyncio.TimeoutError:
+                yield b" "
+            except Exception:  # noqa: BLE001 - the page has started; finish it
+                log.exception("sign-in failed after the page had started")
+                response = page(
+                    "Sign in to Garmin",
+                    "<div class=err>Something went wrong on our side. Please try "
+                    "again.</div>" + _try_again(flow),
+                )
+                break
+        yield bytes(response.body)
+
+    return StreamingResponse(
+        body(),
+        media_type="text/html; charset=utf-8",
+        # Every page a sign-in can end on is safe with these, and the consent
+        # page needs them; they have to be chosen before the outcome is known.
+        headers={
+            "X-Frame-Options": "DENY",
+            "Content-Security-Policy": "frame-ancestors 'none'",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 async def _connect_attempt(request: Request, form: Any, email: str, password: str, flow: str) -> Response:

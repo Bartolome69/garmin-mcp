@@ -506,6 +506,20 @@ async def main() -> int:
         code, _ = await anyio_run(signin, SLOW_EMAIL)
         check("pressing again after an answer is a fresh sign-in",
               code == 200 and len(SIGNIN_CREDS) - before == 2)
+        # A sign-in slower than the hold starts its page early and keeps the
+        # connection busy with spaces, so Fly's 60 second limit never cuts it.
+        hold, keepalive = hosted.SIGNIN_HOLD, hosted.SIGNIN_KEEPALIVE
+        hosted.SIGNIN_HOLD, hosted.SIGNIN_KEEPALIVE = 0.3, 0.2
+        try:
+            code, body = await anyio_run(signin, SLOW_EMAIL)
+        finally:
+            hosted.SIGNIN_HOLD, hosted.SIGNIN_KEEPALIVE = hold, keepalive
+        check("a slow sign-in starts its page early and still ends on the result",
+              code == 200 and body.startswith(" ") and body.lstrip().startswith("<!doctype html>")
+              and bool(re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)),
+              f"{code} {body[:40]!r}")
+        check("a fast sign-in is answered as before, nothing sent ahead of the page",
+              hosted.SIGNIN_HOLD >= 15 and (await anyio_run(signin, "fast@example.com"))[1].startswith("<!doctype"))
         code, body = await anyio_run(fetch, "/connect")
         check("the sign-in form says it's working once pressed",
               'data-wait="Connecting to Garmin' in body and "please don&rsquo;t press again" in body
