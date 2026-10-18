@@ -103,12 +103,11 @@ class _Server(MCPServer):
         tools = await super().list_tools()
         on = preview.enabled()
         crew_on = crews.available()
-        member = crew_on and crews.in_crew()
         return [
             _with_description(tool, preview_on=on)
             for tool in tools
             if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
-            and (tool.name not in CREW_TOOLS or (crew_on and (member or tool.name not in CREW_MEMBER_TOOLS)))
+            and (crew_on or tool.name not in CREW_TOOLS)
         ]
 
     async def list_resources(self):
@@ -184,10 +183,11 @@ def _for_model(result: Any) -> Any:
 # offering both lets the model pick the weaker one.
 _REPLACED_BY_VIEWS = {"get_plan_chart"}
 
-# Daash Crews live on the hosted server only. Joining is offered to everyone
-# there; the rest only to someone in a crew, so nobody else's tool list grows.
+# Daash Crews live on the hosted server only, where all four are offered to
+# everyone, in a crew or not. Claude keeps a tool list across chats, so a list
+# that changed on joining would leave the crew card missing from a new chat
+# until Claude re-listed; one that never changes can't go stale.
 CREW_TOOLS = {"join_crew", "get_crew", "update_crew", "leave_crew"}
-CREW_MEMBER_TOOLS = {"get_crew", "update_crew", "leave_crew"}
 # They change what the crew sees, so they are not reads, though Garmin is untouched.
 CREW_WRITES = {"join_crew", "update_crew", "leave_crew"}
 
@@ -453,15 +453,14 @@ def _for_view(result: Any) -> Any:
 # across chats, and with it each view's address, so a new tool or a changed
 # card stays out of sight until it re-lists. tools/list_changed asks it to,
 # after whichever tool a person calls first, once per person per listing.
-# The listing changes when they join or leave a crew or try the preview, and
-# the memory empties on deploy, which is when tools and view addresses change.
+# The listing changes when they try the preview, and the memory empties on
+# deploy, which is when tools and view addresses change.
 _TOLD: dict[int, str] = {}
 
 
 def _listing() -> str:
     """What decides which tools this person is shown, beyond the deploy."""
-    crew_on = crews.available()
-    return f"preview={preview.enabled()} crews={crew_on} member={crew_on and crews.in_crew()}"
+    return f"preview={preview.enabled()} crews={crews.available()}"
 
 
 async def _refresh_tool_list(ctx: Any, listing: str) -> None:
@@ -2635,6 +2634,9 @@ async def _read_my_week() -> None:
 
 async def _crew_card(week_of: str | None = None) -> dict[str, Any]:
     day = date_cls.fromisoformat(parse_date(week_of)) if week_of else None
+    if crews.available() and not crews.in_crew():
+        # Said before reading their Garmin week, which nothing would keep.
+        raise crews.CrewError("You're not in a crew. Join one with the code a friend sent, or start one.")
     await _read_my_week()
     card = crews.week(day)
     return {"for_the_assistant": CREW_NOTE, **card}
@@ -2660,7 +2662,8 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     line from the card already in the chat; call again only if there isn't
     one or a day has passed. Never call it together with get_plan: a question
     about the user's own training is get_plan's alone. A member's runs are as of the last time
-    they looked at their own plan ("updated_on").
+    they looked at their own plan ("updated_on"). If the user isn't in a crew
+    it says so: join_crew is how they join or start one.
 
     Args:
         week_of: Any date in the week to show. Defaults to this week, or on a

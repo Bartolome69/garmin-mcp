@@ -1299,8 +1299,11 @@ async def main() -> int:
         check("the model is told to keep crew cards to crew questions, one card per answer",
               "One card per answer" in hosted.mcp.instructions and "never alongside get_plan" in hosted.mcp.instructions)
         names_before = await tool_names(carol)
-        check("anyone can join a crew, but the crew's own tools wait until they do",
-              "join_crew" in names_before and not ({"get_crew", "update_crew", "leave_crew"} & names_before))
+        check("everyone on the hosted connector is offered every crew tool, in a crew or not",
+              {"join_crew", "get_crew", "update_crew", "leave_crew"} <= names_before, str(sorted(names_before))[:200])
+        outsider = await call(carol, "get_crew", {})
+        check("asking for a crew before joining one says how to join",
+              "not in a crew" in str(outsider.get("error")) and "code" in str(outsider.get("error")), str(outsider)[:160])
         started = await call(carol, "join_crew", {
             "your_name": "Carol", "crew_name": "Friday Run Club",
             "usual_times": ["weekday_evening", "weekend_morning"],
@@ -1310,7 +1313,8 @@ async def main() -> int:
         check("starting a crew answers with its card and an invite code",
               re.fullmatch(r"DC-[A-Z2-9]{4}", code) is not None and started["just"]["action"] == "started"
               and started["club_run"]["time"] == "06:45" and started["club_run"]["km"] == 4.3, str(started)[:200])
-        check("a member sees the crew's tools", {"get_crew", "update_crew", "leave_crew"} <= await tool_names(carol))
+        check("joining leaves the tool list as it was, so a chat that kept it still has the crew card",
+              await tool_names(carol) == names_before)
         read_on = crews._connect().execute("SELECT updated_on FROM crew_members WHERE name = 'Carol'").fetchone()
         check("starting a crew reads your own week straight away, so your row isn't empty",
               read_on is not None and read_on[0] == _date.today().isoformat(), str(read_on))
