@@ -1237,3 +1237,110 @@ def summarise(
             ),
         }
     )
+
+
+# --------------------------------------------------------------------------
+# Where someone is with their training, from what the plan card found, and
+# the one next step worth offering them. Claude offers it in a line at the end
+# of its answer; nothing more is fetched until the person asks or says yes.
+
+# How far ahead a race on the calendar still counts as one to train for.
+RACE_WEEKS_AHEAD = 26
+# Runs (or rides) in the log's four weeks that make someone a regular: about
+# one a week.
+REGULAR_IN_LOG = 4
+
+
+def upcoming_events(payloads: Iterable[Any], today: date, weeks: int = RACE_WEEKS_AHEAD) -> list[dict[str, Any]]:
+    """Races and other events on the Garmin calendar in the weeks ahead, soonest first."""
+    found: dict[Any, dict[str, Any]] = {}
+    last = today + timedelta(weeks=weeks)
+    for payload in payloads:
+        items = payload if isinstance(payload, list) else (payload or {}).get("calendarItems", [])
+        for item in items or []:
+            if not isinstance(item, Mapping):
+                continue
+            if item.get("itemType") not in ("event", "race") and not item.get("isRace"):
+                continue
+            day = _day(item.get("date"))
+            if not day or not today <= day <= last:
+                continue
+            key = item.get("id") or (item.get("date"), item.get("title"))
+            found.setdefault(key, {
+                "name": str(item.get("title") or "").strip()[:80] or "Your race",
+                "date": day.isoformat(),
+                "weeks_away": (day - today).days // 7,
+            })
+    return sorted(found.values(), key=lambda e: e["date"])
+
+
+def _when(weeks_away: int) -> str:
+    if weeks_away <= 0:
+        return "this week"
+    if weeks_away == 1:
+        return "next week"
+    return f"in {weeks_away} weeks"
+
+
+def situation(answer: Any, today: date, events: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any] | None:
+    """What the person is up to, and one next step to offer, from a get_plan answer.
+
+    A plan on the calendar is under way, about to start, or just finished.
+    With nothing scheduled, a race ahead makes them about to start one;
+    regular running (or riding) makes the question where their fitness is;
+    little of either, getting going. None for an answer it can't read.
+    """
+    if not isinstance(answer, dict):
+        return None
+    race = dict(events[0]) if events else None
+    ride = answer.get("primary") == "ride"
+    sport = "riding" if ride else "running"
+
+    def found(stage: str, offer: str) -> dict[str, Any]:
+        return drop_empty({"stage": stage, "race": race, "offer": offer})
+
+    if "error" in answer or answer.get("source") == "log":
+        if race:
+            return found(
+                "race_ahead",
+                f"{race['name']} is {_when(race['weeks_away'])}. Want me to build a block "
+                f"for it from where your {sport} is now?",
+            )
+        regular = (answer.get("rides") if ride else answer.get("runs")) or 0
+        if "error" not in answer and regular >= REGULAR_IN_LOG:
+            return found(
+                "just_training",
+                "Want me to check where your fitness is at: race predictions, threshold "
+                "and how it's trending?"
+                if not ride else
+                "Want me to check where your fitness is at, and how it's trending?",
+            )
+        return found("getting_going", f"Want a gentle plan to build your {sport} up from here?")
+
+    weeks = answer.get("weeks")
+    if not isinstance(weeks, list):
+        return None
+    dates = sorted(
+        str(s.get("date"))[:10]
+        for w in weeks if isinstance(w, Mapping)
+        for s in (w.get("sessions") or []) if isinstance(s, Mapping) and s.get("date")
+    )
+    if not dates:
+        return None
+    now = today.isoformat()
+    ahead = [d for d in dates if d >= now]
+    if not ahead:
+        return found(
+            "block_done",
+            "That block is done. Want to see where your fitness has landed, or plan what's next?",
+        )
+    if len(ahead) == len(dates) and ahead[0] > now:
+        start = date.fromisoformat(ahead[0])
+        return found(
+            "starting",
+            f"Your block starts {start.strftime('%A')} {start.day} {start.strftime('%b')}. "
+            "Want a quick check of where your fitness is at before it begins?",
+        )
+    if ahead[0] == now:
+        return found("mid_block", "Want me to check today's session against how recovered you are?")
+    return found("mid_block", "Want me to check how you're recovering, or move anything around this week?")

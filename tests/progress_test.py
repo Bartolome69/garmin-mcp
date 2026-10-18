@@ -246,6 +246,60 @@ def main() -> int:
     r = match(planned, actual, TODAY)
     check("and they match end to end", len(r.done) == 1, str(r.missed))
 
+    print("\nwhere someone is, and the one next step to offer")
+    from garmin_mcp.training_plan import situation, upcoming_events
+
+    def plan_answer(*days):
+        return {"source": "calendar", "weeks": [{"sessions": [{"date": d.isoformat()} for d in days]}]}
+
+    here = situation(plan_answer(TODAY - timedelta(days=2), TODAY, TODAY + timedelta(days=3)), TODAY)
+    check("a block under way with a session today offers to check it against recovery",
+          here["stage"] == "mid_block" and "today's session" in here["offer"], str(here))
+    here = situation(plan_answer(TODAY - timedelta(days=2), TODAY + timedelta(days=2)), TODAY)
+    check("with nothing today, recovery or moving things around",
+          here["stage"] == "mid_block" and "move anything" in here["offer"], str(here))
+    here = situation(plan_answer(TODAY + timedelta(days=1), TODAY + timedelta(days=4)), TODAY)
+    check("a block that hasn't started yet names its first day",
+          here["stage"] == "starting" and "Monday 28 Sep" in here["offer"], str(here))
+    here = situation(plan_answer(TODAY - timedelta(days=9), TODAY - timedelta(days=2)), TODAY)
+    check("a block with nothing left ahead is done", here["stage"] == "block_done", str(here))
+
+    race = upcoming_events([{"calendarItems": [
+        {"id": 1, "itemType": "workout", "date": "2026-10-01", "title": "Easy 8k"},
+        {"id": 2, "itemType": "event", "date": "2026-11-29", "title": "Valencia Half"},
+        {"id": 2, "itemType": "event", "date": "2026-11-29", "title": "Valencia Half"},
+        {"id": 3, "itemType": "event", "date": "2026-09-20", "title": "Last week's parkrun"},
+        {"id": 4, "isRace": True, "date": "2027-08-01", "title": "Too far off"},
+        {"id": 5, "isRace": True, "date": "2026-12-13", "title": "Xmas 10k"},
+    ]}], TODAY)
+    check("races ahead are read from the calendar, soonest first, each once",
+          [e["name"] for e in race] == ["Valencia Half", "Xmas 10k"] and race[0]["weeks_away"] == 9, str(race))
+
+    log = {"source": "log", "primary": "run", "runs": 2, "rides": 0}
+    here = situation(log, TODAY, race)
+    check("nothing scheduled with a race ahead offers a block for it",
+          here["stage"] == "race_ahead" and here["offer"].startswith("Valencia Half is in 9 weeks")
+          and here["race"]["date"] == "2026-11-29", str(here))
+    here = situation({**log, "runs": 6}, TODAY)
+    check("regular running with no plan or race asks where their fitness is at",
+          here["stage"] == "just_training" and "race predictions" in here["offer"], str(here))
+    here = situation({**log, "primary": "ride", "rides": 8}, TODAY)
+    check("a regular rider is asked the same, without running's markers",
+          here["stage"] == "just_training" and "race predictions" not in here["offer"], str(here))
+    here = situation(log, TODAY)
+    check("a little running is getting going", here["stage"] == "getting_going" and "running" in here["offer"], str(here))
+    here = situation({"error": "Nothing is scheduled, and nothing was recorded."}, TODAY)
+    check("nothing at all is getting going too", here["stage"] == "getting_going", str(here))
+    check("an answer it can't read gets no situation",
+          situation(None, TODAY) is None and situation({"weeks": []}, TODAY) is None)
+    here = situation(plan_answer(TODAY, TODAY + timedelta(days=2)), TODAY)
+    check("a block whose first session is today has started", here["stage"] == "mid_block", str(here))
+    offers = [situation(x, TODAY, e)["offer"] for x, e in (
+        (plan_answer(TODAY + timedelta(days=1)), ()), (plan_answer(TODAY), ()),
+        ({"error": "nothing"}, ()), ({**log, "primary": "ride", "rides": 8}, ()), (log, race), ({**log, "runs": 6}, ()), (log, ()))]
+    check("every offer is one question, without dashes",
+          all(o.endswith("?") and o.count("?") == 1 and "\u2014" not in o and " - " not in o for o in offers), str(offers))
+
     print()
     if FAILED:
         print(f"{len(FAILED)} check(s) failed: {', '.join(FAILED)}")

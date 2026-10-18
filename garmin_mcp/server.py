@@ -69,8 +69,13 @@ _INSTRUCTIONS = (
     "(\"how's my training going\", \"how am I doing\", \"how's this week\", "
     "\"show my plan\", \"what's next\", \"am I on track\"), call get_plan "
     "first: it draws the user's plan, or with nothing scheduled their recent "
-    "running and riding, as a card. Add readiness, recovery trends or fitness "
-    "after it only when the question calls for them. A specific question "
+    "running and riding, as a card. Call it alone, not alongside readiness, "
+    "fitness, trends or activities: its answer says where the user is (in a "
+    "block, about to start one, a race ahead with nothing scheduled, or just "
+    "running) and the one next step to offer them at the end, as a question. "
+    "Fetch more only when the question calls for it or they take up the "
+    "offer. Someone asking where their fitness is at goes to get_fitness, "
+    "answered in writing. A specific question "
     "goes to its own tool without the card: a run to get_activity_details, "
     "what a planned session involves (paces, recoveries, cool-down) to "
     "get_workout, "
@@ -209,7 +214,11 @@ _DESCRIPTIONS = {
         "(\"how's my training going\", \"how am I doing\", \"this week\", "
         "\"show my plan\", \"what's next\", \"today's session\", \"am I on "
         "track\"), wherever the plan came from: a coach, an app, Garmin Coach or "
-        "create_plan. Recovery, readiness or fitness can follow when asked. "
+        "create_plan. Call it alone: its situation says where the user is (a "
+        "block under way, about to start or just done; a race ahead with nothing "
+        "scheduled; regular running; or getting going) and offers one next step. "
+        "Recovery, readiness or fitness follow only when asked, or when the user "
+        "takes up that offer. "
         "Without a create_plan plan it reads the calendar around this week. "
         "Sessions carry workout_id and schedule_id for moving or retuning; the "
         "next one carries its steps and target paces. For any other session's "
@@ -434,7 +443,10 @@ VIEW_NOTE = (
     "The user is looking at this as an interactive plan card, drawn from the "
     "data below and fetched just now, so it is current. Don't draw the plan "
     "again or list it day by day: answer in a few sentences about what matters, "
-    "such as how the week is going and what's next. Use the ids below for any change."
+    "such as how the week is going and what's next. Use the ids below for any change. "
+    "If there is a situation below, close with its offer as one short question in "
+    "your own words, unless the user already asked for that or it was offered "
+    "earlier in this chat; fetch nothing more until they ask or say yes."
 )
 
 
@@ -1863,6 +1875,10 @@ HISTORY_WEEKS = 4
 
 
 async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]:
+    return training_plan.calendar_items(await _calendar_months(start, end))
+
+
+async def _calendar_months(start: date_cls, end: date_cls) -> list[Any]:
     # Every month at once: a plan scan reads a dozen, which one after another
     # was most of the card's wait.
     months = training_plan.months_between(start, end)
@@ -1882,7 +1898,7 @@ async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]
             log.debug("calendar %s-%s unavailable (%s)", year, month, type(answer).__name__)
             continue
         payloads.append(answer)
-    return training_plan.calendar_items(payloads)
+    return payloads
 
 
 @_app_tool(PLAN_VIEW)
@@ -2054,6 +2070,32 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
         label: The plan code, e.g. "HM". Omit to get the plan that is running
             now, or the most recent one.
     """
+    result = await _plan_answer(label)
+    return result if label else await _with_situation(result)
+
+
+async def _with_situation(result: Any) -> Any:
+    """The answer with where the person is and one next step to offer them.
+
+    With nothing scheduled, a race on the calendar is what says they're about
+    to start a block, so the months ahead are read for one; they're the ones
+    the plan scan just read, so this costs nothing new.
+    """
+    if not isinstance(result, dict):
+        return result
+    today = date_cls.today()
+    events: list[dict[str, Any]] = []
+    if "error" in result or result.get("source") == "log":
+        try:
+            months = await _calendar_months(today, today + timedelta(weeks=training_plan.RACE_WEEKS_AHEAD))
+            events = training_plan.upcoming_events(months, today)
+        except Exception:  # noqa: BLE001 - the card stands without a race
+            log.debug("could not look for a race ahead", exc_info=True)
+    found = training_plan.situation(result, today, events)
+    return {**result, "situation": found} if found else result
+
+
+async def _plan_answer(label: str | None) -> dict[str, Any]:
     today = date_cls.today()
     items = await _plan_calendar(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
     plans = training_plan.plans_in(items)

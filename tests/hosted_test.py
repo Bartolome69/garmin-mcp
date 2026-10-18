@@ -1248,11 +1248,16 @@ async def main() -> int:
               hosted.GUIDE_URL in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
         check("and how to see their training as a card",
               "How's my training going?" in str(fresh_answer.get("tip")), str(fresh_answer)[:120])
+        check("and the model is told to find out where they are with the plan card alone",
+              "get_plan alone" in str(fresh_answer.get("welcome")) and "situation" in str(fresh_answer.get("welcome")),
+              str(fresh_answer.get("welcome"))[:120])
+        check("the welcome is for the model, not to be read out", "not to repeat" in hosted.WELCOME)
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, "brandnew@example.com")
         again = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
-        check("signing in again doesn't repeat the tip",
-              bool(again) and "tip" not in await call(again.group(1), "get_connection_status"))
+        repeat = await call(again.group(1), "get_connection_status") if again else {}
+        check("signing in again doesn't repeat the tip, or the welcome",
+              bool(again) and "tip" not in repeat and "welcome" not in repeat)
 
         # Update emails: only to people who haven't opted out, and one click
         # (plus a confirm, so a mail scanner can't do it) stops them.

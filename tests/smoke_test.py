@@ -695,6 +695,10 @@ async def check_tool_list_nudge(check) -> None:
           "ctx" not in schema and "label" in schema, schema[:160])
 
 
+async def _months(payloads):
+    return payloads
+
+
 async def check_calendar_fallback(check) -> None:
     """With no plan made here, a preview account sees its calendar as the plan.
 
@@ -863,6 +867,51 @@ async def check_calendar_fallback(check) -> None:
               "Coach easy 10k" in names and "current_plan" not in after and "upcoming_plan" not in after
               and (after.get("next_session") or {}).get("name") == "Coach easy 10k",
               f"{names} {after.get('next_session')}")
+
+        # Where someone is, worked out from the same answer, with one step to offer.
+        def on(n, days, title="Easy 8k"):
+            return {"id": n, "date": (today + _td(days=days)).isoformat(), "workoutId": 555001,
+                    "title": title, "sportTypeKey": "running"}
+
+        under_way = await scenario([on(61, -2), on(62, 2)])
+        check("the plan card says a block is under way, with one step to offer",
+              (under_way.get("situation") or {}).get("stage") == "mid_block"
+              and under_way["situation"]["offer"].endswith("?"), str(under_way.get("situation")))
+        starting = await scenario([on(63, 3), on(64, 6)])
+        check("and when one is about to start",
+              (starting.get("situation") or {}).get("stage") == "starting", str(starting.get("situation")))
+        check("asked for a plan by its code, there's no situation to offer", "situation" not in named)
+        saved_months = server._calendar_months
+        try:
+            server._calendar_months = lambda start, end: _months([])
+            quiet = await scenario([])
+            check("with nothing scheduled and a little running, they're getting going",
+                  quiet.get("source") == "log" and (quiet.get("situation") or {}).get("stage") == "getting_going",
+                  str(quiet.get("situation")))
+            race_day = (today + _td(weeks=10)).isoformat()
+            server._calendar_months = lambda start, end: _months([{"calendarItems": [
+                {"id": 7, "itemType": "event", "date": race_day, "title": "Berlin Half"}]}])
+            racing = await scenario([])
+            check("with nothing scheduled and a race on the calendar, a block for it is offered",
+                  (racing.get("situation") or {}).get("stage") == "race_ahead"
+                  and racing["situation"]["race"]["name"] == "Berlin Half"
+                  and "Berlin Half is in 10 weeks" in racing["situation"]["offer"],
+                  str(racing.get("situation")))
+
+            async def down(start, end):
+                raise RuntimeError("calendar unavailable")
+            server._calendar_months = down
+            still = await scenario([])
+            check("a calendar that can't be read for races still leaves the card and a situation",
+                  still.get("source") == "log" and (still.get("situation") or {}).get("stage") == "getting_going",
+                  str(still)[:160])
+        finally:
+            server._calendar_months = saved_months
+        check("the card's note tells the model to close with the offer, once, and fetch nothing more",
+              "situation" in server.VIEW_NOTE and "earlier in this chat" in server.VIEW_NOTE
+              and "fetch nothing more" in server.VIEW_NOTE)
+        check("the instructions say to call the plan alone and offer the next step",
+              "Call it alone" in server.mcp.instructions and "get_fitness" in server.mcp.instructions)
 
         # Asked again within minutes, the workouts aren't fetched again; after
         # anything is changed through the tools, they are.

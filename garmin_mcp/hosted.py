@@ -568,6 +568,15 @@ PERMISSION_TIP = (
     "anything that changes their Garmin calendar or workouts will still ask "
     f"first. For more ideas of what to ask, by sport, there is a short guide at {GUIDE_URL}."
 )
+# For the model, with the tip, on someone's first answer: their first chat is
+# where gathering everything at once is most tempting, and slowest.
+WELCOME = (
+    "For you, not to repeat: this person has only just connected Daash. Get to "
+    "know where they are before anything else. For a question about their "
+    "training, get_plan alone shows it (a block under way, one about to start, "
+    "a race ahead, or just running) and its situation offers the one next step "
+    "to suggest. Leave readiness, fitness and trends until they ask or say yes."
+)
 # One report per person per tool per day: enough to see which features are
 # used, without a row for every call.
 _TOOL_REPORTED: dict[tuple[str, str], str] = {}
@@ -684,7 +693,7 @@ def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
                 user.email_hash or user_token,
                 {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
             )
-            return {"tip": PERMISSION_TIP, **result}
+            return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
         return result
     return after
 
