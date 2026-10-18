@@ -1387,8 +1387,13 @@ async def update_workout(
     deleting and recreating them. Give `steps` in the same shape create_workout
     takes; leave it out to change only the name or description.
 
+    New steps replace the old list entirely, so to change part of a workout
+    (one pace, the recoveries, the cool-down) read it with get_workout first
+    and send back every step, changing only what the user asked for. The
+    answer carries the steps it replaced, so say exactly what changed.
+
     Args:
-        workout_id: The workoutId from list_workouts or create_workout.
+        workout_id: The workoutId from get_plan, list_workouts or create_workout.
         name: New name. Omit to keep the current one.
         steps: New step list, replacing the old one entirely. Omit to keep it.
         sport: Only needed with steps, and only to change the sport.
@@ -1448,6 +1453,8 @@ async def update_workout(
             "sport": str(sport or current_sport).lower(),
             "estimated_duration": duration(estimated),
             "summary": summary,
+            # What was there before, so the change can be said exactly.
+            "replaced_steps": training_plan.workout_steps(existing) if steps is not None else None,
             "changed": [
                 k for k, v in (("name", name), ("steps", steps), ("description", description))
                 if v is not None

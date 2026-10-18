@@ -1331,6 +1331,9 @@ async def main() -> int:
             check("new steps rebuild the workout and report the shape",
                   "5.00 km" in rebuilt.get("summary", "") and rebuilt.get("changed") == ["steps"]
                   and rebuilt.get("estimated_duration"), str(rebuilt)[:300])
+            check("and say which steps they replaced, so the change can be told exactly",
+                  isinstance(rebuilt.get("replaced_steps"), list) and rebuilt["replaced_steps"]
+                  and any(st.get("kind") == "repeat" for st in rebuilt["replaced_steps"]), str(rebuilt.get("replaced_steps"))[:200])
             nothing = payload(await sess.call_tool("update_workout", {"workout_id": 555001}))
             check("an update with nothing to change is refused", "error" in nothing, str(nothing))
             missing = payload(await sess.call_tool(
