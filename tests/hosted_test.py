@@ -1296,6 +1296,8 @@ async def main() -> int:
                     await sess.initialize()
                     return {t.name for t in (await sess.list_tools()).tools}
 
+        check("the model is told to keep crew cards to crew questions, one card per answer",
+              "One card per answer" in hosted.mcp.instructions and "never alongside get_plan" in hosted.mcp.instructions)
         names_before = await tool_names(carol)
         check("anyone can join a crew, but the crew's own tools wait until they do",
               "join_crew" in names_before and not ({"get_crew", "update_crew", "leave_crew"} & names_before))

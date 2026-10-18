@@ -84,7 +84,14 @@ _INSTRUCTIONS = (
     "get_fitness, whether fitness is improving or how it moved with weight to "
     "get_fitness_trends, shoes "
     "to get_shoes. Answer those in "
-    "writing. Dates are YYYY-MM-DD and "
+    "writing. A Daash crew (friends who see each other's easy and long runs) "
+    "has its own card, get_crew: call it only when the user asks about the "
+    "crew as a whole (\"who's running this week\", \"show the crew\", "
+    "\"post the crew's week\"), never alongside get_plan for a question "
+    "about the user's own training, and answer a question about one day or "
+    "one person (\"is anyone running Sunday\") from the crew card already in "
+    "the chat, in a line, calling get_crew again only if it isn't there or a "
+    "day has passed. One card per answer, at most. Dates are YYYY-MM-DD and "
     "also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
     "'error' key, show it to the user rather than retrying blindly."
@@ -2561,7 +2568,9 @@ async def get_plan_chart(weeks_back: int = 1, weeks_forward: int = 1) -> Any:
 
 CREW_NOTE = (
     "The user is looking at their crew's week as an interactive card. Don't redraw it: "
-    "say in a sentence or two which runs they could do together and who with. Matches "
+    "say in a sentence or two which runs they could do together and who with. Answer "
+    "follow-up questions about the crew from this result, in a line, without calling "
+    "get_crew again unless a day has passed or they ask to see it afresh. Matches "
     "are runs already planned on the same day: don't suggest moving anyone's run to "
     "make one unless the user asks. The crew's club run is a fixture, not a match. "
     "Never share a crew member's details outside the crew."
@@ -2586,9 +2595,14 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     moved to make one. An easy and a long run match too ("mixed"): they share
     the shorter run.
 
-    Use it for "who's running this week", "anyone running Sunday", or "write
-    the crew message for the group chat" (the answer's group_message is the
-    week as a calendar, ready to paste into WhatsApp or Messenger). A member's runs are as of the last time
+    Call it when the user asks about the crew as a whole: "who's running this
+    week", "show the crew", "post the crew's week to the group" (the answer's
+    group_message is the week as a calendar, ready to paste into WhatsApp or
+    Messenger). It draws a card, so for a question about one day or one
+    person ("is anyone running Sunday", "is Tom in on Wednesday") answer in a
+    line from the card already in the chat; call again only if there isn't
+    one or a day has passed. Never call it together with get_plan: a question
+    about the user's own training is get_plan's alone. A member's runs are as of the last time
     they looked at their own plan ("updated_on").
 
     Args:
