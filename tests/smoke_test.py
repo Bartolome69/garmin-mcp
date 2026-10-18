@@ -634,7 +634,7 @@ async def check_preview_gate(check) -> None:
 
 
 async def check_tool_list_nudge(check) -> None:
-    """A changed card asks the host to re-list tools, once per person per version."""
+    """Any tool asks the host to re-list tools, once per person per listing."""
     from garmin_mcp import server
 
     listed = await server.mcp.list_tools()
@@ -653,18 +653,31 @@ async def check_tool_list_nudge(check) -> None:
         session = FakeSession()
 
     server._TOLD.clear()
-    await server._refresh_tool_list(FakeCtx, "ui://garmin/plan/aaa")
-    await server._refresh_tool_list(FakeCtx, "ui://garmin/plan/aaa")
-    check("the host is asked to re-list tools once per view version",
+    await server._refresh_tool_list(FakeCtx, "member=False")
+    await server._refresh_tool_list(FakeCtx, "member=False")
+    check("the host is asked to re-list tools once per listing",
           FakeCtx.session.calls == ["tools", "resources"], str(FakeCtx.session.calls))
-    await server._refresh_tool_list(FakeCtx, "ui://garmin/plan/bbb")
-    check("and again when the view changes", len(FakeCtx.session.calls) == 4)
-    await server._refresh_tool_list(None, "ui://garmin/plan/ccc")
+    await server._refresh_tool_list(FakeCtx, "member=True")
+    check("and again when the listing changes, as on joining a crew", len(FakeCtx.session.calls) == 4)
+    await server._refresh_tool_list(None, "member=None")
     check("no context, no nudge", len(FakeCtx.session.calls) == 4)
+
+    # Through the server: a plain tool, not only a card, carries the nudge,
+    # so a chat that kept an old tool list catches up whatever was asked first.
+    server._TOLD.clear()
+    ctx = FakeCtx()
+    ctx.session = FakeSession()
+    await server.mcp.call_tool("get_connection_status", {}, ctx)
+    check("any tool call asks the host to re-list tools",
+          ctx.session.calls == ["tools", "resources"], str(ctx.session.calls))
+    await server.mcp.call_tool("get_connection_status", {}, ctx)
+    check("only once while the listing stays the same", len(ctx.session.calls) == 2, str(ctx.session.calls))
+    server._TOLD.clear()
+
     plan_tool = next(t for t in listed if t.name == "get_plan")
     schema = json.dumps(getattr(plan_tool, "input_schema", None) or getattr(plan_tool, "inputSchema", None))
-    check("the hidden context keyword stays out of the tool's schema",
-          "view_ctx" not in schema and "label" in schema, schema[:160])
+    check("the plan tool's schema is only its own arguments",
+          "ctx" not in schema and "label" in schema, schema[:160])
 
 
 async def check_calendar_fallback(check) -> None:
