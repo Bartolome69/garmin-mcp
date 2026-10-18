@@ -2644,11 +2644,13 @@ async def join_crew(
         crew_name: Optional, when starting: what the card calls the crew. Left
             out, it is named after the user ("Bart's crew"); the crew can
             rename it later.
-        usual_times: When the user usually runs: mornings or evenings, on
-            weekdays or at weekends, as any of weekday_morning,
-            weekday_evening, weekend_morning, weekend_evening ("mornings" or
-            "evenings" alone means both). Garmin's calendar has days but no
-            times, so this is how runs on the same day are matched by time.
+        usual_times: When the user usually runs: mornings, afternoons or
+            evenings, on weekdays or at weekends, as any of weekday_morning,
+            weekday_afternoon, weekday_evening, weekend_morning,
+            weekend_afternoon, weekend_evening ("mornings" alone means weekday
+            and weekend; a lunchtime run is an afternoon). Garmin's calendar
+            has days but no times, so this is how runs on the same day are
+            matched by time.
         goes_to_club_run: Whether the user usually goes to the crew's club run.
         club_run_day: Optional, when starting: if the crew already runs
             together on a set day every week (a club run), its day, e.g.

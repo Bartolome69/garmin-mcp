@@ -186,7 +186,7 @@
       if (day == null) return null;
       return { d: day, k: ["easy", "long", "mixed"].indexOf(t.k) >= 0 ? t.k : "easy",
         who: Array.isArray(t.who) ? t.who.slice(0, 20).map(function (w) { return str(w, 24); }).filter(Boolean) : [],
-        when: t.when === "morning" || t.when === "evening" ? t.when : "" };
+        when: ["morning", "afternoon", "evening"].indexOf(t.when) >= 0 ? t.when : "" };
     }).filter(Boolean) : [];
     var club = d.club && num(d.club.d, 0, 6) != null ? { d: d.club.d, at: str(d.club.at, 8), km: num(d.club.km, 0, 100) } : null;
     var upTo = num(d.u, 0, 7);

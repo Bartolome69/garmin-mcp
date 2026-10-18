@@ -42,22 +42,27 @@ HORIZON_DAYS = 14
 # runner eases off, which on an easy day is no loss.
 PACE_GAP = 30
 
-# When someone usually runs: mornings or evenings, on weekdays and at weekends,
-# since most people differ between the two (evenings in the week, mornings at
-# the weekend). Garmin's calendar has days but no times, so this is how runs on
-# the same day are told to be at the same time.
-TIMES = ("weekday_morning", "weekday_evening", "weekend_morning", "weekend_evening")
+# When someone usually runs: mornings, afternoons or evenings, on weekdays
+# and at weekends, since most people differ between the two (evenings in the
+# week, mornings or afternoons at the weekend). Garmin's calendar has days but
+# no times, so this is how runs on the same day are told to be at the same time.
+TIMES = ("weekday_morning", "weekday_afternoon", "weekday_evening",
+         "weekend_morning", "weekend_afternoon", "weekend_evening")
 _TIME_WORDS = {
-    "weekday_morning": "weekday mornings", "weekday_evening": "weekday evenings",
-    "weekend_morning": "weekend mornings", "weekend_evening": "weekend evenings",
+    "weekday_morning": "weekday mornings", "weekday_afternoon": "weekday afternoons",
+    "weekday_evening": "weekday evenings", "weekend_morning": "weekend mornings",
+    "weekend_afternoon": "weekend afternoons", "weekend_evening": "weekend evenings",
 }
-# "mornings" alone means both.
-_TIME_ALIASES = {
-    "morning": ("weekday_morning", "weekend_morning"), "mornings": ("weekday_morning", "weekend_morning"),
-    "evening": ("weekday_evening", "weekend_evening"), "evenings": ("weekday_evening", "weekend_evening"),
-    "weekday_mornings": ("weekday_morning",), "weekday_evenings": ("weekday_evening",),
-    "weekend_mornings": ("weekend_morning",), "weekend_evenings": ("weekend_evening",),
-}
+# "mornings" alone means weekday and weekend; lunchtime is an afternoon.
+_TIME_ALIASES: dict[str, tuple[str, ...]] = {}
+for _slot in ("morning", "afternoon", "evening"):
+    _TIME_ALIASES[_slot] = _TIME_ALIASES[_slot + "s"] = ("weekday_" + _slot, "weekend_" + _slot)
+    _TIME_ALIASES["weekday_" + _slot + "s"] = ("weekday_" + _slot,)
+    _TIME_ALIASES["weekend_" + _slot + "s"] = ("weekend_" + _slot,)
+for _alias in ("lunch", "lunchtime", "lunchtimes", "midday"):
+    _TIME_ALIASES[_alias] = ("weekday_afternoon", "weekend_afternoon")
+    _TIME_ALIASES["weekday_" + _alias] = ("weekday_afternoon",)
+    _TIME_ALIASES["weekend_" + _alias] = ("weekend_afternoon",)
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 _DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _SHORT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -293,7 +298,7 @@ def _clean_times(times: Any) -> list[str] | None:
         wanted.extend(_TIME_ALIASES.get(key, (key,)))
     unknown = [t for t in wanted if t not in TIMES]
     if unknown:
-        raise CrewError(f"Usual times are mornings or evenings, weekday or weekend: any of {', '.join(TIMES)}; not {', '.join(unknown)}.")
+        raise CrewError(f"Usual times are mornings, afternoons or evenings, weekday or weekend: any of {', '.join(TIMES)}; not {', '.join(unknown)}.")
     return [t for t in TIMES if t in wanted]
 
 
@@ -520,7 +525,7 @@ def _slot_for(day: date, times: list[str]) -> set[str]:
     return {t.split("_", 1)[1] for t in times if t.startswith(prefix)}
 
 
-_SLOTS = ("morning", "evening")
+_SLOTS = ("morning", "afternoon", "evening")
 
 
 def _best_group(day: date, people: list[dict[str, Any]], must: dict[str, Any] | None = None

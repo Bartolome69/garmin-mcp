@@ -1376,11 +1376,19 @@ async def main() -> int:
               and "Fri: club run 6:45am (Carol, Dave, Bob)" in msg
               and "Sun: Carol long 18k, Dave long 16k, Bob easy 8k → together, morning" in msg
               and code in msg, msg)
-        odd = await call(bob, "update_crew", {"usual_times": ["lunch"]})
-        check("usual times are mornings or evenings", "mornings or evenings" in str(odd.get("error")), str(odd)[:120])
-        both = await call(bob, "update_crew", {"usual_times": ["mornings"]})
-        check("'mornings' alone means weekday and weekend", both.get("changed") == ["your usual times"]
-              and (await call(bob, "get_crew", {"week_of": monday.isoformat()}))["members"][2]["times"] == "weekday mornings, weekend mornings")
+        odd = await call(bob, "update_crew", {"usual_times": ["night"]})
+        check("usual times are mornings, afternoons or evenings", "mornings, afternoons or evenings" in str(odd.get("error")), str(odd)[:120])
+        both = await call(bob, "update_crew", {"usual_times": ["mornings", "weekend afternoons", "lunch"]})
+        check("'mornings' alone means weekday and weekend, and lunch is an afternoon", both.get("changed") == ["your usual times"]
+              and (await call(bob, "get_crew", {"week_of": monday.isoformat()}))["members"][2]["times"]
+              == "weekday mornings, weekday afternoons, weekend mornings, weekend afternoons")
+        # Dave runs Sunday afternoons now: Carol's long run stays in the morning, so they no longer line up.
+        await call(dave, "update_crew", {"usual_times": ["weekday_evening", "weekend_afternoon"]})
+        later = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        sun_later = [t for t in later["together"] if t["date"] == (monday + _td(days=6)).isoformat()]
+        check("an afternoon runner isn't matched with the morning runners",
+              sun_later and "Dave" not in sun_later[0]["who"] and sorted(sun_later[0]["who"]) == ["Bob", "Carol"], str(sun_later))
+        await call(dave, "update_crew", {"usual_times": ["weekday_evening", "weekend_morning"]})
         check("only easy and long runs, never what was done, are kept",
               {k for k, in crews._connect().execute("SELECT DISTINCT kind FROM crew_runs").fetchall()} <= {"easy", "long", "hard"}
               and crews._connect().execute("SELECT COUNT(*) FROM crew_runs WHERE day < ?", (today.isoformat(),)).fetchone()[0] == 0)
