@@ -71,7 +71,6 @@
   .who { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding-right: 4px; }
   .who .nm { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .who .nm.you { color: var(--red-text); }
-  .who .pc { font-size: 11px; color: var(--muted); white-space: nowrap; }
   .who .stale { font-size: 10.5px; color: var(--faint); white-space: nowrap; }
   .cell { min-height: 34px; border-radius: 8px; background: var(--cell); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 11px; color: var(--muted); }
   .cell.past { opacity: 0.45; }
@@ -235,7 +234,6 @@
       var stale = !m.updated_on ? "no week yet" : (daysBetween(m.updated_on, today) > 3 ? "as of " + DAYS[dow(m.updated_on)] : "");
       grid.appendChild(el("div", { class: "who" }, [
         el("span", { class: "nm" + (m.you ? " you" : ""), text: m.name, title: m.you ? "You" : m.name }),
-        m.pace ? el("span", { class: "pc mono", text: m.pace.replace(" /km", "/km") }) : null,
         stale ? el("span", { class: "stale", text: stale }) : null,
       ]));
       m.days.forEach(function (runs, j) {
@@ -337,8 +335,7 @@
   }
   // The crew's week as an image: the share page on garmin.daash.run draws it
   // from what travels after the # in the link, which browsers never send to
-  // a server. Names, days, kinds and distances only: no paces, since the
-  // image is for a group wider than the crew.
+  // a server. Names, days, kinds and distances only.
   var SHARE_PAGE = window.__SHARE_PAGE__ || "https://garmin.daash.run/share/";
   function sharePayload(d) {
     var monday = parse(d.week.starts), u = Math.max(0, Math.min(7, daysBetween(d.week.starts, d.today)));

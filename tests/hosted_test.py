@@ -1362,9 +1362,10 @@ async def main() -> int:
               on_sunday["week"]["starts"] == "2026-10-19" and on_saturday["week"]["starts"] == "2026-10-12",
               f"{on_sunday['week']} {on_saturday['week']}")
         people = {m["name"]: m for m in card.get("members", [])}
-        check("each member's easy pace comes from easy runs they've done",
-              people.get("Carol", {}).get("pace") == "5:40 /km" and people.get("Dave", {}).get("pace") == "5:30 /km",
-              str({k: v.get("pace") for k, v in people.items()}))
+        check("no paces anywhere: a crew matches by day and time, never by speed",
+              all("pace" not in m for m in card.get("members", []))
+              and crews._connect().execute("SELECT COUNT(*) FROM crew_members WHERE pace_s IS NOT NULL").fetchone()[0] == 0,
+              str(card.get("members", [])[:1]))
         check("a hard session shows only as hard",
               people["Carol"]["days"][3] == [{"kind": "hard"}], str(people["Carol"]["days"][3]))
         together = card.get("together", [])

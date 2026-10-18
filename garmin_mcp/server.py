@@ -2651,9 +2651,9 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     """The user's Daash crew this week: who is running when, and which runs they could do together.
 
     A crew is a few friends who all use Daash. Each member's easy and long runs
-    (day, distance, easy pace) and the crew's standing club run are pooled;
+    (day and distance) and the crew's standing club run are pooled;
     hard sessions show only as "hard". Matches are easy or long runs already
-    planned on the same day, at paces and usual times that fit; nobody's run is
+    planned on the same day at a usual time they share, whatever their pace; nobody's run is
     moved to make one. An easy and a long run match too ("mixed"): they share
     the shorter run.
 
@@ -2694,7 +2694,7 @@ async def join_crew(
     easy and long runs for the week and points out the days they're already
     running the same kind of run, so they can run together. Before joining,
     tell the user plainly what the crew will see: their chosen name, usual
-    running times, easy pace, and the day and distance of their easy and long
+    running times, and the day and distance of their easy and long
     runs for the next two weeks; hard sessions show only as "hard", and
     nothing else from Garmin is shared. Ask for anything missing below rather
     than guessing.

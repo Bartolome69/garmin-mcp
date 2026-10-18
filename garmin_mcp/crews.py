@@ -14,7 +14,7 @@ tools stay hidden.
 
 What is kept, and only for members, is the minimum a crew card needs: the
 crew, each member's chosen name, rough running times, whether they go to the
-club run and their easy pace, and the days, kinds and distances of their easy
+club run, and the days, kinds and distances of their easy
 and long runs for the next two weeks. A hard session is kept as "hard" on its
 day and nothing more. Runs that have been done, and anything else from Garmin,
 are never kept. Days drop off once they have passed, and leaving the crew or
@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import re
 import secrets
-import statistics
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -38,10 +37,6 @@ from garmin_mcp import store
 MAX_MEMBERS = 20
 # How far ahead a member's runs are kept, counted from today.
 HORIZON_DAYS = 14
-# Easy paces this close (seconds per km) run together comfortably: the faster
-# runner eases off, which on an easy day is no loss.
-PACE_GAP = 30
-
 # When someone usually runs: mornings, afternoons or evenings, on weekdays
 # and at weekends, since most people differ between the two (evenings in the
 # week, mornings or afternoons at the weekend). Garmin's calendar has days but
@@ -94,7 +89,7 @@ CREATE TABLE IF NOT EXISTS crew_members (
     name        TEXT NOT NULL,
     times       TEXT,                       -- JSON list of TIMES
     club        INTEGER NOT NULL DEFAULT 0, -- usually goes to the club run
-    pace_s      INTEGER,                    -- easy pace, seconds per km
+    pace_s      INTEGER,                    -- no longer used: paces aren't kept
     updated_on  TEXT,                       -- the day their runs were last read
     joined_at   INTEGER NOT NULL
 );
@@ -108,9 +103,19 @@ CREATE TABLE IF NOT EXISTS crew_runs (
 CREATE INDEX IF NOT EXISTS crew_runs_member ON crew_runs (member, day);
 """
 
+_paces_cleared = False
+
+
 def _connect():
+    global _paces_cleared
     conn = store._connect()
     conn.executescript(SCHEMA)
+    if not _paces_cleared:
+        # Paces were kept for a day in October 2026, then dropped: a crew is
+        # for everyone, whatever their pace. Whatever was kept goes, once.
+        conn.execute("UPDATE crew_members SET pace_s = NULL WHERE pace_s IS NOT NULL")
+        conn.commit()
+        _paces_cleared = True
     return conn
 
 
@@ -169,28 +174,6 @@ def in_crew(key: str | None = None) -> bool:
 # Reading a member's week out of their plan
 # --------------------------------------------------------------------------
 
-def _seconds(text: Any) -> int | None:
-    """'38m 30s', '1h 02m', '2:05:10' or '38:30' as seconds."""
-    if not isinstance(text, str):
-        return None
-    parts = dict((unit, int(n)) for n, unit in re.findall(r"(\d+)\s*([hms])", text))
-    if parts:
-        return parts.get("h", 0) * 3600 + parts.get("m", 0) * 60 + parts.get("s", 0)
-    clock = re.fullmatch(r"\s*(?:(\d+):)?(\d+):(\d{2})\s*", text)
-    if clock:
-        h, m, s = clock.groups()
-        return int(h or 0) * 3600 + int(m) * 60 + int(s)
-    return None
-
-
-def _pace_seconds(text: Any) -> int | None:
-    """'5:48 /km' or '5:48/km' as seconds per km."""
-    if not isinstance(text, str):
-        return None
-    found = re.match(r"\s*(\d+):(\d{2})\s*/\s*km", text)
-    return int(found.group(1)) * 60 + int(found.group(2)) if found else None
-
-
 def _is_run(session: dict[str, Any]) -> bool:
     sport = session.get("sport") or "run"
     kind = session.get("kind") or "run"
@@ -204,19 +187,18 @@ def _kind(session: dict[str, Any]) -> str:
     return "long" if kind == "long" else "easy"
 
 
-def from_plan(result: Any, today: date) -> tuple[set[str], list[tuple[str, str, float | None]], int | None]:
+def from_plan(result: Any, today: date) -> tuple[set[str], list[tuple[str, str, float | None]]]:
     """What a crew needs from a get_plan or create_plan answer.
 
-    Returns the days the answer covers (within the next two weeks), the runs
-    ahead on those days as (day, kind, km), and the member's easy pace from the
-    easy runs already done in it, or None when there are none to go on.
+    Returns the days the answer covers (within the next two weeks) and the runs
+    ahead on those days as (day, kind, km). Nothing about runs already done,
+    paces included: a crew matches people by day and time, never by speed.
     """
     if not isinstance(result, dict) or not isinstance(result.get("weeks"), list):
-        return set(), [], None
+        return set(), []
     first, last = today, today + timedelta(days=HORIZON_DAYS - 1)
     covered: set[str] = set()
     runs: list[tuple[str, str, float | None]] = []
-    paces: list[int] = []
     for week in result["weeks"]:
         if not isinstance(week, dict):
             continue
@@ -234,21 +216,13 @@ def from_plan(result: Any, today: date) -> tuple[set[str], list[tuple[str, str, 
             status = str(session.get("status") or "")
             day_text = str(session.get("date") or "")[:10]
             if status.startswith("done") or status == "logged":
-                if _kind(session) != "hard":
-                    pace = _pace_seconds(session.get("actual_pace") or session.get("pace"))
-                    km, secs = session.get("actual_km"), _seconds(session.get("actual"))
-                    if pace is None and isinstance(km, (int, float)) and km >= 3 and secs:
-                        pace = round(secs / km)
-                    if pace and 150 <= pace <= 600:
-                        paces.append(pace)
                 continue
             if status == "missed" or day_text not in covered:
                 continue
             kind = _kind(session)
             km = session.get("planned_km")
             runs.append((day_text, kind, round(float(km), 1) if isinstance(km, (int, float)) and kind != "hard" else None))
-    pace = round(statistics.median(paces) / 5) * 5 if paces else None
-    return covered, runs, pace
+    return covered, runs
 
 
 def capture(key: str, result: Any, today: date | None = None) -> bool:
@@ -261,7 +235,7 @@ def capture(key: str, result: Any, today: date | None = None) -> bool:
     today = today or date.today()
     if not isinstance(result, dict) or not isinstance(result.get("weeks"), list):
         return False
-    covered, runs, pace = from_plan(result, today)
+    covered, runs = from_plan(result, today)
     with _connect() as conn:
         if conn.execute("SELECT 1 FROM crew_members WHERE member = ?", (key,)).fetchone() is None:
             return False
@@ -274,8 +248,8 @@ def capture(key: str, result: Any, today: date | None = None) -> bool:
             [(key, d, k, km) for d, k, km in runs],
         )
         conn.execute(
-            "UPDATE crew_members SET updated_on = ?, pace_s = COALESCE(?, pace_s) WHERE member = ?",
-            (today.isoformat(), pace, key),
+            "UPDATE crew_members SET updated_on = ? WHERE member = ?",
+            (today.isoformat(), key),
         )
     return True
 
@@ -509,10 +483,6 @@ def update(name: Any = None, times: Any = None, goes_to_club: bool | None = None
 # The crew's week, and what to run together
 # --------------------------------------------------------------------------
 
-def _fmt_pace(seconds: int | None) -> str | None:
-    return f"{seconds // 60}:{seconds % 60:02d} /km" if seconds else None
-
-
 def _fmt_km(km: float | None) -> str:
     if km is None:
         return ""
@@ -544,9 +514,10 @@ def _best_group(day: date, people: list[dict[str, Any]], must: dict[str, Any] | 
                 ) -> tuple[list[dict[str, Any]], str | None]:
     """The biggest set of these people who can run together that day.
 
-    Together means a usual time they share (someone who hasn't said when they
-    run fits any) and easy paces within PACE_GAP (an unknown pace fits any).
-    Someone who can't make it drops out rather than sinking the rest. With
+    Together means a usual time they share; someone who hasn't said when they
+    run fits any. Pace never comes into it: whoever is quicker runs at the
+    group's pace, as a club run does. Someone who can't make that time drops
+    out rather than sinking the rest. With
     must, only groups that include that person count. Returns the group, two
     or more, and the time it meets at, or an empty group.
     """
@@ -557,17 +528,12 @@ def _best_group(day: date, people: list[dict[str, Any]], must: dict[str, Any] | 
             free = [p for p in people if not p["times"]]
         else:
             free = [p for p in people if not p["times"] or slot in _slot_for(day, p["times"])]
-        unknown = [p for p in free if not p["pace_s"]]
-        known = sorted((p for p in free if p["pace_s"]), key=lambda p: p["pace_s"])
-        windows = [known[i:j] for i in range(len(known)) for j in range(i + 1, len(known) + 1)
-                   if known[j - 1]["pace_s"] - known[i]["pace_s"] <= PACE_GAP] or [[]]
-        for window in windows:
-            group = window + unknown
-            if must is not None and must not in group:
-                continue
-            if len(group) >= 2 and len(group) > len(best[0]):
-                timed = any(p["times"] for p in group)
-                best = (group, slot if timed else None)
+        group = free
+        if must is not None and must not in group:
+            continue
+        if len(group) >= 2 and len(group) > len(best[0]):
+            timed = any(p["times"] for p in group)
+            best = (group, slot if timed else None)
     return best
 
 
@@ -598,7 +564,7 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
             )
         crew_id, crew_name, code, owner, club_json = row
         members = conn.execute(
-            "SELECT member, name, times, club, pace_s, updated_on FROM crew_members WHERE crew_id = ? ORDER BY joined_at",
+            "SELECT member, name, times, club, updated_on FROM crew_members WHERE crew_id = ? ORDER BY joined_at",
             (crew_id,),
         ).fetchall()
         keys = [m[0] for m in members]
@@ -611,10 +577,10 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
     club_day = days[DAYS.index(club["day"])] if club else None
 
     people: list[dict[str, Any]] = []
-    for key, name, times, goes, pace_s, updated_on in members:
+    for key, name, times, goes, updated_on in members:
         people.append({
             "key": key, "name": name, "you": key == me.key, "times": json.loads(times) if times else [],
-            "club": bool(goes), "pace_s": pace_s, "updated_on": updated_on, "runs": {},
+            "club": bool(goes), "updated_on": updated_on, "runs": {},
         })
     by_key = {p["key"]: p for p in people}
     for key, day_text, kind, km in runs:
@@ -628,7 +594,7 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
     # the grid for whoever goes, and is left out of the matching, so Daash
     # never announces a run the crew has done together for years.
 
-    # Runs on the same day, easy or long, at paces and times that meet. An
+    # Runs on the same day, easy or long, at times that meet. An
     # easy and a long run match too: the shared part is the shorter run and
     # the long-runner carries on. Nobody's run is ever moved to make a match.
     for day in days:
@@ -662,7 +628,7 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
                 ]
             grid.append(cell)
         out_members.append({
-            "name": p["name"], "you": p["you"], "pace": _fmt_pace(p["pace_s"]),
+            "name": p["name"], "you": p["you"],
             "times": ", ".join(_TIME_WORDS[t] for t in p["times"]) or None,
             "club": p["club"], "updated_on": p["updated_on"], "days": grid,
         })
