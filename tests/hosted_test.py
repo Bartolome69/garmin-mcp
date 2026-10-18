@@ -1281,6 +1281,123 @@ async def main() -> int:
               all(fp != fingerprint for _, fp in store.emailable())
               and not store.claim_news(store.tokens_for(fingerprint)[-1], hosted.NEWS_VERSION))
 
+        # Daash Crews. Three people of their own, so nothing above is touched:
+        # Carol and Dave signed in with addresses kept, Bob's row predates that.
+        from datetime import date as _date, timedelta as _td
+        from garmin_mcp import crews
+        carol = store.save_user("c***@example.com", json.dumps({"di_token": "carol"}),
+                                email_hash=store.email_fingerprint("carol@example.com"), email="carol@example.com")
+        dave = store.save_user("d***@example.com", json.dumps({"di_token": "dave"}),
+                               email_hash=store.email_fingerprint("dave@example.com"), email="dave@example.com")
+
+        async def tool_names(user_token: str) -> set[str]:
+            async with streamable_http_client(f"{base}/u/{user_token}/mcp") as (r, w):
+                async with ClientSession(r, w) as sess:
+                    await sess.initialize()
+                    return {t.name for t in (await sess.list_tools()).tools}
+
+        names_before = await tool_names(carol)
+        check("anyone can join a crew, but the crew's own tools wait until they do",
+              "join_crew" in names_before and not ({"get_crew", "update_crew", "leave_crew"} & names_before))
+        started = await call(carol, "join_crew", {
+            "your_name": "Carol", "start_crew_named": "Friday Run Club",
+            "usual_times": ["weekday_evening", "weekend_morning"],
+            "club_run_day": "fri", "club_run_time": "06:45", "club_run_km": 4.3,
+        })
+        code = (started.get("crew") or {}).get("code", "")
+        check("starting a crew answers with its card and an invite code",
+              re.fullmatch(r"DC-[A-Z2-9]{4}", code) is not None and started["just"]["action"] == "started"
+              and started["club_run"]["time"] == "06:45" and started["club_run"]["km"] == 4.3, str(started)[:200])
+        check("a member sees the crew's tools", {"get_crew", "update_crew", "leave_crew"} <= await tool_names(carol))
+        again = await call(carol, "join_crew", {"your_name": "Carol", "start_crew_named": "Another"})
+        check("one crew per person", "already in Friday Run Club" in str(again.get("error")), str(again)[:120])
+        joined = await call(dave, "join_crew", {"your_name": "Dave", "code": code.lower().replace("-", " "),
+                                                "usual_times": ["weekday_evening", "weekend_morning"]})
+        check("joining by code, however it's typed", joined.get("just", {}).get("action") == "joined", str(joined)[:160])
+        clash = await call(bob, "join_crew", {"your_name": "dave", "code": code})
+        check("two members can't share a name", "already called dave" in str(clash.get("error")), str(clash)[:120])
+        await call(bob, "join_crew", {"your_name": "Bob", "code": code, "usual_times": ["weekend_morning"]})
+        nope = await call(alice, "get_crew")
+        check("someone outside a crew is told how to join", "not in a crew" in str(nope.get("error")), str(nope)[:120])
+        wrong = await call(alice, "join_crew", {"your_name": "Al", "code": "DC-ZZZZ"})
+        check("a wrong code says so", "No crew has the code DC-ZZZZ" in str(wrong.get("error")), str(wrong)[:120])
+
+        # Their weeks reach the crew when they look at their plans: the hook
+        # reads each get_plan answer. Next week, so every day is ahead.
+        today = _date.today()
+        monday = today + _td(days=7 - today.weekday())
+
+        def plan_for(runs, done_pace=None):
+            weeks = [{"starts": (monday + _td(days=7 * i)).isoformat(), "sessions": []} for i in (-1, 0)]
+            if done_pace:
+                weeks[0]["sessions"].append({"date": (monday - _td(days=7)).isoformat(), "type": "easy",
+                                             "status": "done", "actual_km": 8.0, "actual": done_pace})
+            for offset, kind, km in runs:
+                weeks[1]["sessions"].append({"date": (monday + _td(days=offset)).isoformat(), "type": kind,
+                                             "status": "ahead", "planned_km": km, "sport": "run", "kind": "run"})
+            return {"label": "X", "weeks": weeks}
+
+        hosted._after_tool_for(carol, store.get_user(carol))(
+            "get_plan", plan_for([(1, "easy", 8.0), (3, "threshold", 11.0), (6, "long", 18.0)], "45m 20s"))
+        hosted._after_tool_for(dave, store.get_user(dave))(
+            "get_plan", plan_for([(2, "easy", 10.0), (6, "long", 16.0)], "44m 00s"))
+        hosted._after_tool_for(bob, store.get_user(bob))(
+            "create_plan", plan_for([(2, "easy", 8.0)], "46m 40s"))
+        card = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        people = {m["name"]: m for m in card.get("members", [])}
+        check("each member's easy pace comes from easy runs they've done",
+              people.get("Carol", {}).get("pace") == "5:40 /km" and people.get("Dave", {}).get("pace") == "5:30 /km",
+              str({k: v.get("pace") for k, v in people.items()}))
+        check("a hard session shows only as hard",
+              people["Carol"]["days"][3] == [{"kind": "hard"}], str(people["Carol"]["days"][3]))
+        together = card.get("together", [])
+        club = [t for t in together if t["kind"] == "club"]
+        check("the club run is on everyone's week, with who goes",
+              club and club[0]["when"] == "6:45am" and sorted(club[0]["who"]) == ["Bob", "Carol", "Dave"]
+              and people["Bob"]["days"][4][0]["kind"] == "club", str(club))
+        longs = [t for t in together if t["kind"] == "long" and not t.get("move_from")]
+        check("Sunday's long runs match, at the time they share",
+              longs and sorted(longs[0]["who"]) == ["Carol", "Dave"] and longs[0]["when"] == "morning"
+              and (longs[0]["km_lo"], longs[0]["km_hi"]) == (16.0, 18.0), str(longs))
+        move = [t for t in together if t.get("move_from")]
+        check("Carol's Tuesday easy run could move a day to join Dave",
+              move and move[0]["date"] == (monday + _td(days=2)).isoformat() and move[0]["who"] == ["Dave"]
+              and move[0]["when"] == "evening", str(move))
+        check("Bob, who only runs weekend mornings, isn't put on a weekday evening",
+              all("Bob" not in t["who"] for t in together if t["kind"] == "easy"), str(together))
+        check("the week comes as a message for the group chat",
+              "This week's Friday Run Club runs" in card.get("group_message", "")
+              and "Fri 6:45am · club run 4.3 km · Carol, Dave, Bob" in card["group_message"]
+              and code in card["group_message"], card.get("group_message", "")[:300])
+        check("only easy and long runs, never what was done, are kept",
+              {k for k, in crews._connect().execute("SELECT DISTINCT kind FROM crew_runs").fetchall()} <= {"easy", "long", "hard"}
+              and crews._connect().execute("SELECT COUNT(*) FROM crew_runs WHERE day < ?", (today.isoformat(),)).fetchone()[0] == 0)
+        crews._connect().execute("INSERT INTO crew_runs (member, day, kind, km) VALUES ('x', '2020-01-01', 'easy', 5)").connection.commit()
+        check("days that have passed are deleted", crews.purge_past() >= 1)
+
+        changed = await call(dave, "update_crew", {"club_run_day": "sat"})
+        check("only whoever started the crew changes its club run", "Only whoever started" in str(changed.get("error")))
+        renamed = await call(carol, "update_crew", {"crew_name": "Friday Flyers", "goes_to_club_run": False})
+        check("the crew's starter can rename it", "the crew's name" in renamed.get("changed", []), str(renamed))
+        refused = await call(bob, "leave_crew")
+        check("leaving asks first", "confirm" in str(refused.get("error")))
+        left = await call(bob, "leave_crew", {"confirm": True})
+        check("leaving takes your runs with you",
+              left.get("left") == "Friday Flyers" and not crews.in_crew(crews.member_key(bob, None))
+              and crews._connect().execute("SELECT COUNT(*) FROM crew_runs WHERE member = ?", (f"t:{bob}",)).fetchone()[0] == 0,
+              str(left))
+        carol_key = crews.member_key(carol, store.get_user(carol).email_hash)
+        code_d, _ = await anyio_run(post, "/disconnect", {"t": carol})
+        dave_key = crews.member_key(dave, store.get_user(dave).email_hash)
+        owner = crews._connect().execute("SELECT owner FROM crews WHERE code = ?", (code,)).fetchone()
+        check("Disconnect deletes your place in the crew, and the crew passes on",
+              code_d == 200 and not crews.in_crew(carol_key)
+              and crews._connect().execute("SELECT COUNT(*) FROM crew_runs WHERE member = ?", (carol_key,)).fetchone()[0] == 0
+              and owner is not None and owner[0] == dave_key, str(owner))
+        await call(dave, "leave_crew", {"confirm": True})
+        check("the last one out deletes the crew",
+              crews._connect().execute("SELECT COUNT(*) FROM crews WHERE code = ?", (code,)).fetchone()[0] == 0)
+
     finally:
         server.should_exit = True
         thread.join(timeout=10)

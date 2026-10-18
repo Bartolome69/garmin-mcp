@@ -34,7 +34,7 @@ import anyio
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, hooks, oauth, preview, store
+from . import analytics, crews, hooks, oauth, preview, store
 from .server import mcp
 from .session import (
     GarminError,
@@ -618,7 +618,16 @@ _UNEXPECTED = re.compile(r"Garmin request failed \((\w+)[:)]")
 
 def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
     """The hook for one person's request: report the tool, carry any news."""
+    crew_key = crews.member_key(user_token, user.email_hash)
+
     def after(name: str, result: Any) -> Any:
+        # A crew member's coming runs reach their crew whenever they look at
+        # their own plan: no extra Garmin calls, nothing for anyone else.
+        if name in ("get_plan", "create_plan") and isinstance(result, dict) and "error" not in result:
+            try:
+                crews.capture(crew_key, result)
+            except Exception:  # noqa: BLE001 - the crew is a side line; the plan must still answer
+                log.debug("crew capture failed", exc_info=True)
         failed = (
             _UNEXPECTED.match(result["error"])
             if isinstance(result, dict) and isinstance(result.get("error"), str) else None
@@ -738,6 +747,9 @@ def _keep_alive_forever() -> None:
     while True:
         with contextlib.suppress(Exception):
             store.sweep_expired_oauth()
+        # Crew runs on days that have passed, gone even if nobody looks.
+        with contextlib.suppress(Exception):
+            crews.purge_past()
         try:
             counts = keep_alive_once()
             if counts["renewed"] or counts["lapsed"]:
@@ -1560,7 +1572,11 @@ async def disconnect(request: Request) -> Response:
     form = await request.form()
     token = str(form.get("t", "")).strip()
     _SESSIONS.pop(token, None)
+    gone = store.get_user(token)
     removed = store.delete_user(token)
+    if removed and gone is not None:
+        # Disconnect deletes everything, crews included.
+        crews.forget(crews.member_key(token, gone.email_hash))
     return page(
         "Disconnected",
         "<h1>Disconnected</h1><p>Your stored session has been deleted and the "
@@ -1995,9 +2011,11 @@ class SessionBinding:
         token = use_session(session_for(user_token))
         preview_token = preview.use(_preview_for(user))
         hook_token = hooks.use(_after_tool_for(user_token, user))
+        crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         try:
             await self.app(scope, receive, send)
         finally:
+            crews.reset(crew_token)
             hooks.reset(hook_token)
             preview.reset(preview_token)
             reset_session(token)

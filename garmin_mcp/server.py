@@ -47,7 +47,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, cycling, fitness_trends, gear, hooks, metrics, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
+from . import conditions, crews, cycling, fitness_trends, gear, hooks, metrics, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, session
 from .workouts import (
@@ -101,10 +101,13 @@ class _Server(MCPServer):
     async def list_tools(self):
         tools = await super().list_tools()
         on = preview.enabled()
+        crew_on = crews.available()
+        member = crew_on and crews.in_crew()
         return [
             _with_description(tool, preview_on=on)
             for tool in tools
             if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
+            and (tool.name not in CREW_TOOLS or (crew_on and (member or tool.name not in CREW_MEMBER_TOOLS)))
         ]
 
     async def list_resources(self):
@@ -169,6 +172,13 @@ def _for_model(result: Any) -> Any:
 # Tools a preview account doesn't see, because a view does the job better and
 # offering both lets the model pick the weaker one.
 _REPLACED_BY_VIEWS = {"get_plan_chart"}
+
+# Daash Crews live on the hosted server only. Joining is offered to everyone
+# there; the rest only to someone in a crew, so nobody else's tool list grows.
+CREW_TOOLS = {"join_crew", "get_crew", "update_crew", "leave_crew"}
+CREW_MEMBER_TOOLS = {"get_crew", "update_crew", "leave_crew"}
+# They change what the crew sees, so they are not reads, though Garmin is untouched.
+CREW_WRITES = {"join_crew", "update_crew", "leave_crew"}
 
 # Tools only preview accounts are offered yet. None at the moment: everything
 # built so far is everyone's. The mechanism stays for the next new thing.
@@ -319,7 +329,7 @@ def _annotations(name: str) -> ToolAnnotations:
     write, so a person can allow every read at once and still be asked before
     anything changes in their Garmin account."""
     return ToolAnnotations(
-        readOnlyHint=name not in WRITES,
+        readOnlyHint=name not in WRITES and name not in CREW_WRITES,
         destructiveHint=name in DESTRUCTIVE,
         # Every tool works on the person's own Garmin account, a closed world,
         # not the open web; saying otherwise invites more caution than it needs.
@@ -399,6 +409,7 @@ def _versioned(name: str, filename: str) -> str:
 
 
 PLAN_VIEW = _versioned("plan", "plan.html")
+CREW_VIEW = _versioned("crew", "crew.html")
 
 
 # Said to the model ahead of the data whenever a view is drawing it. Read at
@@ -521,6 +532,15 @@ try:
 except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
     log.debug("plan view not registered", exc_info=True)
 
+try:
+    _app_view(
+        CREW_VIEW,
+        "crew.html",
+        "A Daash crew's week as an interactive view: who runs when, and which runs to do together.",
+    )
+except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
+    log.debug("crew view not registered", exc_info=True)
+
 MAX_ACTIVITIES = 50
 
 
@@ -570,7 +590,7 @@ def tool_errors(fn):
                 finally:
                     session.forget()
             return await fn(*args, **kwargs)
-        except (GarminError, DateError, WorkoutError, training_plan.PlanError) as exc:
+        except (GarminError, DateError, WorkoutError, training_plan.PlanError, crews.CrewError) as exc:
             return {"error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - a tool must never crash the server
             log.exception("Tool %s failed", fn.__name__)
@@ -2533,6 +2553,164 @@ async def get_plan_chart(weeks_back: int = 1, weeks_forward: int = 1) -> Any:
 # --------------------------------------------------------------------------
 # Status
 # --------------------------------------------------------------------------
+
+
+# --------------------------------------------------------------------------
+# Daash Crews
+# --------------------------------------------------------------------------
+
+CREW_NOTE = (
+    "The user is looking at their crew's week as an interactive card. Don't redraw it: "
+    "say in a sentence or two which runs they could do together and who with. To move "
+    "one of their own runs to join others, read their plan with get_plan for the ids, "
+    "then move it as they ask. Never share a crew member's details outside the crew."
+)
+
+
+def _crew_card(week_of: str | None = None) -> dict[str, Any]:
+    day = date_cls.fromisoformat(parse_date(week_of)) if week_of else None
+    card = crews.week(day)
+    return {"for_the_assistant": CREW_NOTE, **card}
+
+
+@_app_tool(CREW_VIEW)
+@tool_errors
+async def get_crew(week_of: str | None = None) -> dict[str, Any]:
+    """The user's Daash crew this week: who is running when, and which runs they could do together.
+
+    A crew is a few friends who all use Daash. Each member's easy and long runs
+    (day, distance, easy pace) and the crew's standing club run are pooled;
+    hard sessions show only as "hard". Matches are runs of the same kind on the
+    same day at paces and usual times that fit, or one of the user's own runs a
+    day away from others that could move to join them ("move_from").
+
+    Use it for "who's running this week", "anyone running Sunday", "who's in
+    for Friday", or "write the crew message for the group chat" (the answer's
+    group_message is ready to paste). A member's runs are as of the last time
+    they looked at their own plan ("updated_on").
+
+    Args:
+        week_of: Any date in the week to show. Defaults to this week; pass
+            next Monday on a weekend to look at the week ahead.
+    """
+    return _crew_card(week_of)
+
+
+@_app_tool(CREW_VIEW)
+@tool_errors
+async def join_crew(
+    your_name: str,
+    code: str | None = None,
+    start_crew_named: str | None = None,
+    usual_times: list[str] | None = None,
+    goes_to_club_run: bool | None = None,
+    club_run_day: str | None = None,
+    club_run_time: str | None = None,
+    club_run_km: float | None = None,
+    club_run_place: str | None = None,
+) -> dict[str, Any]:
+    """Join a friend's Daash crew with the invite code they sent, or start a new crew.
+
+    A Daash crew is a few friends who all use Daash: it shows them each other's
+    easy and long runs for the week and suggests runs to do together. Before
+    joining, tell the user plainly what the crew will see: their chosen name,
+    usual running times, easy pace, and the day and distance of their easy and
+    long runs for the next two weeks; hard sessions show only as "hard", and
+    nothing else from Garmin is shared. Ask for anything missing below rather
+    than guessing.
+
+    Args:
+        your_name: What the crew calls the user, e.g. "Bart".
+        code: The invite code, like "DC-7Q4M". Omit it to start a crew instead.
+        start_crew_named: The new crew's name, e.g. "Friday Run Club", when
+            starting one.
+        usual_times: When the user usually runs, any of weekday_morning,
+            weekday_lunch, weekday_evening, weekend_morning, weekend_afternoon,
+            weekend_evening. Garmin's calendar has days but no times, so this
+            is how runs are matched by time.
+        goes_to_club_run: Whether the user usually goes to the crew's club run.
+        club_run_day: When starting a crew with a standing club run: its day,
+            e.g. "fri".
+        club_run_time: Its start time, "HH:MM", e.g. "06:45".
+        club_run_km: Its distance in km, e.g. 4.3.
+        club_run_place: Where it starts, a few words.
+    """
+    club = crews._clean_club(club_run_day, club_run_time, club_run_km, club_run_place)
+    if code:
+        joined = crews.join(code, your_name, usual_times, goes_to_club_run)
+        action = "joined"
+    elif start_crew_named:
+        joined = crews.start(start_crew_named, your_name, usual_times, club, goes_to_club_run)
+        action = "started"
+    else:
+        raise crews.CrewError("Give the invite code a friend sent, or a name to start a new crew.")
+    card = _crew_card()
+    card["just"] = {
+        "action": action, "crew": joined["crew"], "code": joined["code"],
+        "next": (
+            "Their runs reach the crew each time they look at their plan, so suggest asking "
+            "\"how's my week looking?\" now. " + (
+                f"Share the code {joined['code']} with friends to invite them." if action == "started" else ""
+            )
+        ).strip(),
+    }
+    return card
+
+
+@mcp.tool()
+@tool_errors
+async def update_crew(
+    your_name: str | None = None,
+    usual_times: list[str] | None = None,
+    goes_to_club_run: bool | None = None,
+    crew_name: str | None = None,
+    club_run_day: str | None = None,
+    club_run_time: str | None = None,
+    club_run_km: float | None = None,
+    club_run_place: str | None = None,
+    remove_member: str | None = None,
+) -> dict[str, Any]:
+    """Change the user's details in their Daash crew, or the crew's own settings.
+
+    Anyone can change their own name, usual times and whether they go to the
+    club run. Whoever started the crew can also rename it, set or change its
+    club run, and remove a member by name. Only pass what changes.
+
+    Args:
+        your_name: A new name for the user in the crew.
+        usual_times: When the user usually runs, as for join_crew.
+        goes_to_club_run: Whether the user usually goes to the club run.
+        crew_name: A new name for the crew.
+        club_run_day: The club run's day, e.g. "fri"; with the time, km and
+            place below. Pass "none" to drop the club run.
+        club_run_time: Its start time, "HH:MM".
+        club_run_km: Its distance in km.
+        club_run_place: Where it starts.
+        remove_member: The name of a member to take out of the crew.
+    """
+    club: dict[str, Any] | None = None
+    if club_run_day and str(club_run_day).strip().lower() == "none":
+        club = {}
+    else:
+        club = crews._clean_club(club_run_day, club_run_time, club_run_km, club_run_place)
+    done = crews.update(your_name, usual_times, goes_to_club_run, crew_name, club, remove_member)
+    return {**done, "next": "Show the crew with get_crew if the user wants to see it."}
+
+
+@mcp.tool()
+@tool_errors
+async def leave_crew(confirm: bool = False) -> dict[str, Any]:
+    """Leave the user's Daash crew, deleting what it kept of their runs.
+
+    The crew stops seeing their runs at once. The last person to leave deletes
+    the crew. Ask the user before calling it with confirm=true.
+
+    Args:
+        confirm: Must be true, after the user has said to leave.
+    """
+    if not confirm:
+        return {"error": "Ask the user to confirm leaving the crew, then call again with confirm=true."}
+    return crews.leave()
 
 
 @mcp.tool()

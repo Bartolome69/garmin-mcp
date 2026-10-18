@@ -1840,6 +1840,14 @@ async def main() -> int:
                                     share_page)
                   and 'name="robots" content="noindex"' in share_page)
 
+            check("crews stay hidden without the hosted server",
+                  not ({"join_crew", "get_crew", "update_crew", "leave_crew"} & {t.name for t in tools.tools}))
+            crew_uri = next((str(r.uri) for r in listed_views.resources if str(r.uri).startswith("ui://garmin/crew/")), "")
+            check("the crew view is listed as an app", bool(crew_uri))
+            crew_view = await sess.read_resource(crew_uri)
+            crew_html = crew_view.contents[0].text if crew_view.contents else ""
+            check("the crew view loads nothing from outside the frame",
+                  "ui/initialize" in crew_html and not re.search(r"""(src|href)=["']?https?:""", crew_html))
             preview_names = {t.name for t in tools.tools}
             check("a preview account is offered shoes and recovery trends",
                   {"get_shoes", "get_recovery_trends"} <= preview_names, str(sorted(preview_names)))

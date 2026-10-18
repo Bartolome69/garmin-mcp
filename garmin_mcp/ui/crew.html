@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daash crew</title>
+<style>
+  /* A Daash crew's week, drawn inside the chat by get_crew and join_crew.
+     Three jobs: show who runs when, list the runs worth doing together with
+     a button to act on each, and hand over a message for the group chat.
+     Same palette and type as the plan card, so the two read as one product. */
+  :root {
+    color-scheme: light;
+    --card: #FFFFFF; --border: #E6E4DD; --text: #1F1E1B; --muted: #6B6A64; --faint: #9A9993;
+    --soft: #4A4944; --row-line: #EEECE6; --cell: #F2F1EC; --btn-border: #D9D7CF;
+    --red: #E0312A; --red-text: #C8261F; --red-wash: #FDF4F2; --red-edge: #F2C9C4;
+    --easy: #3F8A47; --easy-wash: #E3EFE2; --long: #2F68B0; --long-wash: #E0E9F5; --club: #7E57C2; --club-wash: #EEE7F8;
+    --on-red: #FFFFFF; --on-club: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --card: #30302E; --border: #42423F; --text: #F4F3EE; --muted: #A6A59F; --faint: #75746F;
+      --soft: #C9C8C2; --row-line: #3C3C39; --cell: #3A3A37; --btn-border: #55544F;
+      --red: #E8322B; --red-text: #FF6A61; --red-wash: #3B3B38; --red-edge: #6B3530;
+      --easy: #8CC08F; --easy-wash: #34443A; --long: #74A3DB; --long-wash: #2F3D4F; --club: #B39DDB; --club-wash: #3D3550; --on-club: #1F1E1B;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --card: #30302E; --border: #42423F; --text: #F4F3EE; --muted: #A6A59F; --faint: #75746F;
+    --soft: #C9C8C2; --row-line: #3C3C39; --cell: #3A3A37; --btn-border: #55544F;
+    --red: #E8322B; --red-text: #FF6A61; --red-wash: #3B3B38; --red-edge: #6B3530;
+    --easy: #8CC08F; --easy-wash: #34443A; --long: #74A3DB; --long-wash: #2F3D4F; --club: #B39DDB; --club-wash: #3D3550; --on-club: #1F1E1B;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body { color: var(--text); font: 14px/1.4 Geist, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  .mono { font-family: "Geist Mono", ui-monospace, Menlo, monospace; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
+  .empty { padding: 28px 20px; color: var(--muted); }
+  .head { position: relative; padding: 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  .brand { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); font-size: 15px; }
+  .kicker { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
+  .tools { position: absolute; top: 16px; right: 16px; }
+  .refresh { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--muted); }
+  .refresh.spin svg { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
+  .sub { font-size: 13.5px; color: var(--muted); }
+  .just { margin: 12px 16px 0; padding: 10px 12px; border-radius: 12px; background: var(--red-wash); border: 1px solid var(--red-edge); font-size: 13.5px; }
+  .just b { font-weight: 600; }
+
+  .grid-wrap { overflow-x: auto; padding: 14px 16px 4px; }
+  .grid { display: grid; grid-template-columns: minmax(58px, 1.2fr) repeat(7, minmax(30px, 1fr)); gap: 4px; min-width: 300px; }
+  .dh { display: flex; flex-direction: column; align-items: center; gap: 1px; padding-bottom: 2px; }
+  .dh .l { font-size: 10.5px; color: var(--faint); }
+  .dh .n { font-size: 12px; font-weight: 600; width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center; }
+  .dh.today .n { background: var(--red); color: var(--on-red); }
+  .dh.past .n { color: var(--faint); font-weight: 500; }
+  .who { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding-right: 4px; }
+  .who .nm { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .who .nm.you { color: var(--red-text); }
+  .who .pc { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .who .stale { font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+  .cell { min-height: 34px; border-radius: 8px; background: var(--cell); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 11px; color: var(--muted); }
+  .cell.past { opacity: 0.45; }
+  .cell b { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1; }
+  .cell .k { font-size: 9.5px; letter-spacing: 0.04em; line-height: 1.1; }
+  .cell.easy { background: var(--easy-wash); }
+  .cell.easy .k { color: var(--easy); }
+  .cell.long { background: var(--long-wash); }
+  .cell.long .k { color: var(--long); }
+  .cell.club { background: var(--club); }
+  .cell.club b, .cell.club .k { color: var(--on-club); }
+  .cell.hard { background: transparent; border: 1px dashed var(--btn-border); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); padding: 8px 16px 2px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .sw { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+  .sec { padding: 12px 16px 4px; font-size: 16px; font-weight: 600; }
+  .runs { display: flex; flex-direction: column; padding-bottom: 6px; }
+  .run { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 11px 16px; border-top: 1px solid var(--row-line); }
+  .run .day { font-size: 11px; color: var(--muted); padding-top: 2px; }
+  .run .day b { display: block; font-size: 15px; color: var(--text); font-weight: 600; }
+  .run .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .run .what { font-size: 14px; font-weight: 600; display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap; }
+  .run .tag { font-size: 11.5px; font-weight: 600; }
+  .run .meta { font-size: 13px; color: var(--muted); }
+  .run.move { background: var(--red-wash); }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .act { height: 34px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; font-size: 13px; font-weight: 500; padding: 0 14px; }
+  .act:hover { border-color: var(--muted); }
+  .act.go { background: var(--red); border-color: var(--red); color: var(--on-red); }
+  .pill { display: inline-block; font-size: 11.5px; padding: 3px 8px; border-radius: 999px; background: var(--cell); color: var(--soft); font-weight: 500; }
+  .none { padding: 12px 16px 14px; color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--row-line); }
+  .sent { font-size: 12.5px; color: var(--muted); }
+
+  .foot { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; border-top: 1px solid var(--border); }
+  .foot .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  .foot .code { font-size: 13px; color: var(--muted); }
+  .foot .code b { color: var(--text); font-weight: 600; letter-spacing: 0.04em; }
+  textarea { width: 100%; min-height: 120px; border-radius: 10px; border: 1px solid var(--btn-border); background: var(--cell); color: var(--text); font: 13px/1.45 inherit; padding: 10px; resize: vertical; }
+  textarea[hidden] { display: none; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="card" id="app"><div class="empty">Loading your crew&hellip;</div></div>
+<script>
+(function () {
+  "use strict";
+  // ---------------------------------------------------------------- bridge
+  // The same handful of MCP Apps messages the plan card speaks.
+  var host = window.parent !== window ? window.parent : null;
+  var nextId = 1, pending = {}, data = null;
+  function send(msg) { if (host) host.postMessage(Object.assign({ jsonrpc: "2.0" }, msg), "*"); }
+  function request(method, params) {
+    var id = nextId++;
+    return new Promise(function (resolve, reject) {
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ id: id, method: method, params: params || {} });
+      setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 20000);
+    });
+  }
+  function notify(method, params) { send({ method: method, params: params || {} }); }
+  window.addEventListener("message", function (event) {
+    var m = event.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id != null && !m.method && pending[m.id]) {
+      var p = pending[m.id]; delete pending[m.id];
+      m.error ? p.reject(new Error(m.error.message || "error")) : p.resolve(m.result);
+      return;
+    }
+    if (m.method === "ui/notifications/tool-result") show(m.params);
+    else if (m.method === "ui/notifications/host-context-changed") theme(m.params || {});
+    else if ((m.method === "ui/resource-teardown" || m.method === "ping") && m.id != null) send({ id: m.id, result: {} });
+  });
+  function theme(ctx) {
+    if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
+    var fonts = ctx.styles && ctx.styles.css && ctx.styles.css.fonts;
+    if (fonts && !document.getElementById("host-fonts")) {
+      var st = document.createElement("style"); st.id = "host-fonts"; st.textContent = fonts; document.head.appendChild(st);
+    }
+  }
+  var sent = 0;
+  function size() {
+    requestAnimationFrame(function () {
+      var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+      if (host && h && h !== sent) { sent = h; notify("ui/notifications/size-changed", { width: Math.ceil(window.innerWidth), height: h }); }
+    });
+  }
+  if (window.ResizeObserver) new ResizeObserver(size).observe(document.body);
+
+  // ---------------------------------------------------------------- helpers
+  var DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function parse(s) { var p = String(s).slice(0, 10).split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function iso(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
+  function dow(s) { return (parse(s).getDay() + 6) % 7; }
+  function longDay(s) { var d = parse(s); return DAYS[dow(s)] + " " + d.getDate() + " " + MONTHS[d.getMonth()]; }
+  function km(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function kmRange(lo, hi) { if (!lo) return ""; return (hi && hi !== lo) ? km(lo) + " to " + km(hi) + " km" : km(lo) + " km"; }
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "text") n.textContent = attrs[k];
+      else if (k === "onclick") n.addEventListener("click", attrs[k]);
+      else if (attrs[k] != null && attrs[k] !== false) n.setAttribute(k, attrs[k] === true ? "" : attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c == null || c === false) return; n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return n;
+  }
+  function names(list) {
+    if (!list.length) return "nobody yet";
+    if (list.length === 1) return list[0];
+    return list.slice(0, -1).join(", ") + " and " + list[list.length - 1];
+  }
+  var KIND = { easy: { l: "Easy", c: "var(--easy)" }, long: { l: "Long", c: "var(--long)" }, club: { l: "Club run", c: "var(--club)" } };
+
+  // ---------------------------------------------------------------- drawing
+  function show(result) {
+    var d = result && result.structuredContent;
+    if (!d && result && result.content) {
+      for (var i = 0; i < result.content.length; i++) {
+        if (result.content[i].type === "text") { try { d = JSON.parse(result.content[i].text); break; } catch (e) {} }
+      }
+    }
+    var app = document.getElementById("app");
+    app.textContent = "";
+    if (!d || d.error || !d.crew) { app.appendChild(el("div", { class: "empty", text: (d && d.error) || "The crew could not be loaded." })); size(); return; }
+    data = d;
+    var monday = parse(d.week.starts), today = d.today;
+    var sub = d.crew.members + (d.crew.members === 1 ? " member" : " members") + " · " +
+      monday.getDate() + (monday.getMonth() !== addDays(monday, 6).getMonth() ? " " + MONTHS[monday.getMonth()] : "") +
+      "–" + addDays(monday, 6).getDate() + " " + MONTHS[addDays(monday, 6).getMonth()];
+    var head = el("div", { class: "head" }, [
+      el("div", { class: "brand" }, [el("span", { class: "wordmark", text: "Daash" }), el("span", { class: "kicker mono", text: "CREW" })]),
+      el("span", { class: "tools" }, [el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh },
+        [svg('<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>')])]),
+      el("h3", { class: "title", text: d.crew.name }),
+      el("span", { class: "sub", text: sub }),
+    ]);
+    app.appendChild(head);
+    if (d.just) {
+      app.appendChild(el("div", { class: "just" }, d.just.action === "started"
+        ? ["You started ", el("b", { text: d.just.crew }), ". Invite friends with the code ", el("b", { text: d.just.code }), "."]
+        : ["You're in ", el("b", { text: d.just.crew }), ". Your runs show here once you've looked at your plan."]));
+    }
+
+    // Who runs when.
+    var grid = el("div", { class: "grid", role: "table", "aria-label": "Each member's runs by day this week" }, [el("span")]);
+    for (var k = 0; k < 7; k++) {
+      var date = iso(addDays(monday, k));
+      grid.appendChild(el("div", { class: "dh" + (date === today ? " today" : date < today ? " past" : "") }, [
+        el("span", { class: "l mono", text: LETTERS[k] }), el("span", { class: "n", text: String(addDays(monday, k).getDate()) })]));
+    }
+    d.members.forEach(function (m) {
+      var stale = !m.updated_on ? "no week yet" : (daysBetween(m.updated_on, today) > 3 ? "as of " + DAYS[dow(m.updated_on)] : "");
+      grid.appendChild(el("div", { class: "who" }, [
+        el("span", { class: "nm" + (m.you ? " you" : ""), text: m.name, title: m.you ? "You" : m.name }),
+        m.pace ? el("span", { class: "pc mono", text: m.pace.replace(" /km", "/km") }) : null,
+        stale ? el("span", { class: "stale", text: stale }) : null,
+      ]));
+      m.days.forEach(function (runs, j) {
+        var date = iso(addDays(monday, j)), past = date < today;
+        var top = runs.filter(function (r) { return r.kind === "club"; })[0] || runs.filter(function (r) { return r.kind === "long"; })[0] ||
+          runs.filter(function (r) { return r.kind === "easy"; })[0] || runs.filter(function (r) { return r.kind === "hard"; })[0];
+        var label = top ? (top.kind === "hard" ? "hard" : top.kind === "club" ? "club" : top.kind) : "";
+        grid.appendChild(el("div", { class: "cell" + (top ? " " + top.kind : "") + (past ? " past" : ""),
+          "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + " km" : "") : m.name + ", " + DAYS[j] + ": nothing" },
+          top ? [top.km ? el("b", { text: km(top.km) }) : null, el("span", { class: "k", text: label })] : []));
+      });
+    });
+    app.appendChild(el("div", { class: "grid-wrap" }, [grid]));
+    app.appendChild(el("div", { class: "legend" }, [
+      el("span", {}, [el("i", { class: "sw", style: "background:var(--easy)" }), "Easy"]),
+      el("span", {}, [el("i", { class: "sw", style: "background:var(--long)" }), "Long"]),
+      el("span", {}, [el("i", { class: "sw", style: "background:var(--club)" }), "Club run"]),
+      el("span", {}, [el("i", { class: "sw", style: "border:1px dashed var(--faint)" }), "Hard, run alone"]),
+    ]));
+
+    // What to run together.
+    app.appendChild(el("div", { class: "sec", text: "Run together" }));
+    var list = el("div", { class: "runs" });
+    var me = (d.members.filter(function (m) { return m.you; })[0] || {}).name;
+    d.together.forEach(function (t) {
+      var kind = KIND[t.kind] || KIND.easy, dd = parse(t.date);
+      var title = t.kind === "club" ? "Club run" : kind.l + " run";
+      var bits = [kmRange(t.km_lo, t.km_hi), t.when, t.place].filter(Boolean).join(" · ");
+      var who = t.move_from ? names(t.who) + (t.who.length === 1 ? " is" : " are") + " running then"
+        : t.who.length ? names(t.who.map(function (n) { return n === me ? "you" : n; })) + (t.kind === "club" ? " going" : "") : "Nobody has said they're going yet";
+      var acts = [];
+      if (t.move_from) {
+        var from = longDay(t.move_from), to = longDay(t.date);
+        acts.push(el("button", { class: "act go", onclick: function (e) {
+          ask("Move my " + t.kind + " run on " + from + " to " + to + " so I can run with " + names(t.who) + " from my crew. Keep the rest of my week sensible.", e.currentTarget);
+        } }, ["Move mine to " + DAYS[dow(t.date)]]));
+      } else if (t.kind === "club" && !t.you_in) {
+        acts.push(el("button", { class: "act", onclick: function (e) { ask("I usually go to my crew's club run. Mark me as going.", e.currentTarget); } }, ["I usually go"]));
+      } else if (t.you_in) {
+        acts.push(el("span", { class: "pill", text: t.kind === "club" ? "You're going" : "You're on this one" }));
+      }
+      list.appendChild(el("div", { class: "run" + (t.move_from ? " move" : "") }, [
+        el("div", { class: "day mono" }, [DAYS[dow(t.date)].toUpperCase(), el("b", { text: String(dd.getDate()) })]),
+        el("div", { class: "body" }, [
+          el("div", { class: "what" }, [el("span", { class: "tag", style: "color:" + kind.c, text: title }), bits ? el("span", { text: bits }) : null]),
+          el("div", { class: "meta", text: cap(who) + (t.move_from ? ". Yours is on " + DAYS[dow(t.move_from)] + "." : ".") }),
+          acts.length ? el("div", { class: "acts" }, acts) : null,
+        ]),
+      ]));
+    });
+    if (!d.together.length) list.appendChild(el("div", { class: "none", text: "Nothing lines up yet this week. Runs appear here as members look at their plans in Daash." }));
+    app.appendChild(list);
+
+    // For the group chat.
+    var box = el("textarea", { id: "msg", "aria-label": "Message for the group chat", readonly: true, hidden: true });
+    box.value = d.group_message || "";
+    var status = el("span", { class: "sent", role: "status" });
+    app.appendChild(el("div", { class: "foot" }, [
+      el("div", { class: "row" }, [
+        el("button", { class: "act go", onclick: function () { copy(box, status); } }, ["Copy for the group chat"]),
+        el("span", { class: "code" }, ["Invite code ", el("b", { class: "mono", text: d.crew.code })]),
+      ]),
+      status, box,
+    ]));
+    size();
+  }
+
+  function cap(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
+  function daysBetween(a, b) { return Math.round((parse(b) - parse(a)) / 864e5); }
+  function svg(path) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("width", 14); s.setAttribute("height", 14); s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", 2);
+    s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true");
+    s.innerHTML = path; return s;
+  }
+  // The frame may not be allowed the clipboard: then the message is shown,
+  // selected, for the person to copy themselves.
+  function copy(box, status) {
+    var text = box.value;
+    var shown = function () { box.hidden = false; box.focus(); box.select(); status.textContent = "Select the message and copy it."; size(); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { status.textContent = "Copied. Paste it into your group chat."; }, shown);
+      } else shown();
+    } catch (e) { shown(); }
+  }
+  function ask(text, button) {
+    var note = function (msg) {
+      var body = button.closest(".body") || button.parentNode; var old = body.querySelector(".sent"); if (old) old.remove();
+      body.appendChild(el("div", { class: "sent", text: msg })); size();
+    };
+    if (!host) { note("Would ask: “" + text + "”"); return; }
+    var block = { type: "text", text: text };
+    request("ui/message", { role: "user", content: [block] })
+      .catch(function () { return request("ui/message", { role: "user", content: block }); })
+      .then(function () { note("Added to the chat"); }, function () { note("The chat did not accept that"); });
+  }
+  function refresh(event) {
+    var btn = event.currentTarget;
+    if (!host) return;
+    btn.classList.add("spin");
+    request("tools/call", { name: "get_crew", arguments: data && data.week ? { week_of: data.week.starts } : {} })
+      .then(show).catch(function () {})
+      .then(function () { var b = document.querySelector(".refresh"); if (b) b.classList.remove("spin"); });
+  }
+
+  // ---------------------------------------------------------------- start
+  if (window.__CREW_DEMO__) { show({ structuredContent: window.__CREW_DEMO__ }); return; }
+  if (!host) { document.getElementById("app").innerHTML = '<div class="empty">This view opens inside a chat that supports MCP Apps.</div>'; return; }
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "garmin-crew", version: "1.0.0" },
+    clientInfo: { name: "garmin-crew", version: "1.0.0" },
+    appCapabilities: { availableDisplayModes: ["inline"] },
+  }).then(function (r) { theme((r && r.hostContext) || {}); notify("ui/notifications/initialized", {}); })
+    .catch(function () { notify("ui/notifications/initialized", {}); });
+})();
+</script>
+</body>
+</html>

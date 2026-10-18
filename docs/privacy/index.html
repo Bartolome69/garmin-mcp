@@ -302,7 +302,7 @@
       deserves a straight answer rather than four pages of legal throat-clearing,
       so here is the whole of it.
     </p>
-    <p class="stamp">Last updated 12 October 2026</p>
+    <p class="stamp">Last updated 18 October 2026</p>
 
     <dl class="facts">
       <div><dt>Password</dt><dd>Never stored, anywhere</dd></div>
@@ -380,7 +380,8 @@
     <div class="stack">
       <p class="small">
         Nothing from Garmin is stored: no activities, no heart rate, no sleep, no
-        location. Each question fetches from Garmin fresh and the answer is gone
+        location. (The one thing you can choose to change that is joining a
+        Daash crew, below.) Each question fetches from Garmin fresh and the answer is gone
         when the request ends. The one exception is speed: your scheduled
         workouts and workout list are held in memory for up to ten minutes, so
         a chat about your plan doesn&rsquo;t refetch them every turn, and are
@@ -502,12 +503,44 @@
   </section>
 
   <section>
+    <h2>Daash Crews, only if you join one</h2>
+    <div class="stack">
+      <p class="small">
+        A Daash crew is a small group of friends who all use Daash. It shows
+        them each other&rsquo;s easy and long runs for the week and suggests
+        runs to do together. Nobody is in a crew unless they join one with an
+        invite code, and while you are in one, the crew&rsquo;s members can see
+        this, and the server keeps it so they can:
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>The name you chose for the crew</strong>, and the crew&rsquo;s own name and invite code.</span></li>
+      <li><span><strong>When you usually run</strong>, as rough times such as &ldquo;weekday evenings&rdquo;, and whether you usually go to the crew&rsquo;s club run.</span></li>
+      <li><span><strong>Your easy pace</strong>, worked out from easy runs you have done, rounded to five seconds per km.</span></li>
+      <li><span><strong>Your planned easy and long runs for the next two weeks</strong>: the day, whether it is easy or long, and the distance. A hard session such as intervals is kept as the word &ldquo;hard&rdquo; on its day and nothing else. Each day is deleted once it has passed.</span></li>
+    </ul>
+    <div class="stack">
+      <p class="small">
+        These are read from your own plan when you look at it in Daash, so a
+        crew causes no extra requests to Garmin. Runs you have done, heart
+        rate, sleep, routes, location and everything else from Garmin are
+        never kept or shown to the crew. Only members of your crew can see any
+        of it, and only through their own Daash.
+      </p>
+      <p class="small">
+        Leaving the crew deletes all of it at once. So does Disconnect. When the
+        last member leaves, the crew itself is deleted.
+      </p>
+    </div>
+  </section>
+
+  <section>
     <h2>Getting rid of it</h2>
     <div class="stack">
       <p class="small">
         Open the sign-in page and choose <strong>Disconnect</strong>. That deletes
-        your row outright (token, email, fingerprint, timestamps, markers)
-        and the connection stops working immediately. Nothing is retained
+        your row outright (token, email, fingerprint, timestamps, markers),
+        and your place in any crew with everything it kept, and the connection stops working immediately. Nothing is retained
         afterwards, so there is no backlog to request a copy of or ask to be
         forgotten from.
       </p>
@@ -553,7 +586,9 @@
   <footer>
     <p>
       Every claim on this page is checkable: the storage layer is
-      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/store.py" target="_blank" rel="noopener">store.py</a>
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/store.py" target="_blank" rel="noopener">store.py</a>,
+      crews are
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/main/garmin_mcp/crews.py" target="_blank" rel="noopener">crews.py</a>
       and the sign-in server is
       <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/hosted.py" target="_blank" rel="noopener">hosted.py</a>.
       Don&rsquo;t take my word for it.
