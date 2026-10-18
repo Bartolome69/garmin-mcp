@@ -90,7 +90,6 @@
   .run .what { font-size: 14px; font-weight: 600; display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap; }
   .run .tag { font-size: 11.5px; font-weight: 600; }
   .run .meta { font-size: 13px; color: var(--muted); }
-  .run.move { background: var(--red-wash); }
   .acts { display: flex; gap: 6px; flex-wrap: wrap; }
   .act { height: 34px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; font-size: 13px; font-weight: 500; padding: 0 14px; }
   .act:hover { border-color: var(--muted); }
@@ -116,7 +115,7 @@
   // ---------------------------------------------------------------- bridge
   // The same handful of MCP Apps messages the plan card speaks.
   var host = window.parent !== window ? window.parent : null;
-  var nextId = 1, pending = {}, data = null;
+  var nextId = 1, pending = {}, data = null, hostCaps = null;
   function send(msg) { if (host) host.postMessage(Object.assign({ jsonrpc: "2.0" }, msg), "*"); }
   function request(method, params) {
     var id = nextId++;
@@ -180,7 +179,8 @@
     if (list.length === 1) return list[0];
     return list.slice(0, -1).join(", ") + " and " + list[list.length - 1];
   }
-  var KIND = { easy: { l: "Easy", c: "var(--easy)" }, long: { l: "Long", c: "var(--long)" }, club: { l: "Club run", c: "var(--club)" } };
+  var KIND = { easy: { l: "Easy", c: "var(--easy)" }, long: { l: "Long", c: "var(--long)" }, club: { l: "Club run", c: "var(--club)" },
+    mixed: { l: "Easy and long", c: "var(--long)" } };
 
   // ---------------------------------------------------------------- drawing
   function show(result) {
@@ -250,26 +250,23 @@
     var me = (d.members.filter(function (m) { return m.you; })[0] || {}).name;
     d.together.forEach(function (t) {
       var kind = KIND[t.kind] || KIND.easy, dd = parse(t.date);
-      var title = t.kind === "club" ? "Club run" : kind.l + " run";
+      var title = t.kind === "club" ? "Club run" : t.kind === "mixed" ? "Easy and long runs" : kind.l + " run";
       var bits = [kmRange(t.km_lo, t.km_hi), t.when, t.place].filter(Boolean).join(" · ");
-      var who = t.move_from ? names(t.who) + (t.who.length === 1 ? " is" : " are") + " running then"
-        : t.who.length ? names(t.who.map(function (n) { return n === me ? "you" : n; })) + (t.kind === "club" ? " going" : "") : "Nobody has said they're going yet";
+      var order = t.who.filter(function (n) { return n === me; }).map(function () { return "you"; })
+        .concat(t.who.filter(function (n) { return n !== me; }));
+      var who = t.who.length ? names(order) + (t.kind === "club" ? " going" : " running")
+        : "Nobody has said they're going yet";
       var acts = [];
-      if (t.move_from) {
-        var from = longDay(t.move_from), to = longDay(t.date);
-        acts.push(el("button", { class: "act go", onclick: function (e) {
-          ask("Move my " + t.kind + " run on " + from + " to " + to + " so I can run with " + names(t.who) + " from my crew. Keep the rest of my week sensible.", e.currentTarget);
-        } }, ["Move mine to " + DAYS[dow(t.date)]]));
-      } else if (t.kind === "club" && !t.you_in) {
+      if (t.kind === "club" && !t.you_in) {
         acts.push(el("button", { class: "act", onclick: function (e) { ask("I usually go to my crew's club run. Mark me as going.", e.currentTarget); } }, ["I usually go"]));
       } else if (t.you_in) {
-        acts.push(el("span", { class: "pill", text: t.kind === "club" ? "You're going" : "You're on this one" }));
+        acts.push(el("span", { class: "pill", text: t.kind === "club" ? "You're going" : "You're running that day" }));
       }
-      list.appendChild(el("div", { class: "run" + (t.move_from ? " move" : "") }, [
+      list.appendChild(el("div", { class: "run" }, [
         el("div", { class: "day mono" }, [DAYS[dow(t.date)].toUpperCase(), el("b", { text: String(dd.getDate()) })]),
         el("div", { class: "body" }, [
           el("div", { class: "what" }, [el("span", { class: "tag", style: "color:" + kind.c, text: title }), bits ? el("span", { text: bits }) : null]),
-          el("div", { class: "meta", text: cap(who) + (t.move_from ? ". Yours is on " + DAYS[dow(t.move_from)] + "." : ".") }),
+          el("div", { class: "meta", text: cap(who) + "." }),
           acts.length ? el("div", { class: "acts" }, acts) : null,
         ]),
       ]));
@@ -283,7 +280,10 @@
     var status = el("span", { class: "sent", role: "status" });
     app.appendChild(el("div", { class: "foot" }, [
       el("div", { class: "row" }, [
-        el("button", { class: "act go", onclick: function () { copy(box, status); } }, ["Copy for the group chat"]),
+        el("div", { class: "acts" }, [
+          el("button", { class: "act go", onclick: function () { copy(box, status); } }, ["Copy for the group chat"]),
+          canOpen() ? el("button", { class: "act", onclick: function () { whatsapp(box.value, status); } }, ["Send to WhatsApp"]) : null,
+        ]),
         el("span", { class: "code" }, ["Invite code ", el("b", { class: "mono", text: d.crew.code })]),
       ]),
       status, box,
@@ -310,6 +310,25 @@
         navigator.clipboard.writeText(text).then(function () { status.textContent = "Copied. Paste it into your group chat."; }, shown);
       } else shown();
     } catch (e) { shown(); }
+  }
+  // WhatsApp's own share link: it opens WhatsApp with the message typed in,
+  // and the person picks the group. Nothing is sent until they press send.
+  function canOpen() {
+    if (!host || (window.openai && typeof window.openai.openExternal === "function")) return true;
+    return !hostCaps || !!hostCaps.openLinks;
+  }
+  function whatsapp(text, status) {
+    var url = "https://wa.me/?text=" + encodeURIComponent(text);
+    var opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    opened.then(function () { status.textContent = "Opening WhatsApp. Pick your group and send."; },
+      function () { status.textContent = "This chat app didn\u2019t open WhatsApp. Copy the message instead."; });
   }
   function ask(text, button) {
     var note = function (msg) {
@@ -339,7 +358,7 @@
     appInfo: { name: "garmin-crew", version: "1.0.0" },
     clientInfo: { name: "garmin-crew", version: "1.0.0" },
     appCapabilities: { availableDisplayModes: ["inline"] },
-  }).then(function (r) { theme((r && r.hostContext) || {}); notify("ui/notifications/initialized", {}); })
+  }).then(function (r) { hostCaps = (r && r.hostCapabilities) || null; theme((r && r.hostContext) || {}); notify("ui/notifications/initialized", {}); })
     .catch(function () { notify("ui/notifications/initialized", {}); });
 })();
 </script>

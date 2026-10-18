@@ -2561,9 +2561,9 @@ async def get_plan_chart(weeks_back: int = 1, weeks_forward: int = 1) -> Any:
 
 CREW_NOTE = (
     "The user is looking at their crew's week as an interactive card. Don't redraw it: "
-    "say in a sentence or two which runs they could do together and who with. To move "
-    "one of their own runs to join others, read their plan with get_plan for the ids, "
-    "then move it as they ask. Never share a crew member's details outside the crew."
+    "say in a sentence or two which runs they could do together and who with. Matches "
+    "are runs already planned on the same day: don't suggest moving anyone's run to "
+    "make one unless the user asks. Never share a crew member's details outside the crew."
 )
 
 
@@ -2580,9 +2580,10 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
 
     A crew is a few friends who all use Daash. Each member's easy and long runs
     (day, distance, easy pace) and the crew's standing club run are pooled;
-    hard sessions show only as "hard". Matches are runs of the same kind on the
-    same day at paces and usual times that fit, or one of the user's own runs a
-    day away from others that could move to join them ("move_from").
+    hard sessions show only as "hard". Matches are easy or long runs already
+    planned on the same day, at paces and usual times that fit; nobody's run is
+    moved to make one. An easy and a long run match too ("mixed"): they share
+    the shorter run.
 
     Use it for "who's running this week", "anyone running Sunday", "who's in
     for Friday", or "write the crew message for the group chat" (the answer's

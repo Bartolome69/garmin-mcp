@@ -1342,7 +1342,7 @@ async def main() -> int:
         hosted._after_tool_for(dave, store.get_user(dave))(
             "get_plan", plan_for([(2, "easy", 10.0), (6, "long", 16.0)], "44m 00s"))
         hosted._after_tool_for(bob, store.get_user(bob))(
-            "create_plan", plan_for([(2, "easy", 8.0)], "46m 40s"))
+            "create_plan", plan_for([(2, "easy", 8.0), (6, "easy", 8.0)], "46m 40s"))
         card = await call(carol, "get_crew", {"week_of": monday.isoformat()})
         people = {m["name"]: m for m in card.get("members", [])}
         check("each member's easy pace comes from easy runs they've done",
@@ -1355,19 +1355,20 @@ async def main() -> int:
         check("the club run is on everyone's week, with who goes",
               club and club[0]["when"] == "6:45am" and sorted(club[0]["who"]) == ["Bob", "Carol", "Dave"]
               and people["Bob"]["days"][4][0]["kind"] == "club", str(club))
-        longs = [t for t in together if t["kind"] == "long" and not t.get("move_from")]
-        check("Sunday's long runs match, at the time they share",
-              longs and sorted(longs[0]["who"]) == ["Carol", "Dave"] and longs[0]["when"] == "morning"
-              and (longs[0]["km_lo"], longs[0]["km_hi"]) == (16.0, 18.0), str(longs))
-        move = [t for t in together if t.get("move_from")]
-        check("Carol's Tuesday easy run could move a day to join Dave",
-              move and move[0]["date"] == (monday + _td(days=2)).isoformat() and move[0]["who"] == ["Dave"]
-              and move[0]["when"] == "evening", str(move))
+        sunday = [t for t in together if t["date"] == (monday + _td(days=6)).isoformat()]
+        check("Sunday's long runs and an easy run match, at the time they share",
+              sunday and sorted(sunday[0]["who"]) == ["Bob", "Carol", "Dave"] and sunday[0]["kind"] == "mixed"
+              and sunday[0]["when"] == "morning" and (sunday[0]["km_lo"], sunday[0]["km_hi"]) == (8.0, 18.0),
+              str(sunday))
+        check("nobody's run is moved to make a match: Carol's Tuesday stays alone",
+              all("move_from" not in t for t in together)
+              and not [t for t in together if t["date"] == (monday + _td(days=1)).isoformat()], str(together))
         check("Bob, who only runs weekend mornings, isn't put on a weekday evening",
               all("Bob" not in t["who"] for t in together if t["kind"] == "easy"), str(together))
         check("the week comes as a message for the group chat",
               "This week's Friday Run Club runs" in card.get("group_message", "")
               and "Fri 6:45am · club run 4.3 km · Carol, Dave, Bob" in card["group_message"]
+              and "Sun morning · easy and long runs 8 to 18 km · Dave, Carol, Bob" in card["group_message"]
               and code in card["group_message"], card.get("group_message", "")[:300])
         check("only easy and long runs, never what was done, are kept",
               {k for k, in crews._connect().execute("SELECT DISTINCT kind FROM crew_runs").fetchall()} <= {"easy", "long", "hard"}

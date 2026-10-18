@@ -2,8 +2,8 @@
 
 Each member's Daash already knows their week. A crew pools the part of it that
 suits company (easy runs, long runs and the club's standing run) so Daash can
-point out who else is running a similar run on the same day, or the day next
-to it, and suggest doing it together.
+point out who else is running on the same day, and suggest doing it together.
+It never moves anyone's run to make a match.
 
 Only the hosted server has crews: it alone knows who is asking. It sets the
 member for each request here, the same way it binds the Garmin session, and
@@ -591,9 +591,6 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
     def social(person: dict[str, Any], day: date) -> list[dict[str, Any]]:
         return [r for r in person["runs"].get(day.isoformat(), []) if r["kind"] in ("easy", "long")]
 
-    def hard(person: dict[str, Any], day: date) -> bool:
-        return any(r["kind"] == "hard" for r in person["runs"].get(day.isoformat(), []))
-
     together: list[dict[str, Any]] = []
     # The club run comes first, every week, whoever has said they go.
     if club and club_day and club_day >= today:
@@ -604,65 +601,26 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
             "when": _fmt_time(club.get("time")), "place": club.get("place"),
         })
 
-    # Same day, same kind of run, paces and times that meet.
+    # Runs on the same day, easy or long, at paces and times that meet. An
+    # easy and a long run match too: the shared part is the shorter run and
+    # the long-runner carries on. Nobody's run is ever moved to make a match.
     for day in days:
         if day < today:
             continue
-        for kind in ("easy", "long"):
-            group, when = _best_group(day, [
-                p for p in people
-                if any(r["kind"] == kind for r in social(p, day))
-                and not (club_day == day and p["club"] and kind == "easy")
-            ])
-            if not group:
-                continue
-            lo, hi = _km_range([r["km"] for p in group for r in social(p, day) if r["kind"] == kind])
-            together.append({
-                "date": day.isoformat(), "kind": kind, "who": [p["name"] for p in group],
-                "you_in": any(p["you"] for p in group), "km_lo": lo, "km_hi": hi, "when": when,
-            })
-
-    # Your run a day away from others doing the same kind: move it to join them.
-    me_person = by_key[me.key]
-    for day in days:
-        if day < today:
+        group, when = _best_group(day, [
+            p for p in people
+            if social(p, day) and not (club_day == day and p["club"])
+        ])
+        if not group:
             continue
-        for run in social(me_person, day):
-            if club_day == day and me_person["club"]:
-                continue
-            # A run that already has company stays where it is.
-            if any(t["date"] == day.isoformat() and t["kind"] == run["kind"] and t["you_in"] for t in together):
-                continue
-            for shift in (-1, 1):
-                target = day + timedelta(days=shift)
-                if target < today or not (days[0] <= target <= days[-1]):
-                    continue
-                if me_person["runs"].get(target.isoformat()) or hard(me_person, target):
-                    continue
-                # A long run never lands the day before your own hard session.
-                if run["kind"] == "long" and hard(me_person, target + timedelta(days=1)):
-                    continue
-                group, when = _best_group(target, [me_person] + [
-                    p for p in people if not p["you"]
-                    and any(r["kind"] == run["kind"] for r in social(p, target))
-                ], must=me_person)
-                if not group:
-                    continue
-                others = [p for p in group if not p["you"]]
-                lo, hi = _km_range([r["km"] for p in others for r in social(p, target) if r["kind"] == run["kind"]] + [run["km"]])
-                # Others already running together that day: that run gains
-                # the offer to join it, rather than appearing twice.
-                there = next((t for t in together if t["date"] == target.isoformat() and t["kind"] == run["kind"]
-                              and not t.get("move_from")), None)
-                if there is not None:
-                    there.update({"move_from": day.isoformat(), "km_lo": lo, "km_hi": hi, "when": there["when"] or when})
-                    break
-                together.append({
-                    "date": target.isoformat(), "kind": run["kind"], "who": [p["name"] for p in others],
-                    "you_in": False, "km_lo": lo, "km_hi": hi, "when": when,
-                    "move_from": day.isoformat(),
-                })
-                break
+        runs_there = [r for p in group for r in social(p, day)]
+        kinds = {r["kind"] for r in runs_there}
+        lo, hi = _km_range([r["km"] for r in runs_there])
+        together.append({
+            "date": day.isoformat(), "kind": kinds.pop() if len(kinds) == 1 else "mixed",
+            "who": [p["name"] for p in group], "you_in": any(p["you"] for p in group),
+            "km_lo": lo, "km_hi": hi, "when": when,
+        })
     together.sort(key=lambda t: (t["date"], t["kind"] != "club"))
 
     out_members = []
@@ -702,7 +660,8 @@ def _together_line(t: dict[str, Any], club: dict[str, Any] | None) -> str:
         if club and club.get("place"):
             what += f" from {club['place']}"
     else:
-        what = " ".join(x for x in (f"{t['kind']} run", km) if x)
+        label = "easy and long runs" if t["kind"] == "mixed" else f"{t['kind']} run"
+        what = " ".join(x for x in (label, km) if x)
     when = t.get("when")
     head = f"{_SHORT[d.weekday()]}" + (f" {when}" if when else "")
     who = ", ".join(t["who"]) if t["who"] else "nobody yet"
@@ -712,9 +671,7 @@ def _together_line(t: dict[str, Any], club: dict[str, Any] | None) -> str:
 def group_message(crew_name: str, together: list[dict[str, Any]], club: dict[str, Any] | None, code: str) -> str:
     """The week's crew runs as a message for the group chat people already use."""
     lines = [f"This week's {crew_name} runs"]
-    # Runs two or more are already doing, and the club run: an offer to one
-    # person to move their run is theirs, not the group's.
-    shown = [t for t in together if t["kind"] == "club" or len(t["who"]) >= 2]
+    shown = together
     if not shown:
         lines.append("Nothing matched up yet. Check your plan in Daash so it can see your week.")
     for t in shown:
