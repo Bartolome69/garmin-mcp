@@ -460,6 +460,13 @@ async def main() -> int:
                   "oauth@example.com-token" in json.dumps(payload)
                   or payload.get("garmin_display_name", "").endswith("oauth@example.com-token"),
                   str(payload.get("garmin_display_name"))[:80])
+            # Claude connects this way, so crews must be offered this way too.
+            async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {fresh}"}) as http_client:
+                async with streamable_http_client(f"{BASE}/mcp", http_client=http_client) as (r, w):
+                    async with ClientSession(r, w) as sess:
+                        await sess.initialize()
+                        names = {t.name for t in (await sess.list_tools()).tools}
+            check("a bearer token is offered joining a crew", "join_crew" in names, str(sorted(names))[:200])
         except Exception as exc:  # noqa: BLE001
             check("a bearer token reaches that person's Garmin session", False,
                   f"{type(exc).__name__}: {exc}"[:160])
