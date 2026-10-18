@@ -245,7 +245,7 @@
     ]));
 
     // What to run together.
-    app.appendChild(el("div", { class: "sec", text: "Run together" }));
+    app.appendChild(el("div", { class: "sec", text: "Same day" }));
     var list = el("div", { class: "runs" });
     var me = (d.members.filter(function (m) { return m.you; })[0] || {}).name;
     d.together.forEach(function (t) {
@@ -257,11 +257,7 @@
       var who = t.who.length ? names(order) + (t.kind === "club" ? " going" : " running")
         : "Nobody has said they're going yet";
       var acts = [];
-      if (t.kind === "club" && !t.you_in) {
-        acts.push(el("button", { class: "act", onclick: function (e) { ask("I usually go to my crew's club run. Mark me as going.", e.currentTarget); } }, ["I usually go"]));
-      } else if (t.you_in) {
-        acts.push(el("span", { class: "pill", text: t.kind === "club" ? "You're going" : "You're running that day" }));
-      }
+      if (t.you_in) acts.push(el("span", { class: "pill", text: "You're running that day" }));
       list.appendChild(el("div", { class: "run" }, [
         el("div", { class: "day mono" }, [DAYS[dow(t.date)].toUpperCase(), el("b", { text: String(dd.getDate()) })]),
         el("div", { class: "body" }, [
@@ -271,7 +267,7 @@
         ]),
       ]));
     });
-    if (!d.together.length) list.appendChild(el("div", { class: "none", text: "Nothing lines up yet this week. Runs appear here as members look at their plans in Daash." }));
+    if (!d.together.length) list.appendChild(el("div", { class: "none", text: "Nothing lines up yet this week" + (d.club_run ? ", apart from the club run" : "") + ". Runs appear here as members look at their plans in Daash." }));
     app.appendChild(list);
 
     // For the group chat.

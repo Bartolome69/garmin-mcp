@@ -40,14 +40,21 @@ HORIZON_DAYS = 14
 # runner eases off, which on an easy day is no loss.
 PACE_GAP = 30
 
-TIMES = (
-    "weekday_morning", "weekday_lunch", "weekday_evening",
-    "weekend_morning", "weekend_afternoon", "weekend_evening",
-)
+# When someone usually runs: mornings or evenings, on weekdays and at weekends,
+# since most people differ between the two (evenings in the week, mornings at
+# the weekend). Garmin's calendar has days but no times, so this is how runs on
+# the same day are told to be at the same time.
+TIMES = ("weekday_morning", "weekday_evening", "weekend_morning", "weekend_evening")
 _TIME_WORDS = {
-    "weekday_morning": "weekday mornings", "weekday_lunch": "weekday lunchtimes",
-    "weekday_evening": "weekday evenings", "weekend_morning": "weekend mornings",
-    "weekend_afternoon": "weekend afternoons", "weekend_evening": "weekend evenings",
+    "weekday_morning": "weekday mornings", "weekday_evening": "weekday evenings",
+    "weekend_morning": "weekend mornings", "weekend_evening": "weekend evenings",
+}
+# "mornings" alone means both.
+_TIME_ALIASES = {
+    "morning": ("weekday_morning", "weekend_morning"), "mornings": ("weekday_morning", "weekend_morning"),
+    "evening": ("weekday_evening", "weekend_evening"), "evenings": ("weekday_evening", "weekend_evening"),
+    "weekday_mornings": ("weekday_morning",), "weekday_evenings": ("weekday_evening",),
+    "weekend_mornings": ("weekend_morning",), "weekend_evenings": ("weekend_evening",),
 }
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 _DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -278,10 +285,13 @@ def _clean_name(name: Any, what: str, limit: int) -> str:
 def _clean_times(times: Any) -> list[str] | None:
     if times is None:
         return None
-    wanted = [str(t).strip().lower().replace(" ", "_").replace("-", "_") for t in (times or [])]
+    wanted: list[str] = []
+    for t in times or []:
+        key = str(t).strip().lower().replace(" ", "_").replace("-", "_")
+        wanted.extend(_TIME_ALIASES.get(key, (key,)))
     unknown = [t for t in wanted if t not in TIMES]
     if unknown:
-        raise CrewError(f"Usual times are any of {', '.join(TIMES)}; not {', '.join(unknown)}.")
+        raise CrewError(f"Usual times are mornings or evenings, weekday or weekend: any of {', '.join(TIMES)}; not {', '.join(unknown)}.")
     return [t for t in TIMES if t in wanted]
 
 
@@ -506,7 +516,7 @@ def _slot_for(day: date, times: list[str]) -> set[str]:
     return {t.split("_", 1)[1] for t in times if t.startswith(prefix)}
 
 
-_SLOTS = ("morning", "lunch", "afternoon", "evening")
+_SLOTS = ("morning", "evening")
 
 
 def _best_group(day: date, people: list[dict[str, Any]], must: dict[str, Any] | None = None
@@ -592,14 +602,9 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
         return [r for r in person["runs"].get(day.isoformat(), []) if r["kind"] in ("easy", "long")]
 
     together: list[dict[str, Any]] = []
-    # The club run comes first, every week, whoever has said they go.
-    if club and club_day and club_day >= today:
-        going = [p for p in people if p["club"]]
-        together.append({
-            "date": club_day.isoformat(), "kind": "club", "who": [p["name"] for p in going],
-            "you_in": any(p["you"] for p in going), "km_lo": club.get("km"), "km_hi": club.get("km"),
-            "when": _fmt_time(club.get("time")), "place": club.get("place"),
-        })
+    # The club's standing run is already fixed in everyone's week: it shows on
+    # the grid for whoever goes, and is left out of the matching, so Daash
+    # never announces a run the crew has done together for years.
 
     # Runs on the same day, easy or long, at paces and times that meet. An
     # easy and a long run match too: the shared part is the shorter run and
@@ -621,7 +626,7 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
             "who": [p["name"] for p in group], "you_in": any(p["you"] for p in group),
             "km_lo": lo, "km_hi": hi, "when": when,
         })
-    together.sort(key=lambda t: (t["date"], t["kind"] != "club"))
+    together.sort(key=lambda t: t["date"])
 
     out_members = []
     for p in people:
@@ -647,35 +652,51 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
         "today": today.isoformat(),
         "members": out_members,
         "together": together,
-        "group_message": group_message(crew_name, together, club, code),
+        "group_message": group_message(crew_name, days, today, people, together, club, club_day, code),
     }
 
 
-def _together_line(t: dict[str, Any], club: dict[str, Any] | None) -> str:
-    d = date.fromisoformat(t["date"])
-    lo, hi = t.get("km_lo"), t.get("km_hi")
-    km = f"{_fmt_km(lo)} km" if lo and (hi is None or hi == lo) else (f"{_fmt_km(lo)} to {_fmt_km(hi)} km" if lo else "")
-    if t["kind"] == "club":
-        what = " ".join(x for x in ("club run", km) if x)
-        if club and club.get("place"):
-            what += f" from {club['place']}"
-    else:
-        label = "easy and long runs" if t["kind"] == "mixed" else f"{t['kind']} run"
-        what = " ".join(x for x in (label, km) if x)
-    when = t.get("when")
-    head = f"{_SHORT[d.weekday()]}" + (f" {when}" if when else "")
-    who = ", ".join(t["who"]) if t["who"] else "nobody yet"
-    return f"{head} · {what} · {who}"
+def group_message(crew_name: str, days: list[date], today: date, people: list[dict[str, Any]],
+                  together: list[dict[str, Any]], club: dict[str, Any] | None, club_day: date | None,
+                  code: str) -> str:
+    """The crew's week as a message for the group chat people already use.
 
-
-def group_message(crew_name: str, together: list[dict[str, Any]], club: dict[str, Any] | None, code: str) -> str:
-    """The week's crew runs as a message for the group chat people already use."""
-    lines = [f"This week's {crew_name} runs"]
-    shown = together
-    if not shown:
-        lines.append("Nothing matched up yet. Check your plan in Daash so it can see your week.")
-    for t in shown:
-        lines.append(_together_line(t, club))
+    The whole calendar, day by day: who is running what, with the runs that
+    line up marked, so the group can coordinate without opening Daash.
+    """
+    first, last = days[0], days[-1]
+    span = (f"{first.day} to {last.day} {_MONTHS[last.month - 1]}" if first.month == last.month
+            else f"{first.day} {_MONTHS[first.month - 1]} to {last.day} {_MONTHS[last.month - 1]}")
+    lines = [f"{crew_name} \u00b7 {span}"]
+    matched = {(t["date"]): t for t in together}
+    for day in days:
+        key = day.isoformat()
+        bits: list[str] = []
+        if club and club_day == day:
+            going = [p["name"] for p in people if p["club"]]
+            if going:
+                when = _fmt_time(club.get("time"))
+                bits.append("club run" + (f" {when}" if when else "") + " (" + ", ".join(going) + ")")
+        for p in people:
+            for r in p["runs"].get(key, []):
+                if club and club_day == day and p["club"] and r["kind"] == "easy":
+                    continue
+                if r["kind"] == "hard":
+                    bits.append(f"{p['name']} hard")
+                else:
+                    km = f" {_fmt_km(r['km'])}k" if r["km"] else ""
+                    bits.append(f"{p['name']} {r['kind']}{km}")
+        if not bits:
+            continue
+        line = f"{_SHORT[day.weekday()]}: " + ", ".join(bits)
+        t = matched.get(key)
+        if t and day >= today:
+            line += " \u2192 together" + (f", {t['when']}" if t.get("when") else "")
+        if day < today:
+            line = f"{_SHORT[day.weekday()]}: done"
+        lines.append(line)
+    if len(lines) == 1:
+        lines.append("No runs in yet. Check your plan in Daash so it can see your week.")
     lines.append("")
-    lines.append(f"In? Tell your Daash. New to the crew? The code is {code}.")
+    lines.append(f"In? Say so here. New to the crew? Tell your Daash the code {code}.")
     return "\n".join(lines)

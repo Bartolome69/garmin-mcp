@@ -2563,7 +2563,8 @@ CREW_NOTE = (
     "The user is looking at their crew's week as an interactive card. Don't redraw it: "
     "say in a sentence or two which runs they could do together and who with. Matches "
     "are runs already planned on the same day: don't suggest moving anyone's run to "
-    "make one unless the user asks. Never share a crew member's details outside the crew."
+    "make one unless the user asks. The crew's club run is a fixture, not a match. "
+    "Never share a crew member's details outside the crew."
 )
 
 
@@ -2585,9 +2586,9 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     moved to make one. An easy and a long run match too ("mixed"): they share
     the shorter run.
 
-    Use it for "who's running this week", "anyone running Sunday", "who's in
-    for Friday", or "write the crew message for the group chat" (the answer's
-    group_message is ready to paste). A member's runs are as of the last time
+    Use it for "who's running this week", "anyone running Sunday", or "write
+    the crew message for the group chat" (the answer's group_message is the
+    week as a calendar, ready to paste into WhatsApp or Messenger). A member's runs are as of the last time
     they looked at their own plan ("updated_on").
 
     Args:
@@ -2625,13 +2626,16 @@ async def join_crew(
         code: The invite code, like "DC-7Q4M". Omit it to start a crew instead.
         start_crew_named: The new crew's name, e.g. "Friday Run Club", when
             starting one.
-        usual_times: When the user usually runs, any of weekday_morning,
-            weekday_lunch, weekday_evening, weekend_morning, weekend_afternoon,
-            weekend_evening. Garmin's calendar has days but no times, so this
-            is how runs are matched by time.
+        usual_times: When the user usually runs: mornings or evenings, on
+            weekdays or at weekends, as any of weekday_morning,
+            weekday_evening, weekend_morning, weekend_evening ("mornings" or
+            "evenings" alone means both). Garmin's calendar has days but no
+            times, so this is how runs on the same day are matched by time.
         goes_to_club_run: Whether the user usually goes to the crew's club run.
-        club_run_day: When starting a crew with a standing club run: its day,
-            e.g. "fri".
+        club_run_day: When starting a crew that already runs together on a set
+            day (a club run): its day, e.g. "fri". It shows on the week for
+            whoever goes and that day is left out of the matching, since the
+            crew needs no help coordinating it.
         club_run_time: Its start time, "HH:MM", e.g. "06:45".
         club_run_km: Its distance in km, e.g. 4.3.
         club_run_place: Where it starts, a few words.

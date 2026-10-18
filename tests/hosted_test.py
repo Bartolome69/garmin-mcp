@@ -1351,10 +1351,10 @@ async def main() -> int:
         check("a hard session shows only as hard",
               people["Carol"]["days"][3] == [{"kind": "hard"}], str(people["Carol"]["days"][3]))
         together = card.get("together", [])
-        club = [t for t in together if t["kind"] == "club"]
-        check("the club run is on everyone's week, with who goes",
-              club and club[0]["when"] == "6:45am" and sorted(club[0]["who"]) == ["Bob", "Carol", "Dave"]
-              and people["Bob"]["days"][4][0]["kind"] == "club", str(club))
+        check("the club run is on the week for whoever goes, and is not a match",
+              people["Bob"]["days"][4][0]["kind"] == "club" and people["Carol"]["days"][4][0]["kind"] == "club"
+              and not [t for t in together if t["date"] == (monday + _td(days=4)).isoformat()]
+              and card["club_run"]["day_name"] == "Friday", str(together))
         sunday = [t for t in together if t["date"] == (monday + _td(days=6)).isoformat()]
         check("Sunday's long runs and an easy run match, at the time they share",
               sunday and sorted(sunday[0]["who"]) == ["Bob", "Carol", "Dave"] and sunday[0]["kind"] == "mixed"
@@ -1365,11 +1365,17 @@ async def main() -> int:
               and not [t for t in together if t["date"] == (monday + _td(days=1)).isoformat()], str(together))
         check("Bob, who only runs weekend mornings, isn't put on a weekday evening",
               all("Bob" not in t["who"] for t in together if t["kind"] == "easy"), str(together))
-        check("the week comes as a message for the group chat",
-              "This week's Friday Run Club runs" in card.get("group_message", "")
-              and "Fri 6:45am · club run 4.3 km · Carol, Dave, Bob" in card["group_message"]
-              and "Sun morning · easy and long runs 8 to 18 km · Dave, Carol, Bob" in card["group_message"]
-              and code in card["group_message"], card.get("group_message", "")[:300])
+        msg = card.get("group_message", "")
+        check("the week comes as a calendar for the group chat",
+              msg.startswith("Friday Run Club · ") and "Tue: Carol easy 8k" in msg and "Thu: Carol hard" in msg
+              and "Fri: club run 6:45am (Carol, Dave, Bob)" in msg
+              and "Sun: Carol long 18k, Dave long 16k, Bob easy 8k → together, morning" in msg
+              and code in msg, msg)
+        odd = await call(bob, "update_crew", {"usual_times": ["lunch"]})
+        check("usual times are mornings or evenings", "mornings or evenings" in str(odd.get("error")), str(odd)[:120])
+        both = await call(bob, "update_crew", {"usual_times": ["mornings"]})
+        check("'mornings' alone means weekday and weekend", both.get("changed") == ["your usual times"]
+              and (await call(bob, "get_crew", {"week_of": monday.isoformat()}))["members"][2]["times"] == "weekday mornings, weekend mornings")
         check("only easy and long runs, never what was done, are kept",
               {k for k, in crews._connect().execute("SELECT DISTINCT kind FROM crew_runs").fetchall()} <= {"easy", "long", "hard"}
               and crews._connect().execute("SELECT COUNT(*) FROM crew_runs WHERE day < ?", (today.isoformat(),)).fetchone()[0] == 0)
