@@ -30,6 +30,7 @@ EXPECTED_TOOLS = {
     "get_activity_details",
     "get_connection_status",
     "list_workouts",
+    "get_workout",
     "create_workout",
     "schedule_workout",
     "get_profile",
@@ -1276,6 +1277,10 @@ async def main() -> int:
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))
             check("workouts listed", listed.get("count") == 1
                   and listed["workouts"][0]["workout_id"] == 555001)
+            one = payload(await sess.call_tool("get_workout", {"workout_id": 555001}))
+            check("any workout's steps can be read, not only the next session's",
+                  one.get("workout_id") == 555001 and isinstance(one.get("steps"), list) and one["steps"],
+                  str(one)[:200])
 
             created = payload(
                 await sess.call_tool(

@@ -79,6 +79,8 @@ _INSTRUCTIONS = (
     "running and riding, as a card. Add readiness, recovery trends or fitness "
     "after it only when the question calls for them. A specific question "
     "goes to its own tool without the card: a run to get_activity_details, "
+    "what a planned session involves (paces, recoveries, cool-down) to "
+    "get_workout, "
     "whether to go hard today to get_readiness, recovery to "
     "get_recovery_trends, today's fitness markers or race predictions to "
     "get_fitness, whether fitness is improving or how it moved with weight to "
@@ -207,7 +209,9 @@ _DESCRIPTIONS = {
         "create_plan. Recovery, readiness or fitness can follow when asked. "
         "Without a create_plan plan it reads the calendar around this week. "
         "Sessions carry workout_id and schedule_id for moving or retuning; the "
-        "next one carries its steps and target paces.\n\n"
+        "next one carries its steps and target paces. For any other session's "
+        "steps, paces, recoveries or cool-down, call get_workout with its "
+        "workout_id: never guess them.\n\n"
         "Done means run within a day either side of its date, or any day that "
         "week if started from its workout on the watch. A strength session "
         "counts if any strength activity is recorded in its own week, early "
@@ -1236,6 +1240,38 @@ async def list_workouts(limit: int = 20) -> dict[str, Any]:
             for w in workouts
         ],
     }
+
+
+@mcp.tool()
+@tool_errors
+async def get_workout(workout_id: int) -> dict[str, Any]:
+    """The steps of one workout, saved or scheduled: each step with its distance or time and target.
+
+    Use it for any question about what a session involves ("what's the pace
+    for Wednesday's workout", "how long is the cool-down", "what are the
+    recoveries"), with the workout_id from get_plan's sessions or from
+    list_workouts. Never guess a workout's paces, recoveries or warm-up from
+    other sessions: read them here. Repeats keep their structure, e.g. 8 x
+    [1 km at a target, 60 s recovery].
+
+    Args:
+        workout_id: The workout's id, from get_plan or list_workouts.
+    """
+    wid = int(workout_id)
+    detail = await _read(("workout", wid), WORKOUT_MEMORY, lambda c: c.get_workout_by_id(wid)) or {}
+    if not detail:
+        return {"error": f"No workout {wid} in this Garmin account."}
+    steps = training_plan.workout_steps(detail)
+    return drop_empty({
+        "workout_id": wid,
+        "name": detail.get("workoutName"),
+        "sport": (detail.get("sportType") or {}).get("sportTypeKey"),
+        "estimated_duration": duration(detail.get("estimatedDurationInSecs")),
+        "estimated_distance_km": km(detail.get("estimatedDistanceInMeters")),
+        "description": (detail.get("description") or "").strip() or None,
+        "main_target": training_plan.main_target(steps) if steps else None,
+        "steps": steps or None,
+    })
 
 
 async def _ftp_for(*step_lists: Any) -> float | None:
