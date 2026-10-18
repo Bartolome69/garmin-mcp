@@ -46,6 +46,7 @@ from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
 
 import garmin_mcp.hosted as hosted  # noqa: E402
 from garmin_mcp import analytics, hooks  # noqa: E402
+from garmin_mcp import server as garmin_server  # noqa: E402
 
 # Every event the server would have sent to PostHog, kept for inspection.
 SENT: list[dict] = []
@@ -1298,6 +1299,25 @@ async def main() -> int:
 
         check("the model is told to keep crew cards to crew questions, one card per answer",
               "One card per answer" in hosted.mcp.instructions and "never alongside get_plan" in hosted.mcp.instructions)
+        async def notices(user_token: str, tool: str) -> list[str]:
+            seen: list[str] = []
+
+            async def note(message) -> None:
+                root = getattr(message, "root", message)
+                seen.append(type(root).__name__)
+
+            async with streamable_http_client(f"{base}/u/{user_token}/mcp") as (r, w):
+                async with ClientSession(r, w, message_handler=note) as sess:
+                    await sess.initialize()
+                    await sess.call_tool(tool, {})
+            return seen
+
+        garmin_server._TOLD.clear()
+        first, second = await notices(dave, "get_connection_status"), await notices(dave, "get_connection_status")
+        check("over HTTP, a plain tool's answer brings the host a re-list notice",
+              any("ToolListChanged" in n for n in first), str(first))
+        check("once per person, not on every call", not any("ToolListChanged" in n for n in second), str(second))
+
         names_before = await tool_names(carol)
         check("everyone on the hosted connector is offered every crew tool, in a crew or not",
               {"join_crew", "get_crew", "update_crew", "leave_crew"} <= names_before, str(sorted(names_before))[:200])

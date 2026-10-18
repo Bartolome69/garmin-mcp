@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 import anyio
+from mcp import types
 from mcp.types import TextContent, ToolAnnotations
 
 try:  # mcp >= 2.0
@@ -455,7 +456,7 @@ def _for_view(result: Any) -> Any:
 # after whichever tool a person calls first, once per person per listing.
 # The listing changes when they try the preview, and the memory empties on
 # deploy, which is when tools and view addresses change.
-_TOLD: dict[int, str] = {}
+_TOLD: dict[Any, str] = {}
 
 
 def _listing() -> str:
@@ -466,15 +467,21 @@ def _listing() -> str:
 async def _refresh_tool_list(ctx: Any, listing: str) -> None:
     if ctx is None:
         return
-    key = id(session_mod.current_session())
+    # By person on the hosted server: a session object is dropped when idle,
+    # and a new one can reuse its id, which would pass one person's turn on.
+    member = crews.current()
+    key = member.key if member is not None else id(session_mod.current_session())
     if _TOLD.get(key) == listing:
         return
     _TOLD[key] = listing
     if len(_TOLD) > 20000:
         _TOLD.clear()
     try:
-        await ctx.session.send_tool_list_changed()
-        await ctx.session.send_resource_list_changed()
+        # Sent as part of the request being answered: the hosted server keeps
+        # no stream open between requests, so a notice tied to none is dropped.
+        request = ctx.request_context
+        for notice in (types.ToolListChangedNotification(), types.ResourceListChangedNotification()):
+            await request.session.send_notification(notice, related_request_id=request.request_id)
     except Exception:  # noqa: BLE001 - a host that won't take the hint still gets its answer
         log.debug("could not ask the host to re-list tools", exc_info=True)
 

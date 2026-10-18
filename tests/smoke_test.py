@@ -649,24 +649,39 @@ async def check_tool_list_nudge(check) -> None:
         async def send_resource_list_changed(self) -> None:
             self.calls.append("resources")
 
+    class FakeSession2(FakeSession):
+        async def send_notification(self, notice, related_request_id=None) -> None:
+            self.calls.append(("tools" if "Tool" in type(notice).__name__ else "resources")
+                              + ("" if related_request_id == 7 else "-unrelated"))
+
+    class FakeRequest:
+        def __init__(self) -> None:
+            self.session = FakeSession2()
+            self.request_id = 7
+
     class FakeCtx:
-        session = FakeSession()
+        def __init__(self) -> None:
+            self.request_context = FakeRequest()
+
+        @property
+        def session(self):
+            return self.request_context.session
 
     server._TOLD.clear()
-    await server._refresh_tool_list(FakeCtx, "member=False")
-    await server._refresh_tool_list(FakeCtx, "member=False")
-    check("the host is asked to re-list tools once per listing",
-          FakeCtx.session.calls == ["tools", "resources"], str(FakeCtx.session.calls))
-    await server._refresh_tool_list(FakeCtx, "member=True")
-    check("and again when the listing changes, as on joining a crew", len(FakeCtx.session.calls) == 4)
-    await server._refresh_tool_list(None, "member=None")
-    check("no context, no nudge", len(FakeCtx.session.calls) == 4)
+    one = FakeCtx()
+    await server._refresh_tool_list(one, "preview=False")
+    await server._refresh_tool_list(one, "preview=False")
+    check("the host is asked to re-list tools once per listing, as part of the request",
+          one.session.calls == ["tools", "resources"], str(one.session.calls))
+    await server._refresh_tool_list(one, "preview=True")
+    check("and again when the listing changes", len(one.session.calls) == 4)
+    await server._refresh_tool_list(None, "preview=None")
+    check("no context, no nudge", len(one.session.calls) == 4)
 
     # Through the server: a plain tool, not only a card, carries the nudge,
     # so a chat that kept an old tool list catches up whatever was asked first.
     server._TOLD.clear()
     ctx = FakeCtx()
-    ctx.session = FakeSession()
     await server.mcp.call_tool("get_connection_status", {}, ctx)
     check("any tool call asks the host to re-list tools",
           ctx.session.calls == ["tools", "resources"], str(ctx.session.calls))
