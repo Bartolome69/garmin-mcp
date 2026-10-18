@@ -14,12 +14,14 @@ Runs on the hosted machine (the workflows upload it there), in one of two ways:
   opened again the way a tool call opens it, reading the account's name. The
   test account has two-step verification off; a code request is a failure.
 
-    python3 check_signin.py [--full CREDENTIALS] [CANDIDATE_HOSTED_PY]
+    python3 check_signin.py [--full CREDENTIALS] [CANDIDATE]
 
 CREDENTIALS is a file holding the test account's email and password on two
-lines; it is deleted as soon as it is read. CANDIDATE_HOSTED_PY is a hosted.py
-to check before it ships, in place of the live one; the rest is what the
-machine already runs. scripts/run_signin_check.sh runs this from a workflow.
+lines; it is deleted as soon as it is read. CANDIDATE is the garmin_mcp
+package to check before it ships, unpacked in a directory, in place of the
+live one (an older form passed a single hosted.py, which still works, but
+can't carry a module the live machine lacks). scripts/run_signin_check.sh
+runs this from a workflow.
 
 Each run is recorded in PostHog as `sign_in_check`, so the connection alert
 sees a failing one too, and nothing in it identifies the test account. Prints
@@ -51,7 +53,11 @@ if args[:1] == ["--full"]:
     args = args[2:]
 candidate = args[0] if args else None
 
-if candidate:
+if candidate and os.path.isdir(candidate):
+    # Ahead of /app, so every garmin_mcp import below is the candidate's.
+    sys.path.insert(0, candidate)
+    from garmin_mcp import hosted
+elif candidate:
     spec = importlib.util.spec_from_file_location("garmin_mcp.hosted", candidate)
     hosted = importlib.util.module_from_spec(spec)
     sys.modules["garmin_mcp.hosted"] = hosted

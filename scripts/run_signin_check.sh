@@ -4,7 +4,7 @@
 # and FLY_APP.
 #
 #   scripts/run_signin_check.sh                 # the sign-in code that is live
-#   scripts/run_signin_check.sh candidate       # this checkout's garmin_mcp/hosted.py
+#   scripts/run_signin_check.sh candidate       # this checkout's garmin_mcp package
 #   scripts/run_signin_check.sh full [candidate]
 #       signs the spare test account in all the way, from GARMIN_CHECK_EMAIL
 #       and GARMIN_CHECK_PASSWORD. They reach the machine as a file only root
@@ -26,6 +26,9 @@ full_opt=""
 cand_opt=""
 puts="put scripts/check_signin.py $script"
 creds=""
+cand_tar=""
+cleanup_local() { [ -n "$creds" ] && rm -f "$creds"; [ -n "$cand_tar" ] && rm -f "$cand_tar"; return 0; }
+trap cleanup_local EXIT
 for word in "$@"; do
   case "$word" in
     full)
@@ -34,16 +37,19 @@ for word in "$@"; do
         exit 1
       fi
       creds="$(umask 077; mktemp)"
-      trap 'rm -f "$creds"' EXIT
       printf '%s\n%s\n' "$GARMIN_CHECK_EMAIL" "$GARMIN_CHECK_PASSWORD" > "$creds"
       full_opt="--full /tmp/check-signin-$run.creds"
       puts="$puts
 put $creds /tmp/check-signin-$run.creds"
       ;;
     candidate)
-      cand_opt="/tmp/hosted-under-test-$run.py"
+      # The whole package, not hosted.py alone: a hosted.py that imports a
+      # module the live machine doesn't have yet must still be checkable.
+      cand_tar="$(mktemp --suffix=.tgz)"
+      tar czf "$cand_tar" --exclude=__pycache__ garmin_mcp
+      cand_opt="/tmp/candidate-$run"
       puts="$puts
-put garmin_mcp/hosted.py /tmp/hosted-under-test-$run.py"
+put $cand_tar /tmp/candidate-$run.tgz"
       ;;
     *) echo "unknown option: $word"; exit 1 ;;
   esac
@@ -51,6 +57,10 @@ done
 args="$script $full_opt $cand_opt"
 
 flyctl ssh sftp shell --app "$FLY_APP" <<< "$puts"
+if [ -n "$cand_opt" ]; then
+  flyctl ssh console --app "$FLY_APP" -C \
+    "sh -c 'mkdir -p $cand_opt && tar xzf $cand_opt.tgz -C $cand_opt && rm -f $cand_opt.tgz'" > /dev/null
+fi
 if [ -n "$creds" ]; then
   flyctl ssh console --app "$FLY_APP" -C "chmod 600 /tmp/check-signin-$run.creds" > /dev/null
 fi
@@ -59,6 +69,7 @@ flyctl ssh console --app "$FLY_APP" -C \
 
 cleanup_remote() {
   [ -n "$creds" ] && flyctl ssh console --app "$FLY_APP" -C "rm -f /tmp/check-signin-$run.creds" > /dev/null 2>&1 || true
+  [ -n "$cand_opt" ] && flyctl ssh console --app "$FLY_APP" -C "rm -rf $cand_opt" > /dev/null 2>&1 || true
 }
 
 for _ in $(seq 1 30); do
