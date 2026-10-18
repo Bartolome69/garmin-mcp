@@ -1311,6 +1311,9 @@ async def main() -> int:
               re.fullmatch(r"DC-[A-Z2-9]{4}", code) is not None and started["just"]["action"] == "started"
               and started["club_run"]["time"] == "06:45" and started["club_run"]["km"] == 4.3, str(started)[:200])
         check("a member sees the crew's tools", {"get_crew", "update_crew", "leave_crew"} <= await tool_names(carol))
+        read_on = crews._connect().execute("SELECT updated_on FROM crew_members WHERE name = 'Carol'").fetchone()
+        check("starting a crew reads your own week straight away, so your row isn't empty",
+              read_on is not None and read_on[0] == _date.today().isoformat(), str(read_on))
         again = await call(carol, "join_crew", {"your_name": "Carol", "start_new_crew": True})
         check("one crew per person", "already in Friday Run Club" in str(again.get("error")), str(again)[:120])
         unnamed = await call(alice, "join_crew", {"your_name": "Al", "start_new_crew": True})
@@ -1349,6 +1352,15 @@ async def main() -> int:
         hosted._after_tool_for(bob, store.get_user(bob))(
             "create_plan", plan_for([(2, "easy", 8.0), (6, "easy", 8.0)], "46m 40s"))
         card = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        tok = crews.use(crews.Member(crews.member_key(carol, store.get_user(carol).email_hash)))
+        try:
+            on_sunday = crews.week(today=_date(2026, 10, 18))
+            on_saturday = crews.week(today=_date(2026, 10, 17))
+        finally:
+            crews.reset(tok)
+        check("on a Sunday the card shows the week ahead",
+              on_sunday["week"]["starts"] == "2026-10-19" and on_saturday["week"]["starts"] == "2026-10-12",
+              f"{on_sunday['week']} {on_saturday['week']}")
         people = {m["name"]: m for m in card.get("members", [])}
         check("each member's easy pace comes from easy runs they've done",
               people.get("Carol", {}).get("pace") == "5:40 /km" and people.get("Dave", {}).get("pace") == "5:30 /km",

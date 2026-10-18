@@ -2577,8 +2577,27 @@ CREW_NOTE = (
 )
 
 
-def _crew_card(week_of: str | None = None) -> dict[str, Any]:
+async def _read_my_week() -> None:
+    """Bring the asking member's own runs up to date from their plan, at most daily.
+
+    The crew normally learns someone's week when they look at their plan. Right
+    after joining, or after days away, that hasn't happened, and their own row
+    would say "no week yet" on the very card they're looking at.
+    """
+    if not crews.available() or crews.my_week_read_on() == date_cls.today().isoformat():
+        return
+    try:
+        plan = await get_plan.__wrapped__()
+        member = crews.current()
+        if member is not None and isinstance(plan, dict) and "error" not in plan:
+            crews.capture(member.key, plan)
+    except Exception:  # noqa: BLE001 - the card still draws, with what the crew had
+        log.debug("could not read the member's own week for the crew", exc_info=True)
+
+
+async def _crew_card(week_of: str | None = None) -> dict[str, Any]:
     day = date_cls.fromisoformat(parse_date(week_of)) if week_of else None
+    await _read_my_week()
     card = crews.week(day)
     return {"for_the_assistant": CREW_NOTE, **card}
 
@@ -2606,10 +2625,10 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     they looked at their own plan ("updated_on").
 
     Args:
-        week_of: Any date in the week to show. Defaults to this week; pass
-            next Monday on a weekend to look at the week ahead.
+        week_of: Any date in the week to show. Defaults to this week, or on a
+            Sunday to the week ahead.
     """
-    return _crew_card(week_of)
+    return await _crew_card(week_of)
 
 
 @_app_tool(CREW_VIEW)
@@ -2669,12 +2688,12 @@ async def join_crew(
         action = "started"
     else:
         raise crews.CrewError("Give the invite code a friend sent, or say the user wants to start a new crew.")
-    card = _crew_card()
+    card = await _crew_card()
     card["just"] = {
         "action": action, "crew": joined["crew"], "code": joined["code"],
         "next": (
-            "Their runs reach the crew each time they look at their plan, so suggest asking "
-            "\"how's my week looking?\" now. " + (
+            "Their own runs are on the card already, and stay current each time they look at "
+            "their plan. " + (
                 f"Share the code {joined['code']} with friends to invite them." if action == "started" else ""
             )
         ).strip(),

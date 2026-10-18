@@ -259,12 +259,14 @@ def capture(key: str, result: Any, today: date | None = None) -> bool:
     anything was kept.
     """
     today = today or date.today()
-    covered, runs, pace = from_plan(result, today)
-    if not covered:
+    if not isinstance(result, dict) or not isinstance(result.get("weeks"), list):
         return False
+    covered, runs, pace = from_plan(result, today)
     with _connect() as conn:
         if conn.execute("SELECT 1 FROM crew_members WHERE member = ?", (key,)).fetchone() is None:
             return False
+        # A plan with nothing in the next two weeks still counts as read: the
+        # crew sees an empty week, not "no week yet".
         conn.execute("DELETE FROM crew_runs WHERE day < ?", (today.isoformat(),))
         conn.executemany("DELETE FROM crew_runs WHERE member = ? AND day = ?", [(key, d) for d in covered])
         conn.executemany(
@@ -418,6 +420,16 @@ def leave() -> dict[str, Any]:
     return {"left": crew_name, "crew_deleted": not rest}
 
 
+def my_week_read_on() -> str | None:
+    """The day the asking member's runs were last read, or None if never or not a member."""
+    member = _current.get()
+    if member is None:
+        return None
+    with _connect() as conn:
+        row = conn.execute("SELECT updated_on FROM crew_members WHERE member = ?", (member.key,)).fetchone()
+    return row[0] if row else None
+
+
 def purge_past(today: date | None = None) -> int:
     """Delete every crew run on a day before today. Returns how many went."""
     today = today or date.today()
@@ -568,7 +580,8 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
     """The crew card's data for the week holding week_of (this week by default)."""
     me = _me()
     today = today or date.today()
-    anchor = week_of or today
+    # On a Sunday this week is all but over: the week ahead is the one to plan.
+    anchor = week_of or (today + timedelta(days=1) if today.weekday() == 6 else today)
     monday = anchor - timedelta(days=anchor.weekday())
     days = [monday + timedelta(days=i) for i in range(7)]
     with _connect() as conn:

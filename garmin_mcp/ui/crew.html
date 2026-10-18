@@ -55,6 +55,9 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
   .sub { font-size: 13.5px; color: var(--muted); }
+  .weeks { display: inline-flex; gap: 3px; padding: 3px; border-radius: 999px; background: var(--cell); align-self: flex-start; }
+  .weeks button { border: 0; background: transparent; color: var(--muted); height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; font-weight: 500; }
+  .weeks button[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
   .just { margin: 12px 16px 0; padding: 10px 12px; border-radius: 12px; background: var(--red-wash); border: 1px solid var(--red-edge); font-size: 13.5px; }
   .just b { font-weight: 600; }
 
@@ -212,6 +215,7 @@
       ]),
       el("h3", { class: "title", text: d.crew.name }),
       el("span", { class: "sub", text: sub }),
+      weekPicker(d),
     ]);
     app.appendChild(head);
     if (d.just) {
@@ -295,6 +299,22 @@
     size();
   }
 
+  // This week and next: the crew keeps two weeks of runs, so those are the two to show.
+  function weekPicker(d) {
+    if (!host) return null;
+    var t = parse(d.today), thisMon = iso(addDays(t, -((t.getDay() + 6) % 7))), nextMon = iso(addDays(parse(thisMon), 7));
+    var shown = d.week.starts;
+    var pick = function (starts, label) {
+      return el("button", { type: "button", "aria-pressed": shown === starts ? "true" : "false", onclick: function (e) {
+        if (shown === starts) return;
+        e.currentTarget.parentNode.querySelectorAll("button").forEach(function (b) { b.disabled = true; });
+        request("tools/call", { name: "get_crew", arguments: { week_of: starts } }).then(show).catch(function () {
+          e.currentTarget && e.currentTarget.parentNode && e.currentTarget.parentNode.querySelectorAll("button").forEach(function (b) { b.disabled = false; });
+        });
+      } }, [label]);
+    };
+    return el("div", { class: "weeks", role: "group", "aria-label": "Which week" }, [pick(thisMon, "This week"), pick(nextMon, "Next week")]);
+  }
   function cap(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
   function daysBetween(a, b) { return Math.round((parse(b) - parse(a)) / 864e5); }
   function svg(path) {
