@@ -1848,6 +1848,10 @@ async def main() -> int:
             crew_html = crew_view.contents[0].text if crew_view.contents else ""
             check("the crew view loads nothing from outside the frame",
                   "ui/initialize" in crew_html and not re.search(r"""(src|href)=["']?https?:""", crew_html))
+            check("the crew view's only addresses are the share page and WhatsApp's share link",
+                  set(re.findall(r"https?://[^\s\"'#?]+", crew_html)) - {"http://www.w3.org/2000/svg"}
+                  == {"https://garmin.daash.run/share/", "https://wa.me/"},
+                  str(set(re.findall(r"https?://[^\s\"'#?]+", crew_html))))
             preview_names = {t.name for t in tools.tools}
             check("a preview account is offered shoes and recovery trends",
                   {"get_shoes", "get_recovery_trends"} <= preview_names, str(sorted(preview_names)))

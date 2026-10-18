@@ -45,9 +45,13 @@
   .brand { display: flex; align-items: center; gap: 8px; min-height: 32px; }
   .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); font-size: 15px; }
   .kicker { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
-  .tools { position: absolute; top: 16px; right: 16px; }
-  .refresh { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--muted); }
+  .tools { position: absolute; top: 16px; right: 16px; display: flex; gap: 6px; }
+  .refresh, .share { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--muted); }
   .refresh.spin svg { animation: spin 0.9s linear infinite; }
+  .refresh:hover, .share:hover { border-color: var(--muted); color: var(--text); }
+  .note { position: absolute; top: 54px; right: 16px; z-index: 2; max-width: 260px; padding: 8px 12px; border-radius: 10px;
+    background: var(--text); color: var(--card); font-size: 12.5px; line-height: 1.35; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+  .note.on { opacity: 1; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
   .sub { font-size: 13.5px; color: var(--muted); }
@@ -200,8 +204,12 @@
       "–" + addDays(monday, 6).getDate() + " " + MONTHS[addDays(monday, 6).getMonth()];
     var head = el("div", { class: "head" }, [
       el("div", { class: "brand" }, [el("span", { class: "wordmark", text: "Daash" }), el("span", { class: "kicker mono", text: "CREW" })]),
-      el("span", { class: "tools" }, [el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh },
-        [svg('<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>')])]),
+      el("span", { class: "tools" }, [
+        canOpen() ? el("button", { class: "share", "aria-label": "Share the crew's week as an image", title: "Share the crew's week as an image", onclick: shareImage },
+          [svg('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>')]) : null,
+        el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh },
+          [svg('<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>')]),
+      ]),
       el("h3", { class: "title", text: d.crew.name }),
       el("span", { class: "sub", text: sub }),
     ]);
@@ -307,6 +315,48 @@
       } else shown();
     } catch (e) { shown(); }
   }
+  // The crew's week as an image: the share page on garmin.daash.run draws it
+  // from what travels after the # in the link, which browsers never send to
+  // a server. Names, days, kinds and distances only: no paces, since the
+  // image is for a group wider than the crew.
+  var SHARE_PAGE = window.__SHARE_PAGE__ || "https://garmin.daash.run/share/";
+  function sharePayload(d) {
+    var monday = parse(d.week.starts), u = Math.max(0, Math.min(7, daysBetween(d.week.starts, d.today)));
+    var clubIdx = d.club_run ? ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].indexOf(d.club_run.day) : -1;
+    var club = clubIdx >= 0 ? { d: clubIdx, at: fmtTime(d.club_run.time), km: d.club_run.km || null } : null;
+    return {
+      v: 1, type: "crew", c: d.crew.name, w: d.week.starts, u: u, code: d.crew.code, club: club,
+      m: d.members.map(function (m) { return { n: m.name, d: m.days.map(function (runs) {
+        return runs.slice(0, 2).map(function (r) { return r.km ? [r.kind, Math.round(r.km * 10) / 10] : [r.kind]; }); }) }; }),
+      t: d.together.map(function (t) { return { d: dow(t.date), k: t.kind, who: t.who, when: t.when || "" }; }),
+    };
+  }
+  function fmtTime(hhmm) {
+    if (!hhmm) return "";
+    var h = +hhmm.split(":")[0], m = +hhmm.split(":")[1], s = h < 12 ? "am" : "pm", h12 = h % 12 || 12;
+    return m ? h12 + ":" + String(m).padStart(2, "0") + s : h12 + s;
+  }
+  function shareImage(event) {
+    var btn = event.currentTarget;
+    var text = unescape(encodeURIComponent(JSON.stringify(sharePayload(data))));
+    var url = SHARE_PAGE + "#" + btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    var said = function (msg) {
+      var head = document.querySelector(".head"); if (!head) return;
+      var note = head.querySelector(".note") || head.appendChild(el("div", { class: "note", role: "status" }));
+      note.textContent = msg; requestAnimationFrame(function () { note.classList.add("on"); });
+      clearTimeout(said.t); said.t = setTimeout(function () { note.classList.remove("on"); }, 4000);
+    };
+    btn.disabled = true;
+    openLink(url).then(function () { said("The crew's week opens in the browser as an image."); },
+      function () { said("This chat app didn\u2019t open the link."); }).then(function () { btn.disabled = false; });
+  }
+  function openLink(url) {
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      return Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    }
+    if (!host) return Promise.resolve(window.open(url, "_blank", "noopener"));
+    return request("ui/open-link", { url: url });
+  }
   // WhatsApp's own share link: it opens WhatsApp with the message typed in,
   // and the person picks the group. Nothing is sent until they press send.
   function canOpen() {
@@ -315,15 +365,7 @@
   }
   function whatsapp(text, status) {
     var url = "https://wa.me/?text=" + encodeURIComponent(text);
-    var opened;
-    if (window.openai && typeof window.openai.openExternal === "function") {
-      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
-    } else if (!host) {
-      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
-    } else {
-      opened = request("ui/open-link", { url: url });
-    }
-    opened.then(function () { status.textContent = "Opening WhatsApp. Pick your group and send."; },
+    openLink(url).then(function () { status.textContent = "Opening WhatsApp. Pick your group and send."; },
       function () { status.textContent = "This chat app didn\u2019t open WhatsApp. Copy the message instead."; });
   }
   function ask(text, button) {

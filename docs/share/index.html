@@ -106,7 +106,7 @@
       <div class="status" id="friend-status" role="status"></div>
     </div>
     <p class="small">
-      This image was made on your device. Your week reached this page in the part
+      This image was made on your device. The week reached this page in the part
       of its address after the #, which browsers never send to a server, and the
       page has no analytics and stores nothing. <a href="/privacy/">Privacy</a>
     </p>
@@ -162,16 +162,50 @@
       lead: str(a[0], 24), words: str(a[1], 60), rows: rows, h: h.length > 1 ? h : [] };
   }
 
+  // A crew card sends { v, type: "crew", c, w, u, m, t, club, code }: the
+  // crew's name, its Monday, how many days are over, each member's chosen
+  // name and seven days of runs ([kind, km] or [kind]), the days that line
+  // up, the standing club run and the invite code. No paces: the image is
+  // for a group wider than the crew.
+  var CREW_KINDS = ["easy", "long", "hard", "club"];
+  function cleanCrew(d) {
+    if (!d || d.v !== 1 || d.type !== "crew" || !Array.isArray(d.m)) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.w || "")) return null;
+    var members = d.m.slice(0, 20).map(function (m) {
+      var days = [];
+      for (var i = 0; i < 7; i++) {
+        var cell = Array.isArray(m && m.d) && Array.isArray(m.d[i]) ? m.d[i] : [];
+        days.push(cell.slice(0, 2).map(function (r) {
+          return Array.isArray(r) && CREW_KINDS.indexOf(r[0]) >= 0 ? { k: r[0], km: num(r[1], 0, 1000) } : null;
+        }).filter(Boolean));
+      }
+      return { n: str(m && m.n, 24) || "Someone", d: days };
+    });
+    var together = Array.isArray(d.t) ? d.t.slice(0, 7).map(function (t) {
+      var day = num(t && t.d, 0, 6);
+      if (day == null) return null;
+      return { d: day, k: ["easy", "long", "mixed"].indexOf(t.k) >= 0 ? t.k : "easy",
+        who: Array.isArray(t.who) ? t.who.slice(0, 20).map(function (w) { return str(w, 24); }).filter(Boolean) : [],
+        when: t.when === "morning" || t.when === "evening" ? t.when : "" };
+    }).filter(Boolean) : [];
+    var club = d.club && num(d.club.d, 0, 6) != null ? { d: d.club.d, at: str(d.club.at, 8), km: num(d.club.km, 0, 100) } : null;
+    var upTo = num(d.u, 0, 7);
+    return { crew: true, c: str(d.c, 40) || "Daash crew", w: d.w, u: upTo == null ? 0 : upTo, m: members, t: together, club: club,
+      code: /^DC-[A-Z2-9]{4}$/.test(d.code || "") ? d.code : "" };
+  }
+
   // ---------------------------------------------------------------- drawing
   // The plan card's own palette, so the image looks like the card it came from.
   var THEMES = {
     light: { bg: "#FFFFFF", text: "#1F1E1B", soft: "#4A4944", muted: "#6B6A64", faint: "#9A9993", line: "#E6E4DD",
       red: "#E0312A", redText: "#C8261F", past: "#E6E4DD", onRed: "#FFFFFF",
       c: { easy: "#3F8A47", threshold: "#D19B00", intervals: "#C25A12", long: "#2F68B0", race: "#C8261F", swim: "#1F8A93", strength: "#7E57C2", other: "#6B6A64", rec: "#D9D7CF" },
+      wash: { easy: "#E3EFE2", long: "#E0E9F5", club: "#7E57C2", cell: "#F2F1EC" }, onClub: "#FFFFFF",
       label: { threshold: "#8F6A00" } },
     dark: { bg: "#262624", text: "#F4F3EE", soft: "#C9C8C2", muted: "#A6A59F", faint: "#75746F", line: "#3C3C39",
       red: "#E8322B", redText: "#FF6A61", past: "#4A4A46", onRed: "#FFFFFF",
       c: { easy: "#8CC08F", threshold: "#E3BF4F", intervals: "#F2924A", long: "#74A3DB", race: "#FF6A61", swim: "#6FC2C9", strength: "#B39DDB", other: "#A6A59F", rec: "#5A5954" },
+      wash: { easy: "#34443A", long: "#2F3D4F", club: "#B39DDB", cell: "#3A3A37" }, onClub: "#1F1E1B",
       label: {} },
   };
   var SIZES = { post: { w: 1080, h: 1350, top: 84, bottom: 72 }, story: { w: 1080, h: 1920, top: 230, bottom: 270 } };
@@ -338,21 +372,132 @@
     font(ctx, 500, Math.round(34 * k)); ctx.fillStyle = T.text; ctx.textAlign = "right"; ctx.fillText(km, kmX, cy + 10 * k); ctx.textAlign = "left";
   }
 
+  // The crew's week: who runs what, day by day, and the days that line up.
+  function drawCrew(canvas, cw, themeName, sizeName) {
+    var T = THEMES[themeName], S = SIZES[sizeName], W = S.w, H = S.h, P = 72;
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext("2d");
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
+    var story = sizeName === "story";
+    var p = cw.w.split("-"), monday = new Date(+p[0], +p[1] - 1, +p[2]), sunday = new Date(+p[0], +p[1] - 1, +p[2] + 6);
+    var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var span = monday.getMonth() === sunday.getMonth()
+      ? monday.getDate() + " to " + sunday.getDate() + " " + MON[sunday.getMonth()]
+      : monday.getDate() + " " + MON[monday.getMonth()] + " to " + sunday.getDate() + " " + MON[sunday.getMonth()];
+
+    var y = S.top + 40;
+    font(ctx, 800, 46, false, true); ctx.fillStyle = T.redText; ctx.textAlign = "left"; ctx.fillText("Daash", P, y);
+    font(ctx, 500, 24, true); ctx.fillStyle = T.muted; spaced(ctx, "CREW WEEK", W - P, y - 6, 3.4, "right");
+    y += story ? 104 : 92;
+    font(ctx, 700, 66); ctx.fillStyle = T.text;
+    var title = wrap(ctx, cw.c, W - 2 * P, 2);
+    title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 72); });
+    y += (title.length - 1) * 72 + 50;
+    font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(span, P, y);
+
+    // The grid: a name column, then the seven days.
+    y += story ? 70 : 56;
+    var nameW = 200, gap = 8, cellW = (W - 2 * P - nameW - gap * 7) / 7;
+    var n = cw.m.length, rowH = Math.min(98, Math.max(64, (H - S.bottom - y - 60 - (cw.t.length ? 60 + cw.t.length * 54 : 0) - 70) / Math.max(n, 1)));
+    var k = rowH / 98;
+    font(ctx, 500, 20, true); ctx.textAlign = "center";
+    for (var d = 0; d < 7; d++) {
+      var cx = P + nameW + gap + d * (cellW + gap) + cellW / 2;
+      ctx.fillStyle = T.faint; ctx.fillText(["M", "T", "W", "T", "F", "S", "S"][d], cx, y);
+      var dateY = y + 30, today = d === cw.u;
+      if (today) { ctx.fillStyle = T.red; ctx.beginPath(); ctx.arc(cx, dateY - 9, 18, 0, Math.PI * 2); ctx.fill(); }
+      font(ctx, 600, 22); ctx.fillStyle = today ? T.onRed : d < cw.u ? T.faint : T.text;
+      ctx.fillText(String(dayDate(cw.w, d)), cx, dateY);
+      font(ctx, 500, 20, true);
+    }
+    y += 50;
+    cw.m.forEach(function (m) {
+      var top = y, cy = y + rowH / 2;
+      ctx.textAlign = "left"; font(ctx, 600, Math.round(28 * Math.max(k, 0.85))); ctx.fillStyle = T.text;
+      ctx.fillText(fit(ctx, m.n, nameW - 12), P, cy + 10);
+      for (var d = 0; d < 7; d++) {
+        var x = P + nameW + gap + d * (cellW + gap), runs = m.d[d];
+        var pick = runs.filter(function (r) { return r.k === "club"; })[0] || runs.filter(function (r) { return r.k === "long"; })[0]
+          || runs.filter(function (r) { return r.k === "easy"; })[0] || runs[0];
+        var past = d < cw.u;
+        ctx.globalAlpha = past ? 0.45 : 1;
+        if (!pick) { ctx.fillStyle = T.wash.cell; rrect(ctx, x, top + 6, cellW, rowH - 12, 12); ctx.fill(); }
+        else if (pick.k === "hard") {
+          ctx.strokeStyle = T.line; ctx.lineWidth = 2; ctx.setLineDash([6, 5]); rrect(ctx, x, top + 6, cellW, rowH - 12, 12); ctx.stroke(); ctx.setLineDash([]);
+          ctx.textAlign = "center"; font(ctx, 500, Math.round(19 * Math.max(k, 0.85)), true); ctx.fillStyle = T.faint; ctx.fillText("hard", x + cellW / 2, cy + 7);
+        } else {
+          ctx.fillStyle = T.wash[pick.k]; rrect(ctx, x, top + 6, cellW, rowH - 12, 12); ctx.fill();
+          ctx.textAlign = "center";
+          var ink = pick.k === "club" ? T.onClub : T.text, sub = pick.k === "club" ? T.onClub : T.c[pick.k];
+          if (pick.km) {
+            font(ctx, 700, Math.round(26 * Math.max(k, 0.85))); ctx.fillStyle = ink; ctx.fillText(fmtKm(pick.km), x + cellW / 2, cy - 2);
+            font(ctx, 500, Math.round(17 * Math.max(k, 0.85)), true); ctx.fillStyle = sub; ctx.fillText(pick.k, x + cellW / 2, cy + 22);
+          } else {
+            font(ctx, 500, Math.round(19 * Math.max(k, 0.85)), true); ctx.fillStyle = sub; ctx.fillText(pick.k, x + cellW / 2, cy + 7);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+      y += rowH;
+    });
+    // Legend
+    y += 26;
+    ctx.textAlign = "left"; var lx = P;
+    [["easy", "Easy"], ["long", "Long"], ["club", "Club run"], ["hard", "Hard, alone"]].forEach(function (pair) {
+      if (pair[0] === "hard") { ctx.strokeStyle = T.faint; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); rrect(ctx, lx, y - 16, 18, 18, 5); ctx.stroke(); ctx.setLineDash([]); }
+      else { ctx.fillStyle = pair[0] === "club" ? T.wash.club : T.c[pair[0]]; rrect(ctx, lx, y - 16, 18, 18, 5); ctx.fill(); }
+      font(ctx, 400, 24); ctx.fillStyle = T.muted; ctx.fillText(pair[1], lx + 28, y);
+      lx += 28 + ctx.measureText(pair[1]).width + 36;
+    });
+
+    // The days that line up.
+    if (cw.t.length) {
+      y += 70;
+      font(ctx, 700, 34); ctx.fillStyle = T.text; ctx.fillText("Same day", P, y);
+      y += 14;
+      cw.t.forEach(function (t) {
+        y += 50;
+        var dayName = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][t.d];
+        var what = t.k === "mixed" ? "easy and long" : t.k + " run";
+        var who = t.who.length ? (t.who.length === 1 ? t.who[0] : t.who.slice(0, -1).join(", ") + " and " + t.who[t.who.length - 1]) : "";
+        font(ctx, 600, 28); ctx.fillStyle = T.text;
+        var head = dayName + (t.when ? " " + t.when : "");
+        ctx.fillText(head, P, y);
+        var hw = ctx.measureText(head).width;
+        font(ctx, 400, 28); ctx.fillStyle = T.c[t.k === "mixed" ? "long" : t.k]; ctx.fillText("  " + what, P + hw, y);
+        var ww = ctx.measureText("  " + what).width;
+        ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, "  " + who, W - 2 * P - hw - ww), P + hw + ww, y);
+      });
+    }
+
+    // Footer: how to join, and where it came from.
+    var footY = H - S.bottom - 64;
+    ctx.textAlign = "left";
+    font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
+    font(ctx, 400, 26); ctx.fillStyle = T.muted; ctx.textAlign = "right";
+    ctx.fillText(cw.code ? "Join: tell your Daash the code " + cw.code : "Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.textAlign = "left";
+  }
+
   // ---------------------------------------------------------------- page
-  var wk = clean(decode(location.hash.slice(1)));
+  var raw = decode(location.hash.slice(1));
+  var wk = cleanCrew(raw) || clean(raw);
   if (!wk) { document.getElementById("nothing").hidden = false; return; }
   document.getElementById("ready").hidden = false;
-  document.getElementById("heading").textContent = wk.k === "recap" ? "Share your week" : wk.k === "ahead" ? "Share your week ahead" : "Share this week";
+  document.getElementById("heading").textContent = wk.crew ? "Share your crew's week" : wk.k === "recap" ? "Share your week" : wk.k === "ahead" ? "Share your week ahead" : "Share this week";
+  if (wk.crew) document.querySelector(".lead").textContent = "Post it in the group so everyone can see who's running when.";
 
   var look = "light", size = "post", canvas = document.createElement("canvas"), blob = null, url = null;
   var img = document.getElementById("img"), save = document.getElementById("save"), shareBtn = document.getElementById("share");
   var status = document.getElementById("status");
-  var fileName = "daash-week-" + wk.w + ".png";
+  var fileName = (wk.crew ? "daash-crew-" : "daash-week-") + wk.w + ".png";
   save.setAttribute("download", fileName);
-  img.alt = [KICKER[wk.k].charAt(0) + KICKER[wk.k].slice(1).toLowerCase(), wk.t, wk.s, wk.lead + " " + wk.words].filter(Boolean).join(". ");
+  img.alt = wk.crew ? "Crew week. " + wk.c + ". " + wk.m.length + " members' runs by day."
+    : [KICKER[wk.k].charAt(0) + KICKER[wk.k].slice(1).toLowerCase(), wk.t, wk.s, wk.lead + " " + wk.words].filter(Boolean).join(". ");
 
   function render() {
-    draw(canvas, wk, look, size);
+    (wk.crew ? drawCrew : draw)(canvas, wk, look, size);
     document.getElementById("preview").className = "preview" + (size === "story" ? " story" : "");
     canvas.toBlob(function (b) {
       blob = b;
