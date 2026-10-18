@@ -1302,7 +1302,7 @@ async def main() -> int:
         check("anyone can join a crew, but the crew's own tools wait until they do",
               "join_crew" in names_before and not ({"get_crew", "update_crew", "leave_crew"} & names_before))
         started = await call(carol, "join_crew", {
-            "your_name": "Carol", "start_crew_named": "Friday Run Club",
+            "your_name": "Carol", "crew_name": "Friday Run Club",
             "usual_times": ["weekday_evening", "weekend_morning"],
             "club_run_day": "fri", "club_run_time": "06:45", "club_run_km": 4.3,
         })
@@ -1311,8 +1311,11 @@ async def main() -> int:
               re.fullmatch(r"DC-[A-Z2-9]{4}", code) is not None and started["just"]["action"] == "started"
               and started["club_run"]["time"] == "06:45" and started["club_run"]["km"] == 4.3, str(started)[:200])
         check("a member sees the crew's tools", {"get_crew", "update_crew", "leave_crew"} <= await tool_names(carol))
-        again = await call(carol, "join_crew", {"your_name": "Carol", "start_crew_named": "Another"})
+        again = await call(carol, "join_crew", {"your_name": "Carol", "start_new_crew": True})
         check("one crew per person", "already in Friday Run Club" in str(again.get("error")), str(again)[:120])
+        unnamed = await call(alice, "join_crew", {"your_name": "Al", "start_new_crew": True})
+        check("a crew needs no name: it takes its starter's", unnamed.get("crew", {}).get("name") == "Al's crew", str(unnamed)[:120])
+        await call(alice, "leave_crew", {"confirm": True})
         joined = await call(dave, "join_crew", {"your_name": "Dave", "code": code.lower().replace("-", " "),
                                                 "usual_times": ["weekday_evening", "weekend_morning"]})
         check("joining by code, however it's typed", joined.get("just", {}).get("action") == "joined", str(joined)[:160])

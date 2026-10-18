@@ -3,7 +3,9 @@
 Each member's Daash already knows their week. A crew pools the part of it that
 suits company (easy runs, long runs and the club's standing run) so Daash can
 point out who else is running on the same day, and suggest doing it together.
-It never moves anyone's run to make a match.
+It never moves anyone's run to make a match, and a run the crew already does
+together every week (a club run) is shown but never matched: the crew is for
+syncing up the other days.
 
 Only the hosted server has crews: it alone knows who is asking. It sets the
 member for each request here, the same way it binds the Garmin session, and
@@ -324,8 +326,10 @@ def _new_code() -> str:
 def start(crew_name: Any, name: Any, times: Any = None, club: dict[str, Any] | None = None,
           goes_to_club: bool | None = None) -> dict[str, Any]:
     me = _me()
-    crew_name = _clean_name(crew_name, "the crew is called", 40)
     name = _clean_name(name, "the crew calls you", 24)
+    # The name is only a label for the card and the invite; without one, the
+    # crew is named after whoever started it.
+    crew_name = _clean_name(crew_name or f"{name}'s crew", "the crew is called", 40)
     times = _clean_times(times) or []
     with _connect() as conn:
         mine = conn.execute(

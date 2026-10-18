@@ -2617,7 +2617,8 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
 async def join_crew(
     your_name: str,
     code: str | None = None,
-    start_crew_named: str | None = None,
+    start_new_crew: bool = False,
+    crew_name: str | None = None,
     usual_times: list[str] | None = None,
     goes_to_club_run: bool | None = None,
     club_run_day: str | None = None,
@@ -2628,28 +2629,31 @@ async def join_crew(
     """Join a friend's Daash crew with the invite code they sent, or start a new crew.
 
     A Daash crew is a few friends who all use Daash: it shows them each other's
-    easy and long runs for the week and suggests runs to do together. Before
-    joining, tell the user plainly what the crew will see: their chosen name,
-    usual running times, easy pace, and the day and distance of their easy and
-    long runs for the next two weeks; hard sessions show only as "hard", and
+    easy and long runs for the week and points out the days they're already
+    running the same kind of run, so they can run together. Before joining,
+    tell the user plainly what the crew will see: their chosen name, usual
+    running times, easy pace, and the day and distance of their easy and long
+    runs for the next two weeks; hard sessions show only as "hard", and
     nothing else from Garmin is shared. Ask for anything missing below rather
     than guessing.
 
     Args:
         your_name: What the crew calls the user, e.g. "Bart".
-        code: The invite code, like "DC-7Q4M". Omit it to start a crew instead.
-        start_crew_named: The new crew's name, e.g. "Friday Run Club", when
-            starting one.
+        code: The invite code, like "DC-7Q4M", to join a friend's crew.
+        start_new_crew: True to start a crew instead of joining one.
+        crew_name: Optional, when starting: what the card calls the crew. Left
+            out, it is named after the user ("Bart's crew"); the crew can
+            rename it later.
         usual_times: When the user usually runs: mornings or evenings, on
             weekdays or at weekends, as any of weekday_morning,
             weekday_evening, weekend_morning, weekend_evening ("mornings" or
             "evenings" alone means both). Garmin's calendar has days but no
             times, so this is how runs on the same day are matched by time.
         goes_to_club_run: Whether the user usually goes to the crew's club run.
-        club_run_day: When starting a crew that already runs together on a set
-            day (a club run): its day, e.g. "fri". It shows on the week for
-            whoever goes and that day is left out of the matching, since the
-            crew needs no help coordinating it.
+        club_run_day: Optional, when starting: if the crew already runs
+            together on a set day every week (a club run), its day, e.g.
+            "fri". That run shows on everyone's week but is never offered as
+            a match: the crew is for syncing the other days.
         club_run_time: Its start time, "HH:MM", e.g. "06:45".
         club_run_km: Its distance in km, e.g. 4.3.
         club_run_place: Where it starts, a few words.
@@ -2658,11 +2662,11 @@ async def join_crew(
     if code:
         joined = crews.join(code, your_name, usual_times, goes_to_club_run)
         action = "joined"
-    elif start_crew_named:
-        joined = crews.start(start_crew_named, your_name, usual_times, club, goes_to_club_run)
+    elif start_new_crew or crew_name:
+        joined = crews.start(crew_name, your_name, usual_times, club, goes_to_club_run)
         action = "started"
     else:
-        raise crews.CrewError("Give the invite code a friend sent, or a name to start a new crew.")
+        raise crews.CrewError("Give the invite code a friend sent, or say the user wants to start a new crew.")
     card = _crew_card()
     card["just"] = {
         "action": action, "crew": joined["crew"], "code": joined["code"],
