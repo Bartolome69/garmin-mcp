@@ -119,7 +119,7 @@ jobs:
         if: ${{ !inputs.skip_signin_check }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: scripts/run_signin_check.sh candidate
+        run: scripts/signin_check_retry.sh candidate
 
       # And the spare test account all the way, with the new code: the
       # session it stores and a tool call made with it (check-full-signin.yml).
@@ -129,7 +129,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
           GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
-        run: scripts/run_signin_check.sh full candidate
+        run: scripts/signin_check_retry.sh full candidate
 
       - name: Deploy
         env:
@@ -192,11 +192,11 @@ jobs:
       - name: Sign in to Garmin with what is now live
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: scripts/run_signin_check.sh
+        run: scripts/signin_check_retry.sh
 
       - name: Connect the test account with what is now live
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
           GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
-        run: scripts/run_signin_check.sh full
+        run: scripts/signin_check_retry.sh full
