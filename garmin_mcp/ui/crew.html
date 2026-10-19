@@ -15,7 +15,7 @@
     --soft: #4A4944; --row-line: #EEECE6; --cell: #F2F1EC; --btn-border: #D9D7CF;
     --red: #E0312A; --red-text: #C8261F; --red-wash: #FDF4F2; --red-edge: #F2C9C4;
     --easy: #3F8A47; --easy-wash: #E3EFE2; --long: #2F68B0; --long-wash: #E0E9F5; --club: #7E57C2; --club-wash: #EEE7F8;
-    --on-red: #FFFFFF; --on-club: #FFFFFF;
+    --on-red: #FFFFFF; --on-club: #FFFFFF; --page: #F5F4EF;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -24,6 +24,7 @@
       --soft: #C9C8C2; --row-line: #3C3C39; --cell: #3A3A37; --btn-border: #55544F;
       --red: #E8322B; --red-text: #FF6A61; --red-wash: #3B3B38; --red-edge: #6B3530;
       --easy: #8CC08F; --easy-wash: #34443A; --long: #74A3DB; --long-wash: #2F3D4F; --club: #B39DDB; --club-wash: #3D3550; --on-club: #1F1E1B;
+      --page: #262624;
     }
   }
   :root[data-theme="dark"] {
@@ -32,6 +33,7 @@
     --soft: #C9C8C2; --row-line: #3C3C39; --cell: #3A3A37; --btn-border: #55544F;
     --red: #E8322B; --red-text: #FF6A61; --red-wash: #3B3B38; --red-edge: #6B3530;
     --easy: #8CC08F; --easy-wash: #34443A; --long: #74A3DB; --long-wash: #2F3D4F; --club: #B39DDB; --club-wash: #3D3550; --on-club: #1F1E1B;
+    --page: #262624;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: transparent; }
@@ -112,6 +114,14 @@
   .foot .code b { color: var(--text); font-weight: 600; letter-spacing: 0.04em; }
   textarea { width: 100%; min-height: 120px; border-radius: 10px; border: 1px solid var(--btn-border); background: var(--cell); color: var(--text); font: 13px/1.45 inherit; padding: 10px; resize: vertical; }
   textarea[hidden] { display: none; }
+  /* The crew's own web page: the same card, on a page of its own. */
+  html.page, html.page body { background: var(--page); }
+  html.page body { padding: 16px; }
+  html.page #app { max-width: 680px; margin: 0 auto; }
+  .promo { font-size: 13px; color: var(--muted); }
+  .promo a { color: var(--red-text); font-weight: 600; text-decoration: none; }
+  .link-row { font-size: 13px; color: var(--muted); }
+  .link-row button { border: 0; background: none; padding: 0; color: var(--red-text); font-weight: 600; font-size: 13px; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style>
 </head>
@@ -299,23 +309,41 @@
           el("button", { class: "act go", onclick: function () { copy(box, status); } }, ["Copy for the group chat"]),
           canOpen() ? el("button", { class: "act", onclick: function () { whatsapp(box.value, status); } }, ["Send to WhatsApp"]) : null,
         ]),
-        el("span", { class: "code" }, ["Invite code ", el("b", { class: "mono", text: d.crew.code })]),
+        d.crew.code ? el("span", { class: "code" }, ["Invite code ", el("b", { class: "mono", text: d.crew.code })]) : null,
       ]),
+      d.crew.page_url ? el("div", { class: "link-row" }, ["The crew's page is on: anyone with the link can see this week and next. ",
+        el("button", { type: "button", onclick: function () { copyText(d.crew.page_url, status, "Link copied. Pin it in the group chat's description."); } }, ["Copy link"])])
+        : (host && d.crew.you_started_it ? el("div", { class: "link-row body" }, [
+          el("button", { type: "button", onclick: function (e) { ask("Turn on a link to my crew's page, so the group can see our week any time", e.currentTarget); } }, ["Get a link for the group"])]) : null),
+      PAGE && PAGE.promo ? el("div", { class: "promo" }, [PAGE.promo.text + " ",
+        el("a", { href: PAGE.promo.url, target: "_blank", rel: "noopener" }, [PAGE.promo.link])]) : null,
       status, box,
     ]));
     size();
   }
 
   // This week and next: the crew keeps two weeks of runs, so those are the two to show.
+  // The crew's web page sets this; it reads the crew from its own address
+  // instead of asking the chat for get_crew.
+  var PAGE = window.__CREW_PAGE__ || null;
+  function getWeek(args) {
+    if (PAGE) {
+      return fetch(location.pathname + "?format=json" + (args.week_of ? "&week_of=" + encodeURIComponent(args.week_of) : ""),
+        { credentials: "omit", cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("unavailable")); })
+        .then(function (card) { return { structuredContent: card }; });
+    }
+    return request("tools/call", { name: "get_crew", arguments: args });
+  }
   function weekPicker(d) {
-    if (!host) return null;
+    if (!host && !PAGE) return null;
     var t = parse(d.today), thisMon = iso(addDays(t, -((t.getDay() + 6) % 7))), nextMon = iso(addDays(parse(thisMon), 7));
     var shown = d.week.starts;
     var pick = function (starts, label) {
       return el("button", { type: "button", "aria-pressed": shown === starts ? "true" : "false", onclick: function (e) {
         if (shown === starts) return;
         e.currentTarget.parentNode.querySelectorAll("button").forEach(function (b) { b.disabled = true; });
-        request("tools/call", { name: "get_crew", arguments: { week_of: starts } }).then(show).catch(function () {
+        getWeek({ week_of: starts }).then(show).catch(function () {
           e.currentTarget && e.currentTarget.parentNode && e.currentTarget.parentNode.querySelectorAll("button").forEach(function (b) { b.disabled = false; });
         });
       } }, [label]);
@@ -333,6 +361,13 @@
   }
   // The frame may not be allowed the clipboard: then the message is shown,
   // selected, for the person to copy themselves.
+  function copyText(text, status, done) {
+    var fail = function () { status.textContent = text; };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { status.textContent = done; }, fail);
+      else fail();
+    } catch (e) { fail(); }
+  }
   function copy(box, status) {
     var text = box.value;
     var shown = function () { box.hidden = false; box.focus(); box.select(); status.textContent = "Select the message and copy it."; size(); };
@@ -407,15 +442,21 @@
   }
   function refresh(event) {
     var btn = event.currentTarget;
-    if (!host) return;
+    if (!host && !PAGE) return;
     btn.classList.add("spin");
-    request("tools/call", { name: "get_crew", arguments: data && data.week ? { week_of: data.week.starts } : {} })
+    getWeek(data && data.week ? { week_of: data.week.starts } : {})
       .then(show).catch(function () {})
       .then(function () { var b = document.querySelector(".refresh"); if (b) b.classList.remove("spin"); });
   }
 
   // ---------------------------------------------------------------- start
   if (window.__CREW_DEMO__) { show({ structuredContent: window.__CREW_DEMO__ }); return; }
+  if (PAGE) {
+    document.documentElement.classList.add("page");
+    if (PAGE.card && PAGE.card.crew) document.title = PAGE.card.crew.name + " · Daash crew";
+    show({ structuredContent: PAGE.card });
+    return;
+  }
   if (!host) { document.getElementById("app").innerHTML = '<div class="empty">This view opens inside a chat that supports MCP Apps.</div>'; return; }
   request("ui/initialize", {
     protocolVersion: "2026-01-26",

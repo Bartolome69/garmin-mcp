@@ -27,6 +27,7 @@ import re
 import secrets
 import threading
 import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -1876,6 +1877,66 @@ async def mfa_submit(request: Request) -> Response:
 @mcp.custom_route("/health", methods=["GET"])
 async def health(request: Request) -> Response:
     return HTMLResponse("ok")
+
+
+# A crew's own page: its week for anyone with the link the crew's starter
+# turned on. The same card the chat draws, run as a page of its own, with the
+# week written into it so it shows at once. Kept out of search engines,
+# caches and referrer headers; no analytics, no cookies, nothing from
+# anywhere else.
+_UI_DIR = Path(__file__).parent / "ui"
+_CREW_PAGE_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Robots-Tag": "noindex, nofollow",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "connect-src 'self'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; "
+        "frame-ancestors 'none'"
+    ),
+}
+CREW_PAGE_PROMO = {
+    "text": "Got a Garmin? Daash fills in your runs for you.",
+    "link": "Try Daash",
+    "url": "https://daash.run/?utm_source=crew-page&utm_medium=link&utm_campaign=crews",
+}
+
+
+def _crew_page_week(request: Request) -> dict[str, Any] | None:
+    from datetime import date as _date
+
+    raw = request.query_params.get("week_of") or ""
+    try:
+        week_of = _date.fromisoformat(raw) if raw else None
+    except ValueError:
+        week_of = None
+    return crews.public_week(request.path_params.get("link", ""), week_of)
+
+
+@mcp.custom_route("/crew/{link}", methods=["GET"])
+async def crew_page(request: Request) -> Response:
+    card = await anyio.to_thread.run_sync(_crew_page_week, request)
+    if card is None:
+        return Response(
+            "<!doctype html><meta charset=utf-8><meta name=robots content=noindex>"
+            "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Daash crew</title>"
+            "<body style=\"font:16px/1.5 system-ui,sans-serif;max-width:520px;margin:15vh auto;padding:0 16px\">"
+            "<p>This crew page isn't available. The link may have been turned off or replaced: "
+            "ask the crew for the new one.</p>",
+            status_code=404, media_type="text/html", headers=_CREW_PAGE_HEADERS,
+        )
+    if request.query_params.get("format") == "json":
+        return Response(json.dumps(card), media_type="application/json", headers=_CREW_PAGE_HEADERS)
+    config = json.dumps({"card": card, "promo": CREW_PAGE_PROMO}).replace("<", "\\u003c")
+    view = (_UI_DIR / "crew.html").read_text(encoding="utf-8")
+    view = view.replace(
+        "<title>Daash crew</title>",
+        "<title>Daash crew</title><meta name=robots content=\"noindex, nofollow\">"
+        f"<script>window.__CREW_PAGE__ = {config};</script>",
+        1,
+    )
+    return HTMLResponse(view, headers=_CREW_PAGE_HEADERS)
 
 
 @mcp.custom_route("/stats", methods=["GET"])

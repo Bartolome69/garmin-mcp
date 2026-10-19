@@ -11,6 +11,7 @@ import inspect
 import json
 import hashlib
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date as date_cls, timedelta
@@ -2688,7 +2689,23 @@ async def _crew_card(week_of: str | None = None) -> dict[str, Any]:
         raise crews.CrewError("You're not in a crew. Join one with the code a friend sent, or start one.")
     await _read_my_week()
     card = crews.week(day)
-    return {"for_the_assistant": CREW_NOTE, **card}
+    return {"for_the_assistant": CREW_NOTE, **_with_page_url(card)}
+
+
+# Where the hosted server answers, for a crew page's address.
+CREW_PAGE_BASE = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/") or "https://mcp.garmin.daash.run"
+
+
+def crew_page_url(link: str) -> str:
+    return f"{CREW_PAGE_BASE}/crew/{link}"
+
+
+def _with_page_url(card: dict[str, Any]) -> dict[str, Any]:
+    crew = dict(card.get("crew") or {})
+    link = crew.pop("link", None)
+    if link:
+        crew["page_url"] = crew_page_url(link)
+    return {**card, "crew": crew}
 
 
 @_app_tool(CREW_VIEW)
@@ -2712,7 +2729,9 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     one or a day has passed. Never call it together with get_plan: a question
     about the user's own training is get_plan's alone. A member's runs are as of the last time
     they looked at their own plan ("updated_on"). If the user isn't in a crew
-    it says so: join_crew is how they join or start one.
+    it says so: join_crew is how they join or start one. crew.page_url, when
+    the crew's starter has turned its page on (update_crew group_link), is a
+    link anyone in the group can open any time to see this week and next.
 
     Args:
         week_of: Any date in the week to show. Defaults to this week, or on a
@@ -2803,6 +2822,8 @@ async def update_crew(
     club_run_km: float | None = None,
     club_run_place: str | None = None,
     remove_member: str | None = None,
+    group_link: str | None = None,
+    confirm: bool = False,
 ) -> dict[str, Any]:
     """Change the user's details in their Daash crew, or the crew's own settings.
 
@@ -2821,7 +2842,35 @@ async def update_crew(
         club_run_km: Its distance in km.
         club_run_place: Where it starts.
         remove_member: The name of a member to take out of the crew.
+        group_link: The crew's page: "on" for a link the group can open any
+            time to see this week and next, "new" to replace it with a fresh
+            one (the old stops working), "off" to stop it. Only whoever
+            started the crew can change it. Before "on" or "new", tell the
+            user that anyone with the link can see members' first names, the
+            days they run, the time of day and easy, long or hard, and get
+            their yes; then call again with confirm=true. Give them the
+            page_url to pin in the group chat's description.
+        confirm: True once the user has agreed to the link, as above.
     """
+    if group_link is not None:
+        choice = str(group_link).strip().lower()
+        if choice not in ("on", "new", "off"):
+            return {"error": 'group_link is "on", "new" or "off".'}
+        if choice != "off" and not confirm:
+            return {
+                "needs_confirmation": (
+                    "Anyone with the crew's link will be able to see members' first names, the days "
+                    "they run this week and next, the time of day and easy, long or hard: never pace "
+                    "or anything else. Ask the user, then call again with confirm=true."
+                )
+            }
+        link = crews.set_link(choice != "off", renew=choice == "new")
+        if not link:
+            return {"group_link": "off", "next": "The old link no longer works."}
+        return {
+            "group_link": "on", "page_url": crew_page_url(link),
+            "next": "Give the user the page_url to pin in the group chat's description. It updates as members look at their plans.",
+        }
     club: dict[str, Any] | None = None
     if club_run_day and str(club_run_day).strip().lower() == "none":
         club = {}

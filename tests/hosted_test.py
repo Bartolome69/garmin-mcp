@@ -1451,6 +1451,59 @@ async def main() -> int:
         crews._connect().execute("INSERT INTO crew_runs (member, day, kind, km) VALUES ('x', '2020-01-01', 'easy', 5)").connection.commit()
         check("days that have passed are deleted", crews.purge_past() >= 1)
 
+        # The crew's own page, for anyone with its link.
+        def fetch(path):
+            req = urllib.request.Request(f"{base}{path}")
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    return r.status, dict(r.headers), r.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, dict(e.headers), e.read().decode()
+
+        not_starter = await call(dave, "update_crew", {"group_link": "on", "confirm": True})
+        check("only whoever started the crew turns its page link on", "Only whoever started" in str(not_starter.get("error")), str(not_starter)[:120])
+        asked = await call(carol, "update_crew", {"group_link": "on"})
+        check("turning the link on asks the user first, saying who can see what",
+              "needs_confirmation" in asked and "first names" in asked["needs_confirmation"]
+              and crews._connect().execute("SELECT link FROM crews WHERE code = ?", (code,)).fetchone()[0] is None, str(asked)[:160])
+        on = await call(carol, "update_crew", {"group_link": "on", "confirm": True})
+        page_url = on.get("page_url", "")
+        path = "/crew/" + page_url.rsplit("/crew/", 1)[-1]
+        check("once agreed, the link is long and random", on.get("group_link") == "on"
+              and re.fullmatch(r"/crew/[A-Za-z0-9_-]{24}", path) is not None, str(on))
+        status, headers, body = await anyio_run(fetch, path)
+        check("the page shows the crew's week", status == 200 and "__CREW_PAGE__" in body and "Carol" in body and "Friday Run Club" in body, str(status))
+        headers = {k.lower(): v for k, v in headers.items()}
+        check("kept out of search engines, caches and referrers",
+              "noindex" in headers.get("x-robots-tag", "") and headers.get("cache-control") == "no-store"
+              and headers.get("referrer-policy") == "no-referrer" and "noindex" in body
+              and "frame-ancestors 'none'" in headers.get("content-security-policy", ""), str(headers)[:200])
+        check("the page doesn't give away the invite code, or call anyone 'you'",
+              code not in body and '"you": true' not in body, code)
+        # The test's monday is next week's.
+        status, _, raw = await anyio_run(fetch, path + "?format=json&week_of=" + monday.isoformat())
+        nxt = json.loads(raw) if status == 200 else {}
+        check("the page switches to next week by itself",
+              nxt.get("week", {}).get("starts") == monday.isoformat() and "code" not in nxt.get("crew", {}), str(nxt)[:160])
+        status, _, raw = await anyio_run(fetch, path + "?format=json&week_of=2030-01-07")
+        check("and no further than the two weeks the crew keeps",
+              status == 200 and json.loads(raw)["week"]["starts"] == monday.isoformat())
+        seen = await call(dave, "get_crew", {"week_of": monday.isoformat()})
+        check("every member's card shows the page is on, with its link",
+              seen.get("crew", {}).get("page_url") == page_url and "link" not in seen.get("crew", {}), str(seen.get("crew")))
+        renewed = await call(carol, "update_crew", {"group_link": "new", "confirm": True})
+        old_status = (await anyio_run(fetch, path))[0]
+        new_path = "/crew/" + renewed.get("page_url", "").rsplit("/crew/", 1)[-1]
+        check("a new link replaces the old, which stops working",
+              old_status == 404 and new_path != path and (await anyio_run(fetch, new_path))[0] == 200, f"{old_status} {renewed}")
+        off = await call(carol, "update_crew", {"group_link": "off"})
+        check("and the link can be turned off, without asking",
+              off.get("group_link") == "off" and (await anyio_run(fetch, new_path))[0] == 404
+              and "page_url" not in (await call(dave, "get_crew", {}))["crew"], str(off))
+        check("a made-up link finds nothing", (await anyio_run(fetch, "/crew/" + "A" * 24))[0] == 404
+              and (await anyio_run(fetch, "/crew/short"))[0] == 404)
+        await call(carol, "update_crew", {"group_link": "on", "confirm": True})
+
         changed = await call(dave, "update_crew", {"club_run_day": "sat"})
         check("only whoever started the crew changes its club run", "Only whoever started" in str(changed.get("error")))
         renamed = await call(carol, "update_crew", {"crew_name": "Friday Flyers", "goes_to_club_run": False})

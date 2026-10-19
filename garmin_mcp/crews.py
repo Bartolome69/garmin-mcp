@@ -114,6 +114,10 @@ def _connect():
         # Paces were kept for a day in October 2026, then dropped: a crew is
         # for everyone, whatever their pace. Whatever was kept goes, once.
         conn.execute("UPDATE crew_members SET pace_s = NULL WHERE pace_s IS NOT NULL")
+        # A crew's page link came after the first crews: added where missing.
+        if "link" not in {r[1] for r in conn.execute("PRAGMA table_info(crews)")}:
+            conn.execute("ALTER TABLE crews ADD COLUMN link TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS crews_link ON crews (link) WHERE link IS NOT NULL")
         conn.commit()
         _paces_cleared = True
     return conn
@@ -554,6 +558,67 @@ def _km_range(kms: list[float | None]) -> tuple[float | None, float | None]:
 def week(week_of: date | None = None, today: date | None = None) -> dict[str, Any]:
     """The crew card's data for the week holding week_of (this week by default)."""
     me = _me()
+    with _connect() as conn:
+        row = conn.execute("SELECT crew_id FROM crew_members WHERE member = ?", (me.key,)).fetchone()
+    if row is None:
+        raise CrewError(
+            "You're not in a crew yet. Ask a friend for their crew's invite code (like DC-7Q4M), "
+            "or start a crew and share yours."
+        )
+    return _week(row[0], me.key, week_of, today)
+
+
+def drop_none(d: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in d.items() if v is not None}
+
+
+# A crew's page link: long and random, so it can't be guessed the way a
+# six-character invite code could be.
+_LINK_RE = re.compile(r"[A-Za-z0-9_-]{20,64}")
+
+
+def public_week(link: str, week_of: date | None = None, today: date | None = None) -> dict[str, Any] | None:
+    """The crew's week as anyone with its page link sees it, or None for a link that isn't on.
+
+    The card's data with nobody as "you" and without the invite code: the
+    link shows who runs when, and joining still goes through someone in the
+    crew. Only this week and next, the two the crew keeps.
+    """
+    if not isinstance(link, str) or not _LINK_RE.fullmatch(link):
+        return None
+    with _connect() as conn:
+        row = conn.execute("SELECT crew_id FROM crews WHERE link = ?", (link,)).fetchone()
+    if row is None:
+        return None
+    today = today or date.today()
+    this_monday = today - timedelta(days=today.weekday())
+    if week_of is not None:
+        week_of = min(max(week_of, this_monday), this_monday + timedelta(days=7))
+    return _week(row[0], None, week_of, today)
+
+
+def set_link(on: bool, renew: bool = False) -> str | None:
+    """Turn the crew's page link on (or swap it for a new one), or off. Its starter's alone to change."""
+    me = _me()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT c.crew_id, c.owner, c.link FROM crew_members m JOIN crews c ON c.crew_id = m.crew_id WHERE m.member = ?",
+            (me.key,),
+        ).fetchone()
+        if row is None:
+            raise CrewError("You're not in a crew.")
+        crew_id, owner, link = row
+        if owner != me.key:
+            raise CrewError("Only whoever started the crew can turn its link on or off. Ask them.")
+        if not on:
+            link = None
+        elif renew or not link:
+            link = secrets.token_urlsafe(18)
+        conn.execute("UPDATE crews SET link = ? WHERE crew_id = ?", (link, crew_id))
+    return link
+
+
+def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | None) -> dict[str, Any]:
     today = today or date.today()
     # On a Sunday this week is all but over: the week ahead is the one to plan.
     anchor = week_of or (today + timedelta(days=1) if today.weekday() == 6 else today)
@@ -561,17 +626,9 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
     days = [monday + timedelta(days=i) for i in range(7)]
     with _connect() as conn:
         conn.execute("DELETE FROM crew_runs WHERE day < ?", (today.isoformat(),))
-        row = conn.execute(
-            "SELECT c.crew_id, c.name, c.code, c.owner, c.club_json FROM crew_members m "
-            "JOIN crews c ON c.crew_id = m.crew_id WHERE m.member = ?",
-            (me.key,),
+        crew_name, code, owner, club_json, link = conn.execute(
+            "SELECT name, code, owner, club_json, link FROM crews WHERE crew_id = ?", (crew_id,),
         ).fetchone()
-        if row is None:
-            raise CrewError(
-                "You're not in a crew yet. Ask a friend for their crew's invite code (like DC-7Q4M), "
-                "or start a crew and share yours."
-            )
-        crew_id, crew_name, code, owner, club_json = row
         members = conn.execute(
             "SELECT member, name, times, club, updated_on FROM crew_members WHERE crew_id = ? ORDER BY joined_at",
             (crew_id,),
@@ -588,7 +645,7 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
     people: list[dict[str, Any]] = []
     for key, name, times, goes, updated_on in members:
         people.append({
-            "key": key, "name": name, "you": key == me.key, "times": json.loads(times) if times else [],
+            "key": key, "name": name, "you": me_key is not None and key == me_key, "times": json.loads(times) if times else [],
             "club": bool(goes), "updated_on": updated_on, "runs": {},
         })
     by_key = {p["key"]: p for p in people}
@@ -642,20 +699,27 @@ def week(week_of: date | None = None, today: date | None = None) -> dict[str, An
             "club": p["club"], "updated_on": p["updated_on"], "days": grid,
         })
 
+    seen_by_member = me_key is not None
     return {
-        "crew": {"name": crew_name, "code": code, "members": len(people), "you_started_it": owner == me.key},
+        "crew": drop_none({
+            "name": crew_name, "code": code if seen_by_member else None, "members": len(people),
+            "you_started_it": seen_by_member and owner == me_key,
+            # The page link's token, for members: the card shows whether it's on.
+            "link": link if seen_by_member else None,
+        }),
         "club_run": ({**club, "day_name": _DAY_NAMES[DAYS.index(club["day"])]} if club else None),
         "week": {"starts": days[0].isoformat(), "ends": days[-1].isoformat()},
         "today": today.isoformat(),
         "members": out_members,
         "together": together,
-        "group_message": group_message(crew_name, days, today, people, together, club, club_day, code),
+        "group_message": group_message(crew_name, days, today, people, together, club, club_day,
+                                       code if seen_by_member else None),
     }
 
 
 def group_message(crew_name: str, days: list[date], today: date, people: list[dict[str, Any]],
                   together: list[dict[str, Any]], club: dict[str, Any] | None, club_day: date | None,
-                  code: str) -> str:
+                  code: str | None) -> str:
     """The crew's week as a message for the group chat people already use.
 
     The whole calendar, day by day: who is running what, with the runs that
@@ -695,5 +759,5 @@ def group_message(crew_name: str, days: list[date], today: date, people: list[di
     if len(lines) == 1:
         lines.append("No runs in yet. Check your plan in Daash so it can see your week.")
     lines.append("")
-    lines.append(f"In? Say so here. New to the crew? Tell your Daash the code {code}.")
+    lines.append(f"In? Say so here. New to the crew? Tell your Daash the code {code}." if code else "In? Say so in the group.")
     return "\n".join(lines)
