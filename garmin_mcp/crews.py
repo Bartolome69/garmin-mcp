@@ -180,9 +180,18 @@ def _is_run(session: dict[str, Any]) -> bool:
     return sport == "run" and kind == "run" and session.get("type") not in _NOT_RUNS
 
 
+# Reps adding up to this much make any run a hard one for the crew: a long
+# run with 3 x 2 km at pace is run alone, strides after an easy run aren't.
+HARD_WORK_KM = 2.0
+
+
 def _kind(session: dict[str, Any]) -> str:
     kind = session.get("type")
     if kind in HARD:
+        return "hard"
+    shape = session.get("shape") if isinstance(session.get("shape"), list) else []
+    work = sum(float(seg.get("km") or 0) for seg in shape if isinstance(seg, dict) and seg.get("k") == "work")
+    if work >= HARD_WORK_KM:
         return "hard"
     return "long" if kind == "long" else "easy"
 

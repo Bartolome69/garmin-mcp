@@ -1395,6 +1395,20 @@ async def main() -> int:
               all("pace" not in m for m in card.get("members", []))
               and crews._connect().execute("SELECT COUNT(*) FROM crew_members WHERE pace_s IS NOT NULL").fetchone()[0] == 0,
               str(card.get("members", [])[:1]))
+        def one(session):
+            _, runs = crews.from_plan({"weeks": [{"starts": _date.today().isoformat(), "sessions": [
+                {"date": _date.today().isoformat(), "status": "ahead", "planned_km": 18.0, **session}]}]}, _date.today())
+            return runs[0][1:] if runs else None
+
+        reps = [{"k": "easy", "km": 6.0}, {"k": "work", "km": 2.0}, {"k": "rec", "km": 0.4}, {"k": "work", "km": 2.0},
+                {"k": "rec", "km": 0.4}, {"k": "work", "km": 2.0}, {"k": "easy", "km": 5.2}]
+        check("a long run with reps in it is a hard run for the crew, run alone",
+              one({"type": "long", "shape": reps}) == ("hard", None), str(one({"type": "long", "shape": reps})))
+        strides = [{"k": "easy", "km": 8.0}, *[{"k": "work", "km": 0.1}, {"k": "rec", "km": 0.1}] * 6]
+        check("but strides after an easy run leave it easy, and a steady long run stays long",
+              one({"type": "easy", "shape": strides}) == ("easy", 18.0)
+              and one({"type": "long", "shape": [{"k": "easy", "km": 18.0}]}) == ("long", 18.0)
+              and one({"type": "long"}) == ("long", 18.0))
         check("a hard session shows only as hard",
               people["Carol"]["days"][3] == [{"kind": "hard"}], str(people["Carol"]["days"][3]))
         together = card.get("together", [])
