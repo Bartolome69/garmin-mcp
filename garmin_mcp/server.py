@@ -2893,8 +2893,20 @@ async def _crew_card(week_of: str | None = None) -> dict[str, Any]:
         # Said before reading their Garmin week, which nothing would keep.
         raise crews.CrewError("You're not in a crew. Join one with the code a friend sent, or start one.")
     await _read_my_week()
-    card = crews.week(day)
-    return {"for_the_assistant": CREW_NOTE, **_with_page_url(card)}
+    card = _with_page_url(crews.week(day))
+    note = CREW_NOTE
+    crew = card.get("crew") or {}
+    # Said here as well as in update_crew's description: a chat that kept an
+    # older copy of the tool list doesn't know the argument is there.
+    if crew.get("page_url"):
+        note += f" The crew's page is on, at {crew['page_url']}: give it when the group wants the week as a link."
+    elif crew.get("you_started_it"):
+        note += (
+            " The user started this crew, so they can turn on a web page of its week for the group: "
+            "update_crew with group_link \"on\" (it takes that argument even if an older copy of its "
+            "description doesn't show it). It asks first, then call again with confirm=true."
+        )
+    return {"for_the_assistant": note, **card}
 
 
 # Where the hosted server answers, for a crew page's address.

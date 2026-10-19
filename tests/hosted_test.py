@@ -1460,6 +1460,11 @@ async def main() -> int:
             except urllib.error.HTTPError as e:
                 return e.code, dict(e.headers), e.read().decode()
 
+        before_link = await call(carol, "get_crew", {})
+        dave_card = await call(dave, "get_crew", {})
+        check("the crew's starter is told, in the card itself, how to turn the page on",
+              'group_link "on"' in before_link.get("for_the_assistant", "")
+              and "group_link" not in dave_card.get("for_the_assistant", ""), before_link.get("for_the_assistant", "")[-200:])
         not_starter = await call(dave, "update_crew", {"group_link": "on", "confirm": True})
         check("only whoever started the crew turns its page link on", "Only whoever started" in str(not_starter.get("error")), str(not_starter)[:120])
         asked = await call(carol, "update_crew", {"group_link": "on"})
@@ -1490,7 +1495,8 @@ async def main() -> int:
               status == 200 and json.loads(raw)["week"]["starts"] == monday.isoformat())
         seen = await call(dave, "get_crew", {"week_of": monday.isoformat()})
         check("every member's card shows the page is on, with its link",
-              seen.get("crew", {}).get("page_url") == page_url and "link" not in seen.get("crew", {}), str(seen.get("crew")))
+              seen.get("crew", {}).get("page_url") == page_url and "link" not in seen.get("crew", {})
+              and page_url in seen.get("for_the_assistant", ""), str(seen.get("crew")))
         renewed = await call(carol, "update_crew", {"group_link": "new", "confirm": True})
         old_status = (await anyio_run(fetch, path))[0]
         new_path = "/crew/" + renewed.get("page_url", "").rsplit("/crew/", 1)[-1]
