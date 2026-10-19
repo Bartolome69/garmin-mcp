@@ -89,7 +89,8 @@ _INSTRUCTIONS = (
     "get_fitness_trends, shoes "
     "to get_shoes. Answer those in "
     "writing. A Daash crew (friends who see each other's easy and long runs) "
-    "has its own card, get_crew: call it only when the user asks about the "
+    "has its own card, get_crew (friends without Garmin join from the crew's "
+    "page link, adding their easy runs by hand): call it only when the user asks about the "
     "crew as a whole (\"who's running this week\", \"show the crew\", "
     "\"post the crew's week\"), never alongside get_plan for a question "
     "about the user's own training, and answer a question about one day or "
@@ -2899,12 +2900,17 @@ async def _crew_card(week_of: str | None = None) -> dict[str, Any]:
     # Said here as well as in update_crew's description: a chat that kept an
     # older copy of the tool list doesn't know the argument is there.
     if crew.get("page_url"):
-        note += f" The crew's page is on, at {crew['page_url']}: give it when the group wants the week as a link."
+        note += (
+            f" The crew's page is on, at {crew['page_url']}: give it when the group wants the week as a link. "
+            "Friends without Garmin or Daash join from that page: they tap Add your easy runs, pick their usual "
+            "slots and a name and PIN, and show as \"by hand\", matched like everyone else."
+        )
     elif crew.get("you_started_it"):
         note += (
             " The user started this crew, so they can turn on a web page of its week for the group: "
             "update_crew with group_link \"on\" (it takes that argument even if an older copy of its "
-            "description doesn't show it). It asks first, then call again with confirm=true."
+            "description doesn't show it). It asks first, then call again with confirm=true. That page is "
+            "also how friends without Garmin or Daash join the crew's week: they add their easy runs there."
         )
     return {"for_the_assistant": note, **card}
 
@@ -2930,7 +2936,7 @@ def _with_page_url(card: dict[str, Any]) -> dict[str, Any]:
 async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     """The user's Daash crew this week: who is running when, and which runs they could do together.
 
-    A crew is a few friends who all use Daash. Each member's easy and long runs
+    A crew is a few friends, mostly using Daash. Each member's easy and long runs
     (day and distance) and the crew's standing club run are pooled;
     hard sessions show only as "hard". Matches are easy or long runs already
     planned on the same day at a usual time they share, whatever their pace; nobody's run is
@@ -2948,7 +2954,8 @@ async def get_crew(week_of: str | None = None) -> dict[str, Any]:
     they looked at their own plan ("updated_on"). If the user isn't in a crew
     it says so: join_crew is how they join or start one. crew.page_url, when
     the crew's starter has turned its page on (update_crew group_link), is a
-    link anyone in the group can open any time to see this week and next.
+    link anyone in the group can open any time to see this week and next, and
+    where friends without Garmin or Daash add their easy runs ("by hand").
 
     Args:
         week_of: Any date in the week to show. Defaults to this week, or on a
@@ -2973,9 +2980,11 @@ async def join_crew(
 ) -> dict[str, Any]:
     """Join a friend's Daash crew with the invite code they sent, or start a new crew.
 
-    A Daash crew is a few friends who all use Daash: it shows them each other's
-    easy and long runs for the week and points out the days they're already
-    running the same kind of run, so they can run together. Before joining,
+    A Daash crew is a few friends: it shows them each other's easy and long
+    runs for the week and points out the days they're already running the
+    same kind of run, so they can run together. This joins with Daash; a
+    friend without Garmin or Daash adds their easy runs on the crew's page
+    link instead (see get_crew). Before joining,
     tell the user plainly what the crew will see: their chosen name, usual
     running times, and the day and distance of their easy and long
     runs for the next two weeks; hard sessions show only as "hard", and
