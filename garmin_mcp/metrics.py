@@ -116,7 +116,36 @@ def _status_block(raw: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | Non
         }
     )
 
-    balance = _primary((raw.get("mostRecentTrainingLoadBalance") or {}).get("metricsTrainingLoadBalanceDTOMap"))
+    focus_block = load_focus(raw.get("mostRecentTrainingLoadBalance"))
+
+    vo2 = ((raw.get("mostRecentVO2Max") or {}).get("generic") or {})
+    vo2_value = first_present(vo2, "vo2MaxPreciseValue", "vo2MaxValue") if isinstance(vo2, Mapping) else None
+    return status_block or None, focus_block, vo2_value
+
+
+def _hrv_block(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, Mapping):
+        return None
+    summary = raw.get("hrvSummary") or {}
+    baseline = summary.get("baseline") or {}
+    band = [rounded(baseline.get("balancedLow"), 0), rounded(baseline.get("balancedUpper"), 0)]
+    return drop_empty(
+        {
+            "last_night_ms": rounded(summary.get("lastNightAvg"), 0),
+            "weekly_avg_ms": rounded(summary.get("weeklyAvg"), 0),
+            "balanced_range_ms": band if all(v is not None for v in band) else None,
+            "status": _phrase(summary.get("status")),
+        }
+    ) or None
+
+
+def load_focus(container: Any) -> dict[str, Any] | None:
+    """The four-week load focus: low and high aerobic and anaerobic load against Garmin's targets.
+
+    Training status carries it, and so does Garmin's own load-balance
+    endpoint, in the same shape, for accounts whose status leaves it out.
+    """
+    balance = _primary((container or {}).get("metricsTrainingLoadBalanceDTOMap")) if isinstance(container, Mapping) else {}
 
     def _band(key: str) -> dict[str, Any] | None:
         value = balance.get(f"monthlyLoad{key}")
@@ -142,26 +171,7 @@ def _status_block(raw: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | Non
             "low_aerobic": _band("AerobicLow"),
         }
     )
-
-    vo2 = ((raw.get("mostRecentVO2Max") or {}).get("generic") or {})
-    vo2_value = first_present(vo2, "vo2MaxPreciseValue", "vo2MaxValue") if isinstance(vo2, Mapping) else None
-    return status_block or None, focus_block or None, vo2_value
-
-
-def _hrv_block(raw: Any) -> dict[str, Any] | None:
-    if not isinstance(raw, Mapping):
-        return None
-    summary = raw.get("hrvSummary") or {}
-    baseline = summary.get("baseline") or {}
-    band = [rounded(baseline.get("balancedLow"), 0), rounded(baseline.get("balancedUpper"), 0)]
-    return drop_empty(
-        {
-            "last_night_ms": rounded(summary.get("lastNightAvg"), 0),
-            "weekly_avg_ms": rounded(summary.get("weeklyAvg"), 0),
-            "balanced_range_ms": band if all(v is not None for v in band) else None,
-            "status": _phrase(summary.get("status")),
-        }
-    ) or None
+    return focus_block or None
 
 
 def shape_readiness(

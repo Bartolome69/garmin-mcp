@@ -1,7 +1,8 @@
-"""MCP server exposing read-only Garmin Connect data over stdio.
+"""MCP server for the user's own Garmin Connect account.
 
-Every tool is read-only: nothing here writes to Garmin, and nothing returns the
-password or the cached token.
+It reads freely; it writes to the workout library and, when asked, a recorded
+activity's name, notes, type and shoes, never what it measured. Nothing returns
+the password or the cached token.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, crews, cycling, fitness_trends, gear, heart, hooks, metrics, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
+from . import conditions, crews, cycling, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, session
 from .workouts import (
@@ -63,9 +64,10 @@ _INSTRUCTIONS = (
     "The user's own Garmin Connect account. Reads activities and splits, daily "
     "health, sleep, today's readiness and training load (get_readiness), and "
     "fitness markers such as race predictions and lactate threshold "
-    "(get_fitness). Writes only to the workout library: create, update, "
+    "(get_fitness). Writes to the workout library: create, update, "
     "schedule, unschedule and delete structured workouts; scheduling is what "
-    "sends one to the watch. A whole training block is create_plan, read back "
+    "sends one to the watch. And, when asked, a recorded run's name, notes, "
+    "type or shoes (update_activity), never what it measured. A whole training block is create_plan, read back "
     "with get_plan. For any general question about how training is going "
     "(\"how's my training going\", \"how am I doing\", \"how's this week\", "
     "\"show my plan\", \"what's next\", \"am I on track\"), call get_plan "
@@ -591,7 +593,7 @@ async def _read(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
 # nothing remembered can be trusted.
 WRITES = {
     "create_workout", "update_workout", "create_strength_workout", "schedule_workout",
-    "unschedule_workout", "delete_workout", "create_plan", "remove_plan",
+    "unschedule_workout", "delete_workout", "create_plan", "remove_plan", "update_activity",
 }
 
 
@@ -616,7 +618,7 @@ def tool_errors(fn):
                 finally:
                     session.forget()
             return await fn(*args, **kwargs)
-        except (GarminError, DateError, WorkoutError, training_plan.PlanError, crews.CrewError) as exc:
+        except (GarminError, DateError, WorkoutError, training_plan.PlanError, crews.CrewError, ActivityError) as exc:
             return {"error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - a tool must never crash the server
             log.exception("Tool %s failed", fn.__name__)
@@ -651,7 +653,10 @@ def _method(client: Any, *names: str) -> Callable[..., Any]:
 @mcp.tool()
 @tool_errors
 async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
-    """Daily health summary: steps, calories, resting heart rate and body battery.
+    """Daily health summary: steps, calories, resting heart rate, body battery and stress.
+
+    With what charged or drained Body Battery and the longest stressful
+    spells: "why is my Body Battery low", "when was I stressed".
 
     Args:
         date: Day to report on. YYYY-MM-DD, 'today', 'yesterday' or an offset
@@ -661,6 +666,10 @@ async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
     stats = await _call(lambda c: _method(c, "get_stats", "get_user_summary")(day))
     if not stats:
         return {"date": day, "note": "Garmin returned no summary for this day."}
+    (battery_events, stress_day), _ = await _gather([
+        ("body battery events", lambda c: c.get_body_battery_events(day)),
+        ("stress", lambda c: c.get_stress_data(day)),
+    ])
 
     return drop_empty(
         {
@@ -713,6 +722,8 @@ async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
             ),
             "spo2_average": stats.get("averageSpo2"),
             "respiration_avg": stats.get("avgWakingRespirationValue"),
+            "body_battery_events": wellness.body_battery_events(battery_events) or None,
+            "stressful_spells": wellness.stress_spells(stress_day) or None,
         }
     )
 
@@ -778,16 +789,20 @@ async def get_heart_rate(date: str | None = None, start: str | None = None, end:
 @mcp.tool()
 @tool_errors
 async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
-    """Sleep stages and sleep score for a night.
+    """Sleep stages and sleep score for a night, with overnight breathing rate and SpO2 against usual.
 
     Args:
         date: The date you woke up on. YYYY-MM-DD, 'today', 'yesterday' or an
             offset like '-3'. Defaults to today.
     """
     day = parse_date(date)
-    raw = await _call(lambda c: c.get_sleep_data(day))
+    (raw, spo2), _ = await _gather([
+        ("sleep", lambda c: c.get_sleep_data(day)),
+        ("spo2", lambda c: c.get_spo2_data(day)),
+    ])
     if not raw:
         return {"date": day, "note": "Garmin returned no sleep data for this night."}
+    spo2 = spo2 if isinstance(spo2, dict) else {}
 
     dto = raw.get("dailySleepDTO") or {}
     total = dto.get("sleepTimeSeconds")
@@ -829,8 +844,18 @@ async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
             ),
             "score": _sleep_score(dto.get("sleepScores") or {}),
             "resting_heart_rate": raw.get("restingHeartRate"),
-            "average_respiration": dto.get("averageRespirationValue"),
-            "average_spo2": raw.get("averageSpO2Value"),
+            # Breaths a minute, and blood oxygen against its usual: both creep
+            # up or down with illness, altitude and hard training.
+            "breathing": drop_empty({
+                "average": dto.get("averageRespirationValue"),
+                "lowest": dto.get("lowestRespirationValue"),
+                "highest": dto.get("highestRespirationValue"),
+            }),
+            "spo2": drop_empty({
+                "average": first_present(dto, "averageSpO2Value") or raw.get("averageSpO2Value") or spo2.get("avgSleepSpO2"),
+                "lowest": first_present(dto, "lowestSpO2Value") or spo2.get("lowestSpO2"),
+                "usual_7_day": spo2.get("lastSevenDaysAvgSpO2"),
+            }),
             "average_hrv_ms": raw.get("avgOvernightHrv"),
             "body_battery_change": raw.get("bodyBatteryChange"),
             "awake_count": raw.get("awakeCount"),
@@ -1334,6 +1359,17 @@ async def _ftp_for(*step_lists: Any) -> float | None:
     return float(shaped["watts"]) if shaped else None
 
 
+async def _in_zones(steps: Any, sport: str | None = None) -> Any:
+    """Steps with any "z2"-style target turned into the person's own zone, read from Garmin only when used."""
+    wants_hr, wants_power = zones.uses(steps, "hr"), zones.uses(steps, "power")
+    if not (wants_hr or wants_power):
+        return steps
+    kind = "cycling" if str(sport or "").lower() in ("cycling", "bike", "ride") else "running"
+    hr = zones.heart_rate(await _call(lambda c: c.get_heart_rate_zones()), kind) if wants_hr else None
+    watts = zones.power(await _call(lambda c: c.get_power_zones()), "cycling") if wants_power else None
+    return zones.resolve(steps, hr, watts)
+
+
 @mcp.tool()
 @tool_errors
 async def create_workout(
@@ -1357,8 +1393,9 @@ async def create_workout(
             splits). A repeat is {"type": "repeat", "times": 5, "steps": [...]}
             and can't contain another repeat.
             Optional target: "pace" ("4:05" or ["4:00", "4:10"], min/km), "hr"
-            ([150, 165] bpm) or "power" (watts, 250 or [240, 260]; or a share
-            of the FTP set in Garmin, "95%" or ["88%", "94%"]).
+            ([150, 165] bpm, or their Garmin zone: "z2", "z3-z4") or "power"
+            (watts, 250 or [240, 260]; a share of the FTP set in Garmin, "95%"
+            or ["88%", "94%"]; or a power zone, "z3").
             By default only the work reps carry a target, pace for a run;
             warm-ups, cool-downs and recoveries carry none, so the watch stays
             quiet, and the chat and the workout's description say what easy
@@ -1396,6 +1433,7 @@ async def create_workout(
     "rest", "duration_seconds": 15}]}, {"type": "cooldown", "distance_meters":
     200, "stroke": "any"}]
     """
+    steps = await _in_zones(steps, sport)
     ftp = await _ftp_for(steps)
     workout, summary, estimated = build_workout(name, sport, steps, description, pool_length_meters, ftp)
     payload = workout.to_dict()
@@ -1479,6 +1517,7 @@ async def update_workout(
         if pool is None and new_sport == "swimming":
             kept = swimming.pool(existing)
             pool = kept[0] if kept and kept[1] == "m" else None
+        steps = await _in_zones(steps, new_sport)
         workout, summary, estimated = build_workout(
             new_name,
             new_sport,
@@ -1986,6 +2025,10 @@ async def create_plan(
             "1:22"}, date and target optional. The goal race is usually last.
     """
     today = date_cls.today()
+    sessions = [
+        {**s, "steps": await _in_zones(s.get("steps"), s.get("sport"))} if isinstance(s, dict) and s.get("steps") else s
+        for s in sessions or []
+    ]
     ftp = await _ftp_for(*[s.get("steps") for s in sessions or [] if isinstance(s, dict)])
     code, prepared = training_plan.prepare(
         goal, sessions, label, today, name=name, method=method, milestones=milestones, ftp=ftp,
@@ -2422,7 +2465,8 @@ async def get_readiness(date: str | None = None) -> dict[str, Any]:
 
     One call for the recovery picture: Garmin's training readiness score and
     the factors behind it, training status (productive, strained, recovery...),
-    acute against chronic load, the four-week load focus, overnight HRV against
+    acute against chronic load, the four-week load focus (aerobic and
+    anaerobic load against targets: "too much intensity?"), overnight HRV against
     its baseline, body battery, stress, resting heart rate and sleep. Use it
     before prescribing a hard session, or when the user asks whether to push
     today or hold back.
@@ -2442,7 +2486,19 @@ async def get_readiness(date: str | None = None) -> dict[str, Any]:
     )
     if all(x is None for x in (readiness, status, hrv, stats, sleep)):
         return {"error": f"Garmin returned nothing for {day}.", "warnings": warnings}
-    return metrics.shape_readiness(day, readiness, status, hrv, stats, sleep, warnings)
+    shaped = metrics.shape_readiness(day, readiness, status, hrv, stats, sleep, warnings)
+    if isinstance(shaped, dict) and not shaped.get("load_focus"):
+        # Some accounts' training status leaves the load focus out; Garmin's
+        # load-balance endpoint has it in the same shape.
+        try:
+            focus = metrics.load_focus(await _call(lambda c: c.get_training_four_week_load_balance(day)))
+        except GarminError:
+            raise
+        except Exception:  # noqa: BLE001 - the rest of the answer stands without it
+            focus = None
+        if focus:
+            shaped = {**shaped, "load_focus": focus}
+    return shaped
 
 
 @mcp.tool()
@@ -2454,7 +2510,8 @@ async def get_fitness() -> dict[str, Any]:
     threshold heart rate and pace, endurance score, hill score and running
     tolerance, each with its own classification where Garmin gives one. Use it
     to set goals and training paces from evidence: "Garmin thinks you are a
-    1:42 half today" is a better starting point than asking.
+    1:42 half today" is a better starting point than asking. Also the heart
+    rate and power zones set in Garmin, which workouts can target as "z2".
     """
     today = parse_date("today")
     month_ago = parse_date("-28")
@@ -2468,15 +2525,30 @@ async def get_fitness() -> dict[str, Any]:
             ("running tolerance", lambda c: c.get_running_tolerance(month_ago, today)),
         ]
     )
-    (ftp_raw, profile), more = await _gather(
-        [("cycling ftp", lambda c: c.get_cycling_ftp()), ("weight", lambda c: c.get_user_profile())]
+    (ftp_raw, profile, hr_raw, power_raw), more = await _gather(
+        [
+            ("cycling ftp", lambda c: c.get_cycling_ftp()),
+            ("weight", lambda c: c.get_user_profile()),
+            ("heart rate zones", lambda c: c.get_heart_rate_zones()),
+            ("power zones", lambda c: c.get_power_zones()),
+        ]
     )
     ftp = cycling.shape_ftp(ftp_raw, cycling.weight_kg(profile))
     ride = {"cycling_ftp": ftp} if ftp else None
-    warnings = warnings + [w for w in more if not w.startswith("weight")]
-    if all(x is None for x in (vo2, race, lactate, endurance, hill, tolerance)) and not ride:
+    # The zones the watch uses; a workout step can name one ("z2").
+    own = drop_empty({
+        "heart_rate": zones.heart_rate(hr_raw, "running"),
+        "cycling_heart_rate": (lambda z: z if z and z.get("sport") == "cycling" else None)(zones.heart_rate(hr_raw, "cycling")),
+        "power": zones.power(power_raw, "cycling"),
+    })
+    warnings = warnings + [w for w in more if not w.startswith(("weight", "power zones"))]
+    if all(x is None for x in (vo2, race, lactate, endurance, hill, tolerance)) and not ride and not own:
         return {"error": "Garmin returned no fitness data.", "warnings": warnings}
-    return {**metrics.shape_fitness(vo2, race, lactate, endurance, hill, tolerance, warnings), **(ride or {})}
+    return {
+        **metrics.shape_fitness(vo2, race, lactate, endurance, hill, tolerance, warnings),
+        **(ride or {}),
+        **({"zones": own} if own else {}),
+    }
 
 
 FITNESS_TREND_MONTHS = 6
@@ -2597,6 +2669,101 @@ async def get_recovery_trends(weeks: int = RECOVERY_WEEKS) -> dict[str, Any]:
 
 
 MAX_SHOE_LOOKUPS = 10
+
+
+# Activity types a run or ride can be changed to, by the key Garmin uses.
+_ACTIVITY_TYPES = (
+    "running", "trail_running", "treadmill_running", "track_running", "indoor_running",
+    "cycling", "road_biking", "mountain_biking", "gravel_cycling", "indoor_cycling", "virtual_ride",
+    "walking", "hiking", "lap_swimming", "open_water_swimming", "strength_training",
+)
+
+
+class ActivityError(Exception):
+    """A change to a recorded activity that can't be made as asked, said plainly."""
+
+
+def _match_shoe(shoes: list[Mapping[str, Any]], wanted: str) -> Mapping[str, Any]:
+    key = wanted.strip().lower()
+    named = [(g, (gear.name_of(g) or "").lower(), (gear.model_of(g) or "").lower()) for g in shoes]
+    exact = [g for g, n, m in named if key in (n, m)]
+    found = exact or [g for g, n, m in named if key in n or key in m]
+    if len(found) == 1:
+        return found[0]
+    names = ", ".join(sorted(gear.name_of(g) or "unnamed" for g in (found or shoes)))
+    if found:
+        raise ActivityError(f"More than one pair matches {wanted!r}: {names}. Say which.")
+    raise ActivityError(f"No active shoes match {wanted!r}. The user's shoes: {names or 'none set up in Garmin'}.")
+
+
+@mcp.tool()
+@tool_errors
+async def update_activity(
+    activity_id: int,
+    name: str | None = None,
+    notes: str | None = None,
+    shoes: str | None = None,
+    activity_type: str | None = None,
+) -> dict[str, Any]:
+    """Change a recorded run or ride: its name, notes, shoes or type. Pass only what changes; the answer says what each was.
+
+    Args:
+        activity_id: From get_activities.
+        name: The new title.
+        notes: Replaces the notes; read them with get_activity_details to add to them.
+        shoes: A pair's name from get_shoes, replacing any on it; "none" takes them off.
+        activity_type: e.g. trail_running, treadmill_running, track_running, indoor_cycling, walking.
+    """
+    if all(v is None for v in (name, notes, shoes, activity_type)):
+        return {"error": "Nothing to change: pass a name, notes, shoes or an activity_type."}
+    current = await _call(lambda c: c.get_activity(activity_id)) or {}
+    if not current:
+        return {"error": f"No activity {activity_id} in Garmin. Find its id with get_activities."}
+    done: dict[str, Any] = {}
+
+    if name is not None:
+        title = name.strip()
+        if not title:
+            return {"error": "A name can't be empty."}
+        await _call(lambda c: c.set_activity_name(activity_id, title[:120]))
+        done["name"] = {"was": current.get("activityName"), "now": title[:120]}
+
+    if notes is not None:
+        before = first_present(current, "description") or (current.get("summaryDTO") or {}).get("description")
+        await _call(lambda c: c.set_activity_description(activity_id, notes[:2000]))
+        done["notes"] = {"was": before, "now": notes[:2000]}
+
+    if activity_type is not None:
+        key = activity_type.strip().lower().replace(" ", "_").replace("-", "_")
+        if key not in _ACTIVITY_TYPES:
+            return {"error": f"Activity types: {', '.join(_ACTIVITY_TYPES)}.", **({"done": done} if done else {})}
+        types = await _call(lambda c: c.get_activity_types()) or []
+        row = next((t for t in types if isinstance(t, Mapping) and t.get("typeKey") == key), None)
+        if not row:
+            return {"error": f"Garmin doesn't list the type {key}.", **({"done": done} if done else {})}
+        await _call(lambda c: c.set_activity_type(activity_id, row["typeId"], key, row.get("parentTypeId")))
+        done["activity_type"] = {"was": (current.get("activityTypeDTO") or {}).get("typeKey"), "now": key}
+
+    if shoes is not None:
+        on = [g for g in (await _call(lambda c: c.get_activity_gear(activity_id)) or [])
+              if isinstance(g, Mapping) and gear.is_shoe(g)]
+        target = None
+        if shoes.strip().lower() not in ("none", "no shoes", ""):
+            number = await _call(
+                lambda c: getattr(c, "profile_id", None) or (c.get_device_last_used() or {}).get("userProfileNumber")
+            )
+            mine = [g for g in (await _call(lambda c: c.get_gear(number)) or [])
+                    if isinstance(g, Mapping) and gear.is_shoe(g)
+                    and str(g.get("gearStatusName") or "active").lower() != "retired"]
+            target = _match_shoe(mine, shoes)
+        for g in on:
+            if not target or g.get("uuid") != target.get("uuid"):
+                await _call(lambda c, u=g.get("uuid"): c.remove_gear_from_activity(u, activity_id))
+        if target and not any(g.get("uuid") == target.get("uuid") for g in on):
+            await _call(lambda c: c.add_gear_to_activity(target["uuid"], activity_id))
+        done["shoes"] = {"was": [gear.name_of(g) for g in on] or None, "now": gear.name_of(target) if target else None}
+
+    return {"activity_id": activity_id, "changed": done}
 
 
 @mcp.tool()

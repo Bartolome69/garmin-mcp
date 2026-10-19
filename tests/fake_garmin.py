@@ -402,6 +402,52 @@ class FakeGarmin:
     def get_sleep_data(self, day: str) -> dict[str, Any]:
         return dict(SLEEP)
 
+    def get_spo2_data(self, day: str) -> dict[str, Any]:
+        return {"calendarDate": day, "avgSleepSpO2": 95.0, "lowestSpO2": 89, "lastSevenDaysAvgSpO2": 96.0}
+
+    def get_body_battery_events(self, day: str) -> list[dict[str, Any]]:
+        return [
+            {"event": {"eventType": "SLEEP", "eventStartTimeGmt": day + "T22:10:00.0", "timezoneOffset": 3600000,
+                       "durationInMilliseconds": 25800000, "bodyBatteryImpact": 41, "shortFeedback": "GOOD_SLEEP_HIGH_RECOVERY"}},
+            {"event": {"eventType": "ACTIVITY", "eventStartTimeGmt": day + "T17:30:00.0", "timezoneOffset": 3600000,
+                       "durationInMilliseconds": 3600000, "bodyBatteryImpact": -14},
+             "activityName": "Evening Run", "activityType": "running"},
+        ]
+
+    def get_stress_data(self, day: str) -> dict[str, Any]:
+        """Medium stress from 14:00 to 15:12 local, a short blip at 09:00, the rest calm."""
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+        gmt0 = _dt.fromisoformat(day + "T00:00:00").replace(tzinfo=_tz.utc) - _td(hours=1)
+        values = []
+        for i in range(480):
+            local = _dt.fromisoformat(day + "T00:00:00") + _td(minutes=3 * i)
+            minutes = local.hour * 60 + local.minute
+            level = 68 if 14 * 60 <= minutes < 15 * 60 + 12 else 80 if minutes in (540, 543) else 20
+            values.append([int((gmt0 + _td(minutes=3 * i)).timestamp() * 1000), level])
+        return {"startTimestampGMT": gmt0.replace(tzinfo=None).isoformat() + ".0",
+                "startTimestampLocal": day + "T00:00:00.0", "maxStressLevel": 80, "avgStressLevel": 28,
+                "stressValuesArray": values}
+
+    def get_training_four_week_load_balance(self, day: str) -> dict[str, Any]:
+        return {"metricsTrainingLoadBalanceDTOMap": {"123": {
+            "deviceId": 123, "primaryTrainingDevice": True, "trainingBalanceFeedbackPhrase": "AEROBIC_HIGH_SHORTAGE",
+            "monthlyLoadAnaerobic": 210.0, "monthlyLoadAnaerobicTargetMin": 120, "monthlyLoadAnaerobicTargetMax": 360,
+            "monthlyLoadAerobicHigh": 150.0, "monthlyLoadAerobicHighTargetMin": 420, "monthlyLoadAerobicHighTargetMax": 800,
+            "monthlyLoadAerobicLow": 610.0, "monthlyLoadAerobicLowTargetMin": 380, "monthlyLoadAerobicLowTargetMax": 760}}}
+
+    def get_heart_rate_zones(self) -> list[dict[str, Any]]:
+        return [
+            {"sport": "DEFAULT", "trainingMethod": "HR_RESERVE", "maxHeartRateUsed": 190, "restingHeartRateUsed": 48,
+             "zone1Floor": 119, "zone2Floor": 133, "zone3Floor": 148, "zone4Floor": 162, "zone5Floor": 176},
+            {"sport": "CYCLING", "trainingMethod": "PERCENT_MAX_HR", "maxHeartRateUsed": 182,
+             "zone1Floor": 91, "zone2Floor": 109, "zone3Floor": 127, "zone4Floor": 146, "zone5Floor": 164},
+        ]
+
+    def get_power_zones(self) -> list[dict[str, Any]]:
+        return [{"sport": "CYCLING", "functionalThresholdPower": 250, "zone1Floor": 1, "zone2Floor": 138,
+                 "zone3Floor": 188, "zone4Floor": 225, "zone5Floor": 263, "zone6Floor": 300, "zone7Floor": 375}]
+
     def get_heart_rates(self, day: str) -> dict[str, Any]:
         """A reading every two minutes, an hour ahead of GMT, and the watch off
         from 22:24 to 01:12 every night; lowest, 44, at 04:00."""
@@ -482,6 +528,34 @@ class FakeGarmin:
 
     def get_activity_gear(self, activity_id: Any) -> list[dict[str, Any]]:
         return [dict(GEAR[0])]
+
+    # Changes to a recorded activity, kept so tests can see what was sent.
+    def _changed(self) -> list[tuple]:
+        if not hasattr(self, "changes"):
+            self.changes = []
+        return self.changes
+
+    def set_activity_name(self, activity_id: Any, title: str) -> None:
+        self._changed().append(("name", int(activity_id), title))
+
+    def set_activity_description(self, activity_id: Any, description: str) -> None:
+        self._changed().append(("notes", int(activity_id), description))
+
+    def set_activity_type(self, activity_id: Any, type_id: int, type_key: str, parent_type_id: int) -> None:
+        self._changed().append(("type", int(activity_id), type_id, type_key, parent_type_id))
+
+    def get_activity_types(self) -> list[dict[str, Any]]:
+        return [{"typeId": 1, "typeKey": "running", "parentTypeId": 17},
+                {"typeId": 6, "typeKey": "trail_running", "parentTypeId": 1},
+                {"typeId": 18, "typeKey": "treadmill_running", "parentTypeId": 1}]
+
+    def add_gear_to_activity(self, uuid: str, activity_id: Any) -> dict[str, Any]:
+        self._changed().append(("add gear", int(activity_id), uuid))
+        return {}
+
+    def remove_gear_from_activity(self, uuid: str, activity_id: Any) -> dict[str, Any]:
+        self._changed().append(("remove gear", int(activity_id), uuid))
+        return {}
 
     def get_gear(self, profile_number: Any) -> list[dict[str, Any]]:
         assert int(profile_number) == 4242

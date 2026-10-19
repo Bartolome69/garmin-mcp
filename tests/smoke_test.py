@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "get_daily_summary",
     "get_sleep_data",
     "get_heart_rate",
+    "update_activity",
     "get_activities",
     "get_activity_details",
     "get_connection_status",
@@ -1236,9 +1237,10 @@ async def main() -> int:
             check("the tool list goes out compact: no docstring indent, no schema titles",
                   not any("\n        " in (d.get("description") or "") for d in listed_json)
                   and not any('"title"' in json.dumps(d.get("inputSchema")) for d in listed_json)
-                  # Raised from 30,000 for get_heart_rate (about 1,000): what a
-                  # tool adds comes out of every chat's budget, so it stays tight.
-                  and sum(len(json.dumps(d)) for d in listed_json) < 31000,
+                  # Raised from 30,000 for get_heart_rate and update_activity
+                  # (about 1,000 each) and zone targets: what a tool adds comes
+                  # out of every chat's budget, so it stays tight.
+                  and sum(len(json.dumps(d)) for d in listed_json) < 32500,
                   str(sum(len(json.dumps(d)) for d in listed_json)))
 
             check("an ordinary account is offered the plan view",
@@ -1611,6 +1613,48 @@ async def main() -> int:
                   sleepy.get("gaps") == [] and sleepy.get("covered_percent") == 100, str(sleepy)[:160])
             odd = payload(await sess.call_tool("get_heart_rate", {"start": "bedtime"}))
             check("a time it can't read says how to give one", "HH:MM" in str(odd.get("error")), str(odd)[:120])
+
+            # -- zones, breathing, drains, load focus ----------------------
+            fit = payload(await sess.call_tool("get_fitness", {}))
+            hrz = (fit.get("zones") or {}).get("heart_rate") or {}
+            check("fitness carries the heart rate zones set in Garmin, in bpm",
+                  hrz.get("zones", [])[1] == {"zone": 2, "bpm": [133, 147]} and hrz.get("based_on") == "heart rate reserve"
+                  and (fit["zones"].get("power") or {}).get("zones", [])[2] == {"zone": 3, "watts": [188, 224]},
+                  str(fit.get("zones"))[:200])
+            z2 = payload(await sess.call_tool("create_workout", {"name": "Z2 hour", "steps": [
+                {"type": "interval", "duration_seconds": 3600, "hr": "z2"},
+                {"type": "repeat", "times": 2, "steps": [{"type": "interval", "duration_seconds": 300, "hr": "zone 3 to 4"},
+                                                         {"type": "recovery", "duration_seconds": 60}]}]}))
+            check("a workout can target the person's own zones", "133-147 bpm" in str(z2.get("summary"))
+                  and "148-175 bpm" in str(z2.get("summary")), str(z2.get("summary"))[:200])
+            past = payload(await sess.call_tool("create_workout", {"name": "Z9", "steps": [{"type": "interval", "duration_seconds": 60, "hr": "z9"}]}))
+            check("a zone past the person's top zone is refused", "zone 5" in str(past.get("error")), str(past)[:120])
+            slept = payload(await sess.call_tool("get_sleep_data", {"date": "2026-09-22"}))
+            check("sleep has breathing and SpO2 against its usual",
+                  slept.get("breathing", {}).get("average") == 14.2
+                  and slept.get("spo2") == {"average": 95.0, "lowest": 89, "usual_7_day": 96.0}, str(slept)[:200])
+            daily = payload(await sess.call_tool("get_daily_summary", {"date": "2026-09-22"}))
+            check("the day says what drained Body Battery",
+                  {"what": "Evening Run", "kind": "activity", "at": "18:30", "minutes": 60, "impact": -14} in daily.get("body_battery_events", []),
+                  str(daily.get("body_battery_events"))[:200])
+            check("and the stressful spells, without a short blip",
+                  daily.get("stressful_spells") == [{"from": "14:00", "to": "15:12", "minutes": 72, "average": 68, "peak": 68}],
+                  str(daily.get("stressful_spells")))
+            ready = payload(await sess.call_tool("get_readiness", {"date": "2026-09-22"}))
+            check("readiness carries the four-week load focus", (ready.get("load_focus") or {}).get("verdict"), str(ready.get("load_focus")))
+
+            # -- changing a recorded run -------------------------------------
+            changed = payload(await sess.call_tool("update_activity", {
+                "activity_id": 1111, "name": "Long run with Rufus", "shoes": "race day", "activity_type": "trail_running"}))
+            check("a run can be renamed, retyped and moved to other shoes, saying what each was",
+                  changed.get("changed", {}).get("name") == {"was": "Morning Run", "now": "Long run with Rufus"}
+                  and changed["changed"].get("shoes") == {"was": ["Pegasus"], "now": "Race day flats"}
+                  and changed["changed"].get("activity_type", {}).get("now") == "trail_running", str(changed)[:240])
+            unknown = payload(await sess.call_tool("update_activity", {"activity_id": 1111, "shoes": "Old Ghosts"}))
+            check("retired shoes aren't put on a run, and the person's pairs are named",
+                  "Pegasus" in str(unknown.get("error")) and "Race day flats" in str(unknown.get("error")), str(unknown)[:160])
+            nothing = payload(await sess.call_tool("update_activity", {"activity_id": 1111}))
+            check("asking to change nothing says what can change", "Nothing to change" in str(nothing.get("error")))
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout
