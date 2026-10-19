@@ -14,7 +14,7 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date as date_cls, timedelta
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -41,7 +41,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, crews, cycling, fitness_trends, gear, hooks, metrics, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
+from . import conditions, crews, cycling, fitness_trends, gear, heart, hooks, metrics, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, session
 from .workouts import (
@@ -81,7 +81,8 @@ _INSTRUCTIONS = (
     "what a planned session involves (paces, recoveries, cool-down) to "
     "get_workout, "
     "whether to go hard today to get_readiness, recovery to "
-    "get_recovery_trends, today's fitness markers or race predictions to "
+    "get_recovery_trends, heart rate through a day or night (gaps, when it "
+    "settled, how low it went) to get_heart_rate, today's fitness markers or race predictions to "
     "get_fitness, whether fitness is improving or how it moved with weight to "
     "get_fitness_trends, shoes "
     "to get_shoes. Answer those in "
@@ -735,6 +736,43 @@ def _sleep_score(scores: dict[str, Any]) -> dict[str, Any]:
             "qualifiers": drop_empty(qualifiers),
         }
     )
+
+
+@mcp.tool()
+@tool_errors
+async def get_heart_rate(date: str | None = None, start: str | None = None, end: str | None = None) -> dict[str, Any]:
+    """Heart rate through a day or night, from the watch's all-day readings.
+
+    For "was there a gap overnight", "when did my heart rate settle", "how
+    low did it go". Answers with gaps (no reading for 10+ min), blocks with
+    low, average and high, and the lowest and highest readings. A run's heart
+    rate is get_activity_details.
+
+    Args:
+        date: The day the window starts. Defaults to today; last night is
+            yesterday with an evening start.
+        start: Local start time, HH:MM. Defaults to midnight.
+        end: Local end time, HH:MM. Before start runs into the next day.
+    """
+    day = date_cls.fromisoformat(parse_date(date))
+    begin, finish = heart.window(day, start, end)
+    days = []
+    d = begin.date()
+    while d <= (finish - timedelta(seconds=1)).date():
+        days.append(d.isoformat())
+        d += timedelta(days=1)
+    payloads = [await _call(lambda c, x=x: c.get_heart_rates(x)) for x in days]
+    points = heart.readings(payloads)
+    first = payloads[0] if payloads and isinstance(payloads[0], dict) else {}
+    # The person's own clock: Garmin's readings are in GMT and carry the offset.
+    latest = next((p for p in reversed(payloads) if isinstance(p, dict)), {})
+    now = datetime.now(timezone.utc).replace(tzinfo=None) + heart._offset(latest)
+    summary = heart.summarise(points, begin, finish, now=now)
+    return drop_empty({
+        "date": day.isoformat(),
+        **summary,
+        "resting_hr": first.get("restingHeartRate"),
+    })
 
 
 @mcp.tool()

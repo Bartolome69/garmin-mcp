@@ -402,6 +402,27 @@ class FakeGarmin:
     def get_sleep_data(self, day: str) -> dict[str, Any]:
         return dict(SLEEP)
 
+    def get_heart_rates(self, day: str) -> dict[str, Any]:
+        """A reading every two minutes, an hour ahead of GMT, and the watch off
+        from 22:24 to 01:12 every night; lowest, 44, at 04:00."""
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+        gmt0 = _dt.fromisoformat(day + "T00:00:00").replace(tzinfo=_tz.utc) - _td(hours=1)
+        values = []
+        for i in range(720):
+            local = _dt.fromisoformat(day + "T00:00:00") + _td(minutes=2 * i)
+            minutes = local.hour * 60 + local.minute
+            off = minutes < 72 or minutes >= 22 * 60 + 24
+            bpm = None if off else (44 if minutes == 240 else 52 if minutes < 6 * 60 else 70 + (minutes % 30))
+            values.append([int((gmt0 + _td(minutes=2 * i)).timestamp() * 1000), bpm])
+        return {
+            "calendarDate": day,
+            "startTimestampGMT": (gmt0.replace(tzinfo=None)).isoformat() + ".0",
+            "startTimestampLocal": day + "T00:00:00.0",
+            "restingHeartRate": 49, "maxHeartRate": 99, "minHeartRate": 44,
+            "heartRateValues": values,
+        }
+
     def get_activities(self, start: int, limit: int) -> list[dict[str, Any]]:
         return ACTIVITIES[start : start + limit]
 

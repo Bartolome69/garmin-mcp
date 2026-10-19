@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 EXPECTED_TOOLS = {
     "get_daily_summary",
     "get_sleep_data",
+    "get_heart_rate",
     "get_activities",
     "get_activity_details",
     "get_connection_status",
@@ -1235,7 +1236,9 @@ async def main() -> int:
             check("the tool list goes out compact: no docstring indent, no schema titles",
                   not any("\n        " in (d.get("description") or "") for d in listed_json)
                   and not any('"title"' in json.dumps(d.get("inputSchema")) for d in listed_json)
-                  and sum(len(json.dumps(d)) for d in listed_json) < 30000,
+                  # Raised from 30,000 for get_heart_rate (about 1,000): what a
+                  # tool adds comes out of every chat's budget, so it stays tight.
+                  and sum(len(json.dumps(d)) for d in listed_json) < 31000,
                   str(sum(len(json.dumps(d)) for d in listed_json)))
 
             check("an ordinary account is offered the plan view",
@@ -1586,6 +1589,28 @@ async def main() -> int:
             await check_calendar_fallback(check)
             await check_reads_at_once(check)
             await check_tool_list_nudge(check)
+
+            # -- heart rate through a night ---------------------------------
+            # The fake watch is off from 22:24 to 01:12 every night, and lowest
+            # (44) at 04:00, an hour ahead of GMT.
+            night = payload(await sess.call_tool("get_heart_rate", {"date": "2026-09-21", "start": "22:20", "end": "01:30"}))
+            check("a night across midnight is one window, with its gap named",
+                  night.get("from") == "22:20" and night.get("to") == "Tue 01:30"
+                  and night.get("gaps") == [{"from": "22:22", "to": "Tue 01:12", "length": "2h50m"}], str(night)[:240])
+            check("in 10-minute blocks, empty ones marked, never a raw reading list",
+                  night.get("block_minutes") == 10 and len(night.get("blocks", [])) == 19
+                  and night["blocks"][1] == {"from": "22:30", "none": True} and "heartRateValues" not in json.dumps(night),
+                  str(night.get("blocks", [])[:3]))
+            day = payload(await sess.call_tool("get_heart_rate", {"date": "2026-09-21"}))
+            check("a whole day comes hourly, with the lowest reading and when",
+                  day.get("block_minutes") == 60 and len(day.get("blocks", [])) == 24
+                  and day.get("lowest") == {"bpm": 44, "at": "04:00"} and day.get("resting_hr") == 49
+                  and len(json.dumps(day)) < 4000, f"{day.get('lowest')} {len(json.dumps(day))}")
+            sleepy = payload(await sess.call_tool("get_heart_rate", {"date": "2026-09-22", "start": "02:00", "end": "05:00"}))
+            check("a window the watch covered has no gaps and is all covered",
+                  sleepy.get("gaps") == [] and sleepy.get("covered_percent") == 100, str(sleepy)[:160])
+            odd = payload(await sess.call_tool("get_heart_rate", {"start": "bedtime"}))
+            check("a time it can't read says how to give one", "HH:MM" in str(odd.get("error")), str(odd)[:120])
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout
