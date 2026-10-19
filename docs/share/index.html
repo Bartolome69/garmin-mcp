@@ -399,7 +399,11 @@
     // The grid: a name column, then the seven days.
     y += story ? 70 : 56;
     var nameW = 200, gap = 8, cellW = (W - 2 * P - nameW - gap * 7) / 7;
-    var n = cw.m.length, rowH = Math.min(98, Math.max(64, (H - S.bottom - y - 60 - (cw.t.length ? 60 + cw.t.length * 54 : 0) - 70) / Math.max(n, 1)));
+    // Runs that line up with someone else's the same day, outlined as on the card.
+    var matched = {};
+    cw.t.forEach(function (t) { t.who.forEach(function (w) { matched[w + "|" + t.d] = true; }); });
+    var anyMatch = Object.keys(matched).length > 0;
+    var n = cw.m.length, rowH = Math.min(98, Math.max(64, (H - S.bottom - y - 60 - (cw.t.length ? 60 + cw.t.length * 54 : 0) - 70 - (anyMatch ? 40 : 0)) / Math.max(n, 1)));
     var k = rowH / 98;
     font(ctx, 500, 20, true); ctx.textAlign = "center";
     for (var d = 0; d < 7; d++) {
@@ -437,6 +441,9 @@
             font(ctx, 500, Math.round(19 * Math.max(k, 0.85)), true); ctx.fillStyle = sub; ctx.fillText(pick.k, x + cellW / 2, cy + 7);
           }
         }
+        if (pick && pick.k !== "club" && matched[m.n + "|" + d]) {
+          ctx.strokeStyle = T.red; ctx.lineWidth = 4; rrect(ctx, x + 2, top + 8, cellW - 4, rowH - 16, 10); ctx.stroke();
+        }
         ctx.globalAlpha = 1;
       }
       y += rowH;
@@ -444,8 +451,13 @@
     // Legend
     y += 26;
     ctx.textAlign = "left"; var lx = P;
-    [["easy", "Easy"], ["long", "Long"], ["club", "Club run"], ["hard", "Hard, alone"]].forEach(function (pair) {
-      if (pair[0] === "hard") { ctx.strokeStyle = T.faint; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); rrect(ctx, lx, y - 16, 18, 18, 5); ctx.stroke(); ctx.setLineDash([]); }
+    var keys = [["easy", "Easy"], ["long", "Long"], ["club", "Club run"], ["hard", "Hard, alone"]];
+    if (anyMatch) keys.push(["same", "Same day"]);
+    keys.forEach(function (pair) {
+      font(ctx, 400, 24);
+      if (lx + 28 + ctx.measureText(pair[1]).width > W - P) { lx = P; y += 40; }
+      if (pair[0] === "same") { ctx.strokeStyle = T.red; ctx.lineWidth = 3; rrect(ctx, lx + 1.5, y - 14.5, 15, 15, 4); ctx.stroke(); }
+      else if (pair[0] === "hard") { ctx.strokeStyle = T.faint; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); rrect(ctx, lx, y - 16, 18, 18, 5); ctx.stroke(); ctx.setLineDash([]); }
       else { ctx.fillStyle = pair[0] === "club" ? T.wash.club : T.c[pair[0]]; rrect(ctx, lx, y - 16, 18, 18, 5); ctx.fill(); }
       font(ctx, 400, 24); ctx.fillStyle = T.muted; ctx.fillText(pair[1], lx + 28, y);
       lx += 28 + ctx.measureText(pair[1]).width + 36;
