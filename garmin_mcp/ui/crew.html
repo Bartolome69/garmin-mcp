@@ -83,6 +83,8 @@
   .cell.club { background: var(--club); }
   .cell.club b, .cell.club .k { color: var(--on-club); }
   .cell.hard { background: transparent; border: 1px dashed var(--btn-border); }
+  /* A run someone else in the crew is doing the same day: inset, so nothing moves. */
+  .cell.match { box-shadow: inset 0 0 0 2px var(--red); }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); padding: 8px 16px 2px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .sw { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
@@ -223,7 +225,12 @@
         : ["You're in ", el("b", { text: d.just.crew }), ". Your runs show here once you've looked at your plan."]));
     }
 
-    // Who runs when.
+    // Who runs when, with the runs that line up outlined.
+    var matched = {};
+    d.together.forEach(function (t) {
+      if (t.kind === "club") return;
+      t.who.forEach(function (n) { matched[n + "|" + t.date] = true; });
+    });
     var grid = el("div", { class: "grid", role: "table", "aria-label": "Each member's runs by day this week" }, [el("span")]);
     for (var k = 0; k < 7; k++) {
       var date = iso(addDays(monday, k));
@@ -241,8 +248,9 @@
         var top = runs.filter(function (r) { return r.kind === "club"; })[0] || runs.filter(function (r) { return r.kind === "long"; })[0] ||
           runs.filter(function (r) { return r.kind === "easy"; })[0] || runs.filter(function (r) { return r.kind === "hard"; })[0];
         var label = top ? (top.kind === "hard" ? "hard" : top.kind === "club" ? "club" : top.kind) : "";
-        grid.appendChild(el("div", { class: "cell" + (top ? " " + top.kind : "") + (past ? " past" : ""),
-          "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + " km" : "") : m.name + ", " + DAYS[j] + ": nothing" },
+        var same = top && top.kind !== "club" && matched[m.name + "|" + date];
+        grid.appendChild(el("div", { class: "cell" + (top ? " " + top.kind : "") + (past ? " past" : "") + (same ? " match" : ""),
+          "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + " km" : "") + (same ? ", same day as others" : "") : m.name + ", " + DAYS[j] + ": nothing" },
           top ? [top.km ? el("b", { text: km(top.km) }) : null, el("span", { class: "k", text: label })] : []));
       });
     });
@@ -252,6 +260,7 @@
       el("span", {}, [el("i", { class: "sw", style: "background:var(--long)" }), "Long"]),
       el("span", {}, [el("i", { class: "sw", style: "background:var(--club)" }), "Club run"]),
       el("span", {}, [el("i", { class: "sw", style: "border:1px dashed var(--faint)" }), "Hard, run alone"]),
+      Object.keys(matched).length ? el("span", {}, [el("i", { class: "sw", style: "box-shadow:inset 0 0 0 2px var(--red)" }), "Same day"]) : null,
     ]));
 
     // What to run together.
