@@ -23,6 +23,7 @@ disconnecting deletes the lot.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -101,6 +102,13 @@ CREATE TABLE IF NOT EXISTS crew_runs (
     km          REAL
 );
 CREATE INDEX IF NOT EXISTS crew_runs_member ON crew_runs (member, day);
+CREATE TABLE IF NOT EXISTS crew_slot_changes (
+    member      TEXT NOT NULL,              -- someone added by hand on the crew's page
+    day         TEXT NOT NULL,              -- YYYY-MM-DD
+    slot        TEXT NOT NULL,              -- morning, afternoon or evening
+    running     INTEGER NOT NULL,           -- 1 added to their usual week, 0 taken off it
+    PRIMARY KEY (member, day, slot)
+);
 """
 
 _paces_cleared = False
@@ -117,6 +125,13 @@ def _connect():
         # A crew's page link came after the first crews: added where missing.
         if "link" not in {r[1] for r in conn.execute("PRAGMA table_info(crews)")}:
             conn.execute("ALTER TABLE crews ADD COLUMN link TEXT")
+        # So did people who add their runs by hand on that page.
+        have = {r[1] for r in conn.execute("PRAGMA table_info(crew_members)")}
+        for column, kind in (("by_hand", "INTEGER NOT NULL DEFAULT 0"), ("public_id", "TEXT"), ("token_hash", "TEXT"),
+                             ("pin_hash", "TEXT"), ("usual", "TEXT"), ("fails", "INTEGER NOT NULL DEFAULT 0"),
+                             ("locked_until", "INTEGER NOT NULL DEFAULT 0")):
+            if column not in have:
+                conn.execute(f"ALTER TABLE crew_members ADD COLUMN {column} {kind}")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS crews_link ON crews (link) WHERE link IS NOT NULL")
         conn.commit()
         _paces_cleared = True
@@ -395,8 +410,7 @@ def leave() -> dict[str, Any]:
         if row is None:
             raise CrewError("You're not in a crew.")
         crew_id, crew_name, owner = row
-        conn.execute("DELETE FROM crew_members WHERE member = ?", (me.key,))
-        conn.execute("DELETE FROM crew_runs WHERE member = ?", (me.key,))
+        _drop(conn, me.key)
         rest = conn.execute(
             "SELECT member FROM crew_members WHERE crew_id = ? ORDER BY joined_at", (crew_id,)
         ).fetchall()
@@ -428,8 +442,7 @@ def forget(key: str) -> None:
     """Everything a person has in crews, gone: for Disconnect."""
     with _connect() as conn:
         row = conn.execute("SELECT crew_id FROM crew_members WHERE member = ?", (key,)).fetchone()
-        conn.execute("DELETE FROM crew_members WHERE member = ?", (key,))
-        conn.execute("DELETE FROM crew_runs WHERE member = ?", (key,))
+        _drop(conn, key)
         if row:
             rest = conn.execute(
                 "SELECT member FROM crew_members WHERE crew_id = ? ORDER BY joined_at", (row[0],)
@@ -486,8 +499,7 @@ def update(name: Any = None, times: Any = None, goes_to_club: bool | None = None
                 raise CrewError(f"Nobody in {current_name} is called {remove}.")
             if target[0] == me.key:
                 raise CrewError("To take yourself out, leave the crew instead.")
-            conn.execute("DELETE FROM crew_members WHERE member = ?", (target[0],))
-            conn.execute("DELETE FROM crew_runs WHERE member = ?", (target[0],))
+            _drop(conn, target[0])
             changed.append(f"removed {remove}")
     return {"changed": changed}
 
@@ -523,6 +535,13 @@ def _slot_for(day: date, times: list[str]) -> set[str]:
 _SLOTS = ("morning", "afternoon", "evening")
 
 
+def _free_at(person: dict[str, Any], day: date, slot: str) -> bool:
+    """Whether someone runs at that time of day, by their usual times or, added by hand, the slots they picked."""
+    if "day_slots" in person:
+        return slot in person["day_slots"].get(day.isoformat(), ())
+    return not person["times"] or slot in _slot_for(day, person["times"])
+
+
 def _best_group(day: date, people: list[dict[str, Any]], must: dict[str, Any] | None = None
                 ) -> tuple[list[dict[str, Any]], str | None]:
     """The biggest set of these people who can run together that day.
@@ -538,14 +557,14 @@ def _best_group(day: date, people: list[dict[str, Any]], must: dict[str, Any] | 
     options: list[str | None] = list(_SLOTS) + [None]
     for slot in options:
         if slot is None:
-            free = [p for p in people if not p["times"]]
+            free = [p for p in people if not p["times"] and "day_slots" not in p]
         else:
-            free = [p for p in people if not p["times"] or slot in _slot_for(day, p["times"])]
+            free = [p for p in people if _free_at(p, day, slot)]
         group = free
         if must is not None and must not in group:
             continue
         if len(group) >= 2 and len(group) > len(best[0]):
-            timed = any(p["times"] for p in group)
+            timed = any(p["times"] or "day_slots" in p for p in group)
             best = (group, slot if timed else None)
     return best
 
@@ -629,8 +648,10 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
         crew_name, code, owner, club_json, link = conn.execute(
             "SELECT name, code, owner, club_json, link FROM crews WHERE crew_id = ?", (crew_id,),
         ).fetchone()
+        conn.execute("DELETE FROM crew_slot_changes WHERE day < ?", (today.isoformat(),))
         members = conn.execute(
-            "SELECT member, name, times, club, updated_on FROM crew_members WHERE crew_id = ? ORDER BY joined_at",
+            "SELECT member, name, times, club, updated_on, by_hand, public_id, usual FROM crew_members "
+            "WHERE crew_id = ? ORDER BY joined_at",
             (crew_id,),
         ).fetchall()
         keys = [m[0] for m in members]
@@ -639,18 +660,48 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
             f"SELECT member, day, kind, km FROM crew_runs WHERE member IN ({marks}) AND day BETWEEN ? AND ? ORDER BY day",
             (*keys, days[0].isoformat(), days[-1].isoformat()),
         ).fetchall()
+        changes = conn.execute(
+            f"SELECT member, day, slot, running FROM crew_slot_changes WHERE member IN ({marks}) AND day BETWEEN ? AND ?",
+            (*keys, days[0].isoformat(), days[-1].isoformat()),
+        ).fetchall()
     club = json.loads(club_json) if club_json else None
     club_day = days[DAYS.index(club["day"])] if club else None
 
     people: list[dict[str, Any]] = []
-    for key, name, times, goes, updated_on in members:
-        people.append({
+    for key, name, times, goes, updated_on, by_hand, public_id, usual in members:
+        person = {
             "key": key, "name": name, "you": me_key is not None and key == me_key, "times": json.loads(times) if times else [],
             "club": bool(goes), "updated_on": updated_on, "runs": {},
-        })
+        }
+        if by_hand:
+            person.update({"by_hand": True, "id": public_id, "usual": set(json.loads(usual) if usual else [])})
+        people.append(person)
     by_key = {p["key"]: p for p in people}
     for key, day_text, kind, km in runs:
         by_key[key]["runs"].setdefault(day_text, []).append({"kind": kind, "km": km})
+    # Someone added by hand runs easy in the slots of their usual week, with
+    # that week's changes, unless they haven't been back for a while.
+    picked: dict[str, dict[str, bool]] = {}
+    for key, day_text, slot, running in changes:
+        picked.setdefault(key, {})[f"{day_text}|{slot}"] = bool(running)
+    for person in people:
+        if not person.get("by_hand"):
+            continue
+        seen = date.fromisoformat(person["updated_on"]) if person["updated_on"] else None
+        person["stale"] = seen is None or (today - seen).days > STALE_DAYS
+        person["day_slots"] = {}
+        for day in days:
+            slots = {s for s in _SLOTS if f"{DAYS[day.weekday()]}_{s}" in person["usual"]}
+            for mark, running in picked.get(person["key"], {}).items():
+                d, slot = mark.split("|")
+                if d == day.isoformat():
+                    (slots.add if running else slots.discard)(slot)
+            if slots and not person["stale"]:
+                person["day_slots"][day.isoformat()] = slots
+                person["runs"][day.isoformat()] = [{"kind": "easy", "km": None, "when": [s for s in _SLOTS if s in slots]}]
+        if not person["stale"]:
+            # Their usual week stands for now: shown as current, not "as of".
+            person["updated_on"] = today.isoformat()
 
     def social(person: dict[str, Any], day: date) -> list[dict[str, Any]]:
         return [r for r in person["runs"].get(day.isoformat(), []) if r["kind"] in ("easy", "long")]
@@ -687,13 +738,15 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
         grid = []
         for day in days:
             day_runs = p["runs"].get(day.isoformat(), [])
-            cell = [{"kind": r["kind"], **({"km": r["km"]} if r["kind"] != "hard" and r["km"] else {})} for r in day_runs]
+            cell = [{"kind": r["kind"], **({"km": r["km"]} if r["kind"] != "hard" and r["km"] else {}),
+                     **({"when": r["when"]} if r.get("when") else {})} for r in day_runs]
             if club_day == day and p["club"] and not any(r["kind"] == "hard" for r in day_runs):
                 cell = [{"kind": "club", **({"km": club["km"]} if club.get("km") else {})}] + [
                     r for r in cell if r["kind"] == "long"
                 ]
             grid.append(cell)
         out_members.append({
+            **({"by_hand": True, "id": p["id"]} if p.get("by_hand") else {}),
             "name": p["name"], "you": p["you"],
             "times": ", ".join(_TIME_WORDS[t] for t in p["times"]) or None,
             "club": p["club"], "updated_on": p["updated_on"], "days": grid,
@@ -761,3 +814,198 @@ def group_message(crew_name: str, days: list[date], today: date, people: list[di
     lines.append("")
     lines.append(f"In? Say so here. New to the crew? Tell your Daash the code {code}." if code else "In? Say so in the group.")
     return "\n".join(lines)
+
+
+def _drop(conn: Any, key: str) -> None:
+    """Everything kept for one member: their place, runs, and picks made by hand."""
+    conn.execute("DELETE FROM crew_members WHERE member = ?", (key,))
+    conn.execute("DELETE FROM crew_runs WHERE member = ?", (key,))
+    conn.execute("DELETE FROM crew_slot_changes WHERE member = ?", (key,))
+
+
+# --------------------------------------------------------------------------
+# Runners without Daash, on the crew's page
+# --------------------------------------------------------------------------
+# Anyone with the crew's page link can add themselves: a first name, a
+# four-digit PIN, and the slots of their usual week they run easy in, with
+# changes for this week or next. The phone they used remembers them by a
+# token; on another phone their name and PIN let them back in. Nothing else
+# about them is kept, and past days go as everyone else's do.
+
+STALE_DAYS = 21                 # not back for three weeks: shown, but not matched
+MAX_BY_HAND = 15                # people added by hand per crew
+PIN_TRIES = 5
+PIN_LOCK_SECONDS = 15 * 60
+_NAME = re.compile(r"^[^\W\d_][\w .'\-]{0,23}$", re.UNICODE)
+_SLOT_CODES = {f"{d}_{s}" for d in DAYS for s in ("morning", "afternoon", "evening")}
+
+
+class Locked(CrewError):
+    """Too many wrong PINs: wait before trying again."""
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _pin_hash(pin: str, salt: str | None = None) -> str:
+    salt = salt or secrets.token_hex(8)
+    return salt + "$" + hashlib.pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(salt), 200_000).hex()
+
+
+def _pin_ok(pin: str, stored: str | None) -> bool:
+    if not stored or "$" not in stored:
+        return False
+    return secrets.compare_digest(_pin_hash(pin, stored.split("$", 1)[0]), stored)
+
+
+def _runner_name(name: Any) -> str:
+    text = " ".join(str(name or "").split())
+    if not _NAME.match(text):
+        raise CrewError("A first name, up to 24 letters.")
+    return text
+
+
+def _clean_pin(pin: Any) -> str:
+    text = str(pin or "").strip()
+    if not re.fullmatch(r"\d{4}", text):
+        raise CrewError("The PIN is four digits.")
+    return text
+
+
+def _clean_usual(usual: Any) -> list[str]:
+    picks = sorted({str(x) for x in (usual or [])})
+    if any(p not in _SLOT_CODES for p in picks):
+        raise CrewError("Slots are a day and a time of day, such as tue_morning.")
+    return picks
+
+
+def _crew_for_link(conn: Any, link: str) -> str:
+    if not isinstance(link, str) or not _LINK_RE.fullmatch(link):
+        raise CrewError("This crew page isn't available.")
+    row = conn.execute("SELECT crew_id FROM crews WHERE link = ?", (link,)).fetchone()
+    if row is None:
+        raise CrewError("This crew page isn't available.")
+    return row[0]
+
+
+def _runner(conn: Any, crew_id: str, token: Any) -> tuple:
+    if not isinstance(token, str) or len(token) < 20:
+        raise CrewError("Sign in with your name and PIN.")
+    row = conn.execute(
+        "SELECT member, public_id, name, usual, updated_on FROM crew_members "
+        "WHERE crew_id = ? AND by_hand = 1 AND token_hash = ?",
+        (crew_id, _hash(token)),
+    ).fetchone()
+    if row is None:
+        raise CrewError("Sign in with your name and PIN.")
+    return row
+
+
+def add_runner(link: str, name: Any, pin: Any, usual: Any, today: date | None = None) -> dict[str, Any]:
+    """Someone without Daash joins the crew's week. Returns the token their phone keeps."""
+    today = today or date.today()
+    clean, code, picks = _runner_name(name), _clean_pin(pin), _clean_usual(usual)
+    with _connect() as conn:
+        crew_id = _crew_for_link(conn, link)
+        count = conn.execute("SELECT COUNT(*) FROM crew_members WHERE crew_id = ? AND by_hand = 1", (crew_id,)).fetchone()[0]
+        if count >= MAX_BY_HAND:
+            raise CrewError("This crew's page is full. Ask whoever started the crew to make room.")
+        if conn.execute("SELECT 1 FROM crew_members WHERE crew_id = ? AND lower(name) = lower(?)", (crew_id, clean)).fetchone():
+            raise CrewError(f"Someone in the crew is already called {clean}. Add an initial, or sign in if it's you.")
+        token, public_id = secrets.token_urlsafe(24), secrets.token_urlsafe(8)
+        conn.execute(
+            "INSERT INTO crew_members (member, crew_id, name, times, club, updated_on, joined_at, by_hand, public_id, "
+            "token_hash, pin_hash, usual) VALUES (?, ?, ?, NULL, 0, ?, ?, 1, ?, ?, ?, ?)",
+            (f"h:{public_id}", crew_id, clean, today.isoformat(), int(time.time()), public_id,
+             _hash(token), _pin_hash(code), json.dumps(picks)),
+        )
+    return {"token": token, "id": public_id, "name": clean}
+
+
+def runner_sign_in(link: str, runner_id: Any, pin: Any) -> dict[str, Any]:
+    """Back in on another phone, by name (its id on the page) and PIN. Locks after five wrong tries."""
+    now = int(time.time())
+    with _connect() as conn:
+        crew_id = _crew_for_link(conn, link)
+        row = conn.execute(
+            "SELECT member, public_id, name, pin_hash, fails, locked_until FROM crew_members "
+            "WHERE crew_id = ? AND by_hand = 1 AND public_id = ?",
+            (crew_id, str(runner_id or "")),
+        ).fetchone()
+        if row is None:
+            raise CrewError("Nobody added by hand has that name in this crew.")
+        key, public_id, name, stored, fails, locked_until = row
+        if locked_until > now:
+            raise Locked(f"Too many wrong PINs. Try again in {max(1, (locked_until - now) // 60)} minutes.")
+        if not _pin_ok(str(pin or "").strip(), stored):
+            fails += 1
+            conn.execute(
+                "UPDATE crew_members SET fails = ?, locked_until = ? WHERE member = ?",
+                (0 if fails >= PIN_TRIES else fails, now + PIN_LOCK_SECONDS if fails >= PIN_TRIES else 0, key),
+            )
+            # Kept before refusing: the refusal would otherwise roll the count back.
+            conn.commit()
+            raise CrewError("That PIN isn't right." + (" Locked for 15 minutes." if fails >= PIN_TRIES else ""))
+        token = secrets.token_urlsafe(24)
+        conn.execute("UPDATE crew_members SET token_hash = ?, fails = 0, locked_until = 0 WHERE member = ?", (_hash(token), key))
+    return {"token": token, "id": public_id, "name": name}
+
+
+def runner(link: str, token: Any, today: date | None = None) -> dict[str, Any]:
+    """What someone added by hand has set: their usual week, and changes to this week and next."""
+    today = today or date.today()
+    with _connect() as conn:
+        crew_id = _crew_for_link(conn, link)
+        key, public_id, name, usual, updated_on = _runner(conn, crew_id, token)
+        changes = conn.execute(
+            "SELECT day, slot, running FROM crew_slot_changes WHERE member = ? AND day >= ? ORDER BY day",
+            (key, today.isoformat()),
+        ).fetchall()
+    seen = date.fromisoformat(updated_on) if updated_on else None
+    return {
+        "id": public_id, "name": name, "usual": json.loads(usual) if usual else [],
+        "changes": [{"day": d, "slot": s, "running": bool(r)} for d, s, r in changes],
+        "stale": seen is None or (today - seen).days > STALE_DAYS,
+    }
+
+
+def update_runner(link: str, token: Any, usual: Any = None, changes: Any = None, still_running: bool = False,
+                  today: date | None = None) -> dict[str, Any]:
+    """Change someone's usual week or a day this week or next; any change says they're still running."""
+    today = today or date.today()
+    monday = today - timedelta(days=today.weekday())
+    last = monday + timedelta(days=13)
+    with _connect() as conn:
+        crew_id = _crew_for_link(conn, link)
+        key = _runner(conn, crew_id, token)[0]
+        if usual is not None:
+            conn.execute("UPDATE crew_members SET usual = ? WHERE member = ?", (json.dumps(_clean_usual(usual)), key))
+        for change in changes or []:
+            if not isinstance(change, dict):
+                raise CrewError("A change is a day, a slot and whether you're running.")
+            try:
+                day = date.fromisoformat(str(change.get("day")))
+            except ValueError:
+                raise CrewError("A change's day is YYYY-MM-DD.") from None
+            slot = str(change.get("slot"))
+            if not today <= day <= last or slot not in _SLOTS:
+                raise CrewError("Changes are for this week or next, morning, afternoon or evening.")
+            if change.get("running") is None:
+                conn.execute("DELETE FROM crew_slot_changes WHERE member = ? AND day = ? AND slot = ?",
+                             (key, day.isoformat(), slot))
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO crew_slot_changes (member, day, slot, running) VALUES (?, ?, ?, ?)",
+                    (key, day.isoformat(), slot, 1 if change["running"] else 0),
+                )
+        if usual is not None or changes or still_running:
+            conn.execute("UPDATE crew_members SET updated_on = ? WHERE member = ?", (today.isoformat(), key))
+    return runner(link, token, today)
+
+
+def remove_runner(link: str, token: Any) -> None:
+    """Someone added by hand takes themselves off the crew's page, and everything kept for them goes."""
+    with _connect() as conn:
+        crew_id = _crew_for_link(conn, link)
+        _drop(conn, _runner(conn, crew_id, token)[0])

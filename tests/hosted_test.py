@@ -1510,6 +1510,86 @@ async def main() -> int:
               and (await anyio_run(fetch, "/crew/short"))[0] == 404)
         await call(carol, "update_crew", {"group_link": "on", "confirm": True})
 
+        # People without Daash add their easy runs on the page.
+        link = crews._connect().execute("SELECT link FROM crews WHERE code = ?", (code,)).fetchone()[0]
+
+        def runner_post(body, content_type="application/json"):
+            req = urllib.request.Request(f"{base}/crew/{link}/runner", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": content_type}, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    return r.status, json.loads(r.read().decode())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read().decode() or "{}")
+
+        async def page_week(week=None):
+            status, _, raw = await anyio_run(fetch, f"/crew/{link}?format=json" + (f"&week_of={week}" if week else ""))
+            return json.loads(raw) if status == 200 else {}
+
+        status, _ = await anyio_run(runner_post, {"action": "add"}, "text/plain")
+        check("the page's changes are JSON only", status == 415, str(status))
+        # Carol runs Sunday mornings: Sam's usual Sunday morning lines up with her.
+        status, sam = await anyio_run(runner_post, {"action": "add", "name": "Sam", "pin": "4821",
+                                                    "usual": ["sun_morning", "wed_evening"]})
+        check("someone without Daash adds their usual easy runs with a name and PIN",
+              status == 200 and len(sam.get("token", "")) >= 30 and sam.get("name") == "Sam", str(sam)[:120])
+        status, again = await anyio_run(runner_post, {"action": "add", "name": "carol", "pin": "1111", "usual": []})
+        check("a name already in the crew is refused", status == 400 and "already called" in again.get("error", ""), str(again))
+        status, bad = await anyio_run(runner_post, {"action": "add", "name": "Pat", "pin": "12", "usual": []})
+        check("a PIN is four digits", status == 400 and "four digits" in bad.get("error", ""), str(bad))
+        week = await page_week(monday.isoformat())
+        sam_row = next((m for m in week.get("members", []) if m["name"] == "Sam"), {})
+        sunday = (monday + _td(days=6)).isoformat()
+        check("their row is on the page, marked as added by hand, with easy runs in their slots",
+              sam_row.get("by_hand") is True and sam_row.get("id") == sam.get("id")
+              and sam_row["days"][6] == [{"kind": "easy", "when": ["morning"]}] and "token_hash" not in json.dumps(week),
+              str(sam_row)[:200])
+        sun = next((t for t in week.get("together", []) if t["date"] == sunday), {})
+        check("and they're matched with the crew in the same slot", "Sam" in sun.get("who", []) and sun.get("when") == "morning", str(sun))
+        dave_sees = await call(dave, "get_crew", {"week_of": monday.isoformat()})
+        check("Daash members see them on their own crew card",
+              any(m["name"] == "Sam" and m.get("by_hand") for m in dave_sees.get("members", [])))
+        status, mine = await anyio_run(runner_post, {"action": "mine", "token": sam["token"]})
+        check("their phone reads back their usual week", status == 200 and mine.get("usual") == ["sun_morning", "wed_evening"], str(mine))
+        status, upd = await anyio_run(runner_post, {"action": "update", "token": sam["token"],
+                                                    "changes": [{"day": sunday, "slot": "morning", "running": False},
+                                                                {"day": (monday + _td(days=5)).isoformat(), "slot": "afternoon", "running": True}]})
+        week = await page_week(monday.isoformat())
+        sam_row = next((m for m in week.get("members", []) if m["name"] == "Sam"), {})
+        check("a change for one week moves their runs that week only",
+              status == 200 and sam_row["days"][6] == [] and sam_row["days"][5] == [{"kind": "easy", "when": ["afternoon"]}]
+              and json.loads(json.dumps(upd)).get("usual") == ["sun_morning", "wed_evening"], str(sam_row.get("days")))
+        status, far = await anyio_run(runner_post, {"action": "update", "token": sam["token"],
+                                                    "changes": [{"day": "2030-01-01", "slot": "morning", "running": True}]})
+        check("and only this week or next", status == 400, str(far))
+        status, nope = await anyio_run(runner_post, {"action": "update", "token": "x" * 32, "usual": []})
+        check("without their token nothing changes", status == 400 and "PIN" in nope.get("error", ""), str(nope))
+        tries = [await anyio_run(runner_post, {"action": "sign_in", "id": sam["id"], "pin": "0000"}) for _ in range(5)]
+        status, locked = await anyio_run(runner_post, {"action": "sign_in", "id": sam["id"], "pin": "4821"})
+        check("five wrong PINs lock signing in, even with the right one", all(t[0] == 400 for t in tries) and status == 429
+              and "minutes" in locked.get("error", ""), str(locked))
+        crews._connect().execute("UPDATE crew_members SET locked_until = 0 WHERE name = 'Sam'").connection.commit()
+        status, back = await anyio_run(runner_post, {"action": "sign_in", "id": sam["id"], "pin": "4821"})
+        check("on another phone, name and PIN let them back in", status == 200 and back.get("token") and back["token"] != sam["token"], str(back)[:80])
+        old = (_date.today() - _td(days=30)).isoformat()
+        crews._connect().execute("UPDATE crew_members SET updated_on = ? WHERE name = 'Sam'", (old,)).connection.commit()
+        week = await page_week(monday.isoformat())
+        sam_row = next((m for m in week.get("members", []) if m["name"] == "Sam"), {})
+        check("not back for three weeks, they're shown but not matched",
+              sam_row and all(not d for d in sam_row["days"]) and all("Sam" not in t["who"] for t in week.get("together", [])), str(sam_row)[:160])
+        status, stale = await anyio_run(runner_post, {"action": "mine", "token": back["token"]})
+        status, _ = await anyio_run(runner_post, {"action": "update", "token": back["token"], "still_running": True})
+        check("and one tap says they're still running", stale.get("stale") is True
+              and next(m for m in (await page_week(monday.isoformat()))["members"] if m["name"] == "Sam")["days"][2] != [], str(stale))
+        status, gone = await anyio_run(runner_post, {"action": "remove", "token": back["token"]})
+        check("Remove me takes them off, with everything kept for them",
+              status == 200 and not any(m["name"] == "Sam" for m in (await page_week()).get("members", []))
+              and crews._connect().execute("SELECT COUNT(*) FROM crew_slot_changes").fetchone()[0] == 0, str(gone))
+        status, kim = await anyio_run(runner_post, {"action": "add", "name": "Kim", "pin": "1234", "usual": ["mon_morning"]})
+        removed = await call(carol, "update_crew", {"remove_member": "Kim"})
+        check("whoever started the crew can remove someone added by hand",
+              "removed Kim" in removed.get("changed", []) and not any(m["name"] == "Kim" for m in (await page_week()).get("members", [])), str(removed))
+
         changed = await call(dave, "update_crew", {"club_run_day": "sat"})
         check("only whoever started the crew changes its club run", "Only whoever started" in str(changed.get("error")))
         renamed = await call(carol, "update_crew", {"crew_name": "Friday Flyers", "goes_to_club_run": False})

@@ -122,6 +122,22 @@
   .promo a { color: var(--red-text); font-weight: 600; text-decoration: none; }
   .link-row { font-size: 13px; color: var(--muted); }
   .link-row button { border: 0; background: none; padding: 0; color: var(--red-text); font-weight: 600; font-size: 13px; }
+  /* Adding your own easy runs on the crew's page. */
+  .editor { margin: 4px 16px 12px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .editor h4 { margin: 0; font-size: 15px; }
+  .editor .hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+  .pick { display: grid; grid-template-columns: minmax(64px, 1.2fr) repeat(7, minmax(30px, 1fr)); gap: 4px; }
+  .pick .l { font-size: 12px; color: var(--muted); display: flex; align-items: center; }
+  .pick .h { font-size: 10.5px; color: var(--faint); text-align: center; }
+  .pick button { height: 36px; border-radius: 8px; border: 1px solid var(--btn-border); background: transparent; padding: 0; font-size: 11px; color: var(--faint); }
+  .pick button[aria-pressed="true"] { background: var(--easy-wash); border-color: var(--easy); color: var(--easy); font-weight: 600; }
+  .pick button:disabled { opacity: 0.35; cursor: default; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+  .field input, .field select { height: 38px; border-radius: 10px; border: 1px solid var(--btn-border); background: var(--cell); color: var(--text); padding: 0 10px; font: inherit; font-size: 15px; }
+  .fields { display: flex; gap: 10px; flex-wrap: wrap; }
+  .fields .field { flex: 1 1 140px; }
+  .err { font-size: 13px; color: var(--red-text); margin: 0; }
+  .plain-btn { border: 0; background: none; padding: 0; color: var(--muted); font-size: 13px; text-decoration: underline; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style>
 </head>
@@ -187,6 +203,7 @@
     Object.keys(attrs || {}).forEach(function (k) {
       if (k === "text") n.textContent = attrs[k];
       else if (k === "onclick") n.addEventListener("click", attrs[k]);
+      else if (k === "oninput") n.addEventListener("input", attrs[k]);
       else if (attrs[k] != null && attrs[k] !== false) n.setAttribute(k, attrs[k] === true ? "" : attrs[k]);
     });
     (kids || []).forEach(function (c) { if (c == null || c === false) return; n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
@@ -212,6 +229,11 @@
     app.textContent = "";
     if (!d || d.error || !d.crew) { app.appendChild(el("div", { class: "empty", text: (d && d.error) || "The crew could not be loaded." })); size(); return; }
     data = d;
+    var meNow = PAGE ? mine() : null;
+    if (meNow) {
+      d.members.forEach(function (m) { if (m.by_hand && m.id === meNow.id) m.you = true; });
+      d.together.forEach(function (t) { if (t.who.indexOf(meNow.name) >= 0) t.you_in = true; });
+    }
     var monday = parse(d.week.starts), today = d.today;
     var sub = d.crew.members + (d.crew.members === 1 ? " member" : " members") + " · " +
       monday.getDate() + (monday.getMonth() !== addDays(monday, 6).getMonth() ? " " + MONTHS[monday.getMonth()] : "") +
@@ -251,7 +273,7 @@
       var stale = !m.updated_on ? "no week yet" : (daysBetween(m.updated_on, today) > 3 ? "as of " + DAYS[dow(m.updated_on)] : "");
       grid.appendChild(el("div", { class: "who" }, [
         el("span", { class: "nm" + (m.you ? " you" : ""), text: m.name, title: m.you ? "You" : m.name }),
-        stale ? el("span", { class: "stale", text: stale }) : null,
+        stale ? el("span", { class: "stale", text: stale }) : (m.by_hand ? el("span", { class: "stale", text: "by hand" }) : null),
       ]));
       m.days.forEach(function (runs, j) {
         var date = iso(addDays(monday, j)), past = date < today;
@@ -261,7 +283,8 @@
         var same = top && top.kind !== "club" && matched[m.name + "|" + date];
         grid.appendChild(el("div", { class: "cell" + (top ? " " + top.kind : "") + (past ? " past" : "") + (same ? " match" : ""),
           "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + " km" : "") + (same ? ", same day as others" : "") : m.name + ", " + DAYS[j] + ": nothing" },
-          top ? [top.km ? el("b", { text: km(top.km) }) : null, el("span", { class: "k", text: label })] : []));
+          top ? [top.km ? el("b", { text: km(top.km) }) : (top.when ? el("b", { text: top.when.map(function (w) { return WHEN[w]; }).join(" ") }) : null),
+            el("span", { class: "k", text: label })] : []));
       });
     });
     app.appendChild(el("div", { class: "grid-wrap" }, [grid]));
@@ -272,6 +295,8 @@
       el("span", {}, [el("i", { class: "sw", style: "border:1px dashed var(--faint)" }), "Hard, run alone"]),
       Object.keys(matched).length ? el("span", {}, [el("i", { class: "sw", style: "box-shadow:inset 0 0 0 2px var(--red)" }), "Same day"]) : null,
     ]));
+
+    if (PAGE) app.appendChild(runnerPanel(d));
 
     // What to run together.
     app.appendChild(el("div", { class: "sec", text: "Same day" }));
@@ -335,6 +360,167 @@
     }
     return request("tools/call", { name: "get_crew", arguments: args });
   }
+  // ---------------------------------------------------------------- runners without Daash
+  // On the crew's page, anyone with the link can add the easy runs of their
+  // usual week, and change any day this week or next. Their phone remembers
+  // them; a name and four-digit PIN let them back in on another.
+  var WHEN = { morning: "AM", afternoon: "Aft", evening: "PM" };
+  var SLOT_NAMES = [["morning", "Morning"], ["afternoon", "Afternoon"], ["evening", "Evening"]];
+  var KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  var ed = null, checked = false;
+  function storeKey() { return "daash-crew:" + location.pathname.split("/").pop(); }
+  function mine() { try { var v = JSON.parse(localStorage.getItem(storeKey()) || "null"); return v && v.token ? v : null; } catch (e) { return null; } }
+  function remember(v) { try { localStorage.setItem(storeKey(), JSON.stringify({ token: v.token, id: v.id, name: v.name })); } catch (e) {} }
+  function forgetMe() { try { localStorage.removeItem(storeKey()); } catch (e) {} }
+  function post(action, body) {
+    return fetch(location.pathname + "/runner", {
+      method: "POST", credentials: "omit", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ action: action }, body || {})),
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || "That didn't work."); return j; }); });
+  }
+  function rerender() { show({ structuredContent: data }); }
+  function reload() { return getWeek(data && data.week ? { week_of: data.week.starts } : {}).then(function (r) { ed = null; show(r); }); }
+  function fail(e) { if (ed) { ed.error = e.message; ed.busy = false; rerender(); } }
+  function mondayOf(isoDay) { var t = parse(isoDay); return addDays(t, -((t.getDay() + 6) % 7)); }
+
+  function runnerPanel(d) {
+    var me = mine();
+    if (me && !checked) {
+      // Once per visit: are they still on the page, and still running these days?
+      checked = true;
+      post("mine", { token: me.token }).then(function (r) {
+        if (r.stale) { ed = { mode: "stale" }; rerender(); }
+        else post("update", { token: me.token, still_running: true }).catch(function () {});
+      }, function () { forgetMe(); ed = null; rerender(); });
+    }
+    if (!ed && me) {
+      return el("div", { class: "editor" }, [
+        el("p", { class: "hint" }, ["You're on this page as ", el("b", { text: me.name }), "."]),
+        el("div", { class: "acts" }, [el("button", { class: "act", type: "button", onclick: function () { openEdit(me); } }, ["Edit my runs"])]),
+      ]);
+    }
+    if (!ed) {
+      return el("div", { class: "editor" }, [
+        el("h4", { text: "Not on Daash? Add your easy runs" }),
+        el("p", { class: "hint", text: "Tap the times you usually run easy. They repeat every week, so the crew can see when to run with you. No account needed." }),
+        el("div", { class: "acts" }, [
+          el("button", { class: "act go", type: "button", onclick: function () { ed = { mode: "add", usual: {}, tab: "usual" }; rerender(); } }, ["Add your easy runs"]),
+          d.members.some(function (m) { return m.by_hand; })
+            ? el("button", { class: "plain-btn", type: "button", onclick: function () { ed = { mode: "sign_in" }; rerender(); } }, ["Already added? Sign in"]) : null,
+        ]),
+      ]);
+    }
+    if (ed.mode === "stale") {
+      return el("div", { class: "editor" }, [
+        el("h4", { text: "Still running these days?" }),
+        el("p", { class: "hint", text: "It's been a few weeks, so your runs aren't being matched until you say." }),
+        el("div", { class: "acts" }, [
+          el("button", { class: "act go", type: "button", onclick: function () {
+            post("update", { token: me.token, still_running: true }).then(reload, fail); } }, ["Yes, same as before"]),
+          el("button", { class: "act", type: "button", onclick: function () { openEdit(me); } }, ["Update my runs"]),
+        ]),
+      ]);
+    }
+    if (ed.mode === "sign_in") return signInPanel(d);
+    return pickPanel(d, me);
+  }
+
+  function openEdit(me) {
+    ed = { mode: "loading" };
+    post("mine", { token: me.token }).then(function (r) {
+      var usual = {}; r.usual.forEach(function (c) { usual[c] = true; });
+      var changes = {}; r.changes.forEach(function (c) { changes[c.day + "|" + c.slot] = c.running; });
+      ed = { mode: "edit", usual: usual, changes: changes, tab: "usual" };
+      rerender();
+    }, function (e) { forgetMe(); ed = null; rerender(); });
+  }
+
+  function signInPanel(d) {
+    var people = d.members.filter(function (m) { return m.by_hand; });
+    var who = el("select", { "aria-label": "Your name" }, people.map(function (m) { return el("option", { value: m.id, text: m.name }); }));
+    var pin = el("input", { type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off", "aria-label": "Your PIN" });
+    return el("div", { class: "editor" }, [
+      el("h4", { text: "Sign in to edit your runs" }),
+      el("div", { class: "fields" }, [el("label", { class: "field" }, ["Name", who]), el("label", { class: "field" }, ["PIN", pin])]),
+      ed.error ? el("p", { class: "err", text: ed.error }) : null,
+      el("div", { class: "acts" }, [
+        el("button", { class: "act go", type: "button", onclick: function () {
+          ed.error = null;
+          post("sign_in", { id: who.value, pin: pin.value }).then(function (r) { remember(r); checked = true; ed = null; reload(); }, fail);
+        } }, ["Sign in"]),
+        el("button", { class: "plain-btn", type: "button", onclick: function () { ed = null; rerender(); } }, ["Cancel"]),
+      ]),
+    ]);
+  }
+
+  function pickPanel(d, me) {
+    if (ed.mode === "loading") return el("div", { class: "editor" }, [el("p", { class: "hint", text: "Loading your runs…" })]);
+    var adding = ed.mode === "add";
+    var thisMon = mondayOf(d.today), shownMon = ed.tab === "next" ? addDays(thisMon, 7) : thisMon;
+    var tabs = adding ? null : el("div", { class: "weeks", role: "group", "aria-label": "Which runs" },
+      [["usual", "Usual week"], ["this", "This week"], ["next", "Next week"]].map(function (t) {
+        return el("button", { type: "button", "aria-pressed": ed.tab === t[0] ? "true" : "false", onclick: function () { ed.tab = t[0]; rerender(); } }, [t[1]]);
+      }));
+    var grid = el("div", { class: "pick", role: "group", "aria-label": "When you run easy" }, [el("span")]);
+    for (var i = 0; i < 7; i++) {
+      grid.appendChild(el("span", { class: "h mono", text: ed.tab === "usual" ? DAYS[i] : DAYS[i] + " " + addDays(shownMon, i).getDate() }));
+    }
+    SLOT_NAMES.forEach(function (pair) {
+      grid.appendChild(el("span", { class: "l", text: pair[1] }));
+      for (var i = 0; i < 7; i++) (function (i) {
+        var code = KEYS[i] + "_" + pair[0], day = iso(addDays(shownMon, i)), mark = day + "|" + pair[0];
+        var usualOn = !!ed.usual[code];
+        var on = ed.tab === "usual" ? usualOn : (mark in ed.changes && ed.changes[mark] !== null ? ed.changes[mark] : usualOn);
+        var past = ed.tab !== "usual" && day < d.today;
+        grid.appendChild(el("button", {
+          type: "button", "aria-pressed": on ? "true" : "false", disabled: past,
+          "aria-label": DAYS[i] + " " + pair[1].toLowerCase(),
+          onclick: function () {
+            if (ed.tab === "usual") { if (usualOn) delete ed.usual[code]; else ed.usual[code] = true; }
+            else { ed.changes[mark] = (!on === usualOn) ? null : !on; }
+            rerender();
+          },
+        }, [on ? "easy" : ""]));
+      })(i);
+    });
+    var name = adding ? el("input", { type: "text", maxlength: "24", autocomplete: "given-name", "aria-label": "Your first name",
+      value: ed.name || "", oninput: function (e) { ed.name = e.target.value; } }) : null;
+    var pin = adding ? el("input", { type: "password", inputmode: "numeric", maxlength: "4", autocomplete: "off", "aria-label": "Pick a four-digit PIN",
+      value: ed.pin || "", oninput: function (e) { ed.pin = e.target.value; } }) : null;
+    var save = function () {
+      ed.error = null;
+      var usual = Object.keys(ed.usual);
+      if (adding) {
+        post("add", { name: name.value, pin: pin.value, usual: usual }).then(function (r) { remember(r); checked = true; ed = null; reload(); }, fail);
+        return;
+      }
+      var changes = Object.keys(ed.changes).map(function (k) { var p = k.split("|"); return { day: p[0], slot: p[1], running: ed.changes[k] }; });
+      post("update", { token: me.token, usual: usual, changes: changes }).then(reload, fail);
+    };
+    return el("div", { class: "editor" }, [
+      el("h4", { text: adding ? "Your usual easy runs" : "Your runs" }),
+      el("p", { class: "hint", text: ed.tab === "usual"
+        ? "Tap when you usually run easy. This repeats every week."
+        : "Changes for this week only. Your usual week stays as it is." }),
+      tabs, grid,
+      adding ? el("div", { class: "fields" }, [
+        el("label", { class: "field" }, ["First name", name]),
+        el("label", { class: "field" }, ["Pick a 4-digit PIN", pin]),
+      ]) : null,
+      adding ? el("p", { class: "hint", text: "Your PIN lets you edit your runs from another phone. This phone remembers you." }) : null,
+      ed.error ? el("p", { class: "err", text: ed.error }) : null,
+      el("div", { class: "acts" }, [
+        el("button", { class: "act go", type: "button", onclick: save }, [adding ? "Add my runs" : "Save"]),
+        el("button", { class: "plain-btn", type: "button", onclick: function () { ed = null; rerender(); } }, ["Cancel"]),
+        !adding ? el("button", { class: "plain-btn", type: "button", onclick: function () {
+          if (!window.confirm("Take yourself off the crew's page? Your runs are deleted.")) return;
+          post("remove", { token: me.token }).then(function () { forgetMe(); ed = null; reload(); }, fail);
+        } }, ["Remove me"]) : null,
+      ]),
+    ]);
+  }
+
   function weekPicker(d) {
     if (!host && !PAGE) return null;
     var t = parse(d.today), thisMon = iso(addDays(t, -((t.getDay() + 6) % 7))), nextMon = iso(addDays(parse(thisMon), 7));

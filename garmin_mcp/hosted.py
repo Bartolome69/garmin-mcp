@@ -1939,6 +1939,74 @@ async def crew_page(request: Request) -> Response:
     return HTMLResponse(view, headers=_CREW_PAGE_HEADERS)
 
 
+# People without Daash add their easy runs on the crew's page. JSON only:
+# a browser won't send JSON to another site's address without asking it
+# first, so another page can't make these requests for someone. Paced per
+# address, on top of the PIN's own lock.
+_CREW_WRITES: dict[str, list[float]] = {}
+_CREW_WRITE_LIMIT = 60          # changes an hour from one address
+_CREW_JOIN_LIMIT = 10           # people added an hour from one address
+
+
+def _crew_paced(address: str, kind: str, limit: int) -> bool:
+    now = time.time()
+    key = f"{kind}|{address}"
+    recent = [t for t in _CREW_WRITES.get(key, []) if t > now - 3600]
+    recent.append(now)
+    _CREW_WRITES[key] = recent
+    if len(_CREW_WRITES) > 5000:
+        for old in sorted(_CREW_WRITES, key=lambda k: _CREW_WRITES[k][-1])[:1000]:
+            _CREW_WRITES.pop(old, None)
+    return len(recent) > limit
+
+
+def _crew_answer(body: dict[str, Any], status: int = 200) -> Response:
+    return Response(json.dumps(body), status_code=status, media_type="application/json", headers=_CREW_PAGE_HEADERS)
+
+
+@mcp.custom_route("/crew/{link}/runner", methods=["POST"])
+async def crew_runner(request: Request) -> Response:
+    """Add yourself, sign in, read or change your runs, or take yourself off: one address, an action each."""
+    if "application/json" not in request.headers.get("content-type", ""):
+        return _crew_answer({"error": "JSON only."}, 415)
+    try:
+        body = await request.json()
+    except ValueError:
+        return _crew_answer({"error": "That wasn't JSON."}, 400)
+    if not isinstance(body, dict):
+        return _crew_answer({"error": "That wasn't JSON."}, 400)
+    address = _client_address(request)
+    action = str(body.get("action") or "")
+    if _crew_paced(address, "write", _CREW_WRITE_LIMIT) or (action == "add" and _crew_paced(address, "add", _CREW_JOIN_LIMIT)):
+        return _crew_answer({"error": "Too many changes from here. Try again in an hour."}, 429)
+    link = request.path_params.get("link", "")
+    token = body.get("token")
+
+    def run() -> dict[str, Any] | None:
+        if action == "add":
+            return crews.add_runner(link, body.get("name"), body.get("pin"), body.get("usual"))
+        if action == "sign_in":
+            return crews.runner_sign_in(link, body.get("id"), body.get("pin"))
+        if action == "mine":
+            return crews.runner(link, token)
+        if action == "update":
+            return crews.update_runner(link, token, body.get("usual"), body.get("changes"), bool(body.get("still_running")))
+        if action == "remove":
+            crews.remove_runner(link, token)
+            return {"removed": True}
+        return None
+
+    try:
+        answer = await anyio.to_thread.run_sync(run)
+    except crews.Locked as exc:
+        return _crew_answer({"error": str(exc)}, 429)
+    except crews.CrewError as exc:
+        return _crew_answer({"error": str(exc)}, 400)
+    if answer is None:
+        return _crew_answer({"error": "Unknown action."}, 400)
+    return _crew_answer(answer)
+
+
 @mcp.custom_route("/stats", methods=["GET"])
 async def stats(request: Request) -> Response:
     """How many people used this in the last 30 days, for the front page.
