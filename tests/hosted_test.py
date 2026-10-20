@@ -1442,7 +1442,7 @@ async def main() -> int:
         def one(session):
             _, runs = crews.from_plan({"weeks": [{"starts": _date.today().isoformat(), "sessions": [
                 {"date": _date.today().isoformat(), "status": "ahead", "planned_km": 18.0, **session}]}]}, _date.today())
-            return runs[0][1:] if runs else None
+            return runs[0][1:3] if runs else None
 
         reps = [{"k": "easy", "km": 6.0}, {"k": "work", "km": 2.0}, {"k": "rec", "km": 0.4}, {"k": "work", "km": 2.0},
                 {"k": "rec", "km": 0.4}, {"k": "work", "km": 2.0}, {"k": "easy", "km": 5.2}]
@@ -1494,6 +1494,27 @@ async def main() -> int:
               and crews._connect().execute("SELECT COUNT(*) FROM crew_runs WHERE day < ?", (today.isoformat(),)).fetchone()[0] == 0)
         crews._connect().execute("INSERT INTO crew_runs (member, day, kind, km) VALUES ('x', '2020-01-01', 'easy', 5)").connection.commit()
         check("days that have passed are deleted", crews.purge_past() >= 1)
+        # A run already done today stays on the crew's week, faded, and is never matched.
+        t0, y0 = _date.today(), _date.today() - _td(days=1)
+        _, done_runs = crews.from_plan({"weeks": [{"starts": (t0 - _td(days=t0.weekday())).isoformat(), "sessions": [
+            {"date": t0.isoformat(), "status": "done", "planned_km": 10.0, "type": "easy"},
+            {"date": y0.isoformat(), "status": "done", "planned_km": 6.0, "type": "easy"},
+            {"date": y0.isoformat(), "status": "done, moved", "done_on": t0.isoformat(), "planned_km": 5.0, "type": "easy"},
+        ]}]}, t0)
+        check("today's done runs are kept as done, wherever they were planned; earlier ones aren't",
+              sorted(done_runs) == [(t0.isoformat(), "easy", 5.0, True), (t0.isoformat(), "easy", 10.0, True)], str(done_runs))
+        carol_key = crews._connect().execute("SELECT member FROM crew_members WHERE name = 'Carol'").fetchone()[0]
+        dave_key = crews._connect().execute("SELECT member FROM crew_members WHERE name = 'Dave'").fetchone()[0]
+        with crews._connect() as conn:
+            conn.execute("DELETE FROM crew_runs WHERE member IN (?, ?) AND day = ?", (carol_key, dave_key, t0.isoformat()))
+            conn.execute("INSERT INTO crew_runs (member, day, kind, km, done) VALUES (?, ?, 'easy', 10, 1)", (carol_key, t0.isoformat()))
+            conn.execute("INSERT INTO crew_runs (member, day, kind, km, done) VALUES (?, ?, 'easy', 8, 0)", (dave_key, t0.isoformat()))
+        now_card = await call(carol, "get_crew")
+        carol_today = next(m for m in now_card["members"] if m["name"] == "Carol")["days"][t0.weekday()]
+        check("on the card it is marked done, and nobody is matched with it",
+              carol_today[:1] in ([{"kind": "easy", "km": 10.0, "done": True}], [{"kind": "club", "km": 4.3, "done": True}])
+              and not [t for t in now_card["together"] if t["date"] == t0.isoformat() and "Carol" in t["who"]]
+              and "Carol easy 10k" not in now_card.get("group_message", ""), str(carol_today))
 
         # The crew's own page, for anyone with its link.
         def fetch(path):

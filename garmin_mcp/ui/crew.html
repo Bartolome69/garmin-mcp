@@ -292,13 +292,15 @@
       ]));
       m.days.forEach(function (runs, j) {
         var date = iso(addDays(monday, j));
-        var top = runs.filter(function (r) { return r.kind === "club"; })[0] || runs.filter(function (r) { return r.kind === "long"; })[0] ||
-          runs.filter(function (r) { return r.kind === "easy"; })[0] || runs.filter(function (r) { return r.kind === "hard"; })[0];
-        var past = date < today || (top && over(date, top.when));
+        // A run still to come shows before one already done today.
+        var live = runs.filter(function (r) { return !r.done; }), pool = live.length ? live : runs;
+        var top = pool.filter(function (r) { return r.kind === "club"; })[0] || pool.filter(function (r) { return r.kind === "long"; })[0] ||
+          pool.filter(function (r) { return r.kind === "easy"; })[0] || pool.filter(function (r) { return r.kind === "hard"; })[0];
+        var past = date < today || (top && (top.done || over(date, top.when)));
         var label = top ? (top.kind === "hard" ? "hard" : top.kind === "club" ? "club" : top.kind) : "";
         var same = top && top.kind !== "club" && matched[m.name + "|" + date];
         grid.appendChild(el("div", { class: "cell" + (top ? " " + top.kind : "") + (past ? " past" : "") + (same ? " match" : ""),
-          "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + " km" : "") + (same ? ", same day as others" : "") : m.name + ", " + DAYS[j] + ": nothing" },
+          "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + " km" : "") + (top.done ? ", done" : "") + (same ? ", same day as others" : "") : m.name + ", " + DAYS[j] + ": nothing" },
           top ? [top.km ? el("b", { text: km(top.km) }) : (top.when ? el("b", { text: top.when.map(function (w) { return WHEN[w]; }).join(" ") }) : null),
             el("span", { class: "k", text: label })] : []));
       });
@@ -599,7 +601,7 @@
     return {
       v: 1, type: "crew", c: d.crew.name, w: d.week.starts, u: u, code: d.crew.code, club: club,
       m: d.members.map(function (m) { return { n: m.name, d: m.days.map(function (runs) {
-        return runs.slice(0, 2).map(function (r) { return r.km ? [r.kind, Math.round(r.km * 10) / 10] : [r.kind]; }); }) }; }),
+        return runs.filter(function (r) { return !r.done; }).slice(0, 2).map(function (r) { return r.km ? [r.kind, Math.round(r.km * 10) / 10] : [r.kind]; }); }) }; }),
       t: d.together.map(function (t) { return { d: dow(t.date), k: t.kind, who: t.who, when: t.when || "" }; }),
     };
   }

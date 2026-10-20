@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS crew_runs (
     member      TEXT NOT NULL,
     day         TEXT NOT NULL,              -- YYYY-MM-DD
     kind        TEXT NOT NULL,              -- easy, long or hard
-    km          REAL
+    km          REAL,
+    done        INTEGER NOT NULL DEFAULT 0  -- run today already: shown faded, never matched
 );
 CREATE INDEX IF NOT EXISTS crew_runs_member ON crew_runs (member, day);
 CREATE TABLE IF NOT EXISTS crew_slot_changes (
@@ -132,6 +133,9 @@ def _connect():
                              ("locked_until", "INTEGER NOT NULL DEFAULT 0")):
             if column not in have:
                 conn.execute(f"ALTER TABLE crew_members ADD COLUMN {column} {kind}")
+        # And today's runs that are already done.
+        if "done" not in {r[1] for r in conn.execute("PRAGMA table_info(crew_runs)")}:
+            conn.execute("ALTER TABLE crew_runs ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS crews_link ON crews (link) WHERE link IS NOT NULL")
         conn.commit()
         _paces_cleared = True
@@ -215,18 +219,20 @@ def _kind(session: dict[str, Any]) -> str:
     return "long" if kind == "long" else "easy"
 
 
-def from_plan(result: Any, today: date) -> tuple[set[str], list[tuple[str, str, float | None]]]:
+def from_plan(result: Any, today: date) -> tuple[set[str], list[tuple[str, str, float | None, bool]]]:
     """What a crew needs from a get_plan or create_plan answer.
 
     Returns the days the answer covers (within the next two weeks) and the runs
-    ahead on those days as (day, kind, km). Nothing about runs already done,
-    paces included: a crew matches people by day and time, never by speed.
+    on those days as (day, kind, km, done): the runs ahead, and today's that are
+    already done, which the crew sees faded until the day is over. Nothing about
+    how a run went, paces included: a crew matches people by day and time,
+    never by speed.
     """
     if not isinstance(result, dict) or not isinstance(result.get("weeks"), list):
         return set(), []
     first, last = today, today + timedelta(days=HORIZON_DAYS - 1)
     covered: set[str] = set()
-    runs: list[tuple[str, str, float | None]] = []
+    runs: list[tuple[str, str, float | None, bool]] = []
     for week in result["weeks"]:
         if not isinstance(week, dict):
             continue
@@ -243,13 +249,17 @@ def from_plan(result: Any, today: date) -> tuple[set[str], list[tuple[str, str, 
                 continue
             status = str(session.get("status") or "")
             day_text = str(session.get("date") or "")[:10]
-            if status.startswith("done") or status == "logged":
-                continue
-            if status == "missed" or day_text not in covered:
+            done = status.startswith("done") or status == "logged"
+            if done:
+                # Done today, wherever it was planned: the crew sees it, faded.
+                day_text = str(session.get("done_on") or day_text)[:10]
+                if day_text != today.isoformat():
+                    continue
+            elif status == "missed" or day_text not in covered:
                 continue
             kind = _kind(session)
             km = session.get("planned_km")
-            runs.append((day_text, kind, round(float(km), 1) if isinstance(km, (int, float)) and kind != "hard" else None))
+            runs.append((day_text, kind, round(float(km), 1) if isinstance(km, (int, float)) and kind != "hard" else None, done))
     return covered, runs
 
 
@@ -272,8 +282,8 @@ def capture(key: str, result: Any, today: date | None = None) -> bool:
         conn.execute("DELETE FROM crew_runs WHERE day < ?", (today.isoformat(),))
         conn.executemany("DELETE FROM crew_runs WHERE member = ? AND day = ?", [(key, d) for d in covered])
         conn.executemany(
-            "INSERT INTO crew_runs (member, day, kind, km) VALUES (?, ?, ?, ?)",
-            [(key, d, k, km) for d, k, km in runs],
+            "INSERT INTO crew_runs (member, day, kind, km, done) VALUES (?, ?, ?, ?, ?)",
+            [(key, d, k, km, 1 if done else 0) for d, k, km, done in runs],
         )
         conn.execute(
             "UPDATE crew_members SET updated_on = ? WHERE member = ?",
@@ -657,7 +667,7 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
         keys = [m[0] for m in members]
         marks = ",".join("?" * len(keys))
         runs = conn.execute(
-            f"SELECT member, day, kind, km FROM crew_runs WHERE member IN ({marks}) AND day BETWEEN ? AND ? ORDER BY day",
+            f"SELECT member, day, kind, km, done FROM crew_runs WHERE member IN ({marks}) AND day BETWEEN ? AND ? ORDER BY day",
             (*keys, days[0].isoformat(), days[-1].isoformat()),
         ).fetchall()
         changes = conn.execute(
@@ -677,8 +687,8 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
             person.update({"by_hand": True, "id": public_id, "usual": set(json.loads(usual) if usual else [])})
         people.append(person)
     by_key = {p["key"]: p for p in people}
-    for key, day_text, kind, km in runs:
-        by_key[key]["runs"].setdefault(day_text, []).append({"kind": kind, "km": km})
+    for key, day_text, kind, km, done in runs:
+        by_key[key]["runs"].setdefault(day_text, []).append({"kind": kind, "km": km, **({"done": True} if done else {})})
     # Someone added by hand runs easy in the slots of their usual week, with
     # that week's changes, unless they haven't been back for a while.
     picked: dict[str, dict[str, bool]] = {}
@@ -707,7 +717,7 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
             person["club"] = False
 
     def social(person: dict[str, Any], day: date) -> list[dict[str, Any]]:
-        return [r for r in person["runs"].get(day.isoformat(), []) if r["kind"] in ("easy", "long")]
+        return [r for r in person["runs"].get(day.isoformat(), []) if r["kind"] in ("easy", "long") and not r.get("done")]
 
     together: list[dict[str, Any]] = []
     # The club's standing run is already fixed in everyone's week: it shows on
@@ -742,11 +752,13 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
         for day in days:
             day_runs = p["runs"].get(day.isoformat(), [])
             cell = [{"kind": r["kind"], **({"km": r["km"]} if r["kind"] != "hard" and r["km"] else {}),
-                     **({"when": r["when"]} if r.get("when") else {})} for r in day_runs]
+                     **({"when": r["when"]} if r.get("when") else {}),
+                     **({"done": True} if r.get("done") else {})} for r in day_runs]
             if club_day == day and p["club"] and not any(r["kind"] == "hard" for r in day_runs):
-                cell = [{"kind": "club", **({"km": club["km"]} if club.get("km") else {})}] + [
-                    r for r in cell if r["kind"] == "long"
-                ]
+                # Their run on the club's day is the club run; done, if they've run it.
+                ran = any(r.get("done") and r["kind"] != "long" for r in cell)
+                cell = [{"kind": "club", **({"km": club["km"]} if club.get("km") else {}),
+                         **({"done": True} if ran else {})}] + [r for r in cell if r["kind"] == "long"]
             grid.append(cell)
         out_members.append({
             **({"by_hand": True, "id": p["id"]} if p.get("by_hand") else {}),
@@ -796,7 +808,7 @@ def group_message(crew_name: str, days: list[date], today: date, people: list[di
                 bits.append("club run" + (f" {when}" if when else "") + " (" + ", ".join(going) + ")")
         for p in people:
             for r in p["runs"].get(key, []):
-                if club and club_day == day and p["club"] and r["kind"] == "easy":
+                if r.get("done") or club and club_day == day and p["club"] and r["kind"] == "easy":
                     continue
                 if r["kind"] == "hard":
                     bits.append(f"{p['name']} hard")
