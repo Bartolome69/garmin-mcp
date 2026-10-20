@@ -42,12 +42,6 @@ on:
 env:
   FLY_APP: garmin-mcp-1b4387
 
-# Two pushes in quick succession should not race each other onto the machine.
-# Not cancel-in-progress: a half-finished deploy is worse than a redundant one.
-concurrency:
-  group: deploy-hosted
-  cancel-in-progress: false
-
 jobs:
   test:
     name: Test
@@ -85,12 +79,16 @@ jobs:
       - name: Progress matching
         run: python tests/progress_test.py
 
-  deploy:
-    name: Deploy
-    needs: test
-    # Only a hand-started run on main deploys. A push runs the tests and stops.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+  # The real Garmin checks on the new code, run while the tests run: neither
+  # needs the other, and together they were half of every deploy's wait.
+  precheck:
+    name: Check sign-in
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !inputs.skip_signin_check
     runs-on: ubuntu-latest
+    # Two runs checking at once would share the one test account.
+    concurrency:
+      group: deploy-hosted-check
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -116,7 +114,6 @@ jobs:
       # live machine, as an account that doesn't exist, and must get as far as
       # Garmin saying the password is wrong (scripts/check_signin.py).
       - name: Sign in to Garmin with the new code before shipping it
-        if: ${{ !inputs.skip_signin_check }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: scripts/signin_check_retry.sh candidate
@@ -124,12 +121,33 @@ jobs:
       # And the spare test account all the way, with the new code: the
       # session it stores and a tool call made with it (check-full-signin.yml).
       - name: Connect the test account with the new code before shipping it
-        if: ${{ !inputs.skip_signin_check }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
           GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
         run: scripts/signin_check_retry.sh full candidate
+
+  deploy:
+    name: Deploy
+    needs: [test, precheck]
+    # Only a hand-started run on main deploys. A push runs the tests and stops.
+    # The sign-in checks may be skipped on purpose (skip_signin_check), never failed.
+    if: >-
+      always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+      && needs.test.result == 'success'
+      && (needs.precheck.result == 'success' || (inputs.skip_signin_check && needs.precheck.result == 'skipped'))
+    runs-on: ubuntu-latest
+    # Two deploys should not race each other onto the machine, but only the
+    # deploy waits its turn: a push's tests no longer hold up a deploy behind
+    # them. Not cancel-in-progress: a half-finished deploy is worse than a
+    # redundant one.
+    concurrency:
+      group: deploy-hosted
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy
         env:
