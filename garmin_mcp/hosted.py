@@ -27,6 +27,7 @@ import re
 import secrets
 import threading
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -578,6 +579,74 @@ WELCOME = (
     "a race ahead, or just running) and its situation offers the one next step "
     "to suggest. Leave readiness, fitness and trends until they ask or say yes."
 )
+# get_plan answers a general question on its own, and the instructions and
+# its description say so, but a first chat still sent readiness, fitness,
+# trends and activities with it, all at once: the person got a wall of numbers
+# in place of the card and its one offer. So these, when sent at the same time
+# as get_plan, answer with a note rather than their data. The same read asked
+# again goes through, so a question that wanted both still gets both. Only
+# reads answered in writing: a held card tool would draw an empty card.
+WITH_PLAN_HELD = {
+    "get_readiness", "get_fitness", "get_fitness_trends", "get_recovery_trends",
+    "get_activities", "get_daily_summary", "get_sleep_data",
+}
+# Each of them answers no sooner than this, so a get_plan sent in the same
+# breath has started by the time it looks.
+WITH_PLAN_SETTLE = 1.0
+# A get_plan that ended this little before a read started was sent with it.
+WITH_PLAN_SLACK = 0.5
+# A read held back and asked for again within this goes through.
+WITH_PLAN_RETRY = 900
+# No get_plan runs longer than this; one still unfinished after it was dropped.
+WITH_PLAN_LONGEST = 120
+WITH_PLAN_NOTE = (
+    "Not fetched: get_plan was called at the same time, and its card answers a "
+    "general question about training on its own. Answer from the card and close "
+    "with its offer. If the user asked for this too, call this tool again now "
+    "and it will answer."
+)
+# When each person's latest get_plan started and, once it has, ended.
+_PLAN_CALLS: dict[str, tuple[float, float | None]] = {}
+# The reads held back, by person and tool, and when.
+_HELD: dict[tuple[str, str], float] = {}
+# When the tool now running started, for its after hook.
+_STARTED: ContextVar[float] = ContextVar("hosted_tool_started", default=0.0)
+
+
+def _before_tool_for(user_token: str) -> hooks.Before:
+    """The start hook for one person's request: note a get_plan, pace the reads sent with one."""
+
+    def before(name: str) -> float:
+        now = time.monotonic()
+        _STARTED.set(now)
+        if name == "get_plan":
+            if len(_PLAN_CALLS) > 20000:
+                _PLAN_CALLS.clear()
+            _PLAN_CALLS[user_token] = (now, None)
+        return WITH_PLAN_SETTLE if name in WITH_PLAN_HELD else 0.0
+    return before
+
+
+def _sent_with_plan(user_token: str, name: str) -> bool:
+    """Whether this read was sent with a get_plan, and so is held back, this once."""
+    now = time.monotonic()
+    started = _STARTED.get() or now
+    if now - _HELD.pop((user_token, name), float("-inf")) < WITH_PLAN_RETRY:
+        return False
+    plan = _PLAN_CALLS.get(user_token)
+    if plan is None:
+        return False
+    plan_start, plan_end = plan
+    if plan_end is None and now - plan_start > WITH_PLAN_LONGEST:
+        return False  # a get_plan that never finished, such as a dropped request
+    if plan_end is not None and plan_end < started - WITH_PLAN_SLACK:
+        return False
+    if len(_HELD) > 20000:
+        _HELD.clear()
+    _HELD[(user_token, name)] = now
+    return True
+
+
 # One report per person per tool per day: enough to see which features are
 # used, without a row for every call.
 _TOOL_REPORTED: dict[tuple[str, str], str] = {}
@@ -631,6 +700,19 @@ def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
     crew_key = crews.member_key(user_token, user.email_hash)
 
     def after(name: str, result: Any) -> Any:
+        if name == "get_plan" and user_token in _PLAN_CALLS:
+            _PLAN_CALLS[user_token] = (_PLAN_CALLS[user_token][0], time.monotonic())
+        if (
+            name in WITH_PLAN_HELD and isinstance(result, dict) and "error" not in result
+            and _sent_with_plan(user_token, name)
+        ):
+            email = store.email_for(user_token)
+            analytics.capture(
+                "tool_held",
+                user.email_hash or user_token,
+                {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+            )
+            return {"for_the_assistant": WITH_PLAN_NOTE}
         # A crew member's coming runs reach their crew whenever they look at
         # their own plan: no extra Garmin calls, nothing for anyone else.
         if name in ("get_plan", "create_plan") and isinstance(result, dict) and "error" not in result:
@@ -2148,7 +2230,7 @@ class SessionBinding:
 
         token = use_session(session_for(user_token))
         preview_token = preview.use(_preview_for(user))
-        hook_token = hooks.use(_after_tool_for(user_token, user))
+        hook_token = hooks.use(_after_tool_for(user_token, user), _before_tool_for(user_token))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         try:
             await self.app(scope, receive, send)

@@ -608,8 +608,12 @@ def tool_errors(fn):
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
         started = time.monotonic()
+        settle = hooks.before_tool(fn.__name__)
         result = await answer(*args, **kwargs)
-        return hooks.after_tool(fn.__name__, result, time.monotonic() - started)
+        took = time.monotonic() - started
+        if took < settle:
+            await anyio.sleep(settle - took)
+        return hooks.after_tool(fn.__name__, result, took)
 
     async def answer(*args, **kwargs):
         try:

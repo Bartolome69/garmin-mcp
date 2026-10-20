@@ -1192,6 +1192,50 @@ async def main() -> int:
               list(hosted._TIMINGS) == ["get_readiness"], str(hosted._TIMINGS))
         tips = [e for e in events if e["event"] == "permission_tip_shown"]
         check("showing the tip is counted once", len(tips) == 1, str(len(tips)))
+        # A general question gets the plan card alone: reads sent at the same
+        # time as get_plan answer with a note, and the same read asked again
+        # answers in full.
+        async with streamable_http_client(f"{base}/u/{alice}/mcp") as (r, w):
+            async with ClientSession(r, w) as sess:
+                await sess.initialize()
+
+                async def ask(tool: str) -> dict:
+                    result = await sess.call_tool(tool, {})
+                    return getattr(result, "structuredContent", None) or json.loads(result.content[0].text)
+
+                started = time.monotonic()
+                plan_answer, ready_answer, fit_answer = await asyncio.gather(
+                    ask("get_plan"), ask("get_readiness"), ask("get_fitness"))
+                together = time.monotonic() - started
+                check("reads sent with get_plan answer with a note, not their data",
+                      ready_answer == {"for_the_assistant": hosted.WITH_PLAN_NOTE}
+                      and fit_answer == {"for_the_assistant": hosted.WITH_PLAN_NOTE},
+                      str(ready_answer)[:160])
+                check("and get_plan still draws the card",
+                      "error" not in plan_answer and "for_the_assistant" in plan_answer,
+                      str(plan_answer)[:160])
+                check("held reads wait no longer than the settle", together < 10, f"{together:.1f}s")
+                again = await ask("get_readiness")
+                check("the same read asked again answers in full",
+                      "for_the_assistant" not in again and "error" not in again, str(again)[:160])
+                alone = await ask("get_fitness")
+                check("and a read asked again after get_plan has answered goes through",
+                      "for_the_assistant" not in alone, str(alone)[:160])
+        for _ in range(40):
+            held = [e["properties"]["tool"] for e in SENT if e["event"] == "tool_held"]
+            if len(held) >= 2:
+                break
+            time.sleep(0.05)
+        check("holding a read is counted, by tool", sorted(held) == ["get_fitness", "get_readiness"], str(held))
+        # A read on its own, and one sent after get_plan has answered, are not held.
+        hosted._HELD.clear()
+        hosted._PLAN_CALLS[alice] = (time.monotonic() - 5, time.monotonic() - 2)
+        check("a read sent after get_plan answered is not held",
+              "for_the_assistant" not in await call(alice, "get_readiness"))
+        hosted._PLAN_CALLS[alice] = (time.monotonic() - 300, None)
+        check("a get_plan that never finished holds nothing",
+              "for_the_assistant" not in await call(alice, "get_recovery_trends"))
+        hosted._PLAN_CALLS.pop(alice, None)
         check("tool counts carry no Garmin data",
               all("12345" not in json.dumps(e) for e in events if e["event"] == "tool_used"))
         check("a new version is said again",
