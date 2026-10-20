@@ -262,9 +262,19 @@
         : ["You're in ", el("b", { text: d.just.crew }), ". Your runs show here once you've looked at your plan."]));
     }
 
+    // Today's runs for a time of day that's already over count as past, like
+    // yesterday's: a morning run is faded from midday, an afternoon one from
+    // 6pm. A run with no time, from someone's plan, stays until it's done.
+    var hour = new Date().getHours();
+    var over = function (date, when) {
+      if (date !== today || !when || !when.length) return false;
+      return [].concat(when).every(function (w) { return SLOT_ENDS[w] != null && hour >= SLOT_ENDS[w]; });
+    };
+    var together = d.together.filter(function (t) { return !over(t.date, t.when); });
+
     // Who runs when, with the runs that line up outlined.
     var matched = {};
-    d.together.forEach(function (t) {
+    together.forEach(function (t) {
       if (t.kind === "club") return;
       t.who.forEach(function (n) { matched[n + "|" + t.date] = true; });
     });
@@ -281,9 +291,10 @@
         stale ? el("span", { class: "stale", text: stale }) : (m.by_hand ? el("span", { class: "stale", text: "by hand" }) : null),
       ]));
       m.days.forEach(function (runs, j) {
-        var date = iso(addDays(monday, j)), past = date < today;
+        var date = iso(addDays(monday, j));
         var top = runs.filter(function (r) { return r.kind === "club"; })[0] || runs.filter(function (r) { return r.kind === "long"; })[0] ||
           runs.filter(function (r) { return r.kind === "easy"; })[0] || runs.filter(function (r) { return r.kind === "hard"; })[0];
+        var past = date < today || (top && over(date, top.when));
         var label = top ? (top.kind === "hard" ? "hard" : top.kind === "club" ? "club" : top.kind) : "";
         var same = top && top.kind !== "club" && matched[m.name + "|" + date];
         grid.appendChild(el("div", { class: "cell" + (top ? " " + top.kind : "") + (past ? " past" : "") + (same ? " match" : ""),
@@ -307,7 +318,7 @@
     app.appendChild(el("div", { class: "sec", text: "Same day" }));
     var list = el("div", { class: "runs" });
     var me = (d.members.filter(function (m) { return m.you; })[0] || {}).name;
-    d.together.forEach(function (t) {
+    together.forEach(function (t) {
       var kind = KIND[t.kind] || KIND.easy, dd = parse(t.date);
       var title = t.kind === "club" ? "Club run" : t.kind === "mixed" ? "Easy and long runs" : kind.l + " run";
       var bits = [kmRange(t.km_lo, t.km_hi), t.when, t.place].filter(Boolean).join(" · ");
@@ -326,7 +337,7 @@
         ]),
       ]));
     });
-    if (!d.together.length) list.appendChild(el("div", { class: "none", text: "Nothing lines up yet this week" + (d.club_run ? ", apart from the club run" : "") + ". Runs appear here as members look at their plans in Daash." }));
+    if (!together.length) list.appendChild(el("div", { class: "none", text: "Nothing lines up yet this week" + (d.club_run ? ", apart from the club run" : "") + ". Runs appear here as members look at their plans in Daash." }));
     app.appendChild(list);
 
     // For the group chat.
@@ -592,6 +603,7 @@
       t: d.together.map(function (t) { return { d: dow(t.date), k: t.kind, who: t.who, when: t.when || "" }; }),
     };
   }
+  var SLOT_ENDS = { morning: 12, afternoon: 18, evening: 24 };
   function fmtTime(hhmm) {
     if (!hhmm) return "";
     var h = +hhmm.split(":")[0], m = +hhmm.split(":")[1], s = h < 12 ? "am" : "pm", h12 = h % 12 || 12;
