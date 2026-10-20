@@ -1021,6 +1021,7 @@ button.busy, button.busy:hover { background:var(--accent-ink); cursor:progress }
 @keyframes spin { to { transform:rotate(360deg) } }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration:2.4s } }
 .wait { margin:12px 0 0; font-size:0.9rem; text-align:center }
+.fine { margin:10px 0 0; font-size:0.8rem; text-align:center }
 button.secondary { background:var(--surface); color:var(--ink);
   border:1px solid var(--line); margin-top:10px }
 button.secondary:hover { background:var(--ground) }
@@ -1242,6 +1243,7 @@ async def connect_form(request: Request) -> Response:
           <input id=password name=password type=password required
                  autocomplete=current-password>
           <button>Connect</button>
+          <p class=fine>Occasional Daash emails, easy to stop.</p>
           <p class="note wait" role=status hidden
              data-later="Still working. Garmin can be slow to answer, and Daash keeps
              trying for you. Please stay on this page.">Signing you in to Garmin.
