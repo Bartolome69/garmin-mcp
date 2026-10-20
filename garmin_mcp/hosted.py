@@ -2068,13 +2068,15 @@ async def crew_runner(request: Request) -> Response:
 
     def run() -> dict[str, Any] | None:
         if action == "add":
-            return crews.add_runner(link, body.get("name"), body.get("pin"), body.get("usual"))
+            return crews.add_runner(link, body.get("name"), body.get("pin"), body.get("usual"), club=body.get("club") is True)
         if action == "sign_in":
             return crews.runner_sign_in(link, body.get("id"), body.get("pin"))
         if action == "mine":
             return crews.runner(link, token)
         if action == "update":
-            return crews.update_runner(link, token, body.get("usual"), body.get("changes"), bool(body.get("still_running")))
+            club = body.get("club")
+            return crews.update_runner(link, token, body.get("usual"), body.get("changes"), bool(body.get("still_running")),
+                                       club=club if isinstance(club, bool) else None)
         if action == "remove":
             crews.remove_runner(link, token)
             return {"removed": True}

@@ -137,6 +137,11 @@
   .fields { display: flex; gap: 10px; flex-wrap: wrap; }
   .fields .field { flex: 1 1 140px; }
   .err { font-size: 13px; color: var(--red-text); margin: 0; }
+  .club-pick { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--btn-border);
+    background: transparent; color: var(--text); font: inherit; font-size: 14px; text-align: left; }
+  .club-pick .box { flex: none; width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--btn-border); display: flex; align-items: center; justify-content: center; }
+  .club-pick[aria-pressed="true"] { border-color: var(--club); background: var(--club-wash); }
+  .club-pick[aria-pressed="true"] .box { background: var(--club); border-color: var(--club); color: var(--on-club, #FFFFFF); }
   .plain-btn { border: 0; background: none; padding: 0; color: var(--muted); font-size: 13px; text-decoration: underline; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style>
@@ -431,7 +436,7 @@
     post("mine", { token: me.token }).then(function (r) {
       var usual = {}; r.usual.forEach(function (c) { usual[c] = true; });
       var changes = {}; r.changes.forEach(function (c) { changes[c.day + "|" + c.slot] = c.running; });
-      ed = { mode: "edit", usual: usual, changes: changes, tab: "usual" };
+      ed = { mode: "edit", usual: usual, changes: changes, tab: "usual", club: !!r.club };
       rerender();
     }, function (e) { forgetMe(); ed = null; rerender(); });
   }
@@ -492,11 +497,11 @@
       ed.error = null;
       var usual = Object.keys(ed.usual);
       if (adding) {
-        post("add", { name: name.value, pin: pin.value, usual: usual }).then(function (r) { remember(r); checked = true; ed = null; reload(); }, fail);
+        post("add", { name: name.value, pin: pin.value, usual: usual, club: !!ed.club }).then(function (r) { remember(r); checked = true; ed = null; reload(); }, fail);
         return;
       }
       var changes = Object.keys(ed.changes).map(function (k) { var p = k.split("|"); return { day: p[0], slot: p[1], running: ed.changes[k] }; });
-      post("update", { token: me.token, usual: usual, changes: changes }).then(reload, fail);
+      post("update", { token: me.token, usual: usual, changes: changes, club: !!ed.club }).then(reload, fail);
     };
     return el("div", { class: "editor" }, [
       el("h4", { text: adding ? "Your usual easy runs" : "Your runs" }),
@@ -504,6 +509,15 @@
         ? "Tap when you usually run easy. This repeats every week."
         : "Changes for this week only. Your usual week stays as it is." }),
       tabs, grid,
+      // The club's own run, if it has one: those who go show at it, like everyone in Daash.
+      d.club_run && ed.tab === "usual" ? el("button", {
+        class: "club-pick", type: "button", "aria-pressed": ed.club ? "true" : "false",
+        onclick: function () { ed.club = !ed.club; rerender(); },
+      }, [
+        el("span", { class: "box", "aria-hidden": "true" }, [ed.club ? svg('<path d="M20 6 9 17l-5-5"/>') : null]),
+        el("span", { text: "I usually do the club run" + (d.club_run.day_name ? ", " + d.club_run.day_name : "")
+          + (d.club_run.time ? " " + fmtTime(d.club_run.time) : "") }),
+      ]) : null,
       adding ? el("div", { class: "fields" }, [
         el("label", { class: "field" }, ["First name", name]),
         el("label", { class: "field" }, ["Pick a 4-digit PIN", pin]),

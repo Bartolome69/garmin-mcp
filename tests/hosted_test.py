@@ -1608,6 +1608,15 @@ async def main() -> int:
         check("and only this week or next", status == 400, str(far))
         status, nope = await anyio_run(runner_post, {"action": "update", "token": "x" * 32, "usual": []})
         check("without their token nothing changes", status == 400 and "PIN" in nope.get("error", ""), str(nope))
+        # Someone added by hand says whether they do the club run, as members do in Daash.
+        status, joined = await anyio_run(runner_post, {"action": "update", "token": sam["token"], "club": True})
+        sam_row = next((m for m in (await page_week(monday.isoformat())).get("members", []) if m["name"] == "Sam"), {})
+        check("someone added by hand can say they do the club run, and shows at it",
+              status == 200 and joined.get("club") is True and sam_row.get("club") is True
+              and sam_row["days"][4][:1] == [{"kind": "club", "km": 4.3}], str(sam_row.get("days")))
+        status, _ = await anyio_run(runner_post, {"action": "update", "token": sam["token"], "club": "yes"})
+        status, still = await anyio_run(runner_post, {"action": "mine", "token": sam["token"]})
+        check("only a yes or no changes it", still.get("club") is True, str(still))
         tries = [await anyio_run(runner_post, {"action": "sign_in", "id": sam["id"], "pin": "0000"}) for _ in range(5)]
         status, locked = await anyio_run(runner_post, {"action": "sign_in", "id": sam["id"], "pin": "4821"})
         check("five wrong PINs lock signing in, even with the right one", all(t[0] == 400 for t in tries) and status == 429
@@ -1629,7 +1638,10 @@ async def main() -> int:
         check("Remove me takes them off, with everything kept for them",
               status == 200 and not any(m["name"] == "Sam" for m in (await page_week()).get("members", []))
               and crews._connect().execute("SELECT COUNT(*) FROM crew_slot_changes").fetchone()[0] == 0, str(gone))
-        status, kim = await anyio_run(runner_post, {"action": "add", "name": "Kim", "pin": "1234", "usual": ["mon_morning"]})
+        status, kim = await anyio_run(runner_post, {"action": "add", "name": "Kim", "pin": "1234", "usual": ["mon_morning"], "club": True})
+        kim_row = next((m for m in (await page_week(monday.isoformat())).get("members", []) if m["name"] == "Kim"), {})
+        check("and can say so as they add their runs", kim_row.get("club") is True and kim_row["days"][4][:1] == [{"kind": "club", "km": 4.3}],
+              str(kim_row.get("days")))
         removed = await call(carol, "update_crew", {"remove_member": "Kim"})
         check("whoever started the crew can remove someone added by hand",
               "removed Kim" in removed.get("changed", []) and not any(m["name"] == "Kim" for m in (await page_week()).get("members", [])), str(removed))

@@ -702,6 +702,9 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
         if not person["stale"]:
             # Their usual week stands for now: shown as current, not "as of".
             person["updated_on"] = today.isoformat()
+        else:
+            # Nor are they shown at the club run until they say they're still running.
+            person["club"] = False
 
     def social(person: dict[str, Any], day: date) -> list[dict[str, Any]]:
         return [r for r in person["runs"].get(day.isoformat(), []) if r["kind"] in ("easy", "long")]
@@ -893,7 +896,7 @@ def _runner(conn: Any, crew_id: str, token: Any) -> tuple:
     if not isinstance(token, str) or len(token) < 20:
         raise CrewError("Sign in with your name and PIN.")
     row = conn.execute(
-        "SELECT member, public_id, name, usual, updated_on FROM crew_members "
+        "SELECT member, public_id, name, usual, updated_on, club FROM crew_members "
         "WHERE crew_id = ? AND by_hand = 1 AND token_hash = ?",
         (crew_id, _hash(token)),
     ).fetchone()
@@ -902,7 +905,8 @@ def _runner(conn: Any, crew_id: str, token: Any) -> tuple:
     return row
 
 
-def add_runner(link: str, name: Any, pin: Any, usual: Any, today: date | None = None) -> dict[str, Any]:
+def add_runner(link: str, name: Any, pin: Any, usual: Any, today: date | None = None,
+               club: bool = False) -> dict[str, Any]:
     """Someone without Daash joins the crew's week. Returns the token their phone keeps."""
     today = today or date.today()
     clean, code, picks = _runner_name(name), _clean_pin(pin), _clean_usual(usual)
@@ -916,8 +920,8 @@ def add_runner(link: str, name: Any, pin: Any, usual: Any, today: date | None = 
         token, public_id = secrets.token_urlsafe(24), secrets.token_urlsafe(8)
         conn.execute(
             "INSERT INTO crew_members (member, crew_id, name, times, club, updated_on, joined_at, by_hand, public_id, "
-            "token_hash, pin_hash, usual) VALUES (?, ?, ?, NULL, 0, ?, ?, 1, ?, ?, ?, ?)",
-            (f"h:{public_id}", crew_id, clean, today.isoformat(), int(time.time()), public_id,
+            "token_hash, pin_hash, usual) VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?, ?, ?, ?)",
+            (f"h:{public_id}", crew_id, clean, 1 if club else 0, today.isoformat(), int(time.time()), public_id,
              _hash(token), _pin_hash(code), json.dumps(picks)),
         )
     return {"token": token, "id": public_id, "name": clean}
@@ -957,22 +961,25 @@ def runner(link: str, token: Any, today: date | None = None) -> dict[str, Any]:
     today = today or date.today()
     with _connect() as conn:
         crew_id = _crew_for_link(conn, link)
-        key, public_id, name, usual, updated_on = _runner(conn, crew_id, token)
+        key, public_id, name, usual, updated_on, club = _runner(conn, crew_id, token)
         changes = conn.execute(
             "SELECT day, slot, running FROM crew_slot_changes WHERE member = ? AND day >= ? ORDER BY day",
             (key, today.isoformat()),
         ).fetchall()
     seen = date.fromisoformat(updated_on) if updated_on else None
     return {
-        "id": public_id, "name": name, "usual": json.loads(usual) if usual else [],
+        "id": public_id, "name": name, "usual": json.loads(usual) if usual else [], "club": bool(club),
         "changes": [{"day": d, "slot": s, "running": bool(r)} for d, s, r in changes],
         "stale": seen is None or (today - seen).days > STALE_DAYS,
     }
 
 
 def update_runner(link: str, token: Any, usual: Any = None, changes: Any = None, still_running: bool = False,
-                  today: date | None = None) -> dict[str, Any]:
-    """Change someone's usual week or a day this week or next; any change says they're still running."""
+                  today: date | None = None, club: bool | None = None) -> dict[str, Any]:
+    """Change someone's usual week, a day this week or next, or whether they do the club run.
+
+    Any change says they're still running.
+    """
     today = today or date.today()
     monday = today - timedelta(days=today.weekday())
     last = monday + timedelta(days=13)
@@ -981,6 +988,8 @@ def update_runner(link: str, token: Any, usual: Any = None, changes: Any = None,
         key = _runner(conn, crew_id, token)[0]
         if usual is not None:
             conn.execute("UPDATE crew_members SET usual = ? WHERE member = ?", (json.dumps(_clean_usual(usual)), key))
+        if club is not None:
+            conn.execute("UPDATE crew_members SET club = ? WHERE member = ?", (1 if club else 0, key))
         for change in changes or []:
             if not isinstance(change, dict):
                 raise CrewError("A change is a day, a slot and whether you're running.")
@@ -999,7 +1008,7 @@ def update_runner(link: str, token: Any, usual: Any = None, changes: Any = None,
                     "INSERT OR REPLACE INTO crew_slot_changes (member, day, slot, running) VALUES (?, ?, ?, ?)",
                     (key, day.isoformat(), slot, 1 if change["running"] else 0),
                 )
-        if usual is not None or changes or still_running:
+        if usual is not None or changes or still_running or club is not None:
             conn.execute("UPDATE crew_members SET updated_on = ? WHERE member = ?", (today.isoformat(), key))
     return runner(link, token, today)
 

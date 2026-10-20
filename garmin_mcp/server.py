@@ -2910,7 +2910,8 @@ async def _crew_card(week_of: str | None = None) -> dict[str, Any]:
         note += (
             f" The crew's page is on, at {crew['page_url']}: give it when the group wants the week as a link. "
             "Friends without Garmin or Daash join from that page: they tap Add your easy runs, pick their usual "
-            "slots and a name and PIN, and show as \"by hand\", matched like everyone else."
+            "slots and a name and PIN, and show as \"by hand\", matched like everyone else. They change "
+            "their own runs there, whether they do the club run included: Edit my runs on that page."
         )
     elif crew.get("you_started_it"):
         note += (
