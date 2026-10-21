@@ -1,0 +1,242 @@
+<title>Support · Daash</title>
+<meta name="description" content="Help with Daash, the Garmin connector for Claude and ChatGPT: how to reach a person, and quick fixes for signing in, workouts and disconnecting.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* The daash.run design: the same tokens, type and chrome as the site. */
+  :root {
+    color-scheme: light;
+    --bg: #F7F8FA;
+    --card: #FFFFFF;
+    --sunken: #EEF0F3;
+    --text: #161B26;
+    --body: #3A404C;
+    --muted: #5B6270;
+    --faint: #8A909C;
+    --border: #E6E8EC;
+    --row: #EEF0F3;
+    --red: #E0312A;
+    --red-text: #C8261F;
+    --red-hover: #A81E18;
+    --red-soft: #FDF2F1;
+    --outer: 1120px;
+    --measure: 680px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 17px;
+    line-height: 1.7;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  a { color: var(--red-text); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: var(--red-hover); }
+  a:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
+
+  /* ---- Site nav ---- */
+  .site-nav {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(247, 248, 250, 0.92);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .site-nav .bar {
+    max-width: var(--outer); margin: 0 auto; height: 56px;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    display: flex; align-items: center; gap: 24px;
+  }
+  .wordmark {
+    font-weight: 800; font-style: italic; letter-spacing: -0.03em;
+    color: var(--red); font-size: 22px; line-height: 1; text-decoration: none;
+  }
+  .wordmark:hover { color: var(--red); }
+  .site-nav .links { display: none; align-items: center; gap: 4px; font-size: 14.5px; }
+  .site-nav .links a { color: var(--muted); text-decoration: none; padding: 8px 10px; border-radius: 8px; }
+  .site-nav .links a:hover { color: var(--text); }
+  .pill {
+    margin-left: auto; display: inline-flex; align-items: center; height: 40px; padding: 0 16px;
+    border-radius: 999px; background: var(--red); color: #fff; font-weight: 500; font-size: 15px;
+    text-decoration: none;
+  }
+  .pill:hover { background: var(--red-text); color: #fff; }
+  @media (min-width: 760px) { .site-nav .links { display: flex; } }
+
+  /* ---- The page ---- */
+  .wrap {
+    max-width: calc(var(--measure) + 32px);
+    margin: 0 auto;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    padding-block: 32px 64px;
+  }
+
+  h1, h2, h3 { margin: 0; color: var(--text); text-wrap: balance; }
+  h1 { font-size: clamp(32px, 4.6vw, 46px); font-weight: 700; line-height: 1.05; letter-spacing: -0.045em; margin-top: 18px; }
+  h2 { font-size: 24px; font-weight: 700; line-height: 1.2; letter-spacing: -0.03em; }
+
+  p { margin: 0; text-wrap: pretty; }
+
+  .back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13.5px; color: var(--muted); text-decoration: none;
+  }
+  .back:hover { color: var(--text); }
+
+  .lede { font-size: 19px; line-height: 1.6; color: var(--muted); max-width: 58ch; margin-top: 14px; }
+  .stamp { margin-top: 12px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--muted); }
+
+  section { margin-top: 44px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+  .small { font-size: 16.5px; color: var(--body); }
+  .muted, .small.muted { color: var(--muted); }
+  strong { color: var(--text); font-weight: 600; }
+
+  /* ---- The summary cards ---- */
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    margin: 26px 0 0;
+  }
+  .facts div { background: var(--card); padding: 16px 18px; }
+  .facts dt {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px; line-height: 1.4;
+  }
+  .facts dd { margin: 0; font-weight: 600; font-size: 15.5px; line-height: 1.4; }
+  @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
+
+  .note {
+    border-left: 3px solid var(--red);
+    background: var(--red-soft);
+    padding: 16px 18px;
+    border-radius: 0 14px 14px 0;
+    margin-top: 18px;
+    color: var(--body);
+  }
+  .note p + p { margin-top: 10px; }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  ul.plain li {
+    display: grid; grid-template-columns: 14px 1fr; gap: 10px;
+    align-items: baseline; font-size: 16.5px; color: var(--body);
+  }
+  ul.plain li::before {
+    content: ""; width: 6px; height: 6px; border-radius: 999px;
+    background: var(--red); transform: translateY(-2px);
+  }
+
+  code.inline {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 0.86em; background: var(--sunken); padding: 1px 6px; border-radius: 5px;
+    overflow-wrap: anywhere;
+  }
+
+  .wrap > footer {
+    margin-top: 52px; padding-top: 22px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 15px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  /* ---- Site footer ---- */
+  .site-footer { border-top: 1px solid var(--border); }
+  .site-footer .bar {
+    max-width: var(--outer); margin: 0 auto;
+    padding: 28px max(16px, env(safe-area-inset-left), env(safe-area-inset-right)) 32px;
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;
+    gap: 20px 40px; font-size: 14px; color: var(--muted); line-height: 1.5;
+  }
+  .site-footer .about { display: flex; flex-direction: column; gap: 6px; max-width: 36ch; }
+  .site-footer .wordmark { font-size: 18px; }
+  .site-footer nav { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+  .site-footer nav a { color: var(--muted); text-decoration: none; }
+  .site-footer nav a:hover { color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<header class="site-nav">
+  <div class="bar">
+    <a class="wordmark" href="https://daash.run/">Daash</a>
+    <nav class="links" aria-label="Main">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+    </nav>
+    <a class="pill" href="https://daash.run/#connect">Connect</a>
+  </div>
+</header>
+
+
+<div class="wrap">
+
+  <header>
+    <a class="back" href="https://daash.run/">&lsaquo;&nbsp;Daash</a>
+    <h1>Support</h1>
+    <p class="lede">
+      Email <a href="mailto:support@daash.run">support@daash.run</a> and a
+      person will answer. Say whether you use Claude or
+      ChatGPT, and what you asked when it went wrong.
+    </p>
+  </header>
+
+  <section>
+    <h2>Quick fixes</h2>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Garmin won&rsquo;t take my password.</strong> Check it by
+        signing in at connect.garmin.com first. Garmin pauses an account after a
+        few wrong tries, so it is worth checking there before trying again. If
+        Garmin asks you for a code there, you&rsquo;ll be asked for the same code
+        on Daash&rsquo;s sign-in page.</span></li>
+      <li><span><strong>Sign-in keeps failing.</strong> Garmin sometimes turns
+        sign-ins away for a while. Wait an hour and try once more.</span></li>
+      <li><span><strong>A workout isn&rsquo;t on my watch.</strong> It goes onto
+        your Garmin calendar first. Sync the watch in the Garmin Connect app and
+        it arrives.</span></li>
+      <li><span><strong>I want to disconnect.</strong> Open the
+        <a href="https://mcp.garmin.daash.run/connect">sign-in page</a> and choose
+        Disconnect. That deletes everything Daash keeps for you. Then remove the
+        connector in Claude or ChatGPT.</span></li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>
+      <a href="/data/">What it can see</a> &middot; <a href="/privacy/">Privacy</a>
+    </p>
+    <p><a href="https://daash.run/#connect">&larr; Back to setting it up</a></p>
+  </footer>
+
+</div>
+
+
+<footer class="site-footer">
+  <div class="bar">
+    <div class="about">
+      <a class="wordmark" href="https://daash.run/">Daash</a>
+      <span>Free and open source. Not affiliated with Garmin.</span>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="/data/">What it can see</a>
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</footer>
