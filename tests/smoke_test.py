@@ -1394,6 +1394,9 @@ async def main() -> int:
             )
             check("workout scheduled", scheduled.get("schedule_id") == 777001
                   and scheduled.get("scheduled_for"))
+            check("a move ends with the week as a card, once",
+                  "call get_plan on its own" in scheduled.get("note", "")
+                  and "not after each one" in scheduled.get("note", ""))
 
             print("\nupdate_workout")
             renamed = payload(await sess.call_tool(
@@ -1666,6 +1669,8 @@ async def main() -> int:
                   str(cleared)[:140])
             check("unschedule keeps the workout",
                   "kept" in (cleared.get("note") or ""))
+            check("unscheduling also ends with the week as a card",
+                  "call get_plan on its own" in (cleared.get("note") or ""))
 
             empty_day = payload(
                 await sess.call_tool("unschedule_workout", {"date": "2026-09-25"})

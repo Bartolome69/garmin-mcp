@@ -1660,6 +1660,17 @@ async def create_strength_workout(
     }
 
 
+# After a move the user wants to see where things landed, and the card shows
+# the whole week at once. Asked for once, at the end: a card per move is
+# noise, and a card drawn alongside the last move can read the calendar
+# before that move has landed.
+AFTER_MOVE = (
+    "Once every change the user asked for is made, call get_plan on its own "
+    "so they see the week as it now stands: once, after the last change, "
+    "not after each one."
+)
+
+
 @mcp.tool()
 @tool_errors
 async def schedule_workout(workout_id: int | str, date: str) -> dict[str, Any]:
@@ -1683,7 +1694,7 @@ async def schedule_workout(workout_id: int | str, date: str) -> dict[str, Any]:
         "workout_id": workout_id,
         "scheduled_for": day,
         "schedule_id": first_present(result, "workoutScheduleId", "id"),
-        "note": "Sync the watch (or open Garmin Connect on your phone) to pick it up.",
+        "note": "Sync the watch (or open Garmin Connect on your phone) to pick it up. " + AFTER_MOVE,
     }
 
 
@@ -1723,7 +1734,7 @@ async def unschedule_workout(
         except ValueError:
             return {"error": f"schedule_id must be numeric, got {schedule_id!r}."}
         await _call(lambda c: c.unschedule_workout(schedule_id))
-        return {"unscheduled": schedule_id, "note": "The workout itself is kept."}
+        return {"unscheduled": schedule_id, "note": "The workout itself is kept. " + AFTER_MOVE}
 
     if not date:
         return {"error": "Give either a date or a schedule_id."}
@@ -1762,7 +1773,7 @@ async def unschedule_workout(
         "date": day,
         "unscheduled": found,
         "name": first_present(entry, "title", "workoutName"),
-        "note": "Off the calendar. The workout is kept and can be scheduled again.",
+        "note": "Off the calendar. The workout is kept and can be scheduled again. " + AFTER_MOVE,
     }
 
 
