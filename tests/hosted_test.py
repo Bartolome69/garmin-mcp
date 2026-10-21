@@ -1690,6 +1690,80 @@ async def main() -> int:
         check("the last one out deletes the crew",
               crews._connect().execute("SELECT COUNT(*) FROM crews WHERE code = ?", (code,)).fetchone()[0] == 0)
 
+        # Mail to support@daash.run: Resend posts a signed webhook, the server
+        # fetches the message and passes it on to the inbox that answers it.
+        from garmin_mcp import support_mail
+        import base64 as _b64, hashlib as _hl, hmac as _hm
+
+        def mail_post(body: bytes, headers: dict):
+            req = urllib.request.Request(f"{base}/mail/inbound", data=body, method="POST",
+                                         headers={"Content-Type": "application/json", **headers})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return r.status, r.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+
+        def signed(event: dict, secret_key: bytes, stamp: int | None = None) -> tuple[bytes, dict]:
+            body = json.dumps(event).encode()
+            stamp = stamp or int(time.time())
+            sig = _b64.b64encode(_hm.new(secret_key, f"msg_1.{stamp}.".encode() + body, _hl.sha256).digest()).decode()
+            return body, {"svix-id": "msg_1", "svix-timestamp": str(stamp), "svix-signature": f"v1,{sig}"}
+
+        status, _ = await anyio_run(mail_post, b"{}", {})
+        check("support mail waits until it's set up, so Resend keeps the message and retries", status == 503, str(status))
+        key = b"0123456789abcdef0123456789abcdef"
+        sent: list = []
+        fake = {
+            ("GET", "/emails/receiving/em_1"): {"subject": "Help with my plan", "text": "It won't sync.", "html": "<p>It won't sync.</p>"},
+            ("GET", "/emails/receiving/em_1/attachments"): {"data": [{"filename": "watch.png", "size": 5, "content_type": "image/png",
+                                                                      "download_url": "https://files.example/watch.png"}]},
+        }
+
+        def fake_request(method, path, payload=None, headers=None):
+            if method == "POST":
+                sent.append((payload, headers))
+                return {"id": "sent_1"}
+            return fake[(method, path)]
+
+        old_env = {k: os.environ.get(k) for k in ("RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "SUPPORT_FORWARD_TO")}
+        real_request, real_download = support_mail._request, support_mail._download
+        os.environ.update({"RESEND_API_KEY": "re_test", "RESEND_WEBHOOK_SECRET": "whsec_" + _b64.b64encode(key).decode(),
+                           "SUPPORT_FORWARD_TO": "owner@example.com"})
+        support_mail._request, support_mail._download = fake_request, lambda url: b"\x89PNG!"
+        try:
+            event = {"type": "email.received", "data": {"email_id": "em_1", "from": "Runner <runner@example.org>",
+                                                         "to": ["support@daash.run"], "subject": "Help with my plan",
+                                                         "attachments": [{"id": "a1", "filename": "watch.png"}]}}
+            body, headers = signed(event, key)
+            status, outcome = await anyio_run(mail_post, body, headers)
+            msg, sent_headers = sent[0] if sent else ({}, {})
+            check("a signed message to support@ is passed on to the inbox, replies going to the sender",
+                  status == 200 and outcome == "forwarded" and msg.get("to") == ["owner@example.com"]
+                  and msg.get("reply_to") == "Runner <runner@example.org>" and msg.get("subject") == "Help with my plan"
+                  and "It won't sync." in msg.get("text", "") and "runner@example.org" in msg.get("text", "")
+                  and msg.get("from") == "Daash Support <support@daash.run>", f"{status} {outcome} {msg}")
+            check("with its attachments, and sent once even if Resend asks twice",
+                  msg.get("attachments", [{}])[0].get("filename") == "watch.png"
+                  and sent_headers.get("Idempotency-Key") == "support-forward-em_1"
+                  and (await anyio_run(mail_post, *signed(event, key)))[1] == "already forwarded" and len(sent) == 1, str(sent_headers))
+            body, headers = signed(event, b"x" * 32)
+            check("a webhook not signed with the secret is refused", (await anyio_run(mail_post, body, headers))[0] == 401)
+            body, headers = signed(event, key, stamp=int(time.time()) - 3600)
+            check("and so is one signed an hour ago", (await anyio_run(mail_post, body, headers))[0] == 401)
+            other = {"type": "email.received", "data": {"email_id": "em_2", "from": "x@example.org", "to": ["random@daash.run"]}}
+            loop = {"type": "email.received", "data": {"email_id": "em_3", "from": "owner@example.com", "to": ["support@daash.run"]}}
+            check("mail to other addresses, or from the inbox itself, isn't passed on",
+                  (await anyio_run(mail_post, *signed(other, key)))[1].startswith("ignored")
+                  and (await anyio_run(mail_post, *signed(loop, key)))[1].startswith("ignored") and len(sent) == 1)
+        finally:
+            support_mail._request, support_mail._download = real_request, real_download
+            for k, v in old_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
     finally:
         server.should_exit = True
         thread.join(timeout=10)

@@ -36,7 +36,7 @@ import anyio
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, crews, hooks, oauth, preview, store
+from . import analytics, crews, hooks, oauth, preview, store, support_mail
 from .server import mcp
 from .session import (
     GarminError,
@@ -1956,6 +1956,16 @@ async def mfa_submit(request: Request) -> Response:
         )
     return _finish(request, client, pending["email"], pending.get("flow", ""), mfa=True,
                    took=pending.get("took"))
+
+
+# Mail to support@daash.run: Resend receives it and posts here, and it goes
+# on to the inbox that answers it (support_mail).
+@mcp.custom_route("/mail/inbound", methods=["POST"])
+async def mail_inbound(request: Request) -> Response:
+    body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    status, outcome = await anyio.to_thread.run_sync(support_mail.handle, body, headers)
+    return Response(outcome, status_code=status, media_type="text/plain")
 
 
 @mcp.custom_route("/health", methods=["GET"])
