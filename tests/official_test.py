@@ -103,7 +103,7 @@ def main() -> int:
     url, fields = POSTED[-1]
     check("the code is exchanged with the verifier, from the server",
           url == official.TOKEN_URL and fields["code"] == "the-code" and fields["code_verifier"] == opened["v"]
-          and fields["client_secret"] == "shh-secret" and fields["grant_type"] == "authorization_code")
+          and "client_secret" not in fields and fields["grant_type"] == "authorization_code")
     linked = store.official_link(bart)
     check("the account is linked with its Garmin id and permissions",
           garmin_id == "garmin-user-1" and linked is not None and linked.garmin_user_id == "garmin-user-1"
@@ -239,12 +239,14 @@ def main() -> int:
         def __exit__(self, *exc):
             return False
 
+    sent_headers: list[dict] = []
     direct: list[str] = []
     relayed: list[str] = []
     real_urlopen, real_build = urllib.request.urlopen, urllib.request.build_opener
 
     def fake_urlopen(request, timeout=None):
         direct.append(request.full_url)
+        sent_headers.append(dict(request.header_items()))
         raise next(DIRECT)
 
     class FakeOpener:
@@ -261,6 +263,9 @@ def main() -> int:
             said = ""
         except official.OfficialError as exc:
             said = str(exc)
+        expected_auth = "Basic " + base64.b64encode(b"client-123:shh-secret").decode()
+        check("the app's credentials go in a Basic header, the way Garmin's examples send them",
+              sent_headers[-1].get("Authorization") == expected_auth, str(sent_headers[-1].keys()))
         check("Garmin's own refusal is passed on with its code, not as 'couldn't be reached'",
               "400, invalid_grant: Code expired" in said and not relayed, said)
 

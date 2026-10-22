@@ -123,7 +123,7 @@ def authorize_url(link_token: str) -> str | None:
     state = _seal({"u": opened["u"], "v": verifier})
     query = urllib.parse.urlencode({
         "response_type": "code",
-        "client_id": os.environ["GARMIN_OFFICIAL_CLIENT_ID"],
+        "client_id": os.environ["GARMIN_OFFICIAL_CLIENT_ID"].strip(),
         "code_challenge": _challenge(verifier),
         "code_challenge_method": "S256",
         "redirect_uri": f"{base_url()}/official/callback",
@@ -184,11 +184,21 @@ def _oauth_reason(exc: urllib.error.HTTPError) -> str:
     return ": ".join(part for part in (code, detail) if part)
 
 
+def _client_auth() -> str:
+    """The app's credentials as an HTTP Basic header.
+
+    Garmin's token endpoint takes them this way, as its examples send them:
+    sent as form fields instead, it answers 401 with a web page.
+    """
+    pair = f"{os.environ['GARMIN_OFFICIAL_CLIENT_ID'].strip()}:{os.environ['GARMIN_OFFICIAL_CLIENT_SECRET'].strip()}"
+    return "Basic " + base64.b64encode(pair.encode()).decode()
+
+
 def _post_form(url: str, fields: dict[str, str]) -> dict:
     request = urllib.request.Request(
         url, data=urllib.parse.urlencode(fields).encode(), method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json",
-                 "User-Agent": "daash-official"},
+                 "Authorization": _client_auth(), "User-Agent": "daash-official"},
     )
     try:
         raw = _send(request)
@@ -223,8 +233,6 @@ def finish(code: str, state: str) -> str:
         raise OfficialError("Daash doesn't recognise this account any more. Connect Daash again first.")
     answer = _post_form(TOKEN_URL, {
         "grant_type": "authorization_code",
-        "client_id": os.environ["GARMIN_OFFICIAL_CLIENT_ID"],
-        "client_secret": os.environ["GARMIN_OFFICIAL_CLIENT_SECRET"],
         "code": code,
         "code_verifier": opened["v"],
         "redirect_uri": f"{base_url()}/official/callback",
@@ -284,8 +292,6 @@ def _access_token(user_token: str) -> tuple[str, store.OfficialLink]:
         raise OfficialError("The Garmin connection has expired. Connect again.")
     answer = _post_form(TOKEN_URL, {
         "grant_type": "refresh_token",
-        "client_id": os.environ["GARMIN_OFFICIAL_CLIENT_ID"],
-        "client_secret": os.environ["GARMIN_OFFICIAL_CLIENT_SECRET"],
         "refresh_token": tokens["refresh_token"],
     })
     # Garmin issues a new refresh token every time; the old one is spent.
