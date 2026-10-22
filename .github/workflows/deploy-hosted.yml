@@ -166,10 +166,11 @@ jobs:
           SUPPORT_FORWARD_TO: ${{ secrets.SUPPORT_FORWARD_TO }}
           GARMIN_OFFICIAL_CLIENT_ID: ${{ secrets.GARMIN_OFFICIAL_CLIENT_ID }}
           GARMIN_OFFICIAL_CLIENT_SECRET: ${{ secrets.GARMIN_OFFICIAL_CLIENT_SECRET }}
+          GARMIN_MCP_PREVIEW: ${{ secrets.GARMIN_MCP_PREVIEW }}
         run: |
           pairs=()
           for name in RESEND_API_KEY RESEND_WEBHOOK_SECRET SUPPORT_FORWARD_TO \
-                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET; do
+                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET GARMIN_MCP_PREVIEW; do
             if [ -n "${!name}" ]; then pairs+=("$name=${!name}"); fi
           done
           if [ ${#pairs[@]} -gt 0 ]; then
