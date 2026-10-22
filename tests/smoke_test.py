@@ -1200,6 +1200,47 @@ def check_prompts_survive_a_pipe(check) -> None:
     )
 
 
+# What the Connectors Directory reads: each tool's title, and which tools
+# write and which of those take something away.
+ANNOTATED_TITLES = {
+    "find_exercises": "Find exercises",
+    "get_activities": "Get activities",
+    "get_activity_details": "Get activity details",
+    "get_connection_status": "Check Garmin connection",
+    "get_crew": "Get crew week",
+    "get_daily_summary": "Get daily summary",
+    "get_fitness": "Get fitness markers",
+    "get_fitness_trends": "Get fitness trends",
+    "get_heart_rate": "Get heart rate",
+    "get_plan": "Get training plan",
+    "get_profile": "Get profile and records",
+    "get_progress": "Get plan progress",
+    "get_readiness": "Get training readiness",
+    "get_recovery_trends": "Get recovery trends",
+    "get_shoes": "Get shoes",
+    "get_sleep_data": "Get sleep",
+    "get_workout": "Get workout",
+    "list_workouts": "List workouts",
+    "create_plan": "Create training plan",
+    "create_strength_workout": "Create strength workout",
+    "create_workout": "Create workout",
+    "schedule_workout": "Schedule workout",
+    "update_activity": "Update activity details",
+    "join_crew": "Join or start crew",
+    "update_crew": "Update crew",
+    "delete_workout": "Delete workout",
+    "remove_plan": "Remove training plan",
+    "unschedule_workout": "Unschedule workout",
+    "update_workout": "Update workout",
+    "leave_crew": "Leave crew",
+}
+ANNOTATED_DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew"}
+ANNOTATED_WRITES = ANNOTATED_DESTRUCTIVE | {
+    "create_plan", "create_strength_workout", "create_workout", "schedule_workout",
+    "update_activity", "join_crew", "update_crew",
+}
+
+
 async def main() -> int:
     env = dict(os.environ)
     env["GARMIN_MCP_FAKE"] = "1"  # server uses the stub client
@@ -1238,10 +1279,46 @@ async def main() -> int:
                   not any("\n        " in (d.get("description") or "") for d in listed_json)
                   and not any('"title"' in json.dumps(d.get("inputSchema")) for d in listed_json)
                   # Raised from 30,000 for get_heart_rate and update_activity
-                  # (about 1,000 each) and zone targets: what a tool adds comes
-                  # out of every chat's budget, so it stays tight.
-                  and sum(len(json.dumps(d)) for d in listed_json) < 32500,
+                  # (about 1,000 each) and zone targets, then from 32,500 for
+                  # the titles the Connectors Directory requires (about 800):
+                  # what a tool adds comes out of every chat's budget, so it
+                  # stays tight.
+                  and sum(len(json.dumps(d)) for d in listed_json) < 33500,
                   str(sum(len(json.dumps(d)) for d in listed_json)))
+
+            # Claude's Connectors Directory checks every tool for a title in
+            # its annotations, and for readOnlyHint and, on anything that
+            # writes, destructiveHint said outright, not left to a default.
+            # Checked as listed on the wire, where a missing hint is absent.
+            wire = {d["name"]: d.get("annotations") or {} for d in listed_json}
+            untitled = sorted(n for n, a in wire.items() if not (a.get("title") or "").strip())
+            check("every tool has a title in its annotations", not untitled, str(untitled))
+            no_read_hint = sorted(n for n, a in wire.items() if not isinstance(a.get("readOnlyHint"), bool))
+            check("every tool says outright whether it only reads", not no_read_hint, str(no_read_hint))
+            no_destructive_hint = sorted(n for n, a in wire.items()
+                                         if a.get("readOnlyHint") is False
+                                         and not isinstance(a.get("destructiveHint"), bool))
+            check("every writing tool says outright whether it is destructive",
+                  not no_destructive_hint, str(no_destructive_hint))
+            # The crew tools are the hosted server's alone; hosted_test checks
+            # them there. Here, every tool this server lists.
+            check("every tool listed has its directory title",
+                  set(wire) <= set(ANNOTATED_TITLES), str(sorted(set(wire) - set(ANNOTATED_TITLES))))
+            writes = {n for n, a in wire.items() if a.get("readOnlyHint") is False}
+            check("the writing tools are exactly the ones that write",
+                  writes == ANNOTATED_WRITES & set(wire), str(sorted(writes ^ (ANNOTATED_WRITES & set(wire)))))
+            destructive = {n for n, a in wire.items() if a.get("destructiveHint") is True}
+            check("the destructive ones are those that take something away",
+                  destructive == ANNOTATED_DESTRUCTIVE & set(wire),
+                  str(sorted(destructive ^ (ANNOTATED_DESTRUCTIVE & set(wire)))))
+            titles = {n: a.get("title") for n, a in wire.items()}
+            check("each title reads as the directory shows it",
+                  all(titles[n] == ANNOTATED_TITLES.get(n) for n in titles),
+                  str({n: titles[n] for n in titles if titles[n] != ANNOTATED_TITLES.get(n)}))
+            plan_listed = next(d for d in listed_json if d["name"] == "get_plan")
+            check("get_plan keeps its own title beside the annotation's",
+                  plan_listed.get("title") == "Training plan and progress"
+                  and wire["get_plan"].get("title") == "Get training plan")
 
             check("an ordinary account is offered the plan view",
                   any(((t.meta or {}).get("ui")) for t in tools.tools if t.name == "get_plan"))

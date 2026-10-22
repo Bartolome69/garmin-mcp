@@ -288,6 +288,19 @@ async def main() -> int:
               and "heart-rate ceiling" not in workout_tool.description)
         check("deleting is marked destructive, creating is not",
               hints["delete_workout"].destructive_hint and not hints["create_workout"].destructive_hint)
+        # What the Connectors Directory checks on the hosted server itself.
+        check("every tool served has a title in its annotations, and every write a destructive hint",
+              all((a.title or "").strip() for a in hints.values())
+              and all(a.destructive_hint is not None for a in hints.values() if a.read_only_hint is False),
+              str(sorted(n for n, a in hints.items() if not (a.title or "").strip())))
+        check("leaving a crew is marked destructive", hints["leave_crew"].destructive_hint is True)
+        check("the crew tools carry their directory titles",
+              {n: hints[n].title for n in ("get_crew", "join_crew", "update_crew", "leave_crew")}
+              == {"get_crew": "Get crew week", "join_crew": "Join or start crew",
+                  "update_crew": "Update crew", "leave_crew": "Leave crew"},
+              str({n: hints[n].title for n in ("get_crew", "join_crew", "update_crew", "leave_crew")}))
+        check("all 30 tools are served, each titled",
+              len(hints) == 30 and all((a.title or "").strip() for a in hints.values()), str(len(hints)))
 
         # Preview features, per account. Alice is on the list (written the way
         # a person types it); Bob is not. The plan view is everyone's now; the

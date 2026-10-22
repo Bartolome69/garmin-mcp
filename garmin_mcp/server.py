@@ -348,8 +348,43 @@ _TITLES = {"get_plan": "Training plan and progress"}
 
 
 # Tools that take something away: a workout, a plan, a date on the calendar,
-# or a workout's old steps.
-DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout"}
+# a workout's old steps, or everything a crew kept for the person.
+DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew"}
+
+# Each tool's name as a directory listing shows it. Claude's Connectors
+# Directory flags any tool without one in its annotations.
+_ANNOTATION_TITLES = {
+    "find_exercises": "Find exercises",
+    "get_activities": "Get activities",
+    "get_activity_details": "Get activity details",
+    "get_connection_status": "Check Garmin connection",
+    "get_crew": "Get crew week",
+    "get_daily_summary": "Get daily summary",
+    "get_fitness": "Get fitness markers",
+    "get_fitness_trends": "Get fitness trends",
+    "get_heart_rate": "Get heart rate",
+    "get_plan": "Get training plan",
+    "get_profile": "Get profile and records",
+    "get_progress": "Get plan progress",
+    "get_readiness": "Get training readiness",
+    "get_recovery_trends": "Get recovery trends",
+    "get_shoes": "Get shoes",
+    "get_sleep_data": "Get sleep",
+    "get_workout": "Get workout",
+    "list_workouts": "List workouts",
+    "create_plan": "Create training plan",
+    "create_strength_workout": "Create strength workout",
+    "create_workout": "Create workout",
+    "schedule_workout": "Schedule workout",
+    "update_activity": "Update activity details",
+    "join_crew": "Join or start crew",
+    "update_crew": "Update crew",
+    "delete_workout": "Delete workout",
+    "remove_plan": "Remove training plan",
+    "unschedule_workout": "Unschedule workout",
+    "update_workout": "Update workout",
+    "leave_crew": "Leave crew",
+}
 
 
 def _annotations(name: str) -> ToolAnnotations:
@@ -357,6 +392,7 @@ def _annotations(name: str) -> ToolAnnotations:
     write, so a person can allow every read at once and still be asked before
     anything changes in their Garmin account."""
     return ToolAnnotations(
+        title=_ANNOTATION_TITLES.get(name),
         readOnlyHint=name not in WRITES and name not in CREW_WRITES,
         destructiveHint=name in DESTRUCTIVE,
         # Every tool works on the person's own Garmin account, a closed world,
