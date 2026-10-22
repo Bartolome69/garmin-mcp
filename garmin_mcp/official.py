@@ -132,13 +132,75 @@ def authorize_url(link_token: str) -> str | None:
     return f"{AUTHORIZE_URL}?{query}"
 
 
+def _relay() -> str:
+    """The UK relay the private sign-in already uses, for when Garmin turns away the server."""
+    return os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
+
+
+def _blocked(exc: urllib.error.HTTPError, body: bytes) -> bool:
+    """A 403 that is a wall in front of Garmin, not an answer from its API.
+
+    Garmin's own answers are JSON; the wall that turns away data-centre
+    addresses sends a web page.
+    """
+    return exc.code == 403 and not body.lstrip().startswith((b"{", b"["))
+
+
+def _send(request: urllib.request.Request) -> bytes:
+    """Make the request directly, and once more through the relay if Garmin blocks the server."""
+    try:
+        with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
+            return response.read()
+    except urllib.error.HTTPError as exc:
+        body = exc.read() or b""
+        if not (_relay() and _blocked(exc, body)):
+            exc.body = body  # read once; kept for whoever explains it
+            raise
+        log.info("official request to %s blocked directly; trying the relay", urllib.parse.urlparse(request.full_url).hostname)
+    except urllib.error.URLError:
+        if not _relay():
+            raise
+        log.info("official request to %s failed directly; trying the relay", urllib.parse.urlparse(request.full_url).hostname)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({"http": _relay(), "https": _relay()}))
+    try:
+        with opener.open(request, timeout=_TIMEOUT) as response:
+            return response.read()
+    except urllib.error.HTTPError as exc:
+        exc.body = exc.read() or b""
+        raise
+
+
+def _oauth_reason(exc: urllib.error.HTTPError) -> str:
+    """Garmin's OAuth error code, which says what to fix without echoing anything secret."""
+    body = getattr(exc, "body", b"") or b""
+    try:
+        answer = json.loads(body)
+    except ValueError:
+        return "web page" if body.lstrip().startswith(b"<") else ""
+    if not isinstance(answer, dict):
+        return ""
+    code = str(answer.get("error") or answer.get("errorCode") or "")
+    detail = str(answer.get("error_description") or answer.get("message") or "")[:120]
+    return ": ".join(part for part in (code, detail) if part)
+
+
 def _post_form(url: str, fields: dict[str, str]) -> dict:
     request = urllib.request.Request(
         url, data=urllib.parse.urlencode(fields).encode(), method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "daash-official"},
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json",
+                 "User-Agent": "daash-official"},
     )
-    with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
-        return json.loads(response.read() or b"{}")
+    try:
+        raw = _send(request)
+    except urllib.error.HTTPError as exc:
+        reason = _oauth_reason(exc)
+        log.warning("official token request refused: %s %s", exc.code, reason)
+        raise OfficialError(f"Garmin refused the sign-in ({exc.code}{f', {reason}' if reason else ''}). "
+                            "Ask Claude for a new link and try again; if it says the same, send this to support.") from None
+    except urllib.error.URLError as exc:
+        log.warning("official token request failed: %s", type(exc.reason).__name__)
+        raise OfficialError("Daash couldn't reach Garmin to finish connecting. Try a new link in a minute.") from None
+    return json.loads(raw or b"{}")
 
 
 def _tokens_from(answer: dict) -> dict:
@@ -189,18 +251,26 @@ def _call(access_token: str, method: str, path: str, body: Any = None) -> Any:
                  "Accept": "application/json", "User-Agent": "daash-official"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        # Garmin's status says what went wrong well enough to act on; its body
-        # is passed on only by length, since it can echo what was sent.
-        reasons = {401: "Garmin no longer accepts this connection. Connect again.",
-                   403: "Garmin doesn't allow this for Daash's app.",
-                   412: "This Garmin account hasn't given Daash permission for that. "
-                        "Check Daash's permissions in Garmin Connect.",
-                   429: "Garmin is limiting how often Daash can ask. Try again in a while."}
-        raise OfficialError(reasons.get(exc.code, f"Garmin answered {exc.code}.")) from None
+        raw = _send(request)
+    except urllib.error.URLError as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            raise _refused(exc, path) from None
+        log.warning("official %s %s failed: %s", method, path, type(exc.reason).__name__)
+        raise OfficialError("Daash couldn't reach Garmin. Try again in a minute.") from None
     return json.loads(raw) if raw else {}
+
+
+def _refused(exc: urllib.error.HTTPError, path: str) -> OfficialError:
+    """What a refusal from Garmin's API means for the person, logged with Garmin's own code."""
+    reason = _oauth_reason(exc)
+    log.warning("official call %s refused: %s %s", path, exc.code, reason)
+    reasons = {401: "Garmin no longer accepts this connection. Connect again.",
+               403: "Garmin doesn't allow this for Daash's app.",
+               412: "This Garmin account hasn't given Daash permission for that. "
+                    "Check Daash's permissions in Garmin Connect.",
+               429: "Garmin is limiting how often Daash can ask. Try again in a while."}
+    said = f"Garmin answered {exc.code}{f' ({reason})' if reason else ''}."
+    return OfficialError(reasons.get(exc.code, said))
 
 
 def _access_token(user_token: str) -> tuple[str, store.OfficialLink]:

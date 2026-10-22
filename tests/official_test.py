@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -70,6 +73,7 @@ def fake_call(access_token: str, method: str, path: str, body=None):
     return {}
 
 
+REAL_POST_FORM = official._post_form
 official._post_form = fake_post_form
 official._call = fake_call
 
@@ -222,6 +226,68 @@ def main() -> int:
     check("a lapsed link says so", "expired" in client.get("/official/start?t=bogus").text)
     declined = client.get("/official/callback")
     check("declining at Garmin changes nothing", "Not connected" in declined.text)
+
+    print("\nwhen Garmin says no")
+
+    def refusal(code: int, body: bytes):
+        return urllib.error.HTTPError(official.TOKEN_URL, code, "no", {}, io.BytesIO(body))
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    direct: list[str] = []
+    relayed: list[str] = []
+    real_urlopen, real_build = urllib.request.urlopen, urllib.request.build_opener
+
+    def fake_urlopen(request, timeout=None):
+        direct.append(request.full_url)
+        raise next(DIRECT)
+
+    class FakeOpener:
+        def open(self, request, timeout=None):
+            relayed.append(request.full_url)
+            return Answer(b'{"access_token": "a", "refresh_token": "r", "expires_in": 60}')
+
+    urllib.request.urlopen = fake_urlopen
+    urllib.request.build_opener = lambda *handlers: FakeOpener()
+    try:
+        DIRECT = iter([refusal(400, b'{"error": "invalid_grant", "error_description": "Code expired"}')])
+        try:
+            REAL_POST_FORM(official.TOKEN_URL, {"grant_type": "authorization_code"})
+            said = ""
+        except official.OfficialError as exc:
+            said = str(exc)
+        check("Garmin's own refusal is passed on with its code, not as 'couldn't be reached'",
+              "400, invalid_grant: Code expired" in said and not relayed, said)
+
+        os.environ.pop("GARMIN_MCP_LOGIN_PROXY", None)
+        DIRECT = iter([refusal(403, b"<html>Access denied</html>")])
+        try:
+            REAL_POST_FORM(official.TOKEN_URL, {})
+            said = ""
+        except official.OfficialError as exc:
+            said = str(exc)
+        check("a wall in front of Garmin is named as one", "403, web page" in said, said)
+
+        os.environ["GARMIN_MCP_LOGIN_PROXY"] = "http://relay.test:8000"
+        DIRECT = iter([refusal(403, b"<html>Access denied</html>")])
+        got = REAL_POST_FORM(official.TOKEN_URL, {})
+        check("with the relay set, a blocked request goes again through it",
+              got.get("access_token") == "a" and len(relayed) == 1)
+        DIRECT = iter([refusal(403, b'{"error": "access_denied"}')])
+        try:
+            REAL_POST_FORM(official.TOKEN_URL, {})
+            relayed_again = True
+        except official.OfficialError:
+            relayed_again = False
+        check("but an answer from Garmin itself is not retried elsewhere", not relayed_again and len(relayed) == 1)
+    finally:
+        urllib.request.urlopen, urllib.request.build_opener = real_urlopen, real_build
+        os.environ.pop("GARMIN_MCP_LOGIN_PROXY", None)
 
     print()
     if failures:

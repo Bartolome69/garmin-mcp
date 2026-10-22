@@ -1999,7 +1999,7 @@ async def official_callback(request: Request) -> Response:
     except official.OfficialError as exc:
         return page("Not connected", f"<div class=err>{html.escape(str(exc))}</div>")
     except (OSError, ValueError, KeyError) as exc:
-        log.warning("official sign-in failed: %s", type(exc).__name__)
+        log.warning("official sign-in failed: %s %s", type(exc).__name__, exc if isinstance(exc, KeyError) else "")
         return page("Not connected", "<div class=err>Garmin couldn't be reached to finish connecting. "
                     "Ask Claude for a new link and try again.</div>")
     return page("Connected", "<h1>Connected to Garmin</h1><p>Daash is linked to Garmin's official API. "
