@@ -79,6 +79,11 @@ jobs:
       - name: Progress matching
         run: python tests/progress_test.py
 
+      # Garmin's official API: the sign-in, what Garmin pushes, and workouts
+      # in the Training API's shape, against a stubbed Garmin.
+      - name: Official API
+        run: python tests/official_test.py
+
   # The real Garmin checks on the new code, run while the tests run: neither
   # needs the other, and together they were half of every deploy's wait.
   precheck:
@@ -149,25 +154,29 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      # Support mail's keys live as repository secrets and go to the machine
-      # with each deploy, staged so the deploy below is what picks them up.
-      # Only those that are set are passed on; none set leaves it switched off.
-      - name: Hand support mail its keys
+      # Support mail's keys, and the official Garmin API's, live as repository
+      # secrets and go to the machine with each deploy, staged so the deploy
+      # below is what picks them up. Only those that are set are passed on;
+      # none set leaves each switched off.
+      - name: Hand support mail and the official API their keys
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_WEBHOOK_SECRET: ${{ secrets.RESEND_WEBHOOK_SECRET }}
           SUPPORT_FORWARD_TO: ${{ secrets.SUPPORT_FORWARD_TO }}
+          GARMIN_OFFICIAL_CLIENT_ID: ${{ secrets.GARMIN_OFFICIAL_CLIENT_ID }}
+          GARMIN_OFFICIAL_CLIENT_SECRET: ${{ secrets.GARMIN_OFFICIAL_CLIENT_SECRET }}
         run: |
           pairs=()
-          for name in RESEND_API_KEY RESEND_WEBHOOK_SECRET SUPPORT_FORWARD_TO; do
+          for name in RESEND_API_KEY RESEND_WEBHOOK_SECRET SUPPORT_FORWARD_TO \
+                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET; do
             if [ -n "${!name}" ]; then pairs+=("$name=${!name}"); fi
           done
           if [ ${#pairs[@]} -gt 0 ]; then
             flyctl secrets set --stage --app "$FLY_APP" "${pairs[@]}" > /dev/null
-            echo "Staged ${#pairs[@]} support mail setting(s)."
+            echo "Staged ${#pairs[@]} setting(s)."
           else
-            echo "No support mail settings yet."
+            echo "No support mail or official API settings yet."
           fi
 
       - name: Deploy

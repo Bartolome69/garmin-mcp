@@ -34,9 +34,10 @@ from urllib.parse import quote, urlparse
 
 import anyio
 from starlette.requests import Request
+from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, crews, hooks, oauth, preview, store, support_mail
+from . import analytics, crews, hooks, oauth, official, preview, store, support_mail
 from .server import mcp
 from .session import (
     GarminError,
@@ -1667,6 +1668,9 @@ async def disconnect(request: Request) -> Response:
     token = str(form.get("t", "")).strip()
     _SESSIONS.pop(token, None)
     gone = store.get_user(token)
+    if gone is not None and official.configured():
+        # Garmin's official link goes too, told to Garmin as well as deleted here.
+        await anyio.to_thread.run_sync(official.disconnect, token)
     removed = store.delete_user(token)
     if removed and gone is not None:
         # Disconnect deletes everything, crews included.
@@ -1968,6 +1972,51 @@ async def mail_inbound(request: Request) -> Response:
     return Response(outcome, status_code=status, media_type="text/plain")
 
 
+# Garmin's official API (official.py), for preview accounts while it is built.
+# The preview tool hands out a sealed link to /official/start; Garmin sends the
+# person back to /official/callback; Garmin pushes their data to /official/push.
+@mcp.custom_route("/official/start", methods=["GET"])
+async def official_start(request: Request) -> Response:
+    if not official.configured():
+        return page("Not set up", "<div class=err>Garmin's official API isn't set up on this server yet.</div>")
+    target = official.authorize_url(request.query_params.get("t", ""))
+    if target is None:
+        return page("Link expired", "<h1>That link has expired</h1><p>Ask Claude for a new one: "
+                    "they last 15 minutes.</p>")
+    return RedirectResponse(target, status_code=302)
+
+
+@mcp.custom_route("/official/callback", methods=["GET"])
+async def official_callback(request: Request) -> Response:
+    if not official.configured():
+        return page("Not set up", "<div class=err>Garmin's official API isn't set up on this server yet.</div>")
+    code, state = request.query_params.get("code", ""), request.query_params.get("state", "")
+    if not code:
+        return page("Not connected", "<h1>Not connected</h1><p>Garmin didn't share access, so nothing "
+                    "changed. Ask Claude for a new link to try again.</p>")
+    try:
+        await anyio.to_thread.run_sync(official.finish, code, state)
+    except official.OfficialError as exc:
+        return page("Not connected", f"<div class=err>{html.escape(str(exc))}</div>")
+    except (OSError, ValueError, KeyError) as exc:
+        log.warning("official sign-in failed: %s", type(exc).__name__)
+        return page("Not connected", "<div class=err>Garmin couldn't be reached to finish connecting. "
+                    "Ask Claude for a new link and try again.</div>")
+    return page("Connected", "<h1>Connected to Garmin</h1><p>Daash is linked to Garmin's official API. "
+                "You can close this page and go back to your chat.</p>")
+
+
+@mcp.custom_route("/official/push/{key}", methods=["POST"])
+async def official_push(request: Request) -> Response:
+    if not official.configured() or not hmac.compare_digest(request.path_params["key"], official.push_key()):
+        return Response("not found", status_code=404)
+    body = await request.body()
+    # Garmin wants the 200 before any processing, within 30 seconds, so the
+    # data is kept after the answer has gone.
+    return Response("ok", media_type="text/plain",
+                    background=BackgroundTask(anyio.to_thread.run_sync, official.handle_push, body))
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health(request: Request) -> Response:
     return HTMLResponse("ok")
@@ -2246,9 +2295,11 @@ class SessionBinding:
         preview_token = preview.use(_preview_for(user))
         hook_token = hooks.use(_after_tool_for(user_token, user), _before_tool_for(user_token))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
+        official_token = official.use(user_token)
         try:
             await self.app(scope, receive, send)
         finally:
+            official.reset(official_token)
             crews.reset(crew_token)
             hooks.reset(hook_token)
             preview.reset(preview_token)

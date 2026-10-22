@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import sqlite3
@@ -82,6 +83,34 @@ CREATE INDEX IF NOT EXISTS oauth_tokens_client ON oauth_tokens (client_id);
 """
 
 
+# Garmin's official developer programme (official.py). A person's link to it
+# is kept apart from `users`: it holds Garmin's OAuth tokens, not a session
+# from the private sign-in, and Garmin identifies them by its own user id.
+# Garmin pushes data rather than answering for it, so what it sends is kept
+# here, encrypted, until the person disconnects.
+OFFICIAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS official_links (
+    user_token      TEXT PRIMARY KEY,
+    garmin_user_id  TEXT NOT NULL UNIQUE,
+    tokens_enc      BLOB NOT NULL,
+    permissions     TEXT NOT NULL,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS official_summaries (
+    garmin_user_id  TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    summary_id      TEXT NOT NULL,
+    start_time      INTEGER,
+    data_enc        BLOB NOT NULL,
+    received_at     INTEGER NOT NULL,
+    PRIMARY KEY (garmin_user_id, kind, summary_id)
+);
+CREATE INDEX IF NOT EXISTS official_summaries_time
+    ON official_summaries (garmin_user_id, kind, start_time);
+"""
+
+
 class StoreError(RuntimeError):
     """Something is wrong with the store's configuration."""
 
@@ -120,6 +149,7 @@ def _connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     conn.executescript(OAUTH_SCHEMA)
+    conn.executescript(OFFICIAL_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -172,6 +202,13 @@ def save_user(
                 "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen) FROM users WHERE email_hash = ?",
                 (email_hash,),
             ).fetchone()
+            # A link to Garmin's official API belongs to the person, not the
+            # row, so it moves to the new one rather than going with the old.
+            conn.execute(
+                "UPDATE OR IGNORE official_links SET user_token = ? WHERE user_token IN "
+                "(SELECT user_token FROM users WHERE email_hash = ? AND user_token != ?)",
+                (user_token, email_hash, user_token),
+            )
             conn.execute(
                 "DELETE FROM users WHERE email_hash = ? AND user_token != ?",
                 (email_hash, user_token),
@@ -534,3 +571,145 @@ def delete_tokens_for_subject(subject: str) -> int:
         return conn.execute(
             "DELETE FROM oauth_tokens WHERE subject = ?", (subject,)
         ).rowcount
+
+
+# --------------------------------------------------------------------------
+# Garmin's official developer programme
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OfficialLink:
+    user_token: str
+    garmin_user_id: str
+    tokens: dict
+    permissions: list[str]
+    created_at: int
+
+
+def _official_link(row: tuple | None) -> OfficialLink | None:
+    if not row:
+        return None
+    try:
+        tokens = json.loads(_cipher().decrypt(row[2]).decode())
+    except InvalidToken:
+        return None
+    return OfficialLink(row[0], row[1], tokens, json.loads(row[3]), row[4])
+
+
+_LINK_COLUMNS = "user_token, garmin_user_id, tokens_enc, permissions, created_at"
+
+
+def save_official_link(user_token: str, garmin_user_id: str, tokens: dict, permissions: list[str]) -> None:
+    """Link a person to their Garmin account on the official API, replacing any earlier link.
+
+    A Garmin account can be linked to one person here at a time, so a second
+    person linking the same account takes it over.
+    """
+    now = int(time.time())
+    encrypted = _cipher().encrypt(json.dumps(tokens).encode())
+    with _connect() as conn:
+        conn.execute(
+            "DELETE FROM official_links WHERE garmin_user_id = ? AND user_token != ?",
+            (garmin_user_id, user_token),
+        )
+        conn.execute(
+            "INSERT INTO official_links (user_token, garmin_user_id, tokens_enc, permissions, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_token) DO UPDATE SET "
+            "garmin_user_id = excluded.garmin_user_id, tokens_enc = excluded.tokens_enc, "
+            "permissions = excluded.permissions, updated_at = excluded.updated_at",
+            (user_token, garmin_user_id, encrypted, json.dumps(permissions), now, now),
+        )
+
+
+def update_official_tokens(user_token: str, tokens: dict) -> None:
+    encrypted = _cipher().encrypt(json.dumps(tokens).encode())
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE official_links SET tokens_enc = ?, updated_at = ? WHERE user_token = ?",
+            (encrypted, int(time.time()), user_token),
+        )
+
+
+def update_official_permissions(garmin_user_id: str, permissions: list[str]) -> bool:
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE official_links SET permissions = ?, updated_at = ? WHERE garmin_user_id = ?",
+            (json.dumps(permissions), int(time.time()), garmin_user_id),
+        ).rowcount > 0
+
+
+def official_link(user_token: str) -> OfficialLink | None:
+    with _connect() as conn:
+        row = conn.execute(
+            f"SELECT {_LINK_COLUMNS} FROM official_links WHERE user_token = ?", (user_token,)
+        ).fetchone()
+    return _official_link(row)
+
+
+def official_link_for_garmin_user(garmin_user_id: str) -> OfficialLink | None:
+    with _connect() as conn:
+        row = conn.execute(
+            f"SELECT {_LINK_COLUMNS} FROM official_links WHERE garmin_user_id = ?", (garmin_user_id,)
+        ).fetchone()
+    return _official_link(row)
+
+
+def forget_official_user(garmin_user_id: str) -> None:
+    """Delete a Garmin account's link and everything Garmin sent for it."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM official_links WHERE garmin_user_id = ?", (garmin_user_id,))
+        conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ?", (garmin_user_id,))
+
+
+def save_official_summaries(garmin_user_id: str, kind: str, summaries: list[tuple[str, int | None, dict]]) -> int:
+    """Keep what Garmin pushed: (summary id, start time, summary) each.
+
+    A summary Garmin sends again, with more of the day in it, replaces the
+    earlier one under the same id.
+    """
+    if not summaries:
+        return 0
+    cipher, now = _cipher(), int(time.time())
+    rows = [
+        (garmin_user_id, kind, summary_id, start, cipher.encrypt(json.dumps(data).encode()), now)
+        for summary_id, start, data in summaries
+    ]
+    with _connect() as conn:
+        conn.executemany(
+            "INSERT INTO official_summaries (garmin_user_id, kind, summary_id, start_time, data_enc, received_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(garmin_user_id, kind, summary_id) DO UPDATE SET "
+            "start_time = excluded.start_time, data_enc = excluded.data_enc, received_at = excluded.received_at",
+            rows,
+        )
+    return len(rows)
+
+
+def official_summary_counts(garmin_user_id: str) -> dict[str, dict]:
+    """How many of each kind Garmin has sent, and when the latest one starts and arrived."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT kind, COUNT(*), MAX(start_time), MAX(received_at) FROM official_summaries "
+            "WHERE garmin_user_id = ? GROUP BY kind",
+            (garmin_user_id,),
+        ).fetchall()
+    return {kind: {"count": count, "latest_start": latest, "last_received": received}
+            for kind, count, latest, received in rows}
+
+
+def official_summaries(garmin_user_id: str, kind: str, since: int = 0, limit: int = 500) -> list[dict]:
+    """The summaries of one kind starting at or after `since`, oldest first."""
+    cipher = _cipher()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT data_enc FROM official_summaries WHERE garmin_user_id = ? AND kind = ? "
+            "AND COALESCE(start_time, 0) >= ? ORDER BY start_time LIMIT ?",
+            (garmin_user_id, kind, since, limit),
+        ).fetchall()
+    out = []
+    for (blob,) in rows:
+        try:
+            out.append(json.loads(cipher.decrypt(blob).decode()))
+        except InvalidToken:
+            continue
+    return out

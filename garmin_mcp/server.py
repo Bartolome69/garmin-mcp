@@ -42,7 +42,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, crews, cycling, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
+from . import conditions, crews, cycling, official, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, session
 from .workouts import (
@@ -204,7 +204,7 @@ CREW_WRITES = {"join_crew", "update_crew", "leave_crew"}
 
 # Tools only preview accounts are offered yet. None at the moment: everything
 # built so far is everyone's. The mechanism stays for the next new thing.
-_PREVIEW_ONLY: set[str] = set()
+_PREVIEW_ONLY: set[str] = {"garmin_official"}
 
 
 # What a tool is for, as the model should read it. The model chooses a tool by
@@ -349,7 +349,7 @@ _TITLES = {"get_plan": "Training plan and progress"}
 
 # Tools that take something away: a workout, a plan, a date on the calendar,
 # a workout's old steps, or everything a crew kept for the person.
-DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew"}
+DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew", "garmin_official"}
 
 # Each tool's name as a directory listing shows it. Claude's Connectors
 # Directory flags any tool without one in its annotations.
@@ -384,6 +384,7 @@ _ANNOTATION_TITLES = {
     "unschedule_workout": "Unschedule workout",
     "update_workout": "Update workout",
     "leave_crew": "Leave crew",
+    "garmin_official": "Garmin official API (preview)",
 }
 
 
@@ -634,6 +635,7 @@ async def _read(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
 WRITES = {
     "create_workout", "update_workout", "create_strength_workout", "schedule_workout",
     "unschedule_workout", "delete_workout", "create_plan", "remove_plan", "update_activity",
+    "garmin_official",
 }
 
 
@@ -2984,6 +2986,47 @@ def _with_page_url(card: dict[str, Any]) -> dict[str, Any]:
     if link:
         crew["page_url"] = crew_page_url(link)
     return {**card, "crew": crew}
+
+
+@mcp.tool()
+@tool_errors
+async def garmin_official(action: str = "status", date: str = "tomorrow") -> dict[str, Any]:
+    """Preview: Daash on Garmin's official API, tried with your own account first.
+
+    Args:
+        action: "status" says whether this account is connected and what
+            Garmin has sent so far; "connect" gives a link to approve Daash on
+            Garmin's own sign-in page; "test_workout" sends an easy 20-minute
+            run through Garmin's Training API, scheduled on `date`;
+            "disconnect" ends the official link and deletes what Garmin sent.
+        date: For test_workout, the day to schedule it on.
+    """
+    user_token = official.current()
+    if user_token is None or not official.configured():
+        return {"error": "Garmin's official API is only on the hosted server, once it's set up there."}
+    action = (action or "status").strip().lower()
+    if action in ("status", "connect"):
+        found = await anyio.to_thread.run_sync(official.status, user_token)
+        if action == "connect" and found.get("connected"):
+            found["note"] = "Already connected. Say 'disconnect' first to connect a different Garmin account."
+        return found
+    if action == "disconnect":
+        gone = await anyio.to_thread.run_sync(official.disconnect, user_token)
+        return {"disconnected": gone}
+    if action == "test_workout":
+        model, summary, _ = build_workout(
+            "Daash test: easy 20 min", "running",
+            [{"type": "warmup", "duration_seconds": 300}, {"type": "interval", "duration_seconds": 900},
+             {"type": "cooldown", "duration_seconds": 300}],
+            description="Sent through Garmin's official Training API.",
+        )
+        workout = official.training_workout(model, "running")
+        try:
+            sent = await anyio.to_thread.run_sync(official.send_workout, user_token, workout, parse_date(date))
+        except official.OfficialError as exc:
+            return {"error": str(exc)}
+        return {**sent, "summary": summary, "note": "Sync the watch to see it."}
+    return {"error": f"Unknown action {action!r}. Use status, connect, test_workout or disconnect."}
 
 
 @_app_tool(CREW_VIEW)

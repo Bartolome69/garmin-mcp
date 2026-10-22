@@ -325,6 +325,8 @@ async def main() -> int:
                   f"{view_a} {view_b}")
             check("everyone gets shoes and recovery trends, list or not",
                   {"get_shoes", "get_recovery_trends"} <= names_a & names_b, str(sorted(names_b)))
+            check("only accounts on the list are offered Garmin's official API, while it's built",
+                  "garmin_official" in names_a and "garmin_official" not in names_b)
             # Nothing is in preview now, but the list must still be read right
             # for the next thing that is.
             status_a_on = await call(alice, "get_connection_status")
