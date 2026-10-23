@@ -83,6 +83,20 @@ INVITE_CODE = os.environ.get("GARMIN_MCP_INVITE", "").strip()
 OAUTH_ENABLED = os.environ.get("GARMIN_MCP_OAUTH", "").strip() == "1"
 OAUTH_PROVIDER = oauth.GarminOAuthProvider() if OAUTH_ENABLED else None
 
+# Which sign-in someone arriving from the connector gets: "password", their
+# Garmin email and password on Daash's form as since launch, or "official",
+# approving Daash on Garmin's own page. A browser can be put on either with
+# ?route=official or ?route=password on /connect, remembered in a cookie,
+# which is how the official route is tried before it's everyone's.
+SIGNUP_ROUTE = os.environ.get("GARMIN_MCP_SIGNUP", "password").strip().lower()
+ROUTE_COOKIE = "daash_route"
+ROUTES = ("official", "password")
+# Consents waiting after an approval on Garmin's page, by consent token, with
+# when they were staged: those are the ones that ask for an email if the
+# account has none, and that count as an official sign-up when allowed.
+_GARMIN_CONSENTS: dict[str, float] = {}
+_EMAIL_RE = re.compile(r"[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}")
+
 # Crude per-address throttle on sign-in attempts. Not a defence against a
 # determined attacker; enough to stop this being a comfortable place to test
 # stolen Garmin passwords.
@@ -1044,6 +1058,10 @@ button.busy, button.busy:hover { background:var(--accent-ink); cursor:progress }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration:2.4s } }
 .wait { margin:12px 0 0; font-size:0.9rem; text-align:center }
 .fine { margin:10px 0 0; font-size:0.8rem; text-align:center }
+a.button { display:block; margin-top:22px; padding:13px; font-size:1rem; font-weight:600; text-align:center;
+  border-radius:999px; background:var(--accent); color:#fff; text-decoration:none }
+a.button:hover { background:var(--accent-ink) }
+.code { letter-spacing:0.3em; font:600 1.4rem ui-monospace, SFMono-Regular, Menlo, monospace; text-align:center }
 button.secondary { background:var(--surface); color:var(--ink);
   border:1px solid var(--line); margin-top:10px }
 button.secondary:hover { background:var(--ground) }
@@ -1064,6 +1082,11 @@ _LOCK = (
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
     'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
     '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+)
+_TICK = (
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<polyline points="20 6 9 17 4 12"/></svg>'
 )
 
 
@@ -1250,9 +1273,64 @@ async def connect_form(request: Request) -> Response:
     # Set when Claude sent them here from /authorize; it ties this sign-in back
     # to the waiting authorization request.
     flow = request.query_params.get("flow", "")
+    route = _signup_route(request)
+    official_route = bool(flow) and OAUTH_ENABLED and route == "official"
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
-    analytics.capture("sign_in_shown", None, _with_source(request, {"via": "oauth" if flow else "direct"}))
+    analytics.capture("sign_in_shown", None, _with_source(request, {
+        "via": "oauth" if flow else "direct", "route": "official" if official_route else "password"}))
+    if official_route:
+        response = _garmin_intro(flow)
+    else:
+        response = _password_form(flow)
+    asked = request.query_params.get("route", "")
+    if asked in ROUTES and not flow:
+        # Opened by hand, to put this browser on a route before connecting.
+        response = page("Sign-in route set", f"""<h1>Sign-in route set</h1><p>Next time you connect Daash
+            from Claude or ChatGPT in this browser, you&rsquo;ll {"approve Daash on Garmin&rsquo;s own page"
+            if asked == "official" else "sign in with your Garmin email and password"}.</p>
+            <p class=note><a href="/connect?route={"password" if asked == "official" else "official"}">Switch
+            back</a></p>""")
+    if asked in ROUTES:
+        response.set_cookie(ROUTE_COOKIE, asked, max_age=30 * 86400, secure=True, httponly=True, samesite="lax")
+    return response
+
+
+def _signup_route(request: Request) -> str:
+    """"official" or "password": which sign-in this browser gets from the connector."""
+    if not official.configured() or request.query_params.get("usual") == "1":
+        return "password"
+    asked = request.query_params.get("route", "")
+    chosen = asked if asked in ROUTES else request.cookies.get(ROUTE_COOKIE, "")
+    if chosen in ROUTES:
+        return chosen
+    return "official" if SIGNUP_ROUTE == "official" else "password"
+
+
+def _usual_way(flow: str) -> str:
+    return f'<p class=fine>Already use Daash? <a href="{_connect_url(flow)}&amp;usual=1">Sign in the usual way</a></p>'
+
+
+def _garmin_intro(flow: str) -> Response:
+    """Before Garmin's page: what's about to happen, and the unverified label explained."""
+    return page(
+        "Connect your Garmin",
+        f"""
+        <h1>Connect your Garmin</h1>
+        <p>Daash reads your training from Garmin and puts workouts on your watch.
+        Garmin asks you to approve that on its own page.</p>
+        <p class=secure>{_LOCK}<span>You sign in on Garmin&rsquo;s site. Daash never sees your password.</span></p>
+        <p class=note>Garmin shows Daash as <strong>unverified</strong>. Every new app on
+        Garmin&rsquo;s developer programme starts that way.</p>
+        <a class=button href="/official/signup?flow={quote(flow, safe='')}">Continue with Garmin</a>
+        {_usual_way(flow)}
+        <p class=note style="margin-top:20px;text-align:center"><a href="{PRIVACY_URL}"
+        target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
+        """,
+    )
+
+
+def _password_form(flow: str) -> Response:
     return page(
         "Sign in to Garmin",
         f"""
@@ -1439,19 +1517,34 @@ def _signin_error(
     )
 
 
-def _consent_page(consent_token: str, parked: dict[str, Any]) -> Response:
+def _consent_page(
+    consent_token: str, parked: dict[str, Any], *, ask_email: bool = False, garmin: bool = False,
+    email: str = "", email_error: str = "",
+) -> Response:
     """Ask, by name, before handing a client access to this Garmin session.
 
     Everything variable here is escaped: the client name and the redirect come
     from an open registration endpoint, so both are attacker-controlled text.
+
+    After an approval on Garmin's page, an account with no email yet is asked
+    for one here, the last step: they have just said yes to Garmin, and the
+    address is how they're recognised if they connect again.
     """
     params = parked["params"]
     destination = str(params.redirect_uri)
     name = parked.get("client_name") or parked["client_id"]
     known = oauth.recognised_redirect(destination)
+    email_field = f"""
+          <label for=email style="margin-top:4px">Your email</label>
+          <input id=email name=email type=email required autocomplete=email value="{html.escape(email)}">
+          <p class="note hint" id=email-hint role=status hidden></p>
+          {f'<div class=err role=alert>{html.escape(email_error)}</div>' if email_error else ''}
+          <p class="note hint" style="margin-bottom:16px">To sign back in, and the odd Daash update. Easy to stop.</p>
+    """ if ask_email else ""
     form = f"""
         <form method=post action=/oauth/consent style="margin-top:8px">
           <input type=hidden name=consent value="{html.escape(consent_token)}">
+          {email_field}
           <style>
             .chips {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }}
             .chip input {{ position: absolute; opacity: 0; width: 0; height: 0; }}
@@ -1463,10 +1556,11 @@ def _consent_page(consent_token: str, parked: dict[str, Any]) -> Response:
           <p class=note style="margin:0 0 8px">How did you hear about Daash? <span style="opacity:.7">Optional</span></p>
           <div class=chips>{"".join(f'<label class=chip><input type=radio name=heard value="{v}"><span>{t}</span></label>' for v, t in HEARD_FROM)}</div>
           <button name=decision value=allow>Allow</button>
-          <button name=decision value=deny class=secondary>Cancel</button>
+          <button name=decision value=deny class=secondary formnovalidate>Cancel</button>
         </form>
         <p class=note style="margin-top:20px">You stay signed in to Garmin
         either way. Cancelling refuses this app, it does not disconnect you.</p>
+        {_EMAIL_HINT_SCRIPT if ask_email else ""}
     """
 
     # Claude or ChatGPT, known by the exact address the access goes back to.
@@ -1475,9 +1569,10 @@ def _consent_page(consent_token: str, parked: dict[str, Any]) -> Response:
     app = oauth.app_for_redirect(destination) if known else None
     if app in ("Claude", "ChatGPT"):
         host = urlparse(destination).hostname or ""
+        opening = "Garmin approved." if garmin else f"You started this from {app}."
         body = f"""
         <h1>Connect Daash to {app}?</h1>
-        <p class=secure>{_LOCK}<span>You started this from {app}. It will be able
+        <p class=secure>{_TICK if garmin else _LOCK}<span>{opening} {app} will be able
         to read your Garmin data and add or change workouts on your watch.</span></p>
         <p class=note>Access goes back to {html.escape(host)} only.</p>
         {form}
@@ -1521,6 +1616,28 @@ async def oauth_consent(request: Request) -> Response:
     allow = str(form.get("decision", "")) == "allow"
     heard = str(form.get("heard", ""))
     subject = OAUTH_PROVIDER.staged_subject(consent_token)
+    via_garmin = consent_token in _GARMIN_CONSENTS
+
+    if allow and subject and via_garmin:
+        staged = OAUTH_PROVIDER.staged(consent_token)
+        if staged is None:
+            return _consent_expired()
+        parked = staged[1]
+        if store.email_for(subject) is None:
+            email = str(form.get("email", "")).strip()
+            if not _EMAIL_RE.fullmatch(email) or len(email) > 254:
+                return _consent_page(consent_token, parked, ask_email=True, garmin=True, email=email,
+                                     email_error="That doesn't look like an email address.")
+            fingerprint = store.email_fingerprint(email)
+            if [t for t in store.tokens_for(fingerprint) if t != subject]:
+                # The address already has an account: prove it's theirs
+                # before the approval joins it.
+                return await _send_code(request, consent_token, email, heard)
+            store.set_user_email(subject, email, mask_email(email) or "hidden")
+            _official_connected(request, subject, parked, returning=False)
+        else:
+            _official_connected(request, subject, parked, returning=True)
+        _GARMIN_CONSENTS.pop(consent_token, None)
 
     destination = (
         OAUTH_PROVIDER.approve(consent_token)
@@ -1534,12 +1651,123 @@ async def oauth_consent(request: Request) -> Response:
             analytics.capture("heard_from", store.email_hash_for(subject) if subject else None,
                               _with_source(request, {"answer": heard}))
         return RedirectResponse(destination, status_code=303)
+    return _consent_expired()
+
+
+def _consent_expired() -> Response:
     return page(
         "Request expired",
         "<div class=err>That request has expired or was already answered. "
         "Start again from the connector in Claude.</div>",
         400,
     )
+
+
+def _official_connected(request: Request, user_token: str, parked: dict[str, Any], *,
+                        returning: bool, joined: bool = False) -> None:
+    """connector_connected, for someone who came in through Garmin's page."""
+    user = store.get_user(user_token)
+    email = store.email_for(user_token)
+    destination = str(parked["params"].redirect_uri)
+    app = oauth.app_for_redirect(destination) if oauth.recognised_redirect(destination) else None
+    analytics.capture("connector_connected", (user.email_hash if user else None) or None, _with_source(request, {
+        "account": user.email_masked if user else None,
+        **({"email": email} if email else {}),
+        "via": "oauth",
+        "route": "official",
+        **({"app": app} if app else {}),
+        "returning": returning,
+        "joined": joined,
+        "workouts": official.can_write(user_token),
+    }))
+
+
+def _code_page(sealed: str, email: str, *, error: str = "", note: str = "") -> Response:
+    return page(
+        "Check your email",
+        f"""
+        <h1>Check your email</h1>
+        <p>You already use Daash with <strong>{html.escape(mask_email(email) or email)}</strong>.
+        We&rsquo;ve sent a 6-digit code, so your plans, crew and history come with you.</p>
+        <form method=post action=/oauth/confirm data-wait="Checking&hellip;">
+          <input type=hidden name=s value="{html.escape(sealed)}">
+          <label for=code>Code</label>
+          <input id=code name=code class=code required inputmode=numeric autocomplete=one-time-code
+                 pattern="[0-9 ]{{6,7}}" maxlength=7 autofocus>
+          {f'<div class=err role=alert>{html.escape(error)}</div>' if error else ''}
+          {f'<p class="note hint">{html.escape(note)}</p>' if note else ''}
+          <button>Confirm</button>
+          <p class=fine>Arrives in a few seconds. Check spam if not.</p>
+          <button class=secondary name=action value=resend formnovalidate>Send a new code</button>
+          <button class=secondary name=action value=change formnovalidate>Use a different email</button>
+        </form>
+        """,
+    )
+
+
+async def _send_code(request: Request, consent_token: str, email: str, heard: str) -> Response:
+    """Email a code to an address that already has an account, and ask for it."""
+    sealed = official._seal({"c": consent_token, "e": email, "h": heard})
+    if _too_many_attempts(_client_address(request)):
+        return _code_page(sealed, email, error="Too many tries from here. Wait a few minutes, then send a new code.")
+    fingerprint = store.email_fingerprint(email)
+    code = store.new_email_code(fingerprint)
+    if code is None:
+        if store.code_wait(fingerprint) == "day":
+            return _code_page(sealed, email, error="That address has had its codes for today. Try again tomorrow, "
+                              "or use a different email.")
+        return _code_page(sealed, email, note="A code went out under a minute ago. Use that one, or send a new one in a minute.")
+    try:
+        await anyio.to_thread.run_sync(support_mail.send_code, email, code)
+    except (OSError, KeyError):
+        log.warning("sign-in code not sent")
+        return _code_page(sealed, email, error="Daash couldn't send the code just now. Send a new one in a minute.")
+    analytics.capture("email_code_sent", fingerprint, _with_source(request, {}))
+    return _code_page(sealed, email)
+
+
+@mcp.custom_route("/oauth/confirm", methods=["POST"])
+async def oauth_confirm(request: Request) -> Response:
+    """The code from the email: proof the address, and so its account, is theirs."""
+    if not OAUTH_ENABLED:
+        return page("Not found", "<div class=err>Unknown page.</div>", 404)
+    form = await request.form()
+    sealed = str(form.get("s", ""))
+    opened = official._open(sealed, max_age=store.CODE_LIFETIME + 120)
+    staged = OAUTH_PROVIDER.staged(opened["c"]) if opened and opened.get("c") else None
+    if not opened or staged is None:
+        return _consent_expired()
+    consent_token, email, heard = opened["c"], opened["e"], opened.get("h", "")
+    subject, parked = staged
+    action = str(form.get("action", ""))
+    if action == "change":
+        return _consent_page(consent_token, parked, ask_email=True, garmin=True)
+    if action == "resend":
+        return await _send_code(request, consent_token, email, heard)
+    fingerprint = store.email_fingerprint(email)
+    checked = store.check_email_code(fingerprint, str(form.get("code", "")))
+    if checked == "wrong":
+        return _code_page(sealed, email, error="That code isn't right. Check the latest email and try again.")
+    if checked != "ok":
+        return _code_page(sealed, email, error="That code has expired or had too many tries. Send a new one.")
+    others = [t for t in store.tokens_for(fingerprint) if t != subject]
+    if others:
+        target = others[-1]
+        store.join_official_account(subject, target)
+        OAUTH_PROVIDER.restage(consent_token, target)
+        _SESSIONS.pop(subject, None)
+    else:
+        # The account went in the minutes between: this one keeps the address.
+        target = subject
+        store.set_user_email(subject, email, mask_email(email) or "hidden")
+    _official_connected(request, target, parked, returning=bool(others), joined=bool(others))
+    _GARMIN_CONSENTS.pop(consent_token, None)
+    destination = OAUTH_PROVIDER.approve(consent_token)
+    if destination is None:
+        return _consent_expired()
+    if heard in {v for v, _ in HEARD_FROM}:
+        analytics.capture("heard_from", fingerprint, _with_source(request, {"answer": heard}))
+    return RedirectResponse(destination, status_code=303)
 
 
 def _finish(
@@ -2027,11 +2255,57 @@ async def official_start(request: Request) -> Response:
     return RedirectResponse(target, status_code=302)
 
 
+@mcp.custom_route("/official/signup", methods=["GET"])
+async def official_signup(request: Request) -> Response:
+    """From Connect your Garmin to Garmin's own approval page, with the connector's request carried along."""
+    flow = request.query_params.get("flow", "")
+    if not (OAUTH_ENABLED and official.configured()) or OAUTH_PROVIDER.pending(flow) is None:
+        return _consent_expired()
+    analytics.capture("garmin_sign_in_started", None, _with_source(request, {}))
+    return RedirectResponse(official.signup_url(flow), status_code=302)
+
+
+async def _signup_callback(request: Request, code: str, state: str, flow: str) -> Response:
+    """Back from Garmin's page during a sign-up: make or find the account, then the Allow page."""
+    retry = f'<a class=button href="/official/signup?flow={quote(flow, safe="")}">Try again with Garmin</a>'
+    if not code:
+        analytics.capture("garmin_declined", None, _with_source(request, {}))
+        return page("Not connected", f"""<h1>Not connected</h1><p>Garmin didn't share access, so nothing
+                    changed and nothing was kept.</p>{retry}{_usual_way(flow)}""")
+    try:
+        approval = await anyio.to_thread.run_sync(official.finish_signup, code, state)
+    except official.OfficialError as exc:
+        return page("Not connected", f"<div class=err>{html.escape(str(exc))}</div>{retry}")
+    except (OSError, ValueError, KeyError) as exc:
+        log.warning("official sign-up failed: %s", type(exc).__name__)
+        return page("Not connected", "<div class=err>Garmin couldn't be reached to finish connecting. "
+                    f"Try again in a minute.</div>{retry}")
+    if approval.new:
+        # Everything is new to someone just connecting.
+        store.claim_news(approval.user_token, NEWS_VERSION)
+    analytics.capture("garmin_approved", None, _with_source(request, {
+        "new": approval.new, "workouts": "WORKOUT_IMPORT" in approval.permissions}))
+    staged = OAUTH_PROVIDER.stage(approval.flow, approval.user_token)
+    if not staged:
+        return page("Sign-in expired", "<div class=err>That sign-in took too long and the request has "
+                    "expired. Start again from the connector in Claude.</div>", 400)
+    consent_token, parked = staged
+    now = time.time()
+    for stale in [t for t, at in _GARMIN_CONSENTS.items() if at < now - 3600]:
+        _GARMIN_CONSENTS.pop(stale, None)
+    _GARMIN_CONSENTS[consent_token] = now
+    return _consent_page(consent_token, parked, garmin=True,
+                         ask_email=store.email_for(approval.user_token) is None)
+
+
 @mcp.custom_route("/official/callback", methods=["GET"])
 async def official_callback(request: Request) -> Response:
     if not official.configured():
         return page("Not set up", "<div class=err>Garmin's official API isn't set up on this server yet.</div>")
     code, state = request.query_params.get("code", ""), request.query_params.get("state", "")
+    flow = official.signup_flow(state) if state else None
+    if flow and OAUTH_ENABLED:
+        return await _signup_callback(request, code, state, flow)
     if not code:
         return page("Not connected", "<h1>Not connected</h1><p>Garmin didn't share access, so nothing "
                     "changed. Ask Claude for a new link to try again.</p>")

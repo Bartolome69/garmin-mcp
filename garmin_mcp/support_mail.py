@@ -181,3 +181,33 @@ def handle(body: bytes, headers: dict[str, str]) -> tuple[int, str]:
         return 502, "couldn't forward it yet"
     log.info("support mail %s: %s", (event.get("data") or {}).get("email_id"), outcome)
     return 200, outcome
+
+
+# The 6-digit code that proves someone owns the address an account was made
+# with, sent only when a Garmin approval is about to be joined to that account.
+CODE_FROM = os.environ.get("CODE_FROM", "Daash <hello@daash.run>")
+
+
+def can_send() -> bool:
+    return bool(os.environ.get("RESEND_API_KEY"))
+
+
+def send_code(to: str, code: str) -> None:
+    """Email a sign-in code. Raises OSError if Resend couldn't take it."""
+    spaced = f"{code[:3]} {code[3:]}"
+    message = {
+        "from": CODE_FROM,
+        "to": [to],
+        "subject": f"Your Daash code: {spaced}",
+        "text": (
+            f"Your Daash code is {spaced}\n\n"
+            "Type it on the page that asked for it. It works for 10 minutes.\n\n"
+            "Someone, hopefully you, is connecting Daash with this email address. "
+            "If that wasn't you, ignore this email and nothing changes.\n"
+        ),
+    }
+    try:
+        _request("POST", "/emails", message)
+    except urllib.error.URLError as exc:
+        log.warning("code email not sent: %s", type(exc).__name__)
+        raise OSError("code email not sent") from None

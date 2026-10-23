@@ -17,6 +17,8 @@ to be set; the preview tool shows it, for pasting into Garmin's endpoint tool.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import base64
 import calendar
 import hashlib
@@ -117,10 +119,30 @@ def authorize_url(link_token: str) -> str | None:
     opened = _open(link_token)
     if not opened or not opened.get("u"):
         return None
+    return _garmin_page({"u": opened["u"]})
+
+
+def signup_url(flow: str) -> str:
+    """Garmin's approval page for someone signing up from Claude or ChatGPT.
+
+    `flow` is the connector's waiting sign-in request, carried through Garmin
+    and back in the sealed state, so the callback can hand the new account
+    back to the app that asked.
+    """
+    return _garmin_page({"f": flow})
+
+
+def signup_flow(state: str) -> str | None:
+    """The connector request a sign-up's state carries, or None for a link sign-in or a lapsed one."""
+    opened = _open(state)
+    return opened.get("f") if opened else None
+
+
+def _garmin_page(carry: dict) -> str:
     verifier = secrets.token_urlsafe(64)[:96]
     # The verifier and who is signing in travel in the state, sealed, and
     # come back with the code: nothing to keep in memory between the two.
-    state = _seal({"u": opened["u"], "v": verifier})
+    state = _seal({**carry, "v": verifier})
     query = urllib.parse.urlencode({
         "response_type": "code",
         "client_id": os.environ["GARMIN_OFFICIAL_CLIENT_ID"].strip(),
@@ -231,10 +253,45 @@ def finish(code: str, state: str) -> str:
     user_token = opened["u"]
     if store.get_user(user_token) is None:
         raise OfficialError("Daash doesn't recognise this account any more. Connect Daash again first.")
+    garmin_user_id, tokens, permissions = _exchange(code, opened["v"])
+    store.save_official_link(user_token, garmin_user_id, tokens, permissions)
+    return garmin_user_id
+
+
+@dataclass(frozen=True)
+class Approval:
+    """Someone approved Daash on Garmin's page while signing up."""
+    user_token: str
+    garmin_user_id: str
+    flow: str
+    new: bool
+    permissions: list[str]
+
+
+def finish_signup(code: str, state: str) -> Approval:
+    """Exchange Garmin's code and find or make the Daash account it belongs to.
+
+    Garmin's approval says which Garmin account this is, so someone who
+    signed up this way before is recognised by it and gets their own account
+    back. Anyone else gets a new account on the official API alone.
+    """
+    opened = _open(state)
+    if not opened or not opened.get("f") or not opened.get("v"):
+        raise OfficialError("That sign-in has expired. Start again from the connector in Claude.")
+    garmin_user_id, tokens, permissions = _exchange(code, opened["v"])
+    known = store.official_link_for_garmin_user(garmin_user_id)
+    if known is not None and store.get_user(known.user_token) is not None:
+        store.save_official_link(known.user_token, garmin_user_id, tokens, permissions)
+        return Approval(known.user_token, garmin_user_id, opened["f"], False, permissions)
+    user_token = store.save_official_user(garmin_user_id, tokens, permissions)
+    return Approval(user_token, garmin_user_id, opened["f"], True, permissions)
+
+
+def _exchange(code: str, verifier: str) -> tuple[str, dict, list[str]]:
     answer = _post_form(TOKEN_URL, {
         "grant_type": "authorization_code",
         "code": code,
-        "code_verifier": opened["v"],
+        "code_verifier": verifier,
         "redirect_uri": f"{base_url()}/official/callback",
     })
     tokens = _tokens_from(answer)
@@ -242,8 +299,13 @@ def finish(code: str, state: str) -> str:
     if not garmin_user_id:
         raise OfficialError("Garmin didn't say which account this is. Try connecting again.")
     permissions = _call(tokens["access_token"], "GET", "/partner-gateway/rest/user/permissions").get("permissions") or []
-    store.save_official_link(user_token, garmin_user_id, tokens, list(permissions))
-    return garmin_user_id
+    return garmin_user_id, tokens, list(permissions)
+
+
+def can_write(user_token: str) -> bool:
+    """Whether the person let Daash put workouts on their watch when they approved it."""
+    link = store.official_link(user_token)
+    return link is not None and "WORKOUT_IMPORT" in (link.permissions or [])
 
 
 # --------------------------------------------------------------------------

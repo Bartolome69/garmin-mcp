@@ -261,6 +261,21 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         entry = _AWAITING_CONSENT.get(consent_token)
         return entry["subject"] if entry else None
 
+    def staged(self, consent_token: str) -> tuple[str, dict[str, Any]] | None:
+        """(subject, the parked request) behind a consent token, without spending it."""
+        _sweep()
+        entry = _AWAITING_CONSENT.get(consent_token)
+        parked = _PENDING_AUTH.get(entry["flow"]) if entry else None
+        return (entry["subject"], parked) if entry and parked else None
+
+    def restage(self, consent_token: str, subject: str) -> bool:
+        """Point a waiting consent at another account: the one a Garmin approval was just joined to."""
+        entry = _AWAITING_CONSENT.get(consent_token)
+        if entry is None:
+            return False
+        entry["subject"] = subject
+        return True
+
     def approve(self, consent_token: str) -> str | None:
         """Consent given: mint the code and hand back the return URL."""
         entry = _AWAITING_CONSENT.pop(consent_token, None)

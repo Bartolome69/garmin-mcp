@@ -1,0 +1,386 @@
+"""Signing up by approving Daash on Garmin's own page, against the hosted server.
+
+Runs the connector's OAuth sign-in with the Garmin route switched on for one
+browser: Connect your Garmin, Garmin's page (stubbed), the Allow page asking
+for an email, and the code by email when that address already has an
+account. Then the tools, for an account with no Garmin Connect behind it.
+No network: Garmin and the email sender are stubbed.
+
+    .venv/bin/python tests/signup_test.py
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import json
+import os
+import re
+import secrets
+import sys
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+DB = ROOT / "tests" / "signup-test.sqlite3"
+for suffix in ("", "-wal", "-shm"):
+    Path(str(DB) + suffix).unlink(missing_ok=True)
+
+from cryptography.fernet import Fernet  # noqa: E402
+
+PORT = 8934
+os.environ["GARMIN_MCP_DB"] = str(DB)
+os.environ["GARMIN_MCP_SECRET"] = Fernet.generate_key().decode()
+os.environ["GARMIN_MCP_OAUTH"] = "1"
+os.environ["GARMIN_MCP_BASE_URL"] = f"http://127.0.0.1:{PORT}"
+os.environ["GARMIN_OFFICIAL_CLIENT_ID"] = "client-123"
+os.environ["GARMIN_OFFICIAL_CLIENT_SECRET"] = "shh-secret"
+os.environ.pop("GARMIN_MCP_SIGNUP", None)
+os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
+os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
+
+from garminconnect import GarminConnectAuthenticationError  # noqa: E402,F401
+
+from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
+
+import garmin_mcp.hosted as hosted  # noqa: E402
+import garmin_mcp.session as session_mod  # noqa: E402
+from garmin_mcp import official, store, support_mail  # noqa: E402
+
+BASE = f"http://127.0.0.1:{PORT}"
+REDIRECT = "http://localhost:9999/callback"
+
+
+class _Garth:
+    def __init__(self, marker: str) -> None:
+        self._marker = marker
+
+    def dumps(self) -> str:
+        return json.dumps({"di_token": self._marker})
+
+
+def fake_build_client(*, prompt_mfa, email=None, password=None):
+    """The password route's Garmin sign-in, stubbed: anyone gets in."""
+    class Stub(FakeGarmin):
+        @property
+        def client(self):
+            return _Garth(f"{email}-token")
+
+        def login(self, tokenstore=None):
+            return (None, None)
+
+        def get_user_profile(self):
+            return PROFILE
+
+    return Stub()
+
+
+hosted.build_client = fake_build_client
+session_mod.build_client = fake_build_client
+
+
+def http(method: str, path: str, body=None, headers=None, as_json=False):
+    url = path if path.startswith("http") else f"{BASE}{path}"
+    data, head = None, dict(headers or {})
+    if body is not None:
+        if as_json:
+            data = json.dumps(body).encode()
+            head.setdefault("content-type", "application/json")
+        else:
+            data = urllib.parse.urlencode(body).encode()
+            head.setdefault("content-type", "application/x-www-form-urlencoded")
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+
+    request = urllib.request.Request(url, data=data, headers=head, method=method)
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as r:
+            return r.status, r.read().decode(), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(), dict(e.headers)
+
+
+# Garmin, stubbed: which Garmin account the next approval is, and what it allows.
+NEXT_GARMIN = {"id": "g-new-1", "permissions": ["ACTIVITY_EXPORT", "HEALTH_EXPORT", "WORKOUT_IMPORT"]}
+
+
+def fake_post_form(url, fields):
+    return {"access_token": f"access-{secrets.token_hex(4)}", "refresh_token": "refresh",
+            "expires_in": 86400, "refresh_token_expires_in": 7775998}
+
+
+def fake_call(access_token, method, path, body=None):
+    if path.endswith("/user/id"):
+        return {"userId": NEXT_GARMIN["id"]}
+    if path.endswith("/user/permissions"):
+        return {"permissions": NEXT_GARMIN["permissions"]}
+    if path == "/workoutportal/workout/v2":
+        return {"workoutId": 501, "workoutName": body["workoutName"], "ownerId": 7}
+    return {}
+
+
+official._post_form = fake_post_form
+official._call = fake_call
+
+SENT_CODES: list[tuple[str, str]] = []
+support_mail.send_code = lambda to, code: SENT_CODES.append((to, code))
+
+
+async def main() -> int:
+    import uvicorn
+
+    failures: list[str] = []
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        print(f"  {'PASS' if ok else 'FAIL'}  {name}{f' — {detail}' if detail else ''}")
+        if not ok:
+            failures.append(name)
+
+    reported: list[tuple[str, dict]] = []
+    hosted.analytics.capture = lambda event, subject=None, props=None: reported.append((event, props or {}))
+
+    app = hosted.build_app()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="error"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(100):
+        if server.started:
+            break
+        await asyncio.sleep(0.05)
+
+    def run(fn):
+        return asyncio.get_event_loop().run_in_executor(None, fn)
+
+    _, body, _ = await run(lambda: http("POST", "/register", {
+        "client_name": "Test Client", "redirect_uris": [REDIRECT],
+        "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
+        "token_endpoint_auth_method": "none"}, as_json=True))
+    client_id = json.loads(body)["client_id"]
+
+    async def start() -> tuple[str, str]:
+        """A fresh connector sign-in: (flow, PKCE verifier)."""
+        verifier = secrets.token_urlsafe(48)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        query = urllib.parse.urlencode({"response_type": "code", "client_id": client_id, "redirect_uri": REDIRECT,
+                                        "code_challenge": challenge, "code_challenge_method": "S256", "state": "st"})
+        _, _, headers = await run(lambda: http("GET", f"/authorize?{query}"))
+        location = headers.get("location", "")
+        return urllib.parse.parse_qs(urllib.parse.urlparse(location).query)["flow"][0], verifier
+
+    async def through_garmin(flow: str) -> tuple[int, str]:
+        """Continue with Garmin, approve on Garmin's (stubbed) page, land back on Daash."""
+        code, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow)}"))
+        garmin_page = headers.get("location", "")
+        state = urllib.parse.parse_qs(urllib.parse.urlparse(garmin_page).query).get("state", [""])[0]
+        if code != 302 or not garmin_page.startswith(official.AUTHORIZE_URL) or not state:
+            return code, f"not sent to Garmin: {code} {garmin_page[:80]}"
+        code, body, _ = await run(lambda: http(
+            "GET", f"/official/callback?code=garmin-code&state={urllib.parse.quote(state)}"))
+        return code, body
+
+    def consent_of(body: str) -> str:
+        found = re.search(r'name=consent value="([^"]+)"', body)
+        return found.group(1) if found else ""
+
+    async def token_for(back: str, verifier: str) -> str:
+        auth_code = urllib.parse.parse_qs(urllib.parse.urlparse(back).query).get("code", [""])[0]
+        _, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code", "code": auth_code, "redirect_uri": REDIRECT,
+            "client_id": client_id, "code_verifier": verifier}))
+        return json.loads(body).get("access_token", "")
+
+    def subject_of(access: str) -> str:
+        row = store.load_oauth_token(access, "access")
+        return row["subject"] if row else ""
+
+    async def call_tool(access: str, tool: str, args: dict | None = None) -> dict:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+        import httpx2
+        async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {access}"}) as client:
+            async with streamable_http_client(f"{BASE}/mcp", http_client=client) as (r, w):
+                async with ClientSession(r, w) as sess:
+                    await sess.initialize()
+                    result = await sess.call_tool(tool, args or {})
+                    return json.loads(result.content[0].text)
+
+    from types import SimpleNamespace
+    parked = {"params": SimpleNamespace(redirect_uri="https://claude.ai/api/mcp/auth_callback"),
+              "client_name": "Claude", "client_id": "c"}
+    claude_page = bytes(hosted._consent_page("tok", parked, garmin=True, ask_email=True).body).decode()
+    check("for Claude, the Allow page says Garmin approved and asks for the email above the chips",
+          "Garmin approved. Claude will be able" in claude_page
+          and claude_page.index("name=email") < claude_page.index("name=heard")
+          and "formnovalidate>Cancel" in claude_page)
+    plain = bytes(hosted._consent_page("tok", parked).body).decode()
+    check("after a password sign-in it's unchanged: no email field",
+          "name=email" not in plain and "You started this from Claude" in plain)
+
+    try:
+        print("choosing the route")
+        flow, verifier = await start()
+        _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow}"))
+        check("by default the connector still asks for the Garmin password",
+              "Garmin password" in body and "Continue with Garmin" not in body)
+        _, body, headers = await run(lambda: http("GET", f"/connect?flow={flow}&route=official"))
+        check("?route=official shows Connect your Garmin, with the unverified label explained",
+              "Continue with Garmin" in body and "unverified" in body and "Garmin password" not in body
+              and "Sign in the usual way" in body, body[:200])
+        check("and remembers the choice for this browser",
+              "daash_route=official" in headers.get("set-cookie", ""), headers.get("set-cookie", ""))
+        _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow}", headers={"Cookie": "daash_route=official"}))
+        check("a browser on the official route gets it without asking again", "Continue with Garmin" in body)
+        _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow}&usual=1",
+                                            headers={"Cookie": "daash_route=official"}))
+        check("'Sign in the usual way' is today's password form", "Garmin password" in body)
+        shown = [p for e, p in reported if e == "sign_in_shown"]
+        check("each showing says which route it was", [p.get("route") for p in shown[-4:]]
+              == ["password", "official", "official", "password"], str(shown[-4:]))
+
+        print("\na new person")
+        code, body = await through_garmin(flow)
+        check("after Garmin's page, the Allow page asks for an email",
+              code == 200 and 'name=email' in body and "Your email" in body
+              and 'name=heard' in body, body[:300])
+        consent = consent_of(body)
+        approved = [p for e, p in reported if e == "garmin_approved"]
+        check("the approval is counted, new, with workouts allowed",
+              approved and approved[-1] == {"new": True, "workouts": True}, str(approved[-1:]))
+        new_account = official.store.official_link_for_garmin_user("g-new-1")
+        check("the account exists already, on the official route alone, with no Connect session",
+              new_account is not None and not store.has_connect(new_account.user_token)
+              and store.official_only(new_account.user_token) == "g-new-1"
+              and store.idle_users(-10) == [], str(new_account))
+        code, body, _ = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent, "decision": "allow", "email": "not-an-email"}))
+        check("an address that isn't one is sent back with a note", code == 200
+              and "look like an email address" in body and consent_of(body) == consent)
+        code, _, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent, "decision": "allow", "email": "sam@example.com", "heard": "friend"}))
+        back = headers.get("location", "")
+        check("with an email, Allow goes back to the app", code == 303 and back.startswith(REDIRECT), f"{code} {back[:80]}")
+        connected = [p for e, p in reported if e == "connector_connected"]
+        check("and is reported as an official sign-up, with the address",
+              connected and connected[-1].get("route") == "official" and connected[-1].get("email") == "sam@example.com"
+              and connected[-1].get("returning") is False, str(connected[-1:]))
+        check("the chip goes with it", [p for e, p in reported if e == "heard_from"][-1].get("answer") == "friend")
+        check("the address is kept on the account", store.email_for(new_account.user_token) == "sam@example.com")
+        sam = await token_for(back, verifier)
+        check("and the token belongs to that account", subject_of(sam) == new_account.user_token)
+
+        print("\nthe tools, with no Garmin Connect behind them")
+        status = await call_tool(sam, "get_connection_status")
+        check("connection status says it's Garmin's official API", status.get("via") == "Garmin's official API", str(status))
+        ready = await call_tool(sam, "get_readiness")
+        check("a tool the official API can't answer says so plainly, without trying Connect",
+              "Not available on this connection" in str(ready.get("error", "")), str(ready)[:200])
+        made = await call_tool(sam, "create_workout", {"name": "Easy 5k", "steps": [
+            {"type": "interval", "distance_meters": 5000}]})
+        check("a workout goes through the Training API", isinstance(made.get("workout_id"), int), str(made)[:200])
+        plan = await call_tool(sam, "get_plan")
+        check("get_plan says on day one that Garmin sends from today, not that nothing was run",
+              "error" not in plan and "Garmin sends training from then on" in json.dumps(plan), str(plan)[:300])
+
+        print("\nthe same person, reconnecting")
+        flow2, verifier2 = await start()
+        code, body = await through_garmin(flow2)
+        check("Garmin's approval recognises them: no email asked",
+              code == 200 and "Allow" in body and "name=email" not in body, body[:200])
+        code, _, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent_of(body), "decision": "allow"}))
+        again = await token_for(headers.get("location", ""), verifier2)
+        check("and they get their own account back", subject_of(again) == new_account.user_token)
+        check("reported as returning", [p for e, p in reported if e == "connector_connected"][-1].get("returning") is True)
+
+        print("\nsomeone already on Daash, coming through Garmin")
+        flow3, verifier3 = await start()
+        _, _, _ = await run(lambda: http("POST", "/connect", {"email": "runner@example.com", "password": "pw", "flow": flow3}))
+        existing = store.tokens_for(store.email_fingerprint("runner@example.com"))
+        check("they have an account from the password route", len(existing) == 1 and store.has_connect(existing[0]))
+        flow4, verifier4 = await start()
+        NEXT_GARMIN["id"] = "g-runner"
+        code, body = await through_garmin(flow4)
+        consent4 = consent_of(body)
+        code, body, _ = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent4, "decision": "allow", "email": "Runner@Example.com "}))
+        sealed = re.search(r'name=s value="([^"]+)"', body)
+        check("their address has an account, so a code is emailed to it",
+              "Check your email" in body and SENT_CODES and SENT_CODES[-1][0] == "Runner@Example.com" and sealed,
+              body[:200])
+        sealed = sealed.group(1) if sealed else ""
+        code, body, _ = await run(lambda: http("POST", "/oauth/confirm", {"s": sealed, "action": "resend"}))
+        check("asking for another straight away says one just went", "under a minute ago" in body and len(SENT_CODES) == 1)
+        wrong = "000000" if SENT_CODES[-1][1] != "000000" else "111111"
+        code, body, _ = await run(lambda: http("POST", "/oauth/confirm", {"s": sealed, "code": wrong}))
+        check("a wrong code is refused", "code isn" in body and "t right" in body)
+        code, _, headers = await run(lambda: http("POST", "/oauth/confirm", {
+            "s": sealed, "code": SENT_CODES[-1][1][:3] + " " + SENT_CODES[-1][1][3:]}))
+        joined_back = headers.get("location", "")
+        check("the right code goes back to the app", code == 303 and joined_back.startswith(REDIRECT), f"{code} {joined_back[:80]}")
+        runner = await token_for(joined_back, verifier4)
+        check("joined to the account they already had, which keeps reading through Connect",
+              subject_of(runner) == existing[0] and store.official_link(existing[0]) is not None
+              and store.official_link(existing[0]).garmin_user_id == "g-runner"
+              and store.official_only(existing[0]) is None and store.has_connect(existing[0]))
+        check("the account the approval made a moment ago is gone",
+              store.tokens_for(store.email_fingerprint("runner@example.com")) == existing
+              and store.official_link_for_garmin_user("g-runner").user_token == existing[0])
+        check("reported as a join", [p for e, p in reported if e == "connector_connected"][-1].get("joined") is True)
+        code, body, _ = await run(lambda: http("POST", "/oauth/confirm", {"s": sealed, "code": SENT_CODES[-1][1]}))
+        check("the code and its request can't be used twice", "expired" in body)
+
+        print("\nturning back")
+        flow5, _ = await start()
+        NEXT_GARMIN["id"] = "g-other"
+        _, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow5)}"))
+        state = urllib.parse.parse_qs(urllib.parse.urlparse(headers.get("location", "")).query).get("state", [""])[0]
+        code, body, _ = await run(lambda: http(
+            "GET", f"/official/callback?error=access_denied&state={urllib.parse.quote(state)}"))
+        check("declining on Garmin's page offers to try again, request still attached",
+              "Not connected" in body and f"/official/signup?flow={urllib.parse.quote(flow5, safe='')}" in body
+              and "Sign in the usual way" in body, body[:300])
+        code, body = await through_garmin(flow5)
+        consent5 = consent_of(body)
+        _, body, _ = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent5, "decision": "allow", "email": "sam@example.com"}))
+        sealed5 = re.search(r'name=s value="([^"]+)"', body).group(1)
+        _, body, _ = await run(lambda: http("POST", "/oauth/confirm", {"s": sealed5, "action": "change"}))
+        check("'Use a different email' goes back to the Allow page", consent_of(body) == consent5 and "name=email" in body)
+        code, _, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent5, "decision": "deny"}))
+        check("Cancel still works without an email", code == 303 and "error=access_denied" in headers.get("location", ""))
+        _, body, headers = await run(lambda: http("GET", "/connect?route=official"))
+        check("opening ?route=official by hand says what it did",
+              "Sign-in route set" in body and "daash_route=official" in headers.get("set-cookie", ""))
+        import sqlite3
+        sends = []
+        for _ in range(store.CODE_SENDS_PER_DAY + 1):
+            sends.append(store.new_email_code("cap-test"))
+            with sqlite3.connect(DB) as conn:
+                conn.execute("UPDATE email_codes SET sent_at = sent_at - 120 WHERE email_hash = 'cap-test'")
+        check("an address gets a few codes a day, then no more",
+              all(sends[:-1]) and sends[-1] is None and store.code_wait("cap-test") == "day")
+        _, body, _ = await run(lambda: http("GET", "/official/signup?flow=made-up"))
+        check("a sign-up link with no request behind it says start again", "Start again" in body)
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+    print()
+    if failures:
+        print(f"{len(failures)} failed: {', '.join(failures)}")
+        return 1
+    print("all checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(asyncio.run(main()))

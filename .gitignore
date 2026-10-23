@@ -12,6 +12,7 @@ my-prompt.md
 # Local drafts, not part of the project.
 launch-post.md
 tests/oauth-test.sqlite3*
+tests/signup-test.sqlite3*
 
 # Left behind by an earlier local run of the plan tooling.
 plan-config.json

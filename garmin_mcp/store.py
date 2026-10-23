@@ -55,6 +55,9 @@ MIGRATIONS = (
     # Set while a preview account tries Daash on Garmin's official API alone:
     # its reads come only from what Garmin has pushed.
     "ALTER TABLE official_links ADD COLUMN official_only INTEGER",
+    # "official" for someone who signed up by approving Daash on Garmin's own
+    # page: there is no Garmin Connect session behind the row at all.
+    "ALTER TABLE users ADD COLUMN route TEXT",
 )
 
 # OAuth state. Separate from `users`: a person is one row there however many
@@ -83,6 +86,15 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 );
 CREATE INDEX IF NOT EXISTS oauth_tokens_subject ON oauth_tokens (subject);
 CREATE INDEX IF NOT EXISTS oauth_tokens_client ON oauth_tokens (client_id);
+CREATE TABLE IF NOT EXISTS email_codes (
+    email_hash    TEXT PRIMARY KEY,
+    code_hash     TEXT NOT NULL,
+    sent_at       INTEGER NOT NULL,
+    expires_at    INTEGER NOT NULL,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    sends         INTEGER NOT NULL DEFAULT 0,
+    first_sent_at INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -307,12 +319,17 @@ def update_blob(user_token: str, token_blob: str, *, in_use: bool = True) -> Non
 
 
 def idle_users(idle_for: int) -> list[str]:
-    """Connections neither used nor kept alive in the last `idle_for` seconds."""
+    """Connections neither used nor kept alive in the last `idle_for` seconds.
+
+    Only those with a Garmin Connect session to keep alive: someone who signed
+    up through Garmin's own page has none, and Garmin's tokens renew on use.
+    """
     cutoff = int(time.time()) - idle_for
     with _connect() as conn:
         rows = conn.execute(
             "SELECT user_token FROM users "
             "WHERE COALESCE(last_seen_at, created_at) < ? AND COALESCE(kept_alive_at, 0) < ? "
+            "AND COALESCE(route, '') != 'official' "
             "ORDER BY COALESCE(kept_alive_at, 0)",
             (cutoff, cutoff),
         ).fetchall()
@@ -853,3 +870,152 @@ def official_schedules(garmin_user_id: str, start: str, end: str) -> list[tuple[
                             "AND day >= ? AND day <= ? ORDER BY day", (garmin_user_id, start, end)).fetchall()
     return [(int(a), int(b), c) for a, b, c in rows]
 
+
+
+# --------------------------------------------------------------------------
+# Signing up through Garmin's own page
+# --------------------------------------------------------------------------
+
+# Shown where an address would be, until the person gives one.
+NO_EMAIL_YET = "Garmin account"
+
+
+def save_official_user(garmin_user_id: str, tokens: dict, permissions: list[str]) -> str:
+    """A new Daash account from an approval on Garmin's page alone. Returns its token.
+
+    There is no Garmin Connect session behind it, so the row's session is
+    empty and marked as the official route; its reads and writes come only
+    from Garmin's official API. The email comes a step later, on the Allow page.
+    """
+    user_token = new_user_token()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO users (user_token, email_masked, token_blob, created_at, route) VALUES (?, ?, ?, ?, 'official')",
+            (user_token, NO_EMAIL_YET, _cipher().encrypt(b""), int(time.time())),
+        )
+    save_official_link(user_token, garmin_user_id, tokens, permissions)
+    set_official_only(user_token, True)
+    return user_token
+
+
+def has_connect(user_token: str) -> bool:
+    """Whether a Garmin Connect session stands behind this account."""
+    with _connect() as conn:
+        row = conn.execute("SELECT route FROM users WHERE user_token = ?", (user_token,)).fetchone()
+    return bool(row) and row[0] != "official"
+
+
+def set_user_email(user_token: str, email: str, email_masked: str) -> str:
+    """Keep the address someone gave on the Allow page. Returns its fingerprint."""
+    fingerprint = email_fingerprint(email)
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET email_hash = ?, email_enc = ?, email_masked = ? WHERE user_token = ?",
+            (fingerprint, _cipher().encrypt(email.strip().encode()), email_masked, user_token),
+        )
+    return fingerprint
+
+
+def join_official_account(source: str, target: str) -> None:
+    """Move a Garmin approval made just now onto the account the person already had.
+
+    `source` is the account the approval created a moment ago, `target` the
+    one their email belongs to, proven by a code sent to it. Their plans,
+    crew and history stay where they were; the new row goes. Someone who
+    reads through Garmin Connect keeps doing so: only an account that was
+    already on the official route alone stays official-only.
+    """
+    with _connect() as conn:
+        moving = conn.execute(
+            "SELECT garmin_user_id FROM official_links WHERE user_token = ?", (source,)
+        ).fetchone()
+        if not moving:
+            return
+        held = conn.execute(
+            "SELECT garmin_user_id FROM official_links WHERE user_token = ?", (target,)
+        ).fetchone()
+        if held and held[0] != moving[0]:
+            # A different Garmin account was linked before: the person has
+            # just approved this one, so it replaces that, and what the old
+            # one sent goes with its link.
+            for table in ("official_links", "official_summaries", "official_workouts", "official_schedules"):
+                conn.execute(f"DELETE FROM {table} WHERE garmin_user_id = ?", (held[0],))
+        route = conn.execute("SELECT route FROM users WHERE user_token = ?", (target,)).fetchone()
+        alone = bool(route) and route[0] == "official"
+        conn.execute(
+            "UPDATE official_links SET user_token = ?, official_only = ? WHERE user_token = ?",
+            (target, 1 if alone else None, source),
+        )
+        conn.execute("UPDATE oauth_tokens SET subject = ? WHERE subject = ?", (target, source))
+        conn.execute("DELETE FROM users WHERE user_token = ?", (source,))
+
+
+# A code by email, asked for only when an address already belongs to a Daash
+# account: it proves the person typing it owns that account before a Garmin
+# approval is joined to it.
+CODE_LIFETIME = 10 * 60
+CODE_RESEND_AFTER = 60
+CODE_TRIES = 5
+# Codes to one address in a day. With five tries each, guessing one of a
+# million is hopeless, and the address's owner isn't flooded either.
+CODE_SENDS_PER_DAY = 8
+
+
+def _code_digest(email_hash: str, code: str) -> str:
+    key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
+    return hmac.new(key, f"code:{email_hash}:{code}".encode(), hashlib.sha256).hexdigest()
+
+
+def new_email_code(email_hash: str) -> str | None:
+    """A fresh 6-digit code for this address.
+
+    None if one went out under a minute ago, or the address has had its
+    day's codes: the caller says which by asking code_wait.
+    """
+    now = int(time.time())
+    with _connect() as conn:
+        row = conn.execute("SELECT sent_at, sends, first_sent_at FROM email_codes WHERE email_hash = ?",
+                           (email_hash,)).fetchone()
+        if row and now - row[0] < CODE_RESEND_AFTER:
+            return None
+        sends, first = (row[1], row[2]) if row and now - row[2] < 86400 else (0, now)
+        if sends >= CODE_SENDS_PER_DAY:
+            return None
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        conn.execute(
+            "INSERT INTO email_codes (email_hash, code_hash, sent_at, expires_at, attempts, sends, first_sent_at) "
+            "VALUES (?, ?, ?, ?, 0, ?, ?) "
+            "ON CONFLICT(email_hash) DO UPDATE SET code_hash = excluded.code_hash, sent_at = excluded.sent_at, "
+            "expires_at = excluded.expires_at, attempts = 0, sends = excluded.sends, "
+            "first_sent_at = excluded.first_sent_at",
+            (email_hash, _code_digest(email_hash, code), now, now + CODE_LIFETIME, sends + 1, first),
+        )
+        conn.execute("DELETE FROM email_codes WHERE first_sent_at < ?", (now - 2 * 86400,))
+    return code
+
+
+def code_wait(email_hash: str) -> str:
+    """Why no code went out: "minute" (one just did) or "day" (the day's are used up)."""
+    now = int(time.time())
+    with _connect() as conn:
+        row = conn.execute("SELECT sent_at FROM email_codes WHERE email_hash = ?", (email_hash,)).fetchone()
+    return "minute" if row and now - row[0] < CODE_RESEND_AFTER else "day"
+
+
+def check_email_code(email_hash: str, code: str) -> str:
+    """"ok" (and the code is spent), "wrong", "expired" or "locked"."""
+    now = int(time.time())
+    code = "".join(ch for ch in str(code) if ch.isdigit())
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT code_hash, expires_at, attempts FROM email_codes WHERE email_hash = ?", (email_hash,)
+        ).fetchone()
+        if not row or row[1] < now:
+            return "expired"
+        if row[2] >= CODE_TRIES:
+            return "locked"
+        if hmac.compare_digest(row[0], _code_digest(email_hash, code)):
+            conn.execute("UPDATE email_codes SET expires_at = 0 WHERE email_hash = ?", (email_hash,))
+            return "ok"
+        conn.execute("UPDATE email_codes SET attempts = attempts + 1 WHERE email_hash = ?", (email_hash,))
+        return "locked" if row[2] + 1 >= CODE_TRIES else "wrong"

@@ -23,9 +23,11 @@ class NotOnOfficial(AttributeError):
 
 
 class OfficialClient:
-    def __init__(self, user_token: str, garmin_user_id: str) -> None:
+    def __init__(self, user_token: str, garmin_user_id: str, alone: bool = False) -> None:
         self.user_token = user_token
         self.garmin_user_id = garmin_user_id
+        # No Garmin Connect session behind the account to fall back on.
+        self.alone = alone
 
     def __getattr__(self, name: str) -> Any:
         raise NotOnOfficial(f"Garmin's official API has no {name}.")
@@ -34,8 +36,15 @@ class OfficialClient:
         return fn(self)
 
     # ---------------------------------------------------------------- workouts
+    def _may_write(self) -> None:
+        if not official.can_write(self.user_token):
+            raise official.OfficialError(
+                "Putting workouts on the watch was left off when you approved Daash in Garmin. Turn on "
+                "workout import for Daash in Garmin Connect's connected apps settings, then ask again.")
+
     def upload_workout(self, payload: dict) -> dict:
         """Create the workout on Garmin and keep it here, as the tools shaped it."""
+        self._may_write()
         created = official.call(self.user_token, "POST", "/workoutportal/workout/v2", official.training_workout(payload))
         workout_id = created.get("workoutId") if isinstance(created, dict) else None
         if workout_id is None:
@@ -44,6 +53,7 @@ class OfficialClient:
         return {"workoutId": int(workout_id)}
 
     def update_workout(self, workout_id: int, payload: dict) -> dict:
+        self._may_write()
         kept = store.official_workout(self.garmin_user_id, int(workout_id)) or {}
         training = official.training_workout(payload)
         training["workoutId"] = int(workout_id)
@@ -88,6 +98,7 @@ class OfficialClient:
 
     # ---------------------------------------------------------------- the calendar
     def schedule_workout(self, workout_id: int, day: str) -> dict:
+        self._may_write()
         answer = official.call(self.user_token, "POST", "/training-api/schedule/", {"workoutId": int(workout_id), "date": day})
         schedule_id = answer.get("scheduleId") if isinstance(answer, dict) else answer
         if schedule_id is None:

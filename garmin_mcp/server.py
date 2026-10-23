@@ -639,7 +639,17 @@ def _official_client() -> Any:
     token = official.current()
     if garmin_user is None or token is None:
         return None
-    return OfficialClient(token, garmin_user)
+    return OfficialClient(token, garmin_user, alone=not store.has_connect(token))
+
+
+# Said by any tool that needs Garmin Connect, to someone who signed up through
+# Garmin's own page and so has no Connect session for it to fall back on.
+NOT_ON_OFFICIAL = (
+    "Not available on this connection: Daash reads this account through Garmin's official "
+    "API, and Garmin doesn't share that through it. Answer from what Daash can read here "
+    "(activities and their laps, sleep, the day, the plan), and for workout targets use "
+    "paces, heart rate in bpm or watts rather than zones or a share of FTP."
+)
 
 
 def _run(fn: Callable[[Any], Any]) -> Any:
@@ -647,14 +657,16 @@ def _run(fn: Callable[[Any], Any]) -> Any:
 
     A call the official API has no answer for (readiness, gear, the all-day
     heart rate) still goes to Connect while the account has both: this is the
-    preview, and nothing the person already had should stop working.
+    preview, and nothing the person already had should stop working. An
+    account that signed up through Garmin's page has no Connect to go to.
     """
     client = _official_client()
     if client is not None:
         try:
             return client.run(fn)
         except NotOnOfficial:
-            pass
+            if client.alone:
+                raise GarminError(NOT_ON_OFFICIAL) from None
     return session.run(fn)
 
 
@@ -676,7 +688,8 @@ def _remembered(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
         try:
             return client.run(fn)
         except NotOnOfficial:
-            pass
+            if client.alone:
+                raise GarminError(NOT_ON_OFFICIAL) from None
     return session.remembered(key, ttl, fn)
 
 
@@ -723,7 +736,8 @@ def tool_errors(fn):
                 finally:
                     session.forget()
             return await fn(*args, **kwargs)
-        except (GarminError, DateError, WorkoutError, training_plan.PlanError, crews.CrewError, ActivityError) as exc:
+        except (GarminError, DateError, WorkoutError, training_plan.PlanError, crews.CrewError, ActivityError,
+                official.OfficialError) as exc:
             return {"error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - a tool must never crash the server
             log.exception("Tool %s failed", fn.__name__)
@@ -2514,6 +2528,19 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
         lambda c: c.get_activities_by_date(first.isoformat(), today.isoformat())
     ) or []
     if not activities:
+        client = _official_client()
+        link = store.official_link(client.user_token) if client is not None and client.alone else None
+        if link is not None and time.time() - link.created_at < training_plan.LOG_WEEKS * 7 * 86400:
+            # Garmin's official API sends training from the day someone
+            # connects, so an empty log there is new, not idle.
+            since = datetime.fromtimestamp(link.created_at, timezone.utc).date().isoformat()
+            return {
+                "note": (
+                    f"Connected through Garmin's official API on {since}. Garmin sends training from "
+                    "then on, as the watch syncs, so earlier runs aren't here and nothing has arrived "
+                    "yet. Say so in a sentence, then offer to build a plan and put it on their watch."
+                )
+            }
         return {
             "error": (
                 "Nothing is scheduled on the Garmin calendar, and nothing was recorded "
@@ -3369,6 +3396,15 @@ async def get_connection_status() -> dict[str, Any]:
     Reports which credentials are present and whether the cached session is
     usable. Never returns the password or the cached token itself.
     """
+    client = _official_client()
+    if client is not None and client.alone:
+        status = await anyio.to_thread.run_sync(official.status, client.user_token)
+        status = {"logged_in": True, "via": "Garmin's official API",
+                  **{k: status.get(k) for k in ("since", "permissions")}}
+        if not official.can_write(client.user_token):
+            status["note"] = ("Putting workouts on the watch was left off when this account approved Daash in "
+                              "Garmin. It can be turned on in Garmin Connect's connected apps settings.")
+        return status
     status = await anyio.to_thread.run_sync(session.status)
     if preview.enabled():
         status["preview_features"] = "on"
