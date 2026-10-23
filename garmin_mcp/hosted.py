@@ -155,7 +155,7 @@ def _recent_wrong_password(email: str) -> bool:
 # never anything about the person.
 SOURCE_COOKIE = "daash_src"
 # The one optional question on the consent page, answered by a tap or not.
-HEARD_FROM = (("chatgpt", "ChatGPT suggested it"), ("claude", "Claude"), ("friend", "A friend"),
+HEARD_FROM = (("chatgpt", "ChatGPT"), ("claude", "Claude"), ("friend", "A friend"),
               ("search", "Search"), ("instagram", "Instagram"), ("other", "Somewhere else"))
 
 
