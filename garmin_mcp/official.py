@@ -475,6 +475,26 @@ def send_workout(user_token: str, workout: dict, date: str | None = None) -> dic
     return result
 
 
+def scheduled(user_token: str, start: str, end: str) -> dict:
+    """What Garmin's Training API lists on the calendar between two dates, as Garmin returns it.
+
+    The question it answers is which scheduled workouts Garmin shows an app:
+    only the ones this app scheduled, or everything on the person's calendar.
+    """
+    found = call(user_token, "GET", f"/training-api/schedule?startDate={start}&endDate={end}")
+    rows = found if isinstance(found, list) else found.get("workoutSchedules") if isinstance(found, dict) else None
+    if not isinstance(rows, list):
+        return {"from": start, "to": end, "raw": found}
+    listed = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        listed.append({k: v for k, v in row.items() if k != "workout"} | (
+            {"workout_name": row["workout"].get("workoutName"), "sport": row["workout"].get("sport")}
+            if isinstance(row.get("workout"), dict) else {}))
+    return {"from": start, "to": end, "count": len(listed), "scheduled": listed}
+
+
 def read(user_token: str, what: str) -> list[dict] | None:
     """The linked account's recent "activities" or "days", or None when not linked."""
     link = store.official_link(user_token)

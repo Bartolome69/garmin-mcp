@@ -3066,7 +3066,10 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             and laps; "days" reads each recent day's sleep, HRV, resting heart
             rate, stress, Body Battery, steps and VO2 max; "official_only"
             answers the day, sleep and activity tools from Garmin's official
-            API alone, and "both" goes back to Garmin Connect for them.
+            API alone, and "both" goes back to Garmin Connect for them;
+            "calendar" asks Garmin's Training API what is scheduled from
+            `date` for the following six weeks, to see whether it lists only
+            what Daash scheduled or everything on the calendar.
         date: For test_workout, the day to schedule it on.
     """
     user_token = official.current()
@@ -3086,6 +3089,13 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             "get_daily_summary, get_sleep_data, get_activities and get_activity_details now answer only from "
             "Garmin's official API. Everything else still uses Garmin Connect." if on else
             "Back to Garmin Connect for every tool.")}
+    if action == "calendar":
+        start = parse_date(date if date != "tomorrow" else "today")
+        end = (date_cls.fromisoformat(start) + timedelta(weeks=6)).isoformat()
+        try:
+            return await anyio.to_thread.run_sync(official.scheduled, user_token, start, end)
+        except official.OfficialError as exc:
+            return {"error": str(exc)}
     if action in ("activities", "days"):
         found = await anyio.to_thread.run_sync(official.read, user_token, action)
         if found is None:
@@ -3108,7 +3118,7 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
         except official.OfficialError as exc:
             return {"error": str(exc)}
         return {**sent, "summary": summary, "note": "Sync the watch to see it."}
-    return {"error": f"Unknown action {action!r}. Use status, connect, activities, days, official_only, both, test_workout or disconnect."}
+    return {"error": f"Unknown action {action!r}. Use status, connect, activities, days, calendar, official_only, both, test_workout or disconnect."}
 
 
 @_app_tool(CREW_VIEW)
