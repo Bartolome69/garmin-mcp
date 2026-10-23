@@ -2655,15 +2655,15 @@ async def _gather(labels_and_calls: list[tuple[str, Callable[[Any], Any]]]) -> t
 @mcp.tool()
 @tool_errors
 async def get_readiness(date: str | None = None) -> dict[str, Any]:
-    """How ready the user is to train today, and where their load sits.
+    """Whether the user should train hard today or hold back.
 
-    One call for the recovery picture: Garmin's training readiness score and
-    the factors behind it, training status (productive, strained, recovery...),
-    acute against chronic load, the four-week load focus (aerobic and
-    anaerobic load against targets: "too much intensity?"), overnight HRV against
-    its baseline, body battery, stress, resting heart rate and sleep. Use it
-    before prescribing a hard session, or when the user asks whether to push
-    today or hold back.
+    For that question, and for checking today before prescribing a hard
+    session. Not for reviewing a week, a run or how training is going: get_plan
+    and the activity tools answer those. Has Garmin's readiness score and its
+    factors, training status (productive, strained, recovery...), acute against
+    chronic load and the four-week load focus ("too much intensity?"), with
+    last night's sleep, HRV against baseline, body battery, stress and resting
+    heart rate, so get_sleep_data and get_daily_summary aren't needed with it.
 
     Args:
         date: YYYY-MM-DD, 'today', 'yesterday' or an offset like '-1'. Defaults to today.
