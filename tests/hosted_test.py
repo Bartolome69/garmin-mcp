@@ -1532,8 +1532,8 @@ async def main() -> int:
               and "Carol easy 10k" not in now_card.get("group_message", ""), str(carol_today))
 
         # The crew's own page, for anyone with its link.
-        def fetch(path):
-            req = urllib.request.Request(f"{base}{path}")
+        def fetch(path, headers=None):
+            req = urllib.request.Request(f"{base}{path}", headers=headers or {})
             try:
                 with urllib.request.urlopen(req, timeout=15) as r:
                     return r.status, dict(r.headers), r.read().decode()
@@ -1541,10 +1541,11 @@ async def main() -> int:
                 return e.code, dict(e.headers), e.read().decode()
 
         shown_before = len([e for e in SENT if e["event"] == "sign_in_shown"])
-        status_shown, _, _ = fetch("/connect?flow=abc")
+        status_shown, _, _ = fetch("/connect?flow=abc", {"Cookie": "daash_src=Bing!.com"})
         shown = [e for e in SENT if e["event"] == "sign_in_shown"][shown_before:]
         check("opening the sign-in page is counted, without anyone to attribute it to",
               status_shown == 200 and len(shown) == 1 and shown[0]["properties"].get("via") == "oauth"
+              and shown[0]["properties"].get("source") == "bing.com"
               and shown[0]["properties"].get("$process_person_profile") is False, str(shown))
 
         before_link = await call(carol, "get_crew", {})

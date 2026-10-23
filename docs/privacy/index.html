@@ -566,9 +566,13 @@
       <p class="small">
         These pages count views using
         <a href="https://posthog.com" target="_blank" rel="noopener">PostHog</a>
-        on its European servers, configured to leave nothing behind: no cookies,
-        no advertising identifiers, no session recording, and no profile built
-        about you. It records that a page was opened and that a button was
+        on its European servers, configured to leave nothing behind: no cookies
+        of its own, no advertising identifiers, no session recording, and no
+        profile built about you. The site itself sets one small cookie,
+        <code>daash_src</code>, which remembers for 30 days where you arrived
+        from (a site name such as chatgpt.com, or &ldquo;search&rdquo;), so
+        that if you go on to connect, Daash knows what brought you. It holds
+        nothing about you and goes nowhere else. It records that a page was opened and that a button was
         pressed, which is how I know whether the instructions actually work.
         If you use the box on the front page that asks which connector should
         be next, the name you tapped or typed is recorded the same way, and

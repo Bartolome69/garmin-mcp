@@ -149,6 +149,27 @@ def _recent_wrong_password(email: str) -> bool:
     return at is not None and at > time.time() - WRONG_PASSWORD_WINDOW
 
 
+# Where the person came from, as the website remembered it: a cookie set on
+# daash.run with the referring site or campaign, readable here because both
+# sites live under that domain. A word such as "chatgpt.com" or "search",
+# never anything about the person.
+SOURCE_COOKIE = "daash_src"
+# The one optional question on the consent page, answered by a tap or not.
+HEARD_FROM = (("chatgpt", "ChatGPT suggested it"), ("claude", "Claude"), ("friend", "A friend"),
+              ("search", "Search"), ("instagram", "Instagram"), ("other", "Somewhere else"))
+
+
+def _source(request: Request) -> str | None:
+    raw = request.cookies.get(SOURCE_COOKIE, "")
+    clean = re.sub(r"[^a-z0-9._-]", "", raw.lower())[:40]
+    return clean or None
+
+
+def _with_source(request: Request, properties: dict[str, Any]) -> dict[str, Any]:
+    source = _source(request)
+    return {**properties, "source": source} if source else properties
+
+
 def _failed(reason: str, email: str = "", **extra: Any) -> None:
     """Record a failed sign-in: the reason, and who tried.
 
@@ -1231,7 +1252,7 @@ async def connect_form(request: Request) -> Response:
     flow = request.query_params.get("flow", "")
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
-    analytics.capture("sign_in_shown", None, {"via": "oauth" if flow else "direct"})
+    analytics.capture("sign_in_shown", None, _with_source(request, {"via": "oauth" if flow else "direct"}))
     return page(
         "Sign in to Garmin",
         f"""
@@ -1431,6 +1452,16 @@ def _consent_page(consent_token: str, parked: dict[str, Any]) -> Response:
     form = f"""
         <form method=post action=/oauth/consent style="margin-top:8px">
           <input type=hidden name=consent value="{html.escape(consent_token)}">
+          <style>
+            .chips {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }}
+            .chip input {{ position: absolute; opacity: 0; width: 0; height: 0; }}
+            .chip span {{ display: inline-block; padding: 6px 12px; border: 1px solid #D9D7CF; border-radius: 999px;
+              font-size: 13px; color: #4A4944; cursor: pointer; }}
+            .chip input:checked + span {{ border-color: #E0312A; color: #C8261F; background: #FDF4F2; }}
+            .chip input:focus-visible + span {{ outline: 2px solid #E0312A; outline-offset: 2px; }}
+          </style>
+          <p class=note style="margin:0 0 8px">How did you hear about Daash? <span style="opacity:.7">Optional</span></p>
+          <div class=chips>{"".join(f'<label class=chip><input type=radio name=heard value="{v}"><span>{t}</span></label>' for v, t in HEARD_FROM)}</div>
           <button name=decision value=allow>Allow</button>
           <button name=decision value=deny class=secondary>Cancel</button>
         </form>
@@ -1488,6 +1519,8 @@ async def oauth_consent(request: Request) -> Response:
     form = await request.form()
     consent_token = str(form.get("consent", ""))
     allow = str(form.get("decision", "")) == "allow"
+    heard = str(form.get("heard", ""))
+    subject = OAUTH_PROVIDER.staged_subject(consent_token)
 
     destination = (
         OAUTH_PROVIDER.approve(consent_token)
@@ -1495,6 +1528,11 @@ async def oauth_consent(request: Request) -> Response:
         else OAUTH_PROVIDER.deny(consent_token)
     )
     if destination:
+        # Answered with the Allow press, if at all: the one word, against the
+        # same per-person id the connection got, so the two line up.
+        if allow and heard in {v for v, _ in HEARD_FROM}:
+            analytics.capture("heard_from", store.email_hash_for(subject) if subject else None,
+                              _with_source(request, {"answer": heard}))
         return RedirectResponse(destination, status_code=303)
     return page(
         "Request expired",
@@ -1539,7 +1577,7 @@ def _finish(
     analytics.capture(
         "connector_connected",
         fingerprint,
-        {
+        _with_source(request, {
             "account": masked,
             "email": email.strip(),
             # "direct" is someone who reached the form without Claude's request
@@ -1550,7 +1588,7 @@ def _finish(
             "mfa": mfa,
             "returning": bool(previous),
             **(took or {}),
-        },
+        }),
     )
 
     if OAUTH_ENABLED and flow:

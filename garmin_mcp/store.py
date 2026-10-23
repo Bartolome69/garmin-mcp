@@ -229,6 +229,13 @@ def save_user(
     return user_token
 
 
+def email_hash_for(user_token: str) -> str | None:
+    """The per-person handle behind one URL token, or None for an unknown token."""
+    with _connect() as conn:
+        row = conn.execute("SELECT email_hash FROM users WHERE user_token = ?", (user_token,)).fetchone()
+    return row[0] if row and row[0] else None
+
+
 def tokens_for(email_hash: str) -> list[str]:
     """Every URL token currently issued to one person, newest last."""
     with _connect() as conn:

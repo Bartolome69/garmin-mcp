@@ -256,6 +256,11 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         }
         return token, entry
 
+    def staged_subject(self, consent_token: str) -> str | None:
+        """Whose sign-in a consent token holds, without spending the token."""
+        entry = _AWAITING_CONSENT.get(consent_token)
+        return entry["subject"] if entry else None
+
     def approve(self, consent_token: str) -> str | None:
         """Consent given: mint the code and hand back the return URL."""
         entry = _AWAITING_CONSENT.pop(consent_token, None)

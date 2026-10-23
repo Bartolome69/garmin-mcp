@@ -295,10 +295,17 @@ async def main() -> int:
         check("a recognised destination is not flagged",
               "not an app we recognise" not in body)
 
+        check("the consent page asks, optionally, how they heard of Daash",
+              'name=heard value="chatgpt"' in body and "Optional" in body)
+
         # -- 4b. approve ------------------------------------------------
+        before_heard = len(reported)
         code, body, headers = await run(lambda: http("POST", "/oauth/consent", {
-            "consent": consent_token, "decision": "allow",
-        }))
+            "consent": consent_token, "decision": "allow", "heard": "chatgpt",
+        }, headers={"Cookie": "daash_src=ChatGPT.com; other=1"}))
+        heard = [props for event, props in reported[before_heard:] if event == "heard_from"]
+        check("a tapped chip goes through with the Allow press, with the website's source cookie",
+              len(heard) == 1 and heard[0].get("answer") == "chatgpt" and heard[0].get("source") == "chatgpt.com", str(heard))
         back = headers.get("location", "")
         parsed = urllib.parse.parse_qs(urllib.parse.urlparse(back).query)
         auth_code = parsed.get("code", [""])[0]
