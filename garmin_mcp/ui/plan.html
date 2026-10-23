@@ -183,7 +183,7 @@
   .shape { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
   .shape span { border-radius: 2px; min-width: 2px; }
   .shape.big { height: 30px; }
-  .shape.big span { border-radius: 5px; height: 30px; }
+  .shape.big span { border-radius: 5px; }
 
   .next { margin: 4px -8px 8px; padding: 14px; border-radius: 14px; background: var(--next-bg); border: 1px solid var(--next-border);
     display: flex; flex-direction: column; gap: 11px; }
@@ -1011,12 +1011,17 @@
     var work = s.type === "race" ? "race" : hard ? colourOf(s) : "threshold";
     return segs.map(function (g) { return { k: g.k, km: Math.max(g.km, 0.1), c: g.k === "work" ? work : g.k === "rec" ? "rec" : easy }; });
   }
+  // Reps stand above the warm-up, cool-down and recoveries, as a workout's
+  // steps do on Garmin's own chart; the next session's bar is just taller.
   function shapeBar(s, big, share) {
-    var scale = big ? 1 : 0.7;
+    var scale = big ? 30 / 26 : 0.7;
     var width = share && share < 1 ? "width:" + Math.round(share * 1000) / 10 + "%" : "";
-    return el("div", { class: "shape" + (big ? " big" : ""), style: width, "aria-hidden": "true" }, shapeOf(s).map(function (g) {
-      var h = g.k === "work" ? 26 : g.k === "rec" ? 6 : 12;
-      return el("span", { style: "flex:" + g.km + " 1 0;height:" + (big ? 30 : Math.round(h * scale)) + "px;background:" + COLOUR[g.c] });
+    var segs = shapeOf(s);
+    // An even session (an easy run, a race) fills the big bar's height.
+    var even = big && segs.every(function (g) { return g.k === segs[0].k; });
+    return el("div", { class: "shape" + (big ? " big" : ""), style: width, "aria-hidden": "true" }, segs.map(function (g) {
+      var h = even || g.k === "work" ? 26 : g.k === "rec" ? 6 : 12;
+      return el("span", { style: "flex:" + g.km + " 1 0;height:" + Math.round(h * scale) + "px;background:" + COLOUR[g.c] });
     }));
   }
 
