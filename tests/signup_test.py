@@ -231,8 +231,8 @@ async def main() -> int:
         check("by default the connector still asks for the Garmin password",
               "Garmin password" in body and "Continue with Garmin" not in body)
         _, body, headers = await run(lambda: http("GET", f"/connect?flow={flow}&route=official"))
-        check("?route=official shows Connect your Garmin, with the unverified label explained",
-              "Continue with Garmin" in body and "unverified" in body and "Garmin password" not in body
+        check("?route=official shows Connect your Garmin, with Garmin's note explained calmly",
+              "Continue with Garmin" in body and "reviewed" in body and "unverified" not in body and "Garmin password" not in body
               and "Sign in the usual way" in body, body[:200])
         check("and remembers the choice for this browser",
               "daash_route=official" in headers.get("set-cookie", ""), headers.get("set-cookie", ""))

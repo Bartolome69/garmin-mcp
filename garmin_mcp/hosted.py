@@ -1312,7 +1312,7 @@ def _usual_way(flow: str) -> str:
 
 
 def _garmin_intro(flow: str) -> Response:
-    """Before Garmin's page: what's about to happen, and the unverified label explained."""
+    """Before Garmin's page: what's about to happen, and Garmin's note about unreviewed apps, played down."""
     return page(
         "Connect your Garmin",
         f"""
@@ -1320,8 +1320,8 @@ def _garmin_intro(flow: str) -> Response:
         <p>Daash reads your training from Garmin and puts workouts on your watch.
         Garmin asks you to approve that on its own page.</p>
         <p class=secure>{_LOCK}<span>You sign in on Garmin&rsquo;s site. Daash never sees your password.</span></p>
-        <p class=note>Garmin shows Daash as <strong>unverified</strong>. Every new app on
-        Garmin&rsquo;s developer programme starts that way.</p>
+        <p class=note>Garmin&rsquo;s page shows a grey note saying it hasn&rsquo;t reviewed
+        Daash yet. That&rsquo;s normal for new apps.</p>
         <a class=button href="/official/signup?flow={quote(flow, safe='')}">Continue with Garmin</a>
         {_usual_way(flow)}
         <p class=note style="margin-top:20px;text-align:center"><a href="{PRIVACY_URL}"
