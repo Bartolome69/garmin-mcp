@@ -161,9 +161,10 @@ def main() -> int:
     samples = [{"startTimeInSeconds": run_start + i * 10, "totalDistanceInMeters": i * 30.0,
                 "timerDurationInSeconds": i * 10, "movingDurationInSeconds": max(0, i * 10 - 8),
                 "heartRate": 140 + (i % 5), "latitudeInDegree": 51.5, "longitudeInDegree": -0.1,
-                "elevationInMeters": 10 + (i % 20), "stepsPerMinute": 176 + (i % 3)} for i in range(0, 81)]
+                "elevationInMeters": 10 + (i % 20), "stepsPerMinute": 88 + (i % 3)} for i in range(0, 81)]
     detail = {"userId": "garmin-user-1", "summaryId": "77-detail", "activityId": 77,
-              "summary": {"startTimeInSeconds": run_start, "durationInSeconds": 800, "distanceInMeters": 2400.0},
+              "summary": {"startTimeInSeconds": run_start, "durationInSeconds": 800, "distanceInMeters": 2400.0,
+                          "averageRunCadenceInStepsPerMinute": 178, "totalElevationGainInMeters": 30},
               "samples": samples, "laps": [{"startTimeInSeconds": run_start}, {"startTimeInSeconds": run_start + 400}]}
     run = {"userId": "garmin-user-1", "summaryId": "77", "activityId": 77, "activityName": "Morning run",
            "activityType": "RUNNING", "startTimeInSeconds": run_start, "startTimeOffsetInSeconds": 3600,
@@ -222,13 +223,16 @@ def main() -> int:
 
     def fit_file(messages):
         """FIT bytes from (global number, [(field number, base type byte, packed value bytes)]) messages."""
-        sizes = {0x02: 1, 0x84: 2, 0x86: 4}
-        body = b""
-        for local, (global_num, fields) in enumerate(messages):
-            body += bytes([0x40 | local, 0, 0]) + struct.pack("<HB", global_num, len(fields))
-            for number, base, packed in fields:
-                body += bytes([number, len(packed), base])
-            body += bytes([local]) + b"".join(packed for _, _, packed in fields)
+        # One local type (0-15) per message layout, defined once and reused.
+        body, locals_ = b"", {}
+        for global_num, fields in messages:
+            layout = (global_num, tuple((n, b, len(pk)) for n, b, pk in fields))
+            if layout not in locals_:
+                local = locals_[layout] = len(locals_)
+                body += bytes([0x40 | local, 0, 0]) + struct.pack("<HB", global_num, len(fields))
+                for number, base, packed in fields:
+                    body += bytes([number, len(packed), base])
+            body += bytes([locals_[layout]]) + b"".join(packed for _, _, packed in fields)
         head = struct.pack("<BBHI4s", 14, 0x20, 2140, len(body), b".FIT")
         head += struct.pack("<H", fitdecode_crc(head))
         whole = head + body
@@ -255,6 +259,14 @@ def main() -> int:
           and figures.get("hrZoneLow_2") == 112 and figures.get("hrZoneLow_5") == 166 and "hrZoneLow_1" not in figures,
           str(figures))
     check("rubbish isn't a file", official_fit.summary(b"not a fit file") == {})
+    # A file whose session lacks the zone times: they are counted from the records.
+    fit_epoch = 631065600  # FIT's 1989-12-31 reference, in Unix seconds
+    records = [(20, [(253, 0x86, u32(i)), (3, 0x02, u8(hr))]) for i, hr in enumerate([100] * 5 + [120] * 10 + [140] * 4 + [170] * 2)]
+    bare = (18, [(24, 0x02, u8(25))])
+    counted = official_fit.summary(fit_file([bare] + zones_msgs + records))
+    check("zones counted from the records when the session doesn't say",
+          counted.get("hrTimeInZone_1") == 5 and counted.get("hrTimeInZone_2") == 10 and counted.get("hrTimeInZone_3") == 4
+          and counted.get("hrTimeInZone_5") == 1, str(counted))
     fetched = []
     real_fetch = official.fetch_file
     official.fetch_file = lambda token, url: (fetched.append(url), fit_bytes)[1]
@@ -356,7 +368,8 @@ def main() -> int:
     check("and the list shows them too", listed["activities"][0].get("hr_zones") and listed["activities"][0].get("training_effect"), str(listed)[:300])
     check("moving time, the hills and the same loop run before come with it",
           detail_answer["summary"].get("moving_time") == "13m 12s" and isinstance(detail_answer.get("terrain"), dict)
-          and detail_answer["splits"][0].get("avg_cadence_spm") and detail_answer["splits"][0].get("elevation_gain_m") is not None
+          and detail_answer["splits"][0].get("avg_cadence_spm") == 178
+          and sum(x.get("elevation_gain_m") or 0 for x in detail_answer["splits"]) == 30
           and isinstance(detail_answer.get("same_route"), dict), str({k: detail_answer.get(k) for k in ("terrain", "same_route")})[:400])
     sleep_again = as_user(bart, server.get_sleep_data, today)
     check("the night brings breathing and SpO2, how often awake, and what sleep did to Body Battery",

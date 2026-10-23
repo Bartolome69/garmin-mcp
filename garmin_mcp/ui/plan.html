@@ -127,13 +127,13 @@
   .bar-box.on .bar-dot { background: var(--on-red); }
   .bar-lbl { font-size: 11px; text-align: center; white-space: nowrap; color: var(--muted); letter-spacing: -0.02em; min-height: 13px; }
   /* Week mode's labels are words, not numbers: let them take two lines. */
-  .bar-lbl.wrap { white-space: normal; line-height: 1.15; min-height: 26px; font-size: 10.5px; }
+  .bar-lbl.wrap { white-space: normal; line-height: 1.15; min-height: 26px; font-size: 11px; }
   .bar-lbl.on { color: var(--text); }
   .bar-lbl.faint { color: var(--faint); }
   .phases { display: grid; }
   .phase { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .phase-line { height: 2px; border-radius: 2px; background: var(--line); }
-  .phase-lbl { font-size: 10px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+  .phase-lbl { font-size: 11px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
   .phase.on .phase-line { background: var(--red); }
   .phase.on .phase-lbl { color: var(--text); }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: auto; }
@@ -148,7 +148,7 @@
 
   .strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
   .day { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .day-l { font-size: 10.5px; color: var(--faint); }
+  .day-l { font-size: 11px; color: var(--faint); }
   .day-n { width: 30px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
     font-size: 13.5px; font-weight: 600; color: var(--text); }
   .day-n.faint { color: var(--faint); }
@@ -568,7 +568,7 @@
   var TYPES = {
     easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Threshold", v: "var(--threshold)", t: "var(--threshold-text)" },
     intervals: { l: "Intervals", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
-    race: { l: "Race", v: "var(--red-text)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
+    race: { l: "Race", v: "var(--red)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
     strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
   };
   // Plans read before threshold and intervals were told apart said sub.
@@ -1109,7 +1109,7 @@
   // The parts and their colours come from shapeOf, which the shared image
   // draws from too, so the two always agree.
   var COLOUR = { easy: "var(--easy)", threshold: "var(--threshold)", intervals: "var(--intervals)", long: "var(--long)",
-    race: "var(--red-text)", swim: "var(--swim)", strength: "var(--strength)", other: "var(--muted)", rec: "var(--rec)" };
+    race: "var(--red)", swim: "var(--swim)", strength: "var(--strength)", other: "var(--muted)", rec: "var(--rec)" };
   // The colour a session's type takes, by name: TYPES says the same in CSS.
   function colourOf(s) {
     var k = TYPES[s.type] ? s.type : TYPES[s.sport] ? s.sport : "other";

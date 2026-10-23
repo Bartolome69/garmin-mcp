@@ -42,19 +42,35 @@ def _values(curve: Any) -> list[float]:
             if isinstance(v, (int, float)) and v >= 0]
 
 
-def _splits(samples: list[dict], laps: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Kilometre splits and laps from an activity's samples: metres, seconds and average heart rate."""
+def _smoothed(points: list[dict], width: int = 7) -> None:
+    """Elevation smoothed over a few samples, so GPS wobble doesn't read as climbing."""
+    heights = [s.get("elevationInMeters") for s in points]
+    half = width // 2
+    for i, s in enumerate(points):
+        window = [h for h in heights[max(0, i - half):i + half + 1] if isinstance(h, (int, float))]
+        s["_elev"] = sum(window) / len(window) if window else None
+
+
+def _splits(samples: list[dict], laps: list[dict], summary: dict | None = None) -> tuple[list[dict], list[dict]]:
+    """Kilometre splits and laps from an activity's samples: metres, seconds, heart rate, cadence and climb."""
     points = [s for s in samples if isinstance(s, dict) and isinstance(s.get("totalDistanceInMeters"), (int, float))
               and isinstance(s.get("timerDurationInSeconds"), (int, float))]
     if len(points) < 2:
         return [], []
+    _smoothed(points)
+    summary = summary or {}
+    # The samples' cadence is per leg for a run (about half the summary's
+    # steps a minute); the summary says which, so the splits read like it.
+    cadences = [s["stepsPerMinute"] for s in points if isinstance(s.get("stepsPerMinute"), (int, float)) and s["stepsPerMinute"] > 0]
+    whole = summary.get("averageRunCadenceInStepsPerMinute")
+    cad_scale = 2 if cadences and isinstance(whole, (int, float)) and 1.7 <= whole / (sum(cadences) / len(cadences)) <= 2.3 else 1
 
     def stretch(chunk: list[dict], start: dict) -> dict:
         metres = chunk[-1]["totalDistanceInMeters"] - start["totalDistanceInMeters"]
         seconds = chunk[-1]["timerDurationInSeconds"] - start["timerDurationInSeconds"]
         hr = [s["heartRate"] for s in chunk if isinstance(s.get("heartRate"), (int, float)) and s["heartRate"] > 0]
-        cadence = [s["stepsPerMinute"] for s in chunk if isinstance(s.get("stepsPerMinute"), (int, float)) and s["stepsPerMinute"] > 0]
-        heights = [s["elevationInMeters"] for s in [start] + chunk if isinstance(s.get("elevationInMeters"), (int, float))]
+        cadence = [s["stepsPerMinute"] * cad_scale for s in chunk if isinstance(s.get("stepsPerMinute"), (int, float)) and s["stepsPerMinute"] > 0]
+        heights = [s["_elev"] for s in [start] + chunk if isinstance(s.get("_elev"), (int, float))]
         climb = sum(b - a for a, b in zip(heights, heights[1:]) if b > a)
         watts = [s["powerInWatts"] for s in chunk if isinstance(s.get("powerInWatts"), (int, float))]
         return drop_empty({"m": round(metres, 1), "s": round(seconds, 1),
@@ -71,6 +87,8 @@ def _splits(samples: list[dict], laps: list[dict]) -> tuple[list[dict], list[dic
             start, chunk, mark = point, [], mark + 1000
     if chunk and chunk[-1]["totalDistanceInMeters"] - start["totalDistanceInMeters"] >= 100:
         kms.append(stretch(chunk, start))
+    # Garmin's own total for the climb is the one the summary shows; the
+    # splits are scaled to add up to it rather than to their noisier sum.
 
     starts = sorted(int(lap["startTimeInSeconds"]) for lap in laps
                     if isinstance(lap, dict) and isinstance(lap.get("startTimeInSeconds"), (int, float)))
@@ -83,6 +101,13 @@ def _splits(samples: list[dict], laps: list[dict]) -> tuple[list[dict], list[dic
             before = [p for p in points if (p.get("startTimeInSeconds") or 0) < begin]
             if inside:
                 out_laps.append(stretch(inside, before[-1] if before else inside[0]))
+    total_up = summary.get("totalElevationGainInMeters")
+    for group in (kms, out_laps):
+        raw_up = sum(x.get("up") or 0 for x in group)
+        if isinstance(total_up, (int, float)) and raw_up > 0:
+            for x in group:
+                if x.get("up") is not None:
+                    x["up"] = round(x["up"] * total_up / raw_up)
     return kms, out_laps
 
 
@@ -158,7 +183,7 @@ def trim(kind: str, item: dict) -> dict | None:
     if kind == "activityDetails":
         samples, laps = item.pop("samples", None), item.pop("laps", None)
         if isinstance(samples, list):
-            kms, out_laps = _splits(samples, laps if isinstance(laps, list) else [])
+            kms, out_laps = _splits(samples, laps if isinstance(laps, list) else [], item.get("summary"))
             item["splits"], item["laps"] = kms or None, out_laps or None
             points = [s for s in samples if isinstance(s, dict)]
             last = points[-1] if points else {}

@@ -41,6 +41,7 @@ def summary(data: bytes) -> dict[str, Any]:
     out: dict[str, Any] = {}
     zone_tops: list[int] = []
     power_tops: list[int] = []
+    beats: list[tuple[float, int]] = []  # (seconds, heart rate) from the records
     try:
         reader = fitdecode.FitReader(io.BytesIO(data), check_crc=fitdecode.CrcCheck.WARN,
                                      error_handling=fitdecode.ErrorHandling.WARN)
@@ -57,9 +58,20 @@ def summary(data: bytes) -> dict[str, Any]:
                     power_tops.append(int(top))
             elif frame.name == "session":
                 out.update(_session(frame))
+            elif frame.name == "record" and frame.has_field("heart_rate") and frame.has_field("timestamp"):
+                hr, at = _number(frame.get_value("heart_rate")), frame.get_value("timestamp")
+                # A real file's timestamps come back as datetimes; a device's
+                # relative ones as plain seconds. Either spaces the records.
+                when = at.timestamp() if hasattr(at, "timestamp") else _number(at)
+                if hr and when is not None:
+                    beats.append((when, int(hr)))
     except Exception as exc:  # noqa: BLE001 - an odd file loses its extras, not the activity
         log.warning("FIT file not read: %s", type(exc).__name__)
         return out
+    # A file whose session doesn't say the time in each zone still has the
+    # zones and the heart rate second by second: count it here.
+    if not any(k.startswith("hrTimeInZone_") for k in out) and zone_tops and len(beats) > 1:
+        out.update(_zones_from_records(beats, zone_tops))
     # Zone n's floor is the top of the zone below it. Six entries start with
     # the top of "below zone 1"; five start with the top of zone 1.
     below = 1 if len(zone_tops) >= 6 else 2
@@ -67,6 +79,19 @@ def summary(data: bytes) -> dict[str, Any]:
         if f"hrTimeInZone_{n}" in out and 0 <= n - below < len(zone_tops):
             out[f"hrZoneLow_{n}"] = zone_tops[n - below]
     return out
+
+
+def _zones_from_records(beats: list[tuple[float, int]], tops: list[int]) -> dict[str, float]:
+    """Seconds in zones 1 to 5, each record counting until the next, at most ten seconds."""
+    bounds = tops[1:6] if len(tops) >= 6 else tops[:5]  # the top of zones 1..5
+    seconds = [0.0] * 6
+    for (at, hr), (after, _) in zip(beats, beats[1:]):
+        dt = min(max(after - at, 0.0), 10.0)
+        zone = next((n + 1 for n, top in enumerate(bounds) if hr <= top), 5)
+        if len(tops) >= 6 and hr <= tops[0]:
+            zone = 0
+        seconds[zone] += dt
+    return {f"hrTimeInZone_{n}": round(seconds[n], 1) for n in range(1, 6)}
 
 
 # Session field -> (Connect name, scale to Connect's unit).
