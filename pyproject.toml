@@ -30,6 +30,7 @@ dependencies = [
 hosted = [
     "cryptography>=42",
     "uvicorn>=0.30",
+    "fitdecode>=0.11",
 ]
 
 [project.urls]

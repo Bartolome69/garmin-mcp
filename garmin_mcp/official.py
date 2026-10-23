@@ -34,7 +34,7 @@ from typing import Any
 
 from cryptography.fernet import InvalidToken
 
-from . import official_data, store
+from . import official_data, official_fit, store
 
 log = logging.getLogger(__name__)
 
@@ -383,6 +383,11 @@ def handle_push(body: bytes) -> dict[str, int]:
                     store.update_official_permissions(str(item["userId"]), list(item.get("permissions") or []))
             kept[kind] = len(items)
             continue
+        if kind == "activityFiles":
+            files = _keep_files(items)
+            if files:
+                kept[kind] = files
+            continue
         if kind not in official_data.KEPT:
             continue
         by_user: dict[str, list[tuple[str, int | None, dict]]] = {}
@@ -399,6 +404,47 @@ def handle_push(body: bytes) -> dict[str, int]:
                 continue
             kept[kind] = kept.get(kind, 0) + store.save_official_summaries(garmin_user_id, kind, rows)
     return kept
+
+
+def _keep_files(items: list) -> int:
+    """Read each activity's FIT file for its summary figures, keep those, let the file go."""
+    kept = 0
+    for item in items:
+        if not isinstance(item, dict) or not item.get("userId") or not item.get("activityId"):
+            continue
+        if str(item.get("fileType") or "FIT").upper() != "FIT" or not isinstance(item.get("callbackURL"), str):
+            continue
+        link = store.official_link_for_garmin_user(str(item["userId"]))
+        if link is None or not official_fit.available():
+            continue
+        try:
+            figures = official_fit.summary(fetch_file(link.user_token, item["callbackURL"]))
+        except OfficialError as exc:
+            log.warning("activity file %s not fetched: %s", item.get("activityId"), exc)
+            continue
+        if not figures:
+            continue
+        figures["activityId"] = item["activityId"]
+        kept += store.save_official_summaries(link.garmin_user_id, "activityFit",
+                                              [(str(item["activityId"]), _start(item), figures)])
+    return kept
+
+
+def fetch_file(user_token: str, url: str) -> bytes:
+    """The activity file at Garmin's callback address, for the linked account."""
+    if urllib.parse.urlparse(url).hostname != urllib.parse.urlparse(API).hostname:
+        raise OfficialError("The file isn't on Garmin's API.")
+    access_token, _ = _access_token(user_token)
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {access_token}", "User-Agent": "daash-official"})
+    try:
+        data = _send(request)
+    except urllib.error.URLError as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            raise _refused(exc, "activityFile") from None
+        raise OfficialError("Daash couldn't reach Garmin for the file.") from None
+    if len(data) > official_fit.MAX_FILE_BYTES:
+        raise OfficialError("The file is too big to be an activity.")
+    return data
 
 
 # --------------------------------------------------------------------------

@@ -733,7 +733,8 @@ async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
         stats = await anyio.to_thread.run_sync(official_data.connect_stats, garmin_user, day)
         if not stats:
             return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
-        return {**_daily_shape(day, stats, None, None), "source": OFFICIAL_SOURCE}
+        events, spells = await anyio.to_thread.run_sync(official_data.day_extras, garmin_user, day)
+        return {**_daily_shape(day, stats, events, None), "stressful_spells": spells or None, "source": OFFICIAL_SOURCE}
     stats = await _call(lambda c: _method(c, "get_stats", "get_user_summary")(day))
     if not stats:
         return {"date": day, "note": "Garmin returned no summary for this day."}
@@ -1121,7 +1122,8 @@ async def get_activities(
         start = parse_date(start_date) if start_date else None
         end = (parse_date(end_date) if end_date else parse_date("today")) if start_date else None
         rows = await anyio.to_thread.run_sync(official_data.activity_rows, garmin_user, start, end)
-        shown = [_summarise_activity(official_data.connect_activity(a)) for a in rows[:limit]]
+        flat = await anyio.to_thread.run_sync(official_data.connect_activities, garmin_user, rows[:limit])
+        shown = [_summarise_activity(a) for a in flat]
         return drop_empty({
             "count": len(shown), "window": {"from": start, "to": end} if start else None,
             "truncated": len(rows) > len(shown) or None, "activities": shown,
@@ -1211,15 +1213,17 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
 
     garmin_user = _official_only()
     if garmin_user:
-        flat, laps = await anyio.to_thread.run_sync(official_data.activity, garmin_user, activity_id)
+        flat, laps, inside, zones = await anyio.to_thread.run_sync(official_data.activity, garmin_user, activity_id)
         if flat is None:
             return {"activity_id": activity_id, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
         ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
         return drop_empty({
             "activity_id": activity_id,
             "summary": _summarise_activity(flat) or None,
+            "hr_zones": hr_zones(zones),
             "splits_count": len(laps) or None,
             "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
+            "inside": inside,
             "source": OFFICIAL_SOURCE,
         })
 

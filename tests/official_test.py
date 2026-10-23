@@ -215,6 +215,91 @@ def main() -> int:
     check("and details kept without a start get one, so they're read back with their activity",
           official.read(bart, "activities")[0].get("splits") is not None)
 
+    print("\nthe figures in the activity file, and the richer day and night")
+    import struct
+    from garmin_mcp import official_fit
+
+    def fit_file(messages):
+        """FIT bytes from (global number, [(field number, base type byte, packed value bytes)]) messages."""
+        sizes = {0x02: 1, 0x84: 2, 0x86: 4}
+        body = b""
+        for local, (global_num, fields) in enumerate(messages):
+            body += bytes([0x40 | local, 0, 0]) + struct.pack("<HB", global_num, len(fields))
+            for number, base, packed in fields:
+                body += bytes([number, len(packed), base])
+            body += bytes([local]) + b"".join(packed for _, _, packed in fields)
+        head = struct.pack("<BBHI4s", 14, 0x20, 2140, len(body), b".FIT")
+        head += struct.pack("<H", fitdecode_crc(head))
+        whole = head + body
+        return whole + struct.pack("<H", fitdecode_crc(whole))
+
+    def fitdecode_crc(data):
+        from fitdecode.utils import compute_crc
+        return compute_crc(data)
+
+    u8, u16, u32 = (lambda v: struct.pack("<B", v)), (lambda v: struct.pack("<H", v)), (lambda v: struct.pack("<I", v))
+    session = (18, [(24, 0x02, u8(25)), (137, 0x02, u8(4)), (91, 0x84, u16(2470)), (89, 0x84, u16(820)),
+                    (132, 0x84, u16(780)), (134, 0x84, u16(10510)), (20, 0x84, u16(403)), (34, 0x84, u16(417)),
+                    (65, 0x86, b"".join(u32(v) for v in (0, 2716000, 240000, 7000, 0, 0)))])
+    zones_msgs = [(8, [(254, 0x84, u16(i)), (1, 0x02, u8(top))]) for i, top in enumerate((112, 130, 148, 166, 185))]
+    fit_bytes = fit_file([session] + zones_msgs)
+    figures = official_fit.summary(fit_bytes)
+    check("the session's figures come out in Connect's names and units",
+          figures.get("aerobicTrainingEffect") == 2.5 and figures.get("anaerobicTrainingEffect") == 0.4
+          and figures.get("avgGroundContactTime") == 247 and figures.get("avgVerticalOscillation") == 8.2
+          and figures.get("avgVerticalRatio") == 7.8 and figures.get("avgStrideLength") == 105.1
+          and figures.get("avgPower") == 403 and figures.get("normPower") == 417, str(figures))
+    check("time in each of the person's own zones, with the zone floors",
+          figures.get("hrTimeInZone_1") == 2716 and figures.get("hrTimeInZone_2") == 240 and figures.get("hrTimeInZone_3") == 7
+          and figures.get("hrZoneLow_2") == 112 and figures.get("hrZoneLow_5") == 166 and "hrZoneLow_1" not in figures,
+          str(figures))
+    check("rubbish isn't a file", official_fit.summary(b"not a fit file") == {})
+    fetched = []
+    real_fetch = official.fetch_file
+    official.fetch_file = lambda token, url: (fetched.append(url), fit_bytes)[1]
+    try:
+        kept = official.handle_push(json.dumps({"activityFiles": [
+            {"userId": "garmin-user-1", "summaryId": "77-file", "activityId": 77, "fileType": "FIT",
+             "startTimeInSeconds": run_start, "callbackURL": "https://apis.garmin.com/wellness-api/rest/activityFile?id=1&token=t"},
+            {"userId": "somebody-else", "summaryId": "9-file", "activityId": 9, "fileType": "FIT",
+             "callbackURL": "https://apis.garmin.com/wellness-api/rest/activityFile?id=2&token=t"}]}).encode())
+    finally:
+        official.fetch_file = real_fetch
+    check("a linked account's activity file is fetched and read; a stranger's isn't",
+          kept.get("activityFiles") == 1 and len(fetched) == 1 and "id=1" in fetched[0], str(kept))
+    blobs = [store._cipher().decrypt(r[0]) for r in sqlite3.connect(DB).execute("SELECT data_enc FROM official_summaries WHERE kind = 'activityFit'")]
+    check("only its figures are kept, not the file", len(blobs) == 1 and b".FIT" not in blobs[0] and b"hrTimeInZone_1" in blobs[0])
+    try:
+        official.fetch_file("x", "https://evil.example/file")
+        elsewhere = True
+    except official.OfficialError:
+        elsewhere = False
+    check("a callback address off Garmin's API is refused", not elsewhere)
+
+    official.handle_push(json.dumps({"sleeps": [{**sleep, "summaryId": "sl-3", "timeOffsetSleepRespiration": {"0": 12.2, "60": 14.0, "120": 10.8},
+                                                "timeOffsetSleepSpo2": {"0": 96, "60": 93, "120": 95}}],
+                                     "pulseOx": [{"userId": "garmin-user-1", "summaryId": "po-1", "calendarDate": today,
+                                                  "startTimeInSeconds": now - 7 * 3600, "timeOffsetSpo2Values": {"0": 97, "3600": 95}}]}).encode())
+    night = store.official_summaries("garmin-user-1", "sleeps")[-1]
+    check("a night keeps its breathing and SpO2 as averages, not curves",
+          night.get("breathing") == {"average": 12.3, "lowest": 10.8, "highest": 14.0} and night.get("spo2") == {"average": 95, "lowest": 93}
+          and "timeOffsetSleepSpo2" not in night, str(night))
+    # The day's stress details again, fuller, as Garmin re-sends them through the day.
+    stress_start = now - 8 * 3600
+    official.handle_push(json.dumps({"stressDetails": [{
+        "userId": "garmin-user-1", "summaryId": "st-2", "calendarDate": today, "startTimeInSeconds": stress_start,
+        "startTimeOffsetInSeconds": 3600,
+        "timeOffsetStressLevelValues": {str(180 * i): (80 if 20 <= i < 40 else 15) for i in range(60)},
+        "timeOffsetBodyBatteryValues": {"0": 40, "180": 85, "360": 62},
+        "bodyBatteryActivityEventList": [{"eventType": "SLEEP", "eventStartTimeInSeconds": stress_start, "eventStartTimeOffsetInSeconds": 3600,
+                                          "duration": 27000, "bodyBatteryImpact": 48}]}]}).encode())
+    kept_stress = next(r for r in store.official_summaries("garmin-user-1", "stressDetails") if r.get("summaryId") == "st-2")
+    spell = (kept_stress.get("stressfulSpells") or [{}])[0]
+    check("a stressful hour is kept as a spell with local times, the curve dropped",
+          spell.get("minutes") == 60 and spell.get("peak") == 80 and spell.get("from") == time.strftime("%H:%M", time.gmtime(stress_start + 3600 + 3600))
+          and "timeOffsetStressLevelValues" not in kept_stress, str(kept_stress))
+    check("and what charged Body Battery", (kept_stress.get("bodyBatteryEvents") or [{}])[0].get("event", {}).get("bodyBatteryImpact") == 48)
+
     print("\nthe everyday tools, on the official API alone")
     import anyio
     from garmin_mcp import server
@@ -247,8 +332,20 @@ def main() -> int:
     check("and the activity list", listed.get("count") == 1 and listed["activities"][0]["name"] == "Morning run"
           and listed["activities"][0]["pace_per_km"] == "5:33 /km", str(listed)[:300])
     detail_answer = as_user(bart, server.get_activity_details, 77)
-    check("and a run's kilometre splits", detail_answer.get("splits_count") == 3
-          and detail_answer["splits"][0]["pace_per_km"], str(detail_answer)[:300])
+    check("and a run's laps as the watch took them, with kilometre splits worked out inside",
+          detail_answer.get("splits_count") == 2 and detail_answer["splits"][0]["pace_per_km"]
+          and len((detail_answer.get("inside") or {}).get("km_splits") or []) == 2, str(detail_answer)[:300])
+    check("with the file's zones, dynamics, training effect and power, as Connect's answer has them",
+          detail_answer.get("hr_zones", [{}])[0].get("percent") == 91.7 and detail_answer["summary"]["running_dynamics"]["ground_contact_ms"] == 247
+          and detail_answer["summary"]["training_effect"] == {"aerobic": 2.5, "anaerobic": 0.4}
+          and detail_answer["summary"]["power"]["average_w"] == 403, str(detail_answer)[:600])
+    check("and the list shows them too", listed["activities"][0].get("hr_zones") and listed["activities"][0].get("training_effect"), str(listed)[:300])
+    sleep_again = as_user(bart, server.get_sleep_data, today)
+    check("the night brings breathing and SpO2", sleep_again.get("breathing", {}).get("average") == 12.3 and sleep_again.get("spo2", {}).get("lowest") == 93, str(sleep_again))
+    day_again = as_user(bart, server.get_daily_summary, today)
+    check("the day brings its stressful spells, Body Battery events, SpO2 and the week's resting heart rate",
+          (day_again.get("stressful_spells") or [{}])[0].get("minutes") == 60 and (day_again.get("body_battery_events") or [{}])[0].get("impact") == 48
+          and day_again.get("spo2_average") == 96 and day_again["heart_rate"].get("resting_7day_avg_bpm") == 46, str(day_again)[:600])
     missing = as_user(bart, server.get_sleep_data, "2026-01-01")
     check("a night Garmin hasn't sent says so, without falling back", "hasn't sent" in missing.get("note", ""), str(missing))
     check("someone without an official link is never switched", as_user("someone-else", lambda: _async(server._official_only)) is None)
