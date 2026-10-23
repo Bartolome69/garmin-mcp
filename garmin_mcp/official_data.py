@@ -111,7 +111,10 @@ def tidy() -> int:
     for garmin_user_id, kind, summary_id, start, data in store.all_official_summaries(("activityDetails", "dailies",
                                                                                          "sleeps", "hrv", "stressDetails")):
         trimmed = keep(kind, data)
-        if trimmed is not None and trimmed != data:
+        # Details kept before their start was read from inside the summary.
+        if start is None and isinstance(data.get("summary"), dict):
+            start = data["summary"].get("startTimeInSeconds")
+        if trimmed is not None and (trimmed != data or start is not None):
             store.save_official_summaries(garmin_user_id, kind, [(summary_id, start, trimmed)])
     return dropped
 
@@ -125,6 +128,10 @@ def _local(seconds: Any, offset: Any) -> str | None:
     if not isinstance(seconds, (int, float)):
         return None
     return time.strftime("%Y-%m-%d %H:%M", time.gmtime(seconds + (offset if isinstance(offset, (int, float)) else 0)))
+
+
+def _round(value: Any) -> int | None:
+    return round(value) if isinstance(value, (int, float)) else None
 
 
 def _minutes(seconds: Any) -> int | None:
@@ -154,7 +161,7 @@ def activities(garmin_user_id: str, days: int = 14) -> list[dict]:
             "pace": pace_per_km(metres, seconds) if metres else None,
             "avg_hr": a.get("averageHeartRateInBeatsPerMinute"),
             "max_hr": a.get("maxHeartRateInBeatsPerMinute"),
-            "cadence": a.get("averageRunCadenceInStepsPerMinute") or a.get("averageBikeCadenceInRoundsPerMinute"),
+            "cadence": _round(a.get("averageRunCadenceInStepsPerMinute") or a.get("averageBikeCadenceInRoundsPerMinute")),
             "elevation_gain_m": a.get("totalElevationGainInMeters"),
             "kcal": a.get("activeKilocalories"),
             "device": a.get("deviceName"),
@@ -204,7 +211,8 @@ def days(garmin_user_id: str, count: int = 7) -> list[dict]:
             "resting_hr": d.get("restingHeartRateInBeatsPerMinute"),
             "steps": d.get("steps"),
             "stress": drop_empty({"average": d.get("averageStressLevel") if (d.get("averageStressLevel") or -1) >= 0 else None,
-                                  "label": d.get("stressQualifier")}) or (st.get("stress") or None),
+                                  "label": d.get("stressQualifier") if d.get("stressQualifier") != "unknown" else None})
+                      or (st.get("stress") or None),
             "body_battery": st.get("bodyBattery") or drop_empty({
                 "charged": d.get("bodyBatteryChargedValue"), "drained": d.get("bodyBatteryDrainedValue")}) or None,
             "intensity_min": _minutes((d.get("moderateIntensityDurationInSeconds") or 0)

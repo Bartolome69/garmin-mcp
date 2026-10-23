@@ -201,13 +201,15 @@ def main() -> int:
     with sqlite3.connect(DB) as conn:
         conn.execute("INSERT INTO official_summaries (garmin_user_id, kind, summary_id, start_time, data_enc, received_at) "
                      "VALUES ('garmin-user-1', 'epochs', 'old', 0, ?, 0)", (store._cipher().encrypt(b"{}"),))
-        conn.execute("UPDATE official_summaries SET data_enc = ? WHERE kind = 'activityDetails'",
+        conn.execute("UPDATE official_summaries SET data_enc = ?, start_time = NULL WHERE kind = 'activityDetails'",
                      (store._cipher().encrypt(json.dumps(detail).encode()),))
     from garmin_mcp import official_data
     official_data.tidy()
     blobs = [store._cipher().decrypt(r[0]) for r in sqlite3.connect(DB).execute("SELECT data_enc FROM official_summaries")]
     check("what was kept before trimming is tidied away on start",
           "epochs" not in store.official_summary_counts("garmin-user-1") and not any(b"latitudeInDegree" in b for b in blobs))
+    check("and details kept without a start get one, so they're read back with their activity",
+          official.read(bart, "activities")[0].get("splits") is not None)
     official.handle_push(json.dumps({"userPermissionsChange": [
         {"userId": "garmin-user-1", "permissions": ["ACTIVITY_EXPORT"]}]}).encode())
     check("a permission change is recorded", store.official_link(bart).permissions == ["ACTIVITY_EXPORT"])
