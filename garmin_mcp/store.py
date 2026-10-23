@@ -52,6 +52,9 @@ MIGRATIONS = (
     # Set once this person has been told how to stop Claude asking permission
     # for every read.
     "ALTER TABLE users ADD COLUMN tip_seen INTEGER",
+    # Set while a preview account tries Daash on Garmin's official API alone:
+    # its reads come only from what Garmin has pushed.
+    "ALTER TABLE official_links ADD COLUMN official_only INTEGER",
 )
 
 # OAuth state. Separate from `users`: a person is one row there however many
@@ -738,4 +741,19 @@ def all_official_summaries(kinds: tuple[str, ...]) -> list[tuple[str, str, str, 
         except InvalidToken:
             continue
     return out
+
+
+def set_official_only(user_token: str, on: bool) -> bool:
+    """Read only from Garmin's official API for this person, or not. False when they aren't linked."""
+    with _connect() as conn:
+        return conn.execute("UPDATE official_links SET official_only = ? WHERE user_token = ?",
+                            (1 if on else None, user_token)).rowcount > 0
+
+
+def official_only(user_token: str) -> str | None:
+    """The Garmin user id when this person reads only from the official API, else None."""
+    with _connect() as conn:
+        row = conn.execute("SELECT garmin_user_id FROM official_links WHERE user_token = ? AND official_only = 1",
+                           (user_token,)).fetchone()
+    return row[0] if row else None
 

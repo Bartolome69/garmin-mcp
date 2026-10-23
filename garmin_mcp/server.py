@@ -42,7 +42,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, crews, cycling, official, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, stream, swimming, terrain, training_plan
+from . import conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, session
 from .workouts import (
@@ -613,6 +613,25 @@ except Exception:  # noqa: BLE001 - a view that can't register must not stop the
 MAX_ACTIVITIES = 50
 
 
+# A preview account can try Daash on Garmin's official API alone: then the
+# everyday reads (a day, a night, activities) are answered only from what
+# Garmin has pushed, which shows what someone connected that way would get.
+OFFICIAL_SOURCE = "Garmin's official API (preview): only what Garmin has sent since connecting"
+OFFICIAL_NOTHING = "Garmin's official API hasn't sent this yet: it arrives as the watch syncs."
+
+
+def _official_only() -> str | None:
+    """The Garmin user id when this account reads only from Garmin's official API."""
+    token = official.current()
+    if not token or not official.configured():
+        return None
+    try:
+        return store.official_only(token)
+    except Exception:  # noqa: BLE001 - a preview switch never stops anyone's reads
+        log.exception("official-only check failed")
+        return None
+
+
 async def _call(fn: Callable[[Any], Any]) -> Any:
     """Run a blocking Garmin call on a worker thread, reauthenticating if needed."""
     return await anyio.to_thread.run_sync(functools.partial(session.run, fn))
@@ -709,6 +728,12 @@ async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
             like '-3'. Defaults to today.
     """
     day = parse_date(date)
+    garmin_user = _official_only()
+    if garmin_user:
+        stats = await anyio.to_thread.run_sync(official_data.connect_stats, garmin_user, day)
+        if not stats:
+            return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+        return {**_daily_shape(day, stats, None, None), "source": OFFICIAL_SOURCE}
     stats = await _call(lambda c: _method(c, "get_stats", "get_user_summary")(day))
     if not stats:
         return {"date": day, "note": "Garmin returned no summary for this day."}
@@ -717,6 +742,10 @@ async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
         ("stress", lambda c: c.get_stress_data(day)),
     ])
 
+    return _daily_shape(day, stats, battery_events, stress_day)
+
+
+def _daily_shape(day: str, stats: dict[str, Any], battery_events: Any, stress_day: Any) -> dict[str, Any]:
     return drop_empty(
         {
             "date": day,
@@ -842,14 +871,22 @@ async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
             offset like '-3'. Defaults to today.
     """
     day = parse_date(date)
+    garmin_user = _official_only()
+    if garmin_user:
+        raw = await anyio.to_thread.run_sync(official_data.connect_sleep, garmin_user, day)
+        if not raw:
+            return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+        return {**_sleep_shape(day, raw, {}), "source": OFFICIAL_SOURCE}
     (raw, spo2), _ = await _gather([
         ("sleep", lambda c: c.get_sleep_data(day)),
         ("spo2", lambda c: c.get_spo2_data(day)),
     ])
     if not raw:
         return {"date": day, "note": "Garmin returned no sleep data for this night."}
-    spo2 = spo2 if isinstance(spo2, dict) else {}
+    return _sleep_shape(day, raw, spo2 if isinstance(spo2, dict) else {})
 
+
+def _sleep_shape(day: str, raw: dict[str, Any], spo2: dict[str, Any]) -> dict[str, Any]:
     dto = raw.get("dailySleepDTO") or {}
     total = dto.get("sleepTimeSeconds")
     if not dto or total is None:
@@ -1079,6 +1116,18 @@ async def get_activities(
     """
     limit = max(1, min(int(limit or 10), MAX_ACTIVITIES))
 
+    garmin_user = _official_only()
+    if garmin_user:
+        start = parse_date(start_date) if start_date else None
+        end = (parse_date(end_date) if end_date else parse_date("today")) if start_date else None
+        rows = await anyio.to_thread.run_sync(official_data.activity_rows, garmin_user, start, end)
+        shown = [_summarise_activity(official_data.connect_activity(a)) for a in rows[:limit]]
+        return drop_empty({
+            "count": len(shown), "window": {"from": start, "to": end} if start else None,
+            "truncated": len(rows) > len(shown) or None, "activities": shown,
+            "source": OFFICIAL_SOURCE, "note": None if shown else OFFICIAL_NOTHING,
+        })
+
     if start_date:
         start = parse_date(start_date)
         end = parse_date(end_date) if end_date else parse_date("today")
@@ -1159,6 +1208,20 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         activity_id = int(str(activity_id).strip())
     except ValueError:
         return {"error": f"activity_id must be numeric, got {activity_id!r}."}
+
+    garmin_user = _official_only()
+    if garmin_user:
+        flat, laps = await anyio.to_thread.run_sync(official_data.activity, garmin_user, activity_id)
+        if flat is None:
+            return {"activity_id": activity_id, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+        ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
+        return drop_empty({
+            "activity_id": activity_id,
+            "summary": _summarise_activity(flat) or None,
+            "splits_count": len(laps) or None,
+            "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
+            "source": OFFICIAL_SOURCE,
+        })
 
     warnings: list[str] = []
 
@@ -3001,7 +3064,9 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             "disconnect" ends the official link and deletes what Garmin sent;
             "activities" reads the recent activities Garmin sent, with splits
             and laps; "days" reads each recent day's sleep, HRV, resting heart
-            rate, stress, Body Battery, steps and VO2 max.
+            rate, stress, Body Battery, steps and VO2 max; "official_only"
+            answers the day, sleep and activity tools from Garmin's official
+            API alone, and "both" goes back to Garmin Connect for them.
         date: For test_workout, the day to schedule it on.
     """
     user_token = official.current()
@@ -3013,6 +3078,14 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
         if action == "connect" and found.get("connected"):
             found["note"] = "Already connected. Say 'disconnect' first to connect a different Garmin account."
         return found
+    if action in ("official_only", "both"):
+        on = action == "official_only"
+        if not await anyio.to_thread.run_sync(store.set_official_only, user_token, on):
+            return {"error": "Not connected to Garmin's official API yet. Use action 'connect' first."}
+        return {"official_only": on, "note": (
+            "get_daily_summary, get_sleep_data, get_activities and get_activity_details now answer only from "
+            "Garmin's official API. Everything else still uses Garmin Connect." if on else
+            "Back to Garmin Connect for every tool.")}
     if action in ("activities", "days"):
         found = await anyio.to_thread.run_sync(official.read, user_token, action)
         if found is None:
@@ -3035,7 +3108,7 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
         except official.OfficialError as exc:
             return {"error": str(exc)}
         return {**sent, "summary": summary, "note": "Sync the watch to see it."}
-    return {"error": f"Unknown action {action!r}. Use status, connect, activities, days, test_workout or disconnect."}
+    return {"error": f"Unknown action {action!r}. Use status, connect, activities, days, official_only, both, test_workout or disconnect."}
 
 
 @_app_tool(CREW_VIEW)

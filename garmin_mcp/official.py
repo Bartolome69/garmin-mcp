@@ -503,6 +503,7 @@ def status(user_token: str) -> dict:
         # Garmin's id for this account, which the developer portal's tools
         # (the Summary Resender) ask for.
         "garmin_user_id": link.garmin_user_id,
+        "official_only": store.official_only(user_token) is not None,
         "permissions": link.permissions,
         "received": {kind: {"count": c["count"], "latest": fmt(c["latest_start"]), "arrived": fmt(c["last_received"])}
                      for kind, c in sorted(counts.items())},

@@ -10,6 +10,7 @@ arrives, as the privacy page says.
 
 from __future__ import annotations
 
+import calendar
 import time
 from typing import Any, Iterable
 
@@ -38,7 +39,7 @@ def _values(curve: Any) -> list[float]:
 
 
 def _splits(samples: list[dict], laps: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Kilometre splits and laps from an activity's samples: distance, time, pace, heart rate."""
+    """Kilometre splits and laps from an activity's samples: metres, seconds and average heart rate."""
     points = [s for s in samples if isinstance(s, dict) and isinstance(s.get("totalDistanceInMeters"), (int, float))
               and isinstance(s.get("timerDurationInSeconds"), (int, float))]
     if len(points) < 2:
@@ -48,9 +49,8 @@ def _splits(samples: list[dict], laps: list[dict]) -> tuple[list[dict], list[dic
         metres = chunk[-1]["totalDistanceInMeters"] - start["totalDistanceInMeters"]
         seconds = chunk[-1]["timerDurationInSeconds"] - start["timerDurationInSeconds"]
         hr = [s["heartRate"] for s in chunk if isinstance(s.get("heartRate"), (int, float)) and s["heartRate"] > 0]
-        return drop_empty({"km": round(metres / 1000, 2), "time": duration(seconds),
-                           "pace": pace_per_km(metres, seconds),
-                           "avg_hr": round(sum(hr) / len(hr)) if hr else None})
+        return drop_empty({"m": round(metres, 1), "s": round(seconds, 1),
+                           "hr": round(sum(hr) / len(hr)) if hr else None})
 
     kms, start, chunk, mark = [], points[0], [], 1000.0
     for point in points[1:]:
@@ -71,7 +71,7 @@ def _splits(samples: list[dict], laps: list[dict]) -> tuple[list[dict], list[dic
                       and (end is None or (p.get("startTimeInSeconds") or 0) < end)]
             before = [p for p in points if (p.get("startTimeInSeconds") or 0) < begin]
             if inside:
-                out_laps.append({"lap": i + 1, **stretch(inside, before[-1] if before else inside[0])})
+                out_laps.append(stretch(inside, before[-1] if before else inside[0]))
     return kms, out_laps
 
 
@@ -124,6 +124,34 @@ def tidy() -> int:
 # --------------------------------------------------------------------------
 
 
+def _seconds_of(text: str) -> float | None:
+    """'1h 02m 03s', '5m 06s' or '43s' back to seconds, for splits kept before they were kept raw."""
+    total, found = 0.0, False
+    for part in text.split():
+        for unit, scale in (("h", 3600), ("m", 60), ("s", 1)):
+            if part.endswith(unit) and part[:-1].isdigit():
+                total, found = total + int(part[:-1]) * scale, True
+    return total if found else None
+
+
+def raw_splits(splits: Any) -> list[dict]:
+    """Splits or laps as metres, seconds and heart rate, whichever way they were kept."""
+    out = []
+    for x in splits if isinstance(splits, list) else []:
+        if not isinstance(x, dict):
+            continue
+        if "m" in x:
+            out.append(x)
+        elif isinstance(x.get("km"), (int, float)) and isinstance(x.get("time"), str):
+            out.append(drop_empty({"m": x["km"] * 1000, "s": _seconds_of(x["time"]), "hr": x.get("avg_hr")}))
+    return [x for x in out if x.get("m") and x.get("s")]
+
+
+def _split_view(x: dict) -> dict:
+    return drop_empty({"km": round(x["m"] / 1000, 2), "time": duration(x["s"]), "pace": pace_per_km(x["m"], x["s"]),
+                       "avg_hr": x.get("hr")})
+
+
 def _local(seconds: Any, offset: Any) -> str | None:
     if not isinstance(seconds, (int, float)):
         return None
@@ -165,8 +193,8 @@ def activities(garmin_user_id: str, days: int = 14) -> list[dict]:
             "elevation_gain_m": a.get("totalElevationGainInMeters"),
             "kcal": a.get("activeKilocalories"),
             "device": a.get("deviceName"),
-            "splits": detail.get("splits"),
-            "laps": detail.get("laps"),
+            "splits": [_split_view(x) for x in raw_splits(detail.get("splits"))] or None,
+            "laps": [_split_view(x) for x in raw_splits(detail.get("laps"))] or None,
             "_t": a.get("startTimeInSeconds") or 0,
         }))
     out.sort(key=lambda r: r.get("_t", 0), reverse=True)
@@ -220,3 +248,145 @@ def days(garmin_user_id: str, count: int = 7) -> list[dict]:
             "vo2max": m.get("vo2Max"), "vo2max_cycling": m.get("vo2MaxCycling"), "fitness_age": m.get("fitnessAge"),
         }))
     return out
+
+
+# --------------------------------------------------------------------------
+# In Garmin Connect's shapes, for the everyday tools
+# --------------------------------------------------------------------------
+# An account trying Daash on the official API alone has its reads answered
+# from here. Each is turned into the shape Garmin Connect answers in, so the
+# tools describe it exactly as they describe Connect's.
+
+
+def _offset(row: dict) -> float:
+    value = row.get("startTimeOffsetInSeconds")
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _wall(seconds: Any, offset: float) -> str | None:
+    if not isinstance(seconds, (int, float)):
+        return None
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(seconds + offset))
+
+
+def connect_activity(a: dict) -> dict:
+    """An activity summary as Garmin Connect's activity list has it."""
+    return {
+        "activityId": a.get("activityId") or a.get("summaryId"),
+        "activityName": a.get("activityName"),
+        "activityType": {"typeKey": str(a.get("activityType") or "other").lower()},
+        "startTimeLocal": _wall(a.get("startTimeInSeconds"), _offset(a)),
+        "distance": a.get("distanceInMeters"),
+        "duration": a.get("durationInSeconds"),
+        "averageSpeed": a.get("averageSpeedInMetersPerSecond"),
+        "maxSpeed": a.get("maxSpeedInMetersPerSecond"),
+        "averageHR": a.get("averageHeartRateInBeatsPerMinute"),
+        "maxHR": a.get("maxHeartRateInBeatsPerMinute"),
+        "calories": a.get("activeKilocalories"),
+        "elevationGain": a.get("totalElevationGainInMeters"),
+        "elevationLoss": a.get("totalElevationLossInMeters"),
+        "averageRunningCadenceInStepsPerMinute": a.get("averageRunCadenceInStepsPerMinute"),
+        "averageBikingCadenceInRevPerMinute": a.get("averageBikeCadenceInRoundsPerMinute"),
+        "steps": a.get("steps"),
+    }
+
+
+def activity_rows(garmin_user_id: str, start: str | None = None, end: str | None = None) -> list[dict]:
+    """The account's activities, newest first, optionally between two local dates."""
+    since = calendar_seconds(start) - 86400 if start else 0
+    seen: dict[str, dict] = {}
+    for kind in ACTIVITY_KINDS:
+        for a in store.official_summaries(garmin_user_id, kind, since, limit=2000):
+            seen[str(a.get("activityId") or a.get("summaryId"))] = a
+    rows = sorted(seen.values(), key=lambda a: a.get("startTimeInSeconds") or 0, reverse=True)
+    if start or end:
+        rows = [a for a in rows if (_wall(a.get("startTimeInSeconds"), _offset(a)) or "")[:10] >= (start or "")
+                and (_wall(a.get("startTimeInSeconds"), _offset(a)) or "")[:10] <= (end or "9999")]
+    return rows
+
+
+def activity(garmin_user_id: str, activity_id: Any) -> tuple[dict | None, list[dict]]:
+    """One activity, Connect-shaped, and its kilometre splits as Connect's laps."""
+    wanted = str(activity_id)
+    found = next((a for a in activity_rows(garmin_user_id) if str(a.get("activityId") or a.get("summaryId")) == wanted), None)
+    detail = next((d for d in store.official_summaries(garmin_user_id, "activityDetails", limit=2000)
+                   if str(d.get("activityId") or "") == wanted), None)
+    if found is None and detail and isinstance(detail.get("summary"), dict):
+        found = {**detail["summary"], "activityId": detail.get("activityId")}
+    laps = [{"lapIndex": i, "distance": x["m"], "duration": x["s"], "averageHR": x.get("hr")}
+            for i, x in enumerate(raw_splits((detail or {}).get("splits")), start=1)]
+    return (connect_activity(found) if found else None), laps
+
+
+def calendar_seconds(day: str) -> int:
+    return calendar.timegm(time.strptime(day, "%Y-%m-%d"))
+
+
+def _on(garmin_user_id: str, kind: str, day: str) -> dict:
+    rows = store.official_summaries(garmin_user_id, kind, calendar_seconds(day) - 3 * 86400, limit=2000)
+    return next((r for r in reversed(rows) if r.get("calendarDate") == day), {})
+
+
+def connect_stats(garmin_user_id: str, day: str) -> dict | None:
+    """A day's summary as Garmin Connect's daily stats have it, or None when Garmin hasn't sent it."""
+    d, st = _on(garmin_user_id, "dailies", day), _on(garmin_user_id, "stressDetails", day)
+    if not d:
+        return None
+    battery = st.get("bodyBattery") or {}
+    stress = d.get("averageStressLevel")
+    secs = lambda k: d.get(k) if isinstance(d.get(k), (int, float)) else None  # noqa: E731
+    active, bmr = d.get("activeKilocalories"), d.get("bmrKilocalories")
+    return {
+        "totalSteps": d.get("steps"),
+        "dailyStepGoal": d.get("stepsGoal"),
+        "floorsAscended": d.get("floorsClimbed"),
+        "totalDistanceMeters": d.get("distanceInMeters"),
+        "totalKilocalories": (active or 0) + (bmr or 0) if active is not None or bmr is not None else None,
+        "activeKilocalories": active,
+        "bmrKilocalories": bmr,
+        "restingHeartRate": d.get("restingHeartRateInBeatsPerMinute"),
+        "minHeartRate": d.get("minHeartRateInBeatsPerMinute"),
+        "maxHeartRate": d.get("maxHeartRateInBeatsPerMinute"),
+        "bodyBatteryMostRecentValue": battery.get("end"),
+        "bodyBatteryHighestValue": battery.get("high"),
+        "bodyBatteryLowestValue": battery.get("low"),
+        "bodyBatteryChargedValue": d.get("bodyBatteryChargedValue"),
+        "bodyBatteryDrainedValue": d.get("bodyBatteryDrainedValue"),
+        "averageStressLevel": stress if isinstance(stress, (int, float)) and stress >= 0 else None,
+        "maxStressLevel": d.get("maxStressLevel"),
+        "restStressDuration": secs("restStressDurationInSeconds"),
+        "highStressDuration": secs("highStressDurationInSeconds"),
+        "moderateIntensityMinutes": _minutes(d.get("moderateIntensityDurationInSeconds")),
+        "vigorousIntensityMinutes": _minutes(d.get("vigorousIntensityDurationInSeconds")),
+        "intensityMinutesGoal": _minutes(d.get("intensityDurationGoalInSeconds")),
+    }
+
+
+def connect_sleep(garmin_user_id: str, day: str) -> dict | None:
+    """A night as Garmin Connect's sleep answer has it, by the day woken on, or None when Garmin hasn't sent it."""
+    s = _on(garmin_user_id, "sleeps", day)
+    if not s:
+        return None
+    h, d = _on(garmin_user_id, "hrv", day), _on(garmin_user_id, "dailies", day)
+    deep, light, rem = (s.get(k) for k in ("deepSleepDurationInSeconds", "lightSleepDurationInSeconds", "remSleepInSeconds"))
+    asleep = sum(v for v in (deep, light, rem) if isinstance(v, (int, float))) or s.get("durationInSeconds")
+    start, offset = s.get("startTimeInSeconds"), _offset(s)
+    local_ms = (lambda t: (t + offset) * 1000 if isinstance(t, (int, float)) else None)  # noqa: E731
+    scores = {k: v for k, v in (s.get("sleepScores") or {}).items() if isinstance(v, dict)}
+    if isinstance(s.get("overallSleepScore"), dict):
+        scores["overall"] = s["overallSleepScore"]
+    return {
+        "dailySleepDTO": {
+            "sleepTimeSeconds": asleep,
+            "sleepStartTimestampLocal": local_ms(start),
+            "sleepEndTimestampLocal": local_ms(start + s["durationInSeconds"])
+            if isinstance(start, (int, float)) and isinstance(s.get("durationInSeconds"), (int, float)) else None,
+            "deepSleepSeconds": deep,
+            "lightSleepSeconds": light,
+            "remSleepSeconds": rem,
+            "awakeSleepSeconds": s.get("awakeDurationInSeconds"),
+            "sleepScores": scores,
+        },
+        "restingHeartRate": d.get("restingHeartRateInBeatsPerMinute"),
+        "avgOvernightHrv": h.get("lastNightAvg"),
+    }

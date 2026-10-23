@@ -78,6 +78,10 @@ official._post_form = fake_post_form
 official._call = fake_call
 
 
+async def _async(fn, *args):
+    return fn(*args)
+
+
 def main() -> int:
     print("\nsigning in")
     bart = store.save_user("b***@example.com", "{}", email_hash="hash-bart")
@@ -210,6 +214,47 @@ def main() -> int:
           "epochs" not in store.official_summary_counts("garmin-user-1") and not any(b"latitudeInDegree" in b for b in blobs))
     check("and details kept without a start get one, so they're read back with their activity",
           official.read(bart, "activities")[0].get("splits") is not None)
+
+    print("\nthe everyday tools, on the official API alone")
+    import anyio
+    from garmin_mcp import server
+    official.handle_push(json.dumps({"dailies": [{
+        "userId": "garmin-user-1", "summaryId": "d-today", "calendarDate": today, "startTimeInSeconds": now - 6 * 3600,
+        "steps": 10170, "stepsGoal": 16900, "restingHeartRateInBeatsPerMinute": 43, "activeKilocalories": 694,
+        "bmrKilocalories": 2078, "averageStressLevel": 14, "moderateIntensityDurationInSeconds": 120,
+        "vigorousIntensityDurationInSeconds": 3480}]}).encode())
+
+    def as_user(token, fn, *args):
+        bound = official.use(token)
+        try:
+            return anyio.run(fn, *args)
+        finally:
+            official.reset(bound)
+
+    check("off until asked for: nothing changes", as_user(bart, lambda: _async(server._official_only)) is None)
+    switched = as_user(bart, server.garmin_official, "official_only")
+    check("the preview tool turns it on", switched.get("official_only") is True, str(switched))
+    sleep_answer = as_user(bart, server.get_sleep_data, today)
+    check("sleep comes from Garmin's official API, in the usual shape",
+          sleep_answer.get("source", "").startswith("Garmin's official API") and sleep_answer["score"]["overall"] == 84
+          and sleep_answer["stages"]["deep"]["minutes"] == 90 and sleep_answer["average_hrv_ms"] == 61, str(sleep_answer))
+    day_answer = as_user(bart, server.get_daily_summary, today)
+    check("so does the day, Body Battery from its highs and lows",
+          day_answer.get("steps") == 10170 and day_answer["calories"]["total"] == 2772
+          and day_answer["body_battery"]["highest"] == 85 and day_answer["intensity_minutes"]["vigorous"] == 58,
+          str(day_answer))
+    listed = as_user(bart, server.get_activities, 5)
+    check("and the activity list", listed.get("count") == 1 and listed["activities"][0]["name"] == "Morning run"
+          and listed["activities"][0]["pace_per_km"] == "5:33 /km", str(listed)[:300])
+    detail_answer = as_user(bart, server.get_activity_details, 77)
+    check("and a run's kilometre splits", detail_answer.get("splits_count") == 3
+          and detail_answer["splits"][0]["pace_per_km"], str(detail_answer)[:300])
+    missing = as_user(bart, server.get_sleep_data, "2026-01-01")
+    check("a night Garmin hasn't sent says so, without falling back", "hasn't sent" in missing.get("note", ""), str(missing))
+    check("someone without an official link is never switched", as_user("someone-else", lambda: _async(server._official_only)) is None)
+    back = as_user(bart, server.garmin_official, "both")
+    check("and 'both' goes back to Garmin Connect",
+          back.get("official_only") is False and as_user(bart, lambda: _async(server._official_only)) is None)
     official.handle_push(json.dumps({"userPermissionsChange": [
         {"userId": "garmin-user-1", "permissions": ["ACTIVITY_EXPORT"]}]}).encode())
     check("a permission change is recorded", store.official_link(bart).permissions == ["ACTIVITY_EXPORT"])
