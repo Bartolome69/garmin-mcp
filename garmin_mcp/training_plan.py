@@ -416,20 +416,25 @@ def _speed(step: Mapping[str, Any]) -> float | None:
 
 
 def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | None:
-    """A run as segments the card draws: easy, work and recovery, each by its distance.
+    """A run or ride as segments the card draws: easy, work and recovery, each by its distance.
 
     Built from the structured steps, repeats unrolled, time steps converted at
-    their pace target (an easy pace when they have none). Work is what sits
-    inside a repeat, or a body step clearly faster than the slowest one, so a
-    long run with marathon-pace stretches shows them. Runs only: a strength
-    session or a swim has no shape worth drawing this way.
+    their pace target (an easy pace when they have none; a ride's at a steady
+    speed, so its parts are drawn by time). Work is what sits inside a repeat,
+    or a body step clearly harder than the gentlest one, so a long run with
+    marathon-pace stretches shows them; or a tempo's one block between its
+    warm-up and cool-down, when its pace or target says so. The warm-up and
+    cool-down are marked "part" and kept apart from the body, so the card can
+    tell them from the work in a hard session whose targets don't say. A
+    strength session or a swim has no shape worth drawing this way.
     """
     if not workout:
         return None
     sport = ((workout.get("sportType") or {}).get("sportTypeKey") or "running").lower()
-    if category(sport) != "run":
+    ride = is_ride(sport)
+    if category(sport) != "run" and not ride:
         return None
-    flat: list[tuple[str, float, float | None, bool]] = []
+    flat: list[tuple[str, float, tuple[str, float] | None, bool]] = []
 
     def walk(steps: Sequence[Mapping[str, Any]], in_repeat: bool) -> None:
         for step in sorted(steps or [], key=lambda x: x.get("stepOrder") or 0):
@@ -444,48 +449,67 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
             kind = ((step.get("stepType") or {}).get("stepTypeKey") or "other").lower()
             cond = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
             value = float(step.get("endConditionValue") or 0)
-            speed = _speed(step)
+            level = _level(step)
+            speed = RIDE_MPS if ride else (_speed(step) or DEFAULT_MPS)
             if cond == "distance":
                 metres = value
             elif cond == "time":
-                metres = value * (speed or DEFAULT_MPS)
+                metres = value * speed
             else:
                 metres = 0.0
-            flat.append((kind, metres, speed, in_repeat))
+            flat.append((kind, metres, level, in_repeat))
 
     for segment in workout.get("workoutSegments") or []:
         walk(segment.get("workoutSteps") or [], False)
     if not flat:
         return None
 
-    body = [(k, m, sp, rep) for k, m, sp, rep in flat if k not in ("warmup", "cooldown", "recovery", "rest")]
-    speeds = [sp for _, _, sp, _ in body if sp]
-    slowest = min(speeds) if speeds else None
-    any_repeat = any(rep for _, _, _, rep in body)
+    ends = ("warmup", "cooldown")
+    body = [f for f in flat if f[0] not in ends + ("recovery", "rest")]
+    any_repeat = any(f[3] for f in body)
+    flanked = any(f[0] in ends for f in flat)
+    lowest: dict[str, float] = {}
+    for _, _, level, _ in body:
+        if level and level[0] in WORK_LEVEL_RATIO:
+            lowest[level[0]] = min(lowest.get(level[0], level[1]), level[1])
+    warm = {level[0]: level[1] for kind, _, level, _ in flat if kind in ends and level}
 
-    def classify(kind: str, speed: float | None, in_repeat: bool) -> str:
-        if kind in ("warmup", "cooldown"):
+    def classify(kind: str, level: tuple[str, float] | None, in_repeat: bool) -> str:
+        if kind in ends:
             return "easy"
         if kind in ("recovery", "rest"):
             return "rec"
         if in_repeat:
             return "work"
-        if len(body) <= 1 and not any_repeat:
+        if level and level[0] == "zone":
+            # A heart rate zone: 3 and up is work, in a session built round it.
+            return "work" if level[1] >= 3 and flanked and len(body) == 1 and not any_repeat else "easy"
+        if not level or level[0] not in WORK_LEVEL_RATIO:
             return "easy"
-        if speed and slowest and speed >= slowest * WORK_SPEED_RATIO:
+        unit, value = level
+        ratio = WORK_LEVEL_RATIO[unit]
+        if len(body) > 1 or any_repeat:
+            return "work" if value >= lowest[unit] * ratio else "easy"
+        # One block on its own: work when it's run well above an easy pace, or
+        # above its own warm-up, with a warm-up or cool-down around it.
+        if not flanked:
+            return "easy"
+        if unit == "pace" and not ride and value >= DEFAULT_MPS * ratio:
             return "work"
-        return "easy"
+        return "work" if unit in warm and value >= warm[unit] * ratio else "easy"
 
     segments: list[dict[str, Any]] = []
-    for kind, metres, speed, in_repeat in flat:
+    for kind, metres, level, in_repeat in flat:
         km = metres / 1000
         if km < 0.05:
             continue
-        k = classify(kind, speed, in_repeat)
-        if segments and segments[-1]["k"] == k and k == "easy":
-            segments[-1]["km"] = round(segments[-1]["km"] + km, 2)
+        k = classify(kind, level, in_repeat)
+        part = "wu" if kind == "warmup" else "cd" if kind == "cooldown" else None
+        last = segments[-1] if segments else None
+        if last and last["k"] == k == "easy" and last.get("part") == part:
+            last["km"] = round(last["km"] + km, 2)
         else:
-            segments.append({"k": k, "km": round(km, 2)})
+            segments.append({"k": k, "km": round(km, 2), **({"part": part} if part else {})})
     return segments[:SHAPE_MAX_SEGMENTS] or None
 
 

@@ -425,6 +425,43 @@ def check_workout_steps(check) -> None:
     long_shape = tp.workout_shape(_json.loads(long_w.model_dump_json(by_alias=True)))
     check("a long run's faster stretches read as work between easy parts",
           [g["k"] for g in long_shape] == ["easy", "work", "easy", "work", "easy"], str(long_shape))
+    tempo_w, _, _ = build_workout("Tempo 8k", "running", [
+        {"type": "warmup", "duration_seconds": 900},
+        {"type": "interval", "distance_meters": 8000, "pace": ["4:40", "4:50"]},
+        {"type": "cooldown", "duration_seconds": 600}])
+    tempo_shape = tp.workout_shape(_json.loads(tempo_w.model_dump_json(by_alias=True)))
+    check("a tempo's one block between warm-up and cool-down is work, with the ends kept apart",
+          [(g["k"], g.get("part")) for g in tempo_shape] == [("easy", "wu"), ("work", None), ("easy", "cd")], str(tempo_shape))
+    easy_ends_w, _, _ = build_workout("Easy 8k", "running", [
+        {"type": "warmup", "duration_seconds": 600},
+        {"type": "interval", "distance_meters": 8000, "pace": ["5:20", "5:40"]},
+        {"type": "cooldown", "duration_seconds": 300}])
+    easy_ends = tp.workout_shape(_json.loads(easy_ends_w.model_dump_json(by_alias=True)))
+    check("an easy run with a warm-up and cool-down has no work",
+          [g["k"] for g in easy_ends] == ["easy", "easy", "easy"], str(easy_ends))
+    hr_tempo_w, _, _ = build_workout("Tempo 30", "running", [
+        {"type": "warmup", "duration_seconds": 900}, {"type": "interval", "duration_seconds": 1800, "hr": [165, 175]},
+        {"type": "cooldown", "duration_seconds": 600}])
+    hr_tempo = tp.workout_shape(_json.loads(hr_tempo_w.model_dump_json(by_alias=True)))
+    check("a tempo by heart rate keeps its warm-up and cool-down apart, for the card to draw the rest as work",
+          [g.get("part") for g in hr_tempo] == ["wu", None, "cd"], str(hr_tempo))
+    zone_tempo = tp.workout_shape({"sportType": {"sportTypeKey": "running"}, "workoutSegments": [{"workoutSteps": [
+        {"stepOrder": 1, "stepType": {"stepTypeKey": "warmup"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 900},
+        {"stepOrder": 2, "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 1800,
+         "targetType": {"workoutTargetTypeKey": "heart.rate.zone"}, "zoneNumber": 4},
+        {"stepOrder": 3, "stepType": {"stepTypeKey": "cooldown"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 600}]}]})
+    check("a tempo in heart rate zone 4 draws its block as work",
+          [g["k"] for g in zone_tempo] == ["easy", "work", "easy"], str(zone_tempo))
+    ss_w, _, _ = build_workout("Sweet spot 3 x 12", "cycling", [
+        {"type": "warmup", "duration_seconds": 900},
+        {"type": "repeat", "times": 3, "steps": [
+            {"type": "interval", "duration_seconds": 720, "power": ["88%", "94%"]},
+            {"type": "recovery", "duration_seconds": 300}]},
+        {"type": "cooldown", "duration_seconds": 600}], ftp=250)
+    ss_shape = tp.workout_shape(_json.loads(ss_w.model_dump_json(by_alias=True)))
+    check("a ride's intervals have a shape too, drawn by time",
+          [g["k"] for g in ss_shape] == ["easy", "work", "rec", "work", "rec", "work", "rec", "easy"]
+          and ss_shape[1]["km"] == 5.76, str(ss_shape))
     check("a strength session has no run shape",
           tp.workout_shape({"sportType": {"sportTypeKey": "strength_training"}, "workoutSegments": [
               {"workoutSteps": [{"endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 1800}]}]}) is None)

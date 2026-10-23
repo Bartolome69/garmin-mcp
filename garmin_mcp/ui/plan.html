@@ -998,10 +998,12 @@
   }
   function shapeOf(s) {
     var segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
-    // A race, or a hard session with one step, is all work: draw it so.
+    // A race, or a hard session whose targets don't say which part is the
+    // work, is work apart from its warm-up and cool-down: draw it so.
     var hard = s.type === "threshold" || s.type === "intervals" || s.type === "sub";
     if ((s.type === "race" || hard) && !segs.some(function (g) { return g.k === "work"; })) {
-      segs = segs.map(function (g) { return g.k === "easy" ? { k: "work", km: g.km } : g; });
+      var body = segs.some(function (g) { return g.k === "easy" && !g.part; });
+      segs = segs.map(function (g) { return g.k === "easy" && !(body && g.part) ? { k: "work", km: g.km } : g; });
     }
     var easy = s.type === "long" ? "long" : s.type === "easy" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
     // Work in a hard session takes its colour; faster stretches of a long
