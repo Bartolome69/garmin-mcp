@@ -713,3 +713,29 @@ def official_summaries(garmin_user_id: str, kind: str, since: int = 0, limit: in
         except InvalidToken:
             continue
     return out
+
+
+def drop_official_kinds(keep: set[str]) -> int:
+    """Delete every kept summary whose kind isn't in `keep`. Returns how many went."""
+    marks = ", ".join("?" for _ in keep)
+    with _connect() as conn:
+        return conn.execute(f"DELETE FROM official_summaries WHERE kind NOT IN ({marks})", tuple(keep)).rowcount
+
+
+def all_official_summaries(kinds: tuple[str, ...]) -> list[tuple[str, str, str, int | None, dict]]:
+    """Every kept summary of these kinds, for every account: (garmin user, kind, id, start, summary)."""
+    cipher = _cipher()
+    marks = ", ".join("?" for _ in kinds)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT garmin_user_id, kind, summary_id, start_time, data_enc FROM official_summaries WHERE kind IN ({marks})",
+            kinds,
+        ).fetchall()
+    out = []
+    for garmin_user_id, kind, summary_id, start, blob in rows:
+        try:
+            out.append((garmin_user_id, kind, summary_id, start, json.loads(cipher.decrypt(blob).decode())))
+        except InvalidToken:
+            continue
+    return out
+

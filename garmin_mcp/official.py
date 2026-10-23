@@ -34,7 +34,7 @@ from typing import Any
 
 from cryptography.fernet import InvalidToken
 
-from . import store
+from . import official_data, store
 
 log = logging.getLogger(__name__)
 
@@ -339,6 +339,9 @@ def push_url() -> str:
 
 
 def _start(summary: dict) -> int | None:
+    # An activity's details carry their start inside the summary they wrap.
+    if isinstance(summary.get("summary"), dict) and "startTimeInSeconds" not in summary:
+        summary = summary["summary"]
     for field in _START_FIELDS:
         value = summary.get(field)
         if isinstance(value, (int, float)):
@@ -355,7 +358,8 @@ def handle_push(body: bytes) -> dict[str, int]:
     """Keep what Garmin pushed, for accounts linked here. Returns counts per kind.
 
     One push can carry several kinds, each a list under its own key. Data
-    for a Garmin account nobody here is linked to is dropped, not kept.
+    for a Garmin account nobody here is linked to is dropped, not kept, and
+    what is kept is trimmed first (official_data says what goes).
     """
     try:
         payload = json.loads(body or b"{}")
@@ -379,14 +383,17 @@ def handle_push(body: bytes) -> dict[str, int]:
                     store.update_official_permissions(str(item["userId"]), list(item.get("permissions") or []))
             kept[kind] = len(items)
             continue
+        if kind not in official_data.KEPT:
+            continue
         by_user: dict[str, list[tuple[str, int | None, dict]]] = {}
         for item in items:
             if not isinstance(item, dict) or not item.get("userId"):
                 continue
             summary_id = str(item.get("summaryId") or item.get("activityId") or "")
-            if not summary_id:
+            kept_item = official_data.keep(kind, item) if summary_id else None
+            if kept_item is None:
                 continue
-            by_user.setdefault(str(item["userId"]), []).append((summary_id, _start(item), item))
+            by_user.setdefault(str(item["userId"]), []).append((summary_id, _start(item), kept_item))
         for garmin_user_id, rows in by_user.items():
             if store.official_link_for_garmin_user(garmin_user_id) is None:
                 continue
@@ -466,6 +473,16 @@ def send_workout(user_token: str, workout: dict, date: str | None = None) -> dic
         result.update(schedule_id=_field(scheduled, "scheduleId") if isinstance(scheduled, dict) else scheduled,
                       scheduled_for=date)
     return result
+
+
+def read(user_token: str, what: str) -> list[dict] | None:
+    """The linked account's recent "activities" or "days", or None when not linked."""
+    link = store.official_link(user_token)
+    if link is None:
+        return None
+    if what == "activities":
+        return official_data.activities(link.garmin_user_id)
+    return official_data.days(link.garmin_user_id)
 
 
 # --------------------------------------------------------------------------

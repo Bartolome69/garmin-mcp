@@ -37,7 +37,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, crews, hooks, oauth, official, preview, store, support_mail
+from . import analytics, crews, hooks, oauth, official, official_data, preview, store, support_mail
 from .server import mcp
 from .session import (
     GarminError,
@@ -2392,6 +2392,12 @@ def main() -> None:
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
     if analytics.enabled():
         threading.Thread(target=_signin_check_forever, name="signin-check", daemon=True).start()
+    if official.configured():
+        # What Garmin's official API sent before Daash trimmed it on arrival.
+        try:
+            official_data.tidy()
+        except Exception:  # noqa: BLE001 - a tidy-up never stops the server starting
+            log.exception("official data tidy failed")
 
     uvicorn.run(
         build_app(),

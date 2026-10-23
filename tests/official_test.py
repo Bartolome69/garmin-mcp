@@ -150,6 +150,64 @@ def main() -> int:
     raw = sqlite3.connect(DB).execute("SELECT data_enc FROM official_summaries").fetchone()[0]
     check("what Garmin sent is encrypted at rest", b"12000" not in raw)
     check("rubbish is ignored", official.handle_push(b"not json") == {} and official.handle_push(b"[1,2]") == {})
+
+    print("\nkept small, read back")
+    now = int(time.time())
+    run_start = now - 3 * 3600
+    samples = [{"startTimeInSeconds": run_start + i * 10, "totalDistanceInMeters": i * 30.0,
+                "timerDurationInSeconds": i * 10, "heartRate": 140 + (i % 5), "latitudeInDegree": 51.5,
+                "longitudeInDegree": -0.1} for i in range(0, 81)]
+    detail = {"userId": "garmin-user-1", "summaryId": "77-detail", "activityId": 77,
+              "summary": {"startTimeInSeconds": run_start, "durationInSeconds": 800, "distanceInMeters": 2400.0},
+              "samples": samples, "laps": [{"startTimeInSeconds": run_start}, {"startTimeInSeconds": run_start + 400}]}
+    run = {"userId": "garmin-user-1", "summaryId": "77", "activityId": 77, "activityName": "Morning run",
+           "activityType": "RUNNING", "startTimeInSeconds": run_start, "startTimeOffsetInSeconds": 3600,
+           "durationInSeconds": 800, "distanceInMeters": 2400.0, "averageHeartRateInBeatsPerMinute": 142}
+    today = time.strftime("%Y-%m-%d", time.gmtime(now))
+    sleep = {"userId": "garmin-user-1", "summaryId": "sl-2", "calendarDate": today, "startTimeInSeconds": now - 10 * 3600,
+             "durationInSeconds": 27000, "deepSleepDurationInSeconds": 5400, "remSleepInSeconds": 6000,
+             "overallSleepScore": {"value": 84, "qualifierKey": "GOOD"}, "sleepLevelsMap": {"deep": [{"x": 1}]},
+             "timeOffsetSleepSpo2": {"0": 95}}
+    stress = {"userId": "garmin-user-1", "summaryId": "st-2", "calendarDate": today, "startTimeInSeconds": now - 8 * 3600,
+              "timeOffsetBodyBatteryValues": {"0": 40, "180": 85, "360": 62},
+              "timeOffsetStressLevelValues": {"0": 20, "180": 30, "360": -1}}
+    hrv = {"userId": "garmin-user-1", "summaryId": "h-2", "calendarDate": today, "startTimeInSeconds": now - 9 * 3600,
+           "lastNightAvg": 61, "lastNight5MinHigh": 90, "hrvValues": {"300": 58}}
+    metrics = {"userId": "garmin-user-1", "summaryId": "m-2", "calendarDate": today, "vo2Max": 54.0}
+    epoch = {"userId": "garmin-user-1", "summaryId": "e-1", "startTimeInSeconds": now - 900, "steps": 40}
+    kept = official.handle_push(json.dumps({
+        "activities": [run], "activityDetails": [detail], "sleeps": [sleep], "stressDetails": [stress], "hrv": [hrv],
+        "userMetrics": [metrics], "epochs": [epoch], "activityFiles": [{"userId": "garmin-user-1", "summaryId": "f-1",
+                                                                       "callbackURL": "https://x/file?token=t"}]}).encode())
+    check("streams and files Daash doesn't use aren't kept", "epochs" not in kept and "activityFiles" not in kept, str(kept))
+    blobs = [store._cipher().decrypt(r[0]) for r in sqlite3.connect(DB).execute("SELECT data_enc FROM official_summaries")]
+    check("no GPS, sleep stages map or heart rate curve is kept",
+          not any(b"latitudeInDegree" in b or b"sleepLevelsMap" in b or b"hrvValues" in b or b"timeOffset" in b
+                  for b in blobs))
+    check("an activity's details start where its summary says", store.official_summary_counts("garmin-user-1")
+          ["activityDetails"]["latest_start"] == run_start)
+    acts = official.read(bart, "activities")
+    first = acts[0] if acts else {}
+    check("activities read back with kilometre splits and laps",
+          first.get("name") == "Morning run" and first.get("km") == 2.4 and first.get("pace") == "5:33 /km"
+          and len(first.get("splits", [])) == 3 and round(sum(s["km"] for s in first["splits"]), 1) == 2.4
+          and len(first.get("laps", [])) == 2, json.dumps(first)[:400])
+    days = official.read(bart, "days")
+    top = days[0] if days else {}
+    check("each day brings sleep, HRV, Body Battery and VO2 max together",
+          top.get("date") == today and top["sleep"]["score"] == 84 and top["sleep"]["deep_min"] == 90
+          and top["hrv"]["last_night_avg"] == 61 and top["body_battery"] == {"start": 40, "end": 62, "high": 85, "low": 40}
+          and top["vo2max"] == 54.0, json.dumps(top)[:400])
+    with sqlite3.connect(DB) as conn:
+        conn.execute("INSERT INTO official_summaries (garmin_user_id, kind, summary_id, start_time, data_enc, received_at) "
+                     "VALUES ('garmin-user-1', 'epochs', 'old', 0, ?, 0)", (store._cipher().encrypt(b"{}"),))
+        conn.execute("UPDATE official_summaries SET data_enc = ? WHERE kind = 'activityDetails'",
+                     (store._cipher().encrypt(json.dumps(detail).encode()),))
+    from garmin_mcp import official_data
+    official_data.tidy()
+    blobs = [store._cipher().decrypt(r[0]) for r in sqlite3.connect(DB).execute("SELECT data_enc FROM official_summaries")]
+    check("what was kept before trimming is tidied away on start",
+          "epochs" not in store.official_summary_counts("garmin-user-1") and not any(b"latitudeInDegree" in b for b in blobs))
     official.handle_push(json.dumps({"userPermissionsChange": [
         {"userId": "garmin-user-1", "permissions": ["ACTIVITY_EXPORT"]}]}).encode())
     check("a permission change is recorded", store.official_link(bart).permissions == ["ACTIVITY_EXPORT"])

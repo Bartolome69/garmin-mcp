@@ -2998,7 +2998,10 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             Garmin has sent so far; "connect" gives a link to approve Daash on
             Garmin's own sign-in page; "test_workout" sends an easy 20-minute
             run through Garmin's Training API, scheduled on `date`;
-            "disconnect" ends the official link and deletes what Garmin sent.
+            "disconnect" ends the official link and deletes what Garmin sent;
+            "activities" reads the recent activities Garmin sent, with splits
+            and laps; "days" reads each recent day's sleep, HRV, resting heart
+            rate, stress, Body Battery, steps and VO2 max.
         date: For test_workout, the day to schedule it on.
     """
     user_token = official.current()
@@ -3010,6 +3013,12 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
         if action == "connect" and found.get("connected"):
             found["note"] = "Already connected. Say 'disconnect' first to connect a different Garmin account."
         return found
+    if action in ("activities", "days"):
+        found = await anyio.to_thread.run_sync(official.read, user_token, action)
+        if found is None:
+            return {"error": "Not connected to Garmin's official API yet. Use action 'connect' first."}
+        return {action: found, "source": "Garmin's official API: only what Garmin has pushed since connecting.",
+                "note": None if found else "Nothing yet: Garmin sends data when the watch syncs."}
     if action == "disconnect":
         gone = await anyio.to_thread.run_sync(official.disconnect, user_token)
         return {"disconnected": gone}
@@ -3026,7 +3035,7 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
         except official.OfficialError as exc:
             return {"error": str(exc)}
         return {**sent, "summary": summary, "note": "Sync the watch to see it."}
-    return {"error": f"Unknown action {action!r}. Use status, connect, test_workout or disconnect."}
+    return {"error": f"Unknown action {action!r}. Use status, connect, activities, days, test_workout or disconnect."}
 
 
 @_app_tool(CREW_VIEW)
