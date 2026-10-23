@@ -111,6 +111,22 @@ CREATE TABLE IF NOT EXISTS official_summaries (
 );
 CREATE INDEX IF NOT EXISTS official_summaries_time
     ON official_summaries (garmin_user_id, kind, start_time);
+CREATE TABLE IF NOT EXISTS official_workouts (
+    garmin_user_id  TEXT NOT NULL,
+    workout_id      INTEGER NOT NULL,
+    data_enc        BLOB NOT NULL,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    PRIMARY KEY (garmin_user_id, workout_id)
+);
+CREATE TABLE IF NOT EXISTS official_schedules (
+    garmin_user_id  TEXT NOT NULL,
+    schedule_id     INTEGER NOT NULL,
+    workout_id      INTEGER NOT NULL,
+    day             TEXT NOT NULL,
+    PRIMARY KEY (garmin_user_id, schedule_id)
+);
+CREATE INDEX IF NOT EXISTS official_schedules_day ON official_schedules (garmin_user_id, day);
 """
 
 
@@ -670,6 +686,8 @@ def forget_official_user(garmin_user_id: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM official_links WHERE garmin_user_id = ?", (garmin_user_id,))
         conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ?", (garmin_user_id,))
+        conn.execute("DELETE FROM official_workouts WHERE garmin_user_id = ?", (garmin_user_id,))
+        conn.execute("DELETE FROM official_schedules WHERE garmin_user_id = ?", (garmin_user_id,))
 
 
 def save_official_summaries(garmin_user_id: str, kind: str, summaries: list[tuple[str, int | None, dict]]) -> int:
@@ -763,4 +781,75 @@ def official_only(user_token: str) -> str | None:
         row = conn.execute("SELECT garmin_user_id FROM official_links WHERE user_token = ? AND official_only = 1",
                            (user_token,)).fetchone()
     return row[0] if row else None
+
+
+# --------------------------------------------------------------------------
+# Workouts and schedules made through Garmin's official Training API
+# --------------------------------------------------------------------------
+# The Training API has no way to list a person's workouts or their calendar
+# beyond what this app put there, so what Daash creates is kept here: the
+# workout as the tools shaped it, encrypted like everything else, and each
+# date it was scheduled on.
+
+
+def save_official_workout(garmin_user_id: str, workout_id: int, data: dict) -> None:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO official_workouts (garmin_user_id, workout_id, data_enc, created_at, updated_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(garmin_user_id, workout_id) DO UPDATE SET data_enc = excluded.data_enc, updated_at = excluded.updated_at",
+            (garmin_user_id, int(workout_id), _cipher().encrypt(json.dumps(data).encode()), now, now),
+        )
+
+
+def official_workout(garmin_user_id: str, workout_id: int) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT data_enc FROM official_workouts WHERE garmin_user_id = ? AND workout_id = ?",
+                           (garmin_user_id, int(workout_id))).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(_cipher().decrypt(row[0]).decode())
+    except InvalidToken:
+        return None
+
+
+def official_workouts(garmin_user_id: str, limit: int = 100) -> list[dict]:
+    """Newest first."""
+    cipher = _cipher()
+    with _connect() as conn:
+        rows = conn.execute("SELECT data_enc FROM official_workouts WHERE garmin_user_id = ? ORDER BY updated_at DESC LIMIT ?",
+                            (garmin_user_id, limit)).fetchall()
+    out = []
+    for (blob,) in rows:
+        try:
+            out.append(json.loads(cipher.decrypt(blob).decode()))
+        except InvalidToken:
+            continue
+    return out
+
+
+def delete_official_workout(garmin_user_id: str, workout_id: int) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM official_workouts WHERE garmin_user_id = ? AND workout_id = ?", (garmin_user_id, int(workout_id)))
+        conn.execute("DELETE FROM official_schedules WHERE garmin_user_id = ? AND workout_id = ?", (garmin_user_id, int(workout_id)))
+
+
+def save_official_schedule(garmin_user_id: str, schedule_id: int, workout_id: int, day: str) -> None:
+    with _connect() as conn:
+        conn.execute("INSERT OR REPLACE INTO official_schedules (garmin_user_id, schedule_id, workout_id, day) VALUES (?, ?, ?, ?)",
+                     (garmin_user_id, int(schedule_id), int(workout_id), day))
+
+
+def delete_official_schedule(garmin_user_id: str, schedule_id: int) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM official_schedules WHERE garmin_user_id = ? AND schedule_id = ?", (garmin_user_id, int(schedule_id)))
+
+
+def official_schedules(garmin_user_id: str, start: str, end: str) -> list[tuple[int, int, str]]:
+    """(schedule id, workout id, day) for every schedule between two dates, inclusive."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT schedule_id, workout_id, day FROM official_schedules WHERE garmin_user_id = ? "
+                            "AND day >= ? AND day <= ? ORDER BY day", (garmin_user_id, start, end)).fetchall()
+    return [(int(a), int(b), c) for a, b, c in rows]
 

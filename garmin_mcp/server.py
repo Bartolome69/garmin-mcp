@@ -45,6 +45,7 @@ from .formatting import (
 from . import conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, session
+from .official_client import NotOnOfficial, OfficialClient
 from .workouts import (
     SPORTS,
     WorkoutError,
@@ -632,9 +633,34 @@ def _official_only() -> str | None:
         return None
 
 
+def _official_client() -> Any:
+    """The official API standing in for the Connect client, for an official-only account."""
+    garmin_user = _official_only()
+    token = official.current()
+    if garmin_user is None or token is None:
+        return None
+    return OfficialClient(token, garmin_user)
+
+
+def _run(fn: Callable[[Any], Any]) -> Any:
+    """fn against the official API where the account asks for it, else Garmin Connect.
+
+    A call the official API has no answer for (readiness, gear, the all-day
+    heart rate) still goes to Connect while the account has both: this is the
+    preview, and nothing the person already had should stop working.
+    """
+    client = _official_client()
+    if client is not None:
+        try:
+            return client.run(fn)
+        except NotOnOfficial:
+            pass
+    return session.run(fn)
+
+
 async def _call(fn: Callable[[Any], Any]) -> Any:
     """Run a blocking Garmin call on a worker thread, reauthenticating if needed."""
-    return await anyio.to_thread.run_sync(functools.partial(session.run, fn))
+    return await anyio.to_thread.run_sync(functools.partial(_run, fn))
 
 
 # How long a read may be answered from memory. Anything
@@ -644,9 +670,23 @@ CALENDAR_MEMORY = 90
 WORKOUT_MEMORY = 600
 
 
+def _remembered(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
+    client = _official_client()
+    if client is not None:
+        try:
+            return client.run(fn)
+        except NotOnOfficial:
+            pass
+    return session.remembered(key, ttl, fn)
+
+
 async def _read(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
-    """_call, answered from the session's memory where it is fresh enough."""
-    return await anyio.to_thread.run_sync(functools.partial(session.remembered, key, ttl, fn))
+    """_call, answered from the session's memory where it is fresh enough.
+
+    An official-only account's answers come from the store, so nothing is
+    remembered for them: the store is already as quick, and always current.
+    """
+    return await anyio.to_thread.run_sync(functools.partial(_remembered, key, ttl, fn))
 
 
 # Tools that change something in Garmin. After any of them, success or not,
@@ -3094,7 +3134,9 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             return {"error": "Not connected to Garmin's official API yet. Use action 'connect' first."}
         return {"official_only": on, "note": (
             "get_daily_summary, get_sleep_data, get_activities and get_activity_details now answer only from "
-            "Garmin's official API. Everything else still uses Garmin Connect." if on else
+            "Garmin's official API, and workouts, scheduling and plans go through Garmin's Training API. "
+            "The calendar and the workout list show what Daash wrote through it; readiness, fitness, "
+            "heart rate and gear still use Garmin Connect." if on else
             "Back to Garmin Connect for every tool.")}
     if action == "calendar":
         start = parse_date(date if date != "tomorrow" else "today")

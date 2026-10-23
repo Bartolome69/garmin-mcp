@@ -453,53 +453,98 @@ def fetch_file(user_token: str, url: str) -> bytes:
 
 # Daash's sports, as the Training API names them. Walking and hiking have no
 # sport of their own there.
-_SPORTS = {"running": "RUNNING", "cycling": "CYCLING"}
+# Daash's sports, as the Training API names them. Walking and hiking have no
+# sport of their own there.
+_SPORTS = {"running": "RUNNING", "cycling": "CYCLING", "swimming": "LAP_SWIMMING", "lap_swimming": "LAP_SWIMMING",
+           "strength_training": "STRENGTH_TRAINING", "cardio_training": "CARDIO_TRAINING", "yoga": "YOGA",
+           "pilates": "PILATES", "hiit": "HIIT"}
+_SPORTS_BACK = {v: k for k, v in _SPORTS.items()} | {"LAP_SWIMMING": "swimming"}
 _INTENSITY = {"warmup": "WARMUP", "cooldown": "COOLDOWN", "interval": "INTERVAL",
               "recovery": "RECOVERY", "rest": "REST"}
-_TARGETS = {"pace.zone": "SPEED", "heart.rate.zone": "HEART_RATE", "power.zone": "POWER"}
+_INTENSITY_BACK = {v: k for k, v in _INTENSITY.items()} | {"ACTIVE": "interval", "MAIN": "interval"}
+_TARGETS = {"pace.zone": "SPEED", "heart.rate.zone": "HEART_RATE", "power.zone": "POWER", "cadence.zone": "CADENCE"}
+_TARGETS_BACK = {v: k for k, v in _TARGETS.items()} | {"PACE": "pace.zone", "SPEED_LAP": "pace.zone",
+                                                        "HEART_RATE_LAP": "heart.rate.zone", "POWER_LAP": "power.zone"}
+_STROKES = {"free": "FREESTYLE", "backstroke": "BACKSTROKE", "breaststroke": "BREASTSTROKE", "fly": "BUTTERFLY",
+            "individual_medley": "IM", "mixed": "MIXED", "any": "CHOICE", "choice": "CHOICE", "drill": "CHOICE"}
+_STROKES_BACK = {v: k for k, v in _STROKES.items()} | {"CHOICE": "any", "RIMO": "individual_medley"}
+_EQUIPMENT = {"none": "NONE", "fins": "SWIM_FINS", "kickboard": "SWIM_KICKBOARD", "paddles": "SWIM_PADDLES",
+              "pull_buoy": "SWIM_PULL_BUOY", "snorkel": "SWIM_SNORKEL"}
+_EQUIPMENT_BACK = {v: k for k, v in _EQUIPMENT.items()}
 
 
 def _field(obj: Any, name: str) -> Any:
     return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
 
 
-def _step(step: Any, order: list[int]) -> dict:
+def _key(obj: Any, *names: str) -> str:
+    """The first key-like string among nested Garmin type objects, lowercased."""
+    for name in names:
+        value = _field(obj, name)
+        if isinstance(value, str) and value:
+            return value.lower()
+    return ""
+
+
+def _step(step: Any, order: list[int], swim: bool) -> dict:
     order[0] += 1
-    kind = (_field(_field(step, "stepType"), "stepTypeKey") or "").lower()
+    kind = _key(_field(step, "stepType"), "stepTypeKey")
     if kind == "repeat":
         here = order[0]
-        children = [_step(child, order) for child in (_field(step, "workoutSteps") or [])]
+        children = [_step(child, order, swim) for child in (_field(step, "workoutSteps") or [])]
         return {"type": "WorkoutRepeatStep", "stepOrder": here, "repeatType": "REPEAT_UNTIL_STEPS_CMPLT",
                 "repeatValue": float(_field(step, "numberOfIterations") or 0), "steps": children}
-    condition = (_field(_field(step, "endCondition"), "conditionTypeKey") or "").lower()
+    condition = _key(_field(step, "endCondition"), "conditionTypeKey")
     value = _field(step, "endConditionValue")
     out: dict[str, Any] = {"type": "WorkoutStep", "stepOrder": order[0], "intensity": _INTENSITY.get(kind, "ACTIVE"),
                            "description": _field(step, "description") or None}
     if condition == "distance":
         out.update(durationType="DISTANCE", durationValue=float(value), durationValueType="METER")
+    elif condition == "time" and swim and kind == "rest":
+        out.update(durationType="FIXED_REST", durationValue=float(value), durationValueType=None)
     elif condition == "time":
         out.update(durationType="TIME", durationValue=float(value), durationValueType=None)
+    elif condition == "reps":
+        out.update(durationType="REPS", durationValue=float(value), durationValueType=None)
     else:
         out.update(durationType="OPEN", durationValue=None, durationValueType=None)
-    target = _TARGETS.get(_field(_field(step, "targetType"), "workoutTargetTypeKey") or "")
+    target = _TARGETS.get(_key(_field(step, "targetType"), "workoutTargetTypeKey"))
     low, high = _field(step, "targetValueOne"), _field(step, "targetValueTwo")
+    zone = _field(step, "zoneNumber")
     if target and low is not None and high is not None:
         out.update(targetType=target, targetValueLow=float(min(low, high)), targetValueHigh=float(max(low, high)))
+    elif target in ("HEART_RATE", "POWER") and zone:
+        out.update(targetType=target, targetValue=float(zone))
     else:
         out.update(targetType="OPEN", targetValueLow=None, targetValueHigh=None)
+    # A strength set names its exercise and load; a swim its stroke and kit.
+    category, exercise = _field(step, "category"), _field(step, "exerciseName")
+    if category or exercise:
+        out.update(exerciseCategory=category, exerciseName=exercise)
+        grams = _field(step, "weightValue")
+        if isinstance(grams, (int, float)) and grams > 0:
+            out.update(weightValue=round(float(grams) / 1000, 2), weightDisplayUnit="KILOGRAM")
+    stroke = _key(_field(step, "strokeType"), "strokeTypeKey")
+    if swim and stroke:
+        out["strokeType"] = _STROKES.get(stroke, "CHOICE")
+    kit = _key(_field(step, "equipmentType"), "equipmentTypeKey")
+    if swim and kit:
+        out["equipmentType"] = _EQUIPMENT.get(kit, "NONE")
     return out
 
 
-def training_workout(model: Any, sport: str) -> dict:
+def training_workout(model: Any, sport: str | None = None) -> dict:
     """A workout built by workouts.build_workout, in the Training API's shape."""
-    api_sport = _SPORTS.get(sport)
+    key = (sport or _key(_field(model, "sportType"), "sportTypeKey") or "").lower()
+    api_sport = _SPORTS.get(key)
     if api_sport is None:
-        raise OfficialError(f"The official API doesn't take {sport} workouts yet; runs and rides only.")
+        raise OfficialError(f"The official API doesn't take {key or 'that kind of'} workouts yet.")
+    swim = api_sport == "LAP_SWIMMING"
     segments = _field(model, "workoutSegments") or []
     order = [0]
-    steps = [_step(step, order) for segment in segments for step in (_field(segment, "workoutSteps") or [])]
+    steps = [_step(step, order, swim) for segment in segments for step in (_field(segment, "workoutSteps") or [])]
     description = _field(model, "description")
-    return {
+    out = {
         "workoutName": _field(model, "workoutName"),
         "description": (description or "")[:1024] or None,
         "sport": api_sport,
@@ -507,6 +552,63 @@ def training_workout(model: Any, sport: str) -> dict:
         "workoutSourceId": PROVIDER,
         "segments": [{"segmentOrder": 1, "sport": api_sport, "steps": steps}],
     }
+    if swim:
+        pool = _field(model, "poolLength")
+        unit = _key(_field(model, "poolLengthUnit"), "unitKey")
+        out.update(poolLength=float(pool) if isinstance(pool, (int, float)) else None,
+                   poolLengthUnit="YARD" if unit.startswith("yard") else "METER")
+        out["segments"][0].update(poolLength=out["poolLength"], poolLengthUnit=out["poolLengthUnit"])
+    return out
+
+
+def connect_workout(training: dict) -> dict:
+    """A Training API workout back in Garmin Connect's shape, which the tools read."""
+    sport_key = _SPORTS_BACK.get(str(training.get("sport") or ""), str(training.get("sport") or "").lower())
+    segments = training.get("segments") or []
+    steps = [step for segment in segments if isinstance(segment, dict) for step in (segment.get("steps") or [])]
+    return {
+        "workoutId": training.get("workoutId"),
+        "workoutName": training.get("workoutName"),
+        "description": training.get("description"),
+        "sportType": {"sportTypeKey": sport_key},
+        "estimatedDurationInSecs": training.get("estimatedDurationInSecs"),
+        "estimatedDistanceInMeters": training.get("estimatedDistanceInMeters"),
+        "poolLength": training.get("poolLength"),
+        "poolLengthUnit": {"unitKey": "yard" if training.get("poolLengthUnit") == "YARD" else "meter"} if training.get("poolLength") else None,
+        "workoutSegments": [{"segmentOrder": 1, "sportType": {"sportTypeKey": sport_key},
+                             "workoutSteps": [_connect_step(step) for step in steps if isinstance(step, dict)]}],
+    }
+
+
+def _connect_step(step: dict) -> dict:
+    if step.get("type") == "WorkoutRepeatStep":
+        return {"type": "RepeatGroupDTO", "stepOrder": step.get("stepOrder"), "stepType": {"stepTypeKey": "repeat"},
+                "numberOfIterations": int(step.get("repeatValue") or 0),
+                "endCondition": {"conditionTypeKey": "iterations"}, "endConditionValue": step.get("repeatValue"),
+                "workoutSteps": [_connect_step(s) for s in (step.get("steps") or []) if isinstance(s, dict)]}
+    duration_type = str(step.get("durationType") or "OPEN")
+    condition = {"TIME": "time", "FIXED_REST": "time", "DISTANCE": "distance", "REPS": "reps"}.get(duration_type, "lap.button")
+    target = _TARGETS_BACK.get(str(step.get("targetType") or ""))
+    out: dict[str, Any] = {
+        "type": "ExecutableStepDTO", "stepOrder": step.get("stepOrder"),
+        "stepType": {"stepTypeKey": _INTENSITY_BACK.get(str(step.get("intensity") or ""), "interval")},
+        "endCondition": {"conditionTypeKey": condition},
+        "endConditionValue": step.get("durationValue") if condition != "lap.button" else None,
+        "targetType": {"workoutTargetTypeKey": target or "no.target"},
+        "targetValueOne": step.get("targetValueLow") if target else None,
+        "targetValueTwo": step.get("targetValueHigh") if target else None,
+        "zoneNumber": int(step["targetValue"]) if target and step.get("targetValue") and step.get("targetValueLow") is None else None,
+        "description": step.get("description") or None,
+    }
+    if step.get("exerciseCategory") or step.get("exerciseName"):
+        out.update(category=step.get("exerciseCategory"), exerciseName=step.get("exerciseName"))
+        if isinstance(step.get("weightValue"), (int, float)):
+            out.update(weightValue=float(step["weightValue"]) * 1000, weightUnit={"unitKey": "kilogram", "factor": 1000.0})
+    if step.get("strokeType"):
+        out["strokeType"] = {"strokeTypeKey": _STROKES_BACK.get(str(step["strokeType"]), "any")}
+    if step.get("equipmentType") and step["equipmentType"] != "NONE":
+        out["equipmentType"] = {"equipmentTypeKey": _EQUIPMENT_BACK.get(str(step["equipmentType"]), "none")}
+    return out
 
 
 def send_workout(user_token: str, workout: dict, date: str | None = None) -> dict:

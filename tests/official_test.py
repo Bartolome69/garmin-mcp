@@ -9,6 +9,7 @@ turning Daash's workouts into the Training API's shape. Nothing leaves the test.
 from __future__ import annotations
 
 import base64
+from datetime import date, timedelta
 import hashlib
 import io
 import json
@@ -67,10 +68,19 @@ def fake_call(access_token: str, method: str, path: str, body=None):
     if path.endswith("/user/permissions"):
         return {"permissions": ["ACTIVITY_EXPORT", "HEALTH_EXPORT", "WORKOUT_IMPORT"]}
     if path == "/workoutportal/workout/v2":
-        return {"workoutId": 987, "workoutName": body["workoutName"]}
+        IDS[0] += 1
+        return {"workoutId": IDS[0], "workoutName": body["workoutName"], "ownerId": 4242,
+                "estimatedDurationInSecs": 2400, "createdDate": "2026-10-23T08:00:00.0"}
     if path == "/training-api/schedule/":
-        return {"scheduleId": 654, "workoutId": body["workoutId"], "date": body["date"]}
+        IDS[1] += 1
+        return {"scheduleId": IDS[1], "workoutId": body["workoutId"], "date": body["date"]}
+    if method == "PUT" and path.startswith("/training-api/workout/v2/"):
+        return {**body, "updatedDate": "2026-10-23T09:00:00.0"}
     return {}
+
+
+# Workout and schedule ids Garmin hands out, in turn.
+IDS = [986, 653]
 
 
 REAL_POST_FORM = official._post_form
@@ -383,6 +393,104 @@ def main() -> int:
           and day_again.get("respiration_avg") == 14.0 and day_again["body_battery"].get("gained_during_sleep") == 48, str(day_again)[:700])
     missing = as_user(bart, server.get_sleep_data, "2026-01-01")
     check("a night Garmin hasn't sent says so, without falling back", "hasn't sent" in missing.get("note", ""), str(missing))
+
+    print("\nwriting through the Training API")
+    from garmin_mcp.official_client import OfficialClient
+    client = as_user(bart, lambda: _async(server._official_client))
+    check("an official-only account gets the official client, which has no answer for what the API lacks",
+          isinstance(client, OfficialClient) and getattr(client, "get_readiness_data", None) is None)
+    CALLED.clear()
+    made = as_user(bart, server.create_workout, "Threshold Tuesday", [
+        {"type": "warmup", "duration_seconds": 600},
+        {"type": "repeat", "times": 3, "steps": [
+            {"type": "interval", "distance_meters": 1000, "pace": ["3:55", "4:05"]},
+            {"type": "recovery", "duration_seconds": 120}]},
+        {"type": "cooldown", "duration_seconds": 600}], "running")
+    wid = made.get("workout_id")
+    posted = [c for c in CALLED if c[:2] == ("POST", "/workoutportal/workout/v2")]
+    body = posted[0][2] if posted else {}
+    steps = (body.get("segments") or [{}])[0].get("steps") or []
+    check("create_workout goes to the Training API, as a running workout with a repeat",
+          isinstance(wid, int) and body.get("sport") == "RUNNING" and body.get("workoutName") == "Threshold Tuesday"
+          and len(steps) == 3 and steps[1]["type"] == "WorkoutRepeatStep" and steps[1]["repeatValue"] == 3.0
+          and steps[1]["steps"][0]["durationType"] == "DISTANCE" and steps[1]["steps"][0]["targetType"] == "SPEED"
+          and steps[1]["steps"][0]["targetValueLow"] < steps[1]["steps"][0]["targetValueHigh"]
+          and steps[0]["stepOrder"] == 1 and steps[1]["stepOrder"] == 2 and steps[1]["steps"][1]["stepOrder"] == 4
+          and steps[2]["stepOrder"] == 5, str(made)[:200] + " " + str(body)[:400])
+    kept = store.official_workout("garmin-user-1", wid)
+    check("and is kept here, since the API can't list it back",
+          kept is not None and kept["connect"]["workoutName"] == "Threshold Tuesday" and kept["created"]["ownerId"] == 4242, str(kept)[:200])
+    listed_w = as_user(bart, server.list_workouts, 10)
+    check("list_workouts shows it", listed_w.get("count") == 1 and listed_w["workouts"][0]["workout_id"] == wid
+          and listed_w["workouts"][0]["sport"] == "running" and listed_w["workouts"][0]["estimated_duration"], str(listed_w))
+    read_w = as_user(bart, server.get_workout, wid)
+    check("get_workout reads it back with its steps",
+          read_w.get("name") == "Threshold Tuesday" and len(read_w.get("steps") or []) >= 3, str(read_w)[:300])
+    put = as_user(bart, server.schedule_workout, wid, "2026-11-03")
+    check("schedule_workout goes to the Training API and remembers the schedule",
+          isinstance(put.get("schedule_id"), int) and CALLED[-1][:2] == ("POST", "/training-api/schedule/")
+          and CALLED[-1][2] == {"workoutId": wid, "date": "2026-11-03"}
+          and store.official_schedules("garmin-user-1", "2026-11-01", "2026-12-01") == [(put["schedule_id"], wid, "2026-11-03")], str(put))
+    cleared = as_user(bart, server.unschedule_workout, "2026-11-03")
+    check("unschedule_workout by date finds it in the kept calendar and deletes the schedule",
+          cleared.get("unscheduled") == put["schedule_id"] and cleared.get("name") == "Threshold Tuesday"
+          and CALLED[-1][:2] == ("DELETE", f"/training-api/schedule/{put['schedule_id']}")
+          and store.official_schedules("garmin-user-1", "2026-11-01", "2026-12-01") == [], str(cleared))
+    renamed = as_user(bart, server.update_workout, wid, "Threshold Wednesday")
+    check("update_workout puts the renamed workout, with Garmin's owner id",
+          renamed.get("name") == "Threshold Wednesday" and CALLED[-1][:2] == ("PUT", f"/training-api/workout/v2/{wid}")
+          and CALLED[-1][2]["workoutId"] == wid and CALLED[-1][2]["ownerId"] == 4242
+          and CALLED[-1][2]["workoutName"] == "Threshold Wednesday"
+          and store.official_workout("garmin-user-1", wid)["connect"]["workoutName"] == "Threshold Wednesday", str(renamed) + str(CALLED[-1])[:300])
+    gym = as_user(bart, server.create_strength_workout, "Push day", [
+        {"exercise": "Barbell Bench Press", "sets": 4, "reps": 8, "rest_seconds": 120, "weight_kg": 70},
+        {"exercise": "Push Up", "sets": 3, "reps": 12, "rest_seconds": 60}])
+    gym_body = CALLED[-1][2] if CALLED[-1][:2] == ("POST", "/workoutportal/workout/v2") else {}
+    gym_steps = (gym_body.get("segments") or [{}])[0].get("steps") or []
+    bench = gym_steps[0]["steps"][0] if gym_steps and gym_steps[0].get("steps") else {}
+    check("create_strength_workout goes as STRENGTH_TRAINING, sets as repeats, reps and kilograms on the set",
+          isinstance(gym.get("workout_id"), int) and gym_body.get("sport") == "STRENGTH_TRAINING"
+          and gym_steps[0]["type"] == "WorkoutRepeatStep" and gym_steps[0]["repeatValue"] == 4.0
+          and bench.get("durationType") == "REPS" and bench.get("durationValue") == 8.0
+          and bench.get("exerciseCategory") == "BENCH_PRESS" and bench.get("exerciseName") and bench.get("weightValue") == 70.0
+          and bench.get("weightDisplayUnit") == "KILOGRAM" and gym_steps[0]["steps"][1]["durationType"] == "TIME", str(gym)[:200] + str(gym_steps)[:500])
+    asked = as_user(bart, server.delete_workout, gym["workout_id"])
+    gone = as_user(bart, server.delete_workout, gym["workout_id"], "Push day")
+    check("delete_workout asks first, then deletes at Garmin and here",
+          asked.get("confirmation_required") is True and gone.get("deleted") is not None
+          and CALLED[-1][:2] == ("DELETE", f"/training-api/workout/v2/{gym['workout_id']}")
+          and store.official_workout("garmin-user-1", gym["workout_id"]) is None, str(asked)[:150] + str(gone)[:150])
+    monday = date.fromisoformat(today) + timedelta(days=(7 - date.fromisoformat(today).weekday()) % 7 or 7)
+    block = as_user(bart, server.create_plan, "10k in 42 minutes", [
+        {"date": (monday + timedelta(days=d)).isoformat(), "name": n, "steps": st, "phase": "Build"}
+        for d, n, st in (
+            (1, "Easy 8k", [{"type": "interval", "distance_meters": 8000}]),
+            (3, "Threshold 5x1k", [{"type": "warmup", "duration_seconds": 600},
+                                   {"type": "repeat", "times": 5, "steps": [{"type": "interval", "distance_meters": 1000, "pace": "4:05"},
+                                                                            {"type": "recovery", "duration_seconds": 90}]},
+                                   {"type": "cooldown", "duration_seconds": 600}]),
+            (6, "Long 16k", [{"type": "interval", "distance_meters": 16000}]),
+            (8, "Easy 8k", [{"type": "interval", "distance_meters": 8000}]),
+            (10, "Hills 8x200", [{"type": "warmup", "duration_seconds": 600},
+                                 {"type": "repeat", "times": 8, "steps": [{"type": "interval", "distance_meters": 200},
+                                                                          {"type": "recovery", "duration_seconds": 90}]},
+                                 {"type": "cooldown", "duration_seconds": 600}]),
+            (13, "Long 18k", [{"type": "interval", "distance_meters": 18000}]),
+        )], "T10")
+    check("create_plan writes every session through the Training API and schedules each",
+          sum(len(w.get("sessions") or []) for w in (block.get("weeks") or [])) == 6 and block.get("label") == "T10"
+          and all(s.get("workout_id") and s.get("schedule_id") for w in block["weeks"] for s in w["sessions"])
+          and len([c for c in CALLED if c[:2] == ("POST", "/training-api/schedule/")]) == 7
+          and len(store.official_schedules("garmin-user-1", monday.isoformat(), (monday + timedelta(days=14)).isoformat())) == 6,
+          str(block)[:400])
+    card = as_user(bart, server.get_plan, "T10")
+    card_text = json.dumps(card, default=str)
+    check("get_plan draws the block from the kept calendar and workouts",
+          "T10" in card_text and "Threshold 5x1k" in card_text and "error" not in (card if isinstance(card, dict) else {}), card_text[:300])
+    removed = as_user(bart, server.remove_plan, "T10", "T10")
+    check("remove_plan unschedules and deletes the block's sessions",
+          store.official_schedules("garmin-user-1", monday.isoformat(), (monday + timedelta(days=14)).isoformat()) == []
+          and len(store.official_workouts("garmin-user-1")) == 1, str(removed)[:300])
     check("someone without an official link is never switched", as_user("someone-else", lambda: _async(server._official_only)) is None)
     back = as_user(bart, server.garmin_official, "both")
     check("and 'both' goes back to Garmin Connect",
@@ -433,8 +541,9 @@ def main() -> int:
     check("sports the API has no place for are refused, not guessed", walked)
     sent = official.send_workout(again, workout, "2026-10-24")
     check("sending creates the workout and schedules it",
-          sent == {"workout_id": 987, "name": "Threshold", "schedule_id": 654, "scheduled_for": "2026-10-24"}
-          and CALLED[-2][1] == "/workoutportal/workout/v2" and CALLED[-1][2] == {"workoutId": 987, "date": "2026-10-24"})
+          sent == {"workout_id": IDS[0], "name": "Threshold", "schedule_id": IDS[1], "scheduled_for": "2026-10-24"}
+          and CALLED[-2][1] == "/workoutportal/workout/v2" and CALLED[-1][2] == {"workoutId": IDS[0], "date": "2026-10-24"},
+          str(sent))
 
     print("\ndisconnecting")
     check("disconnecting tells Garmin and deletes everything kept",
