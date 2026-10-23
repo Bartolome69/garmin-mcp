@@ -159,8 +159,9 @@ def main() -> int:
     now = int(time.time())
     run_start = now - 3 * 3600
     samples = [{"startTimeInSeconds": run_start + i * 10, "totalDistanceInMeters": i * 30.0,
-                "timerDurationInSeconds": i * 10, "heartRate": 140 + (i % 5), "latitudeInDegree": 51.5,
-                "longitudeInDegree": -0.1} for i in range(0, 81)]
+                "timerDurationInSeconds": i * 10, "movingDurationInSeconds": max(0, i * 10 - 8),
+                "heartRate": 140 + (i % 5), "latitudeInDegree": 51.5, "longitudeInDegree": -0.1,
+                "elevationInMeters": 10 + (i % 20), "stepsPerMinute": 176 + (i % 3)} for i in range(0, 81)]
     detail = {"userId": "garmin-user-1", "summaryId": "77-detail", "activityId": 77,
               "summary": {"startTimeInSeconds": run_start, "durationInSeconds": 800, "distanceInMeters": 2400.0},
               "samples": samples, "laps": [{"startTimeInSeconds": run_start}, {"startTimeInSeconds": run_start + 400}]}
@@ -170,7 +171,7 @@ def main() -> int:
     today = time.strftime("%Y-%m-%d", time.gmtime(now))
     sleep = {"userId": "garmin-user-1", "summaryId": "sl-2", "calendarDate": today, "startTimeInSeconds": now - 10 * 3600,
              "durationInSeconds": 27000, "deepSleepDurationInSeconds": 5400, "remSleepInSeconds": 6000,
-             "overallSleepScore": {"value": 84, "qualifierKey": "GOOD"}, "sleepLevelsMap": {"deep": [{"x": 1}]},
+             "overallSleepScore": {"value": 84, "qualifierKey": "GOOD"}, "sleepLevelsMap": {"deep": [{"x": 1}], "awake": [{"x": 1}, {"x": 2}]},
              "timeOffsetSleepSpo2": {"0": 95}}
     stress = {"userId": "garmin-user-1", "summaryId": "st-2", "calendarDate": today, "startTimeInSeconds": now - 8 * 3600,
               "timeOffsetBodyBatteryValues": {"0": 40, "180": 85, "360": 62},
@@ -299,6 +300,19 @@ def main() -> int:
           spell.get("minutes") == 60 and spell.get("peak") == 80 and spell.get("from") == time.strftime("%H:%M", time.gmtime(stress_start + 3600 + 3600))
           and "timeOffsetStressLevelValues" not in kept_stress, str(kept_stress))
     check("and what charged Body Battery", (kept_stress.get("bodyBatteryEvents") or [{}])[0].get("event", {}).get("bodyBatteryImpact") == 48)
+    official.handle_push(json.dumps({"allDayRespiration": [
+        {"userId": "garmin-user-1", "summaryId": "r-1", "startTimeInSeconds": now - 5 * 3600, "timeOffsetEpochToBreaths": {"0": 14, "60": 16}},
+        {"userId": "garmin-user-1", "summaryId": "r-2", "startTimeInSeconds": now - 4 * 3600, "timeOffsetEpochToBreaths": {"0": 12, "60": -1}}]}).encode())
+    breaths = store.official_summaries("garmin-user-1", "allDayRespiration")
+    check("daytime breathing is kept as averages with their counts", [r.get("breaths") for r in breaths] == [{"average": 15.0, "n": 2}, {"average": 12.0, "n": 1}], str(breaths))
+    # The same loop three days earlier, for "my usual route".
+    earlier_start = run_start - 3 * 86400
+    official.handle_push(json.dumps({
+        "activities": [{**run, "summaryId": "70", "activityId": 70, "activityName": "Same loop", "startTimeInSeconds": earlier_start, "durationInSeconds": 840}],
+        "activityDetails": [{**detail, "summaryId": "70-detail", "activityId": 70,
+                             "summary": {**detail["summary"], "startTimeInSeconds": earlier_start, "durationInSeconds": 840},
+                             "samples": [{**x, "startTimeInSeconds": earlier_start + i * 10} for i, x in enumerate(samples)],
+                             "laps": []}]}).encode())
 
     print("\nthe everyday tools, on the official API alone")
     import anyio
@@ -329,8 +343,8 @@ def main() -> int:
           and day_answer["body_battery"]["highest"] == 85 and day_answer["intensity_minutes"]["vigorous"] == 58,
           str(day_answer))
     listed = as_user(bart, server.get_activities, 5)
-    check("and the activity list", listed.get("count") == 1 and listed["activities"][0]["name"] == "Morning run"
-          and listed["activities"][0]["pace_per_km"] == "5:33 /km", str(listed)[:300])
+    check("and the activity list, newest first", listed.get("count") == 2 and listed["activities"][0]["name"] == "Morning run"
+          and listed["activities"][0]["pace_per_km"] == "5:30 /km", str(listed)[:300])
     detail_answer = as_user(bart, server.get_activity_details, 77)
     check("and a run's laps as the watch took them, with kilometre splits worked out inside",
           detail_answer.get("splits_count") == 2 and detail_answer["splits"][0]["pace_per_km"]
@@ -340,12 +354,20 @@ def main() -> int:
           and detail_answer["summary"]["training_effect"] == {"aerobic": 2.5, "anaerobic": 0.4}
           and detail_answer["summary"]["power"]["average_w"] == 403, str(detail_answer)[:600])
     check("and the list shows them too", listed["activities"][0].get("hr_zones") and listed["activities"][0].get("training_effect"), str(listed)[:300])
+    check("moving time, the hills and the same loop run before come with it",
+          detail_answer["summary"].get("moving_time") == "13m 12s" and isinstance(detail_answer.get("terrain"), dict)
+          and detail_answer["splits"][0].get("avg_cadence_spm") and detail_answer["splits"][0].get("elevation_gain_m") is not None
+          and isinstance(detail_answer.get("same_route"), dict), str({k: detail_answer.get(k) for k in ("terrain", "same_route")})[:400])
     sleep_again = as_user(bart, server.get_sleep_data, today)
-    check("the night brings breathing and SpO2", sleep_again.get("breathing", {}).get("average") == 12.3 and sleep_again.get("spo2", {}).get("lowest") == 93, str(sleep_again))
+    check("the night brings breathing and SpO2, how often awake, and what sleep did to Body Battery",
+          sleep_again.get("breathing", {}).get("average") == 12.3 and sleep_again.get("spo2", {}).get("lowest") == 93
+          and sleep_again.get("spo2", {}).get("usual_7_day") == 96 and sleep_again.get("awake_count") == 2
+          and sleep_again.get("body_battery_change") == 48, str(sleep_again))
     day_again = as_user(bart, server.get_daily_summary, today)
     check("the day brings its stressful spells, Body Battery events, SpO2 and the week's resting heart rate",
           (day_again.get("stressful_spells") or [{}])[0].get("minutes") == 60 and (day_again.get("body_battery_events") or [{}])[0].get("impact") == 48
-          and day_again.get("spo2_average") == 96 and day_again["heart_rate"].get("resting_7day_avg_bpm") == 46, str(day_again)[:600])
+          and day_again.get("spo2_average") == 96 and day_again["heart_rate"].get("resting_7day_avg_bpm") == 46
+          and day_again.get("respiration_avg") == 14.0 and day_again["body_battery"].get("gained_during_sleep") == 48, str(day_again)[:700])
     missing = as_user(bart, server.get_sleep_data, "2026-01-01")
     check("a night Garmin hasn't sent says so, without falling back", "hasn't sent" in missing.get("note", ""), str(missing))
     check("someone without an official link is never switched", as_user("someone-else", lambda: _async(server._official_only)) is None)

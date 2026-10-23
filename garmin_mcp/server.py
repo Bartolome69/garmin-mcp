@@ -877,7 +877,7 @@ async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
         raw = await anyio.to_thread.run_sync(official_data.connect_sleep, garmin_user, day)
         if not raw:
             return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
-        return {**_sleep_shape(day, raw, {}), "source": OFFICIAL_SOURCE}
+        return {**_sleep_shape(day, raw, raw.pop("spo2Week", {}) or {}), "source": OFFICIAL_SOURCE}
     (raw, spo2), _ = await _gather([
         ("sleep", lambda c: c.get_sleep_data(day)),
         ("spo2", lambda c: c.get_spo2_data(day)),
@@ -1213,17 +1213,20 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
 
     garmin_user = _official_only()
     if garmin_user:
-        flat, laps, inside, zones = await anyio.to_thread.run_sync(official_data.activity, garmin_user, activity_id)
-        if flat is None:
+        found = await anyio.to_thread.run_sync(official_data.activity, garmin_user, activity_id)
+        if found is None:
             return {"activity_id": activity_id, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+        flat, laps = found["flat"], found["laps"]
         ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
         return drop_empty({
             "activity_id": activity_id,
             "summary": _summarise_activity(flat) or None,
-            "hr_zones": hr_zones(zones),
+            "hr_zones": hr_zones(found["zones"]),
             "splits_count": len(laps) or None,
             "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
-            "inside": inside,
+            "inside": found["inside"],
+            "terrain": found["terrain"],
+            "same_route": found["same_route"],
             "source": OFFICIAL_SOURCE,
         })
 
