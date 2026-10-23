@@ -1547,6 +1547,7 @@ def _consent_page(
           {email_field}
           <style>
             .chips {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }}
+            .chips .chip {{ display: inline-block; margin: 0; font-weight: 400; }}
             .chip input {{ position: absolute; opacity: 0; width: 0; height: 0; }}
             .chip span {{ display: inline-block; padding: 6px 12px; border: 1px solid #D9D7CF; border-radius: 999px;
               font-size: 13px; color: #4A4944; cursor: pointer; }}
