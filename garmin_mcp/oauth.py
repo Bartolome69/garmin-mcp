@@ -157,6 +157,14 @@ def recognised_redirect(uri: str) -> bool:
     return parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS
 
 
+# The address Daash is listed under in ChatGPT's and Claude's app directories.
+# It is the same server as /mcp, for accounts that sign up by approving Daash
+# on Garmin's own page: clients find it through its own resource metadata,
+# ask for a token for it by name (RFC 8707), and that name is how a sign-in
+# is known to have come from a directory.
+LISTED_PATH = "/listed/mcp"
+
+
 def _sweep() -> None:
     cutoff = time.time() - CODE_TTL
     for key, value in list(_PENDING_AUTH.items()):
@@ -165,6 +173,19 @@ def _sweep() -> None:
     for key, value in list(_AWAITING_CONSENT.items()):
         if value["started"] < cutoff:
             _AWAITING_CONSENT.pop(key, None)
+
+
+def _issued_for(resource: str | None) -> str | None:
+    """The resource a token is stamped with.
+
+    A token asked for by the listed address is stamped with this server's own
+    resource: the listed address is the same endpoint, and the SDK accepts a
+    token only for exactly the resource it serves. Its name has done its job
+    by then, at /authorize.
+    """
+    if not resource or str(resource).rstrip("/").endswith(LISTED_PATH):
+        return _own_resource()
+    return resource
 
 
 def _own_resource() -> str | None:
@@ -225,12 +246,19 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
             "client_name": getattr(client, "client_name", None),
             "params": params,
             "started": time.time(),
+            # Asked for by the listed address: Garmin's own sign-in only.
+            "listed": str(params.resource or "").rstrip("/").endswith(LISTED_PATH),
         }
         return f"/connect?{urlencode({'flow': flow})}"
 
     def pending(self, flow: str) -> dict[str, Any] | None:
         _sweep()
         return _PENDING_AUTH.get(flow)
+
+    def listed(self, flow: str) -> bool:
+        """Whether a waiting sign-in came from the address in the app directories."""
+        entry = self.pending(flow) if flow else None
+        return bool(entry and entry.get("listed"))
 
     def stage(self, flow: str, subject: str) -> tuple[str, dict[str, Any]] | None:
         """Sign-in succeeded; hold the handover until the person approves it.
@@ -378,7 +406,7 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
             client_id=client.client_id,
             subject=authorization_code.subject or "",
             scopes=authorization_code.scopes,
-            resource=authorization_code.resource or _own_resource(),
+            resource=_issued_for(authorization_code.resource),
         )
 
     async def load_refresh_token(
@@ -413,7 +441,7 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
             client_id=client.client_id,
             subject=refresh_token.subject or "",
             scopes=scopes or refresh_token.scopes,
-            resource=refresh_token.resource or _own_resource(),
+            resource=_issued_for(refresh_token.resource),
         )
 
     async def load_access_token(self, token: str) -> AccessToken | None:

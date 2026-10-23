@@ -38,6 +38,7 @@ from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
 from . import analytics, crews, hooks, oauth, official, official_data, preview, store, support_mail
+from . import server as server_mod
 from .server import mcp
 from .session import (
     GarminError,
@@ -1274,13 +1275,15 @@ async def connect_form(request: Request) -> Response:
     # to the waiting authorization request.
     flow = request.query_params.get("flow", "")
     route = _signup_route(request)
-    official_route = bool(flow) and OAUTH_ENABLED and route == "official"
+    listed = bool(flow) and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured()
+    official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
     analytics.capture("sign_in_shown", None, _with_source(request, {
-        "via": "oauth" if flow else "direct", "route": "official" if official_route else "password"}))
+        "via": "oauth" if flow else "direct", "route": "official" if official_route else "password",
+        "listed": listed}))
     if official_route:
-        response = _garmin_intro(flow)
+        response = _garmin_intro(flow, usual=not listed)
     else:
         response = _password_form(flow)
     asked = request.query_params.get("route", "")
@@ -1311,7 +1314,7 @@ def _usual_way(flow: str) -> str:
     return f'<p class=fine>Already use Daash? <a href="{_connect_url(flow)}&amp;usual=1">Sign in the usual way</a></p>'
 
 
-def _garmin_intro(flow: str) -> Response:
+def _garmin_intro(flow: str, usual: bool = True) -> Response:
     """Before Garmin's page: what's about to happen, and Garmin's note about unreviewed apps, played down."""
     return page(
         "Connect your Garmin",
@@ -1323,7 +1326,7 @@ def _garmin_intro(flow: str) -> Response:
         <p class=note>Garmin&rsquo;s page shows a grey note saying it hasn&rsquo;t reviewed
         Daash yet. That&rsquo;s normal for new apps.</p>
         <a class=button href="/official/signup?flow={quote(flow, safe='')}">Continue with Garmin</a>
-        {_usual_way(flow)}
+        {_usual_way(flow) if usual else ""}
         <p class=note style="margin-top:20px;text-align:center"><a href="{PRIVACY_URL}"
         target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
         """,
@@ -1679,6 +1682,7 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
         **({"app": app} if app else {}),
         "returning": returning,
         "joined": joined,
+        "listed": bool(parked.get("listed")),
         "workouts": official.can_write(user_token),
     }))
 
@@ -1977,6 +1981,9 @@ async def connect_submit(request: Request) -> Response:
     email = str(form.get("email", "")).strip()
     password = str(form.get("password", ""))
     flow = str(form.get("flow", ""))
+    if flow and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured():
+        # This address only connects through Garmin's own page.
+        return _garmin_intro(flow, usual=False)
 
     key = _attempt_key(email, password, flow)
     running = _IN_FLIGHT.get(key)
@@ -2271,8 +2278,9 @@ async def _signup_callback(request: Request, code: str, state: str, flow: str) -
     retry = f'<a class=button href="/official/signup?flow={quote(flow, safe="")}">Try again with Garmin</a>'
     if not code:
         analytics.capture("garmin_declined", None, _with_source(request, {}))
+        usual = "" if OAUTH_PROVIDER.listed(flow) else _usual_way(flow)
         return page("Not connected", f"""<h1>Not connected</h1><p>Garmin didn't share access, so nothing
-                    changed and nothing was kept.</p>{retry}{_usual_way(flow)}""")
+                    changed and nothing was kept.</p>{retry}{usual}""")
     try:
         approval = await anyio.to_thread.run_sync(official.finish_signup, code, state)
     except official.OfficialError as exc:
@@ -2522,6 +2530,49 @@ def _preview_for(user: store.User) -> bool:
     return bool(configured and user.email_hash and user.email_hash in _preview_accounts(configured))
 
 
+_METADATA_LINK = re.compile(rb'resource_metadata="[^"]*"')
+
+
+def _listed_metadata_url() -> str:
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    return f"{base}/.well-known/oauth-protected-resource{oauth.LISTED_PATH}"
+
+
+def _pointing_at_listed(send: Any) -> Any:
+    """Answer a 401 at the listed address with that address's own metadata link.
+
+    The SDK's link names the server's root resource. A client that followed it
+    would ask for a token for the root, and its sign-in would not be known to
+    have come from a directory.
+    """
+    async def wrapped(message: Any) -> None:
+        if message.get("type") == "http.response.start" and message.get("status") == 401:
+            link = f'resource_metadata="{_listed_metadata_url()}"'.encode()
+            message = {**message, "headers": [
+                (k, _METADATA_LINK.sub(link, v) if k.lower() == b"www-authenticate" else v)
+                for k, v in message.get("headers", [])]}
+        await send(message)
+    return wrapped
+
+
+@mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.LISTED_PATH}", methods=["GET", "OPTIONS"])
+async def listed_resource_metadata(request: Request) -> Response:
+    """RFC 9728 metadata for the listed address: the same authorization server, its own resource name."""
+    from starlette.responses import JSONResponse
+
+    cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*"}
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=cors)
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    return JSONResponse({
+        "resource": f"{base}{oauth.LISTED_PATH}",
+        "authorization_servers": [f"{base}/"],
+        "bearer_methods_supported": ["header"],
+        "resource_name": "Daash",
+    }, headers=cors)
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 
@@ -2536,6 +2587,12 @@ class SessionBinding:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
+
+        if OAUTH_ENABLED and scope.get("path", "").rstrip("/") == oauth.LISTED_PATH:
+            # The address in the app directories is this same endpoint. Only
+            # its sign-in differs, and clients learn that from its metadata.
+            scope = {**scope, "path": "/mcp", "raw_path": b"/mcp"}
+            send = _pointing_at_listed(send)
 
         if OAUTH_ENABLED:
             # Everyone shares one path; who is asking comes from the bearer
@@ -2612,9 +2669,11 @@ class SessionBinding:
         hook_token = hooks.use(_after_tool_for(user_token, user), _before_tool_for(user_token))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
+        alone_token = server_mod.use_alone(not store.has_connect(user_token))
         try:
             await self.app(scope, receive, send)
         finally:
+            server_mod.reset_alone(alone_token)
             official.reset(official_token)
             crews.reset(crew_token)
             hooks.reset(hook_token)

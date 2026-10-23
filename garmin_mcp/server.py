@@ -15,6 +15,7 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -104,6 +105,64 @@ _INSTRUCTIONS = (
 )
 
 
+# For someone who signed up through Garmin's own page, the account Daash reads
+# is Garmin's official API alone. These tools need Garmin Connect, so they
+# aren't listed for them; called anyway, they say so.
+OFFICIAL_MISSING = {
+    "get_readiness", "get_fitness", "get_fitness_trends", "get_recovery_trends",
+    "get_heart_rate", "get_profile", "get_shoes", "update_activity",
+}
+_OFFICIAL_INSTRUCTIONS = (
+    "The user's own Garmin account, through Garmin's official API. Garmin sends "
+    "training as the watch syncs, from the day the account connected Daash, so "
+    "nothing from before then is here. Reads activities with their laps and "
+    "splits, the day (steps, stress, Body Battery), and sleep. Writes to the "
+    "workout library: create, update, schedule, unschedule and delete structured "
+    "workouts; scheduling is what sends one to the watch. A whole training block "
+    "is create_plan, read back with get_plan. For any general question about how "
+    "training is going (\"how's my training going\", \"how am I doing\", \"how's "
+    "this week\", \"show my plan\", \"what's next\", \"am I on track\"), call "
+    "get_plan first and alone: it draws the plan, or with nothing scheduled the "
+    "recent running and riding, as a card, and says the one next step to offer "
+    "at the end, as a question. A specific question goes to its own tool without "
+    "the card: a run to get_activity_details, what a planned session involves to "
+    "get_workout, a night to get_sleep_data, a day to get_daily_summary, whether "
+    "planned sessions got done to get_progress. Answer those in writing. "
+    "Readiness, race predictions, fitness trends, shoes and all-day heart rate "
+    "aren't shared through Garmin's official API: if asked, say so in a sentence "
+    "and answer from the activities and sleep. For workout targets use paces, "
+    "heart rate in bpm or watts, not zones or a share of FTP. A Daash crew "
+    "(friends who see each other's easy and long runs) has its own card, "
+    "get_crew: call it only when the user asks about the crew as a whole. One "
+    "card per answer, at most. Dates are YYYY-MM-DD and also accept 'today', "
+    "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
+    "'error' key, show it to the user rather than retrying blindly."
+)
+# Set per request by the hosted server: whether the person asking has only
+# Garmin's official API behind them.
+_ALONE: ContextVar[bool] = ContextVar("daash_official_alone", default=False)
+
+
+def use_alone(value: bool):
+    return _ALONE.set(bool(value))
+
+
+def reset_alone(token) -> None:
+    _ALONE.reset(token)
+
+
+class _Instructions:
+    """The instructions a client is given, chosen for whoever is asking."""
+
+    def __get__(self, obj: Any, objtype: Any = None) -> Any:
+        if obj is None:
+            return self
+        return _OFFICIAL_INSTRUCTIONS if _ALONE.get() else obj.__dict__.get("_daash_instructions")
+
+    def __set__(self, obj: Any, value: Any) -> None:
+        obj.__dict__["_daash_instructions"] = value
+
+
 class _Server(MCPServer):
     """The SDK's server, with the preview-only tools hidden from whoever isn't trying them.
 
@@ -115,11 +174,13 @@ class _Server(MCPServer):
         tools = await super().list_tools()
         on = preview.enabled()
         crew_on = crews.available()
+        alone = _ALONE.get()
         return [
             _with_description(tool, preview_on=on)
             for tool in tools
             if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
             and (crew_on or tool.name not in CREW_TOOLS)
+            and not (alone and tool.name in OFFICIAL_MISSING)
         ]
 
     async def list_resources(self):
@@ -428,6 +489,13 @@ def _server() -> MCPServer:
 
 
 mcp = _server()
+# The instructions go out with every initialize: make them follow the person
+# asking, the way the tool list does.
+_low = getattr(mcp, "_lowlevel_server", None)
+if _low is not None and not isinstance(type(_low).__dict__.get("instructions"), _Instructions):
+    _kept = _low.instructions
+    _low.__class__ = type(type(_low).__name__, (type(_low),), {"instructions": _Instructions()})
+    _low.instructions = _kept
 
 
 # Anything that fetches an icon by convention, rather than by asking the
@@ -2007,7 +2075,7 @@ async def get_progress(weeks: int = 6) -> dict[str, Any]:
     """
     weeks = max(1, min(int(weeks or 6), 12))
 
-    data = await anyio.to_thread.run_sync(plan.collect)
+    data = await anyio.to_thread.run_sync(plan.collect, _run)
     planned, actual = progress.from_collected(data)
     result = progress.match(planned, actual, data["today"])
 

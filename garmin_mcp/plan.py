@@ -105,14 +105,19 @@ def monday_of(day: date) -> date:
     return day - timedelta(days=day.weekday())
 
 
-def collect() -> dict[str, Any]:
-    """Pull the calendar and the activities covering the window."""
+def collect(run: Any = None) -> dict[str, Any]:
+    """Pull the calendar and the activities covering the window.
+
+    `run` is how a call reaches Garmin: the server passes its own, which goes
+    to Garmin's official API for an account on it.
+    """
+    run = run or session.run
     today = date.today()
     history_start = monday_of(today) - timedelta(weeks=max(WEEK_STRIP, MONTH_STRIP * 5))
     start = monday_of(today) - timedelta(weeks=WEEKS_BACK)
     end = monday_of(today) + timedelta(weeks=WEEKS_FORWARD + 1) - timedelta(days=1)
 
-    activities = session.run(
+    activities = run(
         lambda c: c.get_activities_by_date(history_start.isoformat(), today.isoformat())
     ) or []
 
@@ -128,7 +133,7 @@ def collect() -> dict[str, Any]:
     seen: dict[Any, dict[str, Any]] = {}
     for year, month in months:
         try:
-            payload = session.run(lambda c, y=year, m=month: c.get_scheduled_workouts(y, m))
+            payload = run(lambda c, y=year, m=month: c.get_scheduled_workouts(y, m))
         except Exception:
             continue
         items = payload if isinstance(payload, list) else (payload or {}).get("calendarItems", [])
@@ -147,7 +152,7 @@ def collect() -> dict[str, Any]:
         if not workout_id or workout_id in distances:
             continue
         try:
-            detail = session.run(lambda c, w=workout_id: c.get_workout_by_id(w)) or {}
+            detail = run(lambda c, w=workout_id: c.get_workout_by_id(w)) or {}
             distances[workout_id] = planned_distance_m(detail)
             durations[workout_id] = float(detail.get("estimatedDurationInSecs") or 0)
         except Exception:

@@ -165,12 +165,13 @@ async def main() -> int:
         "token_endpoint_auth_method": "none"}, as_json=True))
     client_id = json.loads(body)["client_id"]
 
-    async def start() -> tuple[str, str]:
+    async def start(resource: str | None = None) -> tuple[str, str]:
         """A fresh connector sign-in: (flow, PKCE verifier)."""
         verifier = secrets.token_urlsafe(48)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
         query = urllib.parse.urlencode({"response_type": "code", "client_id": client_id, "redirect_uri": REDIRECT,
-                                        "code_challenge": challenge, "code_challenge_method": "S256", "state": "st"})
+                                        "code_challenge": challenge, "code_challenge_method": "S256", "state": "st",
+                                        **({"resource": resource} if resource else {})})
         _, _, headers = await run(lambda: http("GET", f"/authorize?{query}"))
         location = headers.get("location", "")
         return urllib.parse.parse_qs(urllib.parse.urlparse(location).query)["flow"][0], verifier
@@ -211,6 +212,18 @@ async def main() -> int:
                     await sess.initialize()
                     result = await sess.call_tool(tool, args or {})
                     return json.loads(result.content[0].text)
+
+    async def listing(access: str, path: str = "/mcp") -> tuple[set, str]:
+        """(tool names, instructions) as a client at `path` is told them."""
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+        import httpx2
+        async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {access}"}) as client:
+            async with streamable_http_client(f"{BASE}{path}", http_client=client) as (r, w):
+                async with ClientSession(r, w) as sess:
+                    hello = await sess.initialize()
+                    names = {t.name for t in (await sess.list_tools()).tools}
+                    return names, hello.instructions or ""
 
     from types import SimpleNamespace
     parked = {"params": SimpleNamespace(redirect_uri="https://claude.ai/api/mcp/auth_callback"),
@@ -336,6 +349,46 @@ async def main() -> int:
         check("reported as a join", [p for e, p in reported if e == "connector_connected"][-1].get("joined") is True)
         code, body, _ = await run(lambda: http("POST", "/oauth/confirm", {"s": sealed, "code": SENT_CODES[-1][1]}))
         check("the code and its request can't be used twice", "expired" in body)
+
+        names, said = await listing(sam)
+        check("a Garmin-only account isn't offered the tools the official API can't answer",
+              "get_readiness" not in names and "get_shoes" not in names and "get_plan" in names
+              and "create_workout" in names and "through Garmin's official API" in said, str(sorted(names))[:300])
+        names, said = await listing(runner)
+        check("an account with Garmin Connect behind it keeps every tool and the usual instructions",
+              "get_readiness" in names and "get_shoes" in names and "through Garmin's official API" not in said)
+
+        print("\nthe listed address")
+        listed = f"{BASE}/listed/mcp"
+        code, body, _ = await run(lambda: http("GET", "/.well-known/oauth-protected-resource/listed/mcp"))
+        meta = json.loads(body) if code == 200 else {}
+        check("it has its own resource metadata, on the same authorization server",
+              meta.get("resource") == listed and meta.get("authorization_servers") == [f"{BASE}/"], str(meta))
+        probe = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        code, _, headers = await run(lambda: http("POST", "/listed/mcp", probe, as_json=True,
+                                                  headers={"accept": "application/json, text/event-stream"}))
+        challenge_header = headers.get("www-authenticate", "") or headers.get("WWW-Authenticate", "")
+        check("asked without a token, it points clients at that metadata",
+              code == 401 and "oauth-protected-resource/listed/mcp" in challenge_header, f"{code} {challenge_header}")
+        flow_l, verifier_l = await start(resource=listed)
+        _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow_l}"))
+        check("a sign-in for it goes through Garmin, with no password route offered, whatever the switch says",
+              "Continue with Garmin" in body and "Sign in the usual way" not in body and "Garmin password" not in body)
+        _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow_l}&usual=1"))
+        check("not even by asking for the usual way", "Garmin password" not in body)
+        _, body, _ = await run(lambda: http("POST", "/connect", {"email": "x@example.com", "password": "pw", "flow": flow_l}))
+        check("a password sent anyway goes nowhere", "Continue with Garmin" in body and "Allow" not in body)
+        NEXT_GARMIN["id"] = "g-listed"
+        code, body = await through_garmin(flow_l)
+        _, _, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent_of(body), "decision": "allow", "email": "listed@example.com"}))
+        listed_token = await token_for(headers.get("location", ""), verifier_l)
+        names, said = await listing(listed_token, "/listed/mcp")
+        check("and the listed address serves the official tools, with the official instructions",
+              bool(listed_token) and "get_plan" in names and "get_readiness" not in names
+              and "through Garmin's official API" in said, str(sorted(names))[:200])
+        check("its sign-up is reported as listed",
+              [p for e, p in reported if e == "connector_connected"][-1].get("listed") is True)
 
         print("\nturning back")
         flow5, _ = await start()
