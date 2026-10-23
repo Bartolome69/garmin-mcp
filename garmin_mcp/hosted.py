@@ -1229,6 +1229,9 @@ async def connect_form(request: Request) -> Response:
     # Set when Claude sent them here from /authorize; it ties this sign-in back
     # to the waiting authorization request.
     flow = request.query_params.get("flow", "")
+    # Counted, not attributed: there is no one to attribute it to until they
+    # sign in. Shown against submitted and connected says who leaves here.
+    analytics.capture("sign_in_shown", None, {"via": "oauth" if flow else "direct"})
     return page(
         "Sign in to Garmin",
         f"""

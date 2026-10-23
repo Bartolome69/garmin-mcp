@@ -1540,6 +1540,13 @@ async def main() -> int:
             except urllib.error.HTTPError as e:
                 return e.code, dict(e.headers), e.read().decode()
 
+        shown_before = len([e for e in SENT if e["event"] == "sign_in_shown"])
+        status_shown, _, _ = fetch("/connect?flow=abc")
+        shown = [e for e in SENT if e["event"] == "sign_in_shown"][shown_before:]
+        check("opening the sign-in page is counted, without anyone to attribute it to",
+              status_shown == 200 and len(shown) == 1 and shown[0]["properties"].get("via") == "oauth"
+              and shown[0]["properties"].get("$process_person_profile") is False, str(shown))
+
         before_link = await call(carol, "get_crew", {})
         dave_card = await call(dave, "get_crew", {})
         check("the crew's starter is told, in the card itself, how to turn the page on",
