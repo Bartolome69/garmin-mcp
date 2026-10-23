@@ -483,6 +483,9 @@ def status(user_token: str) -> dict:
     return {
         "connected": True,
         "since": fmt(link.created_at),
+        # Garmin's id for this account, which the developer portal's tools
+        # (the Summary Resender) ask for.
+        "garmin_user_id": link.garmin_user_id,
         "permissions": link.permissions,
         "received": {kind: {"count": c["count"], "latest": fmt(c["latest_start"]), "arrived": fmt(c["last_received"])}
                      for kind, c in sorted(counts.items())},

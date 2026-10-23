@@ -146,6 +146,7 @@ def main() -> int:
     check("the status says what has arrived",
           status["connected"] and status["received"]["dailies"]["count"] == 1
           and status["received"]["sleeps"]["count"] == 1 and status["push_url"].startswith("https://daash.test/official/push/"))
+    check("the status gives Garmin's user id, for the portal's tools", status["garmin_user_id"] == "garmin-user-1")
     raw = sqlite3.connect(DB).execute("SELECT data_enc FROM official_summaries").fetchone()[0]
     check("what Garmin sent is encrypted at rest", b"12000" not in raw)
     check("rubbish is ignored", official.handle_push(b"not json") == {} and official.handle_push(b"[1,2]") == {})
