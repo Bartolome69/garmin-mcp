@@ -2293,7 +2293,8 @@ async def _signup_callback(request: Request, code: str, state: str, flow: str) -
         # Everything is new to someone just connecting.
         store.claim_news(approval.user_token, NEWS_VERSION)
     analytics.capture("garmin_approved", None, _with_source(request, {
-        "new": approval.new, "workouts": "WORKOUT_IMPORT" in approval.permissions}))
+        "new": approval.new,
+        "workouts": "unknown" if approval.permissions is None else "WORKOUT_IMPORT" in approval.permissions}))
     staged = OAUTH_PROVIDER.stage(approval.flow, approval.user_token)
     if not staged:
         return page("Sign-in expired", "<div class=err>That sign-in took too long and the request has "

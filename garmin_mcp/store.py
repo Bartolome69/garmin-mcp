@@ -626,7 +626,8 @@ class OfficialLink:
     user_token: str
     garmin_user_id: str
     tokens: dict
-    permissions: list[str]
+    # None while Garmin hasn't said what the account agreed to share.
+    permissions: list[str] | None
     created_at: int
 
 
@@ -643,7 +644,7 @@ def _official_link(row: tuple | None) -> OfficialLink | None:
 _LINK_COLUMNS = "user_token, garmin_user_id, tokens_enc, permissions, created_at"
 
 
-def save_official_link(user_token: str, garmin_user_id: str, tokens: dict, permissions: list[str]) -> None:
+def save_official_link(user_token: str, garmin_user_id: str, tokens: dict, permissions: list[str] | None) -> None:
     """Link a person to their Garmin account on the official API, replacing any earlier link.
 
     A Garmin account can be linked to one person here at a time, so a second
@@ -880,7 +881,7 @@ def official_schedules(garmin_user_id: str, start: str, end: str) -> list[tuple[
 NO_EMAIL_YET = "Garmin account"
 
 
-def save_official_user(garmin_user_id: str, tokens: dict, permissions: list[str]) -> str:
+def save_official_user(garmin_user_id: str, tokens: dict, permissions: list[str] | None) -> str:
     """A new Daash account from an approval on Garmin's page alone. Returns its token.
 
     There is no Garmin Connect session behind it, so the row's session is

@@ -254,6 +254,9 @@ def finish(code: str, state: str) -> str:
     if store.get_user(user_token) is None:
         raise OfficialError("Daash doesn't recognise this account any more. Connect Daash again first.")
     garmin_user_id, tokens, permissions = _exchange(code, opened["v"])
+    if permissions is None:
+        earlier = store.official_link(user_token)
+        permissions = earlier.permissions if earlier else None
     store.save_official_link(user_token, garmin_user_id, tokens, permissions)
     return garmin_user_id
 
@@ -265,7 +268,7 @@ class Approval:
     garmin_user_id: str
     flow: str
     new: bool
-    permissions: list[str]
+    permissions: list[str] | None
 
 
 def finish_signup(code: str, state: str) -> Approval:
@@ -281,6 +284,8 @@ def finish_signup(code: str, state: str) -> Approval:
     garmin_user_id, tokens, permissions = _exchange(code, opened["v"])
     known = store.official_link_for_garmin_user(garmin_user_id)
     if known is not None and store.get_user(known.user_token) is not None:
+        if permissions is None:
+            permissions = known.permissions  # unknown now: keep what Garmin said before
         store.save_official_link(known.user_token, garmin_user_id, tokens, permissions)
         return Approval(known.user_token, garmin_user_id, opened["f"], False, permissions)
     user_token = store.save_official_user(garmin_user_id, tokens, permissions)
@@ -298,14 +303,35 @@ def _exchange(code: str, verifier: str) -> tuple[str, dict, list[str]]:
     garmin_user_id = str(_call(tokens["access_token"], "GET", "/partner-gateway/rest/user/id").get("userId") or "")
     if not garmin_user_id:
         raise OfficialError("Garmin didn't say which account this is. Try connecting again.")
-    permissions = _call(tokens["access_token"], "GET", "/partner-gateway/rest/user/permissions").get("permissions") or []
-    return garmin_user_id, tokens, list(permissions)
+    return garmin_user_id, tokens, _permissions(tokens["access_token"])
+
+
+def _permissions(access_token: str) -> list[str] | None:
+    """What the account agreed to share, or None when Garmin won't say yet.
+
+    Garmin has refused this read (403) for a fresh approval it had just given,
+    while the account itself was readable. The list only lets Daash say in
+    advance that workouts can't go to the watch, and Garmin pushes it again
+    whenever it changes, so a refusal is tried once more and then left
+    unknown rather than stopping the sign-up.
+    """
+    for attempt in range(2):
+        try:
+            return list(_call(access_token, "GET", "/partner-gateway/rest/user/permissions").get("permissions") or [])
+        except OfficialError:
+            if attempt == 0:
+                time.sleep(1.5)
+    log.warning("official permissions unreadable at sign-up; carrying on without them")
+    return None
 
 
 def can_write(user_token: str) -> bool:
-    """Whether the person let Daash put workouts on their watch when they approved it."""
+    """Whether the person let Daash put workouts on their watch when they approved it.
+
+    Unknown counts as yes: Garmin answers the write itself if it isn't allowed.
+    """
     link = store.official_link(user_token)
-    return link is not None and "WORKOUT_IMPORT" in (link.permissions or [])
+    return link is not None and (link.permissions is None or "WORKOUT_IMPORT" in link.permissions)
 
 
 # --------------------------------------------------------------------------

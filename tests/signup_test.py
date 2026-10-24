@@ -121,6 +121,8 @@ def fake_call(access_token, method, path, body=None):
     if path.endswith("/user/id"):
         return {"userId": NEXT_GARMIN["id"]}
     if path.endswith("/user/permissions"):
+        if NEXT_GARMIN["permissions"] is None:
+            raise official.OfficialError("Garmin doesn't allow this for Daash's app.")
         return {"permissions": NEXT_GARMIN["permissions"]}
     if path == "/workoutportal/workout/v2":
         return {"workoutId": 501, "workoutName": body["workoutName"], "ownerId": 7}
@@ -389,6 +391,19 @@ async def main() -> int:
               and "through Garmin's official API" in said, str(sorted(names))[:200])
         check("its sign-up is reported as listed",
               [p for e, p in reported if e == "connector_connected"][-1].get("listed") is True)
+
+        print("\nwhen Garmin won't list what the account shared")
+        official.time.sleep = lambda _s: None
+        flow_p, _ = await start()
+        NEXT_GARMIN.update(id="g-no-perms", permissions=None)
+        code, body = await through_garmin(flow_p)
+        check("the sign-up carries on to the Allow page", code == 200 and "name=email" in body, body[:200])
+        held = store.official_link_for_garmin_user("g-no-perms")
+        check("with the permissions left unknown, and writing allowed until Garmin says otherwise",
+              held is not None and held.permissions is None and official.can_write(held.user_token))
+        approved = [p for e, p in reported if e == "garmin_approved"]
+        check("reported as unknown", approved[-1].get("workouts") == "unknown", str(approved[-1:]))
+        NEXT_GARMIN["permissions"] = ["ACTIVITY_EXPORT", "HEALTH_EXPORT", "WORKOUT_IMPORT"]
 
         print("\nturning back")
         flow5, _ = await start()
