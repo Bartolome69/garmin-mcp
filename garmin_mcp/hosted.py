@@ -2596,6 +2596,17 @@ async def listed_resource_metadata(request: Request) -> Response:
     }, headers=cors)
 
 
+# OpenAI's Apps directory checks Daash owns this host by fetching its token
+# here, as plain text. The token is public by design: it proves nothing alone.
+OPENAI_APPS_CHALLENGE = "7FrcPNgiDeHE-Sac2sGq2fFmdmHOoiZosLQkUI0q7Nc"
+
+
+@mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])
+async def openai_apps_challenge(request: Request) -> Response:
+    """The OpenAI Apps directory's domain check: the token alone, as plain text."""
+    return Response(OPENAI_APPS_CHALLENGE, media_type="text/plain")
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 

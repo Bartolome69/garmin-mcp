@@ -362,6 +362,9 @@ async def main() -> int:
               "get_readiness" in names and "get_shoes" in names and "through Garmin's official API" not in said)
 
         print("\nthe listed address")
+        code, body, _ = await run(lambda: http("GET", "/.well-known/openai-apps-challenge"))
+        check("OpenAI's domain check finds its token alone, as plain text",
+              code == 200 and body == hosted.OPENAI_APPS_CHALLENGE, f"{code} {body[:80]}")
         listed = f"{BASE}/listed/mcp"
         code, body, _ = await run(lambda: http("GET", "/.well-known/oauth-protected-resource/listed/mcp"))
         meta = json.loads(body) if code == 200 else {}
