@@ -1,0 +1,27 @@
+name: Official API log lines
+
+# Prints the hosted server's recent log lines about Garmin's official API
+# refusing a request: the path, Garmin's status code and its reason. Run by
+# hand when an official sign-in fails. Long tokens are blanked, and nothing
+# else from the log is shown.
+
+on:
+  workflow_dispatch:
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  lines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Recent official API refusals
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl logs --app "$FLY_APP" --no-tail 2>/dev/null \
+            | grep -E "official (call|request|token|sign-up|registration)" \
+            | sed -E 's/[A-Za-z0-9_=-]{28,}/<blank>/g' \
+            | tail -40 || true
