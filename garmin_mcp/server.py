@@ -476,7 +476,7 @@ def _server() -> MCPServer:
 
         return _Server(
             "garmin",
-            title="Garmin",
+            title="Daash",
             instructions=_INSTRUCTIONS,
             website_url=WEBSITE,
             icons=[
