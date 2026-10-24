@@ -665,7 +665,13 @@ _TITLES = {"get_plan": "Training plan and progress"}
 
 # Tools that take something away: a workout, a plan, a date on the calendar,
 # a workout's old steps, or everything a crew kept for the person.
-DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew", "garmin_official"}
+DESTRUCTIVE = {
+    "delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew", "update_crew",
+    "garmin_official",
+}
+# Tools that reach past the person's own account: update_crew can put the
+# crew's week on a page anyone with its link can open.
+OPEN_WORLD = {"update_crew"}
 
 # Each tool's name as a directory listing shows it. Claude's Connectors
 # Directory flags any tool without one in its annotations.
@@ -712,9 +718,9 @@ def _annotations(name: str) -> ToolAnnotations:
         title=_ANNOTATION_TITLES.get(name),
         readOnlyHint=name not in WRITES and name not in CREW_WRITES,
         destructiveHint=name in DESTRUCTIVE,
-        # Every tool works on the person's own Garmin account, a closed world,
-        # not the open web; saying otherwise invites more caution than it needs.
-        openWorldHint=False,
+        # Every other tool works on the person's own Garmin account, a closed
+        # world, not the open web; saying otherwise invites more caution than it needs.
+        openWorldHint=name in OPEN_WORLD,
     )
 
 

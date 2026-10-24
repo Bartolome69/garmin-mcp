@@ -294,6 +294,9 @@ async def main() -> int:
               and all(a.destructive_hint is not None for a in hints.values() if a.read_only_hint is False),
               str(sorted(n for n, a in hints.items() if not (a.title or "").strip())))
         check("leaving a crew is marked destructive", hints["leave_crew"].destructive_hint is True)
+        check("changing a crew is marked destructive and open-world, since it can share a public page",
+              hints["update_crew"].destructive_hint is True and hints["update_crew"].open_world_hint is True
+              and hints["get_plan"].open_world_hint is False)
         check("the crew tools carry their directory titles",
               {n: hints[n].title for n in ("get_crew", "join_crew", "update_crew", "leave_crew")}
               == {"get_crew": "Get crew week", "join_crew": "Join or start crew",

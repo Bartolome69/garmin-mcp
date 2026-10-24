@@ -1271,7 +1271,8 @@ ANNOTATED_TITLES = {
     "update_workout": "Update workout",
     "leave_crew": "Leave crew",
 }
-ANNOTATED_DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew"}
+ANNOTATED_DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew",
+                         "update_crew"}
 ANNOTATED_WRITES = ANNOTATED_DESTRUCTIVE | {
     "create_plan", "create_strength_workout", "create_workout", "schedule_workout",
     "update_activity", "join_crew", "update_crew",
