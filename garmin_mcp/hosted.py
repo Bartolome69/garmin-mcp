@@ -1020,7 +1020,18 @@ def _too_many_attempts(address: str) -> bool:
 # This is the page that asks for a Garmin password, so it has to look like the
 # site that sent people here. No web fonts and no outside requests: a sign-in
 # page loads nothing it does not need.
+# The wordmark's five letters in the site's own Inter Tight at 900, inline:
+# the page loads nothing from anywhere else, and without them most computers
+# drew "Daash" in their system font, heavier and wider than on daash.run.
+# Italic is the browser's slant, as on the site, which loads it upright.
+_WORDMARK_FONT = (
+    "data:font/woff2;base64,"
+    "d09GMgABAAAAAAN0AA8AAAAABewAAAMZAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhYbgQocKgZgP1NUQVREAEwRCAqDTIMiATYCJAMUCwwABCAFgR4HIBuvBFFUT+ZB/DyMHRwBUuyVQTNdWb3MCQXPU135fnX1LKlA4g3CxDrpmE0D/PcWTOkRiEpVnf+bcW3RiRkEvAHnxElFY2EvwowCiT5wLz/TIz0APOdmQecOaTqjgt5+IwjgCAAoBEEjCGBPpHSqsrpBC5wHdB0xCGc0wP8IIP17DhuELSCAoFHYItiiiKWBdMUMNPC2hGgVBoIr2yQxDiOMFkv4egBAmxgzMMHM0LeBdWmOmrQXqM0AkOA81qx5w+aco5LhNudq3cHWqhYBAqA7mQ+AUI7I9UDAkwIiqdG9+4wQV/hl87j4I2hcCYD4GTMAA0FJAAACgAIMwLPpKZgmF9hji0JRSVf6MDw8+tG9ra1vKQEAAAT5HxdAMAGwByzAUuApAKABAIVCEG8d7eYT5+JoOM23WmXqkyf24/LdM6Y8fTturOP4rvPUQqZa0be2Wu+Kp7ef9yjUUSoc5j/GEe0o9ucePWq9vpAVJ7CPPHHrAFMe99fROGkHZ4d2NKN9NN5xW9oz5XRVy5I/RdzaL3gfbOW09bFzssrUVq220/nf+m7WmjZzBm+oanpo/YZmh7ZWj5zWZs3nhsdONvz29UTD+kd9H8O0AhMz3frvqG6/eHCHoqmDm61IbGV2tAzxiA7VCWXJmfk1acOHWHoO2/+69+7Rp3Nmdq+e0bB2zCbb4E4NRkfk/ktuEpVendHhb8Hc3cM/bzkTlFKaypvhI5ZhmlbPMarf4TETRh3q3+XU+GvLRjRv1qlhWp34mEZUbvs1JL1NfkFmTWSE3/7vH2IG7Vk+Ycz8Q786rSf0XhfNaJtbkVsTFV4w2fvygvfumDFywtbPLbb88r4GAGAMAhhiaeE5sLizS+FfW8MWgEf9XMoBvqgdY/Hvp9nPfABYUAAIPMncPGAgBZ4goDc19OpfUkevwn+KRnoGgQQwyaEAEHBnoREGou0QvEFZhTPePHHFkUjOD3tSOX8cyX83AHuqqcsgRtCTYYRqQV9604cRNKMnvRnJALoyjNb0LEblct+d/tQVoK5QX6oZgxnYDcIAYrWHWQAAAAA="
+)
+
 _STYLE = """
+@font-face { font-family:"Daash Wordmark"; font-weight:900; font-style:normal;
+  src:url(""" + _WORDMARK_FONT + """) format("woff2"); }
 :root { color-scheme: light; --ground:#F8F9FA; --surface:#fff; --ink:#1C212B;
   --muted:#6A7180; --line:#E2E4E9; --accent:#E63023; --accent-ink:#B8261C; }
 * { box-sizing:border-box }
@@ -1029,7 +1040,7 @@ body { margin:0; background:var(--ground); color:var(--ink); font:16px/1.6
   -webkit-font-smoothing:antialiased; }
 .top { border-bottom:1px solid var(--line); background:var(--surface) }
 .top div { max-width:480px; margin:0 auto; padding:14px 20px }
-.logo { font:italic 900 22px/1 "Inter Tight", Inter, ui-sans-serif, system-ui,
+.logo { font:italic 900 22px/1 "Daash Wordmark", "Inter Tight", Inter, ui-sans-serif, system-ui,
   -apple-system, sans-serif; color:var(--accent); text-decoration:none;
   letter-spacing:-0.02em }
 .wrap { max-width:480px; margin:0 auto; padding:36px 20px 64px; }
