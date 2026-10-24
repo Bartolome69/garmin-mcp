@@ -176,7 +176,7 @@ class _Server(MCPServer):
         crew_on = crews.available()
         alone = _ALONE.get()
         return [
-            _with_description(tool, preview_on=on)
+            _with_description(tool, preview_on=on, alone=alone)
             for tool in tools
             if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
             and (crew_on or tool.name not in CREW_TOOLS)
@@ -359,6 +359,258 @@ _NOTES = {
 _PREVIEW_NOTES: dict[str, str] = {}
 
 
+# What each tool does, for an account on Garmin's official API alone, which is
+# how the directories list Daash. Only what the tool does and takes: no other
+# tool named, nothing on how to answer. The routing lives in the server's
+# instructions instead.
+OFFICIAL_DESCRIPTIONS = {
+    "get_daily_summary": (
+        "One day's health summary: steps, calories, resting heart rate, Body Battery and stress, "
+        "with what charged or drained Body Battery and the longest stressful spells.\n\n"
+        "Args:\n"
+        "  date: The day. YYYY-MM-DD, 'today', 'yesterday' or an offset like '-3'. Defaults to today."
+    ),
+    "get_sleep_data": (
+        "One night's sleep: stages, sleep score, and overnight breathing rate and SpO2 against "
+        "the user's usual.\n\n"
+        "Args:\n"
+        "  date: The date the user woke up on. YYYY-MM-DD, 'today', 'yesterday' or an offset "
+        "like '-3'. Defaults to today."
+    ),
+    "get_activities": (
+        "Recent runs, rides, swims and other activities, with distance, duration, pace or speed "
+        "and heart-rate zones. Swims carry pace per 100 m, pool length, SWOLF and stroke rate.\n\n"
+        "Args:\n"
+        "  limit: Most activities to return, 1-50. Defaults to 10.\n"
+        "  start_date: Optional first day of a range, YYYY-MM-DD.\n"
+        "  end_date: Optional last day of the range. Defaults to today when start_date is given."
+    ),
+    "get_activity_details": (
+        "One activity in detail: laps and splits with pace and heart rate. A run also carries "
+        "the weather during it, the terrain (climbs, pace uphill, flat and downhill, heart-rate "
+        "drift) and earlier runs of the same route. A ride carries power figures, best efforts, "
+        "time in power zones and climbs. A swim carries pace per 100 m, SWOLF, strokes and each "
+        "interval with its rest.\n\n"
+        "Args:\n"
+        "  activity_id: The activity's id."
+    ),
+    "list_workouts": (
+        "The structured workouts saved in the user's Garmin workout library.\n\n"
+        "Args:\n"
+        "  limit: Most workouts to return, 1-100. Defaults to 20."
+    ),
+    "get_workout": (
+        "The steps of one saved or scheduled workout: each step with its distance or time and "
+        "target. Repeats keep their structure, e.g. 8 x [1 km at a target, 60 s recovery].\n\n"
+        "Args:\n"
+        "  workout_id: The workout's id."
+    ),
+    "create_workout": (
+        "Create a new structured workout in the user's Garmin workout library. It never edits an "
+        "existing one. A workout reaches the watch once it is scheduled on a date.\n\n"
+        "Args:\n"
+        "  name: Shown in Garmin Connect and on the watch.\n"
+        "  steps: Ordered steps, each with \"type\" (warmup, interval, recovery, rest, cooldown "
+        "or repeat) and exactly one of \"duration_seconds\", \"distance_meters\" or "
+        "\"until_lap\": true (the step ends on the lap button). A repeat is "
+        "{\"type\": \"repeat\", \"times\": 5, \"steps\": [...]} and can't contain another repeat. "
+        "Optional target on a step: \"pace\" (min/km, \"4:05\" or [\"4:00\", \"4:10\"]), \"hr\" "
+        "(bpm [150, 165], or a Garmin zone such as \"z2\" or \"z3-z4\") or \"power\" (watts, 250 "
+        "or [240, 260]; a share of the FTP set in Garmin, \"95%\" or [\"88%\", \"94%\"]; or a "
+        "power zone, \"z3\"). A pace target narrower than 5 s/km either side is widened to that, "
+        "and a single power value becomes a range 5% either side. Example, 15 min warm-up, "
+        "5 x 1 km at 4:05 with 90 s recoveries, 10 min cool-down: "
+        "[{\"type\": \"warmup\", \"duration_seconds\": 900}, {\"type\": \"repeat\", \"times\": 5, "
+        "\"steps\": [{\"type\": \"interval\", \"distance_meters\": 1000, \"pace\": \"4:05\"}, "
+        "{\"type\": \"recovery\", \"duration_seconds\": 90}]}, "
+        "{\"type\": \"cooldown\", \"duration_seconds\": 600}]\n"
+        "  sport: running (default), cycling, swimming, walking or hiking.\n"
+        "  description: Optional note stored with the workout.\n"
+        "  pool_length_meters: For a swim, 25 (default) or 50.\n\n"
+        "A swim's steps are whole pool lengths (100, 200...), each with an optional \"stroke\": "
+        "freestyle, backstroke, breaststroke, butterfly, im, drill or any. Its \"pace\" is per "
+        "100 m (\"1:45\") and shows on the step as a note rather than an alert. A \"rest\" with no "
+        "duration waits for the lap button; \"duration_seconds\" fixes its length. A \"note\" "
+        "(e.g. \"kick with board\") shows on the step."
+    ),
+    "update_workout": (
+        "Change an existing workout in place: its name, steps, description or pool length. It "
+        "keeps its id, so dates it is already scheduled on stay scheduled and the watch gets the "
+        "new version at its next sync. New steps replace the whole old list, and the result "
+        "carries the steps that were replaced.\n\n"
+        "Args:\n"
+        "  workout_id: The workout's id.\n"
+        "  name: New name. Omit to keep the current one.\n"
+        "  steps: New step list, in the same shape as when creating a workout, replacing the old "
+        "one entirely. Omit to keep it.\n"
+        "  sport: Only with steps, and only to change the sport.\n"
+        "  description: New note. Omit to keep the current one.\n"
+        "  pool_length_meters: For a swim, a new pool length. Omit to keep it."
+    ),
+    "find_exercises": (
+        "Search Garmin's strength exercise catalogue by name. Matching ignores hyphens and "
+        "spacing, so \"pull up\" and \"pull-up\" both match.\n\n"
+        "Args:\n"
+        "  query: Part of an exercise name, e.g. \"bench press\" or \"row\".\n"
+        "  limit: How many matches to return. Defaults to 25."
+    ),
+    "create_strength_workout": (
+        "Create a new strength workout in the user's Garmin workout library. It never edits an "
+        "existing one. Exercise names come from Garmin's catalogue; when a name matches more "
+        "than one exercise, the result lists the candidates and nothing is created.\n\n"
+        "Args:\n"
+        "  name: Shown in Garmin Connect and on the watch.\n"
+        "  exercises: Ordered list of blocks, each with \"exercise\" (catalogue name, e.g. "
+        "\"Barbell Bench Press\"), \"sets\" (default 3), \"reps\" (default 10), \"rest_seconds\" "
+        "(rest after each set, default 90) and optional \"weight_kg\". Example: "
+        "[{\"exercise\": \"Barbell Bench Press\", \"sets\": 4, \"reps\": 8, \"rest_seconds\": 120, "
+        "\"weight_kg\": 70}, {\"exercise\": \"Cable Triceps Pushdown\", \"sets\": 3, \"reps\": 12, "
+        "\"rest_seconds\": 60}]\n"
+        "  description: Optional note stored with the workout."
+    ),
+    "schedule_workout": (
+        "Put a saved workout on a date in the user's Garmin calendar, which is what sends it to "
+        "the watch.\n\n"
+        "Args:\n"
+        "  workout_id: The workout's id.\n"
+        "  date: The day. YYYY-MM-DD, 'today', 'tomorrow' or an offset like '+3'."
+    ),
+    "unschedule_workout": (
+        "Take a workout off a day in the user's Garmin calendar. The workout itself stays in the "
+        "library and can be scheduled again. When more than one workout sits on the day, they "
+        "are listed back and nothing is removed.\n\n"
+        "Args:\n"
+        "  date: The day to clear. YYYY-MM-DD, 'today', 'tomorrow' or an offset like '+3'.\n"
+        "  schedule_id: One specific calendar entry to remove. Takes precedence over date."
+    ),
+    "delete_workout": (
+        "Delete a workout from the user's Garmin workout library, permanently. Recorded "
+        "activities can't be deleted here. The first call deletes nothing: it returns the "
+        "workout's name, and only a second call passing that exact name as confirm deletes it.\n\n"
+        "Args:\n"
+        "  workout_id: The workout's id.\n"
+        "  confirm: The workout's exact name, as the first call returns it."
+    ),
+    "get_progress": (
+        "Which planned sessions got done, week by week, drawn as an interactive plan card. A "
+        "session counts as done when an activity happened within a day either side of its date "
+        "and ran at least roughly as long as planned. Each completed session carries a "
+        "plain-English reason for the match. Effort is not judged.\n\n"
+        "Args:\n"
+        "  weeks: How many weeks back to report, including this one, 1-12."
+    ),
+    "create_plan": (
+        "Create a whole training block at once: each session built as a structured workout and "
+        "scheduled on its date in the user's Garmin calendar. Every session is checked before "
+        "anything is created, so a mistake leaves no half plan. Each workout's name ends with "
+        "the plan code after a middle dot, \"Threshold 5x1k · HM\"; nothing is stored outside "
+        "Garmin. The result is the new block drawn as an interactive plan card.\n\n"
+        "Args:\n"
+        "  goal: What the block is for, e.g. \"Half marathon, 1:40, 15 November\".\n"
+        "  sessions: One per session, any order, at most 150: \"date\" (YYYY-MM-DD, today to 30 "
+        "weeks out), \"name\" (short, as on the watch: \"Long run 18k\"), \"steps\" (as for a "
+        "single workout), and optional \"sport\" (running by default), \"description\", "
+        "\"pool_length_meters\" (25 by default) and \"phase\" (one short word such as \"Base\", "
+        "\"Build\", \"Peak\" or \"Taper\"; the card bands the weeks by it). Days without a "
+        "session are rest days.\n"
+        "  label: 2 or 3 letters or digits for the plan code, e.g. \"HM\", \"10K\", \"MAR\". "
+        "From the goal when omitted.\n"
+        "  name: A short name for the block, shown as the card's title, e.g. \"Marathon build\".\n"
+        "  method: The methodology in a few words, shown under the name, e.g. \"80/20\".\n"
+        "  milestones: Up to 4 points on the way to the goal, drawn as a timeline: "
+        "{\"label\": \"Half check\", \"date\": \"2026-11-29\", \"target\": \"1:22\"}, date and "
+        "target optional."
+    ),
+    "get_plan": (
+        "The user's training plan week by week, drawn as an interactive plan card: each session "
+        "done, missed, moved or ahead, and the next session with its steps and target paces. "
+        "With nothing scheduled, it shows the user's recent weeks of running and riding instead. "
+        "Sessions carry workout_id and schedule_id. A session counts as done when run within a "
+        "day either side of its date, or any day that week when started from its workout on the "
+        "watch; a strength session counts when any strength activity is recorded in its week. "
+        "The result also says where the user is: a block under way, about to start or just "
+        "done, a race ahead with nothing scheduled, regular running, or getting going.\n\n"
+        "Args:\n"
+        "  label: The code of a plan Daash created, e.g. \"HM\". Omit it for the plan running "
+        "now, or the calendar around this week."
+    ),
+    "remove_plan": (
+        "Take the rest of a plan off the user's Garmin calendar and out of the workout library. "
+        "Only sessions from today onward are removed; past ones stay. The first call removes "
+        "nothing and reports what would go; a second call with confirm set to the plan code "
+        "removes it.\n\n"
+        "Args:\n"
+        "  label: The plan code, e.g. \"HM\".\n"
+        "  confirm: The plan code again, to go ahead."
+    ),
+    "get_crew": (
+        "The user's Daash crew this week, drawn as a card: a few friends' easy and long runs "
+        "(day and distance), the crew's standing club run, and the days members are already "
+        "running the same kind of run at a usual time they share. Hard sessions show only as "
+        "\"hard\". Each member's runs are as of the last time they looked at their own plan "
+        "(\"updated_on\"). The result includes group_message, the week as text for a group "
+        "chat, and, when the crew's page is on, page_url. Says so when the user isn't in a "
+        "crew.\n\n"
+        "Args:\n"
+        "  week_of: Any date in the week to show. Defaults to this week, or on a Sunday to the "
+        "week ahead."
+    ),
+    "join_crew": (
+        "Join a friend's Daash crew with an invite code, or start a new crew. Members see each "
+        "other's chosen name, usual running times, and the day and distance of their easy and "
+        "long runs for the next two weeks; hard sessions show only as \"hard\", and nothing "
+        "else from Garmin is shared.\n\n"
+        "Args:\n"
+        "  your_name: What the crew calls the user.\n"
+        "  code: The invite code, like \"DC-7Q4M\", to join a friend's crew.\n"
+        "  start_new_crew: True to start a crew instead of joining one.\n"
+        "  crew_name: Optional, when starting. Defaults to the user's name, \"Bart's crew\".\n"
+        "  usual_times: When the user usually runs, as any of weekday_morning, "
+        "weekday_afternoon, weekday_evening, weekend_morning, weekend_afternoon, weekend_evening. "
+        "Runs on the same day are matched by these.\n"
+        "  goes_to_club_run: Whether the user usually goes to the crew's club run.\n"
+        "  club_run_day: Optional, when starting: the day of a run the crew already does "
+        "together every week, e.g. \"fri\". It shows on everyone's week and is never offered "
+        "as a match.\n"
+        "  club_run_time: Its start time, \"HH:MM\".\n"
+        "  club_run_km: Its distance in km.\n"
+        "  club_run_place: Where it starts, a few words."
+    ),
+    "update_crew": (
+        "Change the user's details in their Daash crew, or the crew's settings. Anyone can "
+        "change their own name, usual times and club-run attendance; whoever started the crew "
+        "can also rename it, change its club run, remove a member, and turn its page link on or "
+        "off. Only what is passed changes. Turning the page link on or replacing it takes "
+        "confirm=true; anyone with the link sees members' first names, the days they run, the "
+        "time of day, and whether each run is easy, long or hard.\n\n"
+        "Args:\n"
+        "  your_name: A new name for the user in the crew.\n"
+        "  usual_times: When the user usually runs, in the same values as when joining.\n"
+        "  goes_to_club_run: Whether the user usually goes to the club run.\n"
+        "  crew_name: A new name for the crew.\n"
+        "  club_run_day: The club run's day, e.g. \"fri\", or \"none\" to drop it.\n"
+        "  club_run_time: Its start time, \"HH:MM\".\n"
+        "  club_run_km: Its distance in km.\n"
+        "  club_run_place: Where it starts.\n"
+        "  remove_member: The name of a member to take out of the crew.\n"
+        "  group_link: \"on\" for a page link the group can open to see this week and next, "
+        "\"new\" to replace it (the old one stops working), \"off\" to stop it.\n"
+        "  confirm: True to turn the page link on or replace it."
+    ),
+    "leave_crew": (
+        "Leave the user's Daash crew and delete what it kept of their runs. The crew stops "
+        "seeing their runs at once; the last member to leave deletes the crew. Nothing happens "
+        "unless confirm is true.\n\n"
+        "Args:\n"
+        "  confirm: True to leave."
+    ),
+    "get_connection_status": (
+        "Whether Daash is connected to the user's Garmin account through Garmin's official API, "
+        "and whether Garmin allows it to write workouts. Never returns a token."
+    ),
+}
+
+
 def _untitled(schema: Any, in_properties: bool = False) -> Any:
     """A JSON schema without the titles the SDK writes on every field.
 
@@ -386,9 +638,11 @@ def _compact_doc(text: str) -> str:
     return "\n".join(" " * ((len(line) - len(line.lstrip(" "))) // 2) + line.strip() for line in lines)
 
 
-def _with_description(tool, *, preview_on: bool):
-    text = _DESCRIPTIONS.get(tool.name)
-    if text is None and tool.name in _NOTES:
+def _with_description(tool, *, preview_on: bool, alone: bool = False):
+    text = OFFICIAL_DESCRIPTIONS.get(tool.name) if alone else _DESCRIPTIONS.get(tool.name)
+    if alone and text is not None:
+        preview_on = False
+    elif text is None and tool.name in _NOTES:
         text = (tool.description or "").rstrip() + _NOTES[tool.name]
     if preview_on and tool.name in _PREVIEW_NOTES:
         text = (text or tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]

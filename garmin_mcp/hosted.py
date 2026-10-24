@@ -650,8 +650,12 @@ _HELD: dict[tuple[str, str], float] = {}
 _STARTED: ContextVar[float] = ContextVar("hosted_tool_started", default=0.0)
 
 
-def _before_tool_for(user_token: str) -> hooks.Before:
-    """The start hook for one person's request: note a get_plan, pace the reads sent with one."""
+def _before_tool_for(user_token: str, alone: bool = False) -> hooks.Before:
+    """The start hook for one person's request: note a get_plan, pace the reads sent with one.
+
+    An account on the official API alone, as the directories list Daash, holds
+    nothing back, so nothing is paced.
+    """
 
     def before(name: str) -> float:
         now = time.monotonic()
@@ -660,7 +664,7 @@ def _before_tool_for(user_token: str) -> hooks.Before:
             if len(_PLAN_CALLS) > 20000:
                 _PLAN_CALLS.clear()
             _PLAN_CALLS[user_token] = (now, None)
-        return WITH_PLAN_SETTLE if name in WITH_PLAN_HELD else 0.0
+        return WITH_PLAN_SETTLE if name in WITH_PLAN_HELD and not alone else 0.0
     return before
 
 
@@ -732,15 +736,20 @@ def _send_timings(hour: str) -> None:
 _UNEXPECTED = re.compile(r"Garmin request failed \((\w+)[:)]")
 
 
-def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
-    """The hook for one person's request: report the tool, carry any news."""
+def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> hooks.Hook:
+    """The hook for one person's request: report the tool, carry any news.
+
+    An account on the official API alone gets its answers as they are: no read
+    held back, and no tip, welcome or news added for the model to pass on. The
+    directories ask that a connector not talk to the model past its own data.
+    """
     crew_key = crews.member_key(user_token, user.email_hash)
 
     def after(name: str, result: Any) -> Any:
         if name == "get_plan" and user_token in _PLAN_CALLS:
             _PLAN_CALLS[user_token] = (_PLAN_CALLS[user_token][0], time.monotonic())
         if (
-            name in WITH_PLAN_HELD and isinstance(result, dict) and "error" not in result
+            not alone and name in WITH_PLAN_HELD and isinstance(result, dict) and "error" not in result
             and _sent_with_plan(user_token, name)
         ):
             email = store.email_for(user_token)
@@ -791,6 +800,8 @@ def _after_tool_for(user_token: str, user: store.User) -> hooks.Hook:
                 {"tool": name, "account": user.email_masked, **timing,
                  **({"email": email} if email else {})},
             )
+        if alone:
+            return result
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -2678,10 +2689,11 @@ class SessionBinding:
 
         token = use_session(session_for(user_token))
         preview_token = preview.use(_preview_for(user))
-        hook_token = hooks.use(_after_tool_for(user_token, user), _before_tool_for(user_token))
+        alone = not store.has_connect(user_token)
+        hook_token = hooks.use(_after_tool_for(user_token, user, alone), _before_tool_for(user_token, alone))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
-        alone_token = server_mod.use_alone(not store.has_connect(user_token))
+        alone_token = server_mod.use_alone(alone)
         try:
             await self.app(scope, receive, send)
         finally:

@@ -52,6 +52,7 @@ from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
 import garmin_mcp.hosted as hosted  # noqa: E402
 import garmin_mcp.session as session_mod  # noqa: E402
 from garmin_mcp import official, store, support_mail  # noqa: E402
+import garmin_mcp.server as server_mod  # noqa: E402
 
 BASE = f"http://127.0.0.1:{PORT}"
 REDIRECT = "http://localhost:9999/callback"
@@ -215,8 +216,8 @@ async def main() -> int:
                     result = await sess.call_tool(tool, args or {})
                     return json.loads(result.content[0].text)
 
-    async def listing(access: str, path: str = "/mcp") -> tuple[set, str]:
-        """(tool names, instructions) as a client at `path` is told them."""
+    async def listing(access: str, path: str = "/mcp") -> tuple[dict, str]:
+        """({tool name: description}, instructions) as a client at `path` is told them."""
         from mcp import ClientSession
         from mcp.client.streamable_http import streamable_http_client
         import httpx2
@@ -224,7 +225,7 @@ async def main() -> int:
             async with streamable_http_client(f"{BASE}{path}", http_client=client) as (r, w):
                 async with ClientSession(r, w) as sess:
                     hello = await sess.initialize()
-                    names = {t.name for t in (await sess.list_tools()).tools}
+                    names = {t.name: t.description or "" for t in (await sess.list_tools()).tools}
                     return names, hello.instructions or ""
 
     from types import SimpleNamespace
@@ -391,6 +392,21 @@ async def main() -> int:
               and "through Garmin's official API" in said, str(sorted(names))[:200])
         check("its sign-up is reported as listed",
               [p for e, p in reported if e == "connector_connected"][-1].get("listed") is True)
+        naming = {n: [o for o in names if o != n and re.search(rf"\b{o}\b", d)] for n, d in names.items()}
+        check("each listed tool's description names no other tool",
+              not any(naming.values()), str({n: o for n, o in naming.items() if o}))
+        check("and gives the model no instructions on how to answer",
+              not any(re.search(r"\b(call it|call this|don't|never guess|ask once|answer from|show the)\b", d, re.I)
+                      for d in names.values()), "")
+        check("every listed tool has its own plain description",
+              set(names) <= set(server_mod.OFFICIAL_DESCRIPTIONS), str(set(names) - set(server_mod.OFFICIAL_DESCRIPTIONS)))
+        listed_user = store.get_user(listed_token) or store.get_user(subject_of(listed_token))
+        after = hosted._after_tool_for(subject_of(listed_token), listed_user, alone=True)
+        check("its answers carry no tip, welcome or news for the model",
+              after("get_activities", {"activities": []}) == {"activities": []}
+              and after("get_plan", {"weeks": []}) == {"weeks": []})
+        check("nor is a read sent alongside get_plan held back",
+              hosted._before_tool_for(subject_of(listed_token), alone=True)("get_sleep_data") == 0.0)
 
         print("\nwhen Garmin won't list what the account shared")
         official.time.sleep = lambda _s: None
