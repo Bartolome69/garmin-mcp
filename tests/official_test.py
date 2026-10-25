@@ -394,6 +394,38 @@ def main() -> int:
     missing = as_user(bart, server.get_sleep_data, "2026-01-01")
     check("a night Garmin hasn't sent says so, without falling back", "hasn't sent" in missing.get("note", ""), str(missing))
 
+    print("\na recovery check, on the official API alone")
+    from datetime import date as _date, timedelta as _td
+    nights = [(_date.fromisoformat(today) - _td(days=k)).isoformat() for k in range(7, 0, -1)]
+    official.handle_push(json.dumps({"hrv": [
+        {"userId": "garmin-user-1", "summaryId": f"h-{d}", "calendarDate": d, "startTimeInSeconds": now - (8 - i) * 86400,
+         "lastNightAvg": 62} for i, d in enumerate(nights)
+    ] + [{"userId": "garmin-user-1", "summaryId": "h-today", "calendarDate": today, "startTimeInSeconds": now - 8 * 3600,
+          "lastNightAvg": 50}]}).encode())
+    from garmin_mcp import official_data as od
+    checked = od.recovery("garmin-user-1", today)
+    hrv_signal = next((x for x in checked.get("signals", []) if x["what"] == "hrv"), {})
+    check("last night's HRV is set against their own usual, and a low one is flagged",
+          checked["hrv"] == {"last_night_ms": 50, "usual_ms": 62, "nights_in_usual": 7} and hrv_signal.get("ok") is False
+          and "lower than normal" in hrv_signal.get("said", ""), str(checked)[:500])
+    check("sleep and resting heart rate count too, against the week",
+          any(x["what"] == "sleep" and x["ok"] for x in checked["signals"])
+          and checked["resting_hr"]["today"] == 43, str(checked.get("signals")))
+    check("with one thing off it says go carefully, and says plainly whose read it is",
+          checked["call"] in ("fine_with_care", "go_easy") and "isn't shared" in checked["what_this_is"], checked["call"])
+    check("a day with nothing sent has nothing to say", od.recovery("garmin-user-1", "2026-01-01") is None)
+    real_has_connect = server.store.has_connect
+    server.store.has_connect = lambda _t: False
+    try:
+        listed_answer = as_user(bart, server.get_readiness, today)
+    finally:
+        server.store.has_connect = real_has_connect
+    check("for an account on the official API alone, get_readiness answers with it",
+          listed_answer.get("call") == checked["call"] and listed_answer.get("source", "").startswith("Garmin's official API"),
+          str(listed_answer)[:300])
+    check("and it's listed for them, with a plain description",
+          "get_readiness" not in server.OFFICIAL_MISSING and "Garmin's own readiness score" in server.OFFICIAL_DESCRIPTIONS["get_readiness"])
+
     print("\nwriting through the Training API")
     from garmin_mcp.official_client import OfficialClient
     client = as_user(bart, lambda: _async(server._official_client))

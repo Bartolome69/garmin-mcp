@@ -296,8 +296,11 @@ async def main() -> int:
         status = await call_tool(sam, "get_connection_status")
         check("connection status says it's Garmin's official API", status.get("via") == "Garmin's official API", str(status))
         ready = await call_tool(sam, "get_readiness")
+        check("readiness is Daash's own recovery check, from what Garmin has sent, without trying Connect",
+              str(ready.get("source", "")).startswith("Garmin's official API") and "error" not in ready, str(ready)[:200])
+        shoes = await call_tool(sam, "get_shoes")
         check("a tool the official API can't answer says so plainly, without trying Connect",
-              "Not available on this connection" in str(ready.get("error", "")), str(ready)[:200])
+              "Not available on this connection" in str(shoes.get("error", "")), str(shoes)[:200])
         made = await call_tool(sam, "create_workout", {"name": "Easy 5k", "steps": [
             {"type": "interval", "distance_meters": 5000}]})
         check("a workout goes through the Training API", isinstance(made.get("workout_id"), int), str(made)[:200])
@@ -355,7 +358,7 @@ async def main() -> int:
 
         names, said = await listing(sam)
         check("a Garmin-only account isn't offered the tools the official API can't answer",
-              "get_readiness" not in names and "get_shoes" not in names and "get_plan" in names
+              "get_fitness" not in names and "get_shoes" not in names and "get_readiness" in names and "get_plan" in names
               and "create_workout" in names and "through Garmin's official API" in said, str(sorted(names))[:300])
         names, said = await listing(runner)
         check("an account with Garmin Connect behind it keeps every tool and the usual instructions",
@@ -391,7 +394,7 @@ async def main() -> int:
         listed_token = await token_for(headers.get("location", ""), verifier_l)
         names, said = await listing(listed_token, "/listed/mcp")
         check("and the listed address serves the official tools, with the official instructions",
-              bool(listed_token) and "get_plan" in names and "get_readiness" not in names
+              bool(listed_token) and "get_plan" in names and "get_fitness" not in names and "get_readiness" in names
               and "through Garmin's official API" in said, str(sorted(names))[:200])
         check("its sign-up is reported as listed",
               [p for e, p in reported if e == "connector_connected"][-1].get("listed") is True)

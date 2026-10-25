@@ -109,7 +109,7 @@ _INSTRUCTIONS = (
 # is Garmin's official API alone. These tools need Garmin Connect, so they
 # aren't listed for them; called anyway, they say so.
 OFFICIAL_MISSING = {
-    "get_readiness", "get_fitness", "get_fitness_trends", "get_recovery_trends",
+    "get_fitness", "get_fitness_trends", "get_recovery_trends",
     "get_heart_rate", "get_profile", "get_shoes", "update_activity",
 }
 _OFFICIAL_INSTRUCTIONS = (
@@ -127,10 +127,11 @@ _OFFICIAL_INSTRUCTIONS = (
     "at the end, as a question. A specific question goes to its own tool without "
     "the card: a run to get_activity_details, what a planned session involves to "
     "get_workout, a night to get_sleep_data, a day to get_daily_summary, whether "
-    "planned sessions got done to get_progress. Answer those in writing. "
-    "Readiness, race predictions, fitness trends, shoes and all-day heart rate "
-    "aren't shared through Garmin's official API: if asked, say so in a sentence "
-    "and answer from the activities and sleep. For workout targets use paces, "
+    "planned sessions got done to get_progress, whether to go hard today to "
+    "get_readiness, which is Daash's own recovery check rather than Garmin's "
+    "readiness score. Answer those in writing. Race predictions, fitness trends, "
+    "shoes and all-day heart rate aren't shared through Garmin's official API: if "
+    "asked, say so in a sentence and answer from the activities and sleep. For workout targets use paces, "
     "heart rate in bpm or watts, not zones or a share of FTP. A Daash crew "
     "(friends who see each other's easy and long runs) has its own card, "
     "get_crew: call it only when the user asks about the crew as a whole. One "
@@ -364,6 +365,15 @@ _PREVIEW_NOTES: dict[str, str] = {}
 # tool named, nothing on how to answer. The routing lives in the server's
 # instructions instead.
 OFFICIAL_DESCRIPTIONS = {
+    "get_readiness": (
+        "A recovery check for a day: last night's sleep, overnight HRV, resting heart rate, Body "
+        "Battery gained overnight and the last week's training, each against the user's own recent "
+        "normal, with a call of ready_for_hard, fine_with_care, go_easy or not_enough_data. It is "
+        "Daash's read of those figures; Garmin's own readiness score isn't shared through its "
+        "official API.\n\n"
+        "Args:\n"
+        "  date: The day. YYYY-MM-DD, 'today', 'yesterday' or an offset like '-1'. Defaults to today."
+    ),
     "get_daily_summary": (
         "One day's health summary: steps, calories, resting heart rate, Body Battery and stress, "
         "with what charged or drained Body Battery and the longest stressful spells.\n\n"
@@ -3006,6 +3016,14 @@ async def get_readiness(date: str | None = None) -> dict[str, Any]:
         date: YYYY-MM-DD, 'today', 'yesterday' or an offset like '-1'. Defaults to today.
     """
     day = parse_date(date)
+    client = _official_client()
+    if client is not None and client.alone:
+        # Garmin's readiness score isn't shared through the official API; its
+        # ingredients are, so this is Daash's own read of them.
+        checked = await anyio.to_thread.run_sync(official_data.recovery, client.garmin_user_id, day)
+        if not checked:
+            return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+        return {**checked, "source": OFFICIAL_SOURCE}
     (readiness, status, hrv, stats, sleep), warnings = await _gather(
         [
             ("readiness", lambda c: c.get_training_readiness(day)),

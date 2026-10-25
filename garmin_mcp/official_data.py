@@ -637,3 +637,139 @@ def _spo2_week(garmin_user_id: str, day: str) -> int | None:
             if isinstance(r.get("calendarDate"), str) and r["calendarDate"] <= day
             and isinstance(r.get("spo2"), dict) and isinstance(r["spo2"].get("average"), (int, float))]
     return round(sum(rows[-7:]) / len(rows[-7:])) if rows else None
+
+
+# --------------------------------------------------------------------------
+# A recovery check, for an account on the official API alone
+# --------------------------------------------------------------------------
+# Garmin's own readiness score isn't shared through the official API, and
+# "should I go hard today?" was the third most asked question of Daash. The
+# pieces it is made from are: last night's sleep, overnight HRV, resting heart
+# rate, Body Battery and the training behind them. Each is set against the
+# person's own recent normal, never a population's, and the answer says
+# plainly that this is Daash's read, not Garmin's score.
+
+# Nights of HRV that make a baseline worth comparing with, and how far back.
+HRV_BASELINE_NIGHTS = 5
+HRV_BASELINE_DAYS = 28
+# How far off their normal counts as a signal.
+HRV_LOW = 0.92          # last night under 92% of the baseline
+RESTING_HR_UP = 5       # beats above the week's average
+SLEEP_SCORE_POOR = 60
+SLEEP_HOURS_SHORT = 6.0
+SLEEP_CHARGE_LOW = 25   # Body Battery gained overnight
+LOAD_HIGH = 1.3         # this week's training time against the three weeks before
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _training(garmin_user_id: str, day: str) -> dict[str, Any]:
+    """Training time and distance over the last 7 days against the 21 before, and the latest hard day."""
+    end = calendar_seconds(day) + 86400
+    seen: dict[str, dict] = {}
+    for kind in ACTIVITY_KINDS:
+        for a in store.official_summaries(garmin_user_id, kind, end - 28 * 86400, limit=2000):
+            seen[str(a.get("activityId") or a.get("summaryId"))] = a
+    week, before, km_week, hard = 0.0, 0.0, 0.0, None
+    # The month's highest heart rate stands in for their maximum.
+    top = max((a.get("maxHeartRateInBeatsPerMinute") or 0 for a in seen.values()), default=0)
+    for a in seen.values():
+        start, secs = a.get("startTimeInSeconds"), a.get("durationInSeconds")
+        if not isinstance(start, (int, float)) or not isinstance(secs, (int, float)) or start >= end:
+            continue
+        if start >= end - 7 * 86400:
+            week += secs
+            km_week += (a.get("distanceInMeters") or 0) / 1000
+        else:
+            before += secs
+        local = time.strftime("%Y-%m-%d", time.gmtime(start + (a.get("startTimeOffsetInSeconds") or 0)))
+        long_one = secs >= 90 * 60
+        hard_hr = bool(top) and (a.get("averageHeartRateInBeatsPerMinute") or 0) >= 0.82 * top
+        if (long_one or hard_hr) and start >= end - 3 * 86400 and (hard is None or local > hard):
+            hard = local
+    usual = before / 3 if before else None
+    return drop_empty({
+        "last_7_days": drop_empty({"hours": round(week / 3600, 1), "km": round(km_week, 1) if km_week else None}),
+        "usual_week_hours": round(usual / 3600, 1) if usual else None,
+        "ratio": round(week / usual, 2) if usual else None,
+        "hard_or_long_session_on": hard,
+    })
+
+
+def recovery(garmin_user_id: str, day: str) -> dict[str, Any] | None:
+    """How recovered the person looks on a day, from the official API's own figures. None with nothing to go on."""
+    since = calendar_seconds(day) - (HRV_BASELINE_DAYS + 1) * 86400
+    hrv = {r["calendarDate"]: r for r in store.official_summaries(garmin_user_id, "hrv", since, limit=2000)
+           if isinstance(r.get("calendarDate"), str) and r["calendarDate"] <= day}
+    night = (hrv.get(day) or {}).get("lastNightAvg")
+    baseline_nights = [r.get("lastNightAvg") for d, r in hrv.items() if d < day and isinstance(r.get("lastNightAvg"), (int, float))]
+    baseline = _mean(baseline_nights) if len(baseline_nights) >= HRV_BASELINE_NIGHTS else None
+    sleep = _on(garmin_user_id, "sleeps", day)
+    score = sleep.get("overallSleepScore") if isinstance(sleep.get("overallSleepScore"), dict) else {}
+    hours = round(sleep["durationInSeconds"] / 3600, 1) if isinstance(sleep.get("durationInSeconds"), (int, float)) else None
+    stats = connect_stats(garmin_user_id, day) or {}
+    resting, resting_week = stats.get("restingHeartRate"), stats.get("lastSevenDaysAvgRestingHeartRate")
+    charge = sleep_charge(garmin_user_id, day)
+    load = _training(garmin_user_id, day)
+    if not any((night, sleep, stats, (load.get("last_7_days") or {}).get("hours"), load.get("usual_week_hours"))):
+        return None
+
+    signals: list[dict[str, Any]] = []
+
+    def signal(what: str, good: bool, said: str) -> None:
+        signals.append({"what": what, "ok": good, "said": said})
+
+    if isinstance(night, (int, float)) and baseline:
+        low = night < baseline * HRV_LOW
+        signal("hrv", not low, f"HRV {round(night)} ms last night against {round(baseline)} ms usual"
+               + (", lower than normal" if low else ", in line with normal"))
+    if isinstance(resting, (int, float)) and isinstance(resting_week, (int, float)):
+        up = resting >= resting_week + RESTING_HR_UP
+        signal("resting_hr", not up, f"Resting heart rate {resting} against {resting_week} this week"
+               + (", raised" if up else ""))
+    sleep_value = score.get("value")
+    if isinstance(sleep_value, (int, float)) or hours is not None:
+        poor = (isinstance(sleep_value, (int, float)) and sleep_value < SLEEP_SCORE_POOR) or (hours is not None and hours < SLEEP_HOURS_SHORT)
+        signal("sleep", not poor, "Sleep " + ", ".join(x for x in (
+            f"score {sleep_value}" if isinstance(sleep_value, (int, float)) else "", f"{hours} hours" if hours is not None else "") if x)
+               + (", short or poor" if poor else ""))
+    if isinstance(charge, (int, float)):
+        low_charge = charge < SLEEP_CHARGE_LOW
+        signal("body_battery", not low_charge, f"Body Battery up {charge} overnight" + (", a weak recharge" if low_charge else ""))
+    if isinstance(load.get("ratio"), (int, float)):
+        heavy = load["ratio"] > LOAD_HIGH
+        signal("load", not heavy, f"{load['last_7_days'].get('hours')} hours of training this week against "
+               f"{load.get('usual_week_hours')} usual" + (", a big jump" if heavy else ""))
+    if load.get("hard_or_long_session_on"):
+        signal("recent_hard", False, f"A hard or long session on {load['hard_or_long_session_on']}")
+
+    flags = sum(1 for s in signals if not s["ok"])
+    measured = sum(1 for s in signals if s["what"] != "recent_hard")
+    if measured < 2:
+        call = "not_enough_data"
+    elif flags == 0:
+        call = "ready_for_hard"
+    elif flags == 1:
+        call = "fine_with_care"
+    else:
+        call = "go_easy"
+    return drop_empty({
+        "date": day,
+        "call": call,
+        "what_this_is": (
+            "Daash's read of how recovered you look, from your own sleep, overnight HRV, resting heart rate, "
+            "Body Battery and recent training, each against your recent normal. Garmin's own readiness score "
+            "isn't shared through its official API."
+        ),
+        "signals": signals,
+        "sleep": drop_empty({"score": sleep_value, "hours": hours,
+                             "quality": (score.get("qualifierKey") or "").lower() or None}) or None,
+        "hrv": drop_empty({"last_night_ms": night, "usual_ms": round(baseline) if baseline else None,
+                           "nights_in_usual": len(baseline_nights) or None}) or None,
+        "resting_hr": drop_empty({"today": resting, "seven_day_avg": resting_week}) or None,
+        "body_battery": drop_empty({"gained_overnight": charge, "now": stats.get("bodyBatteryMostRecentValue"),
+                                    "highest": stats.get("bodyBatteryHighestValue")}) or None,
+        "training": load or None,
+    })
