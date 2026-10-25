@@ -24,6 +24,7 @@ on:
     paths:
       - "garmin_mcp/**"
       - "tests/**"
+      - "docs/share/**"
       - "Dockerfile"
       - "fly.toml"
       - "requirements-hosted.txt"
@@ -83,6 +84,22 @@ jobs:
       # in the Training API's shape, against a stubbed Garmin.
       - name: Official API
         run: python tests/official_test.py
+
+      # Signing up through Garmin's own page, the email step, and the listed
+      # address the directories use.
+      - name: Sign-up
+        run: python tests/signup_test.py
+
+      # The plan card and the share page drawn in a real browser, the way a
+      # chat draws them: a progress answer, an opened run's laps, sharing a run.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Plan card
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+          node tests/card_test.js
 
   # The real Garmin checks on the new code, run while the tests run: neither
   # needs the other, and together they were half of every deploy's wait.
