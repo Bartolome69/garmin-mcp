@@ -883,6 +883,22 @@ def keep_alive_once(spacing: float = KEEP_ALIVE_SPACING) -> dict[str, int]:
     return counts
 
 
+# Garmin's starter access to its official API allows this many users. Past it
+# Daash needs Garmin's paid access, so the count is reported with every
+# keep-alive pass, for a chart against the limit and an alert well before it.
+GARMIN_USER_LIMIT = 1000
+
+
+def report_official_users() -> dict[str, int] | None:
+    if not official.configured():
+        return None
+    counts = store.official_counts()
+    analytics.capture("official_users", "daash-server", {
+        **counts, "limit": GARMIN_USER_LIMIT, "share_of_limit": round(counts["linked"] / GARMIN_USER_LIMIT, 3),
+        "$process_person_profile": False})
+    return counts
+
+
 def _keep_alive_forever() -> None:
     while True:
         with contextlib.suppress(Exception):
@@ -890,6 +906,8 @@ def _keep_alive_forever() -> None:
         # Crew runs on days that have passed, gone even if nobody looks.
         with contextlib.suppress(Exception):
             crews.purge_past()
+        with contextlib.suppress(Exception):
+            report_official_users()
         try:
             counts = keep_alive_once()
             if counts["renewed"] or counts["lapsed"]:

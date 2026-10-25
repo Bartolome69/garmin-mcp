@@ -414,6 +414,13 @@ async def main() -> int:
         check("nor is a read sent alongside get_plan held back",
               hosted._before_tool_for(subject_of(listed_token), alone=True)("get_sleep_data") == 0.0)
 
+        print("\ncounting against Garmin's user limit")
+        counted = hosted.report_official_users()
+        sent = [p for e, p in reported if e == "official_users"][-1:]
+        check("the linked accounts are counted against the limit, with the official sign-ups among them",
+              counted and counted["linked"] >= 3 and 1 <= counted["official_signups"] <= counted["linked"]
+              and sent and sent[0]["limit"] == 1000 and sent[0]["linked"] == counted["linked"], f"{counted} {sent}")
+
         print("\nwhen Garmin turns a password sign-in away")
         flow_b, _ = await start()
         refused = hosted._signin_error(Exception("403 Forbidden"), flow_b, paused=False)

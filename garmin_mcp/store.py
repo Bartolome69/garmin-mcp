@@ -793,6 +793,15 @@ def set_official_only(user_token: str, on: bool) -> bool:
                             (1 if on else None, user_token)).rowcount > 0
 
 
+def official_counts() -> dict[str, int]:
+    """How many Garmin users have approved Daash through Garmin's official API, and how many of
+    those have no Garmin Connect session behind them. Garmin's starter access caps the first."""
+    with _connect() as conn:
+        linked = conn.execute("SELECT COUNT(*) FROM official_links").fetchone()[0]
+        alone = conn.execute("SELECT COUNT(*) FROM users WHERE route = 'official'").fetchone()[0]
+    return {"linked": linked, "official_signups": alone}
+
+
 def official_only(user_token: str) -> str | None:
     """The Garmin user id when this person reads only from the official API, else None."""
     with _connect() as conn:
