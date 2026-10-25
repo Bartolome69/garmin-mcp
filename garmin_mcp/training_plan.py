@@ -1332,12 +1332,12 @@ def situation(answer: Any, today: date, events: Sequence[Mapping[str, Any]] = ()
             )
         regular = (answer.get("rides") if ride else answer.get("runs")) or 0
         if "error" not in answer and regular >= REGULAR_IN_LOG:
+            # Someone training regularly with nothing planned is who a plan is
+            # for: 9 of the first 61 people built one, and they stay the longest.
             return found(
                 "just_training",
-                "Want me to check where your fitness is at: race predictions, threshold "
-                "and how it's trending?"
-                if not ride else
-                "Want me to check where your fitness is at, and how it's trending?",
+                f"Want me to build you a plan for your next race or goal, set from your recent "
+                f"{sport} and with every session on your watch?",
             )
         return found("getting_going", f"Want a gentle plan to build your {sport} up from here?")
 

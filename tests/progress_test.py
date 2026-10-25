@@ -281,11 +281,11 @@ def main() -> int:
           here["stage"] == "race_ahead" and here["offer"].startswith("Valencia Half is in 9 weeks")
           and here["race"]["date"] == "2026-11-29", str(here))
     here = situation({**log, "runs": 6}, TODAY)
-    check("regular running with no plan or race asks where their fitness is at",
-          here["stage"] == "just_training" and "race predictions" in here["offer"], str(here))
+    check("regular running with no plan or race is offered a plan",
+          here["stage"] == "just_training" and "plan" in here["offer"] and "running" in here["offer"], str(here))
     here = situation({**log, "primary": "ride", "rides": 8}, TODAY)
-    check("a regular rider is asked the same, without running's markers",
-          here["stage"] == "just_training" and "race predictions" not in here["offer"], str(here))
+    check("a regular rider is offered one for their riding",
+          here["stage"] == "just_training" and "plan" in here["offer"] and "riding" in here["offer"], str(here))
     here = situation(log, TODAY)
     check("a little running is getting going", here["stage"] == "getting_going" and "running" in here["offer"], str(here))
     here = situation({"error": "Nothing is scheduled, and nothing was recorded."}, TODAY)
