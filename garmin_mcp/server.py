@@ -3480,6 +3480,31 @@ def _with_page_url(card: dict[str, Any]) -> dict[str, Any]:
     return {**card, "crew": crew}
 
 
+async def _weekly_email_test(user_token: str) -> dict[str, Any]:
+    """The Monday email, to this account's own address, now: for trying it before it goes to anyone."""
+    from . import support_mail, weekly
+
+    user = await anyio.to_thread.run_sync(store.get_user, user_token)
+    email = await anyio.to_thread.run_sync(store.email_for, user_token)
+    if not user or not email or not user.email_hash:
+        return {"error": "This connection has no email address kept, so there's nowhere to send it."}
+    if not support_mail.can_send():
+        return {"error": "Email isn't set up on this server."}
+    today = date_cls.fromisoformat(parse_date("today"))
+    monday = today + timedelta(days=(7 - today.weekday()) % 7)
+    said = weekly.summary(await get_plan(), monday)
+    if not said:
+        return {"error": f"Nothing to say for the week of {monday}: nothing done last week and nothing planned."}
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    link = f"{base}/email/unsubscribe?u={user.email_hash}&s={store.unsubscribe_signature(user.email_hash)}"
+    subject, text, page_html = weekly.compose(said, link)
+    try:
+        await anyio.to_thread.run_sync(support_mail.send_weekly, email, subject, text, page_html, link)
+    except OSError:
+        return {"error": "The email didn't send. Try again in a minute."}
+    return {"sent_to": user.email_masked, "as_of_monday": monday.isoformat(), "subject": subject}
+
+
 @mcp.tool()
 @tool_errors
 async def garmin_official(action: str = "status", date: str = "tomorrow") -> dict[str, Any]:
@@ -3498,13 +3523,17 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             API alone, and "both" goes back to Garmin Connect for them;
             "calendar" asks Garmin's Training API what is scheduled from
             `date` for the following six weeks, to see whether it lists only
-            what Daash scheduled or everything on the calendar.
+            what Daash scheduled or everything on the calendar;
+            "weekly_email" sends this account's Monday email to its own
+            address now, as it would go out next Monday.
         date: For test_workout, the day to schedule it on.
     """
     user_token = official.current()
+    action = (action or "status").strip().lower()
+    if action == "weekly_email" and user_token:
+        return await _weekly_email_test(user_token)
     if user_token is None or not official.configured():
         return {"error": "Garmin's official API is only on the hosted server, once it's set up there."}
-    action = (action or "status").strip().lower()
     if action in ("status", "connect"):
         found = await anyio.to_thread.run_sync(official.status, user_token)
         if action == "connect" and found.get("connected"):

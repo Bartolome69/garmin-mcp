@@ -1368,6 +1368,20 @@ async def main() -> int:
         check("with its own unsubscribe link, also in the header mail apps use",
               to_news and "/email/unsubscribe?u=" in to_news[0][4] and to_news[0][4] in to_news[0][2], str(to_news[:1])[:200])
 
+        from garmin_mcp import support_mail as _mail
+        tried: list[tuple] = []
+        real_can, real_send = _mail.can_send, _mail.send_weekly
+        _mail.can_send, _mail.send_weekly = (lambda: True), (lambda *a: tried.append(a))
+        try:
+            news_token = store.tokens_for(store.email_fingerprint("news@example.com"))[-1]
+            test_send = await call(news_token, "garmin_official", {"action": "weekly_email"})
+        finally:
+            _mail.can_send, _mail.send_weekly = real_can, real_send
+        check("the preview tool sends someone their own Monday email to try, built from their real plan card",
+              (len(tried) == 1 and tried[0][0] == "news@example.com" and test_send.get("subject") == tried[0][1]
+               and "/email/unsubscribe?u=" in tried[0][4])
+              or "Nothing to say" in str(test_send.get("error", "")), str(test_send)[:300])
+
         # Update emails: only to people who haven't opted out, and one click
         # (plus a confirm, so a mail scanner can't do it) stops them.
         fingerprint = store.email_fingerprint("news@example.com")
