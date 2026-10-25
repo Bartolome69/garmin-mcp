@@ -1084,6 +1084,8 @@ button.busy, button.busy:hover { background:var(--accent-ink); cursor:progress }
 a.button { display:block; margin-top:22px; padding:13px; font-size:1rem; font-weight:600; text-align:center;
   border-radius:999px; background:var(--accent); color:#fff; text-decoration:none }
 a.button:hover { background:var(--accent-ink) }
+.instead { margin-top:18px; padding:16px; border:1px solid var(--line, #E6E8EC); border-radius:14px; font-size:.95rem; line-height:1.5 }
+.instead a.button { margin-top:14px }
 .code { letter-spacing:0.3em; font:600 1.4rem ui-monospace, SFMono-Regular, Menlo, monospace; text-align:center }
 button.secondary { background:var(--surface); color:var(--ink);
   border:1px solid var(--line); margin-top:10px }
@@ -1283,6 +1285,30 @@ def _connect_url(flow: str) -> str:
 
 def _try_again(flow: str) -> str:
     return f'<p><a href="{_connect_url(flow)}">Try again</a></p>'
+
+
+def _fallback_ok(flow: str) -> bool:
+    """Whether a refused password sign-in can be offered Garmin's own page instead."""
+    return bool(flow) and OAUTH_ENABLED and official.configured() and OAUTH_PROVIDER.pending(flow) is not None
+
+
+def _garmin_instead(flow: str) -> str:
+    """When Garmin turns password sign-ins away, the official route still works.
+
+    Garmin refuses password sign-ins by the address they come from (mid
+    October, 4 of 8 people refused never came back). Approving Daash on
+    Garmin's own page isn't refused that way, so it is offered on the spot,
+    for the same request. Someone who already has an account is matched to it
+    by their email on the way back.
+    """
+    if not _fallback_ok(flow):
+        return ""
+    return (
+        '<div class=instead><strong>Or connect on Garmin&rsquo;s own page, with no wait.</strong> '
+        "You approve Daash on Garmin&rsquo;s site instead of typing your password here. "
+        "If you already use Daash, enter the same email afterwards and you keep everything."
+        f'<a class=button href="/official/signup?flow={quote(flow, safe="")}&amp;via=blocked">Continue with Garmin</a></div>'
+    )
 
 
 _INVITE_FIELD = """
@@ -1498,6 +1524,7 @@ def _signin_error(
                 "<div class=err><strong>Garmin is asking for a pause, sorry.</strong> "
                 f"It is not your password. Garmin limits how many sign-ins it takes{tried}. "
                 "Please try again in fifteen minutes.</div>"
+                + _garmin_instead(flow)
                 + _try_again(flow)
             )
         return (
@@ -1506,6 +1533,7 @@ def _signin_error(
             "from one address, and several people have signed in through here "
             f"recently. Sign-ins are paused for {GARMIN_PAUSE // 60} minutes so the "
             "limit can clear; try again after that.</div>"
+            + _garmin_instead(flow)
             + _try_again(flow)
         )
     if reason == "blocked_by_garmin":
@@ -1514,6 +1542,7 @@ def _signin_error(
                 "<div class=err><strong>Garmin turned this sign-in away, sorry.</strong> "
                 "It is not your password: Garmin refused the request before checking "
                 f"it{tried}. Please try again in a few minutes, or later today.</div>"
+                + _garmin_instead(flow)
                 + _try_again(flow)
             )
         return (
@@ -1522,6 +1551,7 @@ def _signin_error(
             "it, because of where Daash connects from, not anything you did. "
             f"Sign-ins are paused for {GARMIN_PAUSE // 60} minutes; please try "
             "again after that, or later today.</div>"
+            + _garmin_instead(flow)
             + _try_again(flow)
         )
     if reason == "bad_credentials":
@@ -2095,7 +2125,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
 
     left = _pause_left()
     if left:
-        _failed("paused", email)
+        _failed("paused", email, **({"fallback": True} if _fallback_ok(flow) else {}))
         minutes = max(1, -(-left // 60))
         return page(
             "Sign in to Garmin",
@@ -2103,7 +2133,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             "sign-ins are paused for a little while.</strong> It is not your "
             f"password, and nothing was sent to Garmin. Try again in about {minutes} "
             f"minute{'s' if minutes != 1 else ''}; trying sooner would only keep "
-            "Garmin's limit in place for longer.</div>" + _try_again(flow),
+            "Garmin's limit in place for longer.</div>" + _garmin_instead(flow) + _try_again(flow),
             429,
         )
 
@@ -2184,7 +2214,8 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         paused = not egress and not account_paused
         if paused:
             _pause_sign_ins(reason)
-        _failed(reason, email, **took(), **_error_detail(exc))
+        offered = reason in ("rate_limited", "blocked_by_garmin") and _fallback_ok(flow)
+        _failed(reason, email, **took(), **_error_detail(exc), **({"fallback": True} if offered else {}))
         return page(
             "Sign in to Garmin",
             _signin_error(exc, flow, paused=paused, tries=tries,
@@ -2291,7 +2322,8 @@ async def official_signup(request: Request) -> Response:
     flow = request.query_params.get("flow", "")
     if not (OAUTH_ENABLED and official.configured()) or OAUTH_PROVIDER.pending(flow) is None:
         return _consent_expired()
-    analytics.capture("garmin_sign_in_started", None, _with_source(request, {}))
+    via = request.query_params.get("via", "")
+    analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via == "blocked" else {}))
     return RedirectResponse(official.signup_url(flow), status_code=302)
 
 

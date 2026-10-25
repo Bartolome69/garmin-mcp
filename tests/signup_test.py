@@ -411,6 +411,23 @@ async def main() -> int:
         check("nor is a read sent alongside get_plan held back",
               hosted._before_tool_for(subject_of(listed_token), alone=True)("get_sleep_data") == 0.0)
 
+        print("\nwhen Garmin turns a password sign-in away")
+        flow_b, _ = await start()
+        refused = hosted._signin_error(Exception("403 Forbidden"), flow_b, paused=False)
+        check("the refusal offers Garmin's own page for the same request",
+              "Continue with Garmin" in refused and f"/official/signup?flow={urllib.parse.quote(flow_b, safe='')}&amp;via=blocked" in refused)
+        check("and so does Garmin asking for a pause",
+              "Continue with Garmin" in hosted._signin_error(Exception("429 Too Many Requests"), flow_b, paused=True))
+        check("but not a wrong password, nor a paused account, nor a page with no request behind it",
+              "Continue with Garmin" not in hosted._signin_error(Exception("401 Unauthorized"), flow_b)
+              and "Continue with Garmin" not in hosted._signin_error(Exception("403"), flow_b, account_paused=True)
+              and "Continue with Garmin" not in hosted._signin_error(Exception("403"), "", paused=False))
+        _, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow_b)}&via=blocked"))
+        check("taking it goes to Garmin, and is counted as coming from a refusal",
+              "garmin" in headers.get("location", "")
+              and [p for e, p in reported if e == "garmin_sign_in_started"][-1].get("via") == "blocked",
+              str([p for e, p in reported if e == "garmin_sign_in_started"][-1:]))
+
         print("\nwhen Garmin won't list what the account shared")
         official.time.sleep = lambda _s: None
         flow_p, _ = await start()
