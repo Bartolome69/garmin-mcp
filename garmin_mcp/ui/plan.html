@@ -1352,8 +1352,6 @@
         notes.push(["c", line]);
       }
     }
-    var rank = p.same_route && /^1 of (\d+)/.exec(p.same_route.this_run_rank || "");
-    if (rank && +rank[1] >= 3) notes.push(["easy", "Fastest of " + rank[1] + " runs on this route"]);
     var kicker = "Run recap";
     if (model && model.mode === "block") {
       kicker = (model.block.name || goalTitle(model.block.goal) || "Training plan").replace(/\s*[(:].*$/, "");
