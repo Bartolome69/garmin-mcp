@@ -693,7 +693,8 @@ async def main() -> int:
             reasons = [e["properties"].get("reason") for e in SENT[sent_before:]
                        if e["event"] == "sign_in_failed"]
             check("a refusal right after a wrong password reads as the account paused",
-                  code == 400 and "paused sign-ins to your account" in body
+                  code == 400 and "locked sign-ins to your account for about 30 minutes" in body
+                  and "Garmin&rsquo;s own safety lock" in body and body.count("<li>") >= 3
                   and "not your password" not in body.lower(), f"status {code}")
             check("a paused account is not retried from other addresses, and pauses nobody",
                   len(LOCKED_TRIES) == 2 and hosted._pause_left() == 0, str(LOCKED_TRIES))

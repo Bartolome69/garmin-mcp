@@ -1084,6 +1084,7 @@ button.busy, button.busy:hover { background:var(--accent-ink); cursor:progress }
 a.button { display:block; margin-top:22px; padding:13px; font-size:1rem; font-weight:600; text-align:center;
   border-radius:999px; background:var(--accent); color:#fff; text-decoration:none }
 a.button:hover { background:var(--accent-ink) }
+.steps { margin:14px 0 0; padding-left:22px; line-height:1.55 } .steps li { margin:6px 0 }
 .instead { margin-top:18px; padding:16px; border:1px solid var(--line, #E6E8EC); border-radius:14px; font-size:.95rem; line-height:1.5 }
 .instead a.button { margin-top:14px }
 .code { letter-spacing:0.3em; font:600 1.4rem ui-monospace, SFMono-Regular, Menlo, monospace; text-align:center }
@@ -1504,13 +1505,20 @@ def _signin_error(
     if account_paused:
         # Refused right after wrong passwords from the same person: Garmin
         # pausing their account, not anything about where Daash connects from.
+        # Oct 25: someone met this a minute after a wrong password and didn't
+        # come back. Whose lock it is, how long, and three steps, in order.
         return (
-            "<div class=err><strong>Garmin has paused sign-ins to your account for "
-            "now.</strong> That happens after a few wrong passwords. Wait about 30 "
-            "minutes, check your password by signing in at connect.garmin.com (or "
-            "reset it there with &ldquo;Forgot password&rdquo;), then try again "
-            "here.</div>"
+            "<div class=err><strong>Garmin has locked sign-ins to your account for "
+            "about 30 minutes.</strong> It&rsquo;s Garmin&rsquo;s own safety lock after a "
+            "wrong password, not Daash, and trying again now restarts the wait.</div>"
             + typed
+            + "<ol class=steps>"
+            "<li>Check your password by signing in at "
+            '<a href="https://connect.garmin.com/" target=_blank rel=noopener>connect.garmin.com</a>. '
+            "Forgotten it? Reset it there with &ldquo;Forgot password&rdquo;.</li>"
+            "<li>Wait about 30 minutes from your last try.</li>"
+            "<li>Come back and sign in here with the password that worked.</li>"
+            "</ol>"
             + _try_again(flow)
         )
     others = tries - 1
