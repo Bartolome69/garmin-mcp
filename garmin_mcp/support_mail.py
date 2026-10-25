@@ -211,3 +211,21 @@ def send_code(to: str, code: str) -> None:
     except urllib.error.URLError as exc:
         log.warning("code email not sent: %s", type(exc).__name__)
         raise OSError("code email not sent") from None
+
+
+def send_weekly(to: str, subject: str, text: str, page: str, unsubscribe: str) -> None:
+    """Send one Monday email. Raises OSError if Resend couldn't take it."""
+    message = {
+        "from": CODE_FROM,
+        "to": [to],
+        "subject": subject,
+        "text": text,
+        "html": page,
+        # Mail apps show their own unsubscribe button from these.
+        "headers": {"List-Unsubscribe": f"<{unsubscribe}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"},
+    }
+    try:
+        _request("POST", "/emails", message)
+    except urllib.error.URLError as exc:
+        log.warning("weekly email not sent: %s", type(exc).__name__)
+        raise OSError("weekly email not sent") from None

@@ -58,6 +58,8 @@ MIGRATIONS = (
     # "official" for someone who signed up by approving Daash on Garmin's own
     # page: there is no Garmin Connect session behind the row at all.
     "ALTER TABLE users ADD COLUMN route TEXT",
+    # The Monday the weekly email last went to this person, as YYYY-MM-DD.
+    "ALTER TABLE users ADD COLUMN weekly_sent TEXT",
 )
 
 # OAuth state. Separate from `users`: a person is one row there however many
@@ -386,6 +388,40 @@ def emailable() -> list[tuple[str, str]]:
         except InvalidToken:
             continue
     return out
+
+
+def weekly_recipients() -> list[tuple[str, str, str]]:
+    """(user_token, email, email_hash) for each person who can be emailed, once each.
+
+    One person can have several connections (Claude, ChatGPT); the email comes
+    from the one they used last, and goes once.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT user_token, email_enc, email_hash FROM users "
+            "WHERE email_enc IS NOT NULL AND email_hash IS NOT NULL AND COALESCE(email_opt_out, 0) = 0 "
+            "ORDER BY COALESCE(last_seen_at, created_at) DESC"
+        ).fetchall()
+    out, seen = [], set()
+    for user_token, enc, fingerprint in rows:
+        if fingerprint in seen:
+            continue
+        try:
+            email = _cipher().decrypt(enc).decode()
+        except InvalidToken:
+            continue
+        seen.add(fingerprint)
+        out.append((user_token, email, fingerprint))
+    return out
+
+
+def claim_weekly(email_hash: str, monday: str) -> bool:
+    """True once per person per week: whoever claims it sends it, nobody else, restarts included."""
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE users SET weekly_sent = ? WHERE email_hash = ? AND COALESCE(weekly_sent, '') < ?",
+            (monday, email_hash, monday),
+        ).rowcount > 0
 
 
 def mark_kept_alive(user_token: str) -> None:

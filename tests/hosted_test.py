@@ -1322,6 +1322,52 @@ async def main() -> int:
         check("signing in again doesn't repeat the tip, or the welcome",
               bool(again) and "tip" not in repeat and "welcome" not in repeat)
 
+        # The Monday email: what it says, from the plan card's own answer.
+        from datetime import date as _day
+        from garmin_mcp import weekly
+        monday = _day(2026, 10, 26)
+        plan_answer = {"source": "calendar", "weeks": [
+            {"starts": "2026-10-19", "planned": 2, "done": 2, "run_km": 61.8, "sessions": []},
+            {"starts": "2026-10-26", "sessions": [
+                {"date": "2026-10-27", "name": "11km easy", "type": "easy", "status": "ahead", "planned_km": 11},
+                {"date": "2026-10-28", "name": "Sub-T 3x3km · B1", "type": "threshold", "status": "ahead", "planned_km": 15.4},
+                {"date": "2026-11-01", "name": "Long 19km w 4x2km sub-T · B1", "type": "long", "status": "ahead", "planned_km": 18.8},
+            ]}]}
+        said = weekly.summary(plan_answer, monday)
+        check("the Monday email says how last week went and names the week's key session",
+              said["last_week"] == "Every planned session done, 61.8 km run"
+              and said["key_sessions"] == [{"day": "Wednesday", "name": "Sub-T 3 × 3 km", "km": "15.4"},
+                                           {"day": "Sunday", "name": "Long 19 km w 4 × 2 km sub-T", "km": "18.8"}]
+              and said["this_week"] == {"sessions": 3, "km": "45.2"}, str(said))
+        subject, text, page_html = weekly.compose(said, "https://example.test/stop")
+        check("its subject is the key session, and it ends with a way to stop",
+              subject == "This week: Sub-T 3 × 3 km on Wednesday" and "key sessions: Wednesday" in text and "https://example.test/stop" in text
+              and "How's my training going?" in text and "Stop these emails" in page_html, subject)
+        log_answer = {"source": "log", "primary": "run", "weeks": [
+            {"starts": "2026-10-19", "run_km": 32.5, "runs": 4}, {"starts": "2026-10-26", "run_km": 0, "runs": 0}]}
+        said_log = weekly.summary(log_answer, monday)
+        check("with no plan it counts the runs and offers one",
+              said_log["last_week"] == "4 runs, 32.5 km" and said_log["no_plan"] and not said_log["key_sessions"]
+              and "build you a plan" in weekly.compose(said_log, "x")[1], str(said_log))
+        check("and with nothing done and nothing planned it says nothing",
+              weekly.summary({"source": "log", "weeks": [{"starts": "2026-10-19", "run_km": 0, "runs": 0}]}, monday) is None
+              and weekly.summary({"error": "nothing"}, monday) is None)
+
+        mailed: list[tuple] = []
+        real_answer = hosted._plan_answer
+        hosted._plan_answer = lambda token: plan_answer
+        try:
+            first = hosted.weekly_email_once(monday, send=lambda *a: mailed.append(a), spacing=0)
+            again = hosted.weekly_email_once(monday, send=lambda *a: mailed.append(a), spacing=0)
+        finally:
+            hosted._plan_answer = real_answer
+        to_news = [m for m in mailed if m[0] == "news@example.com"]
+        check("each person with an address gets it once a week, however often it runs",
+              first["sent"] >= 1 and again == {"sent": 0, "nothing_to_say": 0, "failed": 0} and len(to_news) == 1
+              and len({m[0] for m in mailed}) == len(mailed), f"{first} {again}")
+        check("with its own unsubscribe link, also in the header mail apps use",
+              to_news and "/email/unsubscribe?u=" in to_news[0][4] and to_news[0][4] in to_news[0][2], str(to_news[:1])[:200])
+
         # Update emails: only to people who haven't opted out, and one click
         # (plus a confirm, so a mail scanner can't do it) stops them.
         fingerprint = store.email_fingerprint("news@example.com")
@@ -1330,7 +1376,7 @@ async def main() -> int:
         link = hosted.unsubscribe_url(base, fingerprint)
         code, body = await anyio_run(fetch, link[len(base):])
         check("the unsubscribe link asks before acting",
-              code == 200 and "Stop update emails" in body
+              code == 200 and "Stop Daash emails" in body
               and ("news@example.com", fingerprint) in store.emailable(), str(code))
         code, body = await anyio_run(post, "/email/unsubscribe", {"u": fingerprint, "s": "0" * 24})
         check("a forged unsubscribe is refused",
@@ -1349,6 +1395,13 @@ async def main() -> int:
         check("signing in again keeps the opt-out and the note seen",
               all(fp != fingerprint for _, fp in store.emailable())
               and not store.claim_news(store.tokens_for(fingerprint)[-1], hosted.NEWS_VERSION))
+        check("and someone who unsubscribed gets no Monday email",
+              all(fp != fingerprint for _, _, fp in store.weekly_recipients()))
+        other = store.email_fingerprint("brandnew@example.com")
+        one_click = hosted.unsubscribe_url(base, other)[len(base):]
+        code, body = await anyio_run(post, one_click, {"List-Unsubscribe": "One-Click"})
+        check("a mail app's one-click unsubscribe works on the link itself",
+              code == 200 and all(fp != other for _, _, fp in store.weekly_recipients()), str(code))
 
         # Daash Crews. Three people of their own, so nothing above is touched:
         # Carol and Dave signed in with addresses kept, Bob's row predates that.

@@ -28,8 +28,10 @@ import secrets
 import threading
 import time
 from contextvars import ContextVar
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+from zoneinfo import ZoneInfo
 from urllib.parse import quote, urlparse
 
 import anyio
@@ -37,7 +39,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, crews, hooks, oauth, official, official_data, preview, store, support_mail
+from . import analytics, crews, hooks, oauth, official, official_data, preview, store, support_mail, weekly
 from . import server as server_mod
 from .server import mcp
 from .session import (
@@ -881,6 +883,84 @@ def keep_alive_once(spacing: float = KEEP_ALIVE_SPACING) -> dict[str, int]:
         if spacing:
             time.sleep(spacing)
     return counts
+
+
+# ---------------------------------------------------------------- Monday email
+# Off until WEEKLY_EMAIL=on: the sign-up page and privacy notice describe the
+# emails people get, and change on the day this starts. Monday mornings,
+# London time, once per person per week whatever restarts happen.
+WEEKLY_EMAIL = os.environ.get("WEEKLY_EMAIL", "").strip().lower() == "on"
+WEEKLY_HOURS = (7, 12)
+WEEKLY_EVERY = 15 * 60
+# Between people, so the reads behind the emails are a trickle to Garmin.
+WEEKLY_SPACING = 5.0
+
+
+def _plan_answer(user_token: str) -> Any:
+    """The plan card's answer for one person, read the way the card reads it.
+
+    Its own Garmin session, as keep-alive does: reading for an email must not
+    count the person as active.
+    """
+    session = GarminSession(
+        tokenstore=lambda t=user_token: store.load_blob(t),
+        on_refresh=lambda blob, t=user_token: store.update_blob(t, blob, in_use=False),
+    )
+    token = use_session(session)
+    official_token = official.use(user_token)
+    alone_token = server_mod.use_alone(not store.has_connect(user_token))
+    try:
+        return anyio.run(server_mod.get_plan)
+    finally:
+        server_mod.reset_alone(alone_token)
+        official.reset(official_token)
+        reset_session(token)
+
+
+def weekly_email_once(today: date | None = None, send: Callable[..., None] | None = None,
+                      spacing: float = WEEKLY_SPACING) -> dict[str, int]:
+    """Send this week's email to everyone it hasn't gone to. Returns counts."""
+    today = today or datetime.now(ZoneInfo("Europe/London")).date()
+    monday = (today - timedelta(days=today.weekday())).isoformat()
+    send = send or support_mail.send_weekly
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    counts = {"sent": 0, "nothing_to_say": 0, "failed": 0}
+    for user_token, email, fingerprint in store.weekly_recipients():
+        if not store.claim_weekly(fingerprint, monday):
+            continue
+        try:
+            said = weekly.summary(_plan_answer(user_token), today)
+        except Exception as exc:  # noqa: BLE001 - one person's Garmin never stops the rest
+            log.info("weekly email: no plan for one person (%s)", type(exc).__name__)
+            said = None
+        if not said:
+            counts["nothing_to_say"] += 1
+            continue
+        link = unsubscribe_url(base, fingerprint)
+        subject, text, page_html = weekly.compose(said, link)
+        try:
+            send(email, subject, text, page_html, link)
+            counts["sent"] += 1
+            analytics.capture("weekly_email_sent", fingerprint, {
+                "key_sessions": len(said.get("key_sessions") or []), "no_plan": bool(said.get("no_plan")),
+                "$process_person_profile": False})
+        except OSError:
+            counts["failed"] += 1
+        time.sleep(spacing)
+    return counts
+
+
+def _weekly_email_forever() -> None:
+    while True:
+        now = datetime.now(ZoneInfo("Europe/London"))
+        if now.weekday() == 0 and WEEKLY_HOURS[0] <= now.hour < WEEKLY_HOURS[1]:
+            try:
+                counts = weekly_email_once(now.date())
+                if any(counts.values()):
+                    log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, %(failed)d failed", counts)
+            except Exception:  # noqa: BLE001
+                log.exception("Weekly email pass failed")
+        time.sleep(WEEKLY_EVERY)
 
 
 # Garmin's starter access to its official API allows this many users. Past it
@@ -1968,8 +2048,12 @@ async def unsubscribe(request: Request) -> Response:
         fingerprint = request.query_params.get("u", "")
         signature = request.query_params.get("s", "")
     else:
+        # The page's own button sends u and s in the form; a mail app's
+        # one-click unsubscribe (RFC 8058) posts to the link, so they're in
+        # its address.
         form = await request.form()
-        fingerprint, signature = str(form.get("u", "")), str(form.get("s", ""))
+        fingerprint = str(form.get("u", "") or request.query_params.get("u", ""))
+        signature = str(form.get("s", "") or request.query_params.get("s", ""))
     genuine = bool(fingerprint) and hmac.compare_digest(signature, store.unsubscribe_signature(fingerprint))
     if not genuine:
         return page("Unsubscribe", "<div class=err>That unsubscribe link isn&rsquo;t valid. "
@@ -1978,9 +2062,9 @@ async def unsubscribe(request: Request) -> Response:
         return page(
             "Unsubscribe",
             f"""
-            <h1>Stop update emails?</h1>
-            <p>You won&rsquo;t get emails about new Daash features. Your connection
-            keeps working exactly as before.</p>
+            <h1>Stop Daash emails?</h1>
+            <p>You won&rsquo;t get the Monday summary of your training or news about
+            Daash. Your connection keeps working exactly as before.</p>
             <form method=post action=/email/unsubscribe>
               <input type=hidden name=u value="{html.escape(fingerprint)}">
               <input type=hidden name=s value="{html.escape(signature)}">
@@ -1992,7 +2076,7 @@ async def unsubscribe(request: Request) -> Response:
     analytics.capture("email_unsubscribed", fingerprint, {})
     return page(
         "Unsubscribed",
-        "<h1>You&rsquo;re unsubscribed</h1><p>No more update emails. Daash keeps "
+        "<h1>You&rsquo;re unsubscribed</h1><p>No more Daash emails. Daash keeps "
         "working in Claude and ChatGPT as before.</p>",
     )
 
@@ -2858,6 +2942,8 @@ def main() -> None:
         handler.addFilter(RedactUserTokens())
 
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
+    if WEEKLY_EMAIL and support_mail.can_send():
+        threading.Thread(target=_weekly_email_forever, name="weekly-email", daemon=True).start()
     if analytics.enabled():
         threading.Thread(target=_signin_check_forever, name="signin-check", daemon=True).start()
     if official.configured():
