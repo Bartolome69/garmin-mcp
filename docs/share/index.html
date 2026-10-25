@@ -279,7 +279,7 @@
     return text.replace(/\s+$/, "") + "…";
   }
   function wrap(ctx, text, max, lines) {
-    var words = text.split(/\s+/), out = [], cur = "";
+    var words = text.split(/[ \t\n]+/), out = [], cur = "";  // a non-breaking space keeps "2 km" whole
     words.forEach(function (w) {
       var next = cur ? cur + " " + w : w;
       if (ctx.measureText(next).width <= max || !cur) cur = next; else { out.push(cur); cur = w; }
@@ -668,6 +668,124 @@
     ctx.textAlign = "left";
   }
 
+  // ---------------------------------------------------------------- one run
+  // The card's "Share this run" sends { v, run, t, s, k, c, f, l, a, n }: the
+  // title, the date and place, a kicker, the session's colour, up to four
+  // [figure, words] facts, the laps as [seconds, pace s/km, work, km], the
+  // average pace in s/km, and up to three [colour, line] notes.
+  function cleanRun(d) {
+    if (!d || d.v !== 1 || d.run !== 1) return null;
+    var t = str(d.t, 80); if (!t) return null;
+    var c = COLOURS.indexOf(d.c) >= 0 ? d.c : "easy";
+    var facts = Array.isArray(d.f) ? d.f.slice(0, 4).map(function (f) {
+      return Array.isArray(f) ? [str(f[0], 12), str(f[1], 20)] : null;
+    }).filter(function (f) { return f && f[0]; }) : [];
+    var laps = Array.isArray(d.l) ? d.l.slice(0, 60).map(function (l) {
+      if (!Array.isArray(l)) return null;
+      var secs = num(l[0], 1, 36000), pace = num(l[1], 60, 1800);
+      return secs ? { s: secs, p: pace, w: l[2] === 1, km: num(l[3], 0, 500) } : null;
+    }).filter(Boolean) : [];
+    var notes = Array.isArray(d.n) ? d.n.slice(0, 3).map(function (n) {
+      return Array.isArray(n) ? { c: n[0] === "c" ? c : COLOURS.indexOf(n[0]) >= 0 ? n[0] : "other", t: str(n[1], 90) } : null;
+    }).filter(function (n) { return n && n.t; }) : [];
+    return { run: true, t: t, s: str(d.s, 60), k: str(d.k, 40) || "Run recap", c: c, f: facts, l: laps, a: num(d.a, 60, 1800), n: notes };
+  }
+  function paceText(s) { return Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0"); }
+
+  function drawRun(canvas, rn, themeName, sizeName) {
+    var T = THEMES[themeName], S = SIZES[sizeName], W = S.w, H = S.h, P = 80;
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext("2d");
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
+    var story = sizeName === "story";
+
+    // Brand row, title and when.
+    var y = S.top + 40;
+    font(ctx, 800, 46, false, true); ctx.fillStyle = T.redText; ctx.textAlign = "left"; ctx.fillText("Daash", P, y);
+    font(ctx, 500, 24, true); ctx.fillStyle = T.muted; spaced(ctx, rn.k.toUpperCase(), W - P, y - 6, 3.4, "right");
+    y += story ? 130 : 112;
+    font(ctx, 700, 70); ctx.fillStyle = T.text;
+    var title = wrap(ctx, rn.t, W - 2 * P, 2);
+    title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 78); });
+    y += (title.length - 1) * 78;
+    if (rn.s) { y += 52; font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, rn.s, W - 2 * P), P, y); }
+
+    // The headline numbers, between two rules.
+    if (rn.f.length) {
+      y += 46;
+      ctx.fillStyle = T.line; ctx.fillRect(P, y, W - 2 * P, 2);
+      var colW = (W - 2 * P) / rn.f.length;
+      rn.f.forEach(function (f, i) {
+        var x = P + i * colW;
+        var big = 50; font(ctx, 700, big);
+        while (big > 34 && ctx.measureText(f[0]).width > colW - 28) { big -= 2; font(ctx, 700, big); }
+        ctx.fillStyle = T.text; ctx.fillText(fit(ctx, f[0], colW - 16), x, y + 76);
+        font(ctx, 400, 24); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, f[1], colW - 16), x, y + 112);
+      });
+      y += 140;
+      ctx.fillStyle = T.line; ctx.fillRect(P, y, W - 2 * P, 2);
+    }
+
+    // The footer and notes come up from the bottom; the laps fill what's between.
+    var footY = H - S.bottom - 60;
+    var notesTop = footY - 40 - rn.n.length * 50;
+    var paced = rn.l.filter(function (l) { return l.p; });
+    if (paced.length > 1) {
+      var lo = Math.min.apply(null, paced.map(function (l) { return l.p; })), hi = Math.max.apply(null, paced.map(function (l) { return l.p; }));
+      var fast = lo - Math.max(8, (hi - lo) * 0.08), slow = hi + Math.max(12, (hi - lo) * 0.15);
+      var reps = rn.l.filter(function (l) { return l.w; }), labelled = reps.length && reps.length < rn.l.length && reps.length <= 8;
+      var edge = rn.l.length > 1 && !rn.l[0].w && labelled;
+      var chartTop = y + (labelled ? 120 : 70), chartBottom = notesTop - (edge ? 90 : 50), ch = chartBottom - chartTop;
+      if (ch > 120) {
+        var gap = rn.l.length > 30 ? 3 : 6, total = rn.l.reduce(function (t, l) { return t + l.s; }, 0);
+        var free = W - 2 * P - gap * (rn.l.length - 1), x = P;
+        var hOf = function (p) { return ch * (0.08 + 0.92 * (slow - p) / (slow - fast)); };
+        var c = T.c[rn.c] || T.c.easy;
+        rn.l.forEach(function (l) {
+          var w = Math.max(3, free * l.s / total), h = l.p ? hOf(l.p) : ch * 0.08;
+          ctx.fillStyle = l.w || !labelled && paced.length === rn.l.length && hi - lo < 40 ? c : T.c.rec;
+          rrect(ctx, x, chartBottom - h, w, h, Math.min(12, w / 3)); ctx.fill();
+          if (labelled && l.w) {
+            font(ctx, 700, 34); ctx.fillStyle = T.label[rn.c] || c; ctx.textAlign = "center";
+            ctx.fillText(paceText(l.p), x + w / 2, chartBottom - h - 16);
+            if (l.km && w > 60) { font(ctx, 600, 24); ctx.fillStyle = T.bg; ctx.fillText(fmtKm(l.km) + " km", x + w / 2, chartBottom - 18); }
+            ctx.textAlign = "left";
+          }
+          x += w + gap;
+        });
+        if (rn.a && rn.a > fast && rn.a < slow) {
+          var ay = chartBottom - hOf(rn.a);
+          ctx.strokeStyle = T.faint; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
+          ctx.beginPath(); ctx.moveTo(P, ay); ctx.lineTo(W - P, ay); ctx.stroke(); ctx.setLineDash([]);
+          font(ctx, 500, 24); var tag = "avg " + paceText(rn.a), tw = ctx.measureText(tag).width;
+          ctx.fillStyle = T.bg; ctx.fillRect(P - 2, ay - 38, tw + 14, 30);
+          ctx.fillStyle = T.muted; ctx.fillText(tag, P, ay - 14);
+        }
+        if (edge) {
+          var first = rn.l[0], last = rn.l[rn.l.length - 1];
+          font(ctx, 400, 26); ctx.fillStyle = T.muted;
+          var wu = "Warm-up" + (first.km ? " " + fmtKm(first.km) + " km" : "") + (first.p ? " · " + paceText(first.p) : "");
+          ctx.fillText(wu, P, chartBottom + 44);
+          if (!last.w) {
+            var cd = "Cool-down" + (last.km ? " " + fmtKm(last.km) + " km" : "") + (last.p ? " · " + paceText(last.p) : "");
+            ctx.textAlign = "right"; ctx.fillText(cd, W - P, chartBottom + 44); ctx.textAlign = "left";
+          }
+        }
+      }
+    }
+
+    // A line or two worth saying, each with a dot in its colour.
+    rn.n.forEach(function (n, i) {
+      var ny = notesTop + i * 50 + 30;
+      ctx.fillStyle = T.c[n.c] || T.c.other; ctx.beginPath(); ctx.arc(P + 8, ny - 10, 8, 0, Math.PI * 2); ctx.fill();
+      font(ctx, 400, 30); ctx.fillStyle = T.soft; ctx.fillText(fit(ctx, n.t, W - 2 * P - 32), P + 32, ny);
+    });
+
+    ctx.fillStyle = T.line; ctx.fillRect(P, footY, W - 2 * P, 2);
+    font(ctx, 700, 34); ctx.fillStyle = T.redText; ctx.textAlign = "right"; ctx.fillText("daash.run", W - P, footY + 52); ctx.textAlign = "left";
+  }
+
   // The same plan as a document, which is what Save as PDF prints: every
   // week, every session, as text.
   function buildDoc(pl) {
@@ -713,10 +831,10 @@
 
   // ---------------------------------------------------------------- page
   var raw = decode(location.hash.slice(1));
-  var wk = cleanCrew(raw) || clean(raw);
+  var wk = cleanRun(raw) || cleanCrew(raw) || clean(raw);
   if (!wk) { document.getElementById("nothing").hidden = false; return; }
   document.getElementById("ready").hidden = false;
-  var plan = !wk.crew && raw ? cleanPlan(raw.p) : null, what = plan ? "plan" : "week";
+  var plan = !wk.crew && !wk.run && raw ? cleanPlan(raw.p) : null, what = plan ? "plan" : "week";
   var heading = document.getElementById("heading"), lead = document.querySelector(".lead");
   var look = "light", size = "post", canvas = document.createElement("canvas"), blob = null, url = null, fileName = "";
   var img = document.getElementById("img"), save = document.getElementById("save"), shareBtn = document.getElementById("share");
@@ -730,6 +848,11 @@
       lead.textContent = "Keep it as a PDF to print or send, or share the whole block as an image.";
       fileName = "daash-plan-" + plan.weeks[0].w + ".png";
       img.alt = ["Training plan", plan.t, plan.s, planSummary(plan)].filter(Boolean).join(". ");
+    } else if (wk.run) {
+      heading.textContent = "Share this run";
+      lead.textContent = "Add it to the run on Strava, post it to your story, or send it to your club.";
+      fileName = "daash-run.png";
+      img.alt = [wk.t, wk.s].concat(wk.f.map(function (f) { return f[0] + " " + f[1]; }), wk.n.map(function (n) { return n.t; })).filter(Boolean).join(". ");
     } else {
       heading.textContent = wk.crew ? "Share your crew's week" : wk.k === "recap" ? "Share your week" : wk.k === "ahead" ? "Share your week ahead" : "Share this week";
       lead.textContent = wk.crew ? "Post it in the group so everyone can see who's running when." : "Post it, send it to your club, or keep it.";
@@ -748,7 +871,7 @@
   function render() {
     words();
     if (what === "plan") drawPlan(canvas, plan, look);
-    else (wk.crew ? drawCrew : draw)(canvas, wk, look, size);
+    else (wk.run ? drawRun : wk.crew ? drawCrew : draw)(canvas, wk, look, size);
     document.getElementById("preview").className = "preview" + (what === "week" && size === "story" ? " story" : "");
     canvas.toBlob(function (b) {
       blob = b;
@@ -783,7 +906,7 @@
 
   // The friend link: the front page, marked as having come from a share so
   // the site can tell these visits apart. Nothing about this week is in it.
-  var FRIEND = "https://daash.run/?utm_source=share&utm_medium=friend&utm_campaign=week-image";
+  var FRIEND = "https://daash.run/?utm_source=share&utm_medium=friend&utm_campaign=" + (wk.run ? "run-image" : "week-image");
   var friendStatus = document.getElementById("friend-status");
   document.getElementById("friend").addEventListener("click", function () {
     var text = "I plan my running with Daash. It connects Garmin to ChatGPT or Claude and puts the sessions on your watch.";

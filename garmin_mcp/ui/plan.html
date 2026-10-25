@@ -223,6 +223,7 @@
   .steps li.rep { margin-left: 10px; padding-left: 10px; border-left: 2px solid var(--row-line); }
   .steps b { color: var(--text); font-weight: 600; min-width: 64px; }
   .detail .act { height: 32px; padding: 0 14px; align-self: flex-start; }
+  .detail .acts { display: flex; flex-wrap: wrap; gap: 8px; }
 
   .foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 10px; border-top: 1px solid var(--row-line); }
   .foot span { font-size: 13px; color: var(--muted); }
@@ -1045,7 +1046,9 @@
       panel.textContent = "";
       var parts = kind === "done" ? doneDetail(p, s) : plannedDetail(p);
       parts.forEach(function (x) { if (x) panel.appendChild(x); });
-      panel.appendChild(askBtn);
+      var shareBtn = kind === "done" && p && canShare()
+        ? el("button", { class: "act", onclick: function (e) { shareRun(p, s, e.currentTarget); } }, ["Share this run"]) : null;
+      panel.appendChild(shareBtn ? el("div", { class: "acts" }, [askBtn, shareBtn]) : askBtn);
       reportSize();
     }
     if (opened[key]) { draw(opened[key]); return; }
@@ -1306,6 +1309,75 @@
         })];
       }),
     };
+  }
+  // One run as an image for Strava or a story: its name, the headline
+  // numbers, the laps as the card draws them, and a line or two worth
+  // saying. Same page, same rule: it travels after the #, and only what the
+  // image shows is sent.
+  function clock(secs) {
+    if (!secs) return null;
+    var h = Math.floor(secs / 3600), m = Math.floor(secs % 3600 / 60), x = Math.round(secs % 60);
+    if (x === 60) { m += 1; x = 0; }
+    return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(x).padStart(2, "0");
+  }
+  function runPayload(p, s) {
+    var sum = (p && p.summary) || {}, hr = sum.heart_rate || {};
+    var label = typeOf(s).l, name = cleanTitle(s);
+    var title = label && !/^(Run|Session|Ride)$/.test(label) && name.toLowerCase().indexOf(label.toLowerCase()) < 0 ? label + " " + name : name;
+    var day = effDate(s), d = parse(day);
+    var sub = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][dow(day)] + " " + d.getDate() + " " + MONTHS[d.getMonth()] +
+      (sum.location ? " \u00b7 " + sum.location : "");
+    var km = sum.distance_km != null ? sum.distance_km : s.actual_km;
+    var pace = sum.pace_per_km || s.actual_pace;
+    var facts = [
+      km != null ? [fmtKm(km), "km"] : null,
+      clockSecs(sum.duration) || sum.duration_seconds ? [clock(sum.duration_seconds || clockSecs(sum.duration)), "time"] : null,
+      pace ? [pace.replace(/\s*\/km$/, ""), "/km average"] : sum.avg_speed_kmh ? [String(sum.avg_speed_kmh), "km/h average"] : null,
+      hr.average_bpm || s.actual_bpm ? [String(hr.average_bpm || s.actual_bpm), "bpm average"] : null,
+    ].filter(Boolean);
+    var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || []).filter(function (x) { return x && x.pace_per_km; });
+    var laps = [], notes = [];
+    if (splits.length > 1 && splits.length <= 60) {
+      var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
+      var known = secs.filter(function (v) { return v != null; }), lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
+      var work = workLaps(splits, secs, lo, hi);
+      laps = splits.map(function (x, i) {
+        return [Math.round(clockSecs(x.duration) || (x.distance_km ? x.distance_km * (secs[i] || 300) : 0) || 1), secs[i] || 0, work[i] ? 1 : 0,
+          x.distance_km != null ? Math.round(x.distance_km * 100) / 100 : null];
+      });
+      var reps = splits.filter(function (x, i) { return work[i]; });
+      if (reps.length > 1 && reps.length < splits.length && reps.length <= 8) {
+        var line = "Reps at " + reps.map(function (x) { return x.pace_per_km.replace(/\s*\/km$/, ""); }).join(", ") + " /km";
+        if (reps.every(function (x) { return x.avg_hr; })) line += " \u00b7 heart rate " + reps.map(function (x) { return x.avg_hr; }).join(", ");
+        notes.push(["c", line]);
+      }
+    }
+    var rank = p.same_route && /^1 of (\d+)/.exec(p.same_route.this_run_rank || "");
+    if (rank && +rank[1] >= 3) notes.push(["easy", "Fastest of " + rank[1] + " runs on this route"]);
+    var kicker = "Run recap";
+    if (model && model.mode === "block") {
+      kicker = (model.block.name || goalTitle(model.block.goal) || "Training plan").replace(/\s*[(:].*$/, "");
+      if (model.block === raw) {
+        var wi = model.weeks.findIndex(function (w) { return day >= w.starts && day < iso(addDays(parse(w.starts), 7)); });
+        if (wi >= 0) kicker += " \u00b7 Week " + (wi + 1) + " of " + model.weeks.length;
+      }
+    }
+    title = title.replace(/(\d) (km|mi|min)\b/g, "$1\u00a0$2");
+    return { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3) };
+  }
+  function shareRun(p, s, btn) {
+    var url = shareLink(runPayload(p, s)), opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    btn.disabled = true;
+    opened.then(function () { btn.textContent = "Opened in the browser"; })
+      .catch(function () { btn.textContent = "This chat app didn\u2019t open the link"; })
+      .then(function () { btn.disabled = false; });
   }
   function shareWords(m) { return planPayload(m) ? "Share or save your plan" : "Share this week as an image"; }
   function shareLink(data) {
