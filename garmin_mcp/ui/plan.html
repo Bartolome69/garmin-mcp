@@ -441,6 +441,8 @@
     try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
     reportSize();
   }
+  // A list from the answer, or none: a count or a missing field draws as empty.
+  function list(x) { return Array.isArray(x) ? x.slice() : []; }
   function planOf(result) {
     var plan = result && result.structuredContent;
     if (!plan && result && result.content) {
@@ -467,9 +469,11 @@
         .catch(function () {});
       return;
     }
-    raw = plan;
+    // Everything after this reads raw, the week buttons and the share link
+    // included, so a progress answer is converted once, here.
+    raw = isProgress(plan) ? fromProgress(plan) : plan;
     state.sel = null;
-    render(isProgress(plan) ? fromProgress(plan) : plan);
+    render(raw);
     D.done();
     // get_progress knows which sessions happened, not what they are: no
     // types, no steps, so every run is a plain green bar. Draw it straight
@@ -641,7 +645,7 @@
     var thisMonday = iso(mondayOf(new Date()));
     var block = p.label ? p : (p.current_plan || null);
     var weeks = (p.weeks || []).map(function (w, i) {
-      return { n: w.week || i + 1, starts: w.starts, sessions: (w.sessions || []).slice(), extra: (w.extra || []).slice(),
+      return { n: w.week || i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra),
         planned: w.planned_km, run_km: w.run_km || 0, current: !!w.current || w.starts === thisMonday };
     });
     if (p.source === "log") {
@@ -672,7 +676,7 @@
     var all = [];
     (p.weeks || []).forEach(function (w) {
       (w.sessions || []).forEach(function (s) { all.push(s); });
-      (w.extra || []).forEach(function (s) {
+      list(w.extra).forEach(function (s) {
         var type = /cycl|ride|bike/i.test(s.name || "") ? "ride" : s.sport === "other" ? "other" : (s.sport || "run");
         all.push(Object.assign({ extra: true, status: "done" }, s, { type: type }));
       });
@@ -1244,7 +1248,7 @@
   function planPayload(m) {
     if (m.mode === "log" || !raw) return null;
     var weeks = m.mode === "block" ? m.weeks : finish({ weeks: (raw.weeks || []).map(function (w, i) {
-      return { n: i + 1, starts: w.starts, sessions: (w.sessions || []).slice(), extra: (w.extra || []).slice(), planned: w.planned_km };
+      return { n: i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra), planned: w.planned_km };
     }), next: null }, raw).weeks;
     weeks = weeks.filter(function (w) { return w.rows.length; });
     if (weeks.length < 2) return null;

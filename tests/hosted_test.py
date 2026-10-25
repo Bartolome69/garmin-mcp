@@ -1527,7 +1527,8 @@ async def main() -> int:
             conn.execute("DELETE FROM crew_runs WHERE member IN (?, ?) AND day = ?", (carol_key, dave_key, t0.isoformat()))
             conn.execute("INSERT INTO crew_runs (member, day, kind, km, done) VALUES (?, ?, 'easy', 10, 1)", (carol_key, t0.isoformat()))
             conn.execute("INSERT INTO crew_runs (member, day, kind, km, done) VALUES (?, ?, 'easy', 8, 0)", (dave_key, t0.isoformat()))
-        now_card = await call(carol, "get_crew")
+        # Asked for by date: on a Sunday the card shows the week ahead.
+        now_card = await call(carol, "get_crew", {"week_of": t0.isoformat()})
         carol_today = next(m for m in now_card["members"] if m["name"] == "Carol")["days"][t0.weekday()]
         check("on the card it is marked done, and nobody is matched with it",
               carol_today[:1] in ([{"kind": "easy", "km": 10.0, "done": True}], [{"kind": "club", "km": 4.3, "done": True}])
