@@ -211,9 +211,13 @@
   .detail .facts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--soft); }
   .detail .facts b { color: var(--text); font-weight: 600; }
   .detail .dnote { font-size: 12.5px; color: var(--muted); }
-  .splits { display: flex; align-items: flex-end; gap: 3px; height: 40px; }
-  .splits span { flex: 1 1 0; min-width: 3px; border-radius: 3px 3px 1px 1px; opacity: .85; }
+  .splits { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 64px; }
+  .splits span { flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 1px 1px; opacity: .9; }
   .splits span.best { opacity: 1; }
+  .splits span.rest { background: var(--rec) !important; opacity: 1; }
+  .splits i { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); opacity: .8; pointer-events: none; }
+  .splits i b { position: absolute; left: 0; bottom: 2px; font-size: 10.5px; font-weight: 500; font-style: normal; line-height: 1; color: var(--muted);
+    background: var(--card); padding: 0 4px 0 0; border-radius: 2px; }
   .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--soft); }
   .steps li { display: flex; gap: 8px; }
   .steps li.rep { margin-left: 10px; padding-left: 10px; border-left: 2px solid var(--row-line); }
@@ -1054,6 +1058,25 @@
       .then(function (r) { var p = planOf(r); if (!p || p.error || (r && r.isError)) throw new Error(p && p.error || "no answer"); opened[key] = p; draw(p); })
       .catch(function () { draw(null); });
   }
+  function paceSecs(text) { var m = /(\d+):(\d+)/.exec(text || ""); return m ? +m[1] * 60 + +m[2] : null; }
+  // "1h 02m 03s", "4m 10s" or "45s" in seconds.
+  function clockSecs(text) {
+    var m = /^(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?$/.exec(String(text || "").trim());
+    return m && (m[1] || m[2] || m[3]) ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : null;
+  }
+  // Which laps were the work. A structured workout says so lap by lap; a run
+  // without one is read from its paces: when the laps split clearly into fast
+  // and slow, the fast ones are the work, otherwise every lap is.
+  function workLaps(splits, secs, lo, hi) {
+    var said = splits.some(function (x) { return x.intensity; });
+    if (said) {
+      var reps = splits.some(function (x) { return x.intensity === "interval"; });
+      return splits.map(function (x) { return reps ? x.intensity === "interval" : !x.intensity; });
+    }
+    if (hi - lo < 40) return splits.map(function () { return true; });
+    var mid = (lo + hi) / 2;
+    return secs.map(function (v) { return v != null && v < mid; });
+  }
   function fact(label, value) { return value == null || value === "" ? null : el("span", {}, [el("b", { text: String(value) }), " " + label]); }
   function doneDetail(p, s) {
     var sum = (p && p.summary) || {}, hr = sum.heart_rate || {};
@@ -1070,14 +1093,27 @@
     var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || []).filter(function (x) { return x && x.pace_per_km; });
     var bars = null, line = null;
     if (splits.length > 1) {
-      var secs = splits.map(function (x) { var m = /(\d+):(\d+)/.exec(x.pace_per_km); return m ? +m[1] * 60 + +m[2] : null; });
+      var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
       var known = secs.filter(function (v) { return v != null; }), lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
       var colour = COLOUR[colourOf(s)] || "var(--easy)";
-      bars = el("div", { class: "splits", role: "img", "aria-label": splits.length + " splits" }, splits.map(function (x, i) {
-        var v = secs[i], h = v == null ? 20 : hi === lo ? 100 : 30 + 70 * (hi - v) / (hi - lo);
-        var label = (x.split != null ? "Lap " + x.split : "km " + (x.km || i + 1)) + " \u00b7 " + x.pace_per_km + (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "");
-        return el("span", { class: v === lo ? "best" : "", style: "height:" + Math.round(h) + "%;background:" + colour, title: label });
-      }));
+      // Drawn like an interval chart: each lap as wide as it took, as tall as
+      // it was fast, the work in colour and everything around it in grey.
+      var work = workLaps(splits, secs, lo, hi);
+      var top = lo - Math.max(8, (hi - lo) * 0.08), bottom = hi + Math.max(12, (hi - lo) * 0.15);
+      var height = function (v) { return 8 + 92 * (bottom - v) / (bottom - top); };
+      var kids = splits.map(function (x, i) {
+        var v = secs[i], h = v == null ? 8 : height(v);
+        var wide = clockSecs(x.duration) || (x.distance_km ? x.distance_km * 300 : 0) || 1;
+        var label = (x.split != null ? "Lap " + x.split : "km " + (x.km || i + 1)) + (x.distance_km ? " \u00b7 " + fmtKm(x.distance_km) + " km" : "") +
+          " \u00b7 " + x.pace_per_km + (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "");
+        return el("span", { class: (work[i] ? "" : "rest ") + (v === lo ? "best" : ""),
+          style: "flex-grow:" + Math.round(wide) + ";height:" + Math.round(h) + "%;background:" + colour, title: label });
+      });
+      var avg = paceSecs(sum.pace_per_km);
+      if (avg != null && avg > top && avg < bottom) {
+        kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + sum.pace_per_km.replace(/\s*\/km$/, "") })]));
+      }
+      bars = el("div", { class: "splits", role: "img", "aria-label": splits.length + " laps" }, kids);
       var fast = secs.indexOf(lo), slow = secs.indexOf(hi);
       line = el("span", { class: "dnote", text: "Fastest " + splits[fast].pace_per_km + " (" + (splits[fast].split != null ? "lap " + splits[fast].split : "km " + (splits[fast].km || fast + 1)) + "), slowest " + splits[slow].pace_per_km + " (" + (splits[slow].split != null ? "lap " + splits[slow].split : "km " + (splits[slow].km || slow + 1)) + ")" });
     }

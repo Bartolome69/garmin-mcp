@@ -1538,12 +1538,20 @@ async def get_activities(
     )
 
 
+def _lap_intensity(lap: dict[str, Any]) -> str | None:
+    """What a lap of a structured workout was for: warmup, interval, recovery,
+    rest or cooldown. A plain lap ("active") says nothing, so it is left out."""
+    kind = str(lap.get("intensityType") or "").lower()
+    return kind if kind in ("warmup", "interval", "recovery", "rest", "cooldown") else None
+
+
 def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[str, Any]:
     distance = lap.get("distance")
     secs = first_present(lap, "duration", "movingDuration", "elapsedDuration")
     if ride:
         return drop_empty({
             "split": lap.get("lapIndex") or index,
+            "intensity": _lap_intensity(lap),
             "distance_km": km(distance),
             "duration": duration(secs),
             "avg_speed_kmh": rounded(distance / secs * 3.6, 1) if distance and secs else None,
@@ -1558,6 +1566,7 @@ def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[
     return drop_empty(
         {
             "split": lap.get("lapIndex") or index,
+            "intensity": _lap_intensity(lap),
             "distance_km": km(distance),
             "duration": duration(secs),
             "pace_per_km": pace_per_km(distance, secs),
