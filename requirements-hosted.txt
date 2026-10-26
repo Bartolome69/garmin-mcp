@@ -26,3 +26,6 @@ pillow==12.3.0
 # the session's figures from it (heart rate zones, running dynamics, training
 # effect, power) and keeps only those.
 fitdecode==0.11.0
+
+# Reads the country table (geo.py): which country someone signs up from.
+maxminddb==2.8.2

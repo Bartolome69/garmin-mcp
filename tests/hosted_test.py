@@ -1322,6 +1322,30 @@ async def main() -> int:
         check("signing in again doesn't repeat the tip, or the welcome",
               bool(again) and "tip" not in repeat and "welcome" not in repeat)
 
+        # Where people sign up from: the country only, looked up on the server.
+        from garmin_mcp import geo
+        from starlette.requests import Request as _Req
+
+        class _Table:
+            def get(self, address):
+                return {"country": {"iso_code": "GB"}} if address.startswith("81.") else {}
+
+        geo._reader.cache_clear()
+        real_reader = geo._reader
+        geo._reader = lambda: _Table()
+        try:
+            check("a public address gives its country, a private one or rubbish none",
+                  geo.country("81.2.69.160") == "GB" and geo.country("8.8.8.8") is None
+                  and geo.country("10.0.0.1") is None and geo.country("not an address") is None)
+            scope = {"type": "http", "headers": [(b"fly-client-ip", b"81.2.69.160")], "query_string": b"", "path": "/"}
+            props = hosted._with_source(_Req(scope), {"account": "x"})
+            check("sign-up events carry the country, never the address",
+                  props.get("country") == "GB" and "81.2.69.160" not in str(props), str(props))
+        finally:
+            geo._reader = real_reader
+        check("without a country table, nothing is added and nothing breaks",
+              geo.country("81.2.69.160") is None or isinstance(geo.country("81.2.69.160"), str))
+
         # The Monday email: what it says, from the plan card's own answer.
         from datetime import date as _day
         from garmin_mcp import weekly

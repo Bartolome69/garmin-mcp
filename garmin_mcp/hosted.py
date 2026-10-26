@@ -39,7 +39,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, crews, hooks, oauth, official, official_data, preview, store, support_mail, weekly
+from . import analytics, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
 from . import server as server_mod
 from .server import mcp
 from .session import (
@@ -184,7 +184,13 @@ def _source(request: Request) -> str | None:
 
 def _with_source(request: Request, properties: dict[str, Any]) -> dict[str, Any]:
     source = _source(request)
-    return {**properties, "source": source} if source else properties
+    return {**properties, **({"source": source} if source else {}), **_where(request)}
+
+
+def _where(request: Request) -> dict[str, str]:
+    """The visitor's country, looked up here from their address; the address itself is never sent."""
+    code = geo.country(_client_address(request))
+    return {"country": code} if code else {}
 
 
 def _failed(reason: str, email: str = "", **extra: Any) -> None:
@@ -2208,7 +2214,7 @@ async def _answer_in_time(task: "asyncio.Future[Response]", flow: str) -> Respon
 
 async def _connect_attempt(request: Request, form: Any, email: str, password: str, flow: str) -> Response:
     if _too_many_attempts(_client_address(request)):
-        _failed("throttled", email)
+        _failed("throttled", email, **_where(request))
         return page(
             "Sign in to Garmin",
             "<div class=err>Too many sign-in attempts. Wait fifteen minutes and "
@@ -2235,7 +2241,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
 
     left = _pause_left()
     if left:
-        _failed("paused", email, **({"fallback": True} if _fallback_ok(flow) else {}))
+        _failed("paused", email, **_where(request), **({"fallback": True} if _fallback_ok(flow) else {}))
         minutes = max(1, -(-left // 60))
         return page(
             "Sign in to Garmin",
@@ -2325,7 +2331,8 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         if paused:
             _pause_sign_ins(reason)
         offered = reason in ("rate_limited", "blocked_by_garmin") and _fallback_ok(flow)
-        _failed(reason, email, **took(), **_error_detail(exc), **({"fallback": True} if offered else {}))
+        _failed(reason, email, **took(), **_error_detail(exc), **_where(request),
+                **({"fallback": True} if offered else {}))
         return page(
             "Sign in to Garmin",
             _signin_error(exc, flow, paused=paused, tries=tries,
