@@ -98,6 +98,15 @@ ROUTES = ("official", "password")
 # cookie, to see which more people finish and keep using (from Oct 26).
 SPLIT = SIGNUP_ROUTE == "split"
 SPLIT_NAME = "signup-route-oct26"
+# Set as someone leaves for Garmin's page, and looked for when Garmin sends
+# them back: missing means they came back in a different browser than the one
+# Claude or ChatGPT opened for signing in (a phone handing Garmin's page to
+# the Garmin Connect app, say), where finishing can't reach the app.
+FLOW_COOKIE = "daash_flow"
+
+
+def _flow_mark(flow: str) -> str:
+    return hashlib.sha256(flow.encode()).hexdigest()[:16]
 # Consents waiting after an approval on Garmin's page, by consent token, with
 # when they were staged: those are the ones that ask for an email if the
 # account has none, and that count as an official sign-up when allowed.
@@ -2480,7 +2489,10 @@ async def official_signup(request: Request) -> Response:
         return _consent_expired()
     via = request.query_params.get("via", "")
     analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via == "blocked" else {}))
-    return RedirectResponse(official.signup_url(flow), status_code=302)
+    response = RedirectResponse(official.signup_url(flow), status_code=302)
+    response.set_cookie(FLOW_COOKIE, _flow_mark(flow), max_age=1800, httponly=True,
+                        secure=request.url.scheme == "https", samesite="lax")
+    return response
 
 
 async def _signup_callback(request: Request, code: str, state: str, flow: str) -> Response:
@@ -2504,6 +2516,7 @@ async def _signup_callback(request: Request, code: str, state: str, flow: str) -
         store.claim_news(approval.user_token, NEWS_VERSION)
     analytics.capture("garmin_approved", None, _with_source(request, {
         "new": approval.new,
+        "same_browser": request.cookies.get(FLOW_COOKIE) == _flow_mark(flow),
         "workouts": "unknown" if approval.permissions is None else "WORKOUT_IMPORT" in approval.permissions}))
     staged = OAUTH_PROVIDER.stage(approval.flow, approval.user_token)
     if not staged:
@@ -2804,6 +2817,53 @@ async def openai_apps_challenge(request: Request) -> Response:
 # and introduces the server, and nothing else: no Garmin session is ever
 # behind it, and a tool call says where to connect.
 DIRECTORY_PATH = "/directory/mcp"
+async def _watch_token(scope: Any, receive: Any, send: Any, app: Any) -> None:
+    """Pass a token request through, and count the ones refused.
+
+    connector_token_issued says an app collected its sign-in; a refusal here
+    says it tried and was turned away, and why. Without either after a
+    connection, the app never came back for it at all.
+    """
+    body, messages = b"", []
+    while True:
+        message = await receive()
+        messages.append(message)
+        body += message.get("body", b"")
+        if message.get("type") != "http.request" or not message.get("more_body"):
+            break
+
+    async def replay() -> Any:
+        return messages.pop(0) if messages else await receive()
+
+    said: dict[str, Any] = {"status": 0, "body": b""}
+
+    async def watched(message: Any) -> None:
+        if message.get("type") == "http.response.start":
+            said["status"] = message.get("status", 0)
+        elif message.get("type") == "http.response.body" and said["status"] >= 400 and len(said["body"]) < 4096:
+            said["body"] += message.get("body", b"")
+        await send(message)
+
+    await app(scope, replay, watched)
+    if said["status"] < 400:
+        return
+    from urllib.parse import parse_qs
+
+    form = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+    try:
+        error = json.loads(said["body"] or b"{}")
+    except ValueError:
+        error = {}
+    client_id = form.get("client_id") or ""
+    analytics.capture("connector_token_failed", None, {
+        "status": said["status"],
+        "grant_type": form.get("grant_type"),
+        "error": error.get("error") if isinstance(error, dict) else None,
+        "reason": (str(error.get("error_description") or "")[:120] or None) if isinstance(error, dict) else None,
+        "client": oauth.app_for_client(client_id) if client_id else None,
+    })
+
+
 # What a directory may ask without signing in. Anything else is refused.
 _DIRECTORY_EMPTY = {"resources/list": "resources", "resources/templates/list": "resourceTemplates",
                     "prompts/list": "prompts"}
@@ -2904,6 +2964,9 @@ class SessionBinding:
         named = scope.get("path", "").rstrip("/")
         if named == DIRECTORY_PATH:
             await _directory(scope, receive, send)
+            return
+        if OAUTH_ENABLED and named == "/token" and scope.get("method") == "POST":
+            await _watch_token(scope, receive, send, self.app)
             return
         if OAUTH_ENABLED and named in oauth.NAMED_PATHS:
             # The address in the app directories, and the password link, are

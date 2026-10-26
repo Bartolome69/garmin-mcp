@@ -179,15 +179,20 @@ async def main() -> int:
         location = headers.get("location", "")
         return urllib.parse.parse_qs(urllib.parse.urlparse(location).query)["flow"][0], verifier
 
-    async def through_garmin(flow: str) -> tuple[int, str]:
-        """Continue with Garmin, approve on Garmin's (stubbed) page, land back on Daash."""
+    async def through_garmin(flow: str, same_browser: bool = False) -> tuple[int, str]:
+        """Continue with Garmin, approve on Garmin's (stubbed) page, land back on Daash.
+
+        Back in another browser unless same_browser, which carries the cookie set on the way out.
+        """
         code, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow)}"))
         garmin_page = headers.get("location", "")
         state = urllib.parse.parse_qs(urllib.parse.urlparse(garmin_page).query).get("state", [""])[0]
         if code != 302 or not garmin_page.startswith(official.AUTHORIZE_URL) or not state:
             return code, f"not sent to Garmin: {code} {garmin_page[:80]}"
+        cookie = (headers.get("set-cookie") or headers.get("Set-Cookie") or "").split(";")[0]
         code, body, _ = await run(lambda: http(
-            "GET", f"/official/callback?code=garmin-code&state={urllib.parse.quote(state)}"))
+            "GET", f"/official/callback?code=garmin-code&state={urllib.parse.quote(state)}",
+            headers={"Cookie": cookie} if same_browser and cookie else None))
         return code, body
 
     def consent_of(body: str) -> str:
@@ -298,6 +303,8 @@ async def main() -> int:
         check("the approval is counted, new, with workouts allowed",
               approved and {k: approved[-1].get(k) for k in ("new", "workouts")} == {"new": True, "workouts": True},
               str(approved[-1:]))
+        check("and it says the person came back in a different browser than they left from",
+              approved[-1].get("same_browser") is False, str(approved[-1:]))
         new_account = official.store.official_link_for_garmin_user("g-new-1")
         check("the account exists already, on the official route alone, with no Connect session",
               new_account is not None and not store.has_connect(new_account.user_token)
@@ -424,6 +431,21 @@ async def main() -> int:
               == {"device": "computer", "browser": "chrome"}
               and _dev("Mozilla/5.0 (Linux; Android 15; Pixel 9; wv) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36")
               == {"device": "phone", "browser": "in-app"})
+
+        print("\nsign-in diagnostics")
+        flow_sb, _vsb = await start()
+        await through_garmin(flow_sb, same_browser=True)
+        approved = [p for e, p in reported if e == "garmin_approved"]
+        check("back from Garmin in the browser that left, it says so",
+              approved and approved[-1].get("same_browser") is True, str(approved[-1:]))
+        code, _, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code", "code": "never-issued", "redirect_uri": REDIRECT,
+            "client_id": client_id, "code_verifier": "x" * 43}))
+        refused = [p for e, p in reported if e == "connector_token_failed"]
+        check("an app turned away collecting its sign-in is counted, with why, never the code",
+              code == 400 and refused and refused[-1].get("error") == "invalid_grant"
+              and refused[-1].get("grant_type") == "authorization_code" and "never-issued" not in str(refused[-1]),
+              str(refused[-1:]))
 
         print("\nthe directory address")
         accept = {"accept": "application/json, text/event-stream"}
