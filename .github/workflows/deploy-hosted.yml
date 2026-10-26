@@ -96,12 +96,13 @@ jobs:
         with:
           node-version: "22"
       - name: Plan card
-        # The browser install hung once (Oct 26) and held the deploy for 20
-        # minutes; the whole step takes about one.
+        # Only the headless browser, without --with-deps: on Oct 26 the apt
+        # mirror took minutes per font package and held two deploys. GitHub's
+        # Ubuntu image already has the libraries Chrome needs.
         timeout-minutes: 8
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npx playwright install --only-shell chromium
           node tests/card_test.js
 
   # The real Garmin checks on the new code, run while the tests run: neither
