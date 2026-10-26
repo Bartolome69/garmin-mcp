@@ -258,6 +258,7 @@ def finish(code: str, state: str) -> str:
         earlier = store.official_link(user_token)
         permissions = earlier.permissions if earlier else None
     store.save_official_link(user_token, garmin_user_id, tokens, permissions)
+    store.queue_backfill(garmin_user_id)
     return garmin_user_id
 
 
@@ -287,8 +288,11 @@ def finish_signup(code: str, state: str) -> Approval:
         if permissions is None:
             permissions = known.permissions  # unknown now: keep what Garmin said before
         store.save_official_link(known.user_token, garmin_user_id, tokens, permissions)
+        store.queue_backfill(garmin_user_id)
         return Approval(known.user_token, garmin_user_id, opened["f"], False, permissions)
     user_token = store.save_official_user(garmin_user_id, tokens, permissions)
+    # Garmin sends only what syncs from now on; the past has to be asked for (backfill.py).
+    store.queue_backfill(garmin_user_id)
     return Approval(user_token, garmin_user_id, opened["f"], True, permissions)
 
 
@@ -747,6 +751,8 @@ def read(user_token: str, what: str) -> list[dict] | None:
 
 
 def status(user_token: str) -> dict:
+    from . import backfill  # it calls Garmin through this module
+
     link = store.official_link(user_token)
     if link is None:
         return {"connected": False, "connect_link": connect_link(user_token),
@@ -763,6 +769,7 @@ def status(user_token: str) -> dict:
         "permissions": link.permissions,
         "received": {kind: {"count": c["count"], "latest": fmt(c["latest_start"]), "arrived": fmt(c["last_received"])}
                      for kind, c in sorted(counts.items())},
+        "history": backfill.summary(link.garmin_user_id),
         "push_url": push_url(),
         "push_setup": "Paste push_url into every summary type at apis.garmin.com/tools/endpoints, "
                       "including deregistrations and user permissions.",

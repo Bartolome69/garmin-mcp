@@ -125,6 +125,13 @@ CREATE TABLE IF NOT EXISTS official_summaries (
 );
 CREATE INDEX IF NOT EXISTS official_summaries_time
     ON official_summaries (garmin_user_id, kind, start_time);
+CREATE TABLE IF NOT EXISTS official_backfill (
+    garmin_user_id  TEXT PRIMARY KEY,
+    anchor          INTEGER NOT NULL,
+    progress        TEXT NOT NULL,
+    done            INTEGER NOT NULL DEFAULT 0,
+    updated_at      INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS official_workouts (
     garmin_user_id  TEXT NOT NULL,
     workout_id      INTEGER NOT NULL,
@@ -742,6 +749,55 @@ def forget_official_user(garmin_user_id: str) -> None:
         conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ?", (garmin_user_id,))
         conn.execute("DELETE FROM official_workouts WHERE garmin_user_id = ?", (garmin_user_id,))
         conn.execute("DELETE FROM official_schedules WHERE garmin_user_id = ?", (garmin_user_id,))
+        conn.execute("DELETE FROM official_backfill WHERE garmin_user_id = ?", (garmin_user_id,))
+
+
+# Asking Garmin for someone's history once they connect (backfill.py): how far
+# back each kind has been asked for, counted back from when they connected.
+def queue_backfill(garmin_user_id: str, anchor: int | None = None) -> bool:
+    """Ask for this account's history, once. False when it was asked for already."""
+    now = int(time.time())
+    with _connect() as conn:
+        return conn.execute(
+            "INSERT OR IGNORE INTO official_backfill (garmin_user_id, anchor, progress, done, updated_at) "
+            "VALUES (?, ?, '{}', 0, 0)", (garmin_user_id, int(anchor or now)),
+        ).rowcount > 0
+
+
+def queue_backfill_for_all_links() -> int:
+    """Everyone linked before history was asked for gets theirs too."""
+    with _connect() as conn:
+        return conn.execute(
+            "INSERT OR IGNORE INTO official_backfill (garmin_user_id, anchor, progress, done, updated_at) "
+            "SELECT garmin_user_id, ?, '{}', 0, 0 FROM official_links", (int(time.time()),),
+        ).rowcount
+
+
+def next_backfill() -> tuple[str, int, dict] | None:
+    """The account waiting longest for its next window: (Garmin id, anchor, progress)."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT garmin_user_id, anchor, progress FROM official_backfill WHERE done = 0 "
+            "ORDER BY updated_at, rowid LIMIT 1"
+        ).fetchone()
+    return (row[0], int(row[1]), json.loads(row[2] or "{}")) if row else None
+
+
+def save_backfill(garmin_user_id: str, progress: dict, done: bool) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE official_backfill SET progress = ?, done = ?, updated_at = ? WHERE garmin_user_id = ?",
+            (json.dumps(progress), int(done), int(time.time() * 1000), garmin_user_id),
+        )
+
+
+def backfill_state(garmin_user_id: str) -> tuple[int, dict, bool] | None:
+    """(anchor, progress, done) for this account, or None if its history was never asked for."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT anchor, progress, done FROM official_backfill WHERE garmin_user_id = ?", (garmin_user_id,)
+        ).fetchone()
+    return (int(row[0]), json.loads(row[1] or "{}"), bool(row[2])) if row else None
 
 
 def save_official_summaries(garmin_user_id: str, kind: str, summaries: list[tuple[str, int | None, dict]]) -> int:

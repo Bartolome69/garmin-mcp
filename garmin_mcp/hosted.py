@@ -39,7 +39,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
+from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
 from . import server as server_mod
 from .server import mcp
 from .session import (
@@ -2954,6 +2954,7 @@ def main() -> None:
     if analytics.enabled():
         threading.Thread(target=_signin_check_forever, name="signin-check", daemon=True).start()
     if official.configured():
+        threading.Thread(target=backfill.forever, name="official-history", daemon=True).start()
         # What Garmin's official API sent before Daash trimmed it on arrival.
         try:
             official_data.tidy()

@@ -577,10 +577,97 @@ def main() -> int:
           and CALLED[-2][1] == "/workoutportal/workout/v2" and CALLED[-1][2] == {"workoutId": IDS[0], "date": "2026-10-24"},
           str(sent))
 
+    print("\nasking Garmin for the history")
+    from garmin_mcp import backfill
+    check("connecting queued the account's history",
+          store.backfill_state("garmin-user-1") is not None, str(store.backfill_state("garmin-user-1")))
+    import sqlite3 as _sq
+    with _sq.connect(DB) as conn:
+        conn.execute("DELETE FROM official_backfill")
+    anchor = 1_800_000_000
+    D = backfill.DAY
+    store.queue_backfill("garmin-user-1", anchor)
+    check("an account is queued once", store.queue_backfill("garmin-user-1", anchor) is False)
+    ASKED: list[tuple[str, int, int]] = []
+    ANSWERS: dict[tuple[str, int], int] = {}
+
+    def fake_ask(user_token, kind, start, end):
+        ASKED.append((kind, start, end))
+        return ANSWERS.get((kind, round((end - start) / D)), 202)
+
+    first = backfill.run_once(fake_ask)
+    check("the last month of runs is asked for first, newest window first",
+          ASKED[-1] == ("activities", anchor - 30 * D, anchor) and first["status"] == 202, str(ASKED[-1]))
+    backfill.run_once(fake_ask)
+    check("then the last month of runs' laps and splits", ASKED[-1] == ("activityDetails", anchor - 30 * D, anchor))
+    ANSWERS[("sleeps", 30)] = 400
+    backfill.run_once(fake_ask)
+    backfill.run_once(fake_ask)
+    check("a window Garmin calls too wide is asked again at half the width",
+          ASKED[-2] == ("sleeps", anchor - 30 * D, anchor) and ASKED[-1] == ("sleeps", anchor - 15 * D, anchor), str(ASKED[-2:]))
+    backfill.run_once(fake_ask)
+    check("and carries on from where that one reached", ASKED[-1] == ("sleeps", anchor - 30 * D, anchor - 15 * D), str(ASKED[-1]))
+    ANSWERS[("dailies", 30)] = 409
+    backfill.run_once(fake_ask)
+    backfill.run_once(fake_ask)
+    check("a window asked for already counts as asked", ASKED[-1][0] == "hrv", str(ASKED[-1]))
+    ANSWERS[("activities", 30)] = 429
+    waited = backfill.run_once(fake_ask)
+    held = store.backfill_state("garmin-user-1")[1]["activities"]["reached"]
+    check("when Garmin asks Daash to slow down, it waits and nothing moves on",
+          waited.get("wait") == 60 and held == anchor - 30 * D, str(waited))
+    ANSWERS.pop(("activities", 30))
+    ANSWERS[("userMetrics", 30)] = 412
+    for _ in range(40):
+        if backfill.run_once(fake_ask) in (None, {"done": True}):
+            break
+    anchor_, progress, done = store.backfill_state("garmin-user-1")
+    asked_runs = [a for a in ASKED if a[0] == "activities"]
+    check("runs are asked for back six months, a month at a time, never further",
+          asked_runs[-1][1] == anchor - 182 * D and min(a[1] for a in asked_runs) == anchor - 182 * D, str(asked_runs[-1]))
+    check("a kind the person didn't share is left out, not asked again and again",
+          [a for a in ASKED if a[0] == "userMetrics"] == [("userMetrics", anchor - 30 * D, anchor)]
+          and progress["userMetrics"]["reached"] == backfill.EXHAUSTED)
+    check("once everything is asked for, the account is done", done and backfill.run_once(fake_ask) is None)
+    shown = official.status(again)["history"]
+    check("the status says how far back each kind was asked for",
+          shown["finished"] and shown["asked_for"]["activities"] == "back to " + time.strftime("%Y-%m-%d", time.gmtime(anchor - 182 * D))
+          and shown["asked_for"]["userMetrics"] == "not available", str(shown))
+
+    with _sq.connect(DB) as conn:
+        conn.execute("DELETE FROM official_backfill")
+    store.queue_backfill("garmin-user-1", anchor)
+    ANSWERS.clear()
+    ANSWERS[("activities", 30)] = 400
+    ANSWERS[("activities", 15)] = 400
+    ANSWERS[("activities", 7)] = 400
+    ANSWERS[("activities", 3)] = 400
+    ANSWERS[("activities", 1)] = 400
+    for _ in range(5):
+        backfill.run_once(fake_ask)
+    check("a one-day window refused means nothing that old, and the next kind comes up",
+          store.backfill_state("garmin-user-1")[1]["activities"]["reached"] == backfill.EXHAUSTED
+          and backfill.run_once(fake_ask)["kind"] == "activityDetails")
+
+    def unreachable(user_token, kind, start, end):
+        return 0
+    for _ in range(backfill.MAX_FAILS):
+        missed = backfill.run_once(unreachable)
+    check("Garmin out of reach is tried again later, then left be",
+          missed.get("wait") == 30 and store.backfill_state("garmin-user-1")[2])
+    check("the request goes to Garmin's backfill address for the window",
+          backfill.path("sleeps", 10, 20) == "/wellness-api/rest/backfill/sleeps?summaryStartTimeInSeconds=10&summaryEndTimeInSeconds=20")
+    check("everyone linked before this gets their history queued too",
+          store.queue_backfill_for_all_links() == 0)
+    with _sq.connect(DB) as conn:
+        conn.execute("DELETE FROM official_backfill")
+    check("and once the queue is empty, they're added", store.queue_backfill_for_all_links() == 1)
+
     print("\ndisconnecting")
     check("disconnecting tells Garmin and deletes everything kept",
           official.disconnect(again) and CALLED[-1][:2] == ("DELETE", "/partner-gateway/rest/user/registration")
-          and store.official_link(again) is None and store.official_summaries("garmin-user-1", "dailies") == [])
+          and store.official_link(again) is None and store.official_summaries("garmin-user-1", "dailies") == []
+          and store.backfill_state("garmin-user-1") is None)
     check("with nothing linked, there's nothing to disconnect", official.disconnect(again) is False)
 
     official.finish("code-2", official._seal({"u": again, "v": "v" * 50}))
