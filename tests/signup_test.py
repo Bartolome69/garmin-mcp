@@ -411,6 +411,35 @@ async def main() -> int:
         check("an account with Garmin Connect behind it keeps every tool and the usual instructions",
               "get_readiness" in names and "get_shoes" in names and "through Garmin's official API" not in said)
 
+        print("\nthe password address")
+        pw_address = f"{BASE}/password/mcp"
+        code, body, _ = await run(lambda: http("GET", "/.well-known/oauth-protected-resource/password/mcp"))
+        meta = json.loads(body) if code == 200 else {}
+        check("the password address has its own resource metadata, on the same authorization server",
+              meta.get("resource") == pw_address and meta.get("authorization_servers") == [f"{BASE}/"], str(meta))
+        probe = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        code, _, headers = await run(lambda: http("POST", "/password/mcp", probe, as_json=True,
+                                                  headers={"accept": "application/json, text/event-stream"}))
+        challenge_header = headers.get("www-authenticate", "") or headers.get("WWW-Authenticate", "")
+        check("asked without a token, it points clients at its own metadata",
+              code == 401 and "oauth-protected-resource/password/mcp" in challenge_header, f"{code} {challenge_header}")
+        flow_p, _vp = await start(resource=pw_address)
+        _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow_p}", headers={"Cookie": "daash_route=official"}))
+        check("a sign-in for it gets the password form, even in a browser on Garmin's route",
+              "Garmin password" in body and "Continue with Garmin" not in body)
+        hosted.SPLIT = True
+        try:
+            _, body, headers = await run(lambda: http("GET", f"/connect?flow={flow_p}"))
+            shown_p = [p for e, p in reported if e == "sign_in_shown"][-1]
+            check("and during the split it's neither drawn nor counted in it",
+                  "Garmin password" in body and "daash_route" not in headers.get("set-cookie", "")
+                  and shown_p.get("password_link") is True and "split" not in shown_p, str(shown_p))
+        finally:
+            hosted.SPLIT = False
+        names, said = await listing(runner, "/password/mcp")
+        check("and it serves the same tools as the usual address", "get_fitness" in names and "get_plan" in names,
+              str(sorted(names))[:200])
+
         print("\nthe listed address")
         code, body, _ = await run(lambda: http("GET", "/.well-known/openai-apps-challenge"))
         check("OpenAI's domain check finds its token alone, as plain text",

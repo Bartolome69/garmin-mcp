@@ -163,6 +163,12 @@ def recognised_redirect(uri: str) -> bool:
 # ask for a token for it by name (RFC 8707), and that name is how a sign-in
 # is known to have come from a directory.
 LISTED_PATH = "/listed/mcp"
+# The same server again, for a link that always gets the Garmin email and
+# password form: someone sent here wants their whole history from day one,
+# which Garmin's own sign-in doesn't give on Starter access. Known the same
+# way, by the resource name the client asks for.
+PASSWORD_PATH = "/password/mcp"
+NAMED_PATHS = (LISTED_PATH, PASSWORD_PATH)
 
 
 def _sweep() -> None:
@@ -183,7 +189,7 @@ def _issued_for(resource: str | None) -> str | None:
     token only for exactly the resource it serves. Its name has done its job
     by then, at /authorize.
     """
-    if not resource or str(resource).rstrip("/").endswith(LISTED_PATH):
+    if not resource or str(resource).rstrip("/").endswith(NAMED_PATHS):
         return _own_resource()
     return resource
 
@@ -248,6 +254,8 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
             "started": time.time(),
             # Asked for by the listed address: Garmin's own sign-in only.
             "listed": str(params.resource or "").rstrip("/").endswith(LISTED_PATH),
+            # Asked for by the password address: the password form only.
+            "password": str(params.resource or "").rstrip("/").endswith(PASSWORD_PATH),
         }
         return f"/connect?{urlencode({'flow': flow})}"
 
@@ -259,6 +267,11 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         """Whether a waiting sign-in came from the address in the app directories."""
         entry = self.pending(flow) if flow else None
         return bool(entry and entry.get("listed"))
+
+    def password_only(self, flow: str) -> bool:
+        """Whether a waiting sign-in came from the password address."""
+        entry = self.pending(flow) if flow else None
+        return bool(entry and entry.get("password"))
 
     def stage(self, flow: str, subject: str) -> tuple[str, dict[str, Any]] | None:
         """Sign-in succeeded; hold the handover until the person approves it.

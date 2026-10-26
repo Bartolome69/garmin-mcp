@@ -1438,13 +1438,16 @@ async def connect_form(request: Request) -> Response:
     # to the waiting authorization request.
     flow = request.query_params.get("flow", "")
     route, drawn = _signup_route(request)
+    if flow and OAUTH_ENABLED and OAUTH_PROVIDER.password_only(flow):
+        route, drawn = "password", False  # the password link: whatever the split or cookie says
     listed = bool(flow) and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured()
     official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
     analytics.capture("sign_in_shown", None, _with_source(request, {
         "via": "oauth" if flow else "direct", "route": "official" if official_route else "password",
-        "listed": listed, **({"split": SPLIT_NAME, "split_arm": route} if SPLIT and flow and not listed else {})}))
+        "listed": listed, **({"password_link": True} if flow and OAUTH_ENABLED and OAUTH_PROVIDER.password_only(flow) else
+                             {"split": SPLIT_NAME, "split_arm": route} if SPLIT and flow and not listed else {})}))
     if official_route:
         response = _garmin_intro(flow, usual=not listed)
     else:
@@ -2721,21 +2724,21 @@ def _preview_for(user: store.User) -> bool:
 _METADATA_LINK = re.compile(rb'resource_metadata="[^"]*"')
 
 
-def _listed_metadata_url() -> str:
+def _named_metadata_url(path: str = oauth.LISTED_PATH) -> str:
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    return f"{base}/.well-known/oauth-protected-resource{oauth.LISTED_PATH}"
+    return f"{base}/.well-known/oauth-protected-resource{path}"
 
 
-def _pointing_at_listed(send: Any) -> Any:
-    """Answer a 401 at the listed address with that address's own metadata link.
+def _pointing_at_named(send: Any, path: str = oauth.LISTED_PATH) -> Any:
+    """Answer a 401 at a named address (listed, password) with its own metadata link.
 
     The SDK's link names the server's root resource. A client that followed it
     would ask for a token for the root, and its sign-in would not be known to
-    have come from a directory.
+    have come from that address.
     """
     async def wrapped(message: Any) -> None:
         if message.get("type") == "http.response.start" and message.get("status") == 401:
-            link = f'resource_metadata="{_listed_metadata_url()}"'.encode()
+            link = f'resource_metadata="{_named_metadata_url(path)}"'.encode()
             message = {**message, "headers": [
                 (k, _METADATA_LINK.sub(link, v) if k.lower() == b"www-authenticate" else v)
                 for k, v in message.get("headers", [])]}
@@ -2744,8 +2747,9 @@ def _pointing_at_listed(send: Any) -> Any:
 
 
 @mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.LISTED_PATH}", methods=["GET", "OPTIONS"])
+@mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.PASSWORD_PATH}", methods=["GET", "OPTIONS"])
 async def listed_resource_metadata(request: Request) -> Response:
-    """RFC 9728 metadata for the listed address: the same authorization server, its own resource name."""
+    """RFC 9728 metadata for a named address: the same authorization server, its own resource name."""
     from starlette.responses import JSONResponse
 
     cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -2753,8 +2757,9 @@ async def listed_resource_metadata(request: Request) -> Response:
     if request.method == "OPTIONS":
         return Response(status_code=204, headers=cors)
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    named = oauth.PASSWORD_PATH if request.url.path.endswith(oauth.PASSWORD_PATH) else oauth.LISTED_PATH
     return JSONResponse({
-        "resource": f"{base}{oauth.LISTED_PATH}",
+        "resource": f"{base}{named}",
         "authorization_servers": [f"{base}/"],
         "bearer_methods_supported": ["header"],
         "resource_name": "Daash",
@@ -2787,11 +2792,13 @@ class SessionBinding:
             await self.app(scope, receive, send)
             return
 
-        if OAUTH_ENABLED and scope.get("path", "").rstrip("/") == oauth.LISTED_PATH:
-            # The address in the app directories is this same endpoint. Only
-            # its sign-in differs, and clients learn that from its metadata.
+        named = scope.get("path", "").rstrip("/")
+        if OAUTH_ENABLED and named in oauth.NAMED_PATHS:
+            # The address in the app directories, and the password link, are
+            # this same endpoint. Only their sign-in differs, and clients
+            # learn that from their metadata.
             scope = {**scope, "path": "/mcp", "raw_path": b"/mcp"}
-            send = _pointing_at_listed(send)
+            send = _pointing_at_named(send, named)
 
         if OAUTH_ENABLED:
             # Everyone shares one path; who is asking comes from the bearer
