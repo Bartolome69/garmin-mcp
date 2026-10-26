@@ -1328,14 +1328,17 @@ async def main() -> int:
 
         class _Table:
             def get(self, address):
-                return {"country": {"iso_code": "GB"}} if address.startswith("81.") else {}
+                if address.startswith("81."):
+                    return {"country": {"iso_code": "GB"}}
+                # The npm copy of the table has the code flat.
+                return {"country_code": "IE"} if address.startswith("86.") else {}
 
         geo._reader.cache_clear()
         real_reader = geo._reader
         geo._reader = lambda: _Table()
         try:
             check("a public address gives its country, a private one or rubbish none",
-                  geo.country("81.2.69.160") == "GB" and geo.country("8.8.8.8") is None
+                  geo.country("81.2.69.160") == "GB" and geo.country("86.40.1.1") == "IE" and geo.country("8.8.8.8") is None
                   and geo.country("10.0.0.1") is None and geo.country("not an address") is None)
             scope = {"type": "http", "headers": [(b"fly-client-ip", b"81.2.69.160")], "query_string": b"", "path": "/"}
             props = hosted._with_source(_Req(scope), {"account": "x"})

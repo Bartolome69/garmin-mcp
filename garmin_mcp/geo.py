@@ -45,5 +45,8 @@ def country(address: str | None) -> str | None:
         found = reader.get(str(ip)) or {}
     except Exception:  # noqa: BLE001
         return None
-    code = (found.get("country") or {}).get("iso_code") if isinstance(found, dict) else None
+    if not isinstance(found, dict):
+        return None
+    # db-ip.com's own table nests it; the npm copy has it flat.
+    code = (found.get("country") or {}).get("iso_code") or found.get("country_code")
     return code if isinstance(code, str) and len(code) == 2 else None
