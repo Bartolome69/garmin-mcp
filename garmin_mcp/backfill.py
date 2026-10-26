@@ -53,6 +53,8 @@ DAYS_PER_MINUTE = float(os.environ.get("GARMIN_BACKFILL_DAYS_PER_MINUTE", "300")
 MAX_FAILS = 8
 # A kind Garmin won't give: nothing that old, or not shared.
 EXHAUSTED = -1
+# Bumped when the asking changes, so accounts asked the old way are asked again.
+VERSION = 2
 
 
 def path(kind: str, start: int, end: int) -> str:
@@ -60,8 +62,8 @@ def path(kind: str, start: int, end: int) -> str:
             + urllib.parse.urlencode({"summaryStartTimeInSeconds": start, "summaryEndTimeInSeconds": end}))
 
 
-def ask_garmin(user_token: str, kind: str, start: int, end: int) -> int:
-    """Ask Garmin to send one window of one kind. Returns its HTTP status; 0 when unreachable."""
+def ask_garmin(user_token: str, kind: str, start: int, end: int) -> tuple[int, str]:
+    """Ask Garmin to send one window of one kind: its HTTP status (0 when unreachable) and its reason."""
     access_token, _ = official._access_token(user_token)
     request = urllib.request.Request(
         official.API + path(kind, start, end), method="GET",
@@ -70,11 +72,11 @@ def ask_garmin(user_token: str, kind: str, start: int, end: int) -> int:
     )
     try:
         official._send(request)
-        return 202
+        return 202, ""
     except urllib.error.HTTPError as exc:
-        return exc.code
-    except (urllib.error.URLError, OSError):
-        return 0
+        return exc.code, official._oauth_reason(exc)
+    except (urllib.error.URLError, OSError) as exc:
+        return 0, type(exc).__name__
 
 
 def _next(anchor: int, progress: dict) -> tuple[str, int, int] | None:
@@ -90,7 +92,7 @@ def _next(anchor: int, progress: dict) -> tuple[str, int, int] | None:
     return None
 
 
-def run_once(ask: Callable[[str, str, int, int], int] = ask_garmin) -> dict | None:
+def run_once(ask: Callable[[str, str, int, int], "int | tuple[int, str]"] = ask_garmin) -> dict | None:
     """Ask for one window for whoever has waited longest. None when nobody is waiting.
 
     Returns what happened: the kind, the window's days, Garmin's answer, and
@@ -100,6 +102,8 @@ def run_once(ask: Callable[[str, str, int, int], int] = ask_garmin) -> dict | No
     if waiting is None:
         return None
     garmin_user_id, anchor, progress = waiting
+    if progress.get("v") != VERSION:
+        progress = {"v": VERSION}
     link = store.official_link_for_garmin_user(garmin_user_id)
     window = _next(anchor, progress)
     if link is None or window is None:
@@ -107,12 +111,14 @@ def run_once(ask: Callable[[str, str, int, int], int] = ask_garmin) -> dict | No
         return {"done": True}
     kind, start, end = window
     try:
-        status = ask(link.user_token, kind, start, end)
+        answer = ask(link.user_token, kind, start, end)
     except official.OfficialError as exc:  # the connection itself has lapsed
         log.info("history not asked for: %s", exc)
         store.save_backfill(garmin_user_id, progress, True)
         return {"done": True, "kind": kind}
-    state = dict(progress.get(kind) or {})
+    status, reason = answer if isinstance(answer, tuple) else (answer, "")
+    # What Garmin last said about this kind, for the status tool: its rules aren't public.
+    state = {**(progress.get(kind) or {}), "said": f"{status} {reason}".strip()[:160]}
     happened = {"kind": kind, "days": round((end - start) / DAY), "status": status}
     if status in (200, 202, 409):  # asked for, or asked for already
         state["reached"] = start
@@ -124,13 +130,14 @@ def run_once(ask: Callable[[str, str, int, int], int] = ask_garmin) -> dict | No
             state["reached"] = EXHAUSTED
     elif status in (401, 403, 404, 412):  # not shared, or not offered to Daash's app
         state["reached"] = EXHAUSTED
-        log.info("history for %s not available: %s", kind, status)
+        log.info("history for %s not available: %s %s", kind, status, reason)
     elif status == 429:
         happened["wait"] = 60
+        store.save_backfill(garmin_user_id, {**progress, kind: state}, False, keep_turn=True)
         return happened  # nobody's turn moves on; try again in a minute
     else:  # unreachable or Garmin's own error: try later, then give up
         fails = int(progress.get("fails", 0)) + 1
-        progress = {**progress, "fails": fails}
+        progress = {**progress, kind: state, "fails": fails}
         store.save_backfill(garmin_user_id, progress, fails >= MAX_FAILS)
         happened["wait"] = 30
         return happened
@@ -148,17 +155,21 @@ def summary(garmin_user_id: str) -> dict | None:
     day = lambda t: time.strftime("%Y-%m-%d", time.gmtime(t))  # noqa: E731
     asked = {}
     for kind in dict.fromkeys(k for k, _ in PLAN):
-        reached = (progress.get(kind) or {}).get("reached")
+        state = progress.get(kind) or {}
+        reached, said = state.get("reached"), state.get("said")
         if reached == EXHAUSTED:
-            asked[kind] = "not available"
+            asked[kind] = "not available" + (f" (Garmin said {said})" if said else "")
         elif reached is not None:
             asked[kind] = f"back to {day(reached)}"
+        elif said:
+            asked[kind] = f"waiting (Garmin said {said})"
     return {"finished": done, "connected": day(anchor), "asked_for": asked}
 
 
 def forever(ask: Callable[[str, str, int, int], int] = ask_garmin) -> None:
     """Work through everyone waiting, within Garmin's budget of days per minute."""
     try:
+        store.reopen_backfills(VERSION)
         queued = store.queue_backfill_for_all_links()
         if queued:
             log.info("history to ask for: %d linked account(s)", queued)

@@ -632,7 +632,10 @@ def main() -> int:
     shown = official.status(again)["history"]
     check("the status says how far back each kind was asked for",
           shown["finished"] and shown["asked_for"]["activities"] == "back to " + time.strftime("%Y-%m-%d", time.gmtime(anchor - 182 * D))
-          and shown["asked_for"]["userMetrics"] == "not available", str(shown))
+          and shown["asked_for"]["userMetrics"] == "not available (Garmin said 412)", str(shown))
+    check("an account asked for the old way is asked again from the start",
+          store.reopen_backfills(backfill.VERSION + 1) == 1 and not store.backfill_state("garmin-user-1")[2]
+          and store.backfill_state("garmin-user-1")[1] == {})
 
     with _sq.connect(DB) as conn:
         conn.execute("DELETE FROM official_backfill")

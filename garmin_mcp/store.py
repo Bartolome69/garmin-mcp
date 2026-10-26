@@ -783,12 +783,25 @@ def next_backfill() -> tuple[str, int, dict] | None:
     return (row[0], int(row[1]), json.loads(row[2] or "{}")) if row else None
 
 
-def save_backfill(garmin_user_id: str, progress: dict, done: bool) -> None:
+def save_backfill(garmin_user_id: str, progress: dict, done: bool, keep_turn: bool = False) -> None:
     with _connect() as conn:
+        if keep_turn:
+            conn.execute("UPDATE official_backfill SET progress = ?, done = ? WHERE garmin_user_id = ?",
+                         (json.dumps(progress), int(done), garmin_user_id))
+            return
         conn.execute(
             "UPDATE official_backfill SET progress = ?, done = ?, updated_at = ? WHERE garmin_user_id = ?",
             (json.dumps(progress), int(done), int(time.time() * 1000), garmin_user_id),
         )
+
+
+def reopen_backfills(version: int) -> int:
+    """Accounts asked for the old way, asked again from the start."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT garmin_user_id, progress FROM official_backfill").fetchall()
+        stale = [(gid,) for gid, progress in rows if json.loads(progress or "{}").get("v") != version]
+        conn.executemany("UPDATE official_backfill SET progress = '{}', done = 0, updated_at = 0 WHERE garmin_user_id = ?", stale)
+    return len(stale)
 
 
 def backfill_state(garmin_user_id: str) -> tuple[int, dict, bool] | None:
