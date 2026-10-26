@@ -611,27 +611,26 @@ def main() -> int:
     backfill.run_once(fake_ask)
     backfill.run_once(fake_ask)
     check("a window asked for already counts as asked", ASKED[-1][0] == "hrv", str(ASKED[-1]))
-    ANSWERS[("activities", 30)] = 429
+    ANSWERS[("userMetrics", 30)] = 429
     waited = backfill.run_once(fake_ask)
-    held = store.backfill_state("garmin-user-1")[1]["activities"]["reached"]
+    held = store.backfill_state("garmin-user-1")[1]["userMetrics"]
     check("when Garmin asks Daash to slow down, it waits and nothing moves on",
-          waited.get("wait") == 60 and held == anchor - 30 * D, str(waited))
-    ANSWERS.pop(("activities", 30))
+          waited.get("wait") == 60 and "reached" not in held and held["said"] == "429", str(waited))
     ANSWERS[("userMetrics", 30)] = 412
     for _ in range(40):
         if backfill.run_once(fake_ask) in (None, {"done": True}):
             break
     anchor_, progress, done = store.backfill_state("garmin-user-1")
     asked_runs = [a for a in ASKED if a[0] == "activities"]
-    check("runs are asked for back six months, a month at a time, never further",
-          asked_runs[-1][1] == anchor - 182 * D and min(a[1] for a in asked_runs) == anchor - 182 * D, str(asked_runs[-1]))
+    check("runs are asked for back a month, never further, as Garmin allows",
+          min(a[1] for a in asked_runs) == anchor - 30 * D, str(asked_runs))
     check("a kind the person didn't share is left out, not asked again and again",
-          [a for a in ASKED if a[0] == "userMetrics"] == [("userMetrics", anchor - 30 * D, anchor)]
+          [a for a in ASKED if a[0] == "userMetrics"] == [("userMetrics", anchor - 30 * D, anchor)] * 2
           and progress["userMetrics"]["reached"] == backfill.EXHAUSTED)
     check("once everything is asked for, the account is done", done and backfill.run_once(fake_ask) is None)
     shown = official.status(again)["history"]
     check("the status says how far back each kind was asked for",
-          shown["finished"] and shown["asked_for"]["activities"] == "back to " + time.strftime("%Y-%m-%d", time.gmtime(anchor - 182 * D))
+          shown["finished"] and shown["asked_for"]["activities"] == "back to " + time.strftime("%Y-%m-%d", time.gmtime(anchor - 30 * D))
           and shown["asked_for"]["userMetrics"] == "not available (Garmin said 412)", str(shown))
     check("an account asked for the old way is asked again from the start",
           store.reopen_backfills(backfill.VERSION + 1) == 1 and not store.backfill_state("garmin-user-1")[2]

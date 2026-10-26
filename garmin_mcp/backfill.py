@@ -7,14 +7,16 @@ past too when asked for it, a window of time at a time ("backfill"). What it
 sends arrives at the same push address as everything else and is kept the same
 way (official.handle_push), so nothing else changes.
 
-Asked newest first and the most useful kinds first, so last month's runs and
-nights land in the first minute and the older months follow.
+Asked newest first and the most useful kinds first, so runs and nights land
+before the rest.
 
-Garmin's rules for it sit in its developer portal rather than in public: each
-request covers one window; a window asked for twice answers 409; one too wide
-or too far back answers 400; and there is a budget of days asked for per
-minute. So a window starts at CHUNK_DAYS and halves on a 400, and a one-day
-window refused means Garmin has nothing that old, so that kind is done.
+Garmin's rules (Health API 2.0, section 7, "Enterprise Access - Historical
+Data"): history is for Enterprise Access only, so on Starter Access every
+request answers 412 and this stays off (GARMIN_BACKFILL=on turns it on).
+Each request covers at most a month, and a person's history reaches back a
+month at most. A window asked for twice answers 409. The budget is 10,000
+days asked for a minute per app. A window too wide answers 400, so it halves;
+a one-day window refused means nothing that old, and that kind is done.
 """
 
 from __future__ import annotations
@@ -32,19 +34,19 @@ from . import official, store
 log = logging.getLogger(__name__)
 
 DAY = 86400
-# What to ask for and how far back, most useful first. A kind can come back
-# for a further stretch once the more useful ones are in.
+# On only with Garmin's Enterprise Access; Starter Access answers every request 412.
+ENABLED = os.environ.get("GARMIN_BACKFILL", "").strip().lower() == "on"
+# What to ask for and how far back, most useful first. Garmin keeps a
+# person's history to a month.
 PLAN: tuple[tuple[str, int], ...] = (
     ("activities", 30),
     ("activityDetails", 30),
     ("sleeps", 30),
     ("dailies", 30),
     ("hrv", 30),
-    ("activities", 182),
-    ("userMetrics", 182),
+    ("userMetrics", 30),
     ("stressDetails", 30),
-    ("bodyComps", 182),
-    ("activityDetails", 60),
+    ("bodyComps", 30),
 )
 CHUNK_DAYS = int(os.environ.get("GARMIN_BACKFILL_CHUNK_DAYS", "30"))
 # Garmin's budget is days asked for per minute, across everyone.

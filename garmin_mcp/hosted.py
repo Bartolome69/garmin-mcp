@@ -2954,7 +2954,8 @@ def main() -> None:
     if analytics.enabled():
         threading.Thread(target=_signin_check_forever, name="signin-check", daemon=True).start()
     if official.configured():
-        threading.Thread(target=backfill.forever, name="official-history", daemon=True).start()
+        if backfill.ENABLED:
+            threading.Thread(target=backfill.forever, name="official-history", daemon=True).start()
         # What Garmin's official API sent before Daash trimmed it on arrival.
         try:
             official_data.tidy()

@@ -114,10 +114,9 @@ OFFICIAL_MISSING = {
 }
 _OFFICIAL_INSTRUCTIONS = (
     "The user's own Garmin account, through Garmin's official API. Garmin sends "
-    "training as the watch syncs; when the account connects, Daash also asks "
-    "Garmin for about six months of activities and a month of days and nights, "
-    "which arrive over the first few minutes, so a brand-new account may show "
-    "little at first. Reads activities with their laps and "
+    "training as the watch syncs, from the day the account connected Daash, so "
+    "nothing from before then is here and a brand-new account may show little "
+    "at first. Reads activities with their laps and "
     "splits, the day (steps, stress, Body Battery), and sleep. Writes to the "
     "workout library: create, update, schedule, unschedule and delete structured "
     "workouts; scheduling is what sends one to the watch. A whole training block "
