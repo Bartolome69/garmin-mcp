@@ -1369,8 +1369,8 @@ async def main() -> int:
               and said["this_week"] == {"sessions": 3, "km": "45.2"}, str(said))
         subject, text, page_html = weekly.compose(said, "https://example.test/stop")
         check("its subject is the week's key sessions, and it ends with a way to stop",
-              subject == "This week: Sub-T 3 × 3 km Wed, Long 19 km Sun" and "key sessions:\n- Wednesday: Sub-T 3 × 3 km (15.4 km)" in text
-              and "<li" in page_html and "Ask Daash" in text and "Claude or ChatGPT" not in text and "https://example.test/stop" in text
+              subject == "This week: Sub-T 3 × 3 km Wed, Long 19 km Sun" and "key session" not in text
+              and "<li" not in page_html and "<strong>Sub-T 3 × 3 km</strong>" in page_html and "Ask Daash" in text and "Claude or ChatGPT" not in text and "https://example.test/stop" in text
               and "How's my training going this week?" in text and "Stop these emails" in page_html, subject)
         check("it lays out the whole week, rest days too, without repeating a distance the name says",
               "Mon  Rest" in text and "Tue  11 km easy\n" in text and "Wed  Sub-T 3 × 3 km (15.4 km)" in text
@@ -1386,6 +1386,44 @@ async def main() -> int:
               block_subject.startswith("Week 3 of 4: ")
               and block_text.startswith("Base block (Norwegian singles style) · week 3 of 4 · 90% of sessions done so far"),
               block_subject)
+        # One thing last week showed, from the card's own numbers.
+        def _run(day, name, kind, pace, bpm, km, reps=0):
+            return {"date": day, "name": name, "type": kind, "kind": "run", "status": "done", "actual_pace": pace,
+                    "actual_bpm": bpm, "actual_km": km, "shape": [{"k": "easy", "km": 3}] + [{"k": "work", "km": 1}] * reps}
+        earlier = [{"starts": "2026-10-05", "run_km": 47.9, "sessions": [
+                       _run("2026-10-07", "11km easy", "easy", "5:09 /km", 134, 10.6),
+                       _run("2026-10-10", "9km easy", "easy", "5:10 /km", 134, 9.2)]},
+                   {"starts": "2026-10-12", "run_km": 58.7, "sessions": [
+                       _run("2026-10-13", "10km easy", "easy", "5:05 /km", 130, 10.2),
+                       _run("2026-10-14", "Sub-T 6x1km", "threshold", "4:38 /km", 148, 12.2, 6),
+                       _run("2026-10-16", "9km easy", "easy", "5:08 /km", 126, 9.1)]}]
+        def _with_last(*sessions, km=61.8):
+            return {"source": "calendar", "weeks": earlier + [{"starts": "2026-10-19", "planned": 3, "done": 3,
+                                                              "run_km": km, "sessions": list(sessions)}]}
+        more_reps = weekly.summary(_with_last(_run("2026-10-22", "Sub-T 8x1km", "threshold", "4:35 /km", 148, 15.1, 8)), monday)
+        quicker = weekly.summary(_with_last(_run("2026-10-22", "Sub-T 6x1km", "threshold", "4:30 /km", 146, 12.0, 6)), monday)
+        harder = weekly.summary(_with_last(_run("2026-10-22", "Sub-T 6x1km", "threshold", "4:38 /km", 155, 12.0, 6)), monday)
+        easier = weekly.summary(_with_last(_run("2026-10-20", "10km easy", "easy", "5:06 /km", 124, 10.1),
+                                           _run("2026-10-23", "9km easy", "easy", "5:08 /km", 125, 9.0)), monday)
+        bigger = weekly.summary(_with_last(_run("2026-10-20", "10km easy", "easy", "5:06 /km", 130, 10.1),
+                                           _run("2026-10-23", "9km easy", "easy", "5:08 /km", 130, 9.0)), monday)
+        check("a hard session is held against the last one like it: more reps for the same heart rate",
+              more_reps["insight"] == "Thursday's Sub-T 8 × 1 km averaged 148 bpm, the same heart rate as "
+              "Sub-T 6 × 1 km the week before, with two more reps.", str(more_reps["insight"]))
+        check("or the same session quicker, or with a heart rate worth a look",
+              quicker["insight"] == "Thursday's Sub-T 6 × 1 km was 8 s/km quicker than Sub-T 6 × 1 km the week before, "
+              "at 2 bpm lower." and "7 higher than" in harder["insight"] and "recovered" in harder["insight"],
+              f"{quicker['insight']} | {harder['insight']}")
+        check("easy runs at the same pace for fewer beats, or else the biggest week",
+              str(easier["insight"]).startswith("Easy runs averaged 124 bpm, 7 lower than the weeks before at the same pace")
+              and bigger["insight"] == "Your biggest week of the last three, 3.1 km up on the one before.",
+              f"{easier['insight']} | {bigger['insight']}")
+        quiet = weekly.summary(_with_last(_run("2026-10-20", "10km easy", "easy", "5:06 /km", 130, 10.1),
+                                          _run("2026-10-23", "9km easy", "easy", "5:08 /km", 130, 9.0), km=40), monday)
+        check("and when nothing stands out, no insight at all", quiet["insight"] is None, str(quiet["insight"]))
+        _s, insight_text, insight_page = weekly.compose(more_reps, "x")
+        check("the insight sits right under last week",
+              "61.8 km run. Thursday's Sub-T 8 × 1 km" in insight_text and "border-left:3px solid" in insight_page)
         log_answer = {"source": "log", "primary": "run", "weeks": [
             {"starts": "2026-10-19", "run_km": 32.5, "runs": 4}, {"starts": "2026-10-26", "run_km": 0, "runs": 0}]}
         said_log = weekly.summary(log_answer, monday)

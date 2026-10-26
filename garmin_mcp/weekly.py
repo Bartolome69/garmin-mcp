@@ -1,4 +1,4 @@
-"""The Monday email: last week in a line, this week's key session, and the way back in.
+"""The Monday email: last week in a line and one thing it showed, this week at a glance, and the way back in.
 
 Two-thirds of people a week into Daash are still using it; the quieter third
 drift off between runs. One short email on a Monday morning, from their own
@@ -62,6 +62,113 @@ def _block(answer: dict[str, Any]) -> dict[str, Any] | None:
     return {"name": name or None, "week": week, "weeks": total, "percent": answer.get("completion_percent")}
 
 
+NUMBERS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+# Sessions worth comparing with the last one of the same kind: same type, so like for like.
+COMPARED = ("threshold", "intervals", "sub", "long")
+
+
+def _pace(value: Any) -> int | None:
+    """Seconds per km from "5:09 /km"."""
+    m = re.match(r"\s*(\d+):(\d{2})", str(value or ""))
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+
+def _reps(session: dict[str, Any]) -> int:
+    """Work reps in a session's shape, strides left out."""
+    return sum(1 for p in session.get("shape") or [] if isinstance(p, dict)
+               and p.get("k") == "work" and float(p.get("km") or 0) >= 0.4)
+
+
+def _count(n: int) -> str:
+    return NUMBERS[n] if 0 <= n < len(NUMBERS) else str(n)
+
+
+def _done(week: dict[str, Any] | None) -> list[dict[str, Any]]:
+    return [x for x in (week or {}).get("sessions") or [] if isinstance(x, dict) and x.get("status") == "done"]
+
+
+def _insight(answer: dict[str, Any], monday: date, ride: bool) -> str | None:
+    """One thing last week showed, in a sentence, from the numbers already on the card. None when
+    nothing stands out: a made-up insight is worse than none."""
+    last_start = monday - timedelta(days=7)
+    weeks = sorted((w for w in answer.get("weeks") or [] if isinstance(w, dict)
+                    and str(w.get("starts") or "") <= last_start.isoformat()), key=lambda w: w["starts"])
+    if not weeks or weeks[-1].get("starts") != last_start.isoformat():
+        return None
+    last, earlier = weeks[-1], weeks[:-1]
+
+    def ago(then: dict[str, Any]) -> str:
+        gap = (last_start - date.fromisoformat(then["_week"])).days // 7
+        return "the week before" if gap <= 1 else f"{_count(gap)} weeks before"
+
+    def day_of(x: dict[str, Any]) -> str:
+        return DAY_NAMES[date.fromisoformat(x["date"]).weekday()]
+
+    # 1. A hard session against the last one of its kind: more reps or quicker, at what heart rate.
+    if answer.get("source") != "log":
+        hard = sorted((x for x in _done(last) if x.get("type") in COMPARED and x.get("actual_bpm")
+                       and _pace(x.get("actual_pace"))), key=lambda x: COMPARED.index(x["type"]))
+        for now in hard:
+            before = [x | {"_week": w["starts"]} for w in earlier for x in _done(w) if x.get("type") == now["type"]
+                      and x.get("actual_bpm") and _pace(x.get("actual_pace"))]
+            if not before:
+                continue
+            then = before[-1]
+            bpm, dhr = int(now["actual_bpm"]), int(now["actual_bpm"]) - int(then["actual_bpm"])
+            dpace = _pace(now["actual_pace"]) - _pace(then["actual_pace"])
+            more = _reps(now) - _reps(then)
+            hr = "the same heart rate as" if dhr >= -1 else f"{-dhr} bpm lower than"
+            lead, was = f"{day_of(now)}'s {_name(now)}", f"{_name(then)} {ago(then)}"
+            if more > 0 and dhr <= 1:
+                return f"{lead} averaged {bpm} bpm, {hr} {was}, with {_count(more)} more rep{'s' if more > 1 else ''}."
+            similar = more == 0 and abs(float(now.get("actual_km") or 0) - float(then.get("actual_km") or 0)) \
+                <= 0.15 * max(float(then.get("actual_km") or 0), 1)
+            if similar and dhr <= 1 and dpace <= -5:
+                return f"{lead} was {-dpace} s/km quicker than {was}, at {hr.removesuffix(' as').removesuffix(' than')}."
+            if similar and dhr >= 5 and dpace >= -2:
+                return (f"{lead} averaged {bpm} bpm, {dhr} higher than {was} at the same pace: tiredness, heat or "
+                        "hills can do that, so check how you've recovered before the next hard day.")
+
+        # 2. Easy runs: the same pace for fewer beats, or more beats for the same pace.
+        def easy(ws: list[dict[str, Any]]) -> tuple[float, float, float] | None:
+            runs = [x for w in ws for x in _done(w) if x.get("type") == "easy" and x.get("kind") == "run"
+                    and x.get("actual_bpm") and _pace(x.get("actual_pace")) and x.get("actual_km")]
+            km = sum(float(x["actual_km"]) for x in runs)
+            if len(runs) < 2 or km <= 0:
+                return None
+            return (km, sum(float(x["actual_bpm"]) * float(x["actual_km"]) for x in runs) / km,
+                    sum(_pace(x["actual_pace"]) * float(x["actual_km"]) for x in runs) / km)
+        now_easy, then_easy = easy([last]), easy(earlier)
+        if not ride and now_easy and then_easy:
+            dhr, dpace = round(now_easy[1] - then_easy[1]), round(now_easy[2] - then_easy[2])
+            if dhr <= -3 and dpace <= 3:
+                return (f"Easy runs averaged {round(now_easy[1])} bpm, {-dhr} lower than the weeks before at "
+                        f"{'the same pace' if dpace >= -3 else 'a quicker pace'}: the easy running is paying off.")
+            if dhr >= 4 and dpace >= -3:
+                return (f"Easy runs averaged {round(now_easy[1])} bpm, {dhr} higher than the weeks before at the same "
+                        "pace or slower: worth keeping them truly easy this week.")
+
+    # 3. The biggest week, or the longest run, of the weeks on the card.
+    field = "ride_km" if ride else "run_km"
+    before_km = [float(w.get(field) or 0) for w in earlier if float(w.get(field) or 0) > 0]
+    now_km = float(last.get(field) or 0)
+    if len(before_km) >= 2 and now_km >= max(before_km) + 1:
+        return (f"Your biggest week of the last {_count(len(earlier) + 1)}, "
+                f"{_km(now_km - before_km[-1])} km up on the one before." if float(earlier[-1].get(field) or 0) > 0
+                else f"Your biggest week of the last {_count(len(earlier) + 1)}.")
+    kind = "ride" if ride else "run"
+
+    def outings(w: dict[str, Any]) -> list[dict[str, Any]]:
+        return [x for x in (w.get("sessions") or []) + (w.get("extra") or []) if isinstance(x, dict)
+                and x.get("kind") == kind and x.get("actual_km") and x.get("status") in ("done", "logged", None)]
+    longest = max(outings(last), key=lambda x: float(x["actual_km"]), default=None)
+    before_long = [float(x["actual_km"]) for w in earlier for x in outings(w)]
+    if longest and len(earlier) >= 2 and before_long and float(longest["actual_km"]) >= max(before_long) + 0.5:
+        return (f"{day_of(longest)}'s {_km(longest['actual_km'])} km was your longest {kind} "
+                f"in {_count(len(earlier) + 1)} weeks.")
+    return None
+
+
 def summary(answer: Any, today: date) -> dict[str, Any] | None:
     """What Monday's email says, from a get_plan answer. None when there's nothing to say."""
     if not isinstance(answer, dict) or "error" in answer:
@@ -107,6 +214,7 @@ def summary(answer: Any, today: date) -> dict[str, Any] | None:
         return None
     return {
         "last_week": last_line,
+        "insight": _insight(answer, monday, ride) if last_line else None,
         "key_sessions": keys,
         "this_week": planned_week and {"sessions": planned_week["sessions"], "km": _km(planned_week["km"])},
         "schedule": schedule or None,
@@ -153,10 +261,7 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None) -> tupl
     if context:
         parts.append(context)
     if s.get("last_week"):
-        parts.append(f"Last week: {s['last_week']}.")
-    if keys:
-        parts.append(("This week's key sessions:" if len(keys) > 1 else "This week's key session:") + "".join(
-            f"\n- {k['day']}: {k['name']}" + (f" ({k['km']} km)" if k.get("km") else "") for k in keys))
+        parts.append(f"Last week: {s['last_week']}." + (f" {s['insight']}" if s.get("insight") else ""))
     if s.get("schedule"):
         rows = [f"{d['day']}  " + (" + ".join(i["name"] + (f" ({i['km']} km)" if i.get("km") else "") for i in d["items"])
                                    or "Rest") for d in s["schedule"]]
@@ -180,12 +285,9 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None) -> tupl
     if context:
         body += f"<p style=\"margin:0 0 16px;font-size:13px;color:#5B6270\">{e(context)}</p>"
     if s.get("last_week"):
-        body += f"<p style=\"margin:0 0 14px\">Last week: {e(s['last_week'])}.</p>"
-    if keys:
-        body += (f"<p style=\"margin:0 0 6px\">{'This week' + chr(39) + 's key sessions:' if len(keys) > 1 else 'This week' + chr(39) + 's key session:'}</p>"
-                 "<ul style=\"margin:0 0 16px;padding-left:22px\">"
-                 + "".join(f"<li style=\"margin:0 0 4px\"><strong>{e(k['day'])}</strong>: {e(k['name'])}"
-                           + (f" ({e(k['km'])} km)" if k.get("km") else "") + "</li>" for k in keys) + "</ul>")
+        body += f"<p style=\"margin:0 0 {'6' if s.get('insight') else '14'}px\">Last week: {e(s['last_week'])}.</p>"
+    if s.get("insight"):
+        body += f"<p style=\"margin:0 0 16px;padding:10px 12px;background:#fff;border-left:3px solid #E0312A\">{e(s['insight'])}</p>"
     if s.get("schedule"):
         rows = ""
         for d in s["schedule"]:
