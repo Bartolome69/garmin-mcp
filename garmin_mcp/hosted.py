@@ -1501,7 +1501,16 @@ def _signup_route(request: Request) -> tuple[str, bool]:
     if not official.configured() or request.query_params.get("usual") == "1":
         return "password", False
     asked = request.query_params.get("route", "")
-    chosen = asked if asked in ROUTES else request.cookies.get(ROUTE_COOKIE, "")
+    if asked in ROUTES:
+        return asked, False
+    if _device(request).get("device") == "phone":
+        # Oct 26: on phones, Garmin's page approved Daash but Claude never
+        # collected the sign-in (0 of 5 tries, while computers and tablets
+        # went through first time), and the same people got in at once with
+        # a password. Phones get the password until that's fixed, whatever
+        # the split drew for them before.
+        return "password", False
+    chosen = request.cookies.get(ROUTE_COOKIE, "")
     if chosen in ROUTES:
         return chosen, False
     if SPLIT:

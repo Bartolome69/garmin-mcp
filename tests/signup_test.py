@@ -290,6 +290,24 @@ async def main() -> int:
             check("every showing in the split says the split and the side",
                   all(p.get("split") == hosted.SPLIT_NAME and p.get("split_arm") == p.get("route") for p in tagged),
                   str(tagged[-2:]))
+            iphone = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
+                      "Version/18.0 Mobile/15E148 Safari/604.1")
+            phone_bodies = []
+            for cookie in ("", "daash_route=official"):
+                f, _v = await start()
+                _, body, headers = await run(lambda: http("GET", f"/connect?flow={f}", headers={
+                    "User-Agent": iphone, **({"Cookie": cookie} if cookie else {})}))
+                phone_bodies.append((body, headers.get("set-cookie", "")))
+            check("phones get the password sign-in, even ones the split put on Garmin's page, and aren't drawn",
+                  all("Garmin password" in b and "Continue with Garmin" not in b and "daash_route" not in c
+                      for b, c in phone_bodies), str([c for _b, c in phone_bodies]))
+            f, _v = await start()
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={f}&route=official", headers={"User-Agent": iphone}))
+            check("unless the link asks for Garmin's page by name", "Continue with Garmin" in body)
+            f, _v = await start()
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={f}", headers={
+                "User-Agent": "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) Safari/604.1", "Cookie": "daash_route=official"}))
+            check("tablets keep their side of the split", "Continue with Garmin" in body)
         finally:
             hosted.SPLIT = False
 
