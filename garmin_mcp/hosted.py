@@ -94,6 +94,10 @@ OAUTH_PROVIDER = oauth.GarminOAuthProvider() if OAUTH_ENABLED else None
 SIGNUP_ROUTE = os.environ.get("GARMIN_MCP_SIGNUP", "password").strip().lower()
 ROUTE_COOKIE = "daash_route"
 ROUTES = ("official", "password")
+# "split" puts each new browser on one of the two at random, kept in the same
+# cookie, to see which more people finish and keep using (from Oct 26).
+SPLIT = SIGNUP_ROUTE == "split"
+SPLIT_NAME = "signup-route-oct26"
 # Consents waiting after an approval on Garmin's page, by consent token, with
 # when they were staged: those are the ones that ask for an email if the
 # account has none, and that count as an official sign-up when allowed.
@@ -184,7 +188,13 @@ def _source(request: Request) -> str | None:
 
 def _with_source(request: Request, properties: dict[str, Any]) -> dict[str, Any]:
     source = _source(request)
-    return {**properties, **({"source": source} if source else {}), **_where(request)}
+    return {**properties, **({"source": source} if source else {}), **_where(request), **_split_arm(request)}
+
+
+def _split_arm(request: Request) -> dict[str, str]:
+    """Which side of the sign-in split this browser is on, while the split runs."""
+    arm = request.cookies.get(ROUTE_COOKIE, "")
+    return {"split": SPLIT_NAME, "split_arm": arm} if SPLIT and arm in ROUTES else {}
 
 
 def _where(request: Request) -> dict[str, str]:
@@ -1427,14 +1437,14 @@ async def connect_form(request: Request) -> Response:
     # Set when Claude sent them here from /authorize; it ties this sign-in back
     # to the waiting authorization request.
     flow = request.query_params.get("flow", "")
-    route = _signup_route(request)
+    route, drawn = _signup_route(request)
     listed = bool(flow) and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured()
     official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
     analytics.capture("sign_in_shown", None, _with_source(request, {
         "via": "oauth" if flow else "direct", "route": "official" if official_route else "password",
-        "listed": listed}))
+        "listed": listed, **({"split": SPLIT_NAME, "split_arm": route} if SPLIT and flow and not listed else {})}))
     if official_route:
         response = _garmin_intro(flow, usual=not listed)
     else:
@@ -1447,20 +1457,24 @@ async def connect_form(request: Request) -> Response:
             if asked == "official" else "sign in with your Garmin email and password"}.</p>
             <p class=note><a href="/connect?route={"password" if asked == "official" else "official"}">Switch
             back</a></p>""")
-    if asked in ROUTES:
-        response.set_cookie(ROUTE_COOKIE, asked, max_age=30 * 86400, secure=True, httponly=True, samesite="lax")
+    if asked in ROUTES or (drawn and flow and not listed):
+        response.set_cookie(ROUTE_COOKIE, asked if asked in ROUTES else route, max_age=30 * 86400,
+                            secure=True, httponly=True, samesite="lax")
     return response
 
 
-def _signup_route(request: Request) -> str:
-    """"official" or "password": which sign-in this browser gets from the connector."""
+def _signup_route(request: Request) -> tuple[str, bool]:
+    """"official" or "password": which sign-in this browser gets from the connector,
+    and whether it was drawn just now for the split (so the cookie keeps it)."""
     if not official.configured() or request.query_params.get("usual") == "1":
-        return "password"
+        return "password", False
     asked = request.query_params.get("route", "")
     chosen = asked if asked in ROUTES else request.cookies.get(ROUTE_COOKIE, "")
     if chosen in ROUTES:
-        return chosen
-    return "official" if SIGNUP_ROUTE == "official" else "password"
+        return chosen, False
+    if SPLIT:
+        return secrets.choice(ROUTES), True
+    return ("official" if SIGNUP_ROUTE == "official" else "password"), False
 
 
 def _usual_way(flow: str) -> str:

@@ -260,6 +260,31 @@ async def main() -> int:
         shown = [p for e, p in reported if e == "sign_in_shown"]
         check("each showing says which route it was", [p.get("route") for p in shown[-4:]]
               == ["password", "official", "official", "password"], str(shown[-4:]))
+        check("with no split running, nothing is tagged as one", not any("split" in p for p in shown))
+
+        hosted.SPLIT = True
+        try:
+            arms = []
+            for _ in range(40):
+                f, _v = await start()
+                _, body, headers = await run(lambda: http("GET", f"/connect?flow={f}"))
+                cookie = headers.get("set-cookie", "")
+                arm = "official" if "Continue with Garmin" in body else "password"
+                arms.append((arm, cookie))
+            check("the split puts new browsers on both routes",
+                  {a for a, _c in arms} == {"official", "password"}, str([a for a, _c in arms]))
+            check("and each browser keeps the side it drew",
+                  all(f"daash_route={a}" in c for a, c in arms), str(arms[:3]))
+            f, _v = await start()
+            _, body, headers = await run(lambda: http("GET", f"/connect?flow={f}", headers={"Cookie": "daash_route=password"}))
+            check("a browser already on a side isn't drawn again",
+                  "Garmin password" in body and "daash_route" not in headers.get("set-cookie", ""))
+            tagged = [p for e, p in reported if e == "sign_in_shown"][-41:]
+            check("every showing in the split says the split and the side",
+                  all(p.get("split") == hosted.SPLIT_NAME and p.get("split_arm") == p.get("route") for p in tagged),
+                  str(tagged[-2:]))
+        finally:
+            hosted.SPLIT = False
 
         print("\na new person")
         code, body = await through_garmin(flow)
