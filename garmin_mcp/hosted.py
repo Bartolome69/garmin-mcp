@@ -2797,6 +2797,95 @@ async def openai_apps_challenge(request: Request) -> Response:
     return Response(OPENAI_APPS_CHALLENGE, media_type="text/plain")
 
 
+# Directories (Glama, and others like it) check a server every hour by
+# connecting with no sign-in and listing its tools. The real address answers
+# that with 401, as it must: the 401 is what makes Claude and ChatGPT show the
+# Garmin sign-in. So directories get this address instead. It lists the tools
+# and introduces the server, and nothing else: no Garmin session is ever
+# behind it, and a tool call says where to connect.
+DIRECTORY_PATH = "/directory/mcp"
+# What a directory may ask without signing in. Anything else is refused.
+_DIRECTORY_EMPTY = {"resources/list": "resources", "resources/templates/list": "resourceTemplates",
+                    "prompts/list": "prompts"}
+
+
+async def _directory_answer(message: Any) -> dict[str, Any] | None:
+    """One JSON-RPC reply from the directory address; None for a notification."""
+    from . import __version__
+
+    if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid request"}}
+    if "id" not in message:
+        return None
+    method, ident = message["method"], message["id"]
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/") or server_mod.SITE
+    connect = f"To use Daash, add {base}/mcp as a connector and sign in with Garmin."
+    if method == "initialize":
+        asked = (message.get("params") or {}).get("protocolVersion")
+        result: dict[str, Any] = {
+            "protocolVersion": asked if isinstance(asked, str) and asked else "2025-06-18",
+            "capabilities": {"tools": {"listChanged": False}, "resources": {}, "prompts": {}},
+            "serverInfo": {"name": "garmin", "title": "Daash", "version": __version__,
+                           "websiteUrl": server_mod.WEBSITE,
+                           "icons": [{"src": f"{server_mod.SITE}/icon-512.png", "mimeType": "image/png",
+                                      "sizes": ["512x512"]}]},
+            "instructions": f"This address only lists Daash's tools, for directories. {connect}",
+        }
+    elif method == "ping":
+        result = {}
+    elif method == "tools/list":
+        tools = await mcp.list_tools()
+        result = {"tools": [t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in tools]}
+    elif method in _DIRECTORY_EMPTY:
+        result = {_DIRECTORY_EMPTY[method]: []}
+    elif method == "tools/call":
+        result = {"isError": True, "content": [{"type": "text", "text": (
+            f"This is Daash's directory address, which can't reach anyone's Garmin. {connect}")}]}
+    else:
+        return {"jsonrpc": "2.0", "id": ident, "error": {"code": -32601, "message": f"{method} needs sign-in. {connect}"}}
+    return {"jsonrpc": "2.0", "id": ident, "result": result}
+
+
+async def _directory(scope: Any, receive: Any, send: Any) -> None:
+    """The directory address: initialize and tools/list without sign-in, as plain JSON."""
+    from starlette.responses import JSONResponse
+
+    cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*"}
+    method = scope.get("method")
+    if method == "OPTIONS":
+        await Response(status_code=204, headers=cors)(scope, receive, send)
+        return
+    if method != "POST":
+        # Streamable HTTP lets a server refuse the GET stream; nothing is ever pushed from here.
+        await Response(status_code=405, headers={**cors, "Allow": "POST"})(scope, receive, send)
+        return
+    body = b""
+    while True:
+        part = await receive()
+        body += part.get("body", b"")
+        if len(body) > 65536:
+            await Response(status_code=413)(scope, receive, send)
+            return
+        if not part.get("more_body"):
+            break
+    try:
+        parsed = json.loads(body or b"null")
+    except ValueError:
+        await JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
+                           status_code=400, headers=cors)(scope, receive, send)
+        return
+    if isinstance(parsed, list):
+        replies = [r for r in [await _directory_answer(m) for m in parsed[:20]] if r is not None]
+        reply: Any = replies or None
+    else:
+        reply = await _directory_answer(parsed)
+    if reply is None:
+        await Response(status_code=202, headers=cors)(scope, receive, send)
+        return
+    await JSONResponse(reply, headers=cors)(scope, receive, send)
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 
@@ -2813,6 +2902,9 @@ class SessionBinding:
             return
 
         named = scope.get("path", "").rstrip("/")
+        if named == DIRECTORY_PATH:
+            await _directory(scope, receive, send)
+            return
         if OAUTH_ENABLED and named in oauth.NAMED_PATHS:
             # The address in the app directories, and the password link, are
             # this same endpoint. Only their sign-in differs, and clients

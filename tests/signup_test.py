@@ -425,6 +425,33 @@ async def main() -> int:
               and _dev("Mozilla/5.0 (Linux; Android 15; Pixel 9; wv) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36")
               == {"device": "phone", "browser": "in-app"})
 
+        print("\nthe directory address")
+        accept = {"accept": "application/json, text/event-stream"}
+        hello = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "directory-check", "version": "1"}}}
+        code, body, _ = await run(lambda: http("POST", "/directory/mcp", hello, as_json=True, headers=accept))
+        said = json.loads(body) if code == 200 else {}
+        check("a directory can introduce itself without signing in",
+              said.get("result", {}).get("serverInfo", {}).get("title") == "Daash"
+              and said["result"]["protocolVersion"] == "2025-06-18" and "/mcp" in said["result"]["instructions"], body)
+        code, body, _ = await run(lambda: http("POST", "/directory/mcp", {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                                               as_json=True, headers=accept))
+        check("its notifications are taken quietly", code == 202, str(code))
+        code, body, _ = await run(lambda: http("POST", "/directory/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+                                               as_json=True, headers=accept))
+        tools = [t["name"] for t in json.loads(body)["result"]["tools"]] if code == 200 else []
+        check("and list the tools everyone gets, preview ones left out",
+              "get_plan" in tools and "create_workout" in tools and "garmin_official" not in tools
+              and all("inputSchema" in t for t in json.loads(body)["result"]["tools"]), str(tools))
+        code, body, _ = await run(lambda: http("POST", "/directory/mcp", {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                                                                          "params": {"name": "get_plan", "arguments": {}}},
+                                               as_json=True, headers=accept))
+        called = json.loads(body).get("result", {}) if code == 200 else {}
+        check("but a tool call reaches nobody's Garmin: it says where to connect",
+              called.get("isError") is True and f"{BASE}/mcp" in called["content"][0]["text"], body)
+        code, _, headers = await run(lambda: http("POST", "/mcp", hello, as_json=True, headers=accept))
+        check("while the real address still asks for sign-in", code == 401, str(code))
+
         print("\nthe password address")
         pw_address = f"{BASE}/password/mcp"
         code, body, _ = await run(lambda: http("GET", "/.well-known/oauth-protected-resource/password/mcp"))
