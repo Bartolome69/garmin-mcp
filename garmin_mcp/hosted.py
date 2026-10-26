@@ -188,7 +188,27 @@ def _source(request: Request) -> str | None:
 
 def _with_source(request: Request, properties: dict[str, Any]) -> dict[str, Any]:
     source = _source(request)
-    return {**properties, **({"source": source} if source else {}), **_where(request), **_split_arm(request)}
+    return {**properties, **({"source": source} if source else {}), **_where(request), **_split_arm(request),
+            **_device(request)}
+
+
+def _device(request: Request) -> dict[str, str]:
+    """Phone or computer, and which kind of browser: never the browser string itself.
+
+    Oct 26: one person approved Daash on Garmin's page five times before
+    Claude started using it, and nothing said whether they were on a phone,
+    where a sign-in runs in the app's own browser.
+    """
+    agent = request.headers.get("user-agent", "")
+    low = agent.lower()
+    if not agent:
+        return {}
+    device = "tablet" if "ipad" in low or ("android" in low and "mobile" not in low) else \
+        "phone" if any(k in low for k in ("iphone", "android", "mobile")) else "computer"
+    browser = ("in-app" if any(k in low for k in ("claude", "chatgpt", "openai", "; wv)", "fban", "instagram"))
+               else "edge" if "edg/" in low else "firefox" if "firefox" in low or "fxios" in low
+               else "chrome" if "chrome" in low or "crios" in low else "safari" if "safari" in low else "other")
+    return {"device": device, "browser": browser}
 
 
 def _split_arm(request: Request) -> dict[str, str]:

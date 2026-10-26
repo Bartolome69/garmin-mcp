@@ -296,7 +296,8 @@ async def main() -> int:
         consent = consent_of(body)
         approved = [p for e, p in reported if e == "garmin_approved"]
         check("the approval is counted, new, with workouts allowed",
-              approved and approved[-1] == {"new": True, "workouts": True}, str(approved[-1:]))
+              approved and {k: approved[-1].get(k) for k in ("new", "workouts")} == {"new": True, "workouts": True},
+              str(approved[-1:]))
         new_account = official.store.official_link_for_garmin_user("g-new-1")
         check("the account exists already, on the official route alone, with no Connect session",
               new_account is not None and not store.has_connect(new_account.user_token)
@@ -410,6 +411,19 @@ async def main() -> int:
         names, said = await listing(runner)
         check("an account with Garmin Connect behind it keeps every tool and the usual instructions",
               "get_readiness" in names and "get_shoes" in names and "through Garmin's official API" not in said)
+
+        check("when Claude or ChatGPT collects its sign-in, that's recorded too",
+              any(e == "connector_token_issued" for e, _p in reported))
+        from starlette.requests import Request as _Rq
+        def _dev(agent):
+            return hosted._device(_Rq({"type": "http", "headers": [(b"user-agent", agent.encode())], "query_string": b"", "path": "/"}))
+        check("sign-ins say phone or computer and the kind of browser, never the browser string",
+              _dev("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1")
+              == {"device": "phone", "browser": "safari"}
+              and _dev("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/141.0 Safari/537.36")
+              == {"device": "computer", "browser": "chrome"}
+              and _dev("Mozilla/5.0 (Linux; Android 15; Pixel 9; wv) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36")
+              == {"device": "phone", "browser": "in-app"})
 
         print("\nthe password address")
         pw_address = f"{BASE}/password/mcp"

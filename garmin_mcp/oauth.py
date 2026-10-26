@@ -415,6 +415,11 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
+        # The last step of connecting, done by Claude or ChatGPT itself: without
+        # it a person approved on our page but the app never got through.
+        user = store.get_user(authorization_code.subject or "")
+        analytics.capture("connector_token_issued", (user.email_hash or user.user_token) if user else None,
+                          {"client": app_for_client(client.client_id)})
         return self._issue(
             client_id=client.client_id,
             subject=authorization_code.subject or "",
