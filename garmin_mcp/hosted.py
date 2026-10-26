@@ -973,7 +973,7 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
             counts["nothing_to_say"] += 1
             continue
         link = unsubscribe_url(base, fingerprint)
-        subject, text, page_html = weekly.compose(said, link)
+        subject, text, page_html = weekly.compose(said, link, oauth.app_for_user(user_token))
         try:
             send(email, subject, text, page_html, link)
             counts["sent"] += 1

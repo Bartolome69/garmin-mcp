@@ -1363,13 +1363,29 @@ async def main() -> int:
         said = weekly.summary(plan_answer, monday)
         check("the Monday email says how last week went and names the week's key session",
               said["last_week"] == "Every planned session done, 61.8 km run"
-              and said["key_sessions"] == [{"day": "Wednesday", "name": "Sub-T 3 × 3 km", "km": "15.4"},
-                                           {"day": "Sunday", "name": "Long 19 km w 4 × 2 km sub-T", "km": "18.8"}]
+              and [{k: x[k] for k in ("day", "name", "km")} for x in said["key_sessions"]]
+              == [{"day": "Wednesday", "name": "Sub-T 3 × 3 km", "km": "15.4"},
+                  {"day": "Sunday", "name": "Long 19 km w 4 × 2 km sub-T", "km": "18.8"}]
               and said["this_week"] == {"sessions": 3, "km": "45.2"}, str(said))
         subject, text, page_html = weekly.compose(said, "https://example.test/stop")
-        check("its subject is the key session, and it ends with a way to stop",
-              subject == "This week: Sub-T 3 × 3 km on Wednesday" and "key sessions: Wednesday" in text and "https://example.test/stop" in text
-              and "How's my training going?" in text and "Stop these emails" in page_html, subject)
+        check("its subject is the week's key sessions, and it ends with a way to stop",
+              subject == "This week: Sub-T 3 × 3 km Wed, Long 19 km Sun" and "key sessions:\n- Wednesday: Sub-T 3 × 3 km (15.4 km)" in text
+              and "<li" in page_html and "Ask Daash" in text and "Claude or ChatGPT" not in text and "https://example.test/stop" in text
+              and "How's my training going this week?" in text and "Stop these emails" in page_html, subject)
+        check("it lays out the whole week, rest days too, without repeating a distance the name says",
+              "Mon  Rest" in text and "Tue  11 km easy\n" in text and "Wed  Sub-T 3 × 3 km (15.4 km)" in text
+              and "3 sessions, 45.2 km" in text, text)
+        _s, _t, claude_page = weekly.compose(said, "x", "Claude")
+        check("and its button opens the app they use, with the question typed in",
+              "https://claude.ai/new?q=Ask%20Daash" in claude_page and "chatgpt.com" not in claude_page
+              and "in Claude</a>" in claude_page)
+        block_said = weekly.summary({**plan_answer, "completion_percent": 90, "current_plan": {
+            "goal": "Base block (Norwegian singles style): 4 weeks", "week": 3, "weeks_total": 4}}, monday)
+        block_subject, block_text, _p = weekly.compose(block_said, "x")
+        check("with a block running it says where in the block, in the subject and at the top",
+              block_subject.startswith("Week 3 of 4: ")
+              and block_text.startswith("Base block (Norwegian singles style) · week 3 of 4 · 90% of sessions done so far"),
+              block_subject)
         log_answer = {"source": "log", "primary": "run", "weeks": [
             {"starts": "2026-10-19", "run_km": 32.5, "runs": 4}, {"starts": "2026-10-26", "run_km": 0, "runs": 0}]}
         said_log = weekly.summary(log_answer, monday)

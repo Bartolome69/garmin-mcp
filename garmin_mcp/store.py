@@ -553,6 +553,15 @@ def take_oauth_code(code: str) -> str | None:
     return row[0] if row else None
 
 
+def last_client(subject: str) -> str | None:
+    """The client (Claude, ChatGPT…) this account was most recently connected from."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT client_id FROM oauth_tokens WHERE subject = ? ORDER BY created_at DESC LIMIT 1", (subject,)
+        ).fetchone()
+    return row[0] if row else None
+
+
 def save_oauth_token(
     token: str,
     *,

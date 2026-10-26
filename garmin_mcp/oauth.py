@@ -142,6 +142,13 @@ def app_for_client(client_id: str) -> str:
     return _APP_FOR_CLIENT[client_id]
 
 
+def app_for_user(user_token: str) -> str | None:
+    """The app an account last connected from, when it's one we recognise."""
+    client = store.last_client(user_token)
+    app = app_for_client(client) if client else None
+    return app if app in ("Claude", "ChatGPT") else None
+
+
 def recognised_redirect(uri: str) -> bool:
     """Whether a code going here is business as usual.
 
