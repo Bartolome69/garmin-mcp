@@ -307,6 +307,8 @@ async def main() -> int:
         plan = await call_tool(sam, "get_plan")
         check("get_plan says on day one that Garmin sends from today, not that nothing was run",
               "error" not in plan and "Garmin sends training from then on" in json.dumps(plan), str(plan)[:300])
+        check("and that before a plan it asks about their running before then",
+              "usual weekly distance, longest recent run" in json.dumps(plan), str(plan)[:400])
 
         print("\nthe same person, reconnecting")
         flow2, verifier2 = await start()

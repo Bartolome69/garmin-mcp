@@ -115,8 +115,12 @@ OFFICIAL_MISSING = {
 _OFFICIAL_INSTRUCTIONS = (
     "The user's own Garmin account, through Garmin's official API. Garmin sends "
     "training as the watch syncs, from the day the account connected Daash, so "
-    "nothing from before then is here and a brand-new account may show little "
-    "at first. Reads activities with their laps and "
+    "nothing from before then is here. In the first weeks, say so once, in a "
+    "sentence, so a thin card isn't a surprise; not in every answer. Before "
+    "designing a plan from little history, ask in one message for what Daash "
+    "can't see: their usual weekly distance, longest recent run, and a recent "
+    "race or time trial (or how long they've been running), then set paces "
+    "from that. Reads activities with their laps and "
     "splits, the day (steps, stress, Body Battery), and sleep. Writes to the "
     "workout library: create, update, schedule, unschedule and delete structured "
     "workouts; scheduling is what sends one to the watch. A whole training block "
@@ -2875,18 +2879,26 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
     activities = await _call(
         lambda c: c.get_activities_by_date(first.isoformat(), today.isoformat())
     ) or []
+    # Garmin's official API sends training from the day someone connects (its
+    # history is for Enterprise Access only), so for the first weeks the log's
+    # earlier weeks are new, not idle, and a plan has too little to go on.
+    client = _official_client()
+    link = store.official_link(client.user_token) if client is not None and client.alone else None
+    since = None
+    if link is not None and time.time() - link.created_at < training_plan.LOG_WEEKS * 7 * 86400:
+        since = datetime.fromtimestamp(link.created_at, timezone.utc).date().isoformat()
+    ask_first = (
+        f"If they want a plan, first ask in one message about their running before {since}: usual "
+        "weekly distance, longest recent run, and a recent race or time trial, and build from that."
+    )
     if not activities:
-        client = _official_client()
-        link = store.official_link(client.user_token) if client is not None and client.alone else None
-        if link is not None and time.time() - link.created_at < training_plan.LOG_WEEKS * 7 * 86400:
-            # Garmin's official API sends training from the day someone
-            # connects, so an empty log there is new, not idle.
-            since = datetime.fromtimestamp(link.created_at, timezone.utc).date().isoformat()
+        if since:
             return {
                 "note": (
                     f"Connected through Garmin's official API on {since}. Garmin sends training from "
                     "then on, as the watch syncs, so earlier runs aren't here and nothing has arrived "
-                    "yet. Say so in a sentence, then offer to build a plan and put it on their watch."
+                    "yet. Say so in a sentence, then offer to build a plan and put it on their watch. "
+                    + ask_first
                 )
             }
         return {
@@ -2895,7 +2907,13 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
                 f"in the last {training_plan.LOG_WEEKS} weeks."
             )
         }
-    return training_plan.summarise_log(activities, today)
+    summary = training_plan.summarise_log(activities, today)
+    if since and isinstance(summary, dict):
+        summary["note"] = (
+            f"Connected through Garmin's official API on {since}: Garmin sends training from then on, "
+            "so the weeks before that look empty here but weren't. Say so once, in a sentence. " + ask_first
+        )
+    return summary
 
 
 @mcp.tool()
