@@ -345,6 +345,15 @@ async def main() -> int:
         before = await call_tool(sam, "get_daily_summary", {"date": "yesterday"})
         check("and yesterday is from before", "from before the account connected Daash" in str(before.get("note")),
               str(before)[:300])
+        check("and offers what works from day one instead",
+              "a workout on their watch for tomorrow" in str(before.get("note")), str(before)[:400])
+        runs = await call_tool(sam, "get_activities")
+        check("an empty activity list says runs come from connecting on, and offers a workout",
+              "No activities have synced since the account connected" in str(runs.get("note"))
+              and "a workout on their watch" in str(runs.get("note")), str(runs)[:400])
+        status = await call_tool(sam, "get_connection_status")
+        check("the connection check says it's working and why a new account looks empty",
+              "Connected and working" in str(status.get("what_to_expect")), str(status)[:400])
 
         print("\nthe same person, reconnecting")
         flow2, verifier2 = await start()

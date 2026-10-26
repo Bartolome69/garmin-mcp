@@ -964,6 +964,23 @@ OFFICIAL_SOURCE = "Garmin's official API (preview): only what Garmin has sent si
 OFFICIAL_NOTHING = "Garmin's official API hasn't sent this yet: it arrives as the watch syncs."
 
 
+# What still works on a Garmin sign-in with nothing synced yet: writing to the
+# watch. Oct 26: of the first four people on Garmin's page, three went looking
+# for last night and today, found nothing, checked the connection, and none
+# built a workout; half the password sign-ins that day built one.
+OFFICIAL_MEANWHILE = ("Meanwhile, offer what works from day one, as one question: a workout on their watch "
+                      "for tomorrow, or a plan for their next race (asking first about their recent running).")
+
+
+def _connected_on() -> str | None:
+    """The day this account linked Garmin's official API, or None."""
+    try:
+        link = store.official_link(official.current() or "")
+    except Exception:  # noqa: BLE001 - a missing date only loses the explanation
+        return None
+    return datetime.fromtimestamp(link.created_at, timezone.utc).date().isoformat() if link else None
+
+
 def _official_nothing(day: str, night: bool = False) -> str:
     """Why there's nothing for a day: not synced yet, or from before the account connected.
 
@@ -971,15 +988,11 @@ def _official_nothing(day: str, night: bool = False) -> str:
     last night's sleep on the day they connect never comes (Oct 26: the
     first person through the sign-in split asked for it within a minute).
     """
-    try:
-        link = store.official_link(official.current() or "")
-    except Exception:  # noqa: BLE001 - the plain note still stands
-        link = None
-    if link is not None:
-        since = datetime.fromtimestamp(link.created_at, timezone.utc).date().isoformat()
-        if day < since or (night and day == since):
-            return (f"This is from before the account connected Daash on {since}. Garmin's official API "
-                    "only sends what syncs after that, so it won't arrive. Say so plainly, in a sentence.")
+    since = _connected_on()
+    if since and (day < since or (night and day == since)):
+        return (f"This is from before the account connected Daash on {since}. Garmin's official API "
+                "only sends what syncs after that, so it won't arrive. Say so plainly, in a sentence. "
+                + OFFICIAL_MEANWHILE)
     return OFFICIAL_NOTHING
 
 
@@ -1278,6 +1291,16 @@ async def get_heart_rate(date: str | None = None, start: str | None = None, end:
     })
 
 
+def _no_activities_yet(start: str | None) -> str:
+    """Why the activity list is empty on a Garmin sign-in."""
+    since = _connected_on()
+    if since and (start is None or start <= since):
+        return (f"No activities have synced since the account connected Daash on {since}. Garmin's official "
+                "API sends activities from then on, as the watch syncs, so earlier ones won't show; the next "
+                "one recorded will. Say so in a sentence. " + OFFICIAL_MEANWHILE)
+    return OFFICIAL_NOTHING
+
+
 @mcp.tool()
 @tool_errors
 async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
@@ -1543,7 +1566,7 @@ async def get_activities(
         return drop_empty({
             "count": len(shown), "window": {"from": start, "to": end} if start else None,
             "truncated": len(rows) > len(shown) or None, "activities": shown,
-            "source": OFFICIAL_SOURCE, "note": None if shown else OFFICIAL_NOTHING,
+            "source": OFFICIAL_SOURCE, "note": None if shown else _no_activities_yet(start),
         })
 
     if start_date:
@@ -3822,7 +3845,12 @@ async def get_connection_status() -> dict[str, Any]:
     if client is not None and client.alone:
         status = await anyio.to_thread.run_sync(official.status, client.user_token)
         status = {"logged_in": True, "via": "Garmin's official API",
-                  **{k: status.get(k) for k in ("since", "permissions")}}
+                  **{k: status.get(k) for k in ("since", "permissions")},
+                  # Asked for mostly when something looked empty: say it's working, and why.
+                  "what_to_expect": ("Connected and working. Garmin's official API sends what the watch syncs "
+                                     "from the moment the account connected, nothing from before, so a new "
+                                     "account looks empty until the next sync. Writing workouts and plans to "
+                                     "the watch works straight away. " + OFFICIAL_MEANWHILE)}
         if not official.can_write(client.user_token):
             status["note"] = ("Putting workouts on the watch was left off when this account approved Daash in "
                               "Garmin. It can be turned on in Garmin Connect's connected apps settings.")
