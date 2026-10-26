@@ -334,6 +334,15 @@ async def main() -> int:
               "error" not in plan and "Garmin sends training from then on" in json.dumps(plan), str(plan)[:300])
         check("and that before a plan it asks about their running before then",
               "usual weekly distance, longest recent run" in json.dumps(plan), str(plan)[:400])
+        night = await call_tool(sam, "get_sleep_data", {"date": "today"})
+        check("last night, slept before connecting, is said to be from before, not still coming",
+              "from before the account connected Daash" in str(night.get("note")), str(night)[:300])
+        day = await call_tool(sam, "get_daily_summary", {"date": "today"})
+        check("while today, still being recorded, is just not synced yet",
+              "hasn't sent this yet" in str(day.get("note")), str(day)[:300])
+        before = await call_tool(sam, "get_daily_summary", {"date": "yesterday"})
+        check("and yesterday is from before", "from before the account connected Daash" in str(before.get("note")),
+              str(before)[:300])
 
         print("\nthe same person, reconnecting")
         flow2, verifier2 = await start()

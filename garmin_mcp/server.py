@@ -964,6 +964,25 @@ OFFICIAL_SOURCE = "Garmin's official API (preview): only what Garmin has sent si
 OFFICIAL_NOTHING = "Garmin's official API hasn't sent this yet: it arrives as the watch syncs."
 
 
+def _official_nothing(day: str, night: bool = False) -> str:
+    """Why there's nothing for a day: not synced yet, or from before the account connected.
+
+    Garmin's official API sends only what syncs after someone connects, so
+    last night's sleep on the day they connect never comes (Oct 26: the
+    first person through the sign-in split asked for it within a minute).
+    """
+    try:
+        link = store.official_link(official.current() or "")
+    except Exception:  # noqa: BLE001 - the plain note still stands
+        link = None
+    if link is not None:
+        since = datetime.fromtimestamp(link.created_at, timezone.utc).date().isoformat()
+        if day < since or (night and day == since):
+            return (f"This is from before the account connected Daash on {since}. Garmin's official API "
+                    "only sends what syncs after that, so it won't arrive. Say so plainly, in a sentence.")
+    return OFFICIAL_NOTHING
+
+
 def _official_only() -> str | None:
     """The Garmin user id when this account reads only from Garmin's official API."""
     token = official.current()
@@ -1129,7 +1148,7 @@ async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
     if garmin_user:
         stats = await anyio.to_thread.run_sync(official_data.connect_stats, garmin_user, day)
         if not stats:
-            return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+            return {"date": day, "source": OFFICIAL_SOURCE, "note": _official_nothing(day)}
         events, spells = await anyio.to_thread.run_sync(official_data.day_extras, garmin_user, day)
         return {**_daily_shape(day, stats, events, None), "stressful_spells": spells or None, "source": OFFICIAL_SOURCE}
     stats = await _call(lambda c: _method(c, "get_stats", "get_user_summary")(day))
@@ -1273,7 +1292,7 @@ async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
     if garmin_user:
         raw = await anyio.to_thread.run_sync(official_data.connect_sleep, garmin_user, day)
         if not raw:
-            return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+            return {"date": day, "source": OFFICIAL_SOURCE, "note": _official_nothing(day, night=True)}
         return {**_sleep_shape(day, raw, raw.pop("spo2Week", {}) or {}), "source": OFFICIAL_SOURCE}
     (raw, spo2), _ = await _gather([
         ("sleep", lambda c: c.get_sleep_data(day)),
@@ -3041,7 +3060,7 @@ async def get_readiness(date: str | None = None) -> dict[str, Any]:
         # ingredients are, so this is Daash's own read of them.
         checked = await anyio.to_thread.run_sync(official_data.recovery, client.garmin_user_id, day)
         if not checked:
-            return {"date": day, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
+            return {"date": day, "source": OFFICIAL_SOURCE, "note": _official_nothing(day)}
         return {**checked, "source": OFFICIAL_SOURCE}
     (readiness, status, hrv, stats, sleep), warnings = await _gather(
         [

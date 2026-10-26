@@ -392,7 +392,10 @@ def main() -> int:
           and day_again.get("spo2_average") == 96 and day_again["heart_rate"].get("resting_7day_avg_bpm") == 46
           and day_again.get("respiration_avg") == 14.0 and day_again["body_battery"].get("gained_during_sleep") == 48, str(day_again)[:700])
     missing = as_user(bart, server.get_sleep_data, "2026-01-01")
-    check("a night Garmin hasn't sent says so, without falling back", "hasn't sent" in missing.get("note", ""), str(missing))
+    check("a night from before connecting says so, without falling back",
+          "from before the account connected" in missing.get("note", ""), str(missing))
+    future = as_user(bart, server.get_sleep_data, "2099-01-01")
+    check("a night not synced yet says it arrives as the watch syncs", "hasn't sent" in future.get("note", ""), str(future))
 
     print("\na recovery check, on the official API alone")
     from datetime import date as _date, timedelta as _td
