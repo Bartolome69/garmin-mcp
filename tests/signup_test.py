@@ -250,6 +250,8 @@ async def main() -> int:
         check("?route=official shows Connect your Garmin, with Garmin's note explained calmly",
               "Continue with Garmin" in body and "reviewed" in body and "unverified" not in body and "Garmin password" not in body
               and "Sign in the usual way" in body, body[:200])
+        check("and says up front that only what syncs from now on will show",
+              "syncs from now on" in body and "last night" in body)
         check("and remembers the choice for this browser",
               "daash_route=official" in headers.get("set-cookie", ""), headers.get("set-cookie", ""))
         _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow}", headers={"Cookie": "daash_route=official"}))

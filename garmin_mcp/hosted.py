@@ -1489,6 +1489,8 @@ def _garmin_intro(flow: str, usual: bool = True) -> Response:
         <h1>Connect your Garmin</h1>
         <p>Daash reads your training from Garmin and puts workouts on your watch.
         Garmin asks you to approve that on its own page.</p>
+        <p class=note>Garmin shares what your watch syncs from now on, so last night&rsquo;s
+        sleep and earlier runs won&rsquo;t show. Each sync after this adds to it.</p>
         <p class=secure>{_LOCK}<span>You sign in on Garmin&rsquo;s site. Daash never sees your password.</span></p>
         <p class=note>Garmin&rsquo;s page shows a grey note saying it hasn&rsquo;t reviewed
         Daash yet. That&rsquo;s normal for new apps.</p>
