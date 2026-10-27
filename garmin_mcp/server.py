@@ -2015,7 +2015,9 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     """
     day = parse_date(date)
     today = parse_date("today")
-    answer = await get_plan()
+    # The plan as get_plan reads it, without its hooks: counted as a get_plan,
+    # it would hold back the next read the chat sends (hosted.WITH_PLAN_HELD).
+    answer = await get_plan.__wrapped__()
     if not isinstance(answer, dict) or "error" in answer:
         return answer if isinstance(answer, dict) else {"error": "The plan couldn't be read."}
     if answer.get("source") == "log":

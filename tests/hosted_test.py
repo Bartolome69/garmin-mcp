@@ -332,7 +332,10 @@ async def main() -> int:
                   "garmin_official" in names_a and "garmin_official" not in names_b)
             check("and the workout card, get_session, while it's tried out",
                   "get_session" in names_a and "get_session" not in names_b)
+            hosted._PLAN_CALLS.pop(alice, None)
             session_answer = await call(alice, "get_session", {"date": "today"})
+            check("get_session reading the plan isn't taken for a get_plan, so the next read isn't held",
+                  alice not in hosted._PLAN_CALLS, str(hosted._PLAN_CALLS.get(alice)))
             check("get_session answers with a session card, or says nothing is on the calendar",
                   session_answer.get("card") == "session" or "Nothing is scheduled" in str(session_answer.get("error")),
                   str(session_answer)[:300])
