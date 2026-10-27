@@ -12,6 +12,15 @@ from typing import Any, Mapping, Sequence
 
 from garminconnect import workout as gw
 
+# Garmin's own workoutTargetTypeId values. Pinned rather than borrowed from
+# garminconnect: TargetType only gained these names in 0.3.x (0.2.x has no
+# PACE_ZONE and numbers the rest differently), and requirements still allow
+# 0.2.25. They match TargetType in current releases.
+TARGET_NONE = 1
+TARGET_POWER_ZONE = 2
+TARGET_HEART_RATE_ZONE = 4
+TARGET_PACE_ZONE = 6
+
 from . import swimming
 
 # Sport name -> (workout model, default pace seconds per km used for estimates)
@@ -105,7 +114,7 @@ def _pace_target(pace: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
 
     speeds = sorted(1000.0 / b for b in bounds)
     target = {
-        "workoutTargetTypeId": gw.TargetType.PACE_ZONE,
+        "workoutTargetTypeId": TARGET_PACE_ZONE,
         "workoutTargetTypeKey": "pace.zone",
         "displayOrder": 6,
     }
@@ -120,7 +129,7 @@ def _hr_target(hr: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
     if not 60 <= low <= 230 or not 60 <= high <= 230:
         raise WorkoutError(f"Heart-rate target {hr!r} is outside 60-230 bpm.")
     target = {
-        "workoutTargetTypeId": gw.TargetType.HEART_RATE_ZONE,
+        "workoutTargetTypeId": TARGET_HEART_RATE_ZONE,
         "workoutTargetTypeKey": "heart.rate.zone",
         "displayOrder": 4,
     }
@@ -193,7 +202,7 @@ def _power_target(power: Any, ftp: float | None) -> tuple[dict[str, Any], tuple[
     # Halves round up: round() goes to even, so 250 W ± 5% read 238-262.
     low, high = float(int(low + 0.5)), float(int(high + 0.5))
     target = {
-        "workoutTargetTypeId": gw.TargetType.POWER_ZONE,
+        "workoutTargetTypeId": TARGET_POWER_ZONE,
         "workoutTargetTypeKey": "power.zone",
         "displayOrder": 2,
     }
@@ -202,7 +211,7 @@ def _power_target(power: Any, ftp: float | None) -> tuple[dict[str, Any], tuple[
 
 
 NO_TARGET = {
-    "workoutTargetTypeId": gw.TargetType.NO_TARGET,
+    "workoutTargetTypeId": TARGET_NONE,
     "workoutTargetTypeKey": "no.target",
     "displayOrder": 1,
 }

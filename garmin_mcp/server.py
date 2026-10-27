@@ -3988,7 +3988,14 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    mcp.run(transport="stdio")
+    # The HTTP transport (self-hosting) is opt-in and its settings are read
+    # here, at startup, so importing this module never depends on them.
+    from . import remote
+
+    if remote.transport() == "http":
+        remote.run(mcp)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
