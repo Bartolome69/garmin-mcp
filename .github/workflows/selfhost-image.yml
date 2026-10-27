@@ -11,8 +11,8 @@ name: Self-host image
 # replaces a working :latest. Pull requests build it without publishing.
 #
 # Needs nothing set up: it publishes with the workflow's own GITHUB_TOKEN. The
-# first publish creates the package; if it comes out private, make it public
-# under the package's settings so people can pull it without logging in.
+# package stays private: it's for the few people given read access under the
+# package's settings, not something Daash offers. Leave it private.
 
 on:
   push:
