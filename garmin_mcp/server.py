@@ -382,12 +382,18 @@ _NOTES = {
 _PREVIEW_NOTES: dict[str, str] = {
     "get_plan": (
         "\n\nA question about one session (\"what's tomorrow\", \"talk me through "
-        "Sunday\", today's session in a morning check-in) is get_session's, not this: "
-        "one card per reply."
+        "Sunday\", today's session in a morning check-in) is get_session's, not this, "
+        "even if this plan is already in the chat: one card per reply."
     ),
     "update_workout": (
         "\n\nAfter changing one session, call get_session for its date, on its own, "
         "to show it as it now is."
+    ),
+    "get_workout": (
+        "\n\nA question about a day's scheduled session (\"what's tomorrow's run\", "
+        "\"what's the plan for Sunday\") is get_session's, for that date, even if "
+        "the plan is already in the chat: it shows the session as a card. This is "
+        "for a saved workout that isn't on the calendar."
     ),
 }
 

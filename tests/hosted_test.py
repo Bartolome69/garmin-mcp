@@ -317,7 +317,10 @@ async def main() -> int:
             plan_tool = next(t for t in tools if t.name == "get_plan")
             view = ((getattr(plan_tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
             listed = [str(r.uri) for r in resources if str(r.uri).startswith("ui://")]
+            described[user_token] = {t.name: t.description or "" for t in tools}
             return view, listed, {t.name for t in tools}
+
+        described: dict[str, dict[str, str]] = {}
 
         os.environ["GARMIN_MCP_PREVIEW"] = " Alice@Example.com , carol@example.com"
         try:
@@ -332,6 +335,9 @@ async def main() -> int:
                   "garmin_official" in names_a and "garmin_official" not in names_b)
             check("and the workout card, get_session, while it's tried out",
                   "get_session" in names_a and "get_session" not in names_b)
+            check("and a question about one day's session is sent to it, from get_plan and get_workout",
+                  all("get_session" in described[alice][t] for t in ("get_plan", "get_workout"))
+                  and not any("get_session" in described[bob][t] for t in ("get_plan", "get_workout")))
             hosted._PLAN_CALLS.pop(alice, None)
             session_answer = await call(alice, "get_session", {"date": "today"})
             check("get_session reading the plan isn't taken for a get_plan, so the next read isn't held",
