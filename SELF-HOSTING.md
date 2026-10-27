@@ -104,7 +104,9 @@ it publicly on 443:
 ```yaml
 services:
   garmin-mcp:
-    image: garmin-mcp          # docker build -f Dockerfile.selfhost -t garmin-mcp .
+    # Published from main for Intel and ARM. To build it yourself instead:
+    #   docker build -f Dockerfile.selfhost -t garmin-mcp .
+    image: ghcr.io/bartolome69/garmin-mcp-selfhost:latest
     env_file: .env
     ports:
       - "127.0.0.1:8000:8000"  # local only, for health checks
