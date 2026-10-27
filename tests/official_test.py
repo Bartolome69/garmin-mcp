@@ -409,7 +409,7 @@ def main() -> int:
     checked = od.recovery("garmin-user-1", today)
     hrv_signal = next((x for x in checked.get("signals", []) if x["what"] == "hrv"), {})
     check("last night's HRV is set against their own usual, and a low one is flagged",
-          checked["hrv"] == {"last_night_ms": 50, "usual_ms": 62, "nights_in_usual": 7} and hrv_signal.get("ok") is False
+          checked["hrv"] == {"last_night_ms": 50, "usual_ms": 62, "nights_in_usual": 7, "baseline": "early"} and hrv_signal.get("ok") is False
           and "lower than normal" in hrv_signal.get("said", ""), str(checked)[:500])
     check("sleep and resting heart rate count too, against the week",
           any(x["what"] == "sleep" and x["ok"] for x in checked["signals"])
@@ -417,6 +417,34 @@ def main() -> int:
     check("with one thing off it says go carefully, and says plainly whose read it is",
           checked["call"] in ("fine_with_care", "go_easy") and "isn't shared" in checked["what_this_is"], checked["call"])
     check("a day with nothing sent has nothing to say", od.recovery("garmin-user-1", "2026-01-01") is None)
+    check("a week of nights is an early baseline, and the answer says so",
+          checked["hrv"].get("baseline") == "early" and any("7 of 21" in n for n in checked.get("notes") or []),
+          str(checked.get("notes")))
+    # Pushes are kept only for Garmin accounts linked here.
+    for gid in ("garmin-user-new", "garmin-user-nohrv"):
+        official.store.save_official_user(gid, {"access_token": "a", "refresh_token": "r", "expires_in": 3600}, ["HEALTH_EXPORT"])
+    few = [(_date.fromisoformat(today) - _td(days=k)).isoformat() for k in range(3, 0, -1)]
+    official.handle_push(json.dumps({"hrv": [
+        {"userId": "garmin-user-new", "summaryId": f"hn-{d}", "calendarDate": d, "startTimeInSeconds": now - (4 - i) * 86400,
+         "lastNightAvg": 70} for i, d in enumerate(few)
+    ] + [{"userId": "garmin-user-new", "summaryId": "hn-today", "calendarDate": today, "startTimeInSeconds": now - 8 * 3600,
+          "lastNightAvg": 40}], "sleeps": [{"userId": "garmin-user-new", "summaryId": "sn-today", "calendarDate": today,
+          "startTimeInSeconds": now - 8 * 3600, "durationInSeconds": 4 * 3600, "overallSleepScore": {"value": 45}}]}).encode())
+    early = od.recovery("garmin-user-new", today)
+    check("with three nights connected there's no call, only what it can see, and how many nights it still needs",
+          early["call"] == "not_enough_data" and early["hrv"].get("baseline") == "building"
+          and any("3 of 7" in n for n in early.get("notes") or []) and any(x["what"] == "sleep" for x in early["signals"]),
+          str({k: early.get(k) for k in ("call", "hrv", "notes")}))
+    official.handle_push(json.dumps({"sleeps": [
+        {"userId": "garmin-user-nohrv", "summaryId": f"so-{k}", "startTimeInSeconds": now - (k + 1) * 86400,
+         "calendarDate": (_date.fromisoformat(today) - _td(days=k)).isoformat(), "durationInSeconds": 8 * 3600,
+         "overallSleepScore": {"value": 80}} for k in range(0, 9)]}).encode())
+    no_hrv = od.recovery("garmin-user-nohrv", today)
+    check("a watch that never sends HRV doesn't wait for it forever",
+          no_hrv["call"] != "not_enough_data" or len([x for x in no_hrv["signals"] if x["what"] != "recent_hard"]) < 2,
+          str({k: no_hrv.get(k) for k in ("call", "signals", "notes")}))
+    for gid in ("garmin-user-new", "garmin-user-nohrv"):
+        official.store.forget_official_user(gid)
     real_has_connect = server.store.has_connect
     server.store.has_connect = lambda _t: False
     try:

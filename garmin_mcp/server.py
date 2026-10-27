@@ -373,7 +373,8 @@ OFFICIAL_DESCRIPTIONS = {
     "get_readiness": (
         "A recovery check for a day: last night's sleep, overnight HRV, resting heart rate, Body "
         "Battery gained overnight and the last week's training, each against the user's own recent "
-        "normal, with a call of ready_for_hard, fine_with_care, go_easy or not_enough_data. It is "
+        "normal, with a call of ready_for_hard, fine_with_care, go_easy or not_enough_data (no call "
+        "until a week of nights gives an HRV baseline; an early one until about three weeks). It is "
         "Daash's read of those figures; Garmin's own readiness score isn't shared through its "
         "official API.\n\n"
         "Args:\n"

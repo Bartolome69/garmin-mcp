@@ -649,8 +649,13 @@ def _spo2_week(garmin_user_id: str, day: str) -> int | None:
 # person's own recent normal, never a population's, and the answer says
 # plainly that this is Daash's read, not Garmin's score.
 
-# Nights of HRV that make a baseline worth comparing with, and how far back.
-HRV_BASELINE_NIGHTS = 5
+# Nights of HRV before last night is compared with a usual, and before that
+# usual is settled; and how far back it looks. Garmin's own HRV status takes
+# about three weeks to set a baseline. On Garmin's route the data starts the
+# day someone connects, so for the first week there's no usual to compare
+# with, and no call is made on the rest alone (asked for on Reddit, Oct 27).
+HRV_BASELINE_NIGHTS = 7
+HRV_SETTLED_NIGHTS = 21
 HRV_BASELINE_DAYS = 28
 # How far off their normal counts as a signal.
 HRV_LOW = 0.92          # last night under 92% of the baseline
@@ -747,7 +752,27 @@ def recovery(garmin_user_id: str, day: str) -> dict[str, Any] | None:
 
     flags = sum(1 for s in signals if not s["ok"])
     measured = sum(1 for s in signals if s["what"] != "recent_hard")
-    if measured < 2:
+    # A watch that never records HRV shouldn't wait for a baseline it won't
+    # get: a week of nights slept without any HRV says that's the watch.
+    nights_slept = len({r.get("calendarDate") for r in store.official_summaries(garmin_user_id, "sleeps", since, limit=2000)
+                        if isinstance(r.get("calendarDate"), str) and r["calendarDate"] < day})
+    no_hrv_watch = not hrv and nights_slept >= HRV_BASELINE_NIGHTS
+    building = not baseline and not no_hrv_watch
+    notes: list[str] = []
+    if building:
+        notes.append(f"Not enough nights yet for an HRV baseline: {len(baseline_nights)} of {HRV_BASELINE_NIGHTS}. "
+                     "Garmin shares data from the day the account connected, so there's no usual to compare "
+                     "last night with until then. No call is made without it: say what the figures show, and "
+                     "that a recovery call comes once a week of nights has synced.")
+    elif baseline and len(baseline_nights) < HRV_SETTLED_NIGHTS:
+        notes.append(f"Early HRV baseline: {len(baseline_nights)} of {HRV_SETTLED_NIGHTS} nights. Garmin's own "
+                     "HRV status takes about three weeks to settle, so give the call as provisional.")
+    elif no_hrv_watch:
+        notes.append("No HRV has arrived from this watch, which may not record it overnight: the call rests on "
+                     "sleep, resting heart rate, Body Battery and training.")
+    if not load.get("usual_week_hours") and (load.get("last_7_days") or {}).get("hours"):
+        notes.append("Not enough weeks yet to say whether this week's training is more than usual.")
+    if building or measured < 2:
         call = "not_enough_data"
     elif flags == 0:
         call = "ready_for_hard"
@@ -767,7 +792,10 @@ def recovery(garmin_user_id: str, day: str) -> dict[str, Any] | None:
         "sleep": drop_empty({"score": sleep_value, "hours": hours,
                              "quality": (score.get("qualifierKey") or "").lower() or None}) or None,
         "hrv": drop_empty({"last_night_ms": night, "usual_ms": round(baseline) if baseline else None,
-                           "nights_in_usual": len(baseline_nights) or None}) or None,
+                           "nights_in_usual": len(baseline_nights) or None,
+                           "baseline": ("building" if building else "early" if baseline and len(baseline_nights) < HRV_SETTLED_NIGHTS
+                                        else "settled" if baseline else None)}) or None,
+        "notes": notes or None,
         "resting_hr": drop_empty({"today": resting, "seven_day_avg": resting_week}) or None,
         "body_battery": drop_empty({"gained_overnight": charge, "now": stats.get("bodyBatteryMostRecentValue"),
                                     "highest": stats.get("bodyBatteryHighestValue")}) or None,
