@@ -17,6 +17,7 @@ const { chromium } = require("playwright");
 const ROOT = path.join(__dirname, "..");
 const CARD = fs.readFileSync(process.env.CARD_FILE || path.join(ROOT, "garmin_mcp", "ui", "plan.html"), "utf8");
 const SHARE = "file://" + path.join(ROOT, "docs", "share", "index.html");
+const SESSION_CARD = fs.readFileSync(path.join(ROOT, "garmin_mcp", "ui", "session.html"), "utf8");
 
 let failed = 0;
 function check(name, ok, detail) {
@@ -62,11 +63,30 @@ const PROGRESS = {
   upcoming: [{ date: md(3), name: "Threshold 3x2k", sport: "run" }],
 };
 
+// One session, as get_session answers for it: a threshold session changed a
+// moment ago, on a week with a strength day and a long run.
+const SESSION = {
+  card: "session", date: md(2), today: md(1),
+  week: { label: "Week 3", starts: md(0), done: 1, planned: 4, days: [
+    { date: md(0), type: "strength", status: "done" }, { date: md(1) }, { date: md(2), type: "threshold", status: "ahead" },
+    { date: md(3), type: "easy", status: "ahead" }, { date: md(4) }, { date: md(5) }, { date: md(6), type: "long", status: "ahead" }] },
+  session: { name: "Sub-T 3 × 2 km", type: "threshold", kind: "run", status: "ahead", key: true, workout_id: 7 },
+  totals: { km: 10.9, minutes: 49, rep: { label: "Rep pace /km", value: "3:58–4:08" }, estimated: true },
+  segments: [{ k: "easy", km: 2, part: "wu", secs: 618 }, { k: "work", km: 2, secs: 486 }, { k: "rec", km: 0.29, secs: 90, by: "time" },
+    { k: "work", km: 2, secs: 486 }, { k: "rec", km: 0.29, secs: 90, by: "time" }, { k: "work", km: 2, secs: 486 },
+    { k: "rec", km: 0.29, secs: 90, by: "time" }, { k: "easy", km: 2, part: "cd", secs: 618 }],
+  steps: [{ kind: "warmup", label: "Warm up", amount: "2 km" },
+    { kind: "repeat", times: 3, steps: [{ kind: "interval", label: "Run", amount: "2 km", target: "3:58–4:08/km" }, { kind: "recovery", label: "Recover", amount: "90 s" }] },
+    { kind: "cooldown", label: "Cool down", amount: "2 km" }],
+  also: [{ name: "Core", type: "strength", kind: "strength" }],
+  change: { was: "Sub-T 3 × 3 km", same_ends: true },
+};
+
 // The chat around the card: answers its handshake, sends it a tool result,
 // answers the tools it calls, and keeps any link it asks to open.
-function host(result) {
+function host(result, src = "card.html") {
   return `<!doctype html><body><iframe id=f style="width:420px;height:1100px;border:0"></iframe><script>
-const f = document.getElementById("f"); window.opened = null;
+const f = document.getElementById("f"); window.opened = null; window.asked = [];
 window.addEventListener("message", (e) => {
   const m = e.data; if (!m || !m.method) return;
   const reply = (r) => f.contentWindow.postMessage({ jsonrpc: "2.0", id: m.id, result: r }, "*");
@@ -74,8 +94,9 @@ window.addEventListener("message", (e) => {
   if (m.method === "ui/notifications/initialized") f.contentWindow.postMessage({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: ${JSON.stringify(result)}, content: [] } }, "*");
   if (m.method === "tools/call") reply({ structuredContent: m.params.name === "get_activity_details" ? ${JSON.stringify(DETAILS)} : { error: "not in this test" } });
   if (m.method === "ui/open-link") { window.opened = m.params.url; reply({}); }
+  if (m.method === "ui/message") { window.asked.push((m.params.content[0] || m.params.content).text); reply({}); }
 });
-f.src = "card.html";
+f.src = ${JSON.stringify(src)};
 </script></body>`;
 }
 
@@ -145,6 +166,39 @@ function decode(url) {
       check(`draws ${what}`, drawn.heading === heading && drawn.img.startsWith("blob:"), JSON.stringify(drawn));
       await share.close();
     }
+
+    console.log("the workout card");
+    fs.writeFileSync(path.join(dir, "session.html"), SESSION_CARD);
+    fs.writeFileSync(path.join(dir, "host.html"), host(SESSION, "session.html"));
+    page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("file://" + path.join(dir, "host.html"));
+    await page.waitForTimeout(800);
+    card = page.frames()[1];
+    const drawn = await card.evaluate(() => ({
+      text: document.body.innerText,
+      stats: document.querySelectorAll(".stat-v").length,
+      segs: document.querySelectorAll(".seg").length,
+      steps: document.querySelectorAll(".step").length,
+      reps: document.querySelectorAll(".rep").length,
+      mini: document.querySelectorAll(".mini i").length,
+      me: [...document.querySelectorAll(".mini i")].findIndex((i) => i.classList.contains("me")),
+    }));
+    check("leads with the session, the key pill and the change", /Sub-T 3 × 2 km/.test(drawn.text) && /Key session/.test(drawn.text)
+      && /Was Sub-T 3 × 3 km\. Same warm-up and cool-down\./.test(drawn.text.replace(/\s+/g, " ")), drawn.text.slice(0, 300));
+    check("distance, time and rep pace", drawn.stats === 3 && /10\.9/.test(drawn.text) && /~49/.test(drawn.text) && /3:58–4:08/.test(drawn.text), drawn.text.slice(0, 400));
+    check("the shape, and the steps with the repeat grouped", drawn.segs === 8 && drawn.steps === 4 && drawn.reps === 1
+      && /3 km|2 km at 3:58–4:08 \/km/.test(drawn.text) && /Jog/.test(drawn.text), JSON.stringify(drawn));
+    check("the day's other session, the watch line and the week", /Also .*Core/.test(drawn.text)
+      && /Updated\. On your watch at the next sync/.test(drawn.text) && drawn.mini === 7 && drawn.me === 2
+      && /Week 3 · 1 of 4 done/.test(drawn.text), drawn.text.slice(-300));
+    await card.getByText("Undo").click();
+    await card.getByText("See the week").click();
+    await page.waitForTimeout(300);
+    const asked = await page.evaluate(() => window.asked);
+    check("Undo and See the week ask in the chat", asked.length === 2 && /^Undo the change to my Sub-T 3 × 2 km/.test(asked[0])
+      && /week looking/.test(asked[1]), JSON.stringify(asked));
+    await page.close();
 
     check("no page threw an error", errors.length === 0, errors.join(" | "));
   } finally {

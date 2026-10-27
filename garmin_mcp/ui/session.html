@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session</title>
+<style>
+  /* The workout card get_session draws inside the chat: one session, leading
+     with its distance, time and pace, then its shape, its steps, whether it's
+     on the watch, and a line back to the week. The host says light or dark. */
+  :root {
+    color-scheme: light;
+    --card: #FFFFFF; --border: #E6E4DD; --text: #1F1E1B; --muted: #6B6A64; --faint: #9A9993;
+    --line: #EEECE6; --subtle: #F5F4EF; --btn-border: #D9D7CF; --red: #E0312A; --red-text: #C8261F;
+    --key-bg: #FBEEDF; --key-text: #B8651C;
+    --easy: #3F8A47; --threshold: #B8651C; --intervals: #C25A12; --race: #C8261F; --long: #2F68B0;
+    --strength: #7E57C2; --swim: #1F8A93; --rec: #D3D7DE; --other: #6B6A64;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --card: #30302E; --border: #3D3D3A; --text: #F4F3EE; --muted: #A6A59F; --faint: #7D7C77;
+      --line: #3A3A37; --subtle: #383836; --btn-border: #4A4A46; --red: #E8322B; --red-text: #FF6A61;
+      --key-bg: rgba(227,163,63,0.16); --key-text: #E3A33F;
+      --easy: #8CC08F; --threshold: #E3A33F; --intervals: #F2924A; --race: #FF6A61; --long: #74A3DB;
+      --strength: #A98BE0; --swim: #6FC2C9; --rec: #5A5954; --other: #A6A59F;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --card: #30302E; --border: #3D3D3A; --text: #F4F3EE; --muted: #A6A59F; --faint: #7D7C77;
+    --line: #3A3A37; --subtle: #383836; --btn-border: #4A4A46; --red: #E8322B; --red-text: #FF6A61;
+    --key-bg: rgba(227,163,63,0.16); --key-text: #E3A33F;
+    --easy: #8CC08F; --threshold: #E3A33F; --intervals: #F2924A; --race: #FF6A61; --long: #74A3DB;
+    --strength: #A98BE0; --swim: #6FC2C9; --rec: #5A5954; --other: #A6A59F;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body {
+    color: var(--text);
+    font: 14px/1.4 Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01";
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  .mono { font-family: "Geist Mono", ui-monospace, Menlo, monospace; }
+
+  .card { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .empty { color: var(--muted); padding: 12px 0; }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 26px; }
+  .when { font-size: 12px; letter-spacing: 0.06em; color: var(--red-text); text-transform: uppercase; }
+  .pill { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    background: var(--key-bg); color: var(--key-text); white-space: nowrap; }
+  .type { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 0; overflow-wrap: anywhere; }
+
+  .change { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center;
+    background: var(--subtle); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+  .change s { color: var(--muted); }
+  .undo { border: 0; background: none; color: var(--red-text); font-weight: 600; padding: 6px 4px; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .stats.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats.one { grid-template-columns: minmax(0, 1fr); }
+  .stat-v { font-size: 19px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .stat-v small { font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 3px; }
+  .stat-l { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  .shape { display: flex; gap: 3px; align-items: flex-end; }
+  .seg { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+  .seg i { display: block; width: 100%; border-radius: 4px; }
+  .seg span { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+
+  .steps { display: flex; flex-direction: column; gap: 4px; }
+  .step { display: grid; grid-template-columns: 3px 84px 1fr; gap: 0 12px; align-items: center; min-height: 28px; }
+  .rail { align-self: stretch; border-radius: 2px; min-height: 22px; }
+  .step-l { font-weight: 600; }
+  .step-d { color: var(--muted); overflow-wrap: anywhere; }
+  .rep { background: var(--subtle); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .rep-h { font-size: 11px; color: var(--muted); }
+  .rep .step { grid-template-columns: 3px 72px 1fr; }
+
+  .also { font-size: 13.5px; color: var(--muted); }
+  .watch { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+  .acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 420px; }
+  .acts.one { grid-template-columns: minmax(0, 1fr); max-width: 200px; }
+  .act { height: 44px; border-radius: 12px; border: 1px solid var(--btn-border); background: transparent; font-weight: 500; }
+  .act:hover { background: var(--subtle); }
+  .sent { font-size: 12.5px; color: var(--muted); }
+
+  .foot { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .mini { display: flex; gap: 4px; }
+  .mini i { display: block; width: 14px; height: 6px; border-radius: 2px; background: var(--line); }
+  .mini i.me { outline: 1.5px solid var(--red); outline-offset: 2px; }
+  .mini { flex-shrink: 0; }
+  .foot-t { flex: 1 1 0; min-width: 0; color: var(--muted); font-size: 13px; }
+  .see { flex-shrink: 0; border: 0; background: none; font-weight: 600; padding: 8px 0; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  .diag { margin: 12px 0; padding: 12px 14px; border-radius: 10px; background: #FFF3CD; color: #3D2C00;
+    border: 1px solid #E8C96A; font: 14px/1.45 system-ui, -apple-system, Roboto, sans-serif; }
+  .diag[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="card" id="app"><div class="empty">Loading the session&hellip;</div></div>
+<div class="diag" id="diag" hidden></div>
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- bridge
+  // The host speaks JSON-RPC over postMessage; only what this card needs.
+  var host = window.parent !== window ? window.parent : null;
+  var nextId = 1, pending = {}, hostContext = {};
+  function send(msg) { if (host) host.postMessage(Object.assign({ jsonrpc: "2.0" }, msg), "*"); }
+  function request(method, params) {
+    var id = nextId++;
+    return new Promise(function (resolve, reject) {
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ id: id, method: method, params: params || {} });
+      setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 20000);
+    });
+  }
+  function notify(method, params) { send({ method: method, params: params || {} }); }
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.jsonrpc !== "2.0") return;
+    if (data.id != null && !data.method && pending[data.id]) {
+      var p = pending[data.id]; delete pending[data.id];
+      data.error ? p.reject(new Error(data.error.message || "error")) : p.resolve(data.result);
+      return;
+    }
+    switch (data.method) {
+      case "ui/notifications/tool-result": onResult(data.params); break;
+      case "ui/notifications/host-context-changed": applyContext(data.params || {}); break;
+      case "ui/notifications/tool-cancelled": fail("The session could not be loaded."); break;
+      case "ui/resource-teardown": case "ping": if (data.id != null) send({ id: data.id, result: {} }); break;
+    }
+  });
+  function applyContext(ctx) {
+    Object.assign(hostContext, ctx);
+    if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
+    var fonts = ctx.styles && ctx.styles.css && ctx.styles.css.fonts;
+    if (fonts && !document.getElementById("host-fonts")) {
+      var st = document.createElement("style"); st.id = "host-fonts"; st.textContent = fonts; document.head.appendChild(st);
+    }
+    reportSize();
+  }
+
+  // The card tells the host its natural height, so the frame fits it.
+  var sent = { w: 0, h: 0 }, measuring = false, root = document.documentElement;
+  function reportSize() {
+    if (measuring) return;
+    measuring = true;
+    requestAnimationFrame(function () {
+      measuring = false;
+      var was = root.style.height; root.style.height = "max-content";
+      var h = Math.ceil(root.getBoundingClientRect().height); root.style.height = was;
+      var w = Math.ceil(window.innerWidth);
+      if (host && h && (w !== sent.w || h !== sent.h)) { sent = { w: w, h: h }; notify("ui/notifications/size-changed", { width: w, height: h }); }
+    });
+  }
+  if (window.ResizeObserver) { var ro = new ResizeObserver(reportSize); ro.observe(root); ro.observe(document.body); }
+
+  // ---------------------------------------------------------------- helpers
+  var DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  var LONG_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var TYPES = {
+    easy: "Easy", recovery: "Recovery", threshold: "Threshold", sub: "Threshold", intervals: "Intervals",
+    race: "Race", long: "Long run", strength: "Strength", swim: "Swim", ride: "Ride", other: "Session",
+  };
+  function colourOf(type) {
+    var k = type === "sub" ? "threshold" : type === "recovery" ? "easy" : type;
+    return ["easy", "threshold", "intervals", "race", "long", "strength", "swim"].indexOf(k) >= 0 ? "var(--" + k + ")" : "var(--other)";
+  }
+  function parse(s) { var p = String(s).slice(0, 10).split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function dow(s) { return (parse(s).getDay() + 6) % 7; }
+  function between(a, b) { return Math.round((parse(b) - parse(a)) / 864e5); }
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "class") node.className = attrs[k];
+      else if (k === "text") node.textContent = attrs[k];
+      else if (k === "onclick") node.addEventListener("click", attrs[k]);
+      else if (k === "style") node.setAttribute("style", attrs[k]);
+      else node.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) { if (c == null || c === false) return; node.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return node;
+  }
+  var ICON = {
+    watch: '<circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+  };
+  function svg(path, size, colour) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("width", size); s.setAttribute("height", size); s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", colour || "currentColor"); s.setAttribute("stroke-width", "2");
+    s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true");
+    s.innerHTML = path; return s;
+  }
+  function fmtKm(n) { var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function distLabel(km) { return km < 1 ? Math.round(km * 1000 / 10) * 10 + " m" : fmtKm(km) + " km"; }
+  function timeLabel(secs) {
+    var m = Math.round(secs / 60);
+    return secs < 120 ? Math.round(secs) + " s" : m + " min";
+  }
+  function duration(min) {
+    if (min < 100) return [String(min), "min"];
+    return [Math.floor(min / 60) + ":" + String(min % 60).padStart(2, "0"), "h"];
+  }
+  function whenLabel(day, today) {
+    var d = parse(day), diff = today ? between(today, day) : null;
+    var named = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : diff === -1 ? "Yesterday" : null;
+    var date = DAYS[dow(day)] + " " + d.getDate() + " " + MONTHS[d.getMonth()];
+    return (named ? named + " · " : "") + date;
+  }
+
+  // ---------------------------------------------------------------- drawing
+  function stat(value, unit, label) {
+    return el("div", {}, [
+      el("div", { class: "stat-v" }, [value, unit ? el("small", { text: unit }) : null]),
+      el("div", { class: "stat-l", text: label }),
+    ]);
+  }
+  function stats(c) {
+    var s = c.session || {}, t = c.totals || {}, a = s.actual || {}, cells = [];
+    if (s.status === "done" && (a.actual_km || a.actual)) {
+      if (a.actual_km) cells.push(stat(fmtKm(a.actual_km), "km", "Distance"));
+      if (a.actual) cells.push(stat(a.actual, "", "Time"));
+      if (a.actual_pace) cells.push(stat(a.actual_pace.replace(/\s*\/km$/, ""), "", "Pace /km"));
+    } else {
+      if (t.km) cells.push(stat(fmtKm(t.km), "km", "Total"));
+      if (t.minutes) { var d = duration(t.minutes); cells.push(stat((t.estimated ? "~" : "") + d[0], d[1], "Time")); }
+      if (t.rep && t.rep.value) cells.push(stat(t.rep.value.replace(/\s*\/km$/, ""), "", t.rep.label || "Rep target"));
+    }
+    if (!cells.length) return null;
+    return el("div", { class: "stats" + (cells.length === 2 ? " two" : cells.length === 1 ? " one" : "") }, cells);
+  }
+  function shape(c) {
+    var segs = (c.segments || []).filter(function (g) { return g.secs || g.km; });
+    if (segs.length < 2) return null;
+    var work = colourOf((c.session || {}).type);
+    var reps = segs.filter(function (g) { return g.k === "work"; }).length;
+    var firstWork = true;
+    return el("div", { class: "shape", "aria-hidden": "true" }, segs.map(function (g) {
+      var colour = g.k === "work" ? work : g.k === "rec" ? "var(--rec)" : "var(--easy)";
+      var h = g.k === "work" ? 24 : g.k === "rec" ? 8 : 14;
+      // A long set labels its first rep only, so the labels never collide.
+      var label = null;
+      if (g.k !== "rec" && (g.k !== "work" || reps <= 6 || firstWork)) label = g.by === "time" ? timeLabel(g.secs) : distLabel(g.km);
+      if (g.k === "work") firstWork = false;
+      return el("div", { class: "seg", style: "flex:" + Math.max(1, g.secs || g.km * 300) + " 1 0" }, [
+        el("i", { style: "height:" + h + "px;background:" + colour }),
+        el("span", { class: "mono", text: label || " " }),
+      ]);
+    }));
+  }
+  var STEP_LABELS = { warmup: "Warm up", cooldown: "Cool down", recovery: "Jog", rest: "Rest", interval: "Run" };
+  function stepRow(st, workColour) {
+    var kind = st.kind || "";
+    var label = (kind === "interval" && st.label && st.label !== "Run") ? st.label : (STEP_LABELS[kind] || st.label || "Run");
+    var target = st.target ? st.target.replace(/\/km$/, " /km") : "";
+    var detail = st.amount || "";
+    if (target) detail += (detail ? " at " : "") + target;
+    else if ((kind === "warmup" || kind === "cooldown") && /km|m$/.test(detail)) detail += " easy";
+    if (st.note) detail += (detail ? " · " : "") + st.note;
+    var rail = kind === "recovery" || kind === "rest" ? "var(--rec)" : kind === "interval" ? workColour : "var(--easy)";
+    return el("div", { class: "step" }, [
+      el("span", { class: "rail", style: "background:" + rail }),
+      el("span", { class: "step-l", text: label }),
+      el("span", { class: "step-d", text: detail }),
+    ]);
+  }
+  function steps(c) {
+    var list = c.steps || [];
+    if (!list.length) return null;
+    var work = colourOf((c.session || {}).type);
+    return el("div", { class: "steps" }, list.map(function (st) {
+      if (st.kind === "repeat") {
+        return el("div", { class: "rep" }, [el("div", { class: "rep-h mono", text: st.times + " ×" })]
+          .concat((st.steps || []).map(function (x) { return stepRow(x, work); })));
+      }
+      return stepRow(st, work);
+    }));
+  }
+  function watchLine(c) {
+    var s = c.session || {}, a = s.actual || {};
+    var text = s.status === "done" ? "Done" + (a.actual_bpm ? " · average " + a.actual_bpm + " bpm" : "")
+      : s.status === "missed" ? "Not recorded on the day"
+      : (c.change ? "Updated. On your watch at the next sync" : "On your watch at the next sync");
+    return el("div", { class: "watch" }, [svg(s.status === "done" ? ICON.check : ICON.watch, 15, s.status === "done" ? colourOf(s.type) : null), text]);
+  }
+  function actions(c, name, when) {
+    var s = c.session || {};
+    if (s.status === "done") {
+      return el("div", { class: "acts one" }, [
+        el("button", { class: "act", onclick: function (e) { ask("How did my " + name + " on " + when + " go?", e.currentTarget); } }, ["How did it go?"]),
+      ]);
+    }
+    return el("div", { class: "acts" }, [
+      el("button", { class: "act", onclick: function (e) { ask("Move my " + name + " on " + when + " to another day that works with the rest of the week.", e.currentTarget); } }, ["Move"]),
+      s.status === "missed" ? null : el("button", { class: "act", onclick: function (e) { ask("Make my " + name + " on " + when + " easier. I’m not fresh enough for it as planned.", e.currentTarget); } }, ["Easier"]),
+      el("button", { class: "act", onclick: function (e) { ask("Why is " + name + " on " + when + " in my plan, and what should it feel like?", e.currentTarget); } }, ["Why this?"]),
+    ]);
+  }
+  function foot(c) {
+    var wk = c.week || {}, days = wk.days || [];
+    if (!days.length) return null;
+    var bars = el("div", { class: "mini", "aria-hidden": "true" }, days.map(function (d) {
+      var style = d.type ? "background:" + colourOf(d.type) + ";opacity:" + (d.status === "done" ? 1 : 0.4) : "";
+      return el("i", { class: d.date === c.date ? "me" : "", style: style });
+    }));
+    var label = wk.label || (c.today && wk.starts && between(c.today, wk.starts) <= 0 && between(c.today, wk.starts) > -7 ? "This week" : "Week of " + parse(wk.starts).getDate() + " " + MONTHS[parse(wk.starts).getMonth()]);
+    var done = wk.planned ? " · " + (wk.done || 0) + " of " + wk.planned + " done" : "";
+    return el("div", { class: "foot" }, [
+      bars,
+      el("span", { class: "foot-t", text: label + done }),
+      el("button", { class: "see", onclick: function (e) { ask("How’s my week looking?", e.currentTarget); } }, ["See the week"]),
+    ]);
+  }
+  function render(c) {
+    var app = document.getElementById("app");
+    app.textContent = "";
+    if (!c || c.error) { app.appendChild(el("div", { class: "empty", text: (c && c.error) || "No session to show." })); reportSize(); return; }
+    var top = el("div", { class: "top" }, [el("span", { class: "when mono", text: whenLabel(c.date, c.today) })]);
+    if (c.rest) {
+      var nxt = c.next;
+      app.appendChild(top);
+      app.appendChild(el("h1", { class: "title", text: "Rest day" }));
+      app.appendChild(el("div", { class: "also", text: nxt ? "Nothing planned. Next: " + DAYS[dow(nxt.date)] + " " + parse(nxt.date).getDate() + " · " + nxt.name : "Nothing planned." }));
+      var f0 = foot(c); if (f0) app.appendChild(f0);
+      reportSize(); return;
+    }
+    var s = c.session || {}, name = s.name || "Session";
+    var whenText = LONG_DAYS[dow(c.date)] + " " + parse(c.date).getDate() + " " + MONTHS[parse(c.date).getMonth()];
+    if (s.key) top.appendChild(el("span", { class: "pill", text: "Key session" }));
+    app.appendChild(top);
+    app.appendChild(el("div", {}, [
+      el("div", { class: "type", style: "color:" + colourOf(s.type), text: TYPES[s.type] || TYPES[s.kind] || "Session" }),
+      el("h1", { class: "title", text: name }),
+    ]));
+    if (c.change) {
+      var said = el("span", {}, c.change.was ? ["Was ", el("s", { text: c.change.was }), "." + (c.change.same_ends ? " Same warm-up and cool-down." : "")] : ["Changed just now."]);
+      app.appendChild(el("div", { class: "change" }, [
+        svg(ICON.check, 16, "var(--easy)"), said,
+        el("button", { class: "undo", onclick: function (e) { ask("Undo the change to my " + name + " on " + whenText + ": put it back the way it was.", e.currentTarget); } }, ["Undo"]),
+      ]));
+    }
+    var st = stats(c); if (st) app.appendChild(st);
+    var sh = shape(c); if (sh) app.appendChild(sh);
+    var sp = steps(c); if (sp) app.appendChild(sp);
+    (c.also || []).forEach(function (o) {
+      app.appendChild(el("div", { class: "also", text: "Also " + LONG_DAYS[dow(c.date)] + ": " + o.name + (o.km ? " · " + fmtKm(o.km) + " km" : "") }));
+    });
+    app.appendChild(watchLine(c));
+    app.appendChild(actions(c, name, whenText));
+    var f = foot(c); if (f) app.appendChild(f);
+    reportSize();
+  }
+
+  // ---------------------------------------------------------------- actions
+  function ask(text, button) {
+    if (!host) { note(button, "Would ask: “" + text + "”"); return; }
+    var block = { type: "text", text: text };
+    request("ui/message", { role: "user", content: [block] })
+      .catch(function () { return request("ui/message", { role: "user", content: block }); })
+      .then(function () { note(button, "Added to the chat"); })
+      .catch(function () { note(button, "The chat did not accept that"); });
+  }
+  function note(button, msg) {
+    var app = document.getElementById("app");
+    var old = app.querySelector(".sent"); if (old) old.remove();
+    var where = button.closest(".acts, .foot, .change") || app.lastChild;
+    where.insertAdjacentElement("afterend", el("div", { class: "sent", text: msg }));
+    reportSize();
+  }
+
+  // ---------------------------------------------------------------- data in
+  function dataOf(result) {
+    var data = result && result.structuredContent;
+    if (!data && result && result.content) {
+      for (var i = 0; i < result.content.length; i++) {
+        var c = result.content[i];
+        if (c.type === "text") { try { data = JSON.parse(c.text); break; } catch (e) {} }
+      }
+    }
+    return data;
+  }
+  function onResult(result) {
+    try { render(dataOf(result)); } catch (e) { fail("drawing: " + (e && e.message)); }
+  }
+  function fail(msg) {
+    var box = document.getElementById("diag");
+    box.textContent = "The session didn't load here. Ask for it as text instead. (" + msg + ")";
+    box.hidden = false; reportSize();
+  }
+
+  // ---------------------------------------------------------------- start
+  if (window.__SESSION_DEMO__) { render(window.__SESSION_DEMO__); return; }
+  if (!host) { fail("This view opens inside a chat that supports MCP Apps."); return; }
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "garmin-session", version: "1.0.0" },
+    clientInfo: { name: "garmin-session", version: "1.0.0" },
+    appCapabilities: { availableDisplayModes: ["inline"] },
+  }).then(function (result) {
+    applyContext((result && result.hostContext) || {});
+    notify("ui/notifications/initialized", {});
+  }).catch(function () { notify("ui/notifications/initialized", {}); });
+})();
+</script>
+</body>
+</html>

@@ -157,6 +157,21 @@ def reset_alone(token) -> None:
     _ALONE.reset(token)
 
 
+# Set per request by the hosted server: whether it came in through the address
+# Daash is listed under in the app directories. Tools not yet through their
+# review stay off that address, so the directories see what they reviewed.
+_LISTED: ContextVar[bool] = ContextVar("daash_listed_address", default=False)
+_NOT_ON_LISTED = {"get_session"}
+
+
+def use_listed(value: bool):
+    return _LISTED.set(bool(value))
+
+
+def reset_listed(token) -> None:
+    _LISTED.reset(token)
+
+
 class _Instructions:
     """The instructions a client is given, chosen for whoever is asking."""
 
@@ -187,6 +202,7 @@ class _Server(MCPServer):
             if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
             and (crew_on or tool.name not in CREW_TOOLS)
             and not (alone and tool.name in OFFICIAL_MISSING)
+            and not (_LISTED.get() and tool.name in _NOT_ON_LISTED)
         ]
 
     async def list_resources(self):
@@ -272,7 +288,7 @@ CREW_WRITES = {"join_crew", "update_crew", "leave_crew"}
 
 # Tools only preview accounts are offered yet. None at the moment: everything
 # built so far is everyone's. The mechanism stays for the next new thing.
-_PREVIEW_ONLY: set[str] = {"garmin_official"}
+_PREVIEW_ONLY: set[str] = {"garmin_official", "get_session"}
 
 
 # What a tool is for, as the model should read it. The model chooses a tool by
@@ -361,8 +377,19 @@ _NOTES = {
 }
 
 
-# Added after those, for preview accounts only. Empty while nothing is in preview.
-_PREVIEW_NOTES: dict[str, str] = {}
+# Added after those, for preview accounts only: where get_session, the
+# workout card, takes over from get_plan.
+_PREVIEW_NOTES: dict[str, str] = {
+    "get_plan": (
+        "\n\nA question about one session (\"what's tomorrow\", \"talk me through "
+        "Sunday\", today's session in a morning check-in) is get_session's, not this: "
+        "one card per reply."
+    ),
+    "update_workout": (
+        "\n\nAfter changing one session, call get_session for its date, on its own, "
+        "to show it as it now is."
+    ),
+}
 
 
 # What each tool does, for an account on Garmin's official API alone, which is
@@ -819,6 +846,7 @@ def _versioned(name: str, filename: str) -> str:
 
 
 PLAN_VIEW = _versioned("plan", "plan.html")
+SESSION_VIEW = _versioned("session", "session.html")
 CREW_VIEW = _versioned("crew", "crew.html")
 
 
@@ -840,7 +868,16 @@ VIEW_NOTE = (
 )
 
 
-def _for_view(result: Any) -> Any:
+SESSION_NOTE = (
+    "The user is looking at this session as a card, drawn from the data below "
+    "and fetched just now: its distance, time, pace, steps and week. Don't list "
+    "the steps again: say in a few sentences what matters about it, such as how "
+    "to run it and how it fits the week. If it shows a change, say what changed "
+    "in a line. Use the ids below for any change."
+)
+
+
+def _for_view(result: Any, note: str = VIEW_NOTE) -> Any:
     """A tool's result with the note to the model as its first field.
 
     In the data itself rather than a separate text block, because some hosts
@@ -849,7 +886,7 @@ def _for_view(result: Any) -> Any:
     """
     if not isinstance(result, dict) or "error" in result:
         return result
-    return {"for_the_assistant": VIEW_NOTE, **result}
+    return {"for_the_assistant": note, **result}
 
 
 # Who has been told which tool list: a host keeps the tool list it fetched,
@@ -888,7 +925,7 @@ async def _refresh_tool_list(ctx: Any, listing: str) -> None:
         log.debug("could not ask the host to re-list tools", exc_info=True)
 
 
-def _app_tool(view: str):
+def _app_tool(view: str, note: str = VIEW_NOTE):
     """mcp.tool() that also names a view, on SDKs that know about tool meta.
 
     The function stays importable as written, returning its plain dict; what
@@ -899,7 +936,7 @@ def _app_tool(view: str):
     def register(fn):
         @functools.wraps(fn)
         async def answered(*args, **kwargs):
-            return _for_view(await fn(*args, **kwargs))
+            return _for_view(await fn(*args, **kwargs), note)
 
         try:
             mcp.tool(meta=meta)(answered)
@@ -945,6 +982,15 @@ try:
     )
 except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
     log.debug("plan view not registered", exc_info=True)
+
+try:
+    _app_view(
+        SESSION_VIEW,
+        "session.html",
+        "One planned session as an interactive card: distance, time, pace, steps and its week.",
+    )
+except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
+    log.debug("session view not registered", exc_info=True)
 
 try:
     _app_view(
@@ -1916,6 +1962,74 @@ async def get_workout(workout_id: int) -> dict[str, Any]:
     })
 
 
+# What a session was before update_workout changed it, so its card can say
+# "Was 3 x 3 km" with an Undo. Held by person, in memory, for half an hour.
+CHANGE_MEMORY_S = 1800
+_CHANGES: dict[tuple[Any, int], dict[str, Any]] = {}
+
+
+def _who() -> Any:
+    member = crews.current()
+    return member.key if member is not None else id(session_mod.current_session())
+
+
+def _remember_change(workout_id: int, old_name: Any, existing: Any) -> None:
+    now = time.time()
+    for key in [k for k, v in _CHANGES.items() if now - v["at"] > CHANGE_MEMORY_S]:
+        _CHANGES.pop(key, None)
+    _CHANGES[(_who(), int(workout_id))] = {
+        "was": old_name, "steps": training_plan.workout_steps(existing) if isinstance(existing, dict) else None, "at": now}
+
+
+def _recent_change(workout_id: Any, steps_now: Any) -> dict[str, Any] | None:
+    from .weekly import _name as display_name
+
+    try:
+        found = _CHANGES.get((_who(), int(workout_id)))
+    except (TypeError, ValueError):
+        return None
+    if not found or time.time() - found["at"] > CHANGE_MEMORY_S:
+        return None
+    before, now = found.get("steps") or [], steps_now or []
+    return drop_empty({
+        "was": display_name({"name": found.get("was") or ""}) if found.get("was") else None,
+        "same_ends": bool(before and now and before[0] == now[0] and before[-1] == now[-1]) or None,
+    }) or {"changed": True}
+
+
+@_app_tool(SESSION_VIEW, note=SESSION_NOTE)
+@tool_errors
+async def get_session(date: str = "today") -> dict[str, Any]:
+    """One planned session as a card: its type, total distance and time, rep pace, steps, whether it's on the watch, and its week in one line.
+
+    Call it for a question about one session ("what's tomorrow", "talk me
+    through Sunday", today's session in a morning check-in), and after moving,
+    easing or swapping one session, to show what changed. One card per reply:
+    not alongside get_plan, and if a week or plan card came with the last
+    reply, answer with this one instead. For a saved workout that isn't on the
+    calendar, get_workout.
+
+    Args:
+        date: The session's day. YYYY-MM-DD, 'today', 'tomorrow' or an offset
+            like '+2'. Defaults to today.
+    """
+    day = parse_date(date)
+    today = parse_date("today")
+    answer = await get_plan()
+    if not isinstance(answer, dict) or "error" in answer:
+        return answer if isinstance(answer, dict) else {"error": "The plan couldn't be read."}
+    if answer.get("source") == "log":
+        return {"date": day, "error": "Nothing is scheduled on the Garmin calendar: get_plan shows recent training, "
+                "and create_plan puts sessions on it."}
+    main, _ = training_plan.day_sessions(answer, day)
+    wid = (main or {}).get("workout_id")
+    detail = None
+    if wid:
+        detail = await _read(("workout", int(wid)), WORKOUT_MEMORY, lambda c: c.get_workout_by_id(int(wid))) or None
+    change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
+    return training_plan.session_card(answer, day, today, detail, change)
+
+
 async def _ftp_for(*step_lists: Any) -> float | None:
     """The cycling FTP set in Garmin, fetched only when a power target is a percentage."""
     if not any(uses_ftp(steps) for steps in step_lists):
@@ -2102,6 +2216,7 @@ async def update_workout(
         estimated = existing.get("estimatedDurationInSecs")
 
     await _call(lambda c: c.update_workout(workout_id, payload))
+    _remember_change(workout_id, current_name, existing)
     return drop_empty(
         {
             "workout_id": workout_id,

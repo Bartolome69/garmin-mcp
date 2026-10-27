@@ -330,6 +330,12 @@ async def main() -> int:
                   {"get_shoes", "get_recovery_trends"} <= names_a & names_b, str(sorted(names_b)))
             check("only accounts on the list are offered Garmin's official API, while it's built",
                   "garmin_official" in names_a and "garmin_official" not in names_b)
+            check("and the workout card, get_session, while it's tried out",
+                  "get_session" in names_a and "get_session" not in names_b)
+            session_answer = await call(alice, "get_session", {"date": "today"})
+            check("get_session answers with a session card, or says nothing is on the calendar",
+                  session_answer.get("card") == "session" or "Nothing is scheduled" in str(session_answer.get("error")),
+                  str(session_answer)[:300])
             # Nothing is in preview now, but the list must still be read right
             # for the next thing that is.
             status_a_on = await call(alice, "get_connection_status")
@@ -1433,6 +1439,59 @@ async def main() -> int:
         check("and with nothing done and nothing planned it says nothing",
               weekly.summary({"source": "log", "weeks": [{"starts": "2026-10-19", "run_km": 0, "runs": 0}]}, monday) is None
               and weekly.summary({"error": "nothing"}, monday) is None)
+
+        # The workout card: one session, its totals from its steps.
+        from garmin_mcp import training_plan as tp
+
+        def _step(order, kind, cond, value, pace=None):
+            d = {"stepOrder": order, "type": "ExecutableStepDTO", "stepType": {"stepTypeKey": kind},
+                 "endCondition": {"conditionTypeKey": cond}, "endConditionValue": value}
+            if pace:
+                d.update({"targetType": {"workoutTargetTypeKey": "pace.zone"},
+                          "targetValueOne": 1000 / pace[0], "targetValueTwo": 1000 / pace[1]})
+            return d
+        three_by_three = {"sportType": {"sportTypeKey": "running"}, "workoutSegments": [{"workoutSteps": [
+            _step(1, "warmup", "distance", 2000),
+            {"stepOrder": 2, "type": "RepeatGroupDTO", "numberOfIterations": 3, "workoutSteps": [
+                _step(1, "interval", "distance", 3000, (238, 248)), _step(2, "recovery", "time", 90)]},
+            _step(3, "cooldown", "distance", 2000)]}]}
+        totals = tp.session_totals(three_by_three, 1000 / 312)
+        check("a session's total counts its recoveries, and its time is timed at the runner's easy pace",
+              totals == {"km": 13.9, "minutes": 62, "rep": {"label": "Rep pace /km", "value": "3:58\u20134:08"},
+                         "estimated": True}, str(totals))
+        segs = tp.workout_shape(three_by_three, easy_mps=1000 / 312, timed=True)
+        check("its shape carries each part's seconds, recoveries marked as set by time",
+              [g["k"] for g in segs] == ["easy", "work", "rec", "work", "rec", "work", "rec", "easy"]
+              and segs[1]["secs"] == 729 and segs[2].get("by") == "time"
+              and not any("secs" in g for g in tp.workout_shape(three_by_three)), str(segs[:3]))
+        easy_week = {"weeks": [{"starts": "2026-10-19", "sessions": [
+            {"date": f"2026-10-{20 + i}", "type": "easy", "kind": "run", "status": "done",
+             "actual_pace": pace, "actual_km": 9} for i, pace in enumerate(["5:20 /km", "5:00 /km", "5:10 /km"])]}]}
+        check("the runner's easy pace is the middle of their recent easy runs",
+              round(tp.easy_speed(easy_week), 3) == round(1000 / 310, 3) and tp.easy_speed({"weeks": []}) is None)
+        plan_like = {"current_plan": {"week": 3, "weeks_total": 4}, "weeks": [
+            {"starts": "2026-10-26", "done": 1, "planned": 4, "sessions": [
+                {"date": "2026-10-26", "name": "Full body", "type": "strength", "kind": "strength", "status": "done"},
+                {"date": "2026-10-28", "name": "Sub-T 3x3km · B1", "type": "threshold", "kind": "run",
+                 "status": "ahead", "workout_id": 7, "planned_km": 15.4},
+                {"date": "2026-10-29", "name": "10km easy", "type": "easy", "kind": "run", "status": "ahead", "planned_km": 10},
+                {"date": "2026-10-29", "name": "Upper body add-on", "type": "strength", "kind": "strength", "status": "ahead"},
+            ]}]}
+        card = tp.session_card(plan_like, "2026-10-28", "2026-10-27", three_by_three,
+                               {"was": "Sub-T 3 × 2 km", "same_ends": True})
+        check("the card leads with the session, its totals, steps, week and the change",
+              card["session"]["name"] == "Sub-T 3 × 3 km" and card["session"]["key"] is True
+              and card["totals"]["km"] == 13.9 and card["steps"][1]["kind"] == "repeat"
+              and card["week"]["label"] == "Week 3" and len(card["week"]["days"]) == 7
+              and card["week"]["days"][2]["type"] == "threshold" and card["change"]["was"] == "Sub-T 3 × 2 km",
+              str({k: card.get(k) for k in ("session", "week")})[:400])
+        double = tp.session_card(plan_like, "2026-10-29", "2026-10-27", None)
+        check("on a day with two, the run leads and the other is named",
+              double["session"]["name"] == "10 km easy" and double["also"][0]["name"] == "Upper body add-on",
+              str(double.get("also")))
+        rest = tp.session_card(plan_like, "2026-10-27", "2026-10-27", None)
+        check("a day with nothing is a rest day, with the next session",
+              rest.get("rest") is True and rest["next"]["name"] == "Sub-T 3 × 3 km" and "session" not in rest, str(rest))
 
         mailed: list[tuple] = []
         real_answer = hosted._plan_answer

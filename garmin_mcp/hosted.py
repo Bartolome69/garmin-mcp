@@ -3091,9 +3091,11 @@ class SessionBinding:
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
         alone_token = server_mod.use_alone(alone)
+        listed_token = server_mod.use_listed(named == oauth.LISTED_PATH)
         try:
             await self.app(scope, receive, send)
         finally:
+            server_mod.reset_listed(listed_token)
             server_mod.reset_alone(alone_token)
             official.reset(official_token)
             crews.reset(crew_token)

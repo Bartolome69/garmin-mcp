@@ -602,6 +602,18 @@ async def main() -> int:
               and "through Garmin's official API" in said, str(sorted(names))[:200])
         check("its sign-up is reported as listed",
               [p for e, p in reported if e == "connector_connected"][-1].get("listed") is True)
+        was_preview = os.environ.get("GARMIN_MCP_PREVIEW")
+        os.environ["GARMIN_MCP_PREVIEW"] = "on"
+        try:
+            on_listed, _said = await listing(listed_token, "/listed/mcp")
+            on_main, _said = await listing(listed_token, "/mcp")
+        finally:
+            if was_preview is None:
+                os.environ.pop("GARMIN_MCP_PREVIEW", None)
+            else:
+                os.environ["GARMIN_MCP_PREVIEW"] = was_preview
+        check("a tool still in review stays off the listed address, with the same sign-in on the usual one",
+              "get_session" not in on_listed and "get_session" in on_main, f"{sorted(on_listed)[:5]} {sorted(on_main)[:5]}")
         naming = {n: [o for o in names if o != n and re.search(rf"\b{o}\b", d)] for n, d in names.items()}
         check("each listed tool's description names no other tool",
               not any(naming.values()), str({n: o for n, o in naming.items() if o}))

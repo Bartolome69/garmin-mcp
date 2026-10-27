@@ -415,7 +415,8 @@ def _speed(step: Mapping[str, Any]) -> float | None:
     return None
 
 
-def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | None:
+def workout_shape(workout: Mapping[str, Any] | None, easy_mps: float | None = None,
+                  timed: bool = False) -> list[dict[str, Any]] | None:
     """A run or ride as segments the card draws: easy, work and recovery, each by its distance.
 
     Built from the structured steps, repeats unrolled, time steps converted at
@@ -427,6 +428,10 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
     cool-down are marked "part" and kept apart from the body, so the card can
     tell them from the work in a hard session whose targets don't say. A
     strength session or a swim has no shape worth drawing this way.
+
+    With easy_mps, untargeted steps are converted at that speed (the runner's
+    own easy pace) instead of the default; timed adds each segment's seconds,
+    and "by": "time" on segments whose step was set by time.
     """
     if not workout:
         return None
@@ -434,7 +439,7 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
     ride = is_ride(sport)
     if category(sport) != "run" and not ride:
         return None
-    flat: list[tuple[str, float, tuple[str, float] | None, bool]] = []
+    flat: list[tuple[str, float, tuple[str, float] | None, bool, float, bool]] = []
 
     def walk(steps: Sequence[Mapping[str, Any]], in_repeat: bool) -> None:
         for step in sorted(steps or [], key=lambda x: x.get("stepOrder") or 0):
@@ -450,14 +455,14 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
             cond = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
             value = float(step.get("endConditionValue") or 0)
             level = _level(step)
-            speed = RIDE_MPS if ride else (_speed(step) or DEFAULT_MPS)
+            speed = RIDE_MPS if ride else (_speed(step) or easy_mps or DEFAULT_MPS)
             if cond == "distance":
-                metres = value
+                metres, seconds = value, value / speed
             elif cond == "time":
-                metres = value * speed
+                metres, seconds = value * speed, value
             else:
-                metres = 0.0
-            flat.append((kind, metres, level, in_repeat))
+                metres = seconds = 0.0
+            flat.append((kind, metres, level, in_repeat, seconds, cond == "time"))
 
     for segment in workout.get("workoutSegments") or []:
         walk(segment.get("workoutSteps") or [], False)
@@ -469,10 +474,10 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
     any_repeat = any(f[3] for f in body)
     flanked = any(f[0] in ends for f in flat)
     lowest: dict[str, float] = {}
-    for _, _, level, _ in body:
+    for _, _, level, _, _, _ in body:
         if level and level[0] in WORK_LEVEL_RATIO:
             lowest[level[0]] = min(lowest.get(level[0], level[1]), level[1])
-    warm = {level[0]: level[1] for kind, _, level, _ in flat if kind in ends and level}
+    warm = {level[0]: level[1] for kind, _, level, _, _, _ in flat if kind in ends and level}
 
     def classify(kind: str, level: tuple[str, float] | None, in_repeat: bool) -> str:
         if kind in ends:
@@ -499,7 +504,7 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
         return "work" if unit in warm and value >= warm[unit] * ratio else "easy"
 
     segments: list[dict[str, Any]] = []
-    for kind, metres, level, in_repeat in flat:
+    for kind, metres, level, in_repeat, seconds, by_time in flat:
         km = metres / 1000
         if km < 0.05:
             continue
@@ -508,8 +513,14 @@ def workout_shape(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
         last = segments[-1] if segments else None
         if last and last["k"] == k == "easy" and last.get("part") == part:
             last["km"] = round(last["km"] + km, 2)
+            if timed:
+                last["secs"] = round(last["secs"] + seconds)
+                if not by_time:
+                    last.pop("by", None)
         else:
-            segments.append({"k": k, "km": round(km, 2), **({"part": part} if part else {})})
+            segments.append({"k": k, "km": round(km, 2), **({"part": part} if part else {}),
+                             **({"secs": round(seconds)} if timed else {}),
+                             **({"by": "time"} if timed and by_time else {})})
     return segments[:SHAPE_MAX_SEGMENTS] or None
 
 
@@ -1368,3 +1379,183 @@ def situation(answer: Any, today: date, events: Sequence[Mapping[str, Any]] = ()
     if ahead[0] == now:
         return found("mid_block", "Want me to check today's session against how recovered you are?")
     return found("mid_block", "Want me to check how you're recovering, or move anything around this week?")
+
+
+# --------------------------------------------------------------------------
+# One session, as the workout card draws it
+# --------------------------------------------------------------------------
+
+# Sessions the plan is built round, marked on the card as key.
+KEY_SESSION_TYPES = ("race", "threshold", "intervals", "long", "sub")
+# An easy run this short (a jog to the shops) says little about easy pace.
+EASY_PACE_MIN_KM = 3.0
+
+
+def _pace_seconds(text: Any) -> float | None:
+    found = re.match(r"\s*(\d+):(\d{2})", str(text or ""))
+    return int(found.group(1)) * 60 + int(found.group(2)) if found else None
+
+
+def easy_speed(answer: Mapping[str, Any] | None) -> float | None:
+    """The runner's own easy pace, in m/s, from the easy runs get_plan has as done.
+
+    The middle of the most recent eight, so one hilly or chatty run doesn't
+    move it. None with fewer than two to go on.
+    """
+    runs = []
+    for week in (answer or {}).get("weeks") or []:
+        for s in (week or {}).get("sessions") or []:
+            pace = _pace_seconds(s.get("actual_pace"))
+            if (s.get("status") == "done" and s.get("type") == "easy" and s.get("kind", "run") == "run"
+                    and pace and float(s.get("actual_km") or 0) >= EASY_PACE_MIN_KM):
+                runs.append((s.get("date") or "", pace))
+    paces = sorted(p for _, p in sorted(runs)[-8:])
+    if len(paces) < 2:
+        return None
+    middle = paces[len(paces) // 2] if len(paces) % 2 else (paces[len(paces) // 2 - 1] + paces[len(paces) // 2]) / 2
+    return 1000.0 / middle
+
+
+def session_totals(workout: Mapping[str, Any] | None, easy_mps: float | None = None) -> dict[str, Any] | None:
+    """Total distance and time of a workout from its steps, recoveries included, and the reps' target.
+
+    Steps set by distance count as written; steps set by time are converted at
+    their pace target, else at easy_mps (the runner's easy pace), else the
+    default. Time is the same the other way round. Both are estimates once a
+    step has no target or ends on the lap button, and say so.
+    """
+    if not workout:
+        return None
+    sport = ((workout.get("sportType") or {}).get("sportTypeKey") or "running").lower()
+    ride = is_ride(sport)
+    if category(sport) != "run" and not ride:
+        secs = float(workout.get("estimatedDurationInSecs") or 0)
+        return drop_empty({"minutes": round(secs / 60) if secs else None, "estimated": True}) or None
+    metres = seconds = 0.0
+    estimated = False
+    targets: list[Mapping[str, Any]] = []
+
+    def walk(steps: Sequence[Mapping[str, Any]], in_repeat: bool) -> tuple[float, float]:
+        nonlocal estimated
+        m = t = 0.0
+        for step in sorted(steps or [], key=lambda x: x.get("stepOrder") or 0):
+            if step.get("type") == "RepeatGroupDTO" or step.get("numberOfIterations"):
+                times = int(step.get("numberOfIterations") or step.get("endConditionValue") or 1)
+                im, it = walk(step.get("workoutSteps") or [], True)
+                m, t = m + im * times, t + it * times
+                continue
+            kind = ((step.get("stepType") or {}).get("stepTypeKey") or "other").lower()
+            cond = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
+            value = float(step.get("endConditionValue") or 0)
+            own = _speed(step)
+            speed = RIDE_MPS if ride else (own or easy_mps or DEFAULT_MPS)
+            if not own:
+                estimated = True
+            if cond == "distance":
+                m, t = m + value, t + value / speed
+            elif cond == "time":
+                m, t = m + value * speed, t + value
+            else:
+                estimated = True
+            if kind == "interval" and (in_repeat or own) and _target(step):
+                targets.append(step)
+        return m, t
+
+    for segment in workout.get("workoutSegments") or []:
+        sm, st = walk(segment.get("workoutSteps") or [], False)
+        metres, seconds = metres + sm, seconds + st
+    if not metres and not seconds:
+        return None
+    rep = None
+    paced = [s for s in targets if ((s.get("targetType") or {}).get("workoutTargetTypeKey") or "").lower() == "pace.zone"]
+    if paced:
+        speeds = [float(v) for s in paced for v in (s.get("targetValueOne"), s.get("targetValueTwo")) if v]
+        quick, slow = 1000.0 / max(speeds), 1000.0 / min(speeds)
+        rep = {"label": "Rep pace /km", "value": f"{format_pace(quick)[:-3]}–{format_pace(slow)[:-3]}"
+               if round(quick) != round(slow) else format_pace(quick)[:-3]}
+    elif targets:
+        rep = {"label": "Rep target", "value": _target(targets[0])}
+    return drop_empty({
+        "km": round(metres / 1000, 1) if metres else None,
+        "minutes": round(seconds / 60) if seconds else None,
+        "rep": rep,
+        "estimated": estimated,
+    })
+
+
+def _rank(s: Mapping[str, Any]) -> tuple[int, int]:
+    """Which of a day's sessions leads: a key one, then a run or ride, then the rest; longer first."""
+    t = s.get("type")
+    return (0 if t in KEY_SESSION_TYPES else 1 if s.get("kind") in ("run", "ride") else 2,
+            -int(float(s.get("planned_km") or 0) * 10))
+
+
+def day_sessions(answer: Mapping[str, Any] | None, day: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """A day's sessions in a get_plan answer, and the one the card leads with."""
+    on_day = [s for w in (answer or {}).get("weeks") or [] if isinstance(w, dict)
+              for s in w.get("sessions") or [] if isinstance(s, dict) and s.get("date") == day]
+    return (min(on_day, key=_rank) if on_day else None), on_day
+
+
+def session_card(answer: Mapping[str, Any], day: str, today: str, workout: Mapping[str, Any] | None,
+                 change: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """What the workout card draws for one day, from a get_plan answer and the day's main workout."""
+    from .weekly import _name as display_name
+
+    weeks = [w for w in (answer or {}).get("weeks") or [] if isinstance(w, dict)]
+    main, on_day = day_sessions(answer, day)
+    rank = _rank
+    week = next((w for w in weeks if w.get("starts") and w["starts"] <= day < (date.fromisoformat(w["starts"]) + timedelta(days=7)).isoformat()), None)
+    starts = date.fromisoformat(week["starts"]) if week else monday_of(date.fromisoformat(day))
+    days = []
+    for offset in range(7):
+        d = (starts + timedelta(days=offset)).isoformat()
+        here = [s for s in (week or {}).get("sessions") or [] if s.get("date") == d]
+        lead = min(here, key=rank) if here else None
+        days.append(drop_empty({"date": d, "type": lead.get("type") if lead else None,
+                                "status": lead.get("status") if lead else None}))
+    plan = (answer or {}).get("current_plan") or {}
+    label = None
+    if plan.get("week") and plan.get("weeks_total"):
+        this_monday = monday_of(date.fromisoformat(today))
+        shift = (starts - this_monday).days // 7
+        number = int(plan["week"]) + shift
+        if 1 <= number <= int(plan["weeks_total"]):
+            label = f"Week {number}"
+    easy = easy_speed(answer)
+    card = {
+        "card": "session",
+        "date": day,
+        "today": today,
+        "week": drop_empty({"label": label, "starts": starts.isoformat(), "done": (week or {}).get("done"),
+                            "planned": (week or {}).get("planned"), "days": days}),
+    }
+    if not main:
+        following = min((s for w in weeks for s in w.get("sessions") or [] if s.get("date", "") > day),
+                        key=lambda s: (s["date"], _rank(s)), default=None)
+        card["rest"] = True
+        if following:
+            card["next"] = drop_empty({"date": following["date"], "name": display_name(following),
+                                       "type": following.get("type")})
+        return card
+    steps = workout_steps(workout) if workout else None
+    card["session"] = drop_empty({
+        "name": display_name(main),
+        "type": main.get("type"),
+        "kind": main.get("kind") or main.get("sport"),
+        "status": main.get("status"),
+        "key": main.get("type") in KEY_SESSION_TYPES or None,
+        "workout_id": main.get("workout_id"),
+        "schedule_id": main.get("schedule_id"),
+        "planned_km": main.get("planned_km"),
+        "actual": drop_empty({k: main.get(k) for k in ("actual_km", "actual_pace", "actual_bpm", "actual")}) or None,
+    })
+    card["totals"] = session_totals(workout, easy) if workout else None
+    card["segments"] = workout_shape(workout, easy_mps=easy, timed=True) if workout else None
+    card["steps"] = steps
+    card["also"] = [drop_empty({"name": display_name(s), "type": s.get("type"), "kind": s.get("kind"),
+                                "km": s.get("planned_km"), "status": s.get("status")})
+                    for s in on_day if s is not main] or None
+    if change:
+        card["change"] = dict(change)
+    return drop_empty(card)
