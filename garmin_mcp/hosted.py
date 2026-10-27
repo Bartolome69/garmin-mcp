@@ -2850,17 +2850,26 @@ async def _watch_token(scope: Any, receive: Any, send: Any, app: Any) -> None:
 
     form = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
     header = next((v.decode("latin-1") for k, v in scope.get("headers", []) if k.lower() == b"authorization"), "")
-    if not form.get("client_id") and header.lower().startswith("basic "):
-        # OAuth lets a client name itself in the Basic header alone (RFC 6749
-        # 2.3.1); the SDK only looks in the form, and refused a directory
-        # reviewer's client for it on Oct 27. Copied into the form, it reads.
+    if header.lower().startswith("basic "):
+        # OAuth lets a client send its id and secret in the Basic header alone
+        # (RFC 6749 2.3.1), and that's the default for one that registered
+        # without saying (RFC 7591 2). The SDK reads the id only from the form,
+        # and a client it registered without a method is down for sending the
+        # secret there too: Glama was refused for each on Oct 27. Copied into
+        # the form, either way reads.
         try:
-            named = unquote(base64.b64decode(header[6:].strip()).decode("utf-8").split(":", 1)[0])
+            named, _, secret = base64.b64decode(header[6:].strip()).decode("utf-8").partition(":")
+            named, secret = unquote(named), unquote(secret)
         except (ValueError, UnicodeDecodeError):
-            named = ""
-        if named:
+            named = secret = ""
+        added = b""
+        if named and not form.get("client_id"):
             form["client_id"] = named
-            body += (b"&" if body else b"") + b"client_id=" + _quote(named, safe="").encode()
+            added += b"&client_id=" + _quote(named, safe="").encode()
+        if secret and not form.get("client_secret"):
+            added += b"&client_secret=" + _quote(secret, safe="").encode()
+        if added:
+            body = (body + added) if body else added[1:]
             messages = [{"type": "http.request", "body": body, "more_body": False}]
             scope = {**scope, "headers": [(k, str(len(body)).encode() if k.lower() == b"content-length" else v)
                                           for k, v in scope.get("headers", [])]}

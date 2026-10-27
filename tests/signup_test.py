@@ -484,6 +484,33 @@ async def main() -> int:
             "grant_type": "authorization_code", "code": auth_code, "redirect_uri": REDIRECT,
             "code_verifier": verifier_hb}, headers={"Authorization": f"Basic {basic}"}))
         check("and gets its token", code == 200 and "access_token" in body, f"{code} {body[:200]} {back_hb[:80]}")
+        # Glama registers without saying how it sends its secret, so the SDK
+        # files it as sending it in the form; it sends it in the Basic header.
+        _, body, _ = await run(lambda: http("POST", "/register", {
+            "client_name": "Glama", "redirect_uris": [REDIRECT],
+            "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"]}, as_json=True))
+        glama = json.loads(body)
+        verifier_g = secrets.token_urlsafe(48)
+        challenge_g = base64.urlsafe_b64encode(hashlib.sha256(verifier_g.encode()).digest()).decode().rstrip("=")
+        query_g = urllib.parse.urlencode({"response_type": "code", "client_id": glama["client_id"], "redirect_uri": REDIRECT,
+                                          "code_challenge": challenge_g, "code_challenge_method": "S256", "state": "st"})
+        _, _, headers = await run(lambda: http("GET", f"/authorize?{query_g}"))
+        flow_g = urllib.parse.parse_qs(urllib.parse.urlparse(headers.get("location", "")).query)["flow"][0]
+        _, body, _ = await run(lambda: http("POST", "/connect", {"flow": flow_g, "email": "glama@example.com",
+                                                                 "password": "pw"}))
+        _, _, headers = await run(lambda: http("POST", "/oauth/consent", {"consent": consent_of(body), "decision": "allow"}))
+        code_g = urllib.parse.parse_qs(urllib.parse.urlparse(headers.get("location", "")).query).get("code", [""])[0]
+        pair = _b64.b64encode(f"{urllib.parse.quote(glama['client_id'], safe='')}:"
+                              f"{urllib.parse.quote(glama.get('client_secret', ''), safe='')}".encode()).decode()
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code", "code": code_g, "redirect_uri": REDIRECT,
+            "code_verifier": verifier_g}, headers={"Authorization": f"Basic {pair}"}))
+        check("a client that registered without a method and sends its secret in the Basic header gets its token",
+              bool(glama.get("client_secret")) and code == 200 and "access_token" in body, f"{code} {body[:200]}")
+        wrong = _b64.b64encode(f"{urllib.parse.quote(glama['client_id'], safe='')}:not-the-secret".encode()).decode()
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "refresh_token", "refresh_token": "x"}, headers={"Authorization": f"Basic {wrong}"}))
+        check("but a wrong secret there is still refused", code == 401 and "invalid_client" in body, f"{code} {body[:200]}")
 
         print("\nthe directory address")
         accept = {"accept": "application/json, text/event-stream"}
