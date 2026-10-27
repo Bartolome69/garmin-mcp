@@ -218,7 +218,11 @@ def _device(request: Request) -> dict[str, str]:
     browser = ("in-app" if any(k in low for k in ("claude", "chatgpt", "openai", "; wv)", "fban", "instagram"))
                else "edge" if "edg/" in low else "firefox" if "firefox" in low or "fxios" in low
                else "chrome" if "chrome" in low or "crios" in low else "safari" if "safari" in low else "other")
-    return {"device": device, "browser": browser}
+    # Oct 27: Garmin's page failed on a phone in Chrome and worked on a Pixel
+    # in Chrome; which phone it was is the next question.
+    system = ("ios" if any(k in low for k in ("iphone", "ipad", "ipod")) else "android" if "android" in low
+              else "mac" if "macintosh" in low else "windows" if "windows" in low else "other")
+    return {"device": device, "browser": browser, "os": system}
 
 
 def _split_arm(request: Request) -> dict[str, str]:

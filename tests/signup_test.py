@@ -444,11 +444,11 @@ async def main() -> int:
             return hosted._device(_Rq({"type": "http", "headers": [(b"user-agent", agent.encode())], "query_string": b"", "path": "/"}))
         check("sign-ins say phone or computer and the kind of browser, never the browser string",
               _dev("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1")
-              == {"device": "phone", "browser": "safari"}
+              == {"device": "phone", "browser": "safari", "os": "ios"}
               and _dev("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/141.0 Safari/537.36")
-              == {"device": "computer", "browser": "chrome"}
+              == {"device": "computer", "browser": "chrome", "os": "mac"}
               and _dev("Mozilla/5.0 (Linux; Android 15; Pixel 9; wv) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36")
-              == {"device": "phone", "browser": "in-app"})
+              == {"device": "phone", "browser": "in-app", "os": "android"})
 
         print("\nsign-in diagnostics")
         flow_sb, _vsb = await start()
