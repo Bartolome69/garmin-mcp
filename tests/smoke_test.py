@@ -9,6 +9,7 @@ checks the wiring and the response shaping, not Garmin itself.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import os
 import re
@@ -25,26 +26,47 @@ sys.path.insert(0, str(ROOT))
 EXPECTED_TOOLS = {
     "get_daily_summary",
     "get_sleep_data",
+    "get_heart_rate",
+    "update_activity",
     "get_activities",
     "get_activity_details",
     "get_connection_status",
     "list_workouts",
+    "get_workout",
     "create_workout",
     "schedule_workout",
     "get_profile",
-    "get_plan_chart",
     "find_exercises",
+    "get_shoes",
+    "get_recovery_trends",
     "create_strength_workout",
     "unschedule_workout",
     "delete_workout",
     "get_progress",
+    "get_readiness",
+    "get_fitness",
+    "get_fitness_trends",
+    "update_workout",
+    "create_plan",
+    "get_plan",
+    "remove_plan",
 }
 
 
+def field(obj, *names):
+    """The first of these attributes present: SDK 2 renamed them to snake_case."""
+    for name in names:
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return None
+
+
 def payload(result) -> dict:
-    """Pull the JSON body out of a CallToolResult."""
-    if getattr(result, "structuredContent", None):
-        return result.structuredContent
+    """Pull the JSON body out of a CallToolResult: the structured copy, as the card reads it."""
+    structured = getattr(result, "structuredContent", None) or getattr(result, "structured_content", None)
+    if structured:
+        return structured
     text = result.content[0].text
     try:
         return json.loads(text)
@@ -84,6 +106,1030 @@ def check_target_placement(check) -> None:
         "hr values sit on the step",
         (hr_step.get("targetValueOne"), hr_step.get("targetValueTwo")) == (150.0, 165.0),
     )
+
+
+def check_power_targets(check) -> None:
+    """Rides target power: watts, a range, or a share of the FTP set in Garmin."""
+    from garmin_mcp.training_plan import workout_steps
+    from garmin_mcp.workouts import WorkoutError, build_workout, uses_ftp
+
+    workout, summary, _ = build_workout(
+        "Sweet spot",
+        "cycling",
+        [
+            {"type": "warmup", "duration_seconds": 600},
+            {"type": "repeat", "times": 3, "steps": [
+                {"type": "interval", "duration_seconds": 600, "power": ["88%", "94%"]},
+                {"type": "recovery", "duration_seconds": 300}]},
+            {"type": "interval", "duration_seconds": 300, "power": 250},
+            {"type": "cooldown", "duration_seconds": 600},
+        ],
+        ftp=280,
+    )
+    data = workout.to_dict()
+    steps = data["workoutSegments"][0]["workoutSteps"]
+    rep = steps[1]["workoutSteps"][0]
+    single = steps[2]
+    check("a power range from % of FTP is set in watts on the step",
+          rep["targetType"]["workoutTargetTypeKey"] == "power.zone"
+          and (rep.get("targetValueOne"), rep.get("targetValueTwo")) == (246.0, 263.0),
+          str({k: rep.get(k) for k in ("targetType", "targetValueOne", "targetValueTwo")}))
+    check("a single power becomes 5% either side, halves rounded up",
+          (single.get("targetValueOne"), single.get("targetValueTwo")) == (238.0, 263.0),
+          str((single.get("targetValueOne"), single.get("targetValueTwo"))))
+    check("the summary says watts and the share of FTP",
+          "246-263 W (88-94% FTP)" in summary, summary)
+    check("read back, the step shows its watts",
+          (workout_steps(data) or [{}])[1]["steps"][0].get("target") == "246–263 W",
+          str(workout_steps(data)))
+    check("a percentage asks for FTP; watts don't",
+          uses_ftp([{"type": "Repeat", "times": 2, "steps": [{"power": "95%"}]}])
+          and not uses_ftp([{"power": 250}, {"pace": "4:00"}]))
+
+    def refused(steps, sport="cycling", ftp=None):
+        try:
+            build_workout("x", sport, steps, ftp=ftp)
+        except WorkoutError as exc:
+            return str(exc)
+        return ""
+
+    check("a percentage without an FTP in Garmin is refused, asking for watts",
+          "Give watts" in refused([{"type": "interval", "duration_seconds": 60, "power": "95%"}]))
+    check("power and heart rate on one step is refused",
+          "one target" in refused([{"type": "interval", "duration_seconds": 60, "power": 250, "hr": [140, 150]}]))
+    check("implausible power is refused",
+          "plausible" in refused([{"type": "interval", "duration_seconds": 60, "power": 5000}])
+          and "plausible" in refused([{"type": "interval", "duration_seconds": 60, "power": "400%"}], ftp=250))
+    check("a swim can't target power",
+          "power" in refused([{"type": "interval", "distance_meters": 100, "power": 200}], sport="swimming"))
+
+
+def check_plan_summary(check) -> None:
+    """A plan midway through, against real runs: the verdicts that matter.
+
+    Two weeks in. Week one: Tuesday done on the day, Thursday done a day late,
+    Sunday missed. Week two: Tuesday missed, today's session not yet run, one
+    session ahead.
+    """
+    from datetime import date as _d
+    from garmin_mcp import training_plan as tp
+
+    today = _d(2026, 9, 30)  # Wednesday of week two
+    cal = [
+        {"id": 1, "date": "2026-09-22", "workoutId": 11, "title": "Easy 8k · HM", "sportTypeKey": "running"},
+        {"id": 2, "date": "2026-09-24", "workoutId": 12, "title": "Threshold 5x1k · HM", "sportTypeKey": "running"},
+        {"id": 3, "date": "2026-09-27", "workoutId": 13, "title": "Long run 16k · HM", "sportTypeKey": "running"},
+        {"id": 4, "date": "2026-09-29", "workoutId": 14, "title": "Easy 8k · HM", "sportTypeKey": "running"},
+        {"id": 5, "date": "2026-09-30", "workoutId": 15, "title": "Tempo 6k · HM", "sportTypeKey": "running"},
+        {"id": 6, "date": "2026-10-04", "workoutId": 16, "title": "Long run 18k · HM", "sportTypeKey": "running"},
+        {"id": 7, "date": "2026-09-26", "workoutId": 99, "title": "Parkrun", "sportTypeKey": "running"},
+    ]
+    runs = [
+        {"activityId": 501, "startTimeLocal": "2026-09-22 07:00:00", "activityName": "Easy",
+         "activityType": {"typeKey": "running"}, "duration": 2700, "distance": 8100},
+        {"activityId": 502, "startTimeLocal": "2026-09-25 07:00:00", "activityName": "Reps",
+         "activityType": {"typeKey": "running"}, "duration": 3100, "distance": 10200},
+    ]
+    plans = tp.plans_in(cal)
+    check("only tagged sessions form the plan", set(plans) == {"HM"} and len(plans["HM"]) == 6,
+          str({k: len(v) for k, v in plans.items()}))
+    s = tp.summarise("HM", plans["HM"], runs, today, goal="Half")
+    status = {r["date"]: r["status"] for w in s["weeks"] for r in w["sessions"]}
+    check("done on the day, and done a day late, both count",
+          status["2026-09-22"] == "done" and status["2026-09-24"] == "done, moved", str(status))
+    check("an unrun session in the past is missed",
+          status["2026-09-27"] == "missed" and status["2026-09-29"] == "missed", str(status))
+    check("today's unrun session is today, not missed", status["2026-09-30"] == "today", str(status))
+    check("completion counts only the sessions that are due",
+          s["completed"] == 2 and s["missed"] == 2 and s["completion_percent"] == 50, str(s)[:200])
+    check("the next session is today's", s["next_session"]["date"] == "2026-09-30")
+    check("the review names what slipped this week",
+          [m["date"] for m in s["review"]["missed_last_7_days"]] == ["2026-09-27", "2026-09-29"]
+          and s["review"]["this_week_remaining"] == ["Tempo 6k", "Long run 18k"], str(s.get("review")))
+    check("with something missed, the model is told a session done off the watch still counts",
+          "take their word" in s["review"].get("if_done_elsewhere", ""), str(s.get("review")))
+    check("weeks are numbered from the plan's first",
+          [w["week"] for w in s["weeks"]] == [1, 2] and s["current_week"] == 2
+          and s["weeks"][1]["current"] is True, str([(w["week"], w["current"]) for w in s["weeks"]]))
+
+
+def check_conditions(check) -> None:
+    """Units the weather endpoint never states, and the line on what they did."""
+    from garmin_mcp import conditions
+
+    us = conditions.shape_weather({"temp": 50, "apparentTemp": 48, "dewPoint": 40, "windSpeed": 20}, "statute_us")
+    check("a US account gets Fahrenheit and mph beside Celsius and km/h",
+          us.get("temperature_c") == 10.0 and us.get("temperature_f") == 50
+          and us.get("wind_mph") == 20 and us.get("wind_kmh") == 32, str(us))
+    uk = conditions.shape_weather({"temp": 50, "windSpeed": 20}, "statute_uk")
+    check("a UK account's wind is mph, its temperature Celsius only",
+          uk.get("wind_kmh") == 32 and "temperature_f" not in uk, str(uk))
+    check("mild still weather says nothing", conditions.effect(12, 6, 8) is None)
+    check("no weather is no block", conditions.shape_weather({}, "metric") is None)
+
+
+def check_terrain_ignores_stops(check) -> None:
+    """A five-minute regroup with the watch running is not a very slow kilometre."""
+    from garmin_mcp import terrain
+
+    d = t = stopped = 0.0
+    cols = {"sumDistance": [], "sumDuration": [], "directElevation": [], "directHeartRate": []}
+    while d < 9000:
+        for key, value in zip(cols, (d, t, 40.0 - min(max(0.0, d - 3500), 1000) * 0.03, 135.0)):
+            cols[key].append(value)
+        if d >= 3500 and stopped < 300:
+            stopped += 5
+        else:
+            d += 1000 / 300 * 5
+        t += 5
+    r = terrain.analyse(cols)
+    check("a stop is left out of the paces",
+          r["flat_equivalent_pace"] in ("5:01 /km", "5:02 /km", "5:03 /km")
+          and r["by_gradient"]["downhill"]["pace_per_km"] == "5:00 /km", str(r.get("by_gradient")))
+    check("a stop doesn't read as surging", "decoupling_pct" in (r.get("effort") or {}), str(r.get("effort")))
+
+
+def check_workout_steps(check) -> None:
+    """The next session's steps read the way the watch runs them."""
+    import json as _json
+    from garmin_mcp import training_plan as tp
+    from garmin_mcp.workouts import build_workout
+
+    w, _, _ = build_workout("Intervals 6x800", "running", [
+        {"type": "warmup", "duration_seconds": 600},
+        {"type": "repeat", "times": 6, "steps": [
+            {"type": "interval", "distance_meters": 800, "pace": ["4:05", "4:15"]},
+            {"type": "recovery", "duration_seconds": 90}]},
+        {"type": "cooldown", "duration_seconds": 600, "hr": [120, 140]}])
+    steps = tp.workout_steps(_json.loads(w.model_dump_json(by_alias=True)))
+    check("a workout reads as warm up, repeats, cool down",
+          [x["kind"] for x in steps] == ["warmup", "repeat", "cooldown"], str(steps)[:200])
+    reps = steps[1]
+    check("a repeat keeps its count and its steps",
+          reps["times"] == 6 and [x["amount"] for x in reps["steps"]] == ["800 m", "90 s"], str(reps))
+    check("a pace target reads as a pace range, quick end first",
+          reps["steps"][0]["target"] == "4:05\u20134:15/km", str(reps["steps"][0]))
+    check("a heart-rate target reads in bpm", steps[2].get("target") == "120\u2013140 bpm", str(steps[2]))
+    def pace_of(pace):
+        built, _, _ = build_workout("Pace", "running", [{"type": "interval", "distance_meters": 1000, "pace": pace}])
+        return tp.workout_steps(_json.loads(built.model_dump_json(by_alias=True)))[0].get("target")
+    check("a single pace gets 5 s/km either side", pace_of("4:00") == "3:55\u20134:05/km", pace_of("4:00"))
+    check("a range tighter than 10 s/km is widened around its middle",
+          pace_of(["3:58", "4:02"]) == "3:55\u20134:05/km" and pace_of(["4:00", "4:00"]) == "3:55\u20134:05/km",
+          f'{pace_of(["3:58", "4:02"])} {pace_of(["4:00", "4:00"])}')
+    check("a range already wide enough is left alone", pace_of(["5:00", "5:30"]) == "5:00\u20135:30/km",
+          pace_of(["5:00", "5:30"]))
+    # ---- swimming -------------------------------------------------------
+    from garmin_mcp import swimming as sw
+    from garmin_mcp.server import _summarise_activity
+    from garmin_mcp.workouts import WorkoutError as _WE
+
+    swim_row = {"activityId": 77, "activityName": "Pool swim", "activityType": {"typeKey": "lap_swimming"},
+                "distance": 2000.0, "duration": 2700.0, "movingDuration": 2100.0,
+                "poolLength": 2500.0, "unitOfPoolLength": {"unitKey": "meter", "factor": 100.0},
+                "averageSwolf": 38.0, "averageSwimCadenceInStrokesPerMinute": 28.0, "avgStrokes": 17.4,
+                "strokes": 1392.0, "activeLengths": 80, "averageHR": 131}
+    swum = _summarise_activity(swim_row)
+    check("a swim reads by pace per 100 m on swimming time, not per km",
+          swum.get("pace_per_100") == "1:45 /100m" and "pace_per_km" not in swum, str(swum))
+    check("a swim carries its pool, SWOLF, stroke rate and strokes",
+          swum.get("pool") == "25 m" and swum.get("swolf") == 38 and swum.get("stroke_rate_spm") == 28
+          and swum.get("strokes_per_length") == 17.4 and swum.get("lengths") == 80, str(swum))
+    yard = sw.summarise_swim(dict(swim_row, poolLength=2500.0,
+                                  unitOfPoolLength={"unitKey": "yard", "factor": 100.0}), 2000.0, 2700.0)
+    check("a yard pool paces per 100 yd", yard.get("pace_per_100", "").endswith("/100yd") and yard.get("pool") == "25 yd",
+          str(yard.get("pace_per_100")))
+    check("a workout's pool length reads too (25.0 with a factor of 100)",
+          sw.pool({"poolLength": 25.0, "poolLengthUnit": {"unitKey": "meter", "factor": 100.0}}) == (25.0, "m"))
+    open_water = _summarise_activity(dict(swim_row, activityType={"typeKey": "open_water_swimming"}))
+    check("an open-water swim has no pool", "pool" not in open_water and open_water.get("pace_per_100"))
+    laps = [
+        {"distance": 100.0, "duration": 102.0, "numberOfActiveLengths": 4, "averageSwolf": 37.0,
+         "lengthDTOs": [{"swimStroke": "FREESTYLE"}] * 4},
+        {"distance": 0.0, "duration": 15.0, "numberOfActiveLengths": 0},
+        {"distance": 100.0, "duration": 104.0, "numberOfActiveLengths": 4,
+         "lengthDTOs": [{"swimStroke": "FREESTYLE"}, {"swimStroke": "BACKSTROKE"}] * 2},
+        {"distance": 50.0, "duration": 60.0, "swimStroke": "BREASTSTROKE"},
+    ]
+    sets = sw.intervals(laps)
+    check("a pool set reads as intervals, each with pace, stroke and the rest after it",
+          [x["distance_m"] for x in sets] == [100, 100, 50]
+          and sets[0]["pace_per_100"] == "1:42 /100m" and sets[0]["stroke"] == "freestyle"
+          and sets[0]["swolf"] == 37 and sets[0]["rest_after"] == "15s"
+          and sets[1]["stroke"] == "mixed" and sets[2]["stroke"] == "breaststroke", str(sets))
+    check("an unfamiliar swim shape leaves values out rather than guessing",
+          sw.summarise_swim({"activityType": {"typeKey": "lap_swimming"}, "poolLength": 3}, None, None)
+          == {"type": "lap_swimming"})
+
+    css, css_summary, _ = build_workout("CSS 8x100", "swimming", [
+        {"type": "warmup", "distance_meters": 400, "stroke": "any"},
+        {"type": "repeat", "times": 8, "steps": [
+            {"type": "interval", "distance_meters": 100, "stroke": "free", "pace": "1:45"},
+            {"type": "rest", "duration_seconds": 15}]},
+        {"type": "rest"},
+        {"type": "cooldown", "distance_meters": 200, "stroke": "back", "note": "easy"}], pool_length_meters=25)
+    css_json = _json.loads(css.model_dump_json(by_alias=True))
+    rep = css_json["workoutSegments"][0]["workoutSteps"][1]["workoutSteps"][0]
+    check("a swim workout carries its pool length",
+          css_json.get("poolLength") == 25.0 and css_json["poolLengthUnit"]["unitKey"] == "meter",
+          str({k: css_json.get(k) for k in ("poolLength", "poolLengthUnit")}))
+    check("a swim step carries its stroke, and its pace as a note, not a beeping target",
+          rep["strokeType"]["strokeTypeKey"] == "free" and rep["description"] == "1:45 /100m"
+          and rep["targetType"]["workoutTargetTypeKey"] == "no.target", str(rep))
+    open_rest = css_json["workoutSegments"][0]["workoutSteps"][2]
+    check("a rest with no time waits for the lap button",
+          open_rest["endCondition"]["conditionTypeKey"] == "lap.button", str(open_rest["endCondition"]))
+    css_steps = tp.workout_steps(css_json)
+    check("a swim set reads back by stroke, with its pace note",
+          css_steps[1]["steps"][0]["label"] == "Freestyle" and css_steps[1]["steps"][0]["note"] == "1:45 /100m"
+          and css_steps[2]["amount"] == "until lap", str(css_steps))
+    # Strides with a walk back to the start: the walk lasts until lap is pressed.
+    strides, strides_text, strides_secs = build_workout("Strides", "running", [
+        {"type": "warmup", "duration_seconds": 600},
+        {"type": "repeat", "times": 6, "steps": [
+            {"type": "interval", "duration_seconds": 20, "pace": "3:40"},
+            {"type": "recovery", "until_lap": True}]},
+        {"type": "cooldown", "until_lap": True}])
+    strides_json = _json.loads(strides.model_dump_json(by_alias=True))
+    walk = strides_json["workoutSegments"][0]["workoutSteps"][1]["workoutSteps"][1]
+    check("a run step can end with the lap button",
+          walk["endCondition"]["conditionTypeKey"] == "lap.button" and walk.get("endConditionValue") is None,
+          str({k: walk.get(k) for k in ("endCondition", "endConditionValue")}))
+    check("a lap-button step reads as one, and still counts toward the time estimate",
+          "until lap pressed" in strides_text and strides_secs >= 600 + 6 * 80 + 300,
+          f"{strides_secs} {strides_text!r}")
+    for bad, why in ((dict(type="recovery"), "a step with no end at all"),
+                     (dict(type="recovery", until_lap=True, duration_seconds=60), "both lap and a time"),
+                     (dict(type="recovery", until_lap="yes"), "until_lap that isn't true")):
+        try:
+            build_workout("Bad", "running", [bad])
+            refused = False
+        except _WE:
+            refused = True
+        check(f"a run step with {why} is refused", refused)
+    for bad, why in ((dict(distance_meters=110), "lengths"), (dict(distance_meters=100, stroke="doggy"), "stroke"),
+                     (dict(distance_meters=100, pace="0:20"), "pace")):
+        try:
+            build_workout("Bad", "swimming", [dict(type="interval", **bad)])
+            refused = False
+        except _WE:
+            refused = True
+        check(f"a swim step with an impossible {why} is refused", refused)
+    try:
+        build_workout("Run", "running", [{"type": "interval", "distance_meters": 1000}], pool_length_meters=25)
+        refused = False
+    except _WE:
+        refused = True
+    check("a pool length on a run is refused", refused)
+
+    ride, _, _ = build_workout("Sweet spot", "cycling", [{"type": "interval", "duration_seconds": 1200}])
+    check("a ride's work step says ride",
+          tp.workout_steps(_json.loads(ride.model_dump_json(by_alias=True)))[0]["label"] == "Ride")
+    check("no steps, nothing shown", tp.workout_steps({}) is None)
+
+    check("new plan codes default short",
+          [tp.normalise_label(None, g, new=True) for g in
+           ("Half marathon 1:20", "Marathon in April", "10k PB", "Spring ultra", "Get back into running")]
+          == ["HM", "MAR", "10K", "ULT", "GBI"])
+    try:
+        tp.normalise_label("BASE", "", new=True)
+        long_refused = False
+    except tp.PlanError as exc:
+        long_refused = "2 or 3" in str(exc)
+    check("a four-letter code is refused for a new plan, with the rule", long_refused)
+    check("an older plan's longer code still looks up",
+          tp.normalise_label("base", "") == "BASE" and tp.label_of("12km easy · BASE") == "BASE")
+    check("a short code ends the workout name", tp.tagged("Long run 18k", "B1") == "Long run 18k · B1")
+
+    # The shape of a session, from its steps: easy parts low, reps high.
+    thr_w, _, _ = build_workout("Threshold 5x1k", "running", [
+        {"type": "warmup", "duration_seconds": 900},
+        {"type": "repeat", "times": 3, "steps": [
+            {"type": "interval", "distance_meters": 1000, "pace": "4:05"},
+            {"type": "recovery", "duration_seconds": 90}]},
+        {"type": "cooldown", "duration_seconds": 600}])
+    thr_shape = tp.workout_shape(_json.loads(thr_w.model_dump_json(by_alias=True)))
+    check("a threshold session's shape is warm-up, reps with recoveries, cool-down",
+          [g["k"] for g in thr_shape] == ["easy", "work", "rec", "work", "rec", "work", "rec", "easy"]
+          and thr_shape[1]["km"] == 1.0 and thr_shape[0]["km"] > 2, str(thr_shape))
+    easy_w, _, _ = build_workout("Easy 8k", "running", [{"type": "interval", "distance_meters": 8000, "pace": ["5:20", "5:40"]}])
+    easy_shape = tp.workout_shape(_json.loads(easy_w.model_dump_json(by_alias=True)))
+    check("an easy run is one easy segment, not work",
+          easy_shape == [{"k": "easy", "km": 8.0}], str(easy_shape))
+    long_w, _, _ = build_workout("Long run 16k", "running", [
+        {"type": "interval", "distance_meters": 6000, "pace": ["5:20", "5:40"]},
+        {"type": "interval", "distance_meters": 2000, "pace": "4:15"},
+        {"type": "interval", "distance_meters": 1000, "pace": ["5:20", "5:40"]},
+        {"type": "interval", "distance_meters": 2000, "pace": "4:15"},
+        {"type": "interval", "distance_meters": 5000, "pace": ["5:20", "5:40"]}])
+    long_shape = tp.workout_shape(_json.loads(long_w.model_dump_json(by_alias=True)))
+    check("a long run's faster stretches read as work between easy parts",
+          [g["k"] for g in long_shape] == ["easy", "work", "easy", "work", "easy"], str(long_shape))
+    tempo_w, _, _ = build_workout("Tempo 8k", "running", [
+        {"type": "warmup", "duration_seconds": 900},
+        {"type": "interval", "distance_meters": 8000, "pace": ["4:40", "4:50"]},
+        {"type": "cooldown", "duration_seconds": 600}])
+    tempo_shape = tp.workout_shape(_json.loads(tempo_w.model_dump_json(by_alias=True)))
+    check("a tempo's one block between warm-up and cool-down is work, with the ends kept apart",
+          [(g["k"], g.get("part")) for g in tempo_shape] == [("easy", "wu"), ("work", None), ("easy", "cd")], str(tempo_shape))
+    easy_ends_w, _, _ = build_workout("Easy 8k", "running", [
+        {"type": "warmup", "duration_seconds": 600},
+        {"type": "interval", "distance_meters": 8000, "pace": ["5:20", "5:40"]},
+        {"type": "cooldown", "duration_seconds": 300}])
+    easy_ends = tp.workout_shape(_json.loads(easy_ends_w.model_dump_json(by_alias=True)))
+    check("an easy run with a warm-up and cool-down has no work",
+          [g["k"] for g in easy_ends] == ["easy", "easy", "easy"], str(easy_ends))
+    hr_tempo_w, _, _ = build_workout("Tempo 30", "running", [
+        {"type": "warmup", "duration_seconds": 900}, {"type": "interval", "duration_seconds": 1800, "hr": [165, 175]},
+        {"type": "cooldown", "duration_seconds": 600}])
+    hr_tempo = tp.workout_shape(_json.loads(hr_tempo_w.model_dump_json(by_alias=True)))
+    check("a tempo by heart rate keeps its warm-up and cool-down apart, for the card to draw the rest as work",
+          [g.get("part") for g in hr_tempo] == ["wu", None, "cd"], str(hr_tempo))
+    zone_tempo = tp.workout_shape({"sportType": {"sportTypeKey": "running"}, "workoutSegments": [{"workoutSteps": [
+        {"stepOrder": 1, "stepType": {"stepTypeKey": "warmup"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 900},
+        {"stepOrder": 2, "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 1800,
+         "targetType": {"workoutTargetTypeKey": "heart.rate.zone"}, "zoneNumber": 4},
+        {"stepOrder": 3, "stepType": {"stepTypeKey": "cooldown"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 600}]}]})
+    check("a tempo in heart rate zone 4 draws its block as work",
+          [g["k"] for g in zone_tempo] == ["easy", "work", "easy"], str(zone_tempo))
+    ss_w, _, _ = build_workout("Sweet spot 3 x 12", "cycling", [
+        {"type": "warmup", "duration_seconds": 900},
+        {"type": "repeat", "times": 3, "steps": [
+            {"type": "interval", "duration_seconds": 720, "power": ["88%", "94%"]},
+            {"type": "recovery", "duration_seconds": 300}]},
+        {"type": "cooldown", "duration_seconds": 600}], ftp=250)
+    ss_shape = tp.workout_shape(_json.loads(ss_w.model_dump_json(by_alias=True)))
+    check("a ride's intervals have a shape too, drawn by time",
+          [g["k"] for g in ss_shape] == ["easy", "work", "rec", "work", "rec", "work", "rec", "easy"]
+          and ss_shape[1]["km"] == 5.76, str(ss_shape))
+    check("a strength session has no run shape",
+          tp.workout_shape({"sportType": {"sportTypeKey": "strength_training"}, "workoutSegments": [
+              {"workoutSteps": [{"endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 1800}]}]}) is None)
+    def effort_of(name, sport, steps):
+        built, _, _ = build_workout(name, sport, steps, ftp=250) if sport == "cycling" else build_workout(name, sport, steps)
+        return tp.workout_effort(_json.loads(built.model_dump_json(by_alias=True)))
+    wu, cd = {"type": "warmup", "duration_seconds": 900}, {"type": "cooldown", "duration_seconds": 600}
+
+    def reps(times, rep, rest, **target):
+        return [wu, {"type": "repeat", "times": times, "steps": [
+            {"type": "interval", **rep, **target}, {"type": "recovery", **rest}]}, cd]
+    check("the steps tell threshold from intervals, the same for runs and rides",
+          effort_of("A", "running", reps(10, {"distance_meters": 1000}, {"duration_seconds": 60}, pace="3:50")) == "threshold"
+          and effort_of("B", "running", reps(5, {"duration_seconds": 180}, {"duration_seconds": 150}, pace="3:30")) == "intervals"
+          and effort_of("C", "running", reps(8, {"distance_meters": 400}, {"distance_meters": 200}, pace="3:20")) == "intervals"
+          and effort_of("D", "running", reps(3, {"duration_seconds": 480}, {"duration_seconds": 120}, pace="3:55")) == "threshold"
+          and effort_of("E", "running", [
+              {"type": "warmup", "distance_meters": 2000, "pace": ["5:20", "5:40"]},
+              {"type": "interval", "distance_meters": 6000, "pace": "4:10"},
+              {"type": "cooldown", "distance_meters": 2000, "pace": ["5:20", "5:40"]}]) == "threshold"
+          and effort_of("F", "cycling", reps(3, {"duration_seconds": 720}, {"duration_seconds": 300}, power="90%")) == "threshold"
+          and effort_of("G", "cycling", reps(5, {"duration_seconds": 240}, {"duration_seconds": 240}, power="115%")) == "intervals"
+          and effort_of("H", "cycling", reps(12, {"duration_seconds": 30}, {"duration_seconds": 30}, power="130%")) == "intervals")
+    check("easy running stays easy: a slow warm-up, strides, a run-walk, one steady ride",
+          effort_of("I", "running", [
+              {"type": "warmup", "distance_meters": 1000, "pace": ["6:00", "6:10"]},
+              {"type": "interval", "distance_meters": 8000, "pace": ["5:25", "5:40"]},
+              {"type": "cooldown", "distance_meters": 1000, "pace": ["6:00", "6:10"]}]) is None
+          and effort_of("J", "running", [{"type": "interval", "distance_meters": 8000, "pace": ["5:20", "5:40"]},
+                                         {"type": "repeat", "times": 6, "steps": [
+                                             {"type": "interval", "duration_seconds": 20},
+                                             {"type": "recovery", "duration_seconds": 60}]}]) is None
+          and effort_of("K", "running", [{"type": "repeat", "times": 8, "steps": [
+              {"type": "interval", "duration_seconds": 240}, {"type": "recovery", "duration_seconds": 60}]}]) is None
+          and effort_of("L", "cycling", [{"type": "interval", "duration_seconds": 5400, "power": "65%"}]) is None
+          and tp.workout_effort({"sportType": {"sportTypeKey": "strength_training"}}) is None)
+    check("session types: the name says race, long and the kind of hard session; the steps say the rest",
+          tp.session_type("Threshold 5x1k", "running") == "threshold"
+          and tp.session_type("Session", "running", "intervals") == "intervals"
+          and tp.session_type("Session", "running") == "easy"
+          and tp.session_type("Easy 8k", "running", "threshold") == "easy"
+          and tp.session_type("Long run 16k", "running", "threshold") == "long"
+          and tp.session_type("Parkrun", "running") == "race"
+          and tp.session_type("Marathon pace 10k", "running") == "threshold"
+          and tp.session_type("Tempo 6k", "running") == "threshold"
+          and tp.session_type("Sub-T 25x400", "running", "intervals") == "threshold"
+          and tp.session_type("VO2 max 5x3min", "running") == "intervals"
+          and tp.session_type("Hill reps", "running") == "intervals"
+          and tp.session_type("6x800", "running") == "intervals"
+          and tp.session_type("Easy 8k + 6x20s strides", "running") == "easy"
+          and tp.session_type("Easy run, 4x30s hill sprints", "running", "intervals") == "easy"
+          and tp.session_type("Hill sprints 10x10s", "running") == "intervals"
+          and tp.session_type("Easy 10k with tempo finish", "running") == "threshold"
+          and tp.session_type("Sweet spot 3x12", "cycling") == "threshold"
+          and tp.session_type("Ride", "cycling", "intervals") == "intervals"
+          and tp.session_type("Long ride 3h", "cycling") == "long"
+          and tp.session_type("Spin", "cycling") == "ride"
+          and tp.session_type("Gym", "strength_training", "threshold") == "strength"
+          and tp.session_type("Pool", "lap_swimming") == "swim"
+          and tp.session_type("Circuits", "cardio_training") == "other")
+    check("each session's sport for its icon, from Garmin's type key",
+          [tp.activity_kind(k) for k in ("trail_running", "indoor_cycling", "strength_training", "cardio_training",
+                                         "open_water_swimming", "yoga", "pilates", "hiit", "hiking", "walking",
+                                         "indoor_rowing", None)]
+          == ["run", "ride", "strength", "cardio", "swim", "yoga", "pilates", "hiit", "hike", "walk", "other", "other"])
+    thr_steps = tp.workout_steps(_json.loads(thr_w.model_dump_json(by_alias=True)))
+    check("the main target is the reps' pace", tp.main_target(thr_steps) == "4:00\u20134:10/km", str(tp.main_target(thr_steps)))
+    check("phase bands follow the sessions, filling weeks without one",
+          tp.phase_spans([
+              {"week": 1, "sessions": [{"phase": "Base"}, {"phase": "Base"}]},
+              {"week": 2, "sessions": [{}]},
+              {"week": 3, "sessions": [{"phase": "Build"}]},
+          ]) == [{"label": "Base", "from_week": 1, "to_week": 2}, {"label": "Build", "from_week": 3, "to_week": 3}])
+    check("no phases, no bands", tp.phase_spans([{"week": 1, "sessions": [{}]}]) is None)
+    from datetime import date as _d
+    runs = [{"startTimeLocal": "2026-09-22 07:00", "activityType": {"typeKey": "running"}, "distance": 10000},
+            {"startTimeLocal": "2026-09-30 07:00", "activityType": {"typeKey": "running"}, "distance": 12000},
+            {"startTimeLocal": "2026-09-30 18:00", "activityType": {"typeKey": "cycling"}, "distance": 30000}]
+    hist = tp.weekly_run_km(runs, _d(2026, 10, 5), 4)
+    check("weekly history counts runs only, oldest first, empty weeks kept",
+          [h["run_km"] for h in hist] == [0, 0, 10.0, 12.0] and hist[0]["starts"] == "2026-09-07", str(hist))
+
+
+def check_ride_led_log(check) -> None:
+    """A cyclist with nothing scheduled sees kilometres ridden, not zeros for running."""
+    from datetime import date as _date
+    from garmin_mcp import training_plan as tp
+
+    today = _date(2026, 10, 8)
+    rides = [
+        {"activityId": i, "startTimeLocal": f"2026-10-0{d} 07:00:00", "activityName": name,
+         "activityType": {"typeKey": key}, "distance": km * 1000, "duration": secs, "movingDuration": secs}
+        for i, (d, name, key, km, secs) in enumerate([
+            (4, "Box Hill loop", "road_biking", 82.0, 3 * 3600 + 600),
+            (6, "Zwift sweet spot", "virtual_ride", 34.0, 3600),
+            (7, "Commute", "cycling", 9.0, 1500),
+            (5, "Easy jog", "running", 6.0, 2100),
+        ])
+    ]
+    log = tp.summarise_log(rides, today)
+    check("a log of mostly rides is led by riding", log.get("primary") == "ride", str(log.get("primary")))
+    check("rides are totalled apart from runs",
+          log.get("rides") == 3 and log.get("ride_km") == 125.0 and log.get("runs") == 1 and log.get("run_km") == 6.0,
+          str({k: log.get(k) for k in ("rides", "ride_km", "runs", "run_km")}))
+    check("the longest is the longest ride, with its speed",
+          (log.get("longest") or {}).get("name") == "Box Hill loop" and "km/h" in (log["longest"].get("speed") or ""),
+          str(log.get("longest")))
+    check("a short commute can't be the fastest ride",
+          (log.get("fastest") or {}).get("name") == "Zwift sweet spot", str(log.get("fastest")))
+    this_week = next(w for w in log["weeks"] if w["current"])
+    check("each week has its ride total", this_week.get("ride_km") == 43.0 and this_week.get("rides") == 2,
+          str({k: this_week.get(k) for k in ("ride_km", "rides")}))
+    runner = tp.summarise_log([r for r in rides if r["activityType"]["typeKey"] == "running"], today)
+    check("a runner's log is still led by running", runner.get("primary") == "run" and runner.get("runs") == 1)
+    check("a jog beside the rides puts both on the card", log.get("mixed") is True)
+    both = rides + [
+        {"activityId": 90 + i, "startTimeLocal": f"2026-10-0{d} 18:00:00", "activityName": "Run",
+         "activityType": {"typeKey": "running"}, "distance": km * 1000, "duration": secs, "movingDuration": secs}
+        for i, (d, km, secs) in enumerate([(1, 12.0, 3600), (3, 15.0, 4800), (7, 10.0, 3000)])
+    ]
+    mixed = tp.summarise_log(both, today)
+    check("plenty of both is shown as both", mixed.get("mixed") is True and mixed.get("hours_a_week"),
+          str({k: mixed.get(k) for k in ("mixed", "hours_a_week", "primary")}))
+    check("every session carries its time, for the card's weekly hours",
+          all(r.get("secs") for w in mixed["weeks"] for r in w["sessions"] if r.get("actual_km")))
+
+
+def check_shoes_and_nights(check) -> None:
+    """What a real account showed: unnamed models, worn-out pairs, no watch at night."""
+    from datetime import date as _d
+    from garmin_mcp import gear, recovery
+
+    shoe = gear.shape_shoe({"displayName": "Novas", "gearMakeName": "Unknown", "gearModelName": "Unknown Shoes",
+                            "maximumMeters": 644000.0}, {"totalDistance": 688000.0}, [], False, _d(2026, 10, 5))
+    check("Garmin's placeholder model isn't shown as a model", "model" not in shoe, str(shoe))
+    check("a pair past its limit says by how much, not negative km left",
+          shoe.get("km_left") == 0 and shoe.get("km_over_limit") == 44, str(shoe))
+    day = _d(2026, 10, 5)
+    bare = recovery.shape_trends(_d(2026, 9, 14), day, None, [{"calendarDate": "2026-10-01", "value": 55}],
+                                 [], [], [], [], [])
+    check("no watch overnight is said, not left out", "worn overnight" in (bare.get("overnight") or ""), str(bare)[:200])
+
+
+async def check_preview_gate(check) -> None:
+    """Views and ride features are everyone's; preview adds two tools and a run's extras."""
+    from garmin_mcp import preview, server
+
+    def view_of(tools):
+        tool = next(t for t in tools if t.name == "get_plan")
+        return (getattr(tool, "meta", None) or {}).get("ui")
+
+    token = preview.use(False)
+    try:
+        tools = await server.mcp.list_tools()
+        resources = await server.mcp.list_resources()
+        names = {t.name for t in tools}
+        check("without preview, get_plan has its view", view_of(tools) is not None)
+        check("without preview, the view is listed",
+              any(str(r.uri).startswith("ui://") for r in resources))
+        check("without preview, get_plan still has its output schema",
+              next(t for t in tools if t.name == "get_plan").output_schema is not None)
+        check("without preview, the chart tool the view replaces is not offered", "get_plan_chart" not in names)
+        check("without preview, shoes and recovery trends are offered",
+              {"get_shoes", "get_recovery_trends"} <= names, str(sorted(names)))
+        plain_details = next(t for t in tools if t.name == "get_activity_details").description
+        check("without preview, activity details describe a ride's power and climbs",
+              "intensity factor" in plain_details and "VAM" in plain_details)
+        check("without preview, activity details describe a run's weather and shoes",
+              "shoes worn" in plain_details)
+        check("without preview, get_fitness mentions FTP",
+              "FTP" in next(t for t in tools if t.name == "get_fitness").description)
+    finally:
+        preview.reset(token)
+    token = preview.use(True)
+    try:
+        listed = await server.mcp.list_tools()
+        check("with preview, get_plan has its view", view_of(listed) is not None)
+        check("with preview, the preview-only tools are offered",
+              {"get_shoes", "get_recovery_trends"} <= {t.name for t in listed})
+        check("with preview, activity details describe a run's extras too",
+              "shoes worn" in next(t for t in listed if t.name == "get_activity_details").description)
+        preview_description = next(t for t in listed if t.name == "get_plan").description
+        check("get_plan says it covers any plan on the calendar", "coach" in preview_description,
+              preview_description[:80])
+        check("get_plan asks to be called fresh and says it draws a card",
+              "earlier answer goes stale" in preview_description and "plan card" in preview_description)
+        check("get_plan doesn't redraw the card for every follow-up",
+              "answer follow-ups from that result" in preview_description
+              and "specific question" in preview_description)
+        check("get_plan says to check before saying a session isn't in Garmin",
+              "don't guess" in preview_description and "gym app" in preview_description
+              and "sets and weights aren't needed" in preview_description)
+        progress_description = next(t for t in listed if t.name == "get_progress").description
+        check("with preview, get_progress says the same, after its own description",
+              progress_description.startswith("Which planned sessions") and "plan card" in progress_description,
+              progress_description[-120:])
+        old_copy = list(await server.mcp.read_resource("ui://garmin/plan/0000000000"))
+        current = list(await server.mcp.read_resource(server.PLAN_VIEW))
+        check("an older view address still serves the current view",
+              old_copy and old_copy[0].content == current[0].content
+              and old_copy[0].mime_type == "text/html;profile=mcp-app")
+        check("with preview, the picture chart is left to the card",
+              not any(t.name == "get_plan_chart" for t in listed))
+        progress_tool = next(t for t in listed if t.name == "get_progress")
+        check("with preview, get_progress draws the same view",
+              ((getattr(progress_tool, "meta", None) or {}).get("ui") or {}) == view_of(listed))
+    finally:
+        preview.reset(token)
+
+
+async def check_tool_list_nudge(check) -> None:
+    """Any tool asks the host to re-list tools, once per person per listing."""
+    from garmin_mcp import server
+
+    listed = await server.mcp.list_tools()
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def send_tool_list_changed(self) -> None:
+            self.calls.append("tools")
+
+        async def send_resource_list_changed(self) -> None:
+            self.calls.append("resources")
+
+    class FakeSession2(FakeSession):
+        async def send_notification(self, notice, related_request_id=None) -> None:
+            self.calls.append(("tools" if "Tool" in type(notice).__name__ else "resources")
+                              + ("" if related_request_id == 7 else "-unrelated"))
+
+    class FakeRequest:
+        def __init__(self) -> None:
+            self.session = FakeSession2()
+            self.request_id = 7
+
+    class FakeCtx:
+        def __init__(self) -> None:
+            self.request_context = FakeRequest()
+
+        @property
+        def session(self):
+            return self.request_context.session
+
+    server._TOLD.clear()
+    one = FakeCtx()
+    await server._refresh_tool_list(one, "preview=False")
+    await server._refresh_tool_list(one, "preview=False")
+    check("the host is asked to re-list tools once per listing, as part of the request",
+          one.session.calls == ["tools", "resources"], str(one.session.calls))
+    await server._refresh_tool_list(one, "preview=True")
+    check("and again when the listing changes", len(one.session.calls) == 4)
+    await server._refresh_tool_list(None, "preview=None")
+    check("no context, no nudge", len(one.session.calls) == 4)
+
+    # Through the server: a plain tool, not only a card, carries the nudge,
+    # so a chat that kept an old tool list catches up whatever was asked first.
+    server._TOLD.clear()
+    ctx = FakeCtx()
+    await server.mcp.call_tool("get_connection_status", {}, ctx)
+    check("any tool call asks the host to re-list tools",
+          ctx.session.calls == ["tools", "resources"], str(ctx.session.calls))
+    await server.mcp.call_tool("get_connection_status", {}, ctx)
+    check("only once while the listing stays the same", len(ctx.session.calls) == 2, str(ctx.session.calls))
+    server._TOLD.clear()
+
+    plan_tool = next(t for t in listed if t.name == "get_plan")
+    schema = json.dumps(getattr(plan_tool, "input_schema", None) or getattr(plan_tool, "inputSchema", None))
+    check("the plan tool's schema is only its own arguments",
+          "ctx" not in schema and "label" in schema, schema[:160])
+
+
+async def _months(payloads):
+    return payloads
+
+
+async def check_calendar_fallback(check) -> None:
+    """With no plan made here, a preview account sees its calendar as the plan.
+
+    Dates are relative to today, so this doesn't go stale. The calendar is
+    stubbed at the one seam get_plan reads it through.
+    """
+    from datetime import date as _d, timedelta as _td
+    from garmin_mcp import preview, server, session as session_mod
+    from tests.fake_garmin import FakeGarmin
+
+    today = _d.today()
+    monday = today - _td(days=today.weekday())
+    items = [
+        {"id": 1, "date": (monday - _td(days=6)).isoformat(), "workoutId": 555001,
+         "title": "Easy 8k", "sportTypeKey": "running"},
+        {"id": 2, "date": (monday + _td(days=9)).isoformat(), "workoutId": 555001,
+         "title": "Tempo 6k", "sportTypeKey": "running"},
+        {"id": 3, "date": (monday + _td(weeks=20)).isoformat(), "workoutId": 555001,
+         "title": "Far off", "sportTypeKey": "running"},
+    ]
+
+    async def calendar(start, end):
+        return [dict(i) for i in items]
+
+    class RecentRuns(FakeGarmin):
+        """Last week's planned run, done, and a run nobody planned the day after."""
+
+        def get_activities_by_date(self, start, end):
+            return [
+                {"activityId": 901, "startTimeLocal": f"{monday - _td(days=6)} 07:00:00",
+                 "activityName": "Easy", "activityType": {"typeKey": "running"},
+                 "duration": 3000, "distance": 8000},
+                {"activityId": 902, "startTimeLocal": f"{monday - _td(days=5)} 12:30:00",
+                 "activityName": "Lunch run", "activityType": {"typeKey": "running"},
+                 "duration": 1800, "distance": 5200},
+            ]
+
+    saved = server._plan_calendar, session_mod.build_client
+    os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
+    os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
+    server._plan_calendar = calendar
+    session_mod.build_client = lambda **_: RecentRuns()
+    session_mod.session.reset()  # the next call builds the client above
+    try:
+        token = preview.use(False)
+        try:
+            off = await server.get_plan()
+            status_off = await server.get_connection_status()
+        finally:
+            preview.reset(token)
+        check("without preview, get_plan reads the calendar too", "error" not in off, str(off)[:120])
+        check("without preview, status is unchanged", "preview_features" not in status_off, str(status_off)[:120])
+
+        token = preview.use(True)
+        try:
+            cal = await server.get_plan()
+            named = await server.get_plan(label="HM")
+            status_on = await server.get_connection_status()
+        finally:
+            preview.reset(token)
+        check("with preview, the calendar stands in for a plan",
+              cal.get("source") == "calendar" and "label" not in cal, str(cal)[:160])
+        check("the calendar plan is the weeks around this one",
+              cal.get("sessions_total") == 2 and cal.get("weeks")
+              and not any(s["name"] == "Far off" for w in cal["weeks"] for s in w["sessions"]),
+              str(cal.get("sessions_total")))
+        check("the calendar plan names what is next",
+              (cal.get("next_session") or {}).get("name") == "Tempo 6k", str(cal.get("next_session")))
+        check("asking for a plan by code still says it isn't there",
+              "error" in named and named.get("source") != "calendar", str(named)[:120])
+        check("status says preview is on", status_on.get("preview_features") == "on", str(status_on)[:120])
+        last_week = next((w for w in cal.get("weeks", []) if w["starts"] == (monday - _td(weeks=1)).isoformat()), {})
+        # 15 minutes at the default easy pace, then 5 x 1 km: the fake workout's steps.
+        check("each week carries the distance planned, from the workout's steps",
+              last_week.get("planned_km") == 7.9 and last_week["sessions"][0].get("planned_km") == 7.9,
+              str(last_week)[:200])
+        check("and the distance run, counting the run nobody planned",
+              last_week.get("run_km") == 13.2, str(last_week.get("run_km")))
+        check("the unplanned run is listed on its day",
+              [x.get("name") for x in last_week.get("extra") or []] == ["Lunch run"], str(last_week.get("extra")))
+        check("a session beyond the horizon is left out",
+              not any(s["name"] == "Far off" for w in cal["weeks"] for s in w["sessions"]))
+
+        # A plan made here that starts next week, with this week's sessions on
+        # the calendar from elsewhere: the week someone is in must not vanish.
+        this_week = monday + _td(days=3)
+        with_plan = [
+            {"id": 11, "date": this_week.isoformat(), "workoutId": 555001,
+             "title": "10km easy + strides", "sportTypeKey": "running"},
+            {"id": 12, "date": (monday + _td(days=8)).isoformat(), "workoutId": 555001,
+             "title": "12km easy · BASE", "sportTypeKey": "running"},
+            {"id": 13, "date": (monday + _td(days=13)).isoformat(), "workoutId": 555001,
+             "title": "16km long run · BASE", "sportTypeKey": "running"},
+        ]
+
+        async def calendar_with_plan(start, end):
+            return [dict(i) for i in with_plan]
+
+        server._plan_calendar = calendar_with_plan
+        token = preview.use(True)
+        try:
+            mixed = await server.get_plan()
+            by_code = await server.get_plan(label="BASE")
+        finally:
+            preview.reset(token)
+        token = preview.use(False)
+        try:
+            plain = await server.get_plan()
+        finally:
+            preview.reset(token)
+        names = [s["name"] for w in mixed.get("weeks", []) for s in w["sessions"]]
+        check("a plan that starts next week doesn't hide this week",
+              mixed.get("source") == "calendar" and "10km easy + strides" in names, str(names))
+        check("its sessions follow on, without their code",
+              names[1:] == ["12km easy", "16km long run"], str(names))
+        check("and it is named as coming up",
+              (mixed.get("upcoming_plan") or {}).get("label") == "BASE"
+              and mixed["upcoming_plan"].get("starts") == (monday + _td(days=8)).isoformat(),
+              str(mixed.get("upcoming_plan")))
+        check("asked for by code, the plan alone is shown",
+              by_code.get("label") == "BASE" and by_code.get("sessions_total") == 2, str(by_code)[:120])
+        check("without preview, the calendar is the plan too",
+              plain.get("source") == "calendar" and (plain.get("upcoming_plan") or {}).get("label") == "BASE",
+              str(plain)[:120])
+
+        async def scenario(entries):
+            async def cal(start, end):
+                return [dict(i) for i in entries]
+            server._plan_calendar = cal
+            token = preview.use(True)
+            try:
+                return await server.get_plan()
+            finally:
+                preview.reset(token)
+
+        def row(n, offset, title):
+            return {"id": n, "date": (monday + _td(days=offset)).isoformat(), "workoutId": 555001,
+                    "title": title, "sportTypeKey": "running"}
+
+        # A plan made here running this week, with a run club session on top.
+        running = await scenario([row(21, 1, "Easy 8k · HM"), row(22, 3, "Run club"),
+                                  row(23, 5, "Long 16k · HM"), row(24, 9, "Tempo 6k · HM")])
+        names = [x["name"] for w in running.get("weeks", []) for x in w["sessions"]]
+        check("a running plan heads the card and nothing else scheduled is dropped",
+              names == ["Easy 8k", "Run club", "Long 16k", "Tempo 6k"]
+              and (running.get("current_plan") or {}).get("label") == "HM"
+              and running["current_plan"].get("week") == 1 and running["current_plan"].get("weeks_total") == 2,
+              f"{names} {running.get('current_plan')}")
+
+        # A one-week block ending this Sunday, and the next block from Monday:
+        # the running one heads the card and the next one is named after it.
+        handover = await scenario([row(41, 1, "Easy 8k · BA"), row(42, 5, "Long 14k · BA"),
+                                   row(43, 7, "Easy 10k · B1"), row(44, 9, "Sub-T 6x1k · B1"), row(45, 13, "Long 17k · B1")])
+        check("a block ending this week doesn't hide the one starting next week",
+              (handover.get("current_plan") or {}).get("label") == "BA"
+              and (handover.get("upcoming_plan") or {}).get("label") == "B1"
+              and handover["upcoming_plan"].get("starts") == (monday + _td(days=7)).isoformat()
+              and handover["upcoming_plan"].get("weeks_total") == 1,
+              f"{handover.get('current_plan')} {handover.get('upcoming_plan')}")
+
+        # A plan that finished a fortnight ago, and a coach's session next week.
+        after = await scenario([row(31, -13, "Easy 8k · OLD"), row(32, -11, "Long 16k · OLD"),
+                                row(33, 8, "Coach easy 10k")])
+        names = [x["name"] for w in after.get("weeks", []) for x in w["sessions"]]
+        check("a finished plan names nothing and doesn't hide what's next",
+              "Coach easy 10k" in names and "current_plan" not in after and "upcoming_plan" not in after
+              and (after.get("next_session") or {}).get("name") == "Coach easy 10k",
+              f"{names} {after.get('next_session')}")
+
+        # Where someone is, worked out from the same answer, with one step to offer.
+        def on(n, days, title="Easy 8k"):
+            return {"id": n, "date": (today + _td(days=days)).isoformat(), "workoutId": 555001,
+                    "title": title, "sportTypeKey": "running"}
+
+        under_way = await scenario([on(61, -2), on(62, 2)])
+        check("the plan card says a block is under way, with one step to offer",
+              (under_way.get("situation") or {}).get("stage") == "mid_block"
+              and under_way["situation"]["offer"].endswith("?"), str(under_way.get("situation")))
+        starting = await scenario([on(63, 3), on(64, 6)])
+        check("and when one is about to start",
+              (starting.get("situation") or {}).get("stage") == "starting", str(starting.get("situation")))
+        check("asked for a plan by its code, there's no situation to offer", "situation" not in named)
+        saved_months = server._calendar_months
+        try:
+            server._calendar_months = lambda start, end: _months([])
+            quiet = await scenario([])
+            check("with nothing scheduled and a little running, they're getting going",
+                  quiet.get("source") == "log" and (quiet.get("situation") or {}).get("stage") == "getting_going",
+                  str(quiet.get("situation")))
+            race_day = (today + _td(weeks=10)).isoformat()
+            server._calendar_months = lambda start, end: _months([{"calendarItems": [
+                {"id": 7, "itemType": "event", "date": race_day, "title": "Berlin Half"}]}])
+            racing = await scenario([])
+            check("with nothing scheduled and a race on the calendar, a block for it is offered",
+                  (racing.get("situation") or {}).get("stage") == "race_ahead"
+                  and racing["situation"]["race"]["name"] == "Berlin Half"
+                  and "Berlin Half is in 10 weeks" in racing["situation"]["offer"],
+                  str(racing.get("situation")))
+
+            async def down(start, end):
+                raise RuntimeError("calendar unavailable")
+            server._calendar_months = down
+            still = await scenario([])
+            check("a calendar that can't be read for races still leaves the card and a situation",
+                  still.get("source") == "log" and (still.get("situation") or {}).get("stage") == "getting_going",
+                  str(still)[:160])
+        finally:
+            server._calendar_months = saved_months
+        check("the card's note tells the model to close with the offer, once, and fetch nothing more",
+              "situation" in server.VIEW_NOTE and "earlier in this chat" in server.VIEW_NOTE
+              and "fetch nothing more" in server.VIEW_NOTE)
+        check("the instructions say to call the plan alone and offer the next step",
+              "Call it alone" in server.mcp.instructions and "get_fitness" in server.mcp.instructions)
+
+        # Asked again within minutes, the workouts aren't fetched again; after
+        # anything is changed through the tools, they are.
+        lookups = []
+        real_lookup = RecentRuns.get_workout_by_id
+        def counting(self, workout_id):
+            lookups.append(workout_id)
+            return real_lookup(self, workout_id)
+        RecentRuns.get_workout_by_id = counting
+        try:
+            session_mod.session.forget()
+            await scenario([row(51, 1, "Easy 8k"), row(52, 3, "Tempo 6k")])
+            first = len(lookups)
+            await scenario([row(51, 1, "Easy 8k"), row(52, 3, "Tempo 6k")])
+            again = len(lookups) - first
+            token = preview.use(True)
+            try:
+                await server.unschedule_workout(date=(monday + _td(days=40)).isoformat())
+            finally:
+                preview.reset(token)
+            await scenario([row(51, 1, "Easy 8k"), row(52, 3, "Tempo 6k")])
+            after_write = len(lookups) - first - again
+        finally:
+            RecentRuns.get_workout_by_id = real_lookup
+        check("a second look within minutes reads no workouts again", first >= 1 and again == 0,
+              f"first={first} again={again}")
+        check("after a change through the tools, workouts are read fresh", after_write == first,
+              f"after_write={after_write}")
+
+        # A timed strength session has no distance, however its steps add up.
+        gym = await scenario([row(61, 1, "Easy 8k"),
+                              {**row(62, 2, "Full body (runner)"), "sportTypeKey": "strength_training"}])
+        week = next((w for w in gym.get("weeks", []) if w.get("current")), {})
+        strength_row = next((x for x in week.get("sessions", []) if x["name"] == "Full body (runner)"), {})
+        check("a strength session adds nothing to planned km",
+              "planned_km" not in strength_row and week.get("planned_km") == 7.9, str(week)[:200])
+
+        # Nothing scheduled at all: a training log from what was run, every
+        # week shown, with the way to a plan.
+        log = await scenario([])
+        check("with nothing scheduled, the card gets a training log",
+              log.get("source") == "log" and len(log.get("weeks", [])) == 4 and log.get("runs") == 2
+              and log.get("run_km") == 13.2, str({k: log.get(k) for k in ("source", "runs", "run_km")}))
+        check("the log names the longest run and says how to get a plan",
+              (log.get("longest") or {}).get("actual_km") == 8.0 and "create_plan" in (log.get("note") or ""),
+              str(log.get("longest")))
+        check("weeks with no running stay in the log as gaps",
+              sum(1 for w in log["weeks"] if w["runs"] == 0) == 3, str([w["runs"] for w in log["weeks"]]))
+        token = preview.use(False)
+        try:
+            plain_empty = await server.get_plan()
+        finally:
+            preview.reset(token)
+        check("without preview, nothing scheduled gets the training log too",
+              plain_empty.get("source") == "log", str(plain_empty)[:100])
+
+        # Only next week scheduled, by anyone: still a card.
+        nxt = await scenario([row(41, 8, "Easy 10k"), row(42, 10, "Intervals 6x800")])
+        check("next week alone is still a plan",
+              nxt.get("source") == "calendar" and nxt.get("sessions_total") == 2
+              and (nxt.get("next_session") or {}).get("name") == "Easy 10k", str(nxt)[:120])
+    finally:
+        server._plan_calendar, session_mod.build_client = saved
+
+
+async def check_reads_at_once(check) -> None:
+    """A tool's reads go to Garmin side by side, keep their order, and a session
+    Garmin refuses mid-burst is signed in again once, not once per read."""
+    import time as _t
+    from garmin_mcp import server
+    from garmin_mcp import session as session_mod
+    from garminconnect import GarminConnectAuthenticationError
+    from tests.fake_garmin import FakeGarmin
+
+    builds: list[int] = []
+
+    class Slow(FakeGarmin):
+        """Every read takes 0.2 s, like a round trip to Garmin."""
+
+        def __getattribute__(self, name):
+            attr = object.__getattribute__(self, name)
+            if callable(attr) and name.startswith("get_"):
+                def slow(*a, **k):
+                    _t.sleep(0.2)
+                    return attr(*a, **k)
+                return slow
+            return attr
+
+    saved = session_mod.build_client
+    os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
+    os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
+    session_mod.build_client = lambda **_: (builds.append(1), Slow())[1]
+    session_mod.session.reset()
+    try:
+        session_mod.session.client()
+        session_mod.session.forget()
+        began = _t.monotonic()
+        ready = await server.get_readiness()
+        took = _t.monotonic() - began
+        check("a tool's five reads go to Garmin side by side",
+              took < 0.6 and "error" not in ready, f"{took:.2f}s")
+        answers = await server._together([
+            functools.partial(asyncio.sleep, 0.05 * (3 - i), result=i) for i in range(3)
+        ])
+        check("reads at once come back in the order asked", answers == [0, 1, 2], str(answers))
+
+        # Garmin refuses the stored session while several reads are in flight:
+        # one fresh sign-in, then every read goes through.
+        class Refused(Slow):
+            def get_stats(self, *a, **k):
+                _t.sleep(0.1)
+                raise GarminConnectAuthenticationError("401 Unauthorized")
+
+        builds.clear()
+        session_mod.build_client = lambda **_: (builds.append(1), Refused() if not builds[:-1] else Slow())[1]
+        session_mod.session.reset()
+        session_mod.session.client()
+        results = await server._together([
+            functools.partial(server._call, lambda c: c.get_stats("2026-10-01")) for _ in range(4)
+        ])
+        check("a session refused mid-burst signs in again once, and every read then works",
+              len(builds) == 2 and all(isinstance(r, dict) for r in results),
+              f"builds={len(builds)} {[type(r).__name__ for r in results]}")
+    finally:
+        session_mod.build_client = saved
+        session_mod.session.reset()
+
+
+def check_chart_config_read_only(check) -> None:
+    """The chart's settings are read, never written: hosted, the folder is read-only."""
+    import stat
+    from pathlib import Path as _P
+    from garmin_mcp import plan as plan_mod
+
+    saved = plan_mod.CONFIG
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = _P(tmp) / "readonly"
+        folder.mkdir()
+        folder.chmod(stat.S_IRUSR | stat.S_IXUSR)
+        try:
+            plan_mod.CONFIG = folder / "plan-config.json"
+            try:
+                config = plan_mod.load_config()
+                ok, detail = config.get("weekly_target_km") == 50, str(config)
+            except OSError as exc:
+                ok, detail = False, repr(exc)
+            check("the chart works from a folder it can't write to",
+                  ok and not plan_mod.CONFIG.exists(), detail)
+            folder.chmod(stat.S_IRWXU)
+            plan_mod.CONFIG.write_text('{"weekly_target_km": 62}')
+            check("a settings file someone wrote is still read",
+                  plan_mod.load_config().get("weekly_target_km") == 62)
+        finally:
+            folder.chmod(stat.S_IRWXU)
+            plan_mod.CONFIG = saved
+
+
+def check_stream_km_splits(check) -> None:
+    """A 7 km steady lap recorded by a watch that did not auto-lap.
+
+    The splits endpoint gives one row; the recording gives seven kilometres
+    and the drift across the whole effort. Even pace at 4:30/km, HR 150 to 162.
+    """
+    from garmin_mcp import stream
+    from tests.fake_garmin import _stream
+
+    recording = _stream([(7000.0, 1890.0, 150.0, 162.0)], step=5.0)
+    laps = [{"lapIndex": 1, "distance": 7000.0, "duration": 1890.0}]
+    inside = stream.analyse(recording, laps) or {}
+    splits = inside.get("km_splits") or []
+    check("a single long lap yields per-km splits", len(splits) == 7, str(len(splits)))
+    check("km split pace is the even pace that was run",
+          splits and all(s["pace_per_km"] == "4:30 /km" for s in splits),
+          str([s.get("pace_per_km") for s in splits]))
+    check("km split HR rises through the effort",
+          splits and splits[0]["avg_hr"] < splits[-1]["avg_hr"],
+          str([s.get("avg_hr") for s in splits]))
+    drift = (inside.get("laps") or [{}])[0]
+    check("whole-lap drift is reported", 7 <= (drift.get("hr_drift_bpm") or 0) <= 9, str(drift))
 
 
 def check_entrypoints_ignore_cwd(check) -> None:
@@ -191,6 +1237,48 @@ def check_prompts_survive_a_pipe(check) -> None:
     )
 
 
+# What the Connectors Directory reads: each tool's title, and which tools
+# write and which of those take something away.
+ANNOTATED_TITLES = {
+    "find_exercises": "Find exercises",
+    "get_activities": "Get activities",
+    "get_activity_details": "Get activity details",
+    "get_connection_status": "Check Garmin connection",
+    "get_crew": "Get crew week",
+    "get_daily_summary": "Get daily summary",
+    "get_fitness": "Get fitness markers",
+    "get_fitness_trends": "Get fitness trends",
+    "get_heart_rate": "Get heart rate",
+    "get_plan": "Get training plan",
+    "get_profile": "Get profile and records",
+    "get_progress": "Get plan progress",
+    "get_readiness": "Get training readiness",
+    "get_recovery_trends": "Get recovery trends",
+    "get_shoes": "Get shoes",
+    "get_sleep_data": "Get sleep",
+    "get_workout": "Get workout",
+    "list_workouts": "List workouts",
+    "create_plan": "Create training plan",
+    "create_strength_workout": "Create strength workout",
+    "create_workout": "Create workout",
+    "schedule_workout": "Schedule workout",
+    "update_activity": "Update activity details",
+    "join_crew": "Join or start crew",
+    "update_crew": "Update crew",
+    "delete_workout": "Delete workout",
+    "remove_plan": "Remove training plan",
+    "unschedule_workout": "Unschedule workout",
+    "update_workout": "Update workout",
+    "leave_crew": "Leave crew",
+}
+ANNOTATED_DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew",
+                         "update_crew"}
+ANNOTATED_WRITES = ANNOTATED_DESTRUCTIVE | {
+    "create_plan", "create_strength_workout", "create_workout", "schedule_workout",
+    "update_activity", "join_crew", "update_crew",
+}
+
+
 async def main() -> int:
     env = dict(os.environ)
     env["GARMIN_MCP_FAKE"] = "1"  # server uses the stub client
@@ -224,6 +1312,76 @@ async def main() -> int:
                 "every tool documented",
                 all(t.description for t in tools.tools),
             )
+            listed_json = [t.model_dump(exclude_none=True, by_alias=True) for t in tools.tools]
+            check("the tool list goes out compact: no docstring indent, no schema titles",
+                  not any("\n        " in (d.get("description") or "") for d in listed_json)
+                  and not any('"title"' in json.dumps(d.get("inputSchema")) for d in listed_json)
+                  # Raised from 30,000 for get_heart_rate and update_activity
+                  # (about 1,000 each) and zone targets, then from 32,500 for
+                  # the titles the Connectors Directory requires (about 800):
+                  # what a tool adds comes out of every chat's budget, so it
+                  # stays tight.
+                  and sum(len(json.dumps(d)) for d in listed_json) < 33500,
+                  str(sum(len(json.dumps(d)) for d in listed_json)))
+
+            # Claude's Connectors Directory checks every tool for a title in
+            # its annotations, and for readOnlyHint and, on anything that
+            # writes, destructiveHint said outright, not left to a default.
+            # Checked as listed on the wire, where a missing hint is absent.
+            wire = {d["name"]: d.get("annotations") or {} for d in listed_json}
+            untitled = sorted(n for n, a in wire.items() if not (a.get("title") or "").strip())
+            check("every tool has a title in its annotations", not untitled, str(untitled))
+            no_read_hint = sorted(n for n, a in wire.items() if not isinstance(a.get("readOnlyHint"), bool))
+            check("every tool says outright whether it only reads", not no_read_hint, str(no_read_hint))
+            no_destructive_hint = sorted(n for n, a in wire.items()
+                                         if a.get("readOnlyHint") is False
+                                         and not isinstance(a.get("destructiveHint"), bool))
+            check("every writing tool says outright whether it is destructive",
+                  not no_destructive_hint, str(no_destructive_hint))
+            # The crew tools are the hosted server's alone; hosted_test checks
+            # them there. Here, every tool this server lists.
+            check("every tool listed has its directory title",
+                  set(wire) <= set(ANNOTATED_TITLES), str(sorted(set(wire) - set(ANNOTATED_TITLES))))
+            writes = {n for n, a in wire.items() if a.get("readOnlyHint") is False}
+            check("the writing tools are exactly the ones that write",
+                  writes == ANNOTATED_WRITES & set(wire), str(sorted(writes ^ (ANNOTATED_WRITES & set(wire)))))
+            destructive = {n for n, a in wire.items() if a.get("destructiveHint") is True}
+            check("the destructive ones are those that take something away",
+                  destructive == ANNOTATED_DESTRUCTIVE & set(wire),
+                  str(sorted(destructive ^ (ANNOTATED_DESTRUCTIVE & set(wire)))))
+            titles = {n: a.get("title") for n, a in wire.items()}
+            check("each title reads as the directory shows it",
+                  all(titles[n] == ANNOTATED_TITLES.get(n) for n in titles),
+                  str({n: titles[n] for n in titles if titles[n] != ANNOTATED_TITLES.get(n)}))
+            plan_listed = next(d for d in listed_json if d["name"] == "get_plan")
+            check("get_plan keeps its own title beside the annotation's",
+                  plan_listed.get("title") == "Training plan and progress"
+                  and wire["get_plan"].get("title") == "Get training plan")
+
+            check("an ordinary account is offered the plan view",
+                  any(((t.meta or {}).get("ui")) for t in tools.tools if t.name == "get_plan"))
+            plain_plan = await sess.call_tool("get_progress", {"weeks": 2})
+            check("an ordinary account's answer carries the card note",
+                  "for_the_assistant" in plain_plan.content[0].text)
+
+            # Ride features are everyone's now; a run's extras are still preview.
+            plain_ride = payload(await sess.call_tool("get_activity_details", {"activity_id": 2222}))
+            check("an ordinary account's ride has FTP, power zones and work",
+                  (plain_ride.get("ftp") or {}).get("watts") == 250 and plain_ride.get("power_zones")
+                  and plain_ride["summary"]["power"].get("work_kj") == 684, str({k: plain_ride.get(k) for k in ("ftp", "power_zones")})[:200])
+            plain_run = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
+            check("an ordinary account's run has its weather, shoes, terrain and route",
+                  {"weather", "shoes", "same_route", "terrain"} <= set(plain_run), str(sorted(plain_run)))
+            plain_fit = payload(await sess.call_tool("get_fitness", {}))
+            check("an ordinary account's fitness has the cycling FTP",
+                  (plain_fit.get("cycling_ftp") or {}).get("watts") == 250, str(plain_fit.get("cycling_ftp")))
+
+            # The picture chart, end to end: it used to fail on the hosted
+            # server before drawing anything.
+            chart = await sess.call_tool("get_plan_chart", {})
+            kinds = [getattr(c, "type", None) for c in chart.content]
+            check("the plan chart comes back as an image", "image" in kinds,
+                  str(chart.content)[:160])
 
             print("\nget_connection_status")
             status = payload(await sess.call_tool("get_connection_status"))
@@ -262,6 +1420,17 @@ async def main() -> int:
                   and first["running_dynamics"]["vertical_oscillation_cm"] == 9.5)
             check("running power surfaced", first["power"]["normalized_w"] == 400)
 
+            spin = payload(await sess.call_tool("get_activities", {"limit": 3}))["activities"][1]
+            check("a ride reads by speed and rpm, not pace and steps",
+                  spin.get("avg_speed_kmh") == 22.7 and "pace_per_km" not in spin
+                  and spin.get("avg_cadence_rpm") == 82 and "avg_cadence_spm" not in spin, str(spin))
+            check("a ride's power has normalised, max, IF, TSS and best efforts",
+                  spin["power"].get("normalized_w") == 195 and spin["power"].get("max_w") == 650
+                  and spin["power"].get("intensity_factor") == 0.78
+                  and spin["power"].get("training_stress_score") == 72
+                  and spin["power"].get("best_efforts_w", {}).get("20min") == 210
+                  and spin["power"].get("variability_index") == 1.08, str(spin.get("power")))
+
             ranged = payload(
                 await sess.call_tool(
                     "get_activities",
@@ -283,11 +1452,32 @@ async def main() -> int:
             check("per-split dynamics, for watching GCT drift across reps",
                   detail["splits"][0]["running_dynamics"]["ground_contact_ms"] == 230)
             check("hr zones", detail["hr_zones"][0]["percent"] == 25.0)
+            inside = detail.get("inside") or {}
+            lap1 = (inside.get("laps") or [{}])[0]
+            check("the recording gives HR drift inside a lap",
+                  9 <= (lap1.get("hr_drift_bpm") or 0) <= 14, str(lap1))
+            check("drift comes with the paces it happened at",
+                  lap1.get("pace_first_third") == "5:00 /km" and lap1.get("pace_last_third") == "5:00 /km",
+                  str(lap1))
+            check("no km splits when the watch already lapped by km",
+                  "km_splits" not in inside, str(list(inside)))
+            check("an ordinary account's run details carry the weather and shoes",
+                  {"weather", "shoes"} <= set(detail), str(list(detail)))
+            check_stream_km_splits(check)
+            check_conditions(check)
+            check_terrain_ignores_stops(check)
+            check_shoes_and_nights(check)
+            check_ride_led_log(check)
+            check_workout_steps(check)
 
             print("\nworkouts")
             listed = payload(await sess.call_tool("list_workouts", {"limit": 5}))
             check("workouts listed", listed.get("count") == 1
                   and listed["workouts"][0]["workout_id"] == 555001)
+            one = payload(await sess.call_tool("get_workout", {"workout_id": 555001}))
+            check("any workout's steps can be read, not only the next session's",
+                  one.get("workout_id") == 555001 and isinstance(one.get("steps"), list) and one["steps"],
+                  str(one)[:200])
 
             created = payload(
                 await sess.call_tool(
@@ -319,11 +1509,46 @@ async def main() -> int:
             )
             check("workout scheduled", scheduled.get("schedule_id") == 777001
                   and scheduled.get("scheduled_for"))
+            check("a move ends with the week as a card, once",
+                  "call get_plan on its own" in scheduled.get("note", "")
+                  and "not after each one" in scheduled.get("note", ""))
+
+            print("\nupdate_workout")
+            renamed = payload(await sess.call_tool(
+                "update_workout", {"workout_id": 555001, "name": "Thursday Tempo"}))
+            check("rename keeps the id", renamed.get("workout_id") == 555001
+                  and renamed.get("name") == "Thursday Tempo" and renamed.get("changed") == ["name"],
+                  str(renamed)[:200])
+            relisted = payload(await sess.call_tool("list_workouts", {"limit": 5}))
+            check("the library shows the new name",
+                  relisted["workouts"][0]["name"] == "Thursday Tempo", str(relisted)[:200])
+            rebuilt = payload(await sess.call_tool("update_workout", {
+                "workout_id": 555001,
+                "steps": [{"type": "warmup", "duration_seconds": 600},
+                          {"type": "interval", "distance_meters": 5000, "pace": ["4:20", "4:30"]},
+                          {"type": "cooldown", "duration_seconds": 600}],
+            }))
+            check("new steps rebuild the workout and report the shape",
+                  "5.00 km" in rebuilt.get("summary", "") and rebuilt.get("changed") == ["steps"]
+                  and rebuilt.get("estimated_duration"), str(rebuilt)[:300])
+            check("and say which steps they replaced, so the change can be told exactly",
+                  isinstance(rebuilt.get("replaced_steps"), list) and rebuilt["replaced_steps"]
+                  and any(st.get("kind") == "repeat" for st in rebuilt["replaced_steps"]), str(rebuilt.get("replaced_steps"))[:200])
+            nothing = payload(await sess.call_tool("update_workout", {"workout_id": 555001}))
+            check("an update with nothing to change is refused", "error" in nothing, str(nothing))
+            missing = payload(await sess.call_tool(
+                "update_workout", {"workout_id": 424242, "name": "Ghost"}))
+            check("updating an unknown workout errors", "error" in missing, str(missing))
 
             # -- progress ------------------------------------------------
             # Before the removal checks below, which delete 555001 out from
             # under the scheduled session this reads.
-            prog = payload(await sess.call_tool("get_progress", {"weeks": 3}))
+            # The stub's runs have fixed dates (week of 2026-09-14 and the
+            # next), so ask for enough weeks to reach back to them from today.
+            from datetime import date as _pd, timedelta as _ptd
+            this_monday = _pd.today() - _ptd(days=_pd.today().weekday())
+            prog_weeks = (this_monday - _pd(2026, 9, 14)).days // 7 + 1
+            prog = payload(await sess.call_tool("get_progress", {"weeks": prog_weeks}))
             check("progress reports the planned session",
                   prog.get("planned") == 1, str(prog)[:200])
             # The stub's session is scheduled two days after its nearest run,
@@ -335,9 +1560,219 @@ async def main() -> int:
             check("the runs that happened are reported as unplanned",
                   len(prog.get("unplanned", [])) == 3,
                   str(len(prog.get("unplanned", []))))
-            check("weeks are rolled up", len(prog.get("weeks", [])) == 3
+            check("weeks are rolled up", len(prog.get("weeks", [])) == prog_weeks
                   and prog["weeks"][-1]["current"] is True,
                   str(prog.get("weeks"))[:200])
+
+            # -- training plan -------------------------------------------
+            print("\ntraining plan")
+            from datetime import date as _d, timedelta as _td
+            day = lambda n: (_d.today() + _td(days=n)).isoformat()
+            easy = [{"type": "interval", "duration_seconds": 2400, "pace": ["5:20", "5:40"]}]
+            thr = [{"type": "warmup", "duration_seconds": 900},
+                   {"type": "repeat", "times": 5, "steps": [
+                       {"type": "interval", "distance_meters": 1000, "pace": "4:05"},
+                       {"type": "recovery", "duration_seconds": 90}]},
+                   {"type": "cooldown", "duration_seconds": 600}]
+            block = [
+                {"date": day(8), "name": "Long run 16k", "steps": easy},
+                {"date": day(2), "name": "Easy 8k", "steps": easy},
+                {"date": day(4), "name": "Threshold 5x1k", "steps": thr},
+                {"date": day(9), "name": "Easy 8k", "steps": easy},
+            ]
+            bad_block = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon, 1:40",
+                "sessions": block + [{"date": day(10), "name": "Broken", "steps": [{"type": "interval"}]}],
+            }))
+            check("a bad session fails the whole plan before anything is created",
+                  "error" in bad_block and "Session 5" in bad_block["error"], str(bad_block)[:160])
+            past = payload(await sess.call_tool("create_plan", {
+                "goal": "Half", "sessions": [{"date": day(-3), "name": "Too late", "steps": easy}]}))
+            check("a session in the past is refused", "error" in past and "passed" in past["error"], str(past)[:140])
+
+            made = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon, 1:40, mid November", "sessions": block}))
+            print("   ", json.dumps(made, indent=2)[:500])
+            made_info = made.get("created") or {}
+            check("plan created with a code from the goal, answered as its card",
+                  made.get("label") == "HM" and made_info.get("sessions_created") == 4
+                  and isinstance(made.get("weeks"), list), str(made)[:200])
+            check("sessions come back in date order",
+                  [s["date"] for s in made_info.get("first_sessions", [])] == sorted(s["date"] for s in block),
+                  str(made_info.get("first_sessions"))[:200])
+            again = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon", "sessions": block}))
+            check("the same code in the same window is refused",
+                  "error" in again and "already" in again["error"], str(again)[:160])
+
+            got = payload(await sess.call_tool("get_plan", {"label": "HM"}))
+            print("   ", json.dumps(got, indent=2)[:700])
+            check("get_plan finds the plan by its code",
+                  got.get("label") == "HM" and got.get("sessions_total") == 4, str(got)[:200])
+            # create_plan draws its card from the workouts it just wrote rather
+            # than reading each back from Garmin; the card has to be the same.
+            check("the card create_plan answers with matches the plan read back",
+                  made.get("weeks") == got.get("weeks")
+                  and made.get("next_session") == got.get("next_session"),
+                  json.dumps([made.get("weeks"), got.get("weeks")])[:300])
+            check("the goal is read back from Garmin",
+                  got.get("goal") == "Half marathon, 1:40, mid November", str(got.get("goal")))
+            check("the next session is the earliest ahead",
+                  (got.get("next_session") or {}).get("date") == day(2)
+                  and (got.get("next_session") or {}).get("name") == "Easy 8k",
+                  str(got.get("next_session")))
+            check("names come back without the plan code",
+                  all(" · " not in s["name"] for w in got.get("weeks", []) for s in w["sessions"]))
+            check("every session carries the ids needed to move or retune it",
+                  all(s.get("workout_id") and s.get("schedule_id")
+                      for w in got.get("weeks", []) for s in w["sessions"]))
+            check("the next session comes with its steps",
+                  bool((got.get("next_session") or {}).get("steps")),
+                  str((got.get("next_session") or {}).get("steps"))[:160])
+            check("nothing is done or missed yet",
+                  got.get("completed") == 0 and got.get("missed") == 0 and got.get("remaining") == 4)
+
+            thr_row = next(s for w in got["weeks"] for s in w["sessions"] if s["name"] == "Threshold 5x1k")
+            retuned = payload(await sess.call_tool("update_workout", {
+                "workout_id": thr_row["workout_id"], "name": "Threshold 6x1k"}))
+            check("renaming a plan session keeps its plan code",
+                  retuned.get("name") == "Threshold 6x1k · HM", str(retuned)[:160])
+            got2 = payload(await sess.call_tool("get_plan", {"label": "hm"}))
+            check("the renamed session is still in the plan",
+                  any(s["name"] == "Threshold 6x1k" for w in got2["weeks"] for s in w["sessions"])
+                  and got2.get("sessions_total") == 4, str(got2)[:200])
+
+            ask = payload(await sess.call_tool("remove_plan", {"label": "HM"}))
+            check("remove_plan asks first",
+                  ask.get("confirmation_required") is True and ask.get("would_remove") == 4, str(ask))
+            still = payload(await sess.call_tool("get_plan", {"label": "HM"}))
+            check("an unconfirmed remove changes nothing", still.get("sessions_total") == 4)
+            removed = payload(await sess.call_tool("remove_plan", {"label": "HM", "confirm": "hm"}))
+            check("confirmed remove takes every future session", removed.get("removed") == 4, str(removed))
+            gone_plan = payload(await sess.call_tool("get_plan", {"label": "HM"}))
+            check("the plan is gone afterwards", "error" in gone_plan, str(gone_plan)[:140])
+
+            # A block with a name, a method, milestones and phases: all of it
+            # read back from the workouts' notes, nothing kept here.
+            # Phased by date, not list order: by position, a Sunday put one Base
+            # and one Build session in each week, and the tie read Base twice.
+            base = [dict(x, phase="Base" if x["date"] <= day(4) else "Build") for x in block]
+            named = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon, 1:22, 29 November", "sessions": base, "label": "B1",
+                "name": "Base block", "method": "Norwegian singles",
+                "milestones": [{"label": "Half check", "date": day(50), "target": "1:22"}, {"label": "London '27", "target": "sub-2:40"}],
+            }))
+            check("a named plan is created with its name and method",
+                  named.get("label") == "B1" and named.get("name") == "Base block"
+                  and named.get("method") == "Norwegian singles", str(named)[:200])
+            check("a new plan answers as its card: the block's weeks, and what was made",
+                  isinstance(named.get("weeks"), list) and named["weeks"]
+                  and (named.get("created") or {}).get("sessions_created") == len(base)
+                  and named.get("next_session") is not None, str(named)[:300])
+            card = payload(await sess.call_tool("get_plan", {"label": "B1"}))
+            raw_card = await sess.call_tool("get_plan", {"label": "B1"})
+            card_text = raw_card.content[0].text
+            card_struct = getattr(raw_card, "structuredContent", None) or getattr(raw_card, "structured_content", None) or {}
+            check("the model's copy of a plan is compact and leaves out what only the card draws",
+                  "\n" not in card_text and '"shape"' not in card_text
+                  and '"schedule_id"' in card_text and '"for_the_assistant"' in card_text,
+                  card_text[:160])
+            check("while the card's copy keeps every session's shape",
+                  any(s.get("shape") for w in card_struct.get("weeks", []) for s in w.get("sessions", [])))
+            raw_acts = await sess.call_tool("get_activities", {"limit": 2})
+            check("every answer's text is compact JSON with the same data",
+                  "\n" not in raw_acts.content[0].text
+                  and json.loads(raw_acts.content[0].text) == (getattr(raw_acts, "structuredContent", None)
+                                                              or getattr(raw_acts, "structured_content", None)))
+            check("name, method and milestones come back from Garmin",
+                  card.get("name") == "Base block" and card.get("method") == "Norwegian singles"
+                  and card.get("milestones") == [{"label": "Half check", "date": day(50), "target": "1:22"},
+                                                 {"label": "London '27", "target": "sub-2:40"}], str(card.get("milestones")))
+            check("phases band the weeks from the sessions' own phase",
+                  card.get("phases") and card["phases"][0]["label"] == "Base"
+                  and card["phases"][-1]["label"] == "Build", str(card.get("phases")))
+            rows_b1 = [s for w in card["weeks"] for s in w["sessions"]]
+            thr_b1 = next(s for s in rows_b1 if s["name"].startswith("Threshold"))
+            check("each session carries its type and shape",
+                  thr_b1.get("type") == "threshold" and thr_b1.get("sport") == "run" and thr_b1.get("kind") == "run" and [g["k"] for g in thr_b1.get("shape", [])][:3] == ["easy", "work", "rec"]
+                  and next(s for s in rows_b1 if s["name"] == "Easy 8k").get("type") == "easy"
+                  and next(s for s in rows_b1 if s["name"].startswith("Long")).get("type") == "long", str(thr_b1)[:240])
+            check("the next session carries its target",
+                  "/km" in str((card.get("next_session") or {}).get("target")), str(card.get("next_session"))[:200])
+            bad_name = payload(await sess.call_tool("create_plan", {
+                "goal": "10k", "sessions": block, "label": "T1", "milestones": [{"date": day(9)}]}))
+            check("a milestone without a label is refused", "error" in bad_name and "label" in bad_name["error"], str(bad_name)[:160])
+            payload(await sess.call_tool("remove_plan", {"label": "B1", "confirm": "B1"}))
+            check_plan_summary(check)
+            check_chart_config_read_only(check)
+            await check_preview_gate(check)
+            await check_calendar_fallback(check)
+            await check_reads_at_once(check)
+            await check_tool_list_nudge(check)
+
+            # -- heart rate through a night ---------------------------------
+            # The fake watch is off from 22:24 to 01:12 every night, and lowest
+            # (44) at 04:00, an hour ahead of GMT.
+            night = payload(await sess.call_tool("get_heart_rate", {"date": "2026-09-21", "start": "22:20", "end": "01:30"}))
+            check("a night across midnight is one window, with its gap named",
+                  night.get("from") == "22:20" and night.get("to") == "Tue 01:30"
+                  and night.get("gaps") == [{"from": "22:22", "to": "Tue 01:12", "length": "2h50m"}], str(night)[:240])
+            check("in 10-minute blocks, empty ones marked, never a raw reading list",
+                  night.get("block_minutes") == 10 and len(night.get("blocks", [])) == 19
+                  and night["blocks"][1] == {"from": "22:30", "none": True} and "heartRateValues" not in json.dumps(night),
+                  str(night.get("blocks", [])[:3]))
+            day = payload(await sess.call_tool("get_heart_rate", {"date": "2026-09-21"}))
+            check("a whole day comes hourly, with the lowest reading and when",
+                  day.get("block_minutes") == 60 and len(day.get("blocks", [])) == 24
+                  and day.get("lowest") == {"bpm": 44, "at": "04:00"} and day.get("resting_hr") == 49
+                  and len(json.dumps(day)) < 4000, f"{day.get('lowest')} {len(json.dumps(day))}")
+            sleepy = payload(await sess.call_tool("get_heart_rate", {"date": "2026-09-22", "start": "02:00", "end": "05:00"}))
+            check("a window the watch covered has no gaps and is all covered",
+                  sleepy.get("gaps") == [] and sleepy.get("covered_percent") == 100, str(sleepy)[:160])
+            odd = payload(await sess.call_tool("get_heart_rate", {"start": "bedtime"}))
+            check("a time it can't read says how to give one", "HH:MM" in str(odd.get("error")), str(odd)[:120])
+
+            # -- zones, breathing, drains, load focus ----------------------
+            fit = payload(await sess.call_tool("get_fitness", {}))
+            hrz = (fit.get("zones") or {}).get("heart_rate") or {}
+            check("fitness carries the heart rate zones set in Garmin, in bpm",
+                  hrz.get("zones", [])[1] == {"zone": 2, "bpm": [133, 147]} and hrz.get("based_on") == "heart rate reserve"
+                  and (fit["zones"].get("power") or {}).get("zones", [])[2] == {"zone": 3, "watts": [188, 224]},
+                  str(fit.get("zones"))[:200])
+            z2 = payload(await sess.call_tool("create_workout", {"name": "Z2 hour", "steps": [
+                {"type": "interval", "duration_seconds": 3600, "hr": "z2"},
+                {"type": "repeat", "times": 2, "steps": [{"type": "interval", "duration_seconds": 300, "hr": "zone 3 to 4"},
+                                                         {"type": "recovery", "duration_seconds": 60}]}]}))
+            check("a workout can target the person's own zones", "133-147 bpm" in str(z2.get("summary"))
+                  and "148-175 bpm" in str(z2.get("summary")), str(z2.get("summary"))[:200])
+            past = payload(await sess.call_tool("create_workout", {"name": "Z9", "steps": [{"type": "interval", "duration_seconds": 60, "hr": "z9"}]}))
+            check("a zone past the person's top zone is refused", "zone 5" in str(past.get("error")), str(past)[:120])
+            slept = payload(await sess.call_tool("get_sleep_data", {"date": "2026-09-22"}))
+            check("sleep has breathing and SpO2 against its usual",
+                  slept.get("breathing", {}).get("average") == 14.2
+                  and slept.get("spo2") == {"average": 95.0, "lowest": 89, "usual_7_day": 96.0}, str(slept)[:200])
+            daily = payload(await sess.call_tool("get_daily_summary", {"date": "2026-09-22"}))
+            check("the day says what drained Body Battery",
+                  {"what": "Evening Run", "kind": "activity", "at": "18:30", "minutes": 60, "impact": -14} in daily.get("body_battery_events", []),
+                  str(daily.get("body_battery_events"))[:200])
+            check("and the stressful spells, without a short blip",
+                  daily.get("stressful_spells") == [{"from": "14:00", "to": "15:12", "minutes": 72, "average": 68, "peak": 68}],
+                  str(daily.get("stressful_spells")))
+            ready = payload(await sess.call_tool("get_readiness", {"date": "2026-09-22"}))
+            check("readiness carries the four-week load focus", (ready.get("load_focus") or {}).get("verdict"), str(ready.get("load_focus")))
+
+            # -- changing a recorded run -------------------------------------
+            changed = payload(await sess.call_tool("update_activity", {
+                "activity_id": 1111, "name": "Long run with Rufus", "shoes": "race day", "activity_type": "trail_running"}))
+            check("a run can be renamed, retyped and moved to other shoes, saying what each was",
+                  changed.get("changed", {}).get("name") == {"was": "Morning Run", "now": "Long run with Rufus"}
+                  and changed["changed"].get("shoes") == {"was": ["Pegasus"], "now": "Race day flats"}
+                  and changed["changed"].get("activity_type", {}).get("now") == "trail_running", str(changed)[:240])
+            unknown = payload(await sess.call_tool("update_activity", {"activity_id": 1111, "shoes": "Old Ghosts"}))
+            check("retired shoes aren't put on a run, and the person's pairs are named",
+                  "Pegasus" in str(unknown.get("error")) and "Race day flats" in str(unknown.get("error")), str(unknown)[:160])
+            nothing = payload(await sess.call_tool("update_activity", {"activity_id": 1111}))
+            check("asking to change nothing says what can change", "Nothing to change" in str(nothing.get("error")))
 
             # -- removal ------------------------------------------------
             # Unscheduling is the reversible one: off the calendar, workout
@@ -349,6 +1784,8 @@ async def main() -> int:
                   str(cleared)[:140])
             check("unschedule keeps the workout",
                   "kept" in (cleared.get("note") or ""))
+            check("unscheduling also ends with the week as a card",
+                  "call get_plan on its own" in (cleared.get("note") or ""))
 
             empty_day = payload(
                 await sess.call_tool("unschedule_workout", {"date": "2026-09-25"})
@@ -438,6 +1875,113 @@ async def main() -> int:
             )
             check("nested repeat rejected", "error" in nested, str(nested)[:120])
 
+            print("\nreadiness")
+            ready = payload(await sess.call_tool("get_readiness", {"date": "today"}))
+            print("   ", json.dumps(ready, indent=2)[:700])
+            check("readiness score and level", ready["readiness"]["score"] == 58
+                  and ready["readiness"]["level"] == "Moderate", str(ready.get("readiness")))
+            check("recovery time arrives in minutes and is reported in hours",
+                  ready["readiness"].get("recovery_time_hours") == 31, str(ready.get("readiness")))
+            check("training status read off the phrase",
+                  ready["training_status"]["status"] == "Productive", str(ready.get("training_status")))
+            check("acute:chronic ratio and its verdict",
+                  ready["training_status"]["acute_chronic_ratio"] == 1.06
+                  and ready["training_status"]["ratio_status"] == "Optimal")
+            check("load focus names the shortage",
+                  ready["load_focus"]["verdict"] == "Anaerobic shortage"
+                  and ready["load_focus"]["low_aerobic"]["target"] == [360, 720], str(ready.get("load_focus")))
+            check("hrv against its baseline", ready["hrv"]["last_night_ms"] == 61
+                  and ready["hrv"]["balanced_range_ms"] == [53, 66] and ready["hrv"]["status"] == "Balanced")
+            check("body battery, stress and sleep folded in",
+                  ready["body_battery"]["now"] == 71 and ready["stress"]["average"] == 28
+                  and ready["sleep"]["score"] == 82 and ready["sleep"]["total"] == "7h 12m 00s")
+            check("readiness carries no raw device map", "3400" not in json.dumps(ready))
+
+            print("\nfitness")
+            fit = payload(await sess.call_tool("get_fitness", {}))
+            print("   ", json.dumps(fit, indent=2)[:600])
+            check("race predictions as times and paces",
+                  fit["race_predictions"]["half_marathon"]["time"] == "1h 25m 00s"
+                  and fit["race_predictions"]["5k"]["pace_per_km"] == "3:36 /km", str(fit.get("race_predictions")))
+            check("lactate threshold as pace, not m/s",
+                  fit["lactate_threshold"]["pace_per_km"] == "4:23 /km"
+                  and fit["lactate_threshold"]["heart_rate_bpm"] == 172, str(fit.get("lactate_threshold")))
+            check("endurance class read off Garmin's own boundaries",
+                  fit["endurance_score"]["class"] == "Trained", str(fit.get("endurance_score")))
+            check("hill score class likewise", fit["hill_score"]["class"] == "Trained", str(fit.get("hill_score")))
+            check("running tolerance passed through without ids",
+                  fit["running_tolerance"].get("toleranceLimit") == 61.0
+                  and "userProfilePK" not in fit["running_tolerance"], str(fit.get("running_tolerance")))
+            check("vo2max on fitness too", fit.get("vo2max") == 60.9)
+            from garmin_mcp import metrics as _metrics
+            tenth = _metrics.shape_fitness(None, None, {"speed_and_heart_rate": {"speed": 0.43, "heartRate": 170}},
+                                           None, None, None)
+            check("a threshold speed sent a tenth too small is put right",
+                  tenth["lactate_threshold"]["pace_per_km"] == "3:53 /km", str(tenth.get("lactate_threshold")))
+
+            print("\nfitness trends")
+            trend = payload(await sess.call_tool("get_fitness_trends", {"months": 6}))
+            print("   ", json.dumps(trend, indent=2)[:700])
+            check("vo2 max month by month, improving",
+                  trend["vo2max"]["now"] == 60.9 and trend["vo2max"]["then"] == 57.8
+                  and trend["vo2max"]["change"] == 3.1 and trend["vo2max"]["direction"] == "improving"
+                  and len(trend["vo2max"]["by_month"]) == 6, str(trend.get("vo2max")))
+            check("a race prediction coming down reads as improving, in time",
+                  trend["race_predictions"]["half_marathon"]["now"] == "1h 25m 00s"
+                  and trend["race_predictions"]["half_marathon"]["change"] == "-5m 00s"
+                  and trend["race_predictions"]["half_marathon"]["direction"] == "improving",
+                  str(trend.get("race_predictions", {}).get("half_marathon")))
+            check("threshold as pace, faster reads as improving",
+                  trend["lactate_threshold"]["pace"]["now"] == "4:23 /km"
+                  and trend["lactate_threshold"]["pace"]["change"] == "-15s/km"
+                  and trend["lactate_threshold"]["pace"]["direction"] == "improving",
+                  str(trend.get("lactate_threshold")))
+            from garmin_mcp import fitness_trends as _ft
+            from tests.fake_garmin import LACTATE_HISTORY as _LH
+            tenth_lt = {**_LH, "speed": [{**r, "value": r["value"] / 10} for r in _LH["speed"]]}
+            tenth_trend = _ft.shape(lactate=tenth_lt, start="a", end="b")["lactate_threshold"]["pace"]
+            check("threshold pace trends read the same when Garmin sends a tenth",
+                  tenth_trend["now"] == "4:23 /km" and tenth_trend["change"] == "-15s/km", str(tenth_trend))
+            check("threshold heart rate isn't judged better or worse",
+                  "direction" not in trend["lactate_threshold"]["heart_rate_bpm"])
+            check("a score read from a map keyed by date",
+                  trend["endurance_score"]["now"] == 6512 and trend["endurance_score"]["direction"] == "improving",
+                  str(trend.get("endurance_score")))
+            check("an unchanged score reads as steady",
+                  trend["hill_score"]["direction"] == "steady", str(trend.get("hill_score")))
+            check("FTP falling reads as declining",
+                  trend["cycling_ftp_watts"]["change"] == -12
+                  and trend["cycling_ftp_watts"]["direction"] == "declining", str(trend.get("cycling_ftp_watts")))
+            w = trend.get("weight") or {}
+            months_w = {m["month"]: m for m in w.get("by_month", [])}
+            check("weight by month is the average of that month's weigh-ins, in kg",
+                  months_w.get("2026-05", {}).get("kg") == 75.0
+                  and months_w["2026-05"].get("weigh_ins") == 2
+                  and months_w["2026-05"].get("body_fat_pct") == 16.8
+                  and months_w["2026-05"].get("muscle_kg") == 34.1, str(w))
+            check("a month with no weigh-ins is left out, not filled",
+                  "2026-07" not in months_w and len(months_w) == 5, str(list(months_w)))
+            check("the period average and an empty reading don't pass for weigh-ins",
+                  all(m["kg"] < 80 for m in months_w.values())
+                  and months_w["2026-10"]["weigh_ins"] == 1, str(months_w.get("2026-10")))
+            check("weight change first month to last, with no better or worse",
+                  w.get("change_kg") == -2.9 and w.get("since") == "2026-05"
+                  and w.get("latest") == {"day": "2026-10-03", "kg": 72.1}
+                  and w.get("body_fat_change_pct") == -1.9 and "direction" not in w, str(w))
+            check("a month without a scale reading carries weight only",
+                  "body_fat_pct" not in months_w["2026-06"] and months_w["2026-06"]["kg"] == 74.1)
+            check("weight is read as a pattern, not a cause",
+                  "not cause and effect" in trend["how_to_read"])
+            check("kilograms sent as kilograms read the same",
+                  _ft.weight_trend({"dateWeightList": [{"calendarDate": "2026-01-02", "weight": 70.5}]})
+                  ["latest"]["kg"] == 70.5)
+            check("no weigh-ins gives no weight section",
+                  _ft.weight_trend({"dateWeightList": []}) is None and _ft.weight_trend(None) is None)
+            short = payload(await sess.call_tool("get_fitness_trends", {"months": 99}))
+            check("a long look-back is capped at a year",
+                  short["period"]["from"] >= str(__import__("datetime").date.today().replace(
+                      year=__import__("datetime").date.today().year - 1)), str(short.get("period")))
+
             print("\nprofile")
             prof = payload(await sess.call_tool("get_profile", {}))
             print("   ", json.dumps(prof, indent=2)[:400])
@@ -450,6 +1994,18 @@ async def main() -> int:
 
             print("\ntarget placement (regression)")
             check_target_placement(check)
+
+            print("\npower targets")
+            check_power_targets(check)
+            ride = payload(await sess.call_tool("create_workout", {
+                "name": "Sweet spot 3x10", "sport": "cycling", "steps": [
+                    {"type": "warmup", "duration_seconds": 600},
+                    {"type": "repeat", "times": 3, "steps": [
+                        {"type": "interval", "duration_seconds": 600, "power": ["88%", "94%"]},
+                        {"type": "recovery", "duration_seconds": 300}]},
+                    {"type": "cooldown", "duration_seconds": 600}]}))
+            check("a ride's % of FTP is worked out from the FTP set in Garmin",
+                  "220-235 W (88-94% FTP)" in ride.get("summary", ""), str(ride)[:240])
 
             print("\nstrength training")
             found = payload(await sess.call_tool("find_exercises", {"query": "bench press"}))
@@ -514,6 +2070,168 @@ async def main() -> int:
             check("bad id returns error", "error" in bad_id, str(bad_id)[:120])
             still_up = payload(await sess.call_tool("get_connection_status"))
             check("server still alive after errors", still_up.get("authenticated") is True)
+
+    # The same server for an account trying preview features: the plan view
+    # over the wire, as a host reads it.
+    print("\npreview account, plan view")
+    preview_params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(ROOT / "tests" / "fake_server.py")],
+        env={**env, "GARMIN_MCP_PREVIEW": "1"},
+        cwd=str(ROOT),
+    )
+    async with stdio_client(preview_params) as (read, write):
+        async with ClientSession(read, write) as sess:
+            await sess.initialize()
+            tools = await sess.list_tools()
+            # The plan view. A host that draws MCP Apps follows get_plan's
+            # pointer to this resource; the rest ignore it.
+            plan_tool = next(t for t in tools.tools if t.name == "get_plan")
+            view_uri = ((plan_tool.meta or {}).get("ui") or {}).get("resourceUri")
+            check("get_plan points at its view, versioned by its contents",
+                  re.fullmatch(r"ui://garmin/plan/[0-9a-f]{10}", view_uri or "") is not None, str(plan_tool.meta))
+            listed_views = await sess.list_resources()
+            check("the view is listed as an app",
+                  any(str(r.uri) == view_uri and field(r, "mime_type", "mimeType") == "text/html;profile=mcp-app"
+                      for r in listed_views.resources), str(listed_views.resources)[:200])
+            view = await sess.read_resource(view_uri)
+            html = view.contents[0].text if view.contents else ""
+            check("the view is served as html",
+                  field(view.contents[0], "mime_type", "mimeType") == "text/html;profile=mcp-app"
+                  and "ui/initialize" in html and "tool-result" in html, str(view.contents[0])[:120])
+            check("the view loads nothing from outside the frame",
+                  not re.search(r"""(src|href)=["']?https?:""", html) and "@import" not in html)
+            # Share hands the week to a page on garmin.daash.run in the link's
+            # #fragment, which never reaches a server; that page must have no
+            # way to send it on: no analytics, no script from anywhere else.
+            check("the view's only address is the share page",
+                  set(re.findall(r"https?://[^\s\"'#]+", html)) - {"http://www.w3.org/2000/svg"} == {"https://garmin.daash.run/share/"},
+                  str(set(re.findall(r"https?://[^\s\"'#]+", html))))
+            share_page = (Path(__file__).resolve().parent.parent / "docs" / "share" / "index.html").read_text()
+            check("the share page sends the week nowhere",
+                  "posthog" not in share_page.lower() and not re.search(r"<script[^>]+src=", share_page)
+                  and not re.search(r"\b(fetch|XMLHttpRequest|sendBeacon|localStorage|sessionStorage|indexedDB)\b",
+                                    share_page)
+                  and 'name="robots" content="noindex"' in share_page)
+
+            check("crews stay hidden without the hosted server",
+                  not ({"join_crew", "get_crew", "update_crew", "leave_crew"} & {t.name for t in tools.tools}))
+            crew_uri = next((str(r.uri) for r in listed_views.resources if str(r.uri).startswith("ui://garmin/crew/")), "")
+            check("the crew view is listed as an app", bool(crew_uri))
+            crew_view = await sess.read_resource(crew_uri)
+            crew_html = crew_view.contents[0].text if crew_view.contents else ""
+            check("the crew view loads nothing from outside the frame",
+                  "ui/initialize" in crew_html and not re.search(r"""(src|href)=["']?https?:""", crew_html))
+            check("the crew view's only addresses are the share page and WhatsApp's share link",
+                  set(re.findall(r"https?://[^\s\"'#?]+", crew_html)) - {"http://www.w3.org/2000/svg"}
+                  == {"https://garmin.daash.run/share/", "https://wa.me/"},
+                  str(set(re.findall(r"https?://[^\s\"'#?]+", crew_html))))
+            preview_names = {t.name for t in tools.tools}
+            check("a preview account is offered shoes and recovery trends",
+                  {"get_shoes", "get_recovery_trends"} <= preview_names, str(sorted(preview_names)))
+            details_tool = next(t for t in tools.tools if t.name == "get_activity_details")
+            check("a preview account is told what run details now include",
+                  "weather" in details_tool.description and "same route" in details_tool.description)
+
+            print("\npreview account, around a run")
+            hilly = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
+            print("   ", json.dumps({k: hilly.get(k) for k in ("weather", "shoes", "same_route")}, indent=2)[:900])
+            weather = hilly.get("weather") or {}
+            check("weather comes in Celsius from Garmin's Fahrenheit",
+                  weather.get("temperature_c") == 23.9 and weather.get("dew_point_c") == 17.2, str(weather))
+            check("a metric account's wind is already km/h", weather.get("wind_kmh") == 10 and "wind_mph" not in weather,
+                  str(weather))
+            check("weather says what it did to the run", "humid" in (weather.get("effect") or ""), str(weather))
+            check("the shoes worn are named", hilly.get("shoes") == "Pegasus", str(hilly.get("shoes")))
+            ground = hilly.get("terrain") or {}
+            climbs = ground.get("climbs") or []
+            check("the hill is found, about the right size and where it was",
+                  len(climbs) == 1 and 35 <= climbs[0].get("gain_m", 0) <= 42 and climbs[0].get("starts_at_km") in (1.9, 2.0, 2.1),
+                  str(climbs))
+            check("uphill pace is worth more on the flat",
+                  ground["by_gradient"]["uphill"]["flat_equivalent_pace"] < ground["by_gradient"]["uphill"]["pace_per_km"],
+                  str(ground.get("by_gradient")))
+            check("an out-and-back is recognised, with no coordinates in the answer",
+                  ground.get("route", {}).get("kind") == "out and back" and "51.5" not in json.dumps(hilly),
+                  str(ground.get("route")))
+            check("rising heart rate at level pace shows as decoupling",
+                  5 <= (ground.get("effort") or {}).get("decoupling_pct", 0) <= 12, str(ground.get("effort")))
+            same = hilly.get("same_route") or {}
+            check("an earlier run of the same route is found and ranked",
+                  same.get("earlier_runs") == 1 and same.get("this_run_rank") == "1 of 2 by pace"
+                  and same["recent"][0]["activity_id"] == 1111, str(same))
+
+            print("\npreview account, a ride")
+            ride = payload(await sess.call_tool("get_activity_details", {"activity_id": 2222}))
+            print("   ", json.dumps({k: ride.get(k) for k in ("ftp", "power_zones")}, indent=2)[:500])
+            check("a ride's details carry the FTP set in Garmin, with watts per kilo",
+                  ride.get("ftp", {}).get("watts") == 250 and ride["ftp"].get("w_per_kg") == 3.57, str(ride.get("ftp")))
+            check("and its power per kilo",
+                  ride["summary"]["power"].get("normalized_w_per_kg") == 2.79, str(ride["summary"].get("power")))
+            check("time in power zones", [z["zone"] for z in ride.get("power_zones") or []] == [1, 2, 3]
+                  and ride["power_zones"][1]["percent"] == 53.8, str(ride.get("power_zones")))
+            check("a ride's work is power over time pedalled, in kJ",
+                  ride["summary"]["power"].get("work_kj") == 684, str(ride["summary"].get("power")))
+            check("a ride gets no running pace analysis", "inside" not in ride, str(list(ride)))
+            check("ride splits read by speed", "pace_per_km" not in ride["splits"][0]
+                  and ride["splits"][0].get("avg_speed_kmh") == 12.0, str(ride["splits"][0]))
+            fit = payload(await sess.call_tool("get_fitness", {}))
+            check("get_fitness has the cycling FTP", fit.get("cycling_ftp", {}).get("watts") == 250, str(fit.get("cycling_ftp")))
+
+            print("\npreview account, shoes")
+            shoes = payload(await sess.call_tool("get_shoes", {}))
+            print("   ", json.dumps(shoes, indent=2)[:700])
+            pairs = {x["name"]: x for x in shoes.get("shoes") or []}
+            check("only shoes, active ones, by name", set(pairs) == {"Pegasus", "Race day flats"}, str(list(pairs)))
+            peg = pairs.get("Pegasus") or {}
+            check("km used, left and recent",
+                  peg.get("km") == 690 and peg.get("km_left") == 110 and peg.get("km_last_4_weeks") == 10.0, str(peg))
+            check("a pair near its limit is flagged, and the default for runs marked",
+                  peg.get("nearly_done") is True and peg.get("default_for_running") is True, str(peg))
+            flats = pairs.get("Race day flats") or {}
+            check("with no limit set, a typical life is assumed and said",
+                  flats.get("km_left") == 530 and "typical" in flats.get("limit_is", ""), str(flats))
+            check("retired pairs are listed by name and km",
+                  shoes.get("retired") == [{"name": "Old Ghosts", "km": 803.0, "retired": "2026-02-28"}], str(shoes.get("retired")))
+
+            print("\npreview account, recovery trends")
+            trends = payload(await sess.call_tool("get_recovery_trends", {"weeks": 4}))
+            print("   ", json.dumps({k: trends.get(k) for k in ("hrv_now", "signals")}, indent=2)[:700])
+            signals = " ".join(trends.get("signals") or [])
+            check("four weeks, Monday to Monday", len(trends.get("weeks") or []) == 4, str(trends.get("weeks"))[:200])
+            check("a resting heart rate rise is named", "Resting heart rate 5 bpm above" in signals, signals)
+            check("unbalanced HRV nights are named", "HRV status unbalanced" in signals, signals)
+            check("a drop in HRV is named", "averaging 50 ms" in signals, signals)
+            check("sleep and Body Battery are read week by week",
+                  trends["weeks"][0].get("sleep_hours") == 7.5 and trends["weeks"][0].get("body_battery_peak") == 88,
+                  str(trends["weeks"][0]))
+            check("today's HRV status with its balanced range",
+                  trends.get("hrv_now") == {"status": "UNBALANCED", "last_night_ms": 50, "balanced_range_ms": [53, 66]},
+                  str(trends.get("hrv_now")))
+
+            raw_plan = await sess.call_tool("get_plan", {})
+            structured = field(raw_plan, "structured_content", "structuredContent")
+            texts = [c.text for c in raw_plan.content if getattr(c, "type", "") == "text"]
+            slim = json.loads(texts[-1])
+
+            def without_card_only(weeks):
+                return [[{k: v for k, v in x.items() if k not in ("shape", "kind") and not (k == "sport" and v == "run")}
+                         for x in w.get("sessions", [])] for w in weeks or []]
+            check("get_plan hands the view structured content, and the model the same less the card's detail",
+                  isinstance(structured, dict)
+                  and without_card_only(structured.get("weeks")) == [w.get("sessions", []) for w in slim.get("weeks") or []]
+                  and {k: v for k, v in structured.items() if k not in ("weeks", "next_session")}
+                  == {k: v for k, v in slim.items() if k not in ("weeks", "next_session")},
+                  str(structured)[:120])
+            if "error" not in (structured or {}):
+                check("the model is told the card is on screen, first, in text and data alike",
+                      next(iter(structured)) == "for_the_assistant"
+                      and "interactive plan card" in structured["for_the_assistant"]
+                      and json.loads(texts[-1]).get("for_the_assistant") == structured["for_the_assistant"],
+                      str(list(structured)[:3]))
+            else:
+                check("an error goes back plain, with no card note", "for_the_assistant" not in structured,
+                      str(structured)[:120])
 
     # The real entry point, with no credentials and no cache: the server must
     # come up and explain itself rather than crash on startup.

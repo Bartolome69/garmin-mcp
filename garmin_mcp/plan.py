@@ -14,6 +14,7 @@ target, and the random path segment the page is published under.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -22,6 +23,8 @@ from typing import Any
 
 from .formatting import duration, km, pace_per_km
 from .session import session
+
+log = logging.getLogger(__name__)
 
 PROJECT = Path(__file__).resolve().parent.parent
 CONFIG = Path(os.environ.get("GARMIN_MCP_PLAN_CONFIG") or PROJECT / "plan-config.json")
@@ -81,26 +84,40 @@ def planned_distance_m(workout: dict[str, Any]) -> float:
     return total
 
 
+DEFAULT_CONFIG = {"weekly_target_km": 50}
+
+
 def load_config() -> dict[str, Any]:
-    if CONFIG.exists():
-        return json.loads(CONFIG.read_text())
-    config = {"weekly_target_km": 50}
-    CONFIG.write_text(json.dumps(config, indent=2) + "\n")
-    return config
+    """The chart's settings, from the config file if someone has written one.
+
+    Never writes: the hosted server runs from a read-only folder shared by
+    everyone, where creating the file failed and took the chart down with it.
+    """
+    try:
+        if CONFIG.exists():
+            return {**DEFAULT_CONFIG, **json.loads(CONFIG.read_text())}
+    except (OSError, ValueError):
+        log.debug("plan config unreadable; using defaults", exc_info=True)
+    return dict(DEFAULT_CONFIG)
 
 
 def monday_of(day: date) -> date:
     return day - timedelta(days=day.weekday())
 
 
-def collect() -> dict[str, Any]:
-    """Pull the calendar and the activities covering the window."""
+def collect(run: Any = None) -> dict[str, Any]:
+    """Pull the calendar and the activities covering the window.
+
+    `run` is how a call reaches Garmin: the server passes its own, which goes
+    to Garmin's official API for an account on it.
+    """
+    run = run or session.run
     today = date.today()
     history_start = monday_of(today) - timedelta(weeks=max(WEEK_STRIP, MONTH_STRIP * 5))
     start = monday_of(today) - timedelta(weeks=WEEKS_BACK)
     end = monday_of(today) + timedelta(weeks=WEEKS_FORWARD + 1) - timedelta(days=1)
 
-    activities = session.run(
+    activities = run(
         lambda c: c.get_activities_by_date(history_start.isoformat(), today.isoformat())
     ) or []
 
@@ -116,7 +133,7 @@ def collect() -> dict[str, Any]:
     seen: dict[Any, dict[str, Any]] = {}
     for year, month in months:
         try:
-            payload = session.run(lambda c, y=year, m=month: c.get_scheduled_workouts(y, m))
+            payload = run(lambda c, y=year, m=month: c.get_scheduled_workouts(y, m))
         except Exception:
             continue
         items = payload if isinstance(payload, list) else (payload or {}).get("calendarItems", [])
@@ -135,7 +152,7 @@ def collect() -> dict[str, Any]:
         if not workout_id or workout_id in distances:
             continue
         try:
-            detail = session.run(lambda c, w=workout_id: c.get_workout_by_id(w)) or {}
+            detail = run(lambda c, w=workout_id: c.get_workout_by_id(w)) or {}
             distances[workout_id] = planned_distance_m(detail)
             durations[workout_id] = float(detail.get("estimatedDurationInSecs") or 0)
         except Exception:

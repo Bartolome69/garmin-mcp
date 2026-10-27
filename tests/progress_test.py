@@ -9,7 +9,7 @@ counts.
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,8 +42,8 @@ def run(name: str, sport: str = "run", secs: float = 0.0, km: float = 0.0, day=N
                   activity_id=f"{name}-{day}")
 
 
-def plan(name: str, sport: str = "run", secs: float = 0.0, day=None):
-    return Planned(day=day, name=name, sport=sport, seconds=secs)
+def plan(name: str, sport: str = "run", secs: float = 0.0, day=None, titled: bool = False):
+    return Planned(day=day, name=name, sport=sport, seconds=secs, title=name if titled else "")
 
 
 def main() -> int:
@@ -105,6 +105,78 @@ def main() -> int:
               [run("Upper body", sport="strength", secs=2400, day=TUE)], TODAY)
     check("a gym session does not tick off a run",
           len(r.missed) == 1 and len(r.extra) == 1)
+
+    print("\nstrength")
+    # Garmin estimates a strength workout by counting every set and rest, so a
+    # real gym session often comes in well under it. Any strength session on the
+    # day is the session.
+    r = match([plan("Full body", sport="strength", secs=3300, day=TUE)],
+              [run("Strength", sport="strength", secs=1200, day=TUE)], TODAY)
+    check("a short strength session still counts", len(r.done) == 1, str(r.missed))
+    r = match([plan("Full body", sport="strength", secs=3300, day=TUE)],
+              [run("Easy", sport="run", secs=3300, day=TUE)], TODAY)
+    check("but a run doesn't tick off strength", len(r.missed) == 1)
+    r = match([plan("Full body", sport="strength", day=SAT)],
+              [run("Strength", sport="strength", secs=2000, day=MON)], TODAY)
+    check("strength done earlier in the week counts, moved",
+          len(r.done) == 1 and r.done[0]["done_on"] == MON.isoformat()
+          and "5 days early" in r.done[0]["why"], str(r.done or r.missed))
+    r = match([plan("Full body", sport="strength", day=MON)],
+              [run("Strength", sport="strength", secs=2000, day=MON - timedelta(days=2))], TODAY)
+    check("but not from the week before", len(r.missed) == 1 and len(r.extra) == 1)
+    r = match([plan("Upper", sport="strength", day=MON), plan("Lower", sport="strength", day=THU)],
+              [run("Strength", sport="strength", secs=2000, day=THU)], TODAY)
+    check("a session on its own day is never taken to cover an earlier one",
+          [d["name"] for d in r.done] == ["Lower"] and [m["name"] for m in r.missed] == ["Upper"],
+          f"done={[d['name'] for d in r.done]}")
+    r = match([plan("Easy", day=SAT)], [run("Easy", secs=1800, day=MON)], TODAY)
+    check("runs still have to be within a day", len(r.missed) == 1)
+
+    print("\nstrength stays in its own week")
+    NEXT_MON = SUN + timedelta(days=1)
+    r = match([plan("Full body", sport="strength", day=SUN),
+               plan("Full body", sport="strength", day=NEXT_MON)],
+              [run("Strength", sport="strength", secs=1900, day=NEXT_MON)], NEXT_MON)
+    check("Monday's gym is Monday's session, not last Sunday's",
+          [d["date"] for d in r.done] == [NEXT_MON.isoformat()]
+          and [m["date"] for m in r.missed] == [SUN.isoformat()], f"done={r.done} missed={r.missed}")
+    r = match([plan("Full body", sport="strength", day=SUN)],
+              [run("Strength", sport="strength", secs=1900, day=NEXT_MON)], NEXT_MON)
+    check("and never back-dates to cover last week", len(r.missed) == 1 and len(r.extra) == 1)
+
+    print("\nstrength done early")
+    r = match([plan("Full body", sport="strength", day=SAT)],
+              [run("Strength", sport="strength", secs=1900, day=TUE)], WED)
+    check("a session still ahead this week is ticked by one already done",
+          len(r.done) == 1 and not r.upcoming and r.done[0]["done_on"] == TUE.isoformat(), str(r.done or r.upcoming))
+    r = match([plan("Easy", day=SAT)], [run("Easy", secs=1800, day=TUE)], WED)
+    check("a run is not ticked early by type alone", len(r.upcoming) == 1 and len(r.extra) == 1)
+    r = match([plan("Full body", sport="strength", day=SAT + timedelta(days=7))],
+              [run("Strength", sport="strength", secs=1900, day=TUE)], WED)
+    check("nor is next week's strength", len(r.upcoming) == 1)
+
+    print("\nthe workout's own name")
+    # Garmin names an activity after the workout it was started from, with the
+    # place in front for runs. That says which session it was, wherever it fell.
+    r = match([plan("Threshold 5x1km", day=TUE, titled=True)],
+              [run("Tower Hamlets - Threshold 5x1km", secs=3000, day=FRI)], SUN)
+    check("a run started from its workout counts, moved, anywhere in the week",
+          len(r.done) == 1 and r.done[0]["done_on"] == FRI.isoformat(), str(r.done or r.missed))
+    r = match([plan("Threshold 5x1km", day=TUE, titled=True)],
+              [run("Morning Run", secs=3000, day=FRI)], SUN)
+    check("without the name it is still a miss and an extra run", len(r.missed) == 1 and len(r.extra) == 1)
+    r = match([plan("Push", sport="strength", day=MON, titled=True),
+               plan("Pull", sport="strength", day=WED, titled=True)],
+              [run("Pull", sport="strength", secs=1900, day=MON),
+               run("Push", sport="strength", secs=1900, day=WED)], SUN)
+    check("named strength sessions go to their own workouts, swapped days and all",
+          {d["name"]: d["done_on"] for d in r.done} == {"Push": WED.isoformat(), "Pull": MON.isoformat()},
+          str(r.done))
+    r = match([plan("Push", sport="strength", day=MON, titled=True),
+               plan("Pull", sport="strength", day=WED, titled=True)],
+              [run("Strength", sport="strength", secs=1900, day=MON),
+               run("Strength", sport="strength", secs=1900, day=WED)], SUN)
+    check("unnamed ones still count, by day", len(r.done) == 2 and not r.missed)
 
     print("\none run cannot satisfy two sessions")
     r = match(
@@ -173,6 +245,60 @@ def main() -> int:
           len(actual) == 1 and actual[0].day == date(2026, 9, 22), str(actual))
     r = match(planned, actual, TODAY)
     check("and they match end to end", len(r.done) == 1, str(r.missed))
+
+    print("\nwhere someone is, and the one next step to offer")
+    from garmin_mcp.training_plan import situation, upcoming_events
+
+    def plan_answer(*days):
+        return {"source": "calendar", "weeks": [{"sessions": [{"date": d.isoformat()} for d in days]}]}
+
+    here = situation(plan_answer(TODAY - timedelta(days=2), TODAY, TODAY + timedelta(days=3)), TODAY)
+    check("a block under way with a session today offers to check it against recovery",
+          here["stage"] == "mid_block" and "today's session" in here["offer"], str(here))
+    here = situation(plan_answer(TODAY - timedelta(days=2), TODAY + timedelta(days=2)), TODAY)
+    check("with nothing today, recovery or moving things around",
+          here["stage"] == "mid_block" and "move anything" in here["offer"], str(here))
+    here = situation(plan_answer(TODAY + timedelta(days=1), TODAY + timedelta(days=4)), TODAY)
+    check("a block that hasn't started yet names its first day",
+          here["stage"] == "starting" and "Monday 28 Sep" in here["offer"], str(here))
+    here = situation(plan_answer(TODAY - timedelta(days=9), TODAY - timedelta(days=2)), TODAY)
+    check("a block with nothing left ahead is done", here["stage"] == "block_done", str(here))
+
+    race = upcoming_events([{"calendarItems": [
+        {"id": 1, "itemType": "workout", "date": "2026-10-01", "title": "Easy 8k"},
+        {"id": 2, "itemType": "event", "date": "2026-11-29", "title": "Valencia Half"},
+        {"id": 2, "itemType": "event", "date": "2026-11-29", "title": "Valencia Half"},
+        {"id": 3, "itemType": "event", "date": "2026-09-20", "title": "Last week's parkrun"},
+        {"id": 4, "isRace": True, "date": "2027-08-01", "title": "Too far off"},
+        {"id": 5, "isRace": True, "date": "2026-12-13", "title": "Xmas 10k"},
+    ]}], TODAY)
+    check("races ahead are read from the calendar, soonest first, each once",
+          [e["name"] for e in race] == ["Valencia Half", "Xmas 10k"] and race[0]["weeks_away"] == 9, str(race))
+
+    log = {"source": "log", "primary": "run", "runs": 2, "rides": 0}
+    here = situation(log, TODAY, race)
+    check("nothing scheduled with a race ahead offers a block for it",
+          here["stage"] == "race_ahead" and here["offer"].startswith("Valencia Half is in 9 weeks")
+          and here["race"]["date"] == "2026-11-29", str(here))
+    here = situation({**log, "runs": 6}, TODAY)
+    check("regular running with no plan or race is offered a plan",
+          here["stage"] == "just_training" and "plan" in here["offer"] and "running" in here["offer"], str(here))
+    here = situation({**log, "primary": "ride", "rides": 8}, TODAY)
+    check("a regular rider is offered one for their riding",
+          here["stage"] == "just_training" and "plan" in here["offer"] and "riding" in here["offer"], str(here))
+    here = situation(log, TODAY)
+    check("a little running is getting going", here["stage"] == "getting_going" and "running" in here["offer"], str(here))
+    here = situation({"error": "Nothing is scheduled, and nothing was recorded."}, TODAY)
+    check("nothing at all is getting going too", here["stage"] == "getting_going", str(here))
+    check("an answer it can't read gets no situation",
+          situation(None, TODAY) is None and situation({"weeks": []}, TODAY) is None)
+    here = situation(plan_answer(TODAY, TODAY + timedelta(days=2)), TODAY)
+    check("a block whose first session is today has started", here["stage"] == "mid_block", str(here))
+    offers = [situation(x, TODAY, e)["offer"] for x, e in (
+        (plan_answer(TODAY + timedelta(days=1)), ()), (plan_answer(TODAY), ()),
+        ({"error": "nothing"}, ()), ({**log, "primary": "ride", "rides": 8}, ()), (log, race), ({**log, "runs": 6}, ()), (log, ()))]
+    check("every offer is one question, without dashes",
+          all(o.endswith("?") and o.count("?") == 1 and "\u2014" not in o and " - " not in o for o in offers), str(offers))
 
     print()
     if FAILED:

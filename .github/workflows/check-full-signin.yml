@@ -1,0 +1,43 @@
+name: Check a full sign-in
+
+# Signs the spare test account in to Garmin from the hosted machine, through
+# the sign-in proxy, all the way: the sign-in, the session the server would
+# store, and that session opened again the way a tool call opens it. The
+# hourly check (check-login-proxy.yml) uses an account that doesn't exist, so
+# it stops at the password; this covers everything after it. Every six hours
+# rather than every hour, so Garmin doesn't see the test account signing in
+# from a new address every hour and lock it.
+#
+# Needs the repository secrets GARMIN_CHECK_EMAIL and GARMIN_CHECK_PASSWORD
+# (the test account, with two-step verification off) and FLY_API_TOKEN. The
+# test account is never stored on the server and never becomes a user.
+# A failure turns this run red and is recorded in PostHog as sign_in_check,
+# which the connection alert reads.
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: "Sign-in code to check: what is live, or this branch's garmin_mcp/hosted.py before it ships"
+        type: choice
+        options: [live, this-branch]
+        default: live
+  schedule:
+    - cron: "47 */6 * * *"
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Sign the test account in all the way
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
+          GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
+        run: scripts/run_signin_check.sh full ${{ inputs.code == 'this-branch' && 'candidate' || '' }}

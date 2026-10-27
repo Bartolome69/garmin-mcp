@@ -20,6 +20,10 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
+# Remembered answers per session. Small payloads; past this many the memory is
+# simply emptied rather than tracked entry by entry.
+MEMO_LIMIT = 400
+
 TOKEN_FILE = Path(
     os.environ.get("GARMIN_MCP_TOKENS") or Path.home() / ".garmin-mcp" / "tokens.json"
 )
@@ -203,6 +207,8 @@ class GarminSession:
         self,
         tokenstore: str | Callable[[], str | None] | None = None,
         on_refresh: Callable[[str], None] | None = None,
+        reconnect_hint: str | None = None,
+        on_lapsed: Callable[[], None] | None = None,
     ) -> None:
         """
         tokenstore: where the Garmin session comes from. None means the local
@@ -212,13 +218,21 @@ class GarminSession:
         on_refresh: called with a fresh token blob after a password login, for
             callers storing it themselves. Unused here, where garminconnect
             writes the file.
+        reconnect_hint: when hosted there is no terminal and no password, so a
+            session Garmin has refused is fixed by connecting again in Claude.
+            This replaces the local-install advice in that one case.
+        on_lapsed: called when Garmin has refused the stored session for good.
         """
         self._lock = threading.RLock()
+        self._memo: dict[Any, tuple[float, Any]] = {}
         self._client: Any = None
         self._source: str | None = None
         self._connected_at: float | None = None
         self._tokenstore = tokenstore
         self._on_refresh = on_refresh
+        self._saved_blob: str | None = None
+        self._reconnect_hint = reconnect_hint
+        self._on_lapsed = on_lapsed
 
     def _resolve_tokenstore(self) -> tuple[str | None, bool]:
         """Return (what to hand garminconnect, whether a session already existed)."""
@@ -230,6 +244,9 @@ class GarminSession:
     def _connect(self) -> Any:
         email, password = credentials()
         tokenstore, had_session = self._resolve_tokenstore()
+        if not had_session and self._reconnect_hint:
+            self._lapsed()
+            raise GarminAuthError(self._reconnect_hint)
         if not had_session and not (email and password):
             raise GarminAuthError(
                 "Not signed in to Garmin yet. Sign in once in a terminal:\n"
@@ -249,6 +266,9 @@ class GarminSession:
         except GarminMFARequired:
             raise
         except Exception as exc:
+            if self._reconnect_hint and _is_auth_failure(exc) and "429" not in str(exc):
+                self._lapsed()
+                raise GarminAuthError(self._reconnect_hint) from exc
             raise login_error(exc, had_cache=had_session) from exc
 
         after = _token_mtime()
@@ -262,7 +282,9 @@ class GarminSession:
 
         if self._on_refresh is not None:
             with contextlib.suppress(Exception):
-                self._on_refresh(client.client.dumps())
+                blob = client.client.dumps()
+                self._on_refresh(blob)
+                self._saved_blob = blob
         self._connected_at = time.time()
         log.info("Garmin session established via %s", self._source)
         return client
@@ -284,30 +306,93 @@ class GarminSession:
 
         Garmin expires sessions server-side without warning, so one auth failure
         means "reauthenticate", not "report an error".
+
+        The lock covers connecting and reconnecting, not the request itself, so
+        a tool's several reads can be in flight at once: garminconnect keeps a
+        pool of connections and its own lock around renewing its token.
         """
+        result = self._call(fn)
         with self._lock:
-            client = self.client()
-            try:
-                return fn(client)
-            except _auth_error_types() as exc:
-                if _is_mfa(exc):
-                    raise GarminMFARequired(MFA_MESSAGE) from exc
-                if not _is_auth_failure(exc):
-                    # A connection problem, not a rejected session. Try once more
-                    # on the same client rather than throwing the session away.
-                    log.info("Call failed (%s); retrying", type(exc).__name__)
-                    try:
-                        return fn(client)
-                    except Exception as retry_exc:  # noqa: BLE001
-                        raise GarminError(
-                            "Could not reach Garmin Connect. This looks like a "
-                            f"network problem rather than a sign-in one "
-                            f"({type(retry_exc).__name__}). Try again shortly."
-                        ) from retry_exc
-                log.info("Session rejected (%s); re-authenticating", type(exc).__name__)
-                self.reset()
+            self._save_if_renewed()
+        return result
+
+    def _lapsed(self) -> None:
+        if self._on_lapsed is not None:
+            with contextlib.suppress(Exception):
+                self._on_lapsed()
+
+    def _save_if_renewed(self) -> None:
+        """Store the Garmin tokens again if a call renewed them.
+
+        garminconnect renews its access token in place when it nears expiry, and
+        Garmin can hand back a new refresh token with it. Saving only at sign-in
+        left the stored copy holding the old one, so the next restart resumed
+        from a token Garmin had already retired and the person had to sign in
+        again. Comparing first keeps this to one write per renewal.
+        """
+        if self._on_refresh is None or self._client is None:
+            return
+        with contextlib.suppress(Exception):
+            blob = self._client.client.dumps()
+            if blob != self._saved_blob:
+                self._on_refresh(blob)
+                self._saved_blob = blob
+
+    def _call(self, fn: Callable[[Any], Any]) -> Any:
+        client = self.client()
+        try:
+            return fn(client)
+        except _auth_error_types() as exc:
+            if _is_mfa(exc):
+                raise GarminMFARequired(MFA_MESSAGE) from exc
+            if not _is_auth_failure(exc):
+                # A connection problem, not a rejected session. Try once more
+                # on the same client rather than throwing the session away.
+                log.info("Call failed (%s); retrying", type(exc).__name__)
+                try:
+                    return fn(client)
+                except Exception as retry_exc:  # noqa: BLE001
+                    raise GarminError(
+                        "Could not reach Garmin Connect. This looks like a "
+                        f"network problem rather than a sign-in one "
+                        f"({type(retry_exc).__name__}). Try again shortly."
+                    ) from retry_exc
+            log.info("Session rejected (%s); re-authenticating", type(exc).__name__)
+            with self._lock:
+                # Several reads in flight can be refused together; only the
+                # first replaces the client, the rest use the one it made.
+                if self._client is client:
+                    self.reset()
                 client = self.client()
-                return fn(client)
+            return fn(client)
+
+    def remembered(self, key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
+        """run(fn), keeping the answer for ttl seconds under key.
+
+        For reads that rarely change and are asked for again within minutes:
+        a workout's steps, a month of the calendar. Kept per session, so one
+        person's answers are never another's.
+        """
+        now = time.monotonic()
+        hit = self._memo.get(key)
+        if hit is not None and now - hit[0] < ttl:
+            return hit[1]
+        value = self.run(fn)
+        if len(self._memo) >= MEMO_LIMIT:
+            self._memo.clear()
+        self._memo[key] = (now, value)
+        return value
+
+    def forget(self) -> None:
+        """Drop everything remembered, after anything that writes to Garmin."""
+        self._memo.clear()
+
+    def remember(self, key: Any, value: Any) -> None:
+        """Keep an answer already in hand, such as a workout just written, so
+        the next read of it doesn't go back to Garmin for the same thing."""
+        if len(self._memo) >= MEMO_LIMIT:
+            self._memo.clear()
+        self._memo[key] = (time.monotonic(), value)
 
     def status(self) -> dict[str, Any]:
         """Describe the connection without touching the password or the token."""
@@ -369,6 +454,11 @@ def reset_session(token) -> None:
     _current_session.reset(token)
 
 
+def current_session() -> "GarminSession":
+    """The request's session, or the local one."""
+    return _current_session.get() or _local_session
+
+
 class _ActiveSession:
     """Delegates to the request's session, or the local one."""
 
@@ -386,6 +476,15 @@ class _ActiveSession:
 
     def reset(self) -> None:
         self._target().reset()
+
+    def remembered(self, key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
+        return self._target().remembered(key, ttl, fn)
+
+    def forget(self) -> None:
+        self._target().forget()
+
+    def remember(self, key: Any, value: Any) -> None:
+        self._target().remember(key, value)
 
 
 session = _ActiveSession()

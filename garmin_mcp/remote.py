@@ -2,8 +2,9 @@
 
 stdio stays the default and needs nothing from this module. Setting
 GARMIN_MCP_TRANSPORT=http serves MCP at /mcp instead, behind OAuth (see
-google_oauth.py). The choice is read from the environment at import time
-because the SDK takes its auth provider when the server object is built.
+google_oauth.py). Everything here is read at startup, from server.main(), so
+importing the server never depends on these settings; the OAuth provider is
+attached to the already-built server the same way hosted.build_app() does.
 
     GARMIN_MCP_TRANSPORT     stdio (default) or http
     GARMIN_MCP_HOST          interface to listen on, default 127.0.0.1
@@ -51,12 +52,14 @@ def _auth_disabled() -> bool:
     return mode == "none"
 
 
-def server_options() -> tuple[dict[str, Any], Any]:
-    """Constructor arguments for MCPServer, and the OAuth provider if there is one."""
-    if transport() != "http" or _auth_disabled():
-        return {}, None
+def configure(mcp: Any) -> Any:
+    """Attach OAuth to the server at startup. Returns the provider, or None
+    when auth is off (which _auth_disabled only allows on loopback)."""
+    if _auth_disabled():
+        return None
 
     try:
+        from mcp.server.auth.provider import ProviderTokenVerifier
         from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
         from mcp.server.mcpserver import MCPServer  # noqa: F401 - the version check
     except ImportError:
@@ -70,7 +73,12 @@ def server_options() -> tuple[dict[str, Any], Any]:
         raise SystemExit(str(exc)) from None
 
     provider = GoogleOAuthProvider(config)
-    auth = AuthSettings(
+    mcp._auth_server_provider = provider
+    # The constructor derives the verifier from the provider; attaching the
+    # provider afterwards skips that, and without a verifier nothing is
+    # authenticated at all.
+    mcp._token_verifier = ProviderTokenVerifier(provider)
+    mcp.settings.auth = AuthSettings(
         issuer_url=config.public_url,
         resource_server_url=config.resource_url,
         validate_token_resource=True,
@@ -80,7 +88,7 @@ def server_options() -> tuple[dict[str, Any], Any]:
         ),
         revocation_options=RevocationOptions(enabled=True),
     )
-    return {"auth": auth, "auth_server_provider": provider}, provider
+    return provider
 
 
 def app(mcp: Any, provider: Any) -> Any:
@@ -110,9 +118,10 @@ def app(mcp: Any, provider: Any) -> Any:
     )
 
 
-def run(mcp: Any, provider: Any) -> None:
+def run(mcp: Any) -> None:
     import uvicorn
 
+    provider = configure(mcp)
     host, port = _host(), _port()
     log.info(
         "Serving MCP over HTTP on %s:%d%s",

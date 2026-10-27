@@ -12,12 +12,16 @@ from typing import Any, Mapping, Sequence
 
 from garminconnect import workout as gw
 
-# Garmin's own workoutTargetTypeId values. garminconnect's TargetType has never
-# had a pace entry and has renumbered the rest between releases, so these are
-# pinned here rather than borrowed from it.
+# Garmin's own workoutTargetTypeId values. Pinned rather than borrowed from
+# garminconnect: TargetType only gained these names in 0.3.x (0.2.x has no
+# PACE_ZONE and numbers the rest differently), and requirements still allow
+# 0.2.25. They match TargetType in current releases.
 TARGET_NONE = 1
+TARGET_POWER_ZONE = 2
 TARGET_HEART_RATE_ZONE = 4
 TARGET_PACE_ZONE = 6
+
+from . import swimming
 
 # Sport name -> (workout model, default pace seconds per km used for estimates)
 SPORTS: dict[str, tuple[type, float]] = {
@@ -36,9 +40,20 @@ STEP_TYPES = {
     "rest": (gw.StepType.REST, "rest", 5),
 }
 
-# A single pace is widened into a window this many seconds per km either side,
-# because Garmin alerts on a range and an exact target would beep constantly.
+# A pace target is never narrower than this many seconds per km either side of
+# its centre: a single pace is widened into that window, and a tighter range is
+# widened to it. Garmin alerts whenever the pace leaves the range, and anything
+# tighter beeps constantly on a GPS pace that wobbles by a few seconds anyway.
 PACE_WINDOW_SECONDS = 5.0
+
+# A single power target becomes a range this share either side of it, and no
+# range is narrower than POWER_MIN_HALF_WATTS either side. Power wobbles from
+# second to second far more than pace does, and the head unit alerts every
+# time it leaves the range.
+POWER_WINDOW = 0.05
+POWER_MIN_HALF_WATTS = 5.0
+POWER_WATTS = (30.0, 2000.0)
+POWER_PERCENT_FTP = (30.0, 200.0)
 
 
 class WorkoutError(ValueError):
@@ -90,6 +105,9 @@ def _pace_target(pace: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
                 "A pace range needs exactly two values, e.g. ['4:00','4:10']."
             )
         bounds = sorted(parse_pace(p) for p in pace)
+        if bounds[1] - bounds[0] < 2 * PACE_WINDOW_SECONDS:
+            centre = (bounds[0] + bounds[1]) / 2
+            bounds = [centre - PACE_WINDOW_SECONDS, centre + PACE_WINDOW_SECONDS]
     else:
         centre = parse_pace(pace)
         bounds = [centre - PACE_WINDOW_SECONDS, centre + PACE_WINDOW_SECONDS]
@@ -118,6 +136,80 @@ def _hr_target(hr: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
     return target, (low, high), f" @ {low:.0f}-{high:.0f} bpm"
 
 
+def _is_percent(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().endswith("%")
+
+
+def uses_ftp(steps: Sequence[Mapping[str, Any]] | None) -> bool:
+    """Whether any step, repeats included, sets power as a share of FTP."""
+    for step in steps or []:
+        if not isinstance(step, Mapping):
+            continue
+        if str(step.get("type") or "").strip().lower() == "repeat" and uses_ftp(step.get("steps")):
+            return True
+        power = step.get("power")
+        values = power if isinstance(power, (list, tuple)) else [power]
+        if any(_is_percent(v) for v in values):
+            return True
+    return False
+
+
+def parse_power(value: Any, ftp: float | None) -> float:
+    """250, '250', '250 W' -> watts; '95%' -> 95% of the FTP set in Garmin."""
+    if _is_percent(value):
+        try:
+            percent = float(str(value).strip().rstrip("%").strip())
+        except ValueError as exc:
+            raise WorkoutError(f"Could not read {value!r} as a share of FTP, e.g. '95%'.") from exc
+        low, high = POWER_PERCENT_FTP
+        if not low <= percent <= high:
+            raise WorkoutError(f"{value!r} of FTP is outside the plausible {low:.0f}-{high:.0f}%.")
+        if not ftp:
+            raise WorkoutError(
+                "No cycling FTP is set in Garmin Connect, so a power target can't be a "
+                "percentage. Give watts instead, or set FTP in Garmin Connect first."
+            )
+        return ftp * percent / 100
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        watts = float(value)
+    else:
+        text = str(value).strip().lower().replace("watts", "").replace("w", "").strip()
+        try:
+            watts = float(text)
+        except ValueError as exc:
+            raise WorkoutError(
+                f"Could not read {value!r} as power. Use watts (250) or a share of FTP ('95%')."
+            ) from exc
+    low, high = POWER_WATTS
+    if not low <= watts <= high:
+        raise WorkoutError(f"Power {value!r} is outside the plausible {low:.0f}-{high:.0f} W.")
+    return watts
+
+
+def _power_target(power: Any, ftp: float | None) -> tuple[dict[str, Any], tuple[float, float], str]:
+    """Garmin stores a power target as a range in watts."""
+    if isinstance(power, (list, tuple)):
+        if len(power) != 2:
+            raise WorkoutError("A power range needs exactly two values, e.g. [240, 260] or ['88%', '94%'].")
+        low, high = sorted(parse_power(p, ftp) for p in power)
+        if high - low < 2 * POWER_MIN_HALF_WATTS:
+            centre = (low + high) / 2
+            low, high = centre - POWER_MIN_HALF_WATTS, centre + POWER_MIN_HALF_WATTS
+    else:
+        centre = parse_power(power, ftp)
+        half = max(centre * POWER_WINDOW, POWER_MIN_HALF_WATTS)
+        low, high = centre - half, centre + half
+    # Halves round up: round() goes to even, so 250 W ± 5% read 238-262.
+    low, high = float(int(low + 0.5)), float(int(high + 0.5))
+    target = {
+        "workoutTargetTypeId": TARGET_POWER_ZONE,
+        "workoutTargetTypeKey": "power.zone",
+        "displayOrder": 2,
+    }
+    share = f" ({low / ftp * 100:.0f}-{high / ftp * 100:.0f}% FTP)" if ftp else ""
+    return target, (low, high), f" @ {low:.0f}-{high:.0f} W{share}"
+
+
 NO_TARGET = {
     "workoutTargetTypeId": TARGET_NONE,
     "workoutTargetTypeKey": "no.target",
@@ -125,7 +217,20 @@ NO_TARGET = {
 }
 
 
+LAP_BUTTON = {
+    "conditionTypeId": gw.ConditionType.LAP_BUTTON,
+    "conditionTypeKey": "lap.button",
+    "displayOrder": 1,
+    "displayable": True,
+}
+
+# A pool that isn't said is the commonest one.
+DEFAULT_POOL_METRES = 25.0
+
+
 def _end_condition(kind: str) -> dict[str, Any]:
+    if kind == "lap":
+        return dict(LAP_BUTTON)
     if kind == "distance":
         return {
             "conditionTypeId": gw.ConditionType.DISTANCE,
@@ -144,9 +249,13 @@ def _end_condition(kind: str) -> dict[str, Any]:
 class _Builder:
     """Walks the step list, assigning the sequential order ids Garmin expects."""
 
-    def __init__(self, default_pace: float) -> None:
+    def __init__(self, default_pace: float, pool_metres: float | None = None, ftp: float | None = None) -> None:
         self.order = 0
         self.default_pace = default_pace
+        # Set for a swim: steps are then counted in pool lengths, paced per 100 m.
+        self.pool = pool_metres
+        # The FTP set in Garmin, for power targets given as a percentage.
+        self.ftp = ftp
         self.estimated_seconds = 0.0
         self.lines: list[str] = []
 
@@ -209,11 +318,22 @@ class _Builder:
         )
 
     def _build_step(self, kind: str, step: Mapping[str, Any], depth: int) -> Any:
+        if self.pool is not None:
+            return self._build_swim_step(kind, step, depth)
         distance = step.get("distance_meters")
         duration = step.get("duration_seconds")
-        if distance is None and duration is None:
+        # Asked for, never assumed: a step left open by mistake would run
+        # until someone thought to press lap.
+        until_lap = step.get("until_lap") is True
+        if until_lap and (distance is not None or duration is not None):
             raise WorkoutError(
-                f"Step {kind!r} needs either 'duration_seconds' or 'distance_meters'."
+                f"Step {kind!r} ends either at the lap button or after a time or "
+                "distance, not both."
+            )
+        if distance is None and duration is None and not until_lap:
+            raise WorkoutError(
+                f"Step {kind!r} needs either 'duration_seconds' or 'distance_meters', "
+                'or "until_lap": true to end it with the lap button.'
             )
         if distance is not None and duration is not None:
             raise WorkoutError(
@@ -224,16 +344,25 @@ class _Builder:
         target, described = NO_TARGET, ""
         values: tuple[float, float] | None = None
         pace_for_estimate = self.default_pace
-        if step.get("pace") is not None and step.get("hr") is not None:
-            raise WorkoutError("A step can target pace or heart rate, not both.")
+        given = [k for k in ("pace", "hr", "power") if step.get(k) is not None]
+        if len(given) > 1:
+            raise WorkoutError(f"A step can have one target, not {' and '.join(given)}.")
         if step.get("pace") is not None:
             target, values, described = _pace_target(step["pace"])
             # values are speeds in m/s; convert back for the duration estimate.
             pace_for_estimate = (1000.0 / values[0] + 1000.0 / values[1]) / 2
         elif step.get("hr") is not None:
             target, values, described = _hr_target(step["hr"])
+        elif step.get("power") is not None:
+            target, values, described = _power_target(step["power"], self.ftp)
 
-        if distance is not None:
+        value: float | None
+        if until_lap:
+            # Walk or jog until ready, then press lap: a typical minute for a
+            # recovery, a few for anything longer, for the time estimate.
+            value, condition, amount = None, "lap", "until lap pressed"
+            self.estimated_seconds += 60 if kind in ("recovery", "rest") else 300
+        elif distance is not None:
             value = float(distance)
             if value <= 0:
                 raise WorkoutError("'distance_meters' must be positive.")
@@ -272,13 +401,113 @@ class _Builder:
         )
 
 
+    def _build_swim_step(self, kind: str, step: Mapping[str, Any], depth: int) -> Any:
+        """A swim step: lengths of the pool, a stroke, and a pace said rather than beeped.
+
+        A rest with neither time nor distance waits for the lap button, the way
+        swimmers rest at the wall. A pace is per 100 m and goes on the step as a
+        note the watch shows, not as a target: a pace alarm can't be heard or
+        acted on mid-length.
+        """
+        distance = step.get("distance_meters")
+        seconds = step.get("duration_seconds")
+        if distance is not None and seconds is not None:
+            raise WorkoutError(
+                f"Step {kind!r} has both 'duration_seconds' and 'distance_meters'; "
+                "Garmin steps end on one or the other."
+            )
+        if distance is None and seconds is None and kind not in ("rest", "recovery"):
+            raise WorkoutError(
+                f"Swim step {kind!r} needs 'distance_meters' (or 'duration_seconds'). "
+                "Only a rest can be left open, ended by pressing lap."
+            )
+        if step.get("pace") is not None and step.get("hr") is not None:
+            raise WorkoutError("A step can carry a pace or a heart-rate target, not both.")
+        if step.get("power") is not None:
+            raise WorkoutError("A swim step can't have a power target. Use pace or heart rate.")
+
+        notes: list[str] = []
+        pace_100 = None
+        if step.get("pace") is not None:
+            pace_100 = swimming.parse_pace_per_100(step["pace"])
+            notes.append(f"{format_pace(pace_100).replace('/km', '')} /100m")
+        stroke = None
+        if step.get("stroke") is not None:
+            stroke = swimming.stroke_type(step["stroke"])
+            if stroke is None:
+                raise WorkoutError(
+                    f"Unknown stroke {step['stroke']!r}. Use freestyle, backstroke, "
+                    "breaststroke, butterfly, im, drill or any."
+                )
+        if step.get("note"):
+            notes.append(str(step["note"]).strip())
+
+        target, values, described = NO_TARGET, None, ""
+        if step.get("hr") is not None:
+            target, values, described = _hr_target(step["hr"])
+
+        if distance is not None:
+            value = float(distance)
+            if value <= 0:
+                raise WorkoutError("'distance_meters' must be positive.")
+            lengths = value / self.pool
+            if abs(lengths - round(lengths)) > 1e-6:
+                raise WorkoutError(
+                    f"{value:g} m isn't a whole number of {self.pool:g} m lengths; "
+                    "swim distances have to be."
+                )
+            condition = "distance"
+            per_100 = pace_100 or self.default_pace / 10
+            self.estimated_seconds += value / 100 * per_100
+            amount = f"{value:g} m"
+        elif seconds is not None:
+            value = float(seconds)
+            if value <= 0:
+                raise WorkoutError("'duration_seconds' must be positive.")
+            condition = "time"
+            self.estimated_seconds += value
+            minutes, secs = divmod(int(value), 60)
+            amount = f"{minutes}m {secs:02d}s" if secs else f"{minutes}m"
+        else:
+            value, condition, amount = None, "lap", "until lap pressed"
+            self.estimated_seconds += 20  # a typical rest at the wall
+
+        stroke_word = f" {step['stroke']}" if stroke else ""
+        note_text = f" ({'; '.join(notes)})" if notes else ""
+        indent = "  " * (depth + 1) if depth else "  "
+        self.lines.append(f"{indent}{kind}: {amount}{stroke_word}{note_text}{described}")
+
+        type_id, type_key, display = STEP_TYPES[kind]
+        extra: dict[str, Any] = {}
+        if values:
+            extra.update(targetValueOne=values[0], targetValueTwo=values[1])
+        if stroke:
+            extra["strokeType"] = stroke
+        if notes:
+            extra["description"] = "; ".join(notes)
+        return gw.ExecutableStep(
+            stepOrder=self._next_order(),
+            stepType={"stepTypeId": type_id, "stepTypeKey": type_key, "displayOrder": display},
+            endCondition=_end_condition(condition),
+            endConditionValue=value,
+            targetType=target,
+            **extra,
+        )
+
+
 def build_workout(
     name: str,
     sport: str,
     steps: Sequence[Mapping[str, Any]],
     description: str | None = None,
+    pool_length_meters: float | None = None,
+    ftp: float | None = None,
 ) -> tuple[Any, str, int]:
-    """Return (workout model, human-readable summary, estimated seconds)."""
+    """Return (workout model, human-readable summary, estimated seconds).
+
+    ftp is the cycling FTP set in Garmin, in watts, for power targets given as
+    a percentage; the caller fetches it only when uses_ftp(steps) says so.
+    """
     if not name or not str(name).strip():
         raise WorkoutError("The workout needs a name.")
     sport_key = str(sport or "running").strip().lower()
@@ -288,11 +517,22 @@ def build_workout(
         )
 
     model_cls, default_pace = SPORTS[sport_key]
-    builder = _Builder(default_pace)
+    pool = None
+    if sport_key == "swimming":
+        try:
+            pool = float(pool_length_meters) if pool_length_meters is not None else DEFAULT_POOL_METRES
+        except (TypeError, ValueError) as exc:
+            raise WorkoutError("'pool_length_meters' must be a number, e.g. 25 or 50.") from exc
+        if not 10 <= pool <= 100:
+            raise WorkoutError(f"A {pool:g} m pool is outside the plausible 10-100 m.")
+    elif pool_length_meters is not None:
+        raise WorkoutError("'pool_length_meters' only applies to swimming workouts.")
+    builder = _Builder(default_pace, pool, ftp)
     built = builder.build(list(steps))
     estimated = int(round(builder.estimated_seconds))
 
     workout = model_cls(
+        **(swimming.pool_fields(pool) if pool is not None else {}),
         workoutName=str(name).strip(),
         description=description,
         estimatedDurationInSecs=estimated,
@@ -308,7 +548,8 @@ def build_workout(
     hours, rem = divmod(estimated, 3600)
     mins, secs = divmod(rem, 60)
     total = f"{hours}h {mins:02d}m" if hours else f"{mins}m {secs:02d}s"
-    summary = "\n".join([f"{name} ({sport_key}, about {total})", *builder.lines])
+    where = f", {pool:g} m pool" if pool is not None else ""
+    summary = "\n".join([f"{name} ({sport_key}{where}, about {total})", *builder.lines])
     return workout, summary, estimated
 
 

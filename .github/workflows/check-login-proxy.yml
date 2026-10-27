@@ -1,0 +1,118 @@
+name: Check sign-in proxy
+
+# Runs inside the hosted machine and checks the sign-in proxy end to end:
+# that GARMIN_MCP_LOGIN_PROXY is well-formed, which country and network
+# sign-ins leave from through it, and that Garmin's sign-in page answers
+# through it. Prints no part of the secret, only yes/no answers, the exit
+# country and network, and HTTP status codes. Run by hand after changing it,
+# and every six hours or so on its own: it fails when the proxy is broken or
+# out of credit, and GitHub emails the failure.
+#
+# Reaching the sign-in page is not enough, though: on Oct 12 a change to how
+# refusals were counted stopped every sign-in for 18 hours while the page
+# still answered. So the second step signs in for real, as an account that
+# doesn't exist, with the live sign-in code (scripts/check_signin.py):
+# healthy is Garmin saying the email and password are wrong, which only its
+# last step can say. Dispatched with code=this-branch it tests a branch's code
+# before it ships.
+#
+# The hourly test sign-in is the server's own (signin_check_once in
+# garmin_mcp/hosted.py): GitHub starts scheduled runs late or not at all when
+# it is busy, three times in nine hours on the night of Oct 13, which is no
+# way to keep an hourly check.
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: "Sign-in code to check: what is live, or this branch's garmin_mcp/hosted.py before it ships"
+        type: choice
+        options: [live, this-branch]
+        default: live
+  schedule:
+    - cron: "17 */6 * * *"
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Check the proxy from the machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          cat > check.py <<'PY'
+          import json, os, re, secrets, urllib.parse, urllib.request
+          # Sign-ins reach the proxy by swapping the requests and curl_cffi
+          # that garminconnect imports (garmin_mcp/hosted.py); check the
+          # installed release still imports them that way.
+          import types
+          from importlib.metadata import version
+          import garminconnect.client as gc
+          shape = isinstance(getattr(gc, "requests", None), types.ModuleType) and \
+              getattr(gc, "cffi_requests", None) is not None
+          print("garminconnect", version("garminconnect"), "can be routed:", shape)
+          raw = os.environ.get("GARMIN_MCP_LOGIN_PROXY", "").strip()
+          print("set:", bool(raw))
+          if not raw:
+              raise SystemExit(1)
+          u = urllib.parse.urlsplit(raw)
+          print("scheme is http:", u.scheme == "http")
+          print("has username and password:", bool(u.username) and bool(u.password))
+          print("has host and port:", bool(u.hostname) and bool(u.port))
+          print("no spaces:", " " not in raw)
+
+          def get(url, proxy):
+              handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy} if proxy else {})]
+              opener = urllib.request.build_opener(*handlers)
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              try:
+                  with opener.open(req, timeout=30) as r:
+                      return r.status, r.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, b""
+              except Exception as e:
+                  return type(e).__name__, b""
+
+          for label, proxy in (("direct", None), ("through proxy", raw)):
+              status, body = get("https://ipinfo.io/json", proxy)
+              try:
+                  info = json.loads(body)
+                  where = f"{info.get('country')} / {info.get('org')}"
+              except Exception:
+                  where = "unknown"
+              print(f"exit {label}: status {status}, {where}")
+          status, _ = get("https://sso.garmin.com/sso/signin", raw)
+          print("Garmin sign-in page through proxy: status", status)
+
+          # Sign-ins use a fresh session each, as the server does. Healthy
+          # when any of three fresh addresses reaches Garmin: one refused
+          # address is normal, three in a row is not.
+          fresh = lambda: re.sub(r"(_session-)[A-Za-z0-9]+",
+                                 lambda m: m.group(1) + secrets.token_hex(4), raw, count=1)
+          codes = []
+          for _ in range(3):
+              code, _ = get("https://sso.garmin.com/sso/signin", fresh())
+              codes.append(code)
+              if code == 200:
+                  break
+          print("Garmin sign-in page through fresh addresses:", codes)
+          if 200 not in codes or not shape:
+              print("::error::Sign-ins cannot use the proxy. Check the IPRoyal balance, "
+                    "the GARMIN_MCP_LOGIN_PROXY secret, and the garminconnect release.")
+              raise SystemExit(1)
+          PY
+          flyctl ssh sftp shell --app "$FLY_APP" <<< "put check.py /tmp/check-proxy-$GITHUB_RUN_ID.py" >/dev/null 2>&1 || true
+          flyctl ssh console --app "$FLY_APP" -C "python3 /tmp/check-proxy-$GITHUB_RUN_ID.py" \
+            || flyctl ssh console --app "$FLY_APP" -C "python3 -c \"$(sed 's/"/\\"/g' check.py)\""
+
+      - name: Sign in through the proxy as an account that doesn't exist
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        # The hourly run checks what people are signing in with right now.
+        run: scripts/run_signin_check.sh ${{ inputs.code == 'this-branch' && 'candidate' || '' }}

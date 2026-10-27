@@ -13,9 +13,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
+import subprocess
 import sys
 import tempfile
 import time
@@ -93,7 +95,25 @@ def google_token_endpoint(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"id_token": _jwt(claims), "access_token": "x"})
 
 
-server._oauth_provider._google_transport = httpx.MockTransport(google_token_endpoint)
+# What server.main() does at startup for GARMIN_MCP_TRANSPORT=http.
+PROVIDER = remote.configure(server.mcp)
+PROVIDER._google_transport = httpx.MockTransport(google_token_endpoint)
+
+
+class Captured(logging.Handler):
+    """Every log line, so the test can say what must never appear in one."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(record.getMessage())
+
+
+LOGS = Captured()
+logging.getLogger().addHandler(LOGS)
+logging.getLogger().setLevel(logging.INFO)
 
 
 # --- The flow, as Claude drives it ------------------------------------------
@@ -116,11 +136,16 @@ def mcp_post(client: TestClient, token: str | None, body: dict, session_id: str 
 
 
 def rpc_result(response) -> dict:
-    """Streamable HTTP answers with SSE; pull out the JSON-RPC message."""
-    for line in response.text.splitlines():
-        if line.startswith("data:"):
-            return json.loads(line[5:])
-    return response.json()
+    """Streamable HTTP answers with SSE; pull out the JSON-RPC response.
+
+    The stream can carry notifications first (tools/list_changed, for one), so
+    take the message that answers the request rather than the first one.
+    """
+    messages = [json.loads(line[5:]) for line in response.text.splitlines() if line.startswith("data:")]
+    for message in messages:
+        if "result" in message or "error" in message:
+            return message
+    return messages[0] if messages else response.json()
 
 
 def sign_in(client: TestClient, client_id: str, challenge: str, state: str = "claude-state"):
@@ -150,7 +175,7 @@ def consent_token(page: str) -> str:
 
 
 def main() -> int:
-    app = remote.app(server.mcp, server._oauth_provider)
+    app = remote.app(server.mcp, PROVIDER)
     with TestClient(app, base_url=PUBLIC, follow_redirects=False) as client:
         print("\ndiscovery")
         r = mcp_post(client, None, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
@@ -266,6 +291,15 @@ def main() -> int:
         )
         body = json.dumps(rpc_result(r))
         check("a tool call reaches the (stubbed) Garmin account", "12345" in body, body[:300])
+        before = len(LOGS.lines)
+        mcp_post(
+            client,
+            tokens["access_token"],
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_daily_summary", "arguments": {"date": "today"}}},
+            sid,
+        )
+        leaked = [line for line in LOGS.lines[before:] if ME in line.lower()]
+        check("tool calls don't log the caller's email", not leaked, str(leaked[:2]))
 
         r = client.post(
             "/mcp",
@@ -290,7 +324,7 @@ def main() -> int:
         check("...but a near-simultaneous retry doesn't end the grant", r.status_code == 200, str(r.status_code))
 
         # Later reuse can only mean a copied token.
-        store = server._oauth_provider.store
+        store = PROVIDER.store
         with store.edit() as data:
             for entry in data["rotated"].values():
                 entry["rotated_at"] -= 120
@@ -306,7 +340,7 @@ def main() -> int:
         r = client.post("/oauth/consent", data={"consent": consent_token(r.text), "decision": "approve"})
         code = parse_qs(urlparse(r.headers["location"]).query)["code"][0]
         fresh = client.post("/token", data={**exchange, "code": code, "code_verifier": verifier}).json()
-        provider = server._oauth_provider
+        provider = PROVIDER
         original = provider.config
         provider.config = replace(original, allowed_emails=frozenset({"other@example.com"}))
         r = mcp_post(client, fresh["access_token"], init)
@@ -331,14 +365,30 @@ def main() -> int:
     saved = dict(os.environ)
     os.environ.update(GARMIN_MCP_AUTH="none", GARMIN_MCP_HOST="0.0.0.0")
     try:
-        remote.server_options()
+        remote.configure(server.mcp)
         check("auth can't be turned off on a public interface", False)
     except SystemExit:
         check("auth can't be turned off on a public interface", True)
     os.environ.update(GARMIN_MCP_HOST="127.0.0.1")
-    check("auth can be turned off on loopback", remote.server_options() == ({}, None))
+    check("auth can be turned off on loopback", remote.configure(server.mcp) is None)
     os.environ.clear()
     os.environ.update(saved)
+
+    # The settings are read at startup, not import: a typo must not stop the
+    # module importing (tests, doctor, check), only the server starting.
+    bad = {**os.environ, "GARMIN_MCP_TRANSPORT": "htp", "PYTHONPATH": str(ROOT)}
+    imported = subprocess.run(
+        [sys.executable, "-c", "import garmin_mcp.server"], env=bad, capture_output=True, text=True, cwd=ROOT
+    )
+    check("a mistyped transport doesn't break importing", imported.returncode == 0, imported.stderr[-300:])
+    started = subprocess.run(
+        [sys.executable, "-m", "garmin_mcp"], env=bad, capture_output=True, text=True, cwd=ROOT, timeout=60
+    )
+    check(
+        "...but stops the server starting, with the reason",
+        started.returncode != 0 and "GARMIN_MCP_TRANSPORT" in started.stderr,
+        started.stderr[-300:],
+    )
 
     print(f"\n{'all checks passed' if not failures else f'{len(failures)} FAILED: ' + ', '.join(failures)}")
     return 1 if failures else 0

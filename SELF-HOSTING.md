@@ -29,6 +29,11 @@ Details worth knowing:
 - Tokens are stored only as SHA-256 hashes, in `oauth.json` next to the Garmin
   session. Refresh tokens rotate on every use, and a reused one revokes the
   whole grant, because that only happens if a token was copied.
+- **Run one process.** `oauth.json` is a plain JSON file guarded by an
+  in-process lock, and sign-ins in progress and unexchanged codes are held in
+  memory. Two server processes or replicas sharing the file would overwrite
+  each other's grants and couldn't finish each other's sign-ins. That suits one
+  person's server; anything bigger wants the hosted server's database.
 - Codes are only ever sent to Claude's callback
   (`https://claude.ai/api/mcp/auth_callback`) or to a loopback `/callback`
   for Claude Code. Registrations asking for anything else are refused.
@@ -99,7 +104,7 @@ it publicly on 443:
 ```yaml
 services:
   garmin-mcp:
-    image: garmin-mcp          # docker build -t garmin-mcp .
+    image: garmin-mcp          # docker build -f Dockerfile.selfhost -t garmin-mcp .
     env_file: .env
     ports:
       - "127.0.0.1:8000:8000"  # local only, for health checks
@@ -174,5 +179,5 @@ docker compose exec garmin-mcp python -m garmin_mcp.google_oauth status      # w
 docker compose exec garmin-mcp python -m garmin_mcp.google_oauth revoke-all  # sign everything out
 ```
 
-Both take effect on the running server. Every tool call is logged with the
-address it was made for.
+Both take effect on the running server. Sign-ins, approvals and refusals are
+logged with the Google address involved; individual tool calls are not.

@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
-<link rel="canonical" href="https://garmin.daash.run/privacy/">
-<meta property="og:title" content="Privacy · Garmin for Claude">
+<link rel="canonical" href="https://garmin.daash.run/">
+<meta property="og:title" content="Privacy · Daash">
 <meta property="og:description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://garmin.daash.run/privacy/">
+<meta property="og:url" content="https://garmin.daash.run/">
 <meta property="og:site_name" content="Garmin for Claude">
 <!-- Absolute URL: Slack, iMessage and the rest will not resolve a relative one.
      Cache-busted, because every platform caches previews aggressively. -->
@@ -29,162 +29,174 @@
   img { max-width: 100%; }
   [hidden] { display: none !important; }
 </style>
-<title>Privacy · Garmin for Claude</title>
+<title>Privacy · Daash</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap">
 <style>
+  /* The daash.run design: the same tokens, type and chrome as the site. */
   :root {
     color-scheme: light;
-    --ground: #F4F6F3;
-    --surface: #FFFFFF;
-    --sunken: #E8EDE8;
-    --ink: #17211B;
-    --muted: #55655B;
-    --hairline: #D3DBD3;
-    --accent: #2F6B4F;
-    --accent-ink: #235340;
-    --clay: #BC5A2A;
-    --clay-soft: #F6ECE5;
-    --radius: 10px;
-    --measure: 66ch;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --ground: #0E1512;
-      --surface: #16201A;
-      --sunken: #1D2922;
-      --ink: #E3ECE5;
-      --muted: #9AAC9F;
-      --hairline: #27352C;
-      --accent: #63BC8E;
-      --accent-ink: #7FCBA1;
-      --clay: #E08A5A;
-      --clay-soft: #2A1E17;
-    }
-  }
-
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --ground: #0E1512;
-    --surface: #16201A;
-    --sunken: #1D2922;
-    --ink: #E3ECE5;
-    --muted: #9AAC9F;
-    --hairline: #27352C;
-    --accent: #63BC8E;
-    --accent-ink: #7FCBA1;
-    --clay: #E08A5A;
-    --clay-soft: #2A1E17;
+    --bg: #F7F8FA;
+    --card: #FFFFFF;
+    --sunken: #EEF0F3;
+    --text: #161B26;
+    --body: #3A404C;
+    --muted: #5B6270;
+    --faint: #8A909C;
+    --border: #E6E8EC;
+    --row: #EEF0F3;
+    --red: #E0312A;
+    --red-text: #C8261F;
+    --red-hover: #A81E18;
+    --red-soft: #FDF2F1;
+    --outer: 1120px;
+    --measure: 680px;
   }
 
   * { box-sizing: border-box; }
 
   body {
-    background: var(--ground);
-    color: var(--ink);
-    font-family: "Archivo", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 17px;
-    line-height: 1.6;
+    line-height: 1.7;
+    font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     -webkit-text-size-adjust: 100%;
   }
 
+  a { color: var(--red-text); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: var(--red-hover); }
+  a:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
+
+  /* ---- Site nav ---- */
+  .site-nav {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(247, 248, 250, 0.92);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .site-nav .bar {
+    max-width: var(--outer); margin: 0 auto; height: 56px;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    display: flex; align-items: center; gap: 24px;
+  }
+  .wordmark {
+    font-weight: 800; font-style: italic; letter-spacing: -0.03em;
+    color: var(--red); font-size: 22px; line-height: 1; text-decoration: none;
+  }
+  .wordmark:hover { color: var(--red); }
+  .site-nav .links { display: none; align-items: center; gap: 4px; font-size: 14.5px; }
+  .site-nav .links a { color: var(--muted); text-decoration: none; padding: 8px 10px; border-radius: 8px; }
+  .site-nav .links a:hover { color: var(--text); }
+  .pill {
+    margin-left: auto; display: inline-flex; align-items: center; height: 40px; padding: 0 16px;
+    border-radius: 999px; background: var(--red); color: #fff; font-weight: 500; font-size: 15px;
+    text-decoration: none;
+  }
+  .pill:hover { background: var(--red-text); color: #fff; }
+  @media (min-width: 760px) { .site-nav .links { display: flex; } }
+
+  /* ---- The page ---- */
   .wrap {
-    max-width: 800px;
+    max-width: calc(var(--measure) + 32px);
     margin: 0 auto;
-    padding-inline: max(20px, env(safe-area-inset-left), env(safe-area-inset-right));
-    padding-block: 48px 72px;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    padding-block: 32px 64px;
   }
 
-  h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; }
-  h1 { font-size: clamp(2.1rem, 7vw, 3rem); font-weight: 800; line-height: 1.04; max-width: 17ch; }
-  h2 { font-size: clamp(1.3rem, 4vw, 1.6rem); font-weight: 700; line-height: 1.15; }
+  h1, h2, h3 { margin: 0; color: var(--text); text-wrap: balance; }
+  h1 { font-size: clamp(32px, 4.6vw, 46px); font-weight: 700; line-height: 1.05; letter-spacing: -0.045em; margin-top: 18px; }
+  h2 { font-size: 24px; font-weight: 700; line-height: 1.2; letter-spacing: -0.03em; }
 
   p { margin: 0; text-wrap: pretty; }
-  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
-  a:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; border-radius: 3px; }
 
-  .kicker {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--accent-ink);
+  .back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13.5px; color: var(--muted); text-decoration: none;
   }
-  /* The back link is the kicker slot, so the page keeps the front page's
-     silhouette while still being escapable in one tap. */
-  .kicker a { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; }
+  .back:hover { color: var(--text); }
 
-  .lede { font-size: 1.15rem; color: var(--muted); max-width: 56ch; margin-top: 18px; }
-  .stamp {
-    margin-top: 14px; font-size: 0.86rem; color: var(--muted);
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-  }
+  .lede { font-size: 19px; line-height: 1.6; color: var(--muted); max-width: 58ch; margin-top: 14px; }
+  .stamp { margin-top: 12px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--muted); }
 
-  section { margin-top: 46px; }
-  .stack { display: flex; flex-direction: column; gap: 14px; max-width: var(--measure); margin-top: 14px; }
-  .small { font-size: 0.94rem; }
-  .muted { color: var(--muted); }
+  section { margin-top: 44px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+  .small { font-size: 16.5px; color: var(--body); }
+  .muted, .small.muted { color: var(--muted); }
+  strong { color: var(--text); font-weight: 600; }
 
-  /* ---- The summary table, same shape as "Before you start" ---- */
+  /* ---- The summary cards ---- */
   .facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: 1px;
-    background: var(--hairline);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 14px;
     overflow: hidden;
-    margin-top: 26px;
+    margin: 26px 0 0;
   }
-  .facts div { background: var(--surface); padding: 15px 17px; }
+  .facts div { background: var(--card); padding: 16px 18px; }
   .facts dt {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: 4px;
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px; line-height: 1.4;
   }
-  .facts dd { margin: 0; font-weight: 500; font-size: 0.95rem; }
+  .facts dd { margin: 0; font-weight: 600; font-size: 15.5px; line-height: 1.4; }
   @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
 
   .note {
-    border-left: 3px solid var(--clay);
-    background: var(--clay-soft);
-    padding: 15px 17px;
-    border-radius: 0 var(--radius) var(--radius) 0;
-    max-width: var(--measure);
-    margin-top: 16px;
+    border-left: 3px solid var(--red);
+    background: var(--red-soft);
+    padding: 16px 18px;
+    border-radius: 0 14px 14px 0;
+    margin-top: 18px;
+    color: var(--body);
   }
   .note p + p { margin-top: 10px; }
 
-  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; max-width: var(--measure); }
+  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   ul.plain li {
-    display: grid; grid-template-columns: 18px 1fr; gap: 11px;
-    align-items: baseline; font-size: 0.95rem;
+    display: grid; grid-template-columns: 14px 1fr; gap: 10px;
+    align-items: baseline; font-size: 16.5px; color: var(--body);
   }
   ul.plain li::before {
-    content: "—";
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    color: var(--accent); font-size: 0.8rem;
+    content: ""; width: 6px; height: 6px; border-radius: 999px;
+    background: var(--red); transform: translateY(-2px);
   }
-  ul.plain strong { color: var(--ink); }
 
   code.inline {
-    font-family: "IBM Plex Mono", ui-monospace, monospace;
-    font-size: 0.86em; background: var(--sunken); padding: 1px 5px; border-radius: 4px;
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 0.86em; background: var(--sunken); padding: 1px 6px; border-radius: 5px;
     overflow-wrap: anywhere;
   }
 
-  footer {
-    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--hairline);
-    color: var(--muted); font-size: 0.9rem;
+  .wrap > footer {
+    margin-top: 52px; padding-top: 22px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 15px;
     display: flex; flex-direction: column; gap: 8px;
   }
 
+  /* ---- Site footer ---- */
+  .site-footer { border-top: 1px solid var(--border); }
+  .site-footer .bar {
+    max-width: var(--outer); margin: 0 auto;
+    padding: 28px max(16px, env(safe-area-inset-left), env(safe-area-inset-right)) 32px;
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;
+    gap: 20px 40px; font-size: 14px; color: var(--muted); line-height: 1.5;
+  }
+  .site-footer .about { display: flex; flex-direction: column; gap: 6px; max-width: 36ch; }
+  .site-footer .wordmark { font-size: 18px; }
+  .site-footer nav { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+  .site-footer nav a { color: var(--muted); text-decoration: none; }
+  .site-footer nav a:hover { color: var(--text); }
+
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Garmin MCP Server", "url": "https://garmin.daash.run/", "applicationCategory": "HealthApplication", "operatingSystem": "Web, macOS, Linux", "alternateName": ["Garmin Connect MCP", "Garmin connector for Claude"], "description": "Free, open-source MCP server that connects Claude and ChatGPT to a Garmin Connect account: reads runs, rides, splits, power, heart rate, HRV and sleep, and writes structured workouts and whole training plans onto the watch.", "featureList": ["Analyse runs and rides: splits, pace, heart-rate zones, power, normalised power, training stress", "Training readiness, HRV, sleep, Body Battery and training load", "VO2 max, race predictions and lactate threshold", "Structured running, cycling and strength workouts sent to a Garmin watch", "Whole training plans scheduled on the Garmin calendar, tracked as done, moved or missed", "Works in Claude and ChatGPT, on the web and phone, with nothing to install"], "screenshot": "https://garmin.daash.run/og.png", "isAccessibleForFree": true, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/license/mit", "codeRepository": "https://github.com/Bartolome69/garmin-mcp", "author": {"@type": "Person", "name": "Bart Etcheverry", "url": "https://github.com/Bartolome69"}}, {"@context": "https://schema.org", "@type": "WebSite", "name": "Garmin for Claude", "url": "https://garmin.daash.run/", "inLanguage": "en"}]</script>
 
 <script>
   !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){
@@ -267,17 +279,31 @@
 </head>
 <body>
 
+<header class="site-nav">
+  <div class="bar">
+    <a class="wordmark" href="https://daash.run/">Daash</a>
+    <nav class="links" aria-label="Main">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+    </nav>
+    <a class="pill" href="https://daash.run/#connect">Connect</a>
+  </div>
+</header>
+
+
 <div class="wrap">
 
   <header>
-    <p class="kicker"><a href="/">&larr;&nbsp;Garmin for Claude</a></p>
+    <a class="back" href="https://daash.run/how-it-works">&lsaquo;&nbsp;How it works</a>
     <h1>What this does with your data</h1>
     <p class="lede">
       You are about to give a stranger&rsquo;s website your Garmin login. That
       deserves a straight answer rather than four pages of legal throat-clearing,
       so here is the whole of it.
     </p>
-    <p class="stamp">Last updated 29 September 2026</p>
+    <p class="stamp">Last updated 22 October 2026</p>
 
     <dl class="facts">
       <div><dt>Password</dt><dd>Never stored, anywhere</dd></div>
@@ -297,8 +323,16 @@
         all. Nobody can recover it later, including me.
       </p>
       <p class="small">
+        Garmin turns away sign-ins from data-centre addresses, so the sign-in
+        step goes out through a residential relay in the UK run by IPRoyal. The
+        connection is encrypted between this server and Garmin before it
+        reaches the relay, the same way your browser encrypts a connection to
+        your bank: the relay can see that something is going to Garmin, but not
+        your email, your password or anything Garmin sends back.
+      </p>
+      <p class="small">
         If you would rather not type it here at all, that is a reasonable
-        instinct. <a href="/#diy">Run the whole thing on your own machine</a>
+        instinct. <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">Run the whole thing on your own machine</a>
         and your Garmin session never leaves it.
       </p>
     </div>
@@ -317,13 +351,17 @@
       <li>
         <span><strong>The access token Garmin issued you</strong>, encrypted at
         rest. This is the part that does the work: it is what lets the
-        connector read your training without asking you to sign in again.</span>
+        connector read your training without asking you to sign in again.
+        If you go a week without using it, the server renews this token itself,
+        reading nothing, so a long break does not end your connection.</span>
       </li>
       <li>
-        <span><strong>A masked version of your email</strong>: the first
-        letter and the domain, like <code class="inline">b****@gmail.com</code>.
-        It exists so you can tell which account is connected. The full address
-        is not stored.</span>
+        <span><strong>Your email address</strong>, so we can get in touch if
+        something goes wrong with your connection, and now and then about
+        Daash, such as new features or plans. The sign-in page says so under
+        the Connect button. Every one of those emails has a link that
+        stops them in one click, and your connection carries on as before.
+        Your address is never shared or used for anything else.</span>
       </li>
       <li>
         <span><strong>A one-way fingerprint of your email.</strong> Signing in
@@ -332,16 +370,27 @@
         address.</span>
       </li>
       <li>
-        <span><strong>Two timestamps</strong>, for when the connection was made
-        and last used.</span>
+        <span><strong>Three timestamps</strong>, for when the connection was made,
+        last used, and last renewed by the server.</span>
+      </li>
+      <li>
+        <span><strong>Two small markers</strong>: which &ldquo;what&rsquo;s
+        new&rdquo; note you have already been shown in a chat, so it is said only
+        once, and whether you have asked for no more update emails.</span>
       </li>
     </ul>
     <div class="stack">
       <p class="small">
-        Nothing from Garmin is cached: no activities, no heart rate, no sleep, no
-        location. Each question fetches from Garmin fresh and the answer is gone
-        when the request ends. There is no copy of your training history on this
-        server to leak, subpoena or lose.
+        Nothing from Garmin is stored: no activities, no heart rate, no sleep, no
+        location. (The one thing you can choose to change that is joining a
+        Daash crew, below.) Each question fetches from Garmin fresh and the answer is gone
+        when the request ends. The one exception is speed: your scheduled
+        workouts and workout list are held in memory for up to ten minutes, so
+        a chat about your plan doesn&rsquo;t refetch them every turn, and are
+        dropped whenever a change is made through Daash. Nothing is written to
+        disk. There
+        is no copy of your training history on this server to leak, subpoena or
+        lose.
       </p>
       <p class="small">
         Your IP address is held in memory for a few minutes so that repeated
@@ -357,22 +406,24 @@
     <div class="stack">
       <p class="small">
         <strong>Reading is unrestricted.</strong> Activities, splits, heart-rate
-        zones, daily summaries, sleep, body battery, personal records, the
+        zones, daily summaries, sleep, body battery, weight, personal records, the
         same things you see in the Garmin Connect app.
       </p>
       <p class="small">
-        <strong>Writing stays inside the workout library:</strong> creating a
+        <strong>Writing is to the workout library:</strong> creating a
         workout, putting it on a date, taking it off again, and deleting one you
-        no longer want. Deleting is gated rather than merely discouraged.
+        no longer want. And, only when you ask, a run you recorded can be
+        renamed, given notes, corrected in type or given its shoes. Deleting is gated rather than merely discouraged.
         The first attempt only reads the workout&rsquo;s name back, and removing
         it takes a second one quoting that name, so nothing goes without having
         been named out loud first.
       </p>
       <p class="small">
-        <strong>Your training history is out of reach.</strong> There is no tool
-        that deletes or edits a recorded activity, changes your profile, posts
-        anything, or touches anyone else&rsquo;s account. A run you actually did
-        cannot be lost through this, whatever is asked of it.
+        <strong>Your training history stays as recorded.</strong> There is no tool
+        that deletes a recorded activity or changes what it measured (its
+        distance, time, heart rate, splits or route), changes your profile,
+        posts anything, or touches anyone else&rsquo;s account. A run you
+        actually did cannot be lost through this, whatever is asked of it.
       </p>
     </div>
   </section>
@@ -397,9 +448,129 @@
     </div>
     <div class="stack">
       <p class="small">
+        <strong>Sharing a week or a plan is up to you.</strong> The plan card&rsquo;s
+        Share button opens a page on this site that draws the week you are
+        looking at as an image, for you to post, send or keep. The week travels
+        in the part of the link after the #, which browsers keep to themselves,
+        so it never reaches this server or any other, and that page has no
+        analytics and stores nothing. It carries only what the image shows: the
+        plan&rsquo;s name, the dates, and each session&rsquo;s day, type, name,
+        distance and shape, with the pace or time once it is done. With a
+        plan, the link also carries its other weeks the same way, without the
+        shapes, so the page can save the whole plan as a PDF or an image; that
+        is drawn on your device too. Its
+        &ldquo;Send Daash to a friend&rdquo; link is the front page marked as
+        coming from a share, with nothing about you or your week in it. Who
+        sees the image after that is your choice.
+      </p>
+      <p class="small">
         Beyond that: nothing is sold, rented, or handed to advertisers, data
         brokers or anyone else. There is no third party with access to the
         database. It is one server, one person, no business model.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>AI Transparency Statement</h2>
+    <div class="stack">
+      <p class="small">
+        <strong>Which AI systems process your Garmin data.</strong> Only the
+        assistant you connect Daash to: Claude, made by Anthropic, or ChatGPT,
+        made by OpenAI. Daash runs no AI model of its own.
+      </p>
+      <p class="small">
+        <strong>What for, and when.</strong> To answer your questions about your
+        training, sleep and recovery, and to build the workouts and plans you
+        ask for. The assistant reads your Garmin data through Daash only when
+        you ask it something that needs it, and only your own.
+      </p>
+      <p class="small">
+        <strong>Your consent.</strong> You give it by adding Daash to your
+        assistant and signing in, and Claude also asks before Daash first reads
+        or changes anything unless you tell it not to. You can withdraw it at
+        any time: remove Daash from your assistant&rsquo;s connectors, or choose
+        Disconnect on the sign-in page, which also deletes everything Daash
+        keeps.
+      </p>
+      <p class="small">
+        <strong>Training AI models.</strong> Daash never uses your Garmin data,
+        or anything made from it, to train, test or improve any AI model, and
+        lets no one else do so with what it holds. What reaches your chat is
+        handled by Anthropic or OpenAI under their own policies, and whether
+        they may learn from your chats is a setting in your account with them:
+        in Claude, Settings &rarr; Privacy &rarr; Help improve Claude; in
+        ChatGPT, Settings &rarr; Data controls &rarr; Improve the model for
+        everyone. Turn it off and your chats, Garmin data included, are not
+        used for training.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Everyone who handles your data</h2>
+    <div class="stack">
+      <p class="small">
+        Nothing is sold, and nothing is shared beyond this list. Each one only
+        does the job beside it.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Garmin</strong>, where your data comes from and where
+        workouts go.</span></li>
+      <li><span><strong>Fly.io</strong>, which hosts the server in London that
+        keeps your encrypted row.</span></li>
+      <li><span><strong>IPRoyal</strong>, the UK relay the sign-in step passes
+        through, which sees nothing it can read (see above).</span></li>
+      <li><span><strong>Anthropic or OpenAI</strong>, the assistant you
+        connect, which receives what you ask for in your chat.</span></li>
+      <li><span><strong>PostHog</strong>, on its European servers, which
+        records the usage moments described below with your email address,
+        never your Garmin data.</span></li>
+      <li><span><strong>Resend and Google (Gmail)</strong>, which carry and
+        hold email you send to support@daash.run, and the replies to it.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Garmin&rsquo;s official connection, being tested</h2>
+    <div class="stack">
+      <p class="small">
+        Daash is moving onto Garmin&rsquo;s official developer programme. For
+        now only a test account connects that way; everyone else carries on
+        exactly as this page describes above. If you connect that way once it
+        opens, you approve Daash on Garmin&rsquo;s own sign-in page instead of
+        typing your password here, and you are asked first whether Daash may
+        use your data with your assistant.
+      </p>
+      <p class="small">
+        Garmin doesn&rsquo;t share your email address that way, so Daash asks
+        for it on its own page. It&rsquo;s kept encrypted and used to recognise
+        you if you connect again, and for the odd update email you can stop
+        with one click. If the address already has a Daash account, Daash
+        emails it a 6-digit code first, so nobody can join someone else&rsquo;s
+        account by typing their address. The code is kept only as a scrambled
+        check, and only for ten minutes.
+      </p>
+      <p class="small">
+        Garmin then sends Daash your data as your watch syncs, rather than
+        Daash asking for it each time: daily summaries, sleep, heart rate and
+        HRV, stress and Body Battery, fitness markers such as VO2 max, and your
+        activities. Where Garmin allows it, Daash also asks Garmin once for
+        the last month of your history when you first connect, so it
+        isn&rsquo;t starting from nothing; it&rsquo;s kept the same way. It keeps the summaries, not the raw streams: an activity
+        as its distance, time, splits and laps, without its GPS track, and a
+        night or a day as its totals rather than minute-by-minute readings.
+        Garmin also offers the file your watch recorded; Daash reads it once
+        for the figures the watch worked out (time in your heart rate zones,
+        running dynamics, training effect, power) and doesn&rsquo;t keep the file.
+        So that connection keeps that data, encrypted, on the same
+        London server, for as long as you stay connected and only to answer
+        your own questions. The workouts and plans Daash writes to that
+        account are kept here too, because Garmin&rsquo;s API doesn&rsquo;t let
+        Daash read them back: the sessions themselves, and the dates they sit
+        on. Disconnecting here, or removing Daash in Garmin Connect, deletes
+        all of it, and Daash tells Garmin you have gone.
       </p>
     </div>
   </section>
@@ -410,18 +581,128 @@
       <p class="small">
         These pages count views using
         <a href="https://posthog.com" target="_blank" rel="noopener">PostHog</a>
-        on its European servers, configured to leave nothing behind: no cookies,
-        no advertising identifiers, no session recording, and no profile built
-        about you. It records that a page was opened and that a button was
+        on its European servers, configured to leave nothing behind: no cookies
+        of its own, no advertising identifiers, no session recording, and no
+        profile built about you. The site itself sets one small cookie,
+        <code>daash_src</code>, which remembers for 30 days where you arrived
+        from (a site name such as chatgpt.com, or &ldquo;search&rdquo;), so
+        that if you go on to connect, Daash knows what brought you. It holds
+        nothing about you and goes nowhere else. It records that a page was opened and that a button was
         pressed, which is how I know whether the instructions actually work.
         If you use the box on the front page that asks which connector should
         be next, the name you tapped or typed is recorded the same way, and
         that is all it carries.
       </p>
       <p class="small">
-        It never receives your email, your Garmin data, or your connector
-        address. That is also why this site has no cookie banner: there is
-        nothing to ask you to consent to.
+        The server reports a few moments the same way: a sign-in that worked,
+        a sign-in that failed and roughly why, the first time a new connection
+        is used, once a day that it was used that day, once a day the name of
+        each tool used (such as &ldquo;get_plan&rdquo;, and how many seconds it
+        took to answer, never what it returned), once an hour how long each
+        tool took across everyone, with no one&rsquo;s name or address on it,
+        when a tool failed in a way it shouldn&rsquo;t (its name and the kind
+        of error, never the message), when a tool was held back because it
+        was asked for at the same time as the plan card (its name only), when
+        a &ldquo;what&rsquo;s new&rdquo;
+        note was shown, when someone unsubscribed from update emails, and when
+        a connection could not be renewed, by Claude or by Garmin, so it would
+        need connecting again. Each carries a few yes-or-no flags, the app you
+        connected from (such as Claude or ChatGPT) and your email address, so I
+        can see who is using it, which features earn their place, and help if
+        something breaks. Sign-ins also carry the country you connected from,
+        worked out on Daash&rsquo;s own server from your connection&rsquo;s
+        address using
+        <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a>&rsquo;s
+        free country table; the address itself is neither kept nor sent.
+        They also say whether you were on a phone, tablet or computer, its
+        system (iOS, Android, Mac or Windows) and which kind of browser
+        (Safari, Chrome, an app&rsquo;s own and so on),
+        never the browser&rsquo;s full details, so a sign-in that keeps
+        failing on one kind of device can be found and fixed.
+      </p>
+      <p class="small">
+        Email to support@daash.run is received by
+        <a href="https://resend.com" target="_blank" rel="noopener">Resend</a>
+        and passed through the server on its way to my inbox. The server
+        keeps no copy of it.
+      </p>
+      <p class="small">
+        Neither receives your Garmin data or your
+        connector address. That is also why this site has no cookie banner:
+        there is nothing to ask you to consent to.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Daash Crews, only if you join one</h2>
+    <div class="stack">
+      <p class="small">
+        A Daash crew is a small group of friends who all use Daash. It shows
+        them each other&rsquo;s easy and long runs for the week and suggests
+        runs to do together. Nobody is in a crew unless they join one with an
+        invite code, and while you are in one, the crew&rsquo;s members can see
+        this, and the server keeps it so they can:
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>The name you chose for the crew</strong>, and the crew&rsquo;s own name and invite code.</span></li>
+      <li><span><strong>When you usually run</strong>, as rough times such as &ldquo;weekday evenings&rdquo;, and whether you usually go to the crew&rsquo;s club run.</span></li>
+      <li><span><strong>Your planned easy and long runs for the next two weeks</strong>: the day, whether it is easy or long, and the distance. A hard session such as intervals, or any run with 2&nbsp;km or more of reps, is kept as the word &ldquo;hard&rdquo; on its day and nothing else. A planned run you have done today stays until the day ends, marked done, with its planned distance. Each day is deleted once it has passed.</span></li>
+    </ul>
+    <div class="stack">
+      <p class="small">
+        These are read from your own plan when you look at it in Daash, so a
+        crew causes no extra requests to Garmin. How your runs went, your
+        pace, heart rate, sleep, routes, location and everything else from
+        Garmin are never kept or shown to the crew: crews match people by day
+        and time, never by speed. Only members of your crew can see any
+        of it, through their own Daash, unless whoever started the crew turns
+        on its page (below).
+      </p>
+      <p class="small">
+        The crew card can turn the crew&rsquo;s week into a message or an
+        image: a calendar of each member&rsquo;s chosen name and their easy
+        and long runs by day with distances (a hard session as the word
+        &ldquo;hard&rdquo;), the club run, and the invite code, for a member
+        to copy, save or send to WhatsApp.
+        The image is drawn on the member&rsquo;s own device by the same share
+        page as a plan week, and the week travels in the link the same way,
+        reaching no server. That only happens when they press the button, and
+        it goes to whichever chat they choose; Daash sends nothing itself.
+      </p>
+      <p class="small">
+        <strong>The crew&rsquo;s page, only if its starter turns it on.</strong>
+        Whoever started a crew can make a link to a web page of the
+        crew&rsquo;s week, for the group to pin in its chat. Daash asks them
+        first, and every member&rsquo;s crew card says when the page is on.
+        Anyone with the link can see what the crew card shows for this week
+        and next: members&rsquo; chosen names, the days they run, easy, long
+        or &ldquo;hard&rdquo; with distances, which runs line up and at what
+        time of day, and the club run. It never shows the invite code, pace or
+        anything else. The link is long and random, the page is kept out of
+        search engines and has no analytics or cookies, and the crew&rsquo;s
+        starter can replace the link, which stops the old one working, or
+        turn it off at any time.
+      </p>
+      <p class="small">
+        <strong>Friends without Daash, on the crew&rsquo;s page.</strong>
+        Anyone with the page&rsquo;s link can add their easy runs to it without
+        Daash or Garmin. What is kept for them: the first name they type, the
+        times of their usual week they run easy (a day and morning, afternoon
+        or evening), whether they usually do the crew&rsquo;s club run, any
+        changes they make to this week or next, and a four-digit PIN, stored scrambled so it can&rsquo;t be read back, not
+        even by Daash. Their phone remembers them with a random key kept in
+        its browser. Nothing else is asked for or kept: no email, no account,
+        no location. Days that have passed are deleted. After three weeks
+        without them opening the page, their runs stop being matched until
+        they say they&rsquo;re still running. &ldquo;Remove me&rdquo; on the
+        page deletes everything kept for them at once, and whoever started the
+        crew can remove them too.
+      </p>
+      <p class="small">
+        Leaving the crew deletes all of it at once, from the page too. So does Disconnect. When the
+        last member leaves, the crew itself is deleted.
       </p>
     </div>
   </section>
@@ -431,8 +712,8 @@
     <div class="stack">
       <p class="small">
         Open the sign-in page and choose <strong>Disconnect</strong>. That deletes
-        your row outright (token, masked email, fingerprint, timestamps)
-        and the connection stops working immediately. Nothing is retained
+        your row outright (token, email, fingerprint, timestamps, markers),
+        and your place in any crew with everything it kept, and the connection stops working immediately. Nothing is retained
         afterwards, so there is no backlog to request a copy of or ask to be
         forgotten from.
       </p>
@@ -447,6 +728,13 @@
         only removes it at their end. The Disconnect button is what deletes the
         stored session here. Nothing changes on Garmin&rsquo;s side either way.
       </p>
+      <p class="small">
+        To see what is held about you, get a copy of it, or correct it, email
+        <a href="mailto:support@daash.run">support@daash.run</a> from the
+        address you signed in with, and you&rsquo;ll get it within a month, as
+        the law requires. To stop the occasional Daash email, use the link in
+        any of them.
+      </p>
     </div>
   </section>
 
@@ -458,7 +746,8 @@
         affiliated with, endorsed by, or connected to Garmin, Anthropic or
         OpenAI. It reaches Garmin through the same private interface the Garmin
         Connect website uses, which is why it can break when Garmin changes
-        something.
+        something, and is moving onto Garmin&rsquo;s official developer
+        programme (above).
       </p>
       <p class="small">
         It is not intended for children under 13, and it is not a medical device.
@@ -470,8 +759,7 @@
         history is public</a> like the rest of it. Questions, or anything here
         that turns out not to match the code:
         <a href="https://github.com/Bartolome69/garmin-mcp/issues" target="_blank" rel="noopener">open
-        an issue</a>, or find me at
-        <a href="https://www.bartetcheverry.com/" target="_blank" rel="noopener">bartetcheverry.com</a>.
+        an issue on GitHub</a>.
       </p>
     </div>
   </section>
@@ -479,15 +767,35 @@
   <footer>
     <p>
       Every claim on this page is checkable: the storage layer is
-      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/store.py" target="_blank" rel="noopener">store.py</a>
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/store.py" target="_blank" rel="noopener">store.py</a>,
+      crews are
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/main/garmin_mcp/crews.py" target="_blank" rel="noopener">crews.py</a>
       and the sign-in server is
       <a href="https://github.com/Bartolome69/garmin-mcp/blob/hosted/garmin_mcp/hosted.py" target="_blank" rel="noopener">hosted.py</a>.
       Don&rsquo;t take my word for it.
     </p>
-    <p><a href="/">&larr; Back to setting it up</a></p>
+    <p><a href="https://daash.run/#connect">&larr; Back to setting it up</a> &middot; <a href="/data/">What it can see</a></p>
   </footer>
 
 </div>
+
+<footer class="site-footer">
+  <div class="bar">
+    <div class="about">
+      <a class="wordmark" href="https://daash.run/">Daash</a>
+      <span>Free and open source. Not affiliated with Garmin.</span>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="/data/">What it can see</a>
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</footer>
 
 </body>
 </html>

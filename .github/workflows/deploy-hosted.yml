@@ -1,0 +1,274 @@
+name: Deploy hosted server
+
+# The website deploys itself: a push to main and GitHub Pages rebuilds it. The
+# Fly machine did not, so every server change needed somebody to remember to
+# run `flyctl deploy` by hand — and a forgotten deploy looks exactly like a
+# change that did not work.
+#
+# Everything lives on main, hosted server included. Every push to main runs
+# the tests. Deploying is a deliberate step: run this workflow by hand
+# (Actions -> Deploy hosted server -> Run workflow, on main), and only if the
+# tests pass is the image built and rolled out. A merge never reaches the
+# people using the connector without somebody choosing to ship it.
+#
+# Needs one repository secret, FLY_API_TOKEN: Settings -> Secrets and variables
+# -> Actions -> New repository secret. Use a deploy token scoped to this app
+# (Fly dashboard -> the app -> Tokens -> Create deploy token), not an org-wide
+# personal token, so the worst a leak allows is redeploying this one app.
+
+on:
+  push:
+    branches: [main]
+    # Documentation and local-install scripts change often and cannot affect
+    # what the server runs. Deploying for them would just add noise and risk.
+    paths:
+      - "garmin_mcp/**"
+      - "tests/**"
+      - "docs/share/**"
+      - "Dockerfile"
+      - "fly.toml"
+      - "requirements-hosted.txt"
+      - ".github/workflows/deploy-hosted.yml"
+  workflow_dispatch:
+    inputs:
+      skip_signin_check:
+        description: "Deploy even if the new code can't sign in to Garmin (only when Garmin itself is down and this deploy is the fix)"
+        type: boolean
+        default: false
+
+# The app name is public — it is the connector address people paste into
+# Claude. fly.toml deliberately carries a placeholder so a self-hoster does not
+# deploy over this app by accident, so the real name is passed on the command
+# line instead.
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The same pinned set the image installs, so a dependency that breaks the
+      # server fails here rather than in production.
+      # Block scalar, not a plain string: the " : " in `--only-binary :all:`
+      # parses as a YAML mapping and breaks the file.
+      - name: Install
+        run: |
+          pip install --only-binary :all: -r requirements-hosted.txt
+
+      - name: Hosted server
+        run: python tests/hosted_test.py
+
+      - name: OAuth
+        run: python tests/oauth_test.py
+
+      # Covers the tools themselves rather than the transport — including the
+      # confirmation gate on delete_workout, which is now the most consequential
+      # code path here: it is the only one that destroys anything.
+      - name: Tools
+        run: python tests/smoke_test.py
+
+      # The matcher decides whether somebody is told they missed a session.
+      # Getting that wrong is the one bug that would make them stop trusting
+      # the whole thing, so it is guarded independently of the tool wiring.
+      - name: Progress matching
+        run: python tests/progress_test.py
+
+      # Garmin's official API: the sign-in, what Garmin pushes, and workouts
+      # in the Training API's shape, against a stubbed Garmin.
+      - name: Official API
+        run: python tests/official_test.py
+
+      # Signing up through Garmin's own page, the email step, and the listed
+      # address the directories use.
+      - name: Sign-up
+        run: python tests/signup_test.py
+
+      # The plan card and the share page drawn in a real browser, the way a
+      # chat draws them: a progress answer, an opened run's laps, sharing a run.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Plan card
+        # Only the headless browser, without --with-deps: on Oct 26 the apt
+        # mirror took minutes per font package and held two deploys. GitHub's
+        # Ubuntu image already has the libraries Chrome needs.
+        timeout-minutes: 8
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --only-shell chromium
+          node tests/card_test.js
+
+  # The real Garmin checks on the new code, run while the tests run: neither
+  # needs the other, and together they were half of every deploy's wait.
+  precheck:
+    name: Check sign-in
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !inputs.skip_signin_check
+    runs-on: ubuntu-latest
+    # Two runs checking at once would share the one test account.
+    concurrency:
+      group: deploy-hosted-check
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Fails loudly rather than skipping. A deploy job that quietly does
+      # nothing when the secret is missing rebuilds the exact problem this
+      # workflow exists to remove: code on the branch, not on the machine.
+      - name: Check the token is set
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is not set."
+            echo "Add it under Settings -> Secrets and variables -> Actions,"
+            echo "using a deploy token scoped to $FLY_APP."
+            exit 1
+          fi
+
+      # The tests above run against a fake Garmin, and on Oct 12 they passed
+      # for a change that stopped every real sign-in for 18 hours. So before
+      # anything ships, this commit's sign-in code signs in for real from the
+      # live machine, as an account that doesn't exist, and must get as far as
+      # Garmin saying the password is wrong (scripts/check_signin.py).
+      - name: Sign in to Garmin with the new code before shipping it
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: scripts/signin_check_retry.sh candidate
+
+      # And the spare test account all the way, with the new code: the
+      # session it stores and a tool call made with it (check-full-signin.yml).
+      - name: Connect the test account with the new code before shipping it
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
+          GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
+        run: scripts/signin_check_retry.sh full candidate
+
+  deploy:
+    name: Deploy
+    needs: [test, precheck]
+    # Only a hand-started run on main deploys. A push runs the tests and stops.
+    # The sign-in checks may be skipped on purpose (skip_signin_check), never failed.
+    if: >-
+      always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+      && needs.test.result == 'success'
+      && (needs.precheck.result == 'success' || (inputs.skip_signin_check && needs.precheck.result == 'skipped'))
+    runs-on: ubuntu-latest
+    # Two deploys should not race each other onto the machine, but only the
+    # deploy waits its turn: a push's tests no longer hold up a deploy behind
+    # them. Not cancel-in-progress: a half-finished deploy is worse than a
+    # redundant one.
+    concurrency:
+      group: deploy-hosted
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Support mail's keys, and the official Garmin API's, live as repository
+      # secrets and go to the machine with each deploy, staged so the deploy
+      # below is what picks them up. Only those that are set are passed on;
+      # none set leaves each switched off.
+      - name: Hand support mail and the official API their keys
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_WEBHOOK_SECRET: ${{ secrets.RESEND_WEBHOOK_SECRET }}
+          SUPPORT_FORWARD_TO: ${{ secrets.SUPPORT_FORWARD_TO }}
+          GARMIN_OFFICIAL_CLIENT_ID: ${{ secrets.GARMIN_OFFICIAL_CLIENT_ID }}
+          GARMIN_OFFICIAL_CLIENT_SECRET: ${{ secrets.GARMIN_OFFICIAL_CLIENT_SECRET }}
+          GARMIN_MCP_PREVIEW: ${{ secrets.GARMIN_MCP_PREVIEW }}
+        run: |
+          pairs=()
+          for name in RESEND_API_KEY RESEND_WEBHOOK_SECRET SUPPORT_FORWARD_TO \
+                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET GARMIN_MCP_PREVIEW; do
+            if [ -n "${!name}" ]; then pairs+=("$name=${!name}"); fi
+          done
+          if [ ${#pairs[@]} -gt 0 ]; then
+            flyctl secrets set --stage --app "$FLY_APP" "${pairs[@]}" > /dev/null
+            echo "Staged ${#pairs[@]} setting(s)."
+          else
+            echo "No support mail or official API settings yet."
+          fi
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        # Website sign-ups: "password", "official", or "split" (half each, per
+        # browser, from Oct 26). The listed address is always official.
+        run: flyctl deploy --app "$FLY_APP" --remote-only --env GARMIN_MCP_SIGNUP=split
+
+      # `flyctl deploy` exiting 0 means the machine started, not that it serves
+      # what we think it serves. These are the two pages that ask for a Garmin
+      # password, so if either is broken nobody should be signing in.
+      - name: Check it serves what we just shipped
+        run: |
+          base="https://${FLY_APP}.fly.dev"
+          for path in / /connect; do
+            echo "--- $base$path"
+            # Fly may still be draining the previous machine for a moment.
+            for attempt in 1 2 3 4 5; do
+              body="$(curl -fsS --max-time 20 "$base$path" || true)"
+              [ -n "$body" ] && break
+              echo "    no response yet, retrying ($attempt)"
+              sleep 6
+            done
+            if [ -z "$body" ]; then
+              echo "    FAIL: no response"
+              exit 1
+            fi
+            # An f-string that lost its prefix renders the placeholder as
+            # literal text and still returns 200, so absence of the bug is
+            # checked as well as presence of the link.
+            case "$body" in
+              *'{PRIVACY_URL}'*)
+                echo "    FAIL: unrendered placeholder in the page"
+                exit 1 ;;
+            esac
+            case "$body" in
+              *"garmin.daash.run/privacy/"*)
+                echo "    ok: privacy link present" ;;
+              *)
+                echo "    FAIL: no privacy link"
+                exit 1 ;;
+            esac
+          done
+          echo "--- $base/health"
+          curl -fsS --max-time 20 "$base/health" && echo
+
+          # The address people actually paste. The server checks that a token
+          # was minted for the exact resource it is presented to, so a wrong
+          # issuer here breaks every sign-in while both pages still render.
+          public="https://mcp.garmin.daash.run"
+          echo "--- $public/health"
+          curl -fsS --max-time 20 "$public/health" && echo
+          echo "--- $public/.well-known/oauth-authorization-server"
+          issuer="$(curl -fsS --max-time 20 "$public/.well-known/oauth-authorization-server" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("issuer",""))')"
+          case "$issuer" in
+            "$public"|"$public/") echo "    ok: issuer is $issuer" ;;
+            *) echo "    FAIL: issuer is '$issuer', expected $public"; exit 1 ;;
+          esac
+
+      # And once more with what is now live, the whole image this time.
+      - name: Sign in to Garmin with what is now live
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: scripts/signin_check_retry.sh
+
+      - name: Connect the test account with what is now live
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GARMIN_CHECK_EMAIL: ${{ secrets.GARMIN_CHECK_EMAIL }}
+          GARMIN_CHECK_PASSWORD: ${{ secrets.GARMIN_CHECK_PASSWORD }}
+        run: scripts/signin_check_retry.sh full

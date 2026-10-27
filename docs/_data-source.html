@@ -1,0 +1,452 @@
+<title>What it can see · Daash</title>
+<meta name="description" content="Every kind of Garmin data the connector reads for Claude and ChatGPT, the workouts it can write to your watch, and what it never touches.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* The daash.run design: the same tokens, type and chrome as the site. */
+  :root {
+    color-scheme: light;
+    --bg: #F7F8FA;
+    --card: #FFFFFF;
+    --sunken: #EEF0F3;
+    --text: #161B26;
+    --body: #3A404C;
+    --muted: #5B6270;
+    --faint: #8A909C;
+    --border: #E6E8EC;
+    --row: #EEF0F3;
+    --red: #E0312A;
+    --red-text: #C8261F;
+    --red-hover: #A81E18;
+    --red-soft: #FDF2F1;
+    --outer: 1120px;
+    --measure: 680px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 17px;
+    line-height: 1.7;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  a { color: var(--red-text); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:hover { color: var(--red-hover); }
+  a:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
+
+  /* ---- Site nav ---- */
+  .site-nav {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(247, 248, 250, 0.92);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .site-nav .bar {
+    max-width: var(--outer); margin: 0 auto; height: 56px;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    display: flex; align-items: center; gap: 24px;
+  }
+  .wordmark {
+    font-weight: 800; font-style: italic; letter-spacing: -0.03em;
+    color: var(--red); font-size: 22px; line-height: 1; text-decoration: none;
+  }
+  .wordmark:hover { color: var(--red); }
+  .site-nav .links { display: none; align-items: center; gap: 4px; font-size: 14.5px; }
+  .site-nav .links a { color: var(--muted); text-decoration: none; padding: 8px 10px; border-radius: 8px; }
+  .site-nav .links a:hover { color: var(--text); }
+  .pill {
+    margin-left: auto; display: inline-flex; align-items: center; height: 40px; padding: 0 16px;
+    border-radius: 999px; background: var(--red); color: #fff; font-weight: 500; font-size: 15px;
+    text-decoration: none;
+  }
+  .pill:hover { background: var(--red-text); color: #fff; }
+  @media (min-width: 760px) { .site-nav .links { display: flex; } }
+
+  /* ---- The page ---- */
+  .wrap {
+    max-width: calc(var(--measure) + 32px);
+    margin: 0 auto;
+    padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
+    padding-block: 32px 64px;
+  }
+
+  h1, h2, h3 { margin: 0; color: var(--text); text-wrap: balance; }
+  h1 { font-size: clamp(32px, 4.6vw, 46px); font-weight: 700; line-height: 1.05; letter-spacing: -0.045em; margin-top: 18px; }
+  h2 { font-size: 24px; font-weight: 700; line-height: 1.2; letter-spacing: -0.03em; }
+
+  p { margin: 0; text-wrap: pretty; }
+
+  .back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13.5px; color: var(--muted); text-decoration: none;
+  }
+  .back:hover { color: var(--text); }
+
+  .lede { font-size: 19px; line-height: 1.6; color: var(--muted); max-width: 58ch; margin-top: 14px; }
+  .stamp { margin-top: 12px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--muted); }
+
+  section { margin-top: 44px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+  .small { font-size: 16.5px; color: var(--body); }
+  .muted, .small.muted { color: var(--muted); }
+  strong { color: var(--text); font-weight: 600; }
+
+  /* ---- The summary cards ---- */
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    margin: 26px 0 0;
+  }
+  .facts div { background: var(--card); padding: 16px 18px; }
+  .facts dt {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px; line-height: 1.4;
+  }
+  .facts dd { margin: 0; font-weight: 600; font-size: 15.5px; line-height: 1.4; }
+  @media (max-width: 620px) { .facts { grid-template-columns: 1fr; } }
+
+  .note {
+    border-left: 3px solid var(--red);
+    background: var(--red-soft);
+    padding: 16px 18px;
+    border-radius: 0 14px 14px 0;
+    margin-top: 18px;
+    color: var(--body);
+  }
+  .note p + p { margin-top: 10px; }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  ul.plain li {
+    display: grid; grid-template-columns: 14px 1fr; gap: 10px;
+    align-items: baseline; font-size: 16.5px; color: var(--body);
+  }
+  ul.plain li::before {
+    content: ""; width: 6px; height: 6px; border-radius: 999px;
+    background: var(--red); transform: translateY(-2px);
+  }
+
+  code.inline {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 0.86em; background: var(--sunken); padding: 1px 6px; border-radius: 5px;
+    overflow-wrap: anywhere;
+  }
+
+  .wrap > footer {
+    margin-top: 52px; padding-top: 22px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 15px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  /* ---- Site footer ---- */
+  .site-footer { border-top: 1px solid var(--border); }
+  .site-footer .bar {
+    max-width: var(--outer); margin: 0 auto;
+    padding: 28px max(16px, env(safe-area-inset-left), env(safe-area-inset-right)) 32px;
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start;
+    gap: 20px 40px; font-size: 14px; color: var(--muted); line-height: 1.5;
+  }
+  .site-footer .about { display: flex; flex-direction: column; gap: 6px; max-width: 36ch; }
+  .site-footer .wordmark { font-size: 18px; }
+  .site-footer nav { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+  .site-footer nav a { color: var(--muted); text-decoration: none; }
+  .site-footer nav a:hover { color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<header class="site-nav">
+  <div class="bar">
+    <a class="wordmark" href="https://daash.run/">Daash</a>
+    <nav class="links" aria-label="Main">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+    </nav>
+    <a class="pill" href="https://daash.run/#connect">Connect</a>
+  </div>
+</header>
+
+
+<div class="wrap">
+
+  <header>
+    <a class="back" href="https://daash.run/how-it-works">&lsaquo;&nbsp;How it works</a>
+    <h1>What it can see, and what it can change</h1>
+    <p class="lede">
+      The connector is a set of questions Claude or ChatGPT can ask your Garmin
+      account, and a small set of things it can put there. This is the whole
+      list, in the order you would think of them, with what each one never
+      touches.
+    </p>
+    <p class="stamp">Last updated 19 October 2026</p>
+
+    <dl class="facts">
+      <div><dt>Reads</dt><dd>Health, sleep, readiness, activities, fitness markers, weight, shoes, your plan</dd></div>
+      <div><dt>Writes</dt><dd>The workout library; and, when you ask, a run&rsquo;s name, notes, type and shoes</dd></div>
+      <div><dt>Never</dt><dd>Deleting a recorded activity or changing what it measured, your route map, your body composition</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>About today</h2>
+    <div class="stack">
+      <p class="small">
+        The morning questions. Should today be hard or easy, did you sleep,
+        where is your training load sitting. Three tools cover it.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Daily summary.</strong> Steps and distance, calories, resting and
+        min and max heart rate, body battery high and low, stress, intensity
+        minutes, blood oxygen. The same numbers as the Garmin Connect home
+        screen for the day, with what charged or drained body battery (sleep,
+        naps, activities, each with its effect) and the longest spells of
+        stress, with their times.</span></li>
+      <li><span><strong>Heart rate through a day or night.</strong> The watch&rsquo;s
+        all-day readings, about one every two minutes, for the window asked
+        about: answered as the gaps where it had no reading, blocks with their
+        low, average and high, and the lowest and highest readings. The
+        readings themselves are not passed on or kept.</span></li>
+      <li><span><strong>Sleep.</strong> Total time, the stages with durations and
+        percentages, sleep score, overnight HRV, resting heart rate, awake
+        count, breathing rate (average, lowest, highest) and blood oxygen
+        against its usual over the last week. Needs the watch worn overnight;
+        otherwise it says so.</span></li>
+      <li><span><strong>Readiness.</strong> Garmin&rsquo;s training readiness score and
+        the six factors behind it; training status (productive, maintaining,
+        strained, recovery and the rest); acute against chronic load and the
+        ratio between them; the four-week load focus with its targets;
+        overnight HRV against your personal baseline; body battery, stress,
+        resting heart rate and sleep folded in. One call, so the answer to
+        &ldquo;threshold today or tomorrow?&rdquo; comes from evidence.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>About a run</h2>
+    <div class="stack">
+      <p class="small">
+        Every activity Garmin has, at three depths.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>The list.</strong> Runs, rides, swims, strength sessions and
+        anything else recorded, with distance, duration, pace per kilometre and
+        mile, average and max heart rate, time in each heart-rate zone,
+        cadence, training effect, and running dynamics and power when the
+        watch records them. By count or by date range.</span></li>
+      <li><span><strong>One activity in detail.</strong> Every lap or split with its own
+        distance, pace, heart rate, cadence, dynamics and power, plus the full
+        heart-rate time-in-zone for the session.</span></li>
+      <li><span><strong>Inside the recording.</strong> The per-second data behind the
+        laps. For any lap longer than five minutes: heart rate across the first
+        third against the last, at the paces run, which is how cardiac drift and
+        fitness show up. Kilometre splits derived for you when the watch did
+        not lap by kilometre. The recording includes its GPS points. They are
+        used only while answering, to tell an out-and-back from a loop and to
+        find earlier runs or rides of the same route, and are never returned to
+        the assistant or stored. Garmin&rsquo;s route map itself is not
+        requested.</span></li>
+      <li><span><strong>Around it.</strong> The weather during it, from Garmin, and what
+        heat, humidity and wind did to pace; the shoes worn; the terrain:
+        climbs, pace or speed uphill, on the flat and downhill, and heart-rate
+        drift; earlier runs or rides of the same route. For a ride, power
+        against your FTP: normalised power, intensity factor, training stress,
+        best efforts and time in each power zone.</span></li>
+      <li><span><strong>A swim.</strong> Pace per 100 metres (or yards), the pool length,
+        SWOLF, stroke rate, strokes per length and the number of lengths; and
+        the set as swum, each interval with its distance, pace, stroke and the
+        rest after it. Swim workouts are built with the pool length, a stroke
+        per step and rests ended by pressing lap.</span></li>
+      <li><span><strong>Your shoes.</strong> Each pair&rsquo;s name and distance from
+        Garmin&rsquo;s gear list, to say how much life it has left.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>About your fitness</h2>
+    <div class="stack">
+      <p class="small">
+        The markers Garmin computes from everything above, so goals and
+        training paces can start from what your body is doing rather than from
+        what you remember.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>VO2 max</strong> and fitness age.</span></li>
+      <li><span><strong>Race predictions</strong> for 5k, 10k, half and marathon, as finish
+        times and the pace each implies.</span></li>
+      <li><span><strong>Lactate threshold</strong> heart rate and pace, the anchor for tempo
+        and threshold sessions.</span></li>
+      <li><span><strong>Endurance score and hill score</strong>, with the class Garmin puts
+        you in, read off the boundaries Garmin ships with the score.</span></li>
+      <li><span><strong>Running tolerance</strong>, Garmin&rsquo;s estimate of the weekly
+        load your body currently handles.</span></li>
+      <li><span><strong>Personal records</strong>, with the caveat that Garmin only knows
+        races it timed itself.</span></li>
+      <li><span><strong>Cycling FTP</strong>, with watts per kilo. That reads the weight
+        set in your Garmin profile, for this and nothing else.</span></li>
+      <li><span><strong>Your zones</strong>, heart rate and power, as set in Garmin, so a
+        workout can aim at your own zone 2 rather than a guess.</span></li>
+      <li><span><strong>Fitness trends</strong>, the same markers month by month over up
+        to a year: VO2 max, race predictions, lactate threshold, endurance and
+        hill score, and cycling FTP, to see whether you are getting fitter.</span></li>
+      <li><span><strong>Weight</strong>, month by month beside those markers: the average
+        of the weigh-ins you log in Garmin Connect, with body fat and muscle
+        mass where a scale records them, so Claude can see how your fitness
+        moved as your weight changed. Read only, never written or
+        deleted.</span></li>
+      <li><span><strong>Recovery trends</strong>, week by week over up to twelve weeks:
+        overnight HRV, sleep, resting heart rate and body battery.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>About your plan</h2>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>A training block as one thing.</strong> Claude designs the plan
+        with you, from your goal and your fitness markers, and the connector
+        builds and schedules every session in one go. Each workout carries a
+        short plan code in its name, like <code class="inline">Threshold 5x1k · HM</code>,
+        which is how the block is found again. The block&rsquo;s name, method,
+        phases and milestones are written into each workout&rsquo;s notes, so
+        the card reads them back from Garmin. The plan lives on your Garmin
+        calendar and nowhere else.</span></li>
+      <li><span><strong>How the plan is going</strong>, week by week: each session done,
+        done on another day, missed, today or ahead, with the next session and
+        what slipped in the last week. Sessions can be moved or retuned
+        without leaving the plan.</span></li>
+      <li><span><strong>Scheduled workouts</strong> on the Garmin calendar, and the
+        library they come from.</span></li>
+      <li><span><strong>Progress</strong>: which planned sessions actually happened, week by
+        week. A session counts if it was run within a day either side of its
+        date, because people move things and a plan that calls that a failure
+        gets closed.</span></li>
+      <li><span><strong>The plan card</strong>, drawn in the chat where the app supports
+        it: each week&rsquo;s sessions, what was done, moved or missed, and
+        what&rsquo;s next. It reads every workout scheduled on your Garmin
+        calendar, whoever put it there.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What it can change</h2>
+    <div class="stack">
+      <p class="small">
+        Writing is to the <strong>workout library</strong>, the structured sessions you
+        would otherwise build by hand in Garmin Connect, and, only when you
+        ask, to four details of a run you recorded.
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Create</strong> a workout from a list of steps with pace,
+        heart-rate or power targets, or a strength session from Garmin&rsquo;s
+        exercise catalogue. A power target can be a share of the FTP set in
+        Garmin, which is read to work out the watts.</span></li>
+      <li><span><strong>Update</strong> one in place, keeping its id, so the dates it is
+        already scheduled on stay put and the watch picks up the new version at
+        the next sync. This is how paces get retuned as you get fitter.</span></li>
+      <li><span><strong>Schedule</strong> it on a date, which is what sends it to the watch,
+        and <strong>unschedule</strong> it again without deleting it.</span></li>
+      <li><span><strong>Delete</strong> a workout, behind a real gate: the first request only
+        reads the name back, and removing it needs a second request quoting
+        that name. Removing the rest of a plan works the same way, and keeps
+        every session already past.</span></li>
+    </ul>
+    <div class="note">
+      <p class="small">
+        <strong>Your training history stays as recorded.</strong> No tool deletes a
+        recorded activity or changes what it measured: distance, time, heart
+        rate, splits and route stay as your watch recorded them, so a run you
+        actually did cannot be lost through this however badly a request is
+        worded. When you ask, Daash can rename a run, write its notes, correct
+        its type (a trail run logged as a road run) or set the shoes on it, and
+        every answer says what it was before, so it can be put back.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it never reads</h2>
+    <div class="stack">
+      <p class="small">
+        Garmin exposes far more than this connector asks for. The following is
+        available to it and deliberately not requested, today:
+      </p>
+    </div>
+    <ul class="plain" style="margin-top:16px">
+      <li><span><strong>Where you were, kept.</strong> GPS points are read only inside a
+        recording, as above, and are never returned or stored. Route maps,
+        saved courses and location history are not requested.</span></li>
+      <li><span><strong>Your body, beyond weight.</strong> Blood pressure, hydration,
+        nutrition, menstrual and pregnancy tracking. Of what a scale records,
+        only weight, body fat and muscle mass are read, as above; bone mass,
+        body water, visceral fat and metabolic age are dropped.</span></li>
+      <li><span><strong>Your things and your people.</strong> Devices, gear other than
+        shoes (an activity&rsquo;s gear is read to find the shoes, and the rest
+        is dropped), badges,
+        challenges, connections and anything social.</span></li>
+    </ul>
+    <div class="stack" style="margin-top:16px">
+      <p class="small muted">
+        If one of these would make the coaching better, it gets added in the
+        open, on this page and in the code, before it is read.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where the answers go</h2>
+    <div class="stack">
+      <p class="small">
+        Each question is answered live from Garmin and returned into your
+        conversation. The server keeps one encrypted token per person so it can
+        ask on your behalf, and nothing of what comes back.
+        <a href="/privacy/">The privacy page</a> has the exact list of what is
+        stored, and how to delete it.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Every tool on this page is one function in
+      <a href="https://github.com/Bartolome69/garmin-mcp/blob/main/garmin_mcp/server.py" target="_blank" rel="noopener">server.py</a>,
+      with its Garmin calls in plain sight. Don&rsquo;t take my word for it.
+    </p>
+    <p><a href="https://daash.run/#connect">&larr; Back to setting it up</a></p>
+  </footer>
+
+</div>
+
+<footer class="site-footer">
+  <div class="bar">
+    <div class="about">
+      <a class="wordmark" href="https://daash.run/">Daash</a>
+      <span>Free and open source. Not affiliated with Garmin.</span>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://daash.run/training-plans">Plans</a>
+      <a href="https://daash.run/learn">Learn</a>
+      <a href="https://daash.run/how-it-works">How it works</a>
+      <a href="https://daash.run/about">About</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="/data/">What it can see</a>
+      <a href="https://github.com/Bartolome69/garmin-mcp" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</footer>

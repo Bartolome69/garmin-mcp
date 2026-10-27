@@ -1,30 +1,27 @@
-# The server as a long-lived HTTP service, for running on a home server.
-# The local install (Claude Desktop over stdio) needs none of this; see
-# SELF-HOSTING.md for setup, including the Google sign-in it requires.
+# Hosted, multi-user server. The local install needs none of this.
 FROM python:3.12-slim
 
-RUN useradd --create-home --uid 10001 app \
-    && mkdir /data && chown app /data && chmod 700 /data
+RUN useradd --create-home --uid 10001 app
 WORKDIR /app
 
-COPY requirements.txt ./
-# The HTTP transport needs a newer mcp than the stdio floor in requirements.txt.
-RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt "mcp>=2.2,<3"
+COPY requirements-hosted.txt ./
+RUN pip install --no-cache-dir --only-binary :all: -r requirements-hosted.txt
+
+# Country lookups for sign-ups (garmin_mcp/geo.py): DB-IP's free IP to Country
+# Lite table, CC BY 4.0, https://db-ip.com. It's published monthly, so this
+# month's is tried, then last month's; without either the server still runs
+# and records sign-ups without a country.
+COPY scripts/fetch_country_db.py ./scripts/
+RUN mkdir -p /app/geo && python scripts/fetch_country_db.py /app/geo/dbip-country-lite.mmdb
 
 COPY garmin_mcp/ ./garmin_mcp/
 
-# The Garmin session and the OAuth grants both live on the /data volume, so
-# they survive a redeploy. Mount it; never bake either into an image.
-ENV GARMIN_MCP_TRANSPORT=http \
-    GARMIN_MCP_HOST=0.0.0.0 \
-    GARMIN_MCP_PORT=8000 \
-    GARMIN_MCP_TOKENS=/data/tokens.json \
+# The token database lives on a mounted volume so sign-ins survive a redeploy.
+ENV GARMIN_MCP_DB=/data/garmin-mcp.sqlite3 \
+    PORT=8000 \
     PYTHONUNBUFFERED=1
 VOLUME ["/data"]
 USER app
 EXPOSE 8000
 
-HEALTHCHECK --interval=60s --timeout=5s --start-period=10s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/.well-known/oauth-authorization-server', timeout=4)"
-
-CMD ["python", "-m", "garmin_mcp"]
+CMD ["python", "-m", "garmin_mcp.hosted"]

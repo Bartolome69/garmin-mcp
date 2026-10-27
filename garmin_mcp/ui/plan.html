@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training plan</title>
+<style>
+  /* The plan card get_plan draws inside the chat. Three jobs, in order: make
+     the next session unmissable, show this week at a glance, and show the
+     shape of the whole block with a chart that doubles as the week picker.
+     The host says light or dark; the layout is fluid, so one set of rules
+     stacks on a phone and goes two-column on a desktop. */
+  :root {
+    color-scheme: light;
+    --card: #FFFFFF; --border: #E6E4DD; --text: #1F1E1B; --muted: #6B6A64; --faint: #9A9993;
+    --soft: #4A4944; --line: #D9D7CF; --bar-off: #E6E4DD; --bar-past: #EEECE6; --row-line: #EEECE6;
+    --btn-border: #D9D7CF; --red: #E0312A; --red-text: #C8261F; --red-soft: rgba(224,49,42,0.28);
+    --bar-done: #A9A7A0; --next-bg: #FDF4F2; --next-border: #F2C9C4; --rec: #D9D7CF;
+    --easy: #3F8A47; --threshold: #D19B00; --threshold-text: #8F6A00; --intervals: #C25A12; --long: #2F68B0; --strength: #7E57C2; --swim: #1F8A93;
+    --on-red: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --card: #30302E; --border: #42423F; --text: #F4F3EE; --muted: #A6A59F; --faint: #75746F;
+      --soft: #C9C8C2; --line: #4A4A46; --bar-off: #4A4A46; --bar-past: #3E3E3B; --row-line: #3C3C39;
+      --btn-border: #55544F; --red: #E8322B; --red-text: #FF6A61; --red-soft: rgba(232,50,43,0.38);
+      --bar-done: #8A8984; --next-bg: #3B3B38; --next-border: #6B3530; --rec: #5A5954;
+      --easy: #8CC08F; --threshold: #E3BF4F; --threshold-text: #E3BF4F; --intervals: #F2924A; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --card: #30302E; --border: #42423F; --text: #F4F3EE; --muted: #A6A59F; --faint: #75746F;
+    --soft: #C9C8C2; --line: #4A4A46; --bar-off: #4A4A46; --bar-past: #3E3E3B; --row-line: #3C3C39;
+    --btn-border: #55544F; --red: #E8322B; --red-text: #FF6A61; --red-soft: rgba(232,50,43,0.38);
+    --bar-done: #8A8984; --next-bg: #3B3B38; --next-border: #6B3530; --rec: #5A5954;
+    --easy: #8CC08F; --threshold: #E3BF4F; --threshold-text: #E3BF4F; --intervals: #F2924A; --long: #74A3DB; --strength: #B39DDB; --swim: #6FC2C9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body {
+    color: var(--text);
+    font: 14px/1.4 Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01";
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  .mono { font-family: "Geist Mono", ui-monospace, Menlo, monospace; }
+
+  .card { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
+  .empty { padding: 28px 20px; color: var(--muted); font-size: 14px; }
+
+  /* ---- header */
+  .head { position: relative; padding: 16px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 12px 28px; border-bottom: 1px solid var(--border); }
+  .head-l { flex: 1 1 220px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); font-size: 15px; }
+  .kicker { font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
+  /* The card's own corner, not the end of the title column: on a wide card
+     that column stops halfway across, which left the buttons floating
+     mid-header. The brand row keeps their height, so nothing sits under them. */
+  .tools { position: absolute; top: 16px; right: 16px; display: flex; gap: 6px; }
+  .refresh, .expand, .share { width: 32px; height: 32px; border-radius: 999px; border: 1px solid var(--btn-border);
+    background: transparent; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+  .expand[hidden] { display: none; }
+  .refresh.spin svg { animation: spin 0.9s linear infinite; }
+  .share { color: var(--muted); }
+  .share:hover, .refresh:hover, .expand:hover { border-color: var(--muted); color: var(--text); }
+  /* What Share did, said over the header for a few seconds and gone: it
+     never moves anything on the card. */
+  .note { position: absolute; top: 54px; right: 16px; z-index: 2; max-width: 260px; padding: 8px 12px; border-radius: 10px;
+    background: var(--text); color: var(--card); font-size: 12.5px; line-height: 1.35; pointer-events: none;
+    opacity: 0; transition: opacity 0.2s; }
+  .note.on { opacity: 1; }
+  /* A host that keeps the frame shorter than the card: the header and chart
+     stay put and the week's list scrolls, so the next session is reachable
+     without scrolling the whole chat. Only side by side; stacked, the host
+     grows the frame. */
+  html.fit, html.fit body { height: 100%; }
+  html.fit .card { height: 100%; display: flex; flex-direction: column; }
+  html.fit .head { flex: none; }
+  /* One line, so the panes stretch to the frame and the list can scroll;
+     wrapped, the row would size to its content and get cut off instead. */
+  html.fit .body { flex: 1; min-height: 0; flex-wrap: nowrap; }
+  html.fit .pane { min-height: 0; }
+  html.fit .week { overflow-y: auto; overscroll-behavior: contain; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; text-wrap: balance; }
+  /* A long name a size down, so it takes two lines at most on a phone. */
+  .title.long { font-size: 21px; line-height: 1.15; }
+  .sub { font-size: 14px; color: var(--muted); }
+  .tl { flex: 1 1 300px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .tl-line { flex: 1; height: 1px; background: var(--line); min-width: 10px; }
+  .tl-node { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .tl-dot { width: 8px; height: 8px; border-radius: 999px; border: 1.5px solid var(--muted); flex-shrink: 0; }
+  .tl-dot.cur { background: var(--red); border-color: var(--red); }
+  .tl-a { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .tl-b { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
+  /* ---- body: a 1px gap on the border colour draws the divider either way */
+  .body { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); }
+  .pane { background: var(--card); min-width: 0; }
+  .chart { flex: 1 1 220px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .week { flex: 999 1 340px; padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 12px; }
+
+  .stats { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; font-size: 13px; color: var(--muted); }
+  .stats span { white-space: nowrap; }
+  /* The count wraps rather than run past the pane if it ever outgrows it. */
+  .stats span:first-child { white-space: normal; }
+  .stats strong { color: var(--text); font-weight: 600; }
+  .bars { display: grid; align-items: end; }
+  .bar { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; }
+  .bar.still { cursor: default; }
+  .bar:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; border-radius: 6px; }
+  .bar-km { font-size: 11px; text-align: center; color: var(--muted); min-height: 13px; }
+  .bar-km.on { color: var(--text); }
+  .bar-box { position: relative; overflow: hidden; background: var(--bar-off); border-radius: 6px; }
+  .bar-box.r4 { border-radius: 4px; }
+  .bar-box.on { background: var(--red); }
+  .bar-box.on.started { background: var(--red-soft); }
+  .bar-box.past { background: var(--bar-past); }
+  .bar-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bar-done); }
+  .bar-box.on .bar-fill { background: var(--red); }
+  .bar-dot { position: absolute; left: 50%; bottom: 6px; margin-left: -3px; width: 6px; height: 6px; border-radius: 999px; background: var(--red); }
+  .bar-box.on .bar-dot { background: var(--on-red); }
+  .bar-lbl { font-size: 11px; text-align: center; white-space: nowrap; color: var(--muted); letter-spacing: -0.02em; min-height: 13px; }
+  /* Week mode's labels are words, not numbers: let them take two lines. */
+  .bar-lbl.wrap { white-space: normal; line-height: 1.15; min-height: 26px; font-size: 11px; }
+  .bar-lbl.on { color: var(--text); }
+  .bar-lbl.faint { color: var(--faint); }
+  .phases { display: grid; }
+  .phase { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .phase-line { height: 2px; border-radius: 2px; background: var(--line); }
+  .phase-lbl { font-size: 11px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+  .phase.on .phase-line { background: var(--red); }
+  .phase.on .phase-lbl { color: var(--text); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: auto; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .sw { width: 8px; height: 8px; border-radius: 2px; }
+
+  .week-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .week-title { font-size: 16px; font-weight: 600; }
+  .week-meta { font-weight: 400; font-size: 13px; color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 999px; border: 0;
+    background: var(--red); color: var(--on-red); font-size: 12px; font-weight: 500; flex-shrink: 0; }
+
+  .strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .day { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .day-l { font-size: 11px; color: var(--faint); }
+  .day-n { width: 30px; height: 30px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    font-size: 13.5px; font-weight: 600; color: var(--text); }
+  .day-n.faint { color: var(--faint); }
+  .day-n.now { background: var(--red); color: var(--on-red); }
+  .day-m { height: 10px; display: flex; align-items: center; justify-content: center; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; }
+  .ring { width: 7px; height: 7px; border-radius: 999px; border: 1.5px solid var(--red-text); }
+  .ghost { width: 7px; height: 7px; border-radius: 999px; border: 1.5px dashed var(--faint); }
+  .rest { width: 8px; height: 1.5px; border-radius: 1px; background: var(--faint); opacity: 0.7; }
+
+  .rows { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; padding: 11px 0; border-top: 1px solid var(--row-line); align-items: center; }
+  .row-day { font-size: 11px; color: var(--muted); }
+  .row-day.faint { color: var(--faint); }
+  .row-mid { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .row-mid.tight { gap: 4px; }
+  .row-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .type { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .sport { display: inline-flex; flex-shrink: 0; opacity: 0.85; }
+  .next-title .sport { align-self: center; }
+  .name { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+  .name.soft { color: var(--soft); }
+  .name.muted { color: var(--muted); font-weight: 500; }
+  .check { width: 16px; height: 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .miss { width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid var(--red-text); flex-shrink: 0; }
+  .meta { font-size: 12.5px; color: var(--muted); padding-left: 23px; }
+  .meta.missed { color: var(--red-text); }
+  .moved { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+  .km { font-size: 13.5px; font-weight: 500; white-space: nowrap; min-width: 54px; text-align: right; }
+  .km.soft { color: var(--soft); }
+  .km.struck { color: var(--faint); text-decoration: line-through; font-weight: 400; }
+  .shape { display: flex; align-items: flex-end; gap: 2px; height: 18px; }
+  .shape span { border-radius: 2px; min-width: 2px; }
+  .shape.big { height: 30px; }
+  .shape.big span { border-radius: 5px; }
+
+  .next { margin: 4px -8px 8px; padding: 14px; border-radius: 14px; background: var(--next-bg); border: 1px solid var(--next-border);
+    display: flex; flex-direction: column; gap: 11px; }
+  .next-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .next-k { font-size: 11px; letter-spacing: 0.12em; color: var(--red-text); }
+  .next-when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .next-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .next-type { font-size: 14px; font-weight: 600; }
+  .next-name { font-size: 30px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; overflow-wrap: anywhere; }
+  .next-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--soft); }
+  .next-meta span { display: flex; align-items: center; gap: 6px; }
+  .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; max-width: 420px; }
+  .act { height: 36px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent; font-size: 13px; font-weight: 500; padding: 0 6px; }
+  .act:hover { border-color: var(--muted); }
+  .sent { font-size: 12.5px; color: var(--muted); }
+
+  /* A session that can be opened: a run already done, or one still to come.
+     The row is the button; the chevron at the edge says so. */
+  .row.tap { grid-template-columns: 36px minmax(0, 1fr) auto 10px; cursor: pointer; outline: none; }
+  .row.tap::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint);
+    transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
+  .row.tap.open::after { transform: rotate(45deg); }
+  .row.tap:hover .name, .row.tap:focus-visible .name { text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
+  .detail { display: flex; flex-direction: column; gap: 9px; padding: 0 0 12px 46px; }
+  .detail .facts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--soft); }
+  .detail .facts b { color: var(--text); font-weight: 600; }
+  .detail .dnote { font-size: 12.5px; color: var(--muted); }
+  .splits { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 64px; }
+  .splits span { flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 1px 1px; opacity: .9; }
+  .splits span.best { opacity: 1; }
+  .splits span.rest { background: var(--rec) !important; opacity: 1; }
+  .splits i { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); opacity: .8; pointer-events: none; }
+  .splits i b { position: absolute; left: 0; bottom: 2px; font-size: 10.5px; font-weight: 500; font-style: normal; line-height: 1; color: var(--muted);
+    background: var(--card); padding: 0 4px 0 0; border-radius: 2px; }
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--soft); }
+  .steps li { display: flex; gap: 8px; }
+  .steps li.rep { margin-left: 10px; padding-left: 10px; border-left: 2px solid var(--row-line); }
+  .steps b { color: var(--text); font-weight: 600; min-width: 64px; }
+  .detail .act { height: 32px; padding: 0 14px; align-self: flex-start; }
+  .detail .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 10px; border-top: 1px solid var(--row-line); }
+  .foot span { font-size: 13px; color: var(--muted); }
+  .foot .act { height: 34px; padding: 0 14px; flex-shrink: 0; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+
+  /* The status box: fixed colours, nothing from the theme, so it is readable
+     whatever went wrong. */
+  .diag { margin: 12px; padding: 12px 14px; border-radius: 10px; background: #FFF3CD; color: #3D2C00;
+    border: 1px solid #E8C96A; font: 14px/1.45 system-ui, -apple-system, Roboto, sans-serif; }
+  .diag.waiting { background: #EEF2EE; color: #1F2A23; border-color: #C9D3CB; }
+  .diag[hidden] { display: none; }
+  .diag-tech { margin-top: 6px; font: 12px/1.4 ui-monospace, Menlo, monospace; opacity: 0.85; word-break: break-word; }
+</style>
+</head>
+<body>
+<div class="card" id="app"><div class="empty">Loading your plan&hellip;</div></div>
+<div class="diag" id="diag" hidden></div>
+
+<script>
+// Watchdog. Runs before the view itself, so it can say what happened even if
+// the view's script never starts: how far the conversation with the host got,
+// what the host called itself, and any error. Shown only if the plan hasn't
+// appeared after a few seconds, and removed the moment it does.
+(function () {
+  var d = window.__planDiag = { steps: [], errors: [], host: "", rendered: false, gotResult: false, initOk: false };
+  function show() {
+    var box = document.getElementById("diag");
+    if (!box) return;
+    if (d.rendered && !d.errors.length) { box.hidden = true; return; }
+    var waiting = d.initOk && !d.gotResult && !d.errors.length;
+    box.className = "diag" + (waiting ? " waiting" : "");
+    box.textContent = "";
+    var head = document.createElement("strong");
+    head.textContent = waiting ? "Still fetching your plan from Garmin\u2026" : "The plan didn't load here.";
+    box.appendChild(head);
+    if (!waiting) {
+      var hint = document.createElement("div");
+      hint.textContent = "Ask Claude to show it as text instead.";
+      box.appendChild(hint);
+    }
+    var tech = document.createElement("div");
+    tech.className = "diag-tech";
+    tech.textContent = d.steps.join(" > ") + (d.host ? " | app: " + d.host : "") +
+      (d.errors.length ? " | error: " + d.errors.join("; ") : "");
+    box.appendChild(tech);
+    box.hidden = false;
+  }
+  d.step = function (s) { if (d.steps.length < 24) d.steps.push(s); };
+  d.fail = function (msg) { d.errors.push(String(msg).slice(0, 160)); show(); };
+  d.done = function () { d.rendered = true; show(); };
+  window.addEventListener("error", function (e) { d.fail(e.message || "script error"); });
+  window.addEventListener("unhandledrejection", function (e) {
+    d.fail((e.reason && e.reason.message) || "promise rejected");
+  });
+  setTimeout(show, 8000);
+  setTimeout(show, 30000);
+  d.step("page");
+})();
+</script>
+<script>
+(function () {
+  "use strict";
+  var D = window.__planDiag || { step: function () {}, fail: function () {}, done: function () {} };
+
+  // ---------------------------------------------------------------- bridge
+  // The host speaks JSON-RPC over postMessage. Only the handful of messages
+  // this view needs are implemented, so there is no SDK to load.
+  var host = window.parent !== window ? window.parent : null;
+  var nextId = 1, pending = {}, hostContext = {}, hostCaps = null;
+
+  function send(msg) { if (host) host.postMessage(Object.assign({ jsonrpc: "2.0" }, msg), "*"); }
+  function request(method, params) {
+    var id = nextId++;
+    return new Promise(function (resolve, reject) {
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ id: id, method: method, params: params || {} });
+      setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 20000);
+    });
+  }
+  function notify(method, params) { send({ method: method, params: params || {} }); }
+
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (data && data.jsonrpc !== "2.0") { D.step("other msg " + String(data.type || typeof data).slice(0, 40)); return; }
+    if (!data) return;
+    if (data.id != null && !data.method && pending[data.id]) {
+      var p = pending[data.id]; delete pending[data.id];
+      data.error ? p.reject(new Error(data.error.message || "error")) : p.resolve(data.result);
+      return;
+    }
+    switch (data.method) {
+      case "ui/notifications/tool-input": D.step("input"); break;
+      case "ui/notifications/tool-result": D.step("result"); D.gotResult = true; onResult(data.params); break;
+      case "ui/notifications/host-context-changed": applyContext(data.params || {}); break;
+      case "ui/notifications/tool-cancelled": D.step("cancelled"); fail("The plan could not be loaded."); D.done(); break;
+      case "ui/resource-teardown": case "ping":
+        if (data.id != null) send({ id: data.id, result: {} });
+        break;
+      default:
+        if (data.method) D.step("got " + String(data.method).slice(0, 60));
+    }
+  });
+
+  function applyContext(ctx) {
+    Object.assign(hostContext, ctx);
+    if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
+    if (ctx.containerDimensions || ctx.displayMode) { reportSize(); setExpandIcon(); }
+    // Nothing is fetched from outside the frame; the host's own font faces
+    // are the only way Geist arrives, system fonts otherwise.
+    var fonts = ctx.styles && ctx.styles.css && ctx.styles.css.fonts;
+    if (fonts && !document.getElementById("host-fonts")) {
+      var st = document.createElement("style"); st.id = "host-fonts"; st.textContent = fonts; document.head.appendChild(st);
+    }
+  }
+
+  // ---------------------------------------------------------------- sizing
+  // The host sizes the frame; without being told, it boxes the card into a
+  // short one that scrolls inside the chat. The card reports its natural
+  // size the way the Apps SDK does: measured at max-content inside an
+  // animation frame, width and height together, whenever either changes.
+  var sent = { w: 0, h: 0 }, natural = 0, measuring = false, fitTimer, scrolledToNext = false, root = document.documentElement;
+  window.__sizeRuns = 0;
+  function naturalHeight() {
+    // Fitted, the card is as tall as the frame, so its natural height is
+    // read off the panes' contents instead; toggling the fit off to measure
+    // would reset the list's scroll and change the page size, which would
+    // trigger another measurement, without end.
+    if (root.classList.contains("fit")) {
+      var head = document.querySelector(".head"), chart = document.querySelector(".chart"), week = document.querySelector(".week");
+      if (head && chart && week) return Math.ceil(head.offsetHeight + 1 + Math.max(chart.scrollHeight, week.scrollHeight) + 2);
+    }
+    var was = root.style.height;
+    root.style.height = "max-content";
+    var h = Math.ceil(root.getBoundingClientRect().height);
+    root.style.height = was;
+    return h;
+  }
+  function reportSize() {
+    if (measuring) return;
+    measuring = true;
+    requestAnimationFrame(function () {
+      measuring = false;
+      window.__sizeRuns++;
+      natural = naturalHeight();
+      var w = Math.ceil(window.innerWidth);
+      if (host && natural && (w !== sent.w || natural !== sent.h)) {
+        sent = { w: w, h: natural };
+        notify("ui/notifications/size-changed", { width: w, height: natural });
+      }
+      clearTimeout(fitTimer);
+      fitTimer = setTimeout(checkFit, 500);
+    });
+  }
+  // Side by side and still shorter than the card half a second after asking:
+  // the host isn't going to grow the frame, so fit the card to it.
+  function checkFit() {
+    var wide = window.innerWidth >= 600, short = window.innerHeight < natural - 4;
+    var fit = wide && short && hostContext.displayMode !== "fullscreen";
+    root.classList.toggle("fit", fit);
+    var btn = document.getElementById("expand");
+    if (btn) btn.hidden = !((fit || hostContext.displayMode === "fullscreen") && canFullscreen());
+    // Once per drawing, bring the next session into view; after that the
+    // scroll position is the user's.
+    if (fit && !scrolledToNext) {
+      scrolledToNext = true;
+      var pane = document.querySelector(".week"), card = document.querySelector(".rows .next");
+      if (pane && card) {
+        var top = card.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+        var bottom = top + card.offsetHeight;
+        if (bottom > pane.scrollTop + pane.clientHeight || top < pane.scrollTop) pane.scrollTop = Math.max(0, top - 12);
+      }
+    }
+  }
+  function canFullscreen() {
+    var modes = hostContext.availableDisplayModes || [];
+    return modes.indexOf("fullscreen") >= 0;
+  }
+  function toggleFullscreen() {
+    if (!host) return;
+    var want = hostContext.displayMode === "fullscreen" ? "inline" : "fullscreen";
+    request("ui/request-display-mode", { mode: want }).then(function (r) {
+      if (r && r.mode) { hostContext.displayMode = r.mode; checkFit(); setExpandIcon(); }
+    }).catch(function () {});
+  }
+  function setExpandIcon() {
+    var btn = document.getElementById("expand");
+    if (!btn) return;
+    var full = hostContext.displayMode === "fullscreen";
+    btn.textContent = "";
+    btn.appendChild(svg(full ? ICON.shrink : ICON.grow, 14));
+    btn.setAttribute("aria-label", full ? "Back to the chat" : "Expand");
+  }
+  if (window.ResizeObserver) { var ro = new ResizeObserver(reportSize); ro.observe(root); ro.observe(document.body); }
+  window.addEventListener("resize", function () { clearTimeout(fitTimer); fitTimer = setTimeout(checkFit, 150); });
+
+  // Three quick clicks on the kicker ("TRAINING PLAN") show what the host told the card
+  // and how big the frame is, for when it comes out the wrong size.
+  var clicks = [];
+  function debugTap() {
+    var now = Date.now();
+    clicks = clicks.filter(function (t) { return now - t < 900; }).concat([now]);
+    if (clicks.length < 3) return;
+    clicks = [];
+    var box = document.getElementById("diag");
+    if (!box) return;
+    if (!box.hidden && box.getAttribute("data-debug")) { box.hidden = true; box.removeAttribute("data-debug"); return; }
+    var ctx = { displayMode: hostContext.displayMode, availableDisplayModes: hostContext.availableDisplayModes,
+      containerDimensions: hostContext.containerDimensions, platform: hostContext.platform, theme: hostContext.theme };
+    box.className = "diag waiting"; box.setAttribute("data-debug", "1"); box.textContent = "";
+    box.appendChild(el("strong", { text: "Card size" }));
+    box.appendChild(el("div", { class: "diag-tech", text:
+      "frame " + window.innerWidth + "\u00d7" + window.innerHeight + " | card " + natural + " | sent " + sent.w + "\u00d7" + sent.h +
+      " | fit " + root.classList.contains("fit") + " | host " + (D.host || "?") + " | " + JSON.stringify(ctx) }));
+    box.hidden = false;
+  }
+
+  function onResult(result) {
+    try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
+    reportSize();
+  }
+  // A list from the answer, or none: a count or a missing field draws as empty.
+  function list(x) { return Array.isArray(x) ? x.slice() : []; }
+  function planOf(result) {
+    var plan = result && result.structuredContent;
+    if (!plan && result && result.content) {
+      for (var i = 0; i < result.content.length; i++) {
+        var c = result.content[i];
+        if (c.type === "text") { try { plan = JSON.parse(c.text); break; } catch (e) {} }
+      }
+    }
+    return plan;
+  }
+  var upgraded = false;
+  function showResult(result) {
+    if (!result) { D.fail("empty result"); return; }
+    var plan = planOf(result);
+    // create_plan answers with the new block as get_plan draws it; when it
+    // couldn't read the block back it answers with a summary instead, and
+    // the card fetches the block itself.
+    if (isCreatedSummary(plan) && host && !upgraded) {
+      upgraded = true;
+      fail("Your new plan is on the Garmin calendar. Loading it\u2026");
+      D.done();
+      request("tools/call", { name: "get_plan", arguments: { label: plan.label } })
+        .then(function (r) { var p = planOf(r); if (p && !p.error) onResult(r); })
+        .catch(function () {});
+      return;
+    }
+    // Everything after this reads raw, the week buttons and the share link
+    // included, so a progress answer is converted once, here.
+    raw = isProgress(plan) ? fromProgress(plan) : plan;
+    state.sel = null;
+    render(raw);
+    D.done();
+    // get_progress knows which sessions happened, not what they are: no
+    // types, no steps, so every run is a plain green bar. Draw it straight
+    // away, then fetch the plan itself once and redraw with the real thing.
+    if (isProgress(plan) && host && !upgraded) {
+      upgraded = true;
+      request("tools/call", { name: "get_plan", arguments: {} })
+        .then(function (r) { var p = planOf(r); if (p && !p.error && !isProgress(p)) onResult(r); })
+        .catch(function () {});
+    }
+  }
+
+  // ---------------------------------------------------------------- helpers
+  var DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  var LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function parse(s) { var p = String(s).slice(0, 10).split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function iso(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
+  function mondayOf(d) { return addDays(d, -((d.getDay() + 6) % 7)); }
+  function between(a, b) { return Math.round((parse(b) - parse(a)) / 864e5); }
+  function dow(s) { return (parse(s).getDay() + 6) % 7; }
+  function short(s) { var d = parse(s); return d.getDate() + " " + MONTHS[d.getMonth()]; }
+  function range(a, b) {
+    var x = parse(a), y = parse(b);
+    if (x.getMonth() === y.getMonth()) return x.getDate() + "\u2013" + y.getDate() + " " + MONTHS[y.getMonth()];
+    return short(a) + " \u2013 " + short(b);
+  }
+  function fmtKm(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function sum(list, f) { return list.reduce(function (t, x) { return t + (f(x) || 0); }, 0); }
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "text") node.textContent = attrs[k];
+      else if (k === "html") node.innerHTML = attrs[k];
+      else if (k === "onclick") node.addEventListener("click", attrs[k]);
+      else if (k === "style") node.setAttribute("style", attrs[k]);
+      else if (attrs[k] != null && attrs[k] !== false) node.setAttribute(k, attrs[k] === true ? "" : attrs[k]);
+    });
+    (children || []).forEach(function (c) { if (c == null || c === false) return; node.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return node;
+  }
+  function svg(path, size, stroke, width) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("width", size); s.setAttribute("height", size); s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", stroke || "currentColor");
+    s.setAttribute("stroke-width", width || 2); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+    s.setAttribute("aria-hidden", "true"); s.innerHTML = path; return s;
+  }
+  var ICON = {
+    refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+    back: '<path d="m15 18-6-6 6-6"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+    gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+    watch: '<circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/>',
+    grow: '<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>',
+    shrink: '<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>',
+    arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+    share: '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>',
+  };
+
+  // The sport as a small grey line icon before each session (Lucide's set,
+  // like the icons above), so the colour can say the effort. Pilates and
+  // mobility share yoga's lotus.
+  var SPORT_ICON = {
+    run: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
+    ride: '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+    strength: '<path d="M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829z"/><path d="m2.5 21.5 1.4-1.4"/><path d="m20.1 3.9 1.4-1.4"/><path d="M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829z"/><path d="m9.6 14.4 4.8-4.8"/>',
+    swim: '<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
+    hike: '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>',
+    walk: '<circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/>',
+    yoga: '<path d="M12 5a3 3 0 1 1 3 3m-3-3a3 3 0 1 0-3 3m3-3v1M9 8a3 3 0 1 0 3 3M9 8h1m5 0a3 3 0 1 1-3 3m3-3h-1m-2 3v-1"/><circle cx="12" cy="8" r="2"/><path d="M12 10v12"/><path d="M12 22c4.2 0 7-1.667 7-5-4.2 0-7 1.667-7 5Z"/><path d="M12 22c-4.2 0-7-1.667-7-5 4.2 0 7 1.667 7 5Z"/>',
+    hiit: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+    cardio: '<path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/><path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+    other: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  };
+  SPORT_ICON.pilates = SPORT_ICON.yoga;
+  var SPORT_NAME = { run: "Run", ride: "Ride", strength: "Strength", swim: "Swim", hike: "Hike", walk: "Walk", yoga: "Yoga", hiit: "HIIT", cardio: "Cardio", other: "Activity", pilates: "Pilates" };
+  function kindOf(s) {
+    if (s.kind && SPORT_ICON[s.kind]) return s.kind;
+    if (s.sport === "ride" || s.type === "ride") return "ride";
+    if (s.sport === "strength" || s.type === "strength") return "strength";
+    if (s.type === "swim") return "swim";
+    return s.sport === "other" ? "other" : "run";
+  }
+  function sportIcon(s, size) {
+    var k = kindOf(s);
+    return el("span", { class: "sport", role: "img", "aria-label": SPORT_NAME[k], title: SPORT_NAME[k] }, [svg(SPORT_ICON[k], size || 13, "var(--muted)", 2)]);
+  }
+
+  // Session types: colour and the short label beside a title. Runs and
+  // rides are coloured by effort, hotter for harder: easy, threshold,
+  // intervals, race, with long its own. An easy ride is easy. Strength and
+  // swims keep their sport's colour.
+  var TYPES = {
+    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Threshold", v: "var(--threshold)", t: "var(--threshold-text)" },
+    intervals: { l: "Intervals", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
+    race: { l: "Race", v: "var(--red)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
+    strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
+  };
+  // Plans read before threshold and intervals were told apart said sub.
+  TYPES.sub = TYPES.threshold;
+  // A hard ride's label is the effort's; its icon says it's a ride. Yoga, a
+  // hike and the rest are named for their sport rather than "Session".
+  function typeOf(s) {
+    var t = TYPES[s.type] || TYPES[s.sport] || TYPES.other;
+    if (t !== TYPES.other || !s.kind || s.kind === "other" || !SPORT_NAME[s.kind]) return t;
+    // "Yoga flow 30 min" already says yoga: the icon is enough.
+    var said = new RegExp("\\b" + SPORT_NAME[s.kind] + "\\b", "i").test(s.name || "");
+    return { l: said ? "" : SPORT_NAME[s.kind], v: t.v };
+  }
+  var TYPE_WORDS = {
+    easy: ["easy"], long: ["long run", "long ride", "long", "easy"], race: [],
+    threshold: ["threshold", "tempo", "sub-?threshold", "sub-?t"], intervals: ["intervals?"],
+    strength: ["strength"], ride: ["ride", "bike"], swim: ["swim"],
+  };
+  TYPE_WORDS.sub = TYPE_WORDS.threshold;
+  // The title without what the row already says: its type and, when that is
+  // all that's left, the distance. "Long run 16k" with the Long label reads
+  // "16 km"; "Threshold 5x1k" reads "5 × 1 km".
+  function cleanTitle(s) {
+    var n = String(s.name || "").trim();
+    // A recorded activity keeps Garmin's name: "Morning Run" is what it was.
+    if (s.status === "logged" || s.extra) return n || "Run";
+    n = n.replace(/(\d+(?:[.,]\d+)?)\s*k(?:m)?\b/gi, "$1 km").replace(/(\d)\s*[x\u00d7]\s*(\d)/gi, "$1\u00a0\u00d7\u00a0$2");
+    (TYPE_WORDS[s.type] || []).concat(s.sport === "ride" && s.type !== "ride" ? TYPE_WORDS.ride : []).forEach(function (w) { n = n.replace(new RegExp("(^|\\s)" + w + "(?=\\s|$|[,:\u00b7-])", "gi"), "$1"); });
+    n = n.replace(/^\s*(run|session|workout)\b/i, "").replace(/\b(run|session|workout)\s*$/i, "");
+    n = n.replace(/\s{2,}/g, " ").replace(/^[\s,:\u00b7-]+|[\s,:\u00b7-]+$/g, "");
+    if (!n) { var km = s.planned_km || s.actual_km; n = km ? fmtKm(km) + " km" : String(s.name || "Session"); }
+    return n.charAt(0).toUpperCase() + n.slice(1);
+  }
+  // A goal reads "what, the rest": "Base block (Norwegian singles), 6
+  // weeks". The part before the first comma outside brackets is its name.
+  function splitGoal(goal) {
+    var g = String(goal || ""), depth = 0;
+    for (var i = 0; i < g.length; i++) {
+      if (g[i] === "(") depth++;
+      else if (g[i] === ")") depth = Math.max(0, depth - 1);
+      else if (g[i] === "," && !depth) return [g.slice(0, i).trim(), g.slice(i + 1).trim()];
+    }
+    return [g.trim(), ""];
+  }
+  function cap(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : ""; }
+  // The title takes the whole name, over two lines if need be; only past
+  // 60 characters is it cut, at a word.
+  function goalTitle(goal) {
+    var head = splitGoal(goal)[0];
+    if (head.length > 60) head = head.slice(0, 59).replace(/\s+\S*$/, "") + "\u2026";
+    return cap(head);
+  }
+  // The timeline has room for a few words only.
+  function shortGoal(goal) {
+    var head = splitGoal(goal)[0];
+    if (head.length > 28) head = head.slice(0, 27).replace(/\s+\S*$/, "") + "\u2026";
+    return cap(head);
+  }
+  function effDate(s) { return s.done_on && s.status === "done, moved" ? s.done_on : s.date; }
+  function isDone(s) { return String(s.status || "").indexOf("done") === 0 || s.status === "logged" || s.extra; }
+
+  // ---------------------------------------------------------------- model
+  // get_plan answers in three shapes: a plan by code, the calendar around now
+  // (with a plan running or not), and a log of the last weeks when nothing is
+  // scheduled. All three become one model: weeks, their sessions placed on
+  // the day they were done, and the next session.
+  function normalise(p) {
+    if (!p || p.error) return { error: (p && p.error) || "The plan could not be loaded." };
+    var today = iso(new Date());
+    var thisMonday = iso(mondayOf(new Date()));
+    var block = p.label ? p : (p.current_plan || null);
+    var weeks = (p.weeks || []).map(function (w, i) {
+      return { n: w.week || i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra),
+        planned: w.planned_km, run_km: w.run_km || 0, current: !!w.current || w.starts === thisMonday };
+    });
+    if (p.source === "log") {
+      var cur = weeks.filter(function (w) { return w.current; })[0] || weeks[weeks.length - 1];
+      var hist = weeks.filter(function (w) { return w !== cur; }).map(function (w) { return { starts: w.starts, run_km: w.run_km }; });
+      cur.sessions.forEach(function (s) { s.status = "logged"; });
+      return finish({ mode: "log", weeks: [cur], history: hist, next: null, note: p.note }, p);
+    }
+    if (block && !p.label) {
+      // The calendar is the plan: a block running alongside sessions it
+      // didn't tag still shows every week around now, numbered from the
+      // first week shown.
+      weeks = weeks.filter(function (w) { return w.sessions.length || w.current; });
+      weeks.forEach(function (w, i) { w.n = i + 1; });
+    }
+    if (!weeks.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
+    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null, upcoming: p.label ? null : (p.upcoming_plan || null) }, p);
+    var ci = weeks.findIndex(function (w) { return w.current; });
+    if (ci < 0) ci = Math.max(0, weeks.findIndex(function (w) { return w.starts > today; }) - 1);
+    if (ci < 0) ci = weeks.length - 1;
+    var ahead = weeks.slice(ci + 1).some(function (w) { return w.sessions.length; });
+    return finish({ mode: "week", weeks: [weeks[ci]], history: p.history || [], next: p.next_session || null,
+      upcoming: p.upcoming_plan || null, moreAhead: ahead }, p);
+  }
+  function finish(m, p) {
+    // Every session, placed on the day it happened if it was done on another
+    // day; a session moved into another week shows there, and km follow it.
+    var all = [];
+    (p.weeks || []).forEach(function (w) {
+      (w.sessions || []).forEach(function (s) { all.push(s); });
+      list(w.extra).forEach(function (s) {
+        var type = /cycl|ride|bike/i.test(s.name || "") ? "ride" : s.sport === "other" ? "other" : (s.sport || "run");
+        all.push(Object.assign({ extra: true, status: "done" }, s, { type: type }));
+      });
+    });
+    m.weeks.forEach(function (w) {
+      var end = iso(addDays(parse(w.starts), 7));
+      w.rows = all.filter(function (s) { var d = effDate(s); return d >= w.starts && d < end; })
+        .sort(function (x, y) { var a = effDate(x), b = effDate(y); return a < b ? -1 : a > b ? 1 : 0; });
+      w.ghosts = all.filter(function (s) { return s.status === "done, moved" && s.date >= w.starts && s.date < end && effDate(s) !== s.date; });
+      var planned = w.rows.filter(function (s) { return !s.extra; });
+      w.plannedKm = w.planned != null ? w.planned : Math.round(10 * sum(planned, function (s) { return s.planned_km; })) / 10;
+      w.doneKm = Math.round(10 * sum(w.rows.filter(isDone), function (s) { return s.actual_km; })) / 10;
+      w.done = planned.filter(isDone).length;
+      w.missed = planned.filter(function (s) { return s.status === "missed"; }).length;
+      w.total = planned.length;
+    });
+    // The next session arrives as its own copy, with its steps; it takes the
+    // place of its row (by schedule id, else day and name) so the row draws
+    // as the next-session card.
+    if (m.next) {
+      var nx = m.next, same = all.filter(function (s) {
+        return !s.extra && (nx.schedule_id != null ? s.schedule_id === nx.schedule_id : s.date === nx.date && s.name === nx.name);
+      })[0];
+      if (same) m.next = Object.assign(same, nx, { type: nx.type || same.type, kind: nx.kind || same.kind, sport: nx.sport || same.sport, shape: nx.shape || same.shape });
+    }
+    m.nextWeek = -1;
+    if (m.next) {
+      m.weeks.forEach(function (w, i) { if (m.next.date >= w.starts && m.next.date < iso(addDays(parse(w.starts), 7))) m.nextWeek = i; });
+    }
+    m.today = iso(new Date());
+    return m;
+  }
+
+  // Phase bands from the phase each session carries: a week takes the phase
+  // most of its sessions have, and a week without one stays in its neighbours'.
+  function phaseSpans(weeks) {
+    var labels = weeks.map(function (w) {
+      var counts = {};
+      w.rows.forEach(function (s) { if (s.phase && !s.extra) counts[s.phase] = (counts[s.phase] || 0) + 1; });
+      var best = null; Object.keys(counts).forEach(function (k) { if (best == null || counts[k] > counts[best]) best = k; });
+      return best;
+    });
+    if (!labels.some(Boolean)) return null;
+    for (var i = 1; i < labels.length; i++) labels[i] = labels[i] || labels[i - 1];
+    for (var j = labels.length - 2; j >= 0; j--) labels[j] = labels[j] || labels[j + 1];
+    var spans = [];
+    labels.forEach(function (l, k) {
+      if (spans.length && spans[spans.length - 1].label === l) spans[spans.length - 1].span++;
+      else spans.push({ label: l, span: 1, from: k });
+    });
+    return spans;
+  }
+
+  // ---------------------------------------------------------------- render
+  var state = { sel: null }, raw = null, model = null;
+
+  function fail(message) {
+    var app = document.getElementById("app");
+    app.textContent = "";
+    app.appendChild(el("div", { class: "empty", text: message }));
+  }
+
+  function render(plan) {
+    model = normalise(plan);
+    if (model.error) { fail(model.error); return; }
+    if (state.sel == null) state.sel = model.nextWeek >= 0 ? model.nextWeek : Math.max(0, model.weeks.findIndex(function (w) { return w.current; }));
+    var app = document.getElementById("app");
+    app.textContent = "";
+    app.appendChild(header(model));
+    app.appendChild(el("div", { class: "body" }, [chart(model), week(model)]));
+    scrolledToNext = false;
+    reportSize();
+  }
+
+  function header(m) {
+    var b = m.block, title, sub;
+    if (m.mode === "block") {
+      title = b.name || goalTitle(b.goal) || "Training plan";
+      var first = m.weeks[0], last = m.weeks[m.weeks.length - 1];
+      var span = b === raw ? range(b.starts, b.ends) : range(first.starts, iso(addDays(parse(last.starts), 6)));
+      sub = [b.method, span].filter(Boolean).join(" \u00b7 ");
+    } else {
+      var w = m.weeks[0];
+      title = "This week";
+      sub = (m.mode === "log" ? "Nothing scheduled" : "Planned week by week") + " \u00b7 " + range(w.starts, iso(addDays(parse(w.starts), 6)));
+    }
+    var left = el("div", { class: "head-l" }, [
+      el("div", { class: "brand" }, [
+        el("span", { class: "wordmark", text: "Daash" }),
+        // With nothing scheduled the card is a log of what was done, not a plan.
+        el("span", { class: "kicker mono", text: m.mode === "log" ? "TRAINING LOG" : "TRAINING PLAN", onclick: debugTap }),
+        el("span", { class: "tools" }, [
+          canShare() ? el("button", { class: "share", "aria-label": shareWords(m), title: shareWords(m), onclick: share }, [svg(ICON.share, 14)]) : null,
+          el("button", { class: "expand", id: "expand", hidden: true, "aria-label": "Expand", onclick: toggleFullscreen }, [svg(ICON.grow, 14)]),
+          el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
+        ]),
+      ]),
+      el("div", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" }, [
+        el("h3", { class: "title" + (title.length > 24 ? " long" : ""), text: title }),
+        el("span", { class: "sub", text: sub }),
+      ]),
+    ]);
+    var nodes = timeline(m);
+    var tl = nodes.length ? el("div", { class: "tl", "aria-label": "Goal timeline" }, nodes.reduce(function (acc, n, i) {
+      if (i) acc.push(el("span", { class: "tl-line" }));
+      acc.push(el("div", { class: "tl-node" }, [
+        el("span", { class: "tl-dot" + (n.cur ? " cur" : "") }),
+        el("div", { style: "display:flex;flex-direction:column;min-width:0" }, [
+          el("span", { class: "tl-a", text: n.a }), n.b ? el("span", { class: "tl-b", text: n.b }) : null,
+        ]),
+      ]));
+      return acc;
+    }, [])) : null;
+    return el("div", { class: "head" }, [left, tl]);
+  }
+
+  // This block, then the milestones on the way to the goal. Without
+  // milestones the goal itself is the one point after the block.
+  function timeline(m) {
+    if (m.mode !== "block") return [];
+    var b = m.block, many = m.weeks.length > 6;
+    var total = Math.round(sum(m.weeks, function (w) { return w.plannedKm; }));
+    var nodes = [{ a: "This block", b: many ? m.weeks.length + " weeks" : (total ? total + " km" : ""), cur: true }];
+    var marks = (b.milestones || []).slice(0, 4);
+    if (marks.length) {
+      marks.forEach(function (x) { nodes.push({ a: x.label, b: x.target || (x.date ? short(x.date) : "") }); });
+    } else if (b.goal && b.name) {
+      // Without milestones the goal is the one point after the block; with
+      // no name either, the title already says it, so no timeline.
+      var head = shortGoal(b.goal), tail = splitGoal(b.goal)[1];
+      if (tail.length > 20) tail = tail.slice(0, 19).replace(/\s+\S*$/, "") + "\u2026";
+      nodes.push({ a: head, b: tail });
+    }
+    return nodes.length > 1 ? nodes : [];
+  }
+
+  function chart(m) {
+    var isWeek = m.mode !== "block";
+    var kms = m.weeks.map(function (w) { return w.plannedKm || 0; });
+    var sel = state.sel, many = m.weeks.length > 6, gap = many ? 3 : 6;
+    var bars = [], stats, cols;
+    var MAX = 64;
+    if (isWeek) {
+      var w0 = m.weeks[0];
+      var hist = m.history || [];
+      var thisKm = m.mode === "log" ? w0.run_km : (w0.plannedKm || 0);
+      var peak = Math.max.apply(null, hist.map(function (h) { return h.run_km || 0; }).concat([thisKm, 1]));
+      var avg = hist.length ? sum(hist, function (h) { return h.run_km; }) / hist.length : 0;
+      hist.forEach(function (h, i) {
+        bars.push(barEl({ km: fmtKm(h.run_km || 0), h: Math.round((h.run_km || 0) / peak * MAX), cls: "past", lbl: i === hist.length - 1 ? "Last" : (hist.length - i) + " wks ago", faint: true, still: true, wrap: true, aria: fmtKm(h.run_km || 0) + " km run, week of " + short(h.starts) }));
+      });
+      bars.push(barEl({ km: fmtKm(thisKm), h: Math.round(thisKm / peak * MAX), cls: "on", on: true, lbl: "This week", dot: m.nextWeek === 0, still: true, wrap: true, aria: "This week, " + fmtKm(thisKm) + " km" }));
+      cols = bars.length;
+      var right = "";
+      // A week in progress isn't compared with finished ones.
+      if (avg > 0 && thisKm > 0 && m.mode !== "log") { var pct = Math.round((thisKm / avg - 1) * 100); right = (pct >= 0 ? "+" : "") + pct + "% on your " + hist.length + "-week average"; }
+      else if (avg > 0) right = fmtKm(Math.round(avg)) + " km a week lately";
+      stats = { lead: fmtKm(thisKm) + " km", left: m.mode === "log" ? "so far this week" : "planned", right: right };
+    } else {
+      var peakKm = Math.max.apply(null, kms.concat([1]));
+      var started = m.today >= m.block.starts;
+      m.weeks.forEach(function (w, i) {
+        var on = i === sel, h = Math.round((w.plannedKm || 0) / peakKm * MAX);
+        var fill = w.plannedKm ? Math.round(h * Math.min(1, w.doneKm / w.plannedKm)) : 0;
+        bars.push(barEl({ km: many && !on ? "" : fmtKm(w.plannedKm || 0), h: h, cls: on ? "on" + (started && fill < h ? " started" : "") : "", on: on,
+          fill: started ? fill : 0, lbl: many ? String(w.n) : "W" + w.n, dot: i === m.nextWeek, r4: many,
+          aria: "Week " + w.n + ", " + fmtKm(w.plannedKm || 0) + " km", onclick: function () { state.sel = i; render(raw); } }));
+      });
+      cols = bars.length;
+      var done = sum(m.weeks, function (w) { return w.done; }), total = sum(m.weeks, function (w) { return w.total; });
+      var missed = sum(m.weeks, function (w) { return w.missed; });
+      var totalKm = Math.round(sum(kms, function (k) { return k; }));
+      var doneKm = Math.round(sum(m.weeks, function (w) { return w.doneKm; }));
+      var firstDay = m.weeks[0].rows.length ? effDate(m.weeks[0].rows[0]) : m.block.starts;
+      var rightTxt = !started ? "Starts " + DAYS[dow(firstDay)] + (between(m.today, firstDay) > 6 ? " " + short(firstDay) : "")
+        : many ? totalKm + " km \u00b7 peak " + Math.round(peakKm) : doneKm + " of " + totalKm + " km";
+      // Done against what was due by now, not against the whole block: 17 of
+      // 42 read as behind when it was 17 of the 18 so far. A session done
+      // early was due the day it was done.
+      // With some missed, "so far" goes: the missed count says it already,
+      // and the line has to fit the narrow chart pane.
+      var due = 0;
+      m.weeks.forEach(function (w) { w.rows.forEach(function (s) { if (!s.extra && (isDone(s) || s.status === "missed" || s.date < m.today)) due++; }); });
+      stats = due ? { lead: done + " of " + due, left: missed ? "done \u00b7 " + missed + " missed" : "done so far", right: rightTxt }
+        : { lead: total + (total === 1 ? " session" : " sessions"), left: "planned", right: rightTxt };
+    }
+    var grid = el("div", { class: "bars", style: "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px" }, bars);
+    var spans = isWeek ? null : phaseSpans(m.weeks);
+    var bands = spans ? el("div", { class: "phases", style: "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px" },
+      spans.map(function (p) {
+        var on = sel >= p.from && sel < p.from + p.span;
+        return el("div", { class: "phase" + (on ? " on" : ""), style: "grid-column:span " + p.span }, [
+          el("span", { class: "phase-line" }), el("span", { class: "phase-lbl mono", text: String(p.label).toUpperCase() })]);
+      })) : null;
+    var present = {};
+    m.weeks.forEach(function (w) { w.rows.forEach(function (s) { present[(TYPES[s.type] || TYPES[s.sport]) ? (s.type || s.sport) : "other"] = true; }); });
+    // Easy always, then the rest in order of effort as they appear; an easy
+    // ride or a plain run is easy, and an old sub is threshold.
+    if (present.sub) present.threshold = true;
+    var legend = ["easy", "threshold", "intervals", "race", "long", "strength", "swim"].filter(function (k) { return k === "easy" || present[k]; });
+    return el("div", { class: "pane chart" }, [
+      el("div", { class: "stats" }, [
+        el("span", {}, [el("strong", { text: stats.lead }), " " + stats.left]),
+        el("span", { text: stats.right }),
+      ]),
+      el("div", { style: "display:flex;flex-direction:column;gap:6px" }, [grid, bands]),
+      el("div", { class: "legend" }, legend.map(function (k) {
+        var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), t.l]);
+      })),
+    ]);
+  }
+  function barEl(o) {
+    return el("button", { class: "bar" + (o.still ? " still" : ""), "aria-label": o.aria, "aria-pressed": o.on ? "true" : null, onclick: o.onclick }, [
+      el("span", { class: "bar-km mono" + (o.on ? " on" : ""), text: o.km }),
+      el("span", { class: "bar-box " + (o.cls || "") + (o.r4 ? " r4" : ""), style: "height:" + Math.max(o.h, 3) + "px" }, [
+        o.fill ? el("span", { class: "bar-fill", style: "height:" + o.fill + "px" }) : null,
+        o.dot ? el("span", { class: "bar-dot" }) : null,
+      ]),
+      el("span", { class: "bar-lbl" + (o.on ? " on" : "") + (o.faint ? " faint" : "") + (o.wrap ? " wrap" : ""), text: o.lbl }),
+    ]);
+  }
+
+  function week(m) {
+    var w = m.weeks[state.sel] || m.weeks[0];
+    var isWeek = m.mode !== "block";
+    var kmTxt = w.doneKm > 0 && w.plannedKm ? fmtKm(w.doneKm) + " of " + fmtKm(w.plannedKm) + " km"
+      : w.plannedKm ? fmtKm(w.plannedKm) + " km" : (w.doneKm ? fmtKm(w.doneKm) + " km" : "");
+    var meta = [range(w.starts, iso(addDays(parse(w.starts), 6))), kmTxt].filter(Boolean).join(" \u00b7 ");
+    var away = !isWeek && m.nextWeek >= 0 && state.sel !== m.nextWeek;
+    var head = el("div", { class: "week-head" }, [
+      el("span", { class: "week-title" }, [isWeek ? "Sessions" : "Week " + w.n, " ", el("span", { class: "week-meta", text: "\u00b7 " + meta })]),
+      away ? el("button", { class: "pill", onclick: function () { state.sel = m.nextWeek; render(raw); } }, [svg(ICON.back, 12, "currentColor", 2.4), "Next: " + DAYS[dow(m.next.date)]]) : null,
+    ]);
+    var rows = w.rows.map(function (s) { return row(s, m, w); });
+    if (m.next && m.nextWeek < 0 && isWeek && !w.rows.some(function (s) { return s === m.next; })) rows.push(nextCard(m.next, m));
+    if (!rows.length) rows.push(el("div", { class: "row", style: "grid-template-columns:1fr" }, [el("span", { class: "meta", style: "padding:0", text: m.mode === "log" ? "Nothing recorded yet this week." : "A rest week: nothing scheduled." })]));
+    var foot = null;
+    // The block after this one, named once on the week it ends.
+    if (m.upcoming && (isWeek || w.starts < m.upcoming.starts && iso(addDays(parse(w.starts), 7)) >= m.upcoming.starts)) {
+      foot = el("div", { class: "foot" }, [el("span", { text: "Your " + (m.upcoming.name || m.upcoming.label || "next") + " block starts " + short(m.upcoming.starts) + "." })]);
+    } else if (isWeek) {
+      if (!m.moreAhead) foot = el("div", { class: "foot" }, [
+        el("span", { text: "Next week isn\u2019t planned yet." }),
+        el("button", { class: "act", onclick: function (e) { ask("Plan next week for me from how my training has gone lately, and put it on my Garmin calendar.", e.currentTarget); } }, ["Plan next week"]),
+      ]);
+    }
+    return el("div", { class: "pane week" }, [head, strip(w, m), el("div", { class: "rows" }, rows), foot]);
+  }
+
+  function strip(w, m) {
+    var cells = [];
+    for (var d = 0; d < 7; d++) {
+      var date = iso(addDays(parse(w.starts), d));
+      var here = w.rows.filter(function (s) { return effDate(s) === date; });
+      var ghost = !here.length && w.ghosts.some(function (s) { return s.date === date; });
+      var first = here[0], isNext = m.next && m.next.date === date && (m.nextWeek === state.sel || m.mode !== "block");
+      // Reset each day: a hoisted var would carry one day's mark to the next.
+      var mark = null;
+      if (isNext && !isDone(m.next)) mark = first && first !== m.next ? el("span", { class: "dot", style: "background:" + typeOf(first).v }) : el("span", { class: "dot", style: "background:" + typeOf(m.next).v });
+      if (!mark && first) {
+        if (isDone(first)) mark = svg(ICON.check, 11, typeOf(first).v, 3.2);
+        else if (first.status === "missed") mark = el("span", { class: "ring" });
+        else mark = el("span", { class: "dot", style: "background:" + typeOf(first).v });
+      }
+      if (!mark && ghost) mark = el("span", { class: "ghost" });
+      // Nothing on a planned day is a rest day. Without a plan, only a day
+      // already gone can be called one.
+      if (!mark && (m.mode !== "log" || date < m.today)) mark = el("span", { class: "rest" });
+      var faint = !first || first.status === "missed";
+      cells.push(el("div", { class: "day" }, [
+        el("span", { class: "day-l mono", text: LETTERS[d] }),
+        el("span", { class: "day-n" + (isNext ? " now" : faint ? " faint" : ""), text: String(parse(date).getDate()) }),
+        el("span", { class: "day-m" }, [mark]),
+      ]));
+    }
+    return el("div", { class: "strip", "aria-hidden": "true" }, cells);
+  }
+
+  function row(s, m, w) {
+    if (m.next && s === m.next) return nextCard(s, m);
+    var t = typeOf(s), day = DAYS[dow(effDate(s))].toUpperCase();
+    if (isDone(s)) {
+      var bits = [];
+      if (s.extra) bits.push("Not on the plan");
+      if (s.actual_pace) bits.push(s.actual_pace.replace(" /km", " /km"));
+      if (s.actual_bpm) bits.push(s.actual_bpm + " bpm");
+      if (!s.actual_pace && s.actual) bits.push(s.actual);
+      if (s.pace && !s.actual_pace) bits.push(s.pace);
+      if (s.speed) bits.push(s.speed);
+      var movedTxt = s.status === "done, moved" ? movedLine(s, w) : null;
+      return el("div", tapAttrs(s, "done"), [
+        el("span", { class: "row-day mono", text: day }),
+        el("div", { class: "row-mid tight" }, [
+          el("div", { class: "row-top" }, [
+            el("span", { class: "check", style: "background:" + t.v }, [svg(ICON.check, 10, "var(--card)", 3.6)]),
+            sportIcon(s),
+            el("span", { class: "name soft", text: cleanTitle(s) }),
+          ]),
+          bits.length ? el("span", { class: "meta", text: bits.join(" \u00b7 ") }) : null,
+          movedTxt ? el("span", { class: "meta" }, [el("span", { class: "moved" }, [svg(ICON.arrow, 12), movedTxt])]) : null,
+        ]),
+        el("span", { class: "km soft", text: s.actual_km ? fmtKm(s.actual_km) + " km" : (s.actual || "") }),
+      ]);
+    }
+    if (s.status === "missed") {
+      return el("div", { class: "row" }, [
+        el("span", { class: "row-day mono faint", text: day }),
+        el("div", { class: "row-mid tight" }, [
+          el("div", { class: "row-top" }, [el("span", { class: "miss" }), sportIcon(s), el("span", { class: "name muted", text: cleanTitle(s) })]),
+          el("span", { class: "meta missed", text: "Missed" }),
+        ]),
+        el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
+      ]);
+    }
+    // Bars are to scale within the week, so the long run is the long one;
+    // a session with no distance, strength say, takes the whole width.
+    var most = Math.max.apply(null, w.rows.map(function (x) { return x.extra ? 0 : x.planned_km || 0; }).concat([0]));
+    var share = s.planned_km && most ? Math.max(0.18, s.planned_km / most) : 1;
+    return el("div", tapAttrs(s, "planned"), [
+      el("span", { class: "row-day mono", text: day }),
+      el("div", { class: "row-mid" }, [
+        el("div", { class: "row-top" }, [sportIcon(s), t.l ? el("span", { class: "type", style: "color:" + (t.t || t.v), text: t.l }) : null, el("span", { class: "name", text: cleanTitle(s) })]),
+        shapeBar(s, false, share),
+      ]),
+      el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
+    ]);
+  }
+  // ---------------------------------------------------------------- opening a session
+  // A finished run opens to its splits and the figures behind the row; a
+  // planned one to its steps. Both ask the server through the host, as the
+  // refresh button does, and the answer is kept for the next tap.
+  var opened = {};
+  function tapAttrs(s, kind) {
+    var can = kind === "done" ? s.activity_id != null : s.workout_id != null;
+    if (!can) return { class: "row" };
+    return { class: "row tap", role: "button", tabindex: "0", "aria-expanded": "false",
+      onclick: function (e) { toggle(e.currentTarget, s, kind); } };
+  }
+  document.addEventListener("keydown", function (e) {
+    var row = e.target && e.target.closest && e.target.closest(".row.tap");
+    if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); row.click(); }
+  });
+  function toggle(rowEl, s, kind) {
+    var open = rowEl.classList.contains("open");
+    var rows = rowEl.parentNode;
+    rows.querySelectorAll(".detail").forEach(function (d) { d.remove(); });
+    rows.querySelectorAll(".row.open").forEach(function (r) { r.classList.remove("open"); r.setAttribute("aria-expanded", "false"); });
+    if (open) { reportSize(); return; }
+    rowEl.classList.add("open"); rowEl.setAttribute("aria-expanded", "true");
+    var panel = el("div", { class: "detail" });
+    rowEl.insertAdjacentElement("afterend", panel);
+    fillDetail(panel, s, kind);
+    reportSize();
+  }
+  function fillDetail(panel, s, kind) {
+    var key = (kind === "done" ? "a:" + s.activity_id : "w:" + s.workout_id);
+    var name = cleanTitle(s), when = DAYS[dow(effDate(s))] + " " + parse(effDate(s)).getDate() + " " + MONTHS[parse(effDate(s)).getMonth()];
+    var askBtn = kind === "done"
+      ? el("button", { class: "act", onclick: function (e) { ask("Tell me about my " + name + " on " + when + ": how it went, and what to take from it.", e.currentTarget); } }, ["Ask about this run"])
+      : el("button", { class: "act", onclick: function (e) { ask("What is my " + name + " on " + when + " for, and what should it feel like?", e.currentTarget); } }, ["Ask about it"]);
+    function draw(p) {
+      panel.textContent = "";
+      var parts = kind === "done" ? doneDetail(p, s) : plannedDetail(p);
+      parts.forEach(function (x) { if (x) panel.appendChild(x); });
+      var shareBtn = kind === "done" && p && canShare()
+        ? el("button", { class: "act", onclick: function (e) { shareRun(p, s, e.currentTarget); } }, ["Share this run"]) : null;
+      panel.appendChild(shareBtn ? el("div", { class: "acts" }, [askBtn, shareBtn]) : askBtn);
+      reportSize();
+    }
+    if (opened[key]) { draw(opened[key]); return; }
+    if (!host) { draw(null); return; }
+    panel.appendChild(el("span", { class: "dnote", text: "Reading it from Garmin…" }));
+    var call = kind === "done"
+      ? { name: "get_activity_details", arguments: { activity_id: s.activity_id } }
+      : { name: "get_workout", arguments: { workout_id: s.workout_id } };
+    request("tools/call", call)
+      .then(function (r) { var p = planOf(r); if (!p || p.error || (r && r.isError)) throw new Error(p && p.error || "no answer"); opened[key] = p; draw(p); })
+      .catch(function () { draw(null); });
+  }
+  function paceSecs(text) { var m = /(\d+):(\d+)/.exec(text || ""); return m ? +m[1] * 60 + +m[2] : null; }
+  // "1h 02m 03s", "4m 10s" or "45s" in seconds.
+  function clockSecs(text) {
+    var m = /^(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?$/.exec(String(text || "").trim());
+    return m && (m[1] || m[2] || m[3]) ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : null;
+  }
+  // Which laps were the work. A structured workout says so lap by lap; a run
+  // without one is read from its paces: when the laps split clearly into fast
+  // and slow, the fast ones are the work, otherwise every lap is.
+  function workLaps(splits, secs, lo, hi) {
+    var said = splits.some(function (x) { return x.intensity; });
+    if (said) {
+      var reps = splits.some(function (x) { return x.intensity === "interval"; });
+      return splits.map(function (x) { return reps ? x.intensity === "interval" : !x.intensity; });
+    }
+    if (hi - lo < 40) return splits.map(function () { return true; });
+    var mid = (lo + hi) / 2;
+    return secs.map(function (v) { return v != null && v < mid; });
+  }
+  function fact(label, value) { return value == null || value === "" ? null : el("span", {}, [el("b", { text: String(value) }), " " + label]); }
+  function doneDetail(p, s) {
+    var sum = (p && p.summary) || {}, hr = sum.heart_rate || {};
+    var facts = el("div", { class: "facts" }, [
+      fact("km", sum.distance_km != null ? fmtKm(sum.distance_km) : (s.actual_km != null ? fmtKm(s.actual_km) : null)),
+      fact("", sum.moving_time || sum.duration || s.actual || null),
+      fact("", sum.pace_per_km || s.actual_pace || null),
+      fact("bpm" + (hr.max_bpm ? ", " + hr.max_bpm + " max" : ""), hr.average_bpm || s.actual_bpm || null),
+      fact("m climb", sum.elevation_gain_m),
+      fact("spm", sum.avg_cadence_spm),
+      fact("aerobic effect", sum.training_effect && sum.training_effect.aerobic),
+    ].filter(Boolean));
+    if (!p) return [facts, el("span", { class: "dnote", text: "The splits need the chat: ask below." })];
+    var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || []).filter(function (x) { return x && x.pace_per_km; });
+    var bars = null, line = null;
+    if (splits.length > 1) {
+      var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
+      var known = secs.filter(function (v) { return v != null; }), lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
+      var colour = COLOUR[colourOf(s)] || "var(--easy)";
+      // Drawn like an interval chart: each lap as wide as it took, as tall as
+      // it was fast, the work in colour and everything around it in grey.
+      var work = workLaps(splits, secs, lo, hi);
+      var top = lo - Math.max(8, (hi - lo) * 0.08), bottom = hi + Math.max(12, (hi - lo) * 0.15);
+      var height = function (v) { return 8 + 92 * (bottom - v) / (bottom - top); };
+      var kids = splits.map(function (x, i) {
+        var v = secs[i], h = v == null ? 8 : height(v);
+        var wide = clockSecs(x.duration) || (x.distance_km ? x.distance_km * 300 : 0) || 1;
+        var label = (x.split != null ? "Lap " + x.split : "km " + (x.km || i + 1)) + (x.distance_km ? " \u00b7 " + fmtKm(x.distance_km) + " km" : "") +
+          " \u00b7 " + x.pace_per_km + (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "");
+        return el("span", { class: (work[i] ? "" : "rest ") + (v === lo ? "best" : ""),
+          style: "flex-grow:" + Math.round(wide) + ";height:" + Math.round(h) + "%;background:" + colour, title: label });
+      });
+      var avg = paceSecs(sum.pace_per_km);
+      if (avg != null && avg > top && avg < bottom) {
+        kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + sum.pace_per_km.replace(/\s*\/km$/, "") })]));
+      }
+      bars = el("div", { class: "splits", role: "img", "aria-label": splits.length + " laps" }, kids);
+      var fast = secs.indexOf(lo), slow = secs.indexOf(hi);
+      line = el("span", { class: "dnote", text: "Fastest " + splits[fast].pace_per_km + " (" + (splits[fast].split != null ? "lap " + splits[fast].split : "km " + (splits[fast].km || fast + 1)) + "), slowest " + splits[slow].pace_per_km + " (" + (splits[slow].split != null ? "lap " + splits[slow].split : "km " + (splits[slow].km || slow + 1)) + ")" });
+    }
+    var zones = p.hr_zones && p.hr_zones.length ? p.hr_zones.filter(function (z) { return z.percent >= 5; }).map(function (z) { return "Z" + z.zone + " " + Math.round(z.percent) + "%"; }).join(" \u00b7 ") : null;
+    return [facts, bars, line, zones ? el("span", { class: "dnote", text: "Heart rate zones: " + zones }) : null];
+  }
+  function plannedDetail(p) {
+    if (!p) return [el("span", { class: "dnote", text: "The steps need the chat: ask below." })];
+    var facts = el("div", { class: "facts" }, [
+      fact("", p.estimated_duration), fact("km", p.estimated_distance_km != null ? fmtKm(p.estimated_distance_km) : null), fact("", p.main_target),
+    ].filter(Boolean));
+    var items = [];
+    (p.steps || []).forEach(function (st) {
+      if (st.kind === "repeat") {
+        items.push(el("li", {}, [el("b", { text: st.times + " \u00d7" }), el("span", { text: "repeat" })]));
+        (st.steps || []).forEach(function (inner) { items.push(stepLine(inner, true)); });
+      } else items.push(stepLine(st, false));
+    });
+    return [facts, items.length ? el("ul", { class: "steps" }, items) : null];
+  }
+  function stepLine(st, inRep) {
+    return el("li", { class: inRep ? "rep" : "" }, [el("b", { text: st.label || st.kind || "Step" }),
+      el("span", { text: [st.amount, st.target].filter(Boolean).join(" at ") + (st.note ? " \u00b7 " + st.note : "") })]);
+  }
+
+  function movedLine(s, w) {
+    var sameWeek = s.date >= w.starts && s.date < iso(addDays(parse(w.starts), 7));
+    return "Moved from " + DAYS[dow(s.date)] + " " + parse(s.date).getDate() + (sameWeek ? "" : " " + MONTHS[parse(s.date).getMonth()]);
+  }
+
+  // The workout as a bar: easy parts low, work reps high, recoveries lower
+  // still, each as wide as its distance. A run without steps is one bar.
+  // The parts and their colours come from shapeOf, which the shared image
+  // draws from too, so the two always agree.
+  var COLOUR = { easy: "var(--easy)", threshold: "var(--threshold)", intervals: "var(--intervals)", long: "var(--long)",
+    race: "var(--red)", swim: "var(--swim)", strength: "var(--strength)", other: "var(--muted)", rec: "var(--rec)" };
+  // The colour a session's type takes, by name: TYPES says the same in CSS.
+  function colourOf(s) {
+    var k = TYPES[s.type] ? s.type : TYPES[s.sport] ? s.sport : "other";
+    return k === "sub" ? "threshold" : k === "run" || k === "ride" ? "easy" : k;
+  }
+  function shapeOf(s) {
+    var segs = s.shape && s.shape.length ? s.shape : [{ k: s.type === "race" ? "work" : "easy", km: s.planned_km || 1 }];
+    // A race, or a hard session whose targets don't say which part is the
+    // work, is work apart from its warm-up and cool-down: draw it so.
+    var hard = s.type === "threshold" || s.type === "intervals" || s.type === "sub";
+    if ((s.type === "race" || hard) && !segs.some(function (g) { return g.k === "work"; })) {
+      var body = segs.some(function (g) { return g.k === "easy" && !g.part; });
+      segs = segs.map(function (g) { return g.k === "easy" && !(body && g.part) ? { k: "work", km: g.km } : g; });
+    }
+    var easy = s.type === "long" ? "long" : s.type === "easy" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
+    // Work in a hard session takes its colour; faster stretches of a long
+    // or easy run are threshold work.
+    var work = s.type === "race" ? "race" : hard ? colourOf(s) : "threshold";
+    return segs.map(function (g) { return { k: g.k, km: Math.max(g.km, 0.1), c: g.k === "work" ? work : g.k === "rec" ? "rec" : easy }; });
+  }
+  // Reps stand above the warm-up, cool-down and recoveries, as a workout's
+  // steps do on Garmin's own chart; the next session's bar is just taller.
+  function shapeBar(s, big, share) {
+    var scale = big ? 30 / 26 : 0.7;
+    var width = share && share < 1 ? "width:" + Math.round(share * 1000) / 10 + "%" : "";
+    var segs = shapeOf(s);
+    // An even session (an easy run, a race) fills the big bar's height.
+    var even = big && segs.every(function (g) { return g.k === segs[0].k; });
+    return el("div", { class: "shape" + (big ? " big" : ""), style: width, "aria-hidden": "true" }, segs.map(function (g) {
+      var h = even || g.k === "work" ? 26 : g.k === "rec" ? 6 : 12;
+      return el("span", { style: "flex:" + g.km + " 1 0;height:" + Math.round(h * scale) + "px;background:" + COLOUR[g.c] });
+    }));
+  }
+
+  function nextCard(s, m) {
+    var t = typeOf(s), d = parse(s.date);
+    var diff = between(m.today, s.date);
+    var when = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : diff > 1 ? "In " + diff + " days" : "Overdue";
+    var meta = [];
+    if (s.target) meta.push(el("span", {}, [svg(/bpm/.test(s.target) ? ICON.heart : ICON.gauge, 13, "var(--red-text)"), s.target]));
+    meta.push(el("span", {}, [svg(ICON.watch, 13), "Ready to sync"]));
+    var name = cleanTitle(s), when2 = DAYS[dow(s.date)] + " " + d.getDate() + " " + MONTHS[d.getMonth()];
+    var card = el("div", { class: "next" }, [
+      el("div", { class: "next-top" }, [
+        el("span", { class: "next-k mono", text: "NEXT \u00b7 " + when2.toUpperCase() }),
+        el("span", { class: "next-when", text: when }),
+      ]),
+      el("div", { class: "next-title" }, [sportIcon(s, 15), t.l ? el("span", { class: "next-type", style: "color:" + (t.t || t.v), text: t.l }) : null, el("span", { class: "next-name", text: name })]),
+      shapeBar(s, true),
+      el("div", { class: "next-meta" }, meta),
+      el("div", { class: "acts" }, [
+        el("button", { class: "act", onclick: function (e) { ask("Move my " + name + " on " + when2 + " to another day that works with the rest of the week.", e.currentTarget); } }, ["Move"]),
+        el("button", { class: "act", onclick: function (e) { ask("Make my " + name + " on " + when2 + " easier. I\u2019m not fresh enough for it as planned.", e.currentTarget); } }, ["Easier"]),
+        el("button", { class: "act", onclick: function (e) { ask("Why is " + name + " on " + when2 + " in my plan this week, and what should it feel like?", e.currentTarget); } }, ["Ask why"]),
+      ]),
+    ]);
+    return card;
+  }
+
+  // ---------------------------------------------------------------- actions
+  function ask(text, button) {
+    if (!host) { flash(button, "Would ask: \u201c" + text + "\u201d"); return; }
+    var block = { type: "text", text: text };
+    request("ui/message", { role: "user", content: [block] })
+      .catch(function () { return request("ui/message", { role: "user", content: block }); })
+      .then(function () { flash(button, "Added to the chat"); })
+      .catch(function () { flash(button, "The chat did not accept that"); });
+  }
+  function flash(button, msg) {
+    var box = button.closest(".next, .foot, .detail"); if (!box) return;
+    var old = box.querySelector(".sent"); if (old) old.remove();
+    box.appendChild(el("div", { class: "sent", text: msg }));
+  }
+  // ---------------------------------------------------------------- share
+  // Share opens a page on garmin.daash.run that draws the week as an image
+  // for the person to post or send. The week travels in the link after the
+  // #, which browsers keep to themselves: it never reaches that server or
+  // any other, and the page counts nothing. Only what the page shows is
+  // sent: the plan's name, the dates, and each session's day, type, name,
+  // distance and shape, with pace once it's done; and with a plan, its other
+  // weeks the same way, without the shapes, for saving it whole.
+  var SHARE_PAGE = window.__SHARE_PAGE__ || "https://garmin.daash.run/share/";
+  function canShare() {
+    if (!host || (window.openai && typeof window.openai.openExternal === "function")) return true;
+    // A host that lists what it can do and leaves out opening links gets no
+    // button; one that lists nothing is asked, and says so if it can't.
+    return !hostCaps || !!hostCaps.openLinks;
+  }
+  function sharePayload(m) {
+    var w = m.weeks[state.sel] || m.weeks[0];
+    var end = iso(addDays(parse(w.starts), 6));
+    var kind = end < m.today ? "recap" : w.starts > m.today ? "ahead" : "now";
+    var title = "My week", sub = range(w.starts, end), lead, label;
+    // "Week 3 of 10" only for a block drawn whole: the calendar around now
+    // numbers its weeks from the first one shown, not from the plan's start.
+    if (m.mode === "block") {
+      title = m.block.name || goalTitle(m.block.goal) || "Training plan";
+      if (m.block === raw) sub = "Week " + w.n + " of " + m.weeks.length + " \u00b7 " + sub;
+    }
+    if (m.mode === "log") {
+      lead = fmtKm(w.run_km) + " km"; label = kind === "now" ? "run so far this week" : "run";
+    } else if (kind === "ahead" || kind === "now" && !w.done && !w.doneKm) {
+      lead = fmtKm(w.plannedKm) + " km"; label = "planned \u00b7 " + w.total + (w.total === 1 ? " session" : " sessions");
+    } else {
+      lead = (w.plannedKm ? fmtKm(w.doneKm) + " of " + fmtKm(w.plannedKm) : fmtKm(w.doneKm)) + " km";
+      label = w.done + " of " + w.total + " sessions done" + (w.missed ? " \u00b7 " + w.missed + " missed" : "");
+    }
+    var rows = w.rows.map(function (s) {
+      var done = isDone(s), r = { d: dow(effDate(s)), c: colourOf(s), l: typeOf(s).l, n: cleanTitle(s) };
+      if (done) {
+        r.st = "d"; r.km = s.actual_km || null;
+        var bits = [];
+        if (s.extra) bits.push("Not on the plan");
+        if (s.actual_pace || s.pace) bits.push(s.actual_pace || s.pace); else if (s.speed) bits.push(s.speed); else if (s.actual) bits.push(s.actual);
+        if (bits.length) r.p = bits.join(" \u00b7 ");
+      } else {
+        r.st = s.status === "missed" ? "m" : "p"; r.km = s.planned_km || null;
+        if (r.st === "p") r.sh = shapeOf(s).map(function (g) { return [g.k === "work" ? "w" : g.k === "rec" ? "r" : "e", Math.round(g.km * 100) / 100, g.c]; });
+      }
+      return r;
+    });
+    var data = { v: 1, k: kind, t: title, s: sub, w: w.starts, a: [lead, label], r: rows };
+    // Without a plan, only a day already gone can be called a rest day.
+    if (m.mode === "log" && kind === "now") data.u = dow(m.today);
+    if (m.mode !== "block" && m.history && m.history.length) data.h = m.history.map(function (h) { return Math.round((h.run_km || 0) * 10) / 10; }).concat([Math.round((m.mode === "log" ? w.run_km : w.plannedKm || 0) * 10) / 10]);
+    return data;
+  }
+  // The whole plan rides along for the share page's PDF and its
+  // plan-at-a-glance image: every week, each session's day, type, name,
+  // distance and whether it was done, with the pace once it is. No shapes or
+  // steps, so a block of twenty weeks still fits in a link.
+  function planPayload(m) {
+    if (m.mode === "log" || !raw) return null;
+    var weeks = m.mode === "block" ? m.weeks : finish({ weeks: (raw.weeks || []).map(function (w, i) {
+      return { n: i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra), planned: w.planned_km };
+    }), next: null }, raw).weeks;
+    weeks = weeks.filter(function (w) { return w.rows.length; });
+    if (weeks.length < 2) return null;
+    var title = "Training plan", sub = "";
+    if (m.mode === "block") {
+      title = m.block.name || goalTitle(m.block.goal) || title;
+      sub = m.block.method || "";
+    }
+    var last = weeks[weeks.length - 1];
+    return {
+      t: title, s: [sub, range(weeks[0].starts, iso(addDays(parse(last.starts), 6)))].filter(Boolean).join(" \u00b7 "),
+      w: weeks.slice(0, 30).map(function (w) {
+        return [w.starts, w.plannedKm || 0, w.rows.slice(0, 14).map(function (s) {
+          var done = isDone(s), r = [dow(effDate(s)), colourOf(s), typeOf(s).l, cleanTitle(s).slice(0, 40)];
+          r.push(done ? s.actual_km || null : s.planned_km || null);
+          r.push(s.extra ? "x" : done ? "d" : s.status === "missed" ? "m" : "p");
+          if (done && (s.actual_pace || s.pace || s.speed)) r.push(s.actual_pace || s.pace || s.speed);
+          return r;
+        })];
+      }),
+    };
+  }
+  // One run as an image for Strava or a story: its name, the headline
+  // numbers, the laps as the card draws them, and a line or two worth
+  // saying. Same page, same rule: it travels after the #, and only what the
+  // image shows is sent.
+  function clock(secs) {
+    if (!secs) return null;
+    var h = Math.floor(secs / 3600), m = Math.floor(secs % 3600 / 60), x = Math.round(secs % 60);
+    if (x === 60) { m += 1; x = 0; }
+    return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(x).padStart(2, "0");
+  }
+  function runPayload(p, s) {
+    var sum = (p && p.summary) || {}, hr = sum.heart_rate || {};
+    var label = typeOf(s).l, name = cleanTitle(s);
+    var title = label && !/^(Run|Session|Ride)$/.test(label) && name.toLowerCase().indexOf(label.toLowerCase()) < 0 ? label + " " + name : name;
+    var day = effDate(s), d = parse(day);
+    var sub = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][dow(day)] + " " + d.getDate() + " " + MONTHS[d.getMonth()] +
+      (sum.location ? " \u00b7 " + sum.location : "");
+    var km = sum.distance_km != null ? sum.distance_km : s.actual_km;
+    var pace = sum.pace_per_km || s.actual_pace;
+    var facts = [
+      km != null ? [fmtKm(km), "km"] : null,
+      clockSecs(sum.duration) || sum.duration_seconds ? [clock(sum.duration_seconds || clockSecs(sum.duration)), "time"] : null,
+      pace ? [pace.replace(/\s*\/km$/, ""), "/km average"] : sum.avg_speed_kmh ? [String(sum.avg_speed_kmh), "km/h average"] : null,
+      hr.average_bpm || s.actual_bpm ? [String(hr.average_bpm || s.actual_bpm), "bpm average"] : null,
+    ].filter(Boolean);
+    var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || []).filter(function (x) { return x && x.pace_per_km; });
+    var laps = [], notes = [];
+    if (splits.length > 1 && splits.length <= 60) {
+      var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
+      var known = secs.filter(function (v) { return v != null; }), lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
+      var work = workLaps(splits, secs, lo, hi);
+      laps = splits.map(function (x, i) {
+        return [Math.round(clockSecs(x.duration) || (x.distance_km ? x.distance_km * (secs[i] || 300) : 0) || 1), secs[i] || 0, work[i] ? 1 : 0,
+          x.distance_km != null ? Math.round(x.distance_km * 100) / 100 : null];
+      });
+      var reps = splits.filter(function (x, i) { return work[i]; });
+      if (reps.length > 1 && reps.length < splits.length && reps.length <= 8) {
+        var line = "Reps at " + reps.map(function (x) { return x.pace_per_km.replace(/\s*\/km$/, ""); }).join(", ") + " /km";
+        if (reps.every(function (x) { return x.avg_hr; })) line += " \u00b7 heart rate " + reps.map(function (x) { return x.avg_hr; }).join(", ");
+        notes.push(["c", line]);
+      }
+    }
+    var kicker = "Run recap";
+    if (model && model.mode === "block") {
+      kicker = (model.block.name || goalTitle(model.block.goal) || "Training plan").replace(/\s*[(:].*$/, "");
+      if (model.block === raw) {
+        var wi = model.weeks.findIndex(function (w) { return day >= w.starts && day < iso(addDays(parse(w.starts), 7)); });
+        if (wi >= 0) kicker += " \u00b7 Week " + (wi + 1) + " of " + model.weeks.length;
+      }
+    }
+    title = title.replace(/(\d) (km|mi|min)\b/g, "$1\u00a0$2");
+    return { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3) };
+  }
+  function shareRun(p, s, btn) {
+    var url = shareLink(runPayload(p, s)), opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    btn.disabled = true;
+    opened.then(function () { btn.textContent = "Opened in the browser"; })
+      .catch(function () { btn.textContent = "This chat app didn\u2019t open the link"; })
+      .then(function () { btn.disabled = false; });
+  }
+  function shareWords(m) { return planPayload(m) ? "Share or save your plan" : "Share this week as an image"; }
+  function shareLink(data) {
+    var text = unescape(encodeURIComponent(JSON.stringify(data)));
+    return SHARE_PAGE + "#" + btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function share(event) {
+    var data = sharePayload(model), whole = planPayload(model);
+    if (whole) data.p = whole;
+    var btn = event.currentTarget, url = shareLink(data);
+    var said = function (msg) {
+      var head = document.querySelector(".head"); if (!head) return;
+      var note = head.querySelector(".note") || head.appendChild(el("div", { class: "note", role: "status" }));
+      note.textContent = msg;
+      requestAnimationFrame(function () { note.classList.add("on"); });
+      clearTimeout(said.t); said.t = setTimeout(function () { note.classList.remove("on"); }, 4000);
+    };
+    var opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    btn.disabled = true;
+    opened.then(function () { said(whole ? "Your plan opens in the browser to share or save." : "Your week opens in the browser as an image."); })
+      .catch(function () { said("This chat app didn\u2019t open the link."); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  function refresh(event) {
+    var btn = event.currentTarget;
+    if (!host) return;
+    btn.classList.add("spin");
+    request("tools/call", { name: "get_plan", arguments: raw && raw.label ? { label: raw.label } : {} })
+      .then(function (r) { onResult(r); })
+      .catch(function () {})
+      .then(function () { var b = document.querySelector(".refresh"); if (b) b.classList.remove("spin"); });
+  }
+
+  // ---------------------------------------------------------------- progress
+  // get_progress answers "how's my plan going" too, with the same sessions in
+  // three lists. Drawn as the calendar version of the plan.
+  function isCreatedSummary(p) {
+    return !!(p && !p.error && p.sessions_created != null && p.label && !Array.isArray(p.weeks));
+  }
+  function isProgress(p) {
+    return !!(p && !p.error && Array.isArray(p.upcoming) && Array.isArray(p.sessions) && p.weeks && p.weeks.length && "week_of" in p.weeks[0]);
+  }
+  function fromProgress(p) {
+    var today = iso(new Date());
+    var earliest = p.weeks[0].week_of;
+    var horizon = iso(addDays(mondayOf(new Date()), 28));
+    var rows = [];
+    (p.sessions || []).forEach(function (r) {
+      rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.done_on && r.done_on !== r.date ? "done, moved" : "done",
+        done_on: r.done_on !== r.date ? r.done_on : undefined, activity_id: r.activity_id, actual_km: r.actual_km });
+    });
+    (p.missed || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "missed" }); });
+    (p.upcoming || []).forEach(function (r) { rows.push({ date: r.date, name: r.name, sport: r.sport, status: r.date === today ? "today" : "ahead" }); });
+    rows = rows.filter(function (r) { return r.date >= earliest && r.date < horizon; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    if (!rows.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
+    rows.forEach(function (r) { r.day = DAYS[dow(r.date)]; r.type = r.sport === "run" ? undefined : r.sport; });
+    var weeks = {}, order = [];
+    rows.forEach(function (r) {
+      var start = iso(mondayOf(parse(r.date)));
+      if (!weeks[start]) { weeks[start] = { starts: start, sessions: [], current: start === iso(mondayOf(new Date())) }; order.push(start); }
+      weeks[start].sessions.push(r);
+    });
+    var list = order.map(function (start, i) { var w = weeks[start]; w.week = i + 1; return w; });
+    var ahead = rows.filter(function (r) { return r.status === "today" || r.status === "ahead"; });
+    return { source: "calendar", starts: rows[0].date, ends: rows[rows.length - 1].date, weeks: list, next_session: ahead[0] || null };
+  }
+
+  // ---------------------------------------------------------------- start
+  if (window.__PLAN_DEMO__) { raw = window.__PLAN_DEMO__; render(raw); D.done(); return; }
+  if (!host) { D.step("no host frame"); fail("This view opens inside a chat that supports MCP Apps."); D.done(); return; }
+  D.step("init sent");
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "garmin-plan", version: "2.0.0" },
+    clientInfo: { name: "garmin-plan", version: "2.0.0" },
+    appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
+  }).then(function (result) {
+    var info = (result && (result.hostInfo || result.serverInfo)) || {};
+    var ctx = (result && result.hostContext) || {};
+    D.initOk = true;
+    D.host = [info.name, info.version, ctx.platform, ctx.theme, ctx.displayMode].filter(Boolean).join(" ") || "unnamed";
+    hostCaps = (result && result.hostCapabilities) || null;
+    D.step("init ok");
+    applyContext(ctx);
+    notify("ui/notifications/initialized", {});
+    D.step("ready sent");
+  }).catch(function (e) {
+    D.step("init failed: " + (e && e.message));
+    notify("ui/notifications/initialized", {});
+  });
+})();
+</script>
+</body>
+</html>
