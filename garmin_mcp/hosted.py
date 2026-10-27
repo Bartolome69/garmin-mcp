@@ -15,6 +15,7 @@ the tokens are stored, encrypted.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import functools
 import hashlib
@@ -2841,6 +2842,25 @@ async def _watch_token(scope: Any, receive: Any, send: Any, app: Any) -> None:
         if message.get("type") != "http.request" or not message.get("more_body"):
             break
 
+    from urllib.parse import parse_qs, quote as _quote, unquote
+
+    form = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+    header = next((v.decode("latin-1") for k, v in scope.get("headers", []) if k.lower() == b"authorization"), "")
+    if not form.get("client_id") and header.lower().startswith("basic "):
+        # OAuth lets a client name itself in the Basic header alone (RFC 6749
+        # 2.3.1); the SDK only looks in the form, and refused a directory
+        # reviewer's client for it on Oct 27. Copied into the form, it reads.
+        try:
+            named = unquote(base64.b64decode(header[6:].strip()).decode("utf-8").split(":", 1)[0])
+        except (ValueError, UnicodeDecodeError):
+            named = ""
+        if named:
+            form["client_id"] = named
+            body += (b"&" if body else b"") + b"client_id=" + _quote(named, safe="").encode()
+            messages = [{"type": "http.request", "body": body, "more_body": False}]
+            scope = {**scope, "headers": [(k, str(len(body)).encode() if k.lower() == b"content-length" else v)
+                                          for k, v in scope.get("headers", [])]}
+
     async def replay() -> Any:
         return messages.pop(0) if messages else await receive()
 
@@ -2856,9 +2876,6 @@ async def _watch_token(scope: Any, receive: Any, send: Any, app: Any) -> None:
     await app(scope, replay, watched)
     if said["status"] < 400:
         return
-    from urllib.parse import parse_qs
-
-    form = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
     try:
         error = json.loads(said["body"] or b"{}")
     except ValueError:

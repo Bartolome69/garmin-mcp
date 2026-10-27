@@ -464,6 +464,26 @@ async def main() -> int:
               code == 400 and refused and refused[-1].get("error") == "invalid_grant"
               and refused[-1].get("grant_type") == "authorization_code" and "never-issued" not in str(refused[-1]),
               str(refused[-1:]))
+        import base64 as _b64
+        basic = _b64.b64encode(f"{urllib.parse.quote(client_id, safe='')}:".encode()).decode()
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code", "code": "never-issued", "redirect_uri": REDIRECT,
+            "code_verifier": "x" * 43}, headers={"Authorization": f"Basic {basic}"}))
+        check("a client naming itself only in the Basic header is read, not refused as missing",
+              code == 400 and json.loads(body).get("error") == "invalid_grant", body)
+        flow_hb, verifier_hb = await start()
+        _, body, _ = await run(lambda: http("POST", "/connect", {"flow": flow_hb, "email": "basic@example.com",
+                                                                 "password": "pw"}))
+        back_hb = ""
+        consent_hb = consent_of(body)
+        if consent_hb:
+            _, _, headers = await run(lambda: http("POST", "/oauth/consent", {"consent": consent_hb, "decision": "allow"}))
+            back_hb = headers.get("location", "")
+        auth_code = urllib.parse.parse_qs(urllib.parse.urlparse(back_hb).query).get("code", [""])[0]
+        code, body, _ = await run(lambda: http("POST", "/token", {
+            "grant_type": "authorization_code", "code": auth_code, "redirect_uri": REDIRECT,
+            "code_verifier": verifier_hb}, headers={"Authorization": f"Basic {basic}"}))
+        check("and gets its token", code == 200 and "access_token" in body, f"{code} {body[:200]} {back_hb[:80]}")
 
         print("\nthe directory address")
         accept = {"accept": "application/json, text/event-stream"}
