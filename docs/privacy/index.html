@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
-<link rel="canonical" href="https://garmin.daash.run/privacy/">
+<link rel="canonical" href="https://garmin.daash.run/">
 <meta property="og:title" content="Privacy · Daash">
 <meta property="og:description" content="Exactly what the hosted Garmin connector stores, where it lives, who else can see your training data, and how to delete all of it.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://garmin.daash.run/privacy/">
+<meta property="og:url" content="https://garmin.daash.run/">
 <meta property="og:site_name" content="Garmin for Claude">
 <!-- Absolute URL: Slack, iMessage and the rest will not resolve a relative one.
      Cache-busted, because every platform caches previews aggressively. -->
@@ -196,6 +196,7 @@
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Garmin MCP Server", "url": "https://garmin.daash.run/", "applicationCategory": "HealthApplication", "operatingSystem": "Web, macOS, Linux", "alternateName": ["Garmin Connect MCP", "Garmin connector for Claude"], "description": "Free, open-source MCP server that connects Claude and ChatGPT to a Garmin Connect account: reads runs, rides, splits, power, heart rate, HRV and sleep, and writes structured workouts and whole training plans onto the watch.", "featureList": ["Analyse runs and rides: splits, pace, heart-rate zones, power, normalised power, training stress", "Training readiness, HRV, sleep, Body Battery and training load", "VO2 max, race predictions and lactate threshold", "Structured running, cycling and strength workouts sent to a Garmin watch", "Whole training plans scheduled on the Garmin calendar, tracked as done, moved or missed", "Works in Claude and ChatGPT, on the web and phone, with nothing to install"], "screenshot": "https://garmin.daash.run/og.png", "isAccessibleForFree": true, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "license": "https://opensource.org/license/mit", "codeRepository": "https://github.com/Bartolome69/garmin-mcp", "author": {"@type": "Person", "name": "Bart Etcheverry", "url": "https://github.com/Bartolome69"}}, {"@context": "https://schema.org", "@type": "WebSite", "name": "Garmin for Claude", "url": "https://garmin.daash.run/", "inLanguage": "en"}]</script>
 
 <script>
   !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){
@@ -613,8 +614,9 @@
         address using
         <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a>&rsquo;s
         free country table; the address itself is neither kept nor sent.
-        They also say whether you were on a phone, tablet or computer and
-        which kind of browser (Safari, Chrome, an app&rsquo;s own and so on),
+        They also say whether you were on a phone, tablet or computer, its
+        system (iOS, Android, Mac or Windows) and which kind of browser
+        (Safari, Chrome, an app&rsquo;s own and so on),
         never the browser&rsquo;s full details, so a sign-in that keeps
         failing on one kind of device can be found and fixed.
       </p>
