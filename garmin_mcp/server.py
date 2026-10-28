@@ -881,7 +881,9 @@ SESSION_NOTE = (
     "and fetched just now: its distance, time, pace, steps and week. Don't list "
     "the steps again: say in a few sentences what matters about it, such as how "
     "to run it and how it fits the week. If it shows a change, say what changed "
-    "in a line. Use the ids below for any change."
+    "in a line. Use the ids below for any change. The card's See the week button "
+    "asks to see the week: answer it with get_plan, which draws the week as the "
+    "plan card, even though this card already read the plan."
 )
 
 

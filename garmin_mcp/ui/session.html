@@ -321,7 +321,7 @@
     return el("div", { class: "foot" }, [
       bars,
       el("span", { class: "foot-t", text: label + done }),
-      el("button", { class: "see", onclick: function (e) { ask("How’s my week looking?", e.currentTarget); } }, ["See the week"]),
+      el("button", { class: "see", onclick: function (e) { ask("Show me this week on my plan card.", e.currentTarget); } }, ["See the week"]),
     ]);
   }
   function render(c) {

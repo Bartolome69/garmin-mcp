@@ -197,7 +197,7 @@ function decode(url) {
     await page.waitForTimeout(300);
     const asked = await page.evaluate(() => window.asked);
     check("Undo and See the week ask in the chat", asked.length === 2 && /^Undo the change to my Sub-T 3 × 2 km/.test(asked[0])
-      && /week looking/.test(asked[1]), JSON.stringify(asked));
+      && /this week on my plan card/.test(asked[1]), JSON.stringify(asked));
     await page.close();
 
     check("no page threw an error", errors.length === 0, errors.join(" | "));
