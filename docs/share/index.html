@@ -693,15 +693,18 @@
   function paceText(s) { return Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0"); }
 
   function drawRun(canvas, rn, themeName, sizeName) {
-    var T = THEMES[themeName], S = SIZES[sizeName], W = S.w, H = S.h, P = 80;
+    var story = sizeName === "story";
+    // Strava's photo viewer fills a tall phone screen with a story-sized image,
+    // so it trims a little off each side and floats its back, save and menu
+    // buttons over the top; a story keeps its words clear of both.
+    var T = THEMES[themeName], S = SIZES[sizeName], W = S.w, H = S.h, P = story ? 128 : 80;
     canvas.width = W; canvas.height = H;
     var ctx = canvas.getContext("2d");
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
-    var story = sizeName === "story";
 
     // Brand row, title and when.
-    var y = S.top + 40;
+    var y = (story ? 330 : S.top) + 40;
     font(ctx, 800, 46, false, true); ctx.fillStyle = T.redText; ctx.textAlign = "left"; ctx.fillText("Daash", P, y);
     font(ctx, 500, 24, true); ctx.fillStyle = T.muted; spaced(ctx, rn.k.toUpperCase(), W - P, y - 6, 3.4, "right");
     y += story ? 130 : 112;
@@ -779,7 +782,9 @@
     rn.n.forEach(function (n, i) {
       var ny = notesTop + i * 50 + 30;
       ctx.fillStyle = T.c[n.c] || T.c.other; ctx.beginPath(); ctx.arc(P + 8, ny - 10, 8, 0, Math.PI * 2); ctx.fill();
-      font(ctx, 400, 30); ctx.fillStyle = T.soft; ctx.fillText(fit(ctx, n.t, W - 2 * P - 32), P + 32, ny);
+      var room = W - 2 * P - 32, size = 30; font(ctx, 400, size);
+      while (size > 24 && ctx.measureText(n.t).width > room) { size -= 1; font(ctx, 400, size); }
+      ctx.fillStyle = T.soft; ctx.fillText(fit(ctx, n.t, room), P + 32, ny);
     });
 
     ctx.fillStyle = T.line; ctx.fillRect(P, footY, W - 2 * P, 2);
@@ -850,7 +855,7 @@
       img.alt = ["Training plan", plan.t, plan.s, planSummary(plan)].filter(Boolean).join(". ");
     } else if (wk.run) {
       heading.textContent = "Share this run";
-      lead.textContent = "Add it to the run on Strava, post it to your story, or send it to your club.";
+      lead.textContent = "Add it to the run on Strava, post it to your story, or send it to your club. Story size fits Strava's photo viewer.";
       fileName = "daash-run.png";
       img.alt = [wk.t, wk.s].concat(wk.f.map(function (f) { return f[0] + " " + f[1]; }), wk.n.map(function (n) { return n.t; })).filter(Boolean).join(". ");
     } else {
@@ -897,6 +902,8 @@
   if (plan) pick("what", what);
   document.querySelectorAll("[data-theme]").forEach(function (b) { b.addEventListener("click", function () { look = b.getAttribute("data-theme"); pick("theme", look); render(); }); });
   document.querySelectorAll("[data-size]").forEach(function (b) { b.addEventListener("click", function () { size = b.getAttribute("data-size"); pick("size", size); render(); }); });
+  // Strava shows a post-sized image cropped hard at the sides; a run starts as a story.
+  if (wk.run) { size = "story"; pick("size", size); }
   shareBtn.addEventListener("click", function () {
     if (!blob) return;
     navigator.share({ files: [new File([blob], fileName, { type: "image/png" })] })
