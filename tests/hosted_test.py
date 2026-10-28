@@ -1364,6 +1364,33 @@ async def main() -> int:
         check("without a country table, nothing is added and nothing breaks",
               geo.country("81.2.69.160") is None or isinstance(geo.country("81.2.69.160"), str))
 
+        # A run's share image link, as the plan card's Share this run makes it.
+        from garmin_mcp import share
+        rep = lambda kind, km, took, pace, hr: {"intensity": kind, "distance_km": km, "duration": took, "pace_per_km": pace, "avg_hr": hr}
+        threshold_run = {"summary": {
+            "name": "Sub-T 3x3km · B1", "type": "running", "start_local": "2026-10-28 06:31:00", "location": "Tower Hamlets",
+            "distance_km": 14.1, "duration": "1h 03m 17s", "duration_seconds": 3797, "pace_per_km": "4:29 /km",
+            "heart_rate": {"average_bpm": 148}},
+            "splits": [rep("warmup", 3.0, "15m 27s", "5:09 /km", 131), rep("interval", 3.0, "12m 09s", "4:03 /km", 157),
+                       rep("recovery", 0.29, "1m 30s", "5:10 /km", 150), rep("interval", 3.0, "12m 09s", "4:03 /km", 163),
+                       rep("recovery", 0.27, "1m 30s", "5:33 /km", 155), rep("interval", 3.0, "12m 12s", "4:04 /km", 163),
+                       rep("cooldown", 1.4, "7m 07s", "5:05 /km", 140)]}
+        drawn = share.run_payload(threshold_run)
+        check("a run's share image has its title without the plan code, its day and place",
+              drawn["t"] == "Sub-T 3\u00a0×\u00a03\u00a0km" and drawn["s"] == "Wednesday 28 Oct · Tower Hamlets", str(drawn)[:160])
+        check("its four numbers, and the threshold colour",
+              drawn["f"] == [["14.1", "km"], ["1:03:17", "time"], ["4:29", "/km average"], ["148", "bpm average"]] and drawn["c"] == "threshold")
+        check("its laps, with the reps marked as the work",
+              [l[2] for l in drawn["l"]] == [0, 1, 0, 1, 0, 1, 0] and drawn["l"][1][:2] == [729, 243], str(drawn["l"]))
+        check("and the reps line under the chart",
+              drawn["n"] == [["c", "Reps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163"]], str(drawn["n"]))
+        check("an easy run with no laps to speak of is still a share image",
+              share.run_payload({"summary": {"name": "Morning Run", "type": "running", "distance_km": 8.2,
+                                             "duration_seconds": 2600, "pace_per_km": "5:17 /km"}})["c"] == "easy")
+        check("a ride or a swim isn't",
+              share.run_payload({"summary": {"type": "road_biking", "distance_km": 40}}) is None
+              and share.run_payload({"summary": {"type": "lap_swimming", "distance_km": 2}}) is None)
+
         # The Monday email: what it says, from the plan card's own answer.
         from datetime import date as _day
         from garmin_mcp import weekly

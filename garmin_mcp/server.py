@@ -43,7 +43,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, store, stream, swimming, terrain, training_plan
+from . import conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, session
 from .official_client import NotOnOfficial, OfficialClient
@@ -353,7 +353,7 @@ _NOTES = {
         "call; this adds how recovery is keeping up with it."
     ),
     "get_activity_details": (
-        "\n\nFor a run, also returns the weather during it (temperature, dew "
+        "\n\nFor a run, also returns share_image, a link to an image of it to post, the weather during it (temperature, dew "
         "point, wind, and what that does to pace), the shoes worn, the terrain "
         "(climbs, pace on uphill, flat and downhill, the pace the effort was "
         "worth on the flat, heart-rate decoupling and where it faded) and "
@@ -437,7 +437,7 @@ OFFICIAL_DESCRIPTIONS = {
     "get_activity_details": (
         "One activity in detail: laps and splits with pace and heart rate. A run also carries "
         "the weather during it, the terrain (climbs, pace uphill, flat and downhill, heart-rate "
-        "drift) and earlier runs of the same route. A ride carries power figures, best efforts, "
+        "drift), earlier runs of the same route and a link to an image of the run to post. A ride carries power figures, best efforts, "
         "time in power zones and climbs. A swim carries pace per 100 m, SWOLF, strokes and each "
         "interval with its rest.\n\n"
         "Args:\n"
@@ -1721,7 +1721,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             return {"activity_id": activity_id, "source": OFFICIAL_SOURCE, "note": OFFICIAL_NOTHING}
         flat, laps = found["flat"], found["laps"]
         ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
-        return drop_empty({
+        return _with_share_image(drop_empty({
             "activity_id": activity_id,
             "summary": _summarise_activity(flat) or None,
             "hr_zones": hr_zones(found["zones"]),
@@ -1731,7 +1731,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             "terrain": found["terrain"],
             "same_route": found["same_route"],
             "source": OFFICIAL_SOURCE,
-        })
+        }))
 
     warnings: list[str] = []
 
@@ -1807,7 +1807,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
     if ride:
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 
-    return drop_empty(
+    return _with_share_image(drop_empty(
         {
             "activity_id": activity_id,
             "summary": _with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)) or None,
@@ -1822,7 +1822,24 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             **around.get("last", {}),
             "warnings": warnings or None,
         }
-    )
+    ))
+
+
+SHARE_IMAGE_NOTE = (
+    "A page that draws this run as an image to post on Strava (story size fits its "
+    "photo viewer) or Instagram, from these figures. Offer it in one short line at the "
+    "end, as a link, the first time a run comes up in a chat, and whenever the user "
+    "wants to share or post one. Don't draw an image of the run yourself."
+)
+
+
+def _with_share_image(result: dict[str, Any]) -> dict[str, Any]:
+    """A run's answer with the link to its share image, as the plan card's
+    Share this run makes it."""
+    url = share.run_link(result) if isinstance(result, dict) and "error" not in result else None
+    if url:
+        result["share_image"] = {"url": url, "note": SHARE_IMAGE_NOTE}
+    return result
 
 
 SAME_ROUTE_LOOKBACK = timedelta(weeks=26)

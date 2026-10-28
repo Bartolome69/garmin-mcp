@@ -1372,6 +1372,15 @@ async def main() -> int:
             plain_run = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
             check("an ordinary account's run has its weather, shoes, terrain and route",
                   {"weather", "shoes", "same_route", "terrain"} <= set(plain_run), str(sorted(plain_run)))
+            shared = (plain_run.get("share_image") or {}).get("url", "")
+            check("a run comes with a link to its share image", shared.startswith("https://garmin.daash.run/share/#"), shared[:80])
+            check("and a ride doesn't", "share_image" not in plain_ride)
+            if shared:
+                import base64 as _b64
+                fragment = shared.split("#", 1)[1]
+                drawn = json.loads(_b64.urlsafe_b64decode(fragment + "=" * (-len(fragment) % 4)).decode("utf-8"))
+                check("the link carries the run as the share page reads it",
+                      drawn.get("run") == 1 and drawn.get("v") == 1 and drawn["f"][0][1] == "km" and drawn.get("l"), str(drawn)[:200])
             plain_fit = payload(await sess.call_tool("get_fitness", {}))
             check("an ordinary account's fitness has the cycling FTP",
                   (plain_fit.get("cycling_ftp") or {}).get("watts") == 250, str(plain_fit.get("cycling_ftp")))
