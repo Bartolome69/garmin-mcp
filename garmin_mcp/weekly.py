@@ -232,6 +232,7 @@ def _short(name: str) -> str:
 
 # Both apps open a new chat with the question already typed, from a link.
 ASK_LINKS = {"Claude": "https://claude.ai/new?q=", "ChatGPT": "https://chatgpt.com/?q="}
+SUBJECT_PREFIX = "Daash - "
 # What the email's button asks, by kind: a plan to build, or the week so far.
 QUESTIONS = {
     "plan": "Build me a training plan from my recent running and put it on my Garmin.",
@@ -260,6 +261,8 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
         subject = f"Last week: {s['last_week']}"
     else:
         subject = "Your week ahead"
+    # Who it's from, first, so it reads as Daash in an inbox list.
+    subject = f"{SUBJECT_PREFIX}{subject}"
 
     context = " · ".join(x for x in (
         block.get("name"),
