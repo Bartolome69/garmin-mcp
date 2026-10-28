@@ -341,6 +341,17 @@ async def main() -> int:
               connected and connected[-1].get("route") == "official" and connected[-1].get("email") == "sam@example.com"
               and connected[-1].get("returning") is False, str(connected[-1:]))
         check("the chip goes with it", [p for e, p in reported if e == "heard_from"][-1].get("answer") == "friend")
+        check("Reddit is a choice, Search no longer is, and somewhere else can say where",
+              'value="reddit"' in body and 'value="search"' not in body and 'name=heard_where' in body, body[-1200:])
+        check("somewhere else keeps a few words of where",
+              hosted._heard_from({"heard": "other", "heard_where": "  Strava\nclub  " + "x" * 60}) == ("other", "Strava club " + "x" * 28))
+        check("where is only kept for somewhere else, and a made-up answer is dropped",
+              hosted._heard_from({"heard": "reddit", "heard_where": "r/running"}) == ("reddit", "")
+              and hosted._heard_from({"heard": "tiktok"}) == ("", ""))
+        check("a page opened before the change can still say Search", hosted._heard_from({"heard": "search"}) == ("search", ""))
+        check("and where goes to PostHog next to the answer",
+              hosted._heard_properties("other", "Strava") == {"answer": "other", "where": "Strava"}
+              and hosted._heard_properties("claude", "") == {"answer": "claude"})
         check("the address is kept on the account", store.email_for(new_account.user_token) == "sam@example.com")
         sam = await token_for(back, verifier)
         check("and the token belongs to that account", subject_of(sam) == new_account.user_token)

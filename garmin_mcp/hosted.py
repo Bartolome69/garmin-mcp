@@ -186,8 +186,25 @@ def _recent_wrong_password(email: str) -> bool:
 # never anything about the person.
 SOURCE_COOKIE = "daash_src"
 # The one optional question on the consent page, answered by a tap or not.
-HEARD_FROM = (("chatgpt", "ChatGPT"), ("claude", "Claude"), ("friend", "A friend"),
-              ("search", "Search"), ("instagram", "Instagram"), ("other", "Somewhere else"))
+HEARD_FROM = (("chatgpt", "ChatGPT"), ("claude", "Claude"), ("reddit", "Reddit"),
+              ("friend", "A friend"), ("instagram", "Instagram"), ("other", "Somewhere else"))
+# Answers the page no longer offers, still taken from a page opened before it changed.
+HEARD_BEFORE = {"search"}
+# "Somewhere else" can say where, in a few words: a word or two, never a story.
+HEARD_WHERE_LONGEST = 40
+
+
+def _heard_from(form: Any) -> tuple[str, str]:
+    """The answer to "How did you hear about Daash?", and where, for somewhere else."""
+    heard = str(form.get("heard", ""))
+    if heard not in {v for v, _ in HEARD_FROM} | HEARD_BEFORE:
+        return "", ""
+    where = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(form.get("heard_where", ""))).split())
+    return heard, (where[:HEARD_WHERE_LONGEST] if heard == "other" else "")
+
+
+def _heard_properties(heard: str, where: str) -> dict[str, Any]:
+    return {"answer": heard, **({"where": where} if where else {})}
 
 
 def _source(request: Request) -> str | None:
@@ -1782,9 +1799,12 @@ def _consent_page(
               font-size: 13px; color: #4A4944; cursor: pointer; }}
             .chip input:checked + span {{ border-color: #E0312A; color: #C8261F; background: #FDF4F2; }}
             .chip input:focus-visible + span {{ outline: 2px solid #E0312A; outline-offset: 2px; }}
+            .where {{ display: none; margin: -8px 0 18px; }}
+            .chips:has(input[value=other]:checked) + .where {{ display: block; }}
           </style>
           <p class=note style="margin:0 0 8px">How did you hear about Daash? <span style="opacity:.7">Optional</span></p>
           <div class=chips>{"".join(f'<label class=chip><input type=radio name=heard value="{v}"><span>{t}</span></label>' for v, t in HEARD_FROM)}</div>
+          <div class=where><input name=heard_where maxlength={HEARD_WHERE_LONGEST} autocomplete=off placeholder="Where? Optional" aria-label="Where did you hear about Daash?"></div>
           <button name=decision value=allow>Allow</button>
           <button name=decision value=deny class=secondary formnovalidate>Cancel</button>
         </form>
@@ -1844,7 +1864,7 @@ async def oauth_consent(request: Request) -> Response:
     form = await request.form()
     consent_token = str(form.get("consent", ""))
     allow = str(form.get("decision", "")) == "allow"
-    heard = str(form.get("heard", ""))
+    heard, where = _heard_from(form)
     subject = OAUTH_PROVIDER.staged_subject(consent_token)
     via_garmin = consent_token in _GARMIN_CONSENTS
 
@@ -1862,7 +1882,7 @@ async def oauth_consent(request: Request) -> Response:
             if [t for t in store.tokens_for(fingerprint) if t != subject]:
                 # The address already has an account: prove it's theirs
                 # before the approval joins it.
-                return await _send_code(request, consent_token, email, heard)
+                return await _send_code(request, consent_token, email, heard, where)
             store.set_user_email(subject, email, mask_email(email) or "hidden")
             _official_connected(request, subject, parked, returning=False)
         else:
@@ -1877,9 +1897,9 @@ async def oauth_consent(request: Request) -> Response:
     if destination:
         # Answered with the Allow press, if at all: the one word, against the
         # same per-person id the connection got, so the two line up.
-        if allow and heard in {v for v, _ in HEARD_FROM}:
+        if allow and heard:
             analytics.capture("heard_from", store.email_hash_for(subject) if subject else None,
-                              _with_source(request, {"answer": heard}))
+                              _with_source(request, _heard_properties(heard, where)))
         return RedirectResponse(destination, status_code=303)
     return _consent_expired()
 
@@ -1936,9 +1956,9 @@ def _code_page(sealed: str, email: str, *, error: str = "", note: str = "") -> R
     )
 
 
-async def _send_code(request: Request, consent_token: str, email: str, heard: str) -> Response:
+async def _send_code(request: Request, consent_token: str, email: str, heard: str, where: str = "") -> Response:
     """Email a code to an address that already has an account, and ask for it."""
-    sealed = official._seal({"c": consent_token, "e": email, "h": heard})
+    sealed = official._seal({"c": consent_token, "e": email, "h": heard, "w": where})
     if _too_many_attempts(_client_address(request)):
         return _code_page(sealed, email, error="Too many tries from here. Wait a few minutes, then send a new code.")
     fingerprint = store.email_fingerprint(email)
@@ -1968,13 +1988,13 @@ async def oauth_confirm(request: Request) -> Response:
     staged = OAUTH_PROVIDER.staged(opened["c"]) if opened and opened.get("c") else None
     if not opened or staged is None:
         return _consent_expired()
-    consent_token, email, heard = opened["c"], opened["e"], opened.get("h", "")
+    consent_token, email, heard, where = opened["c"], opened["e"], opened.get("h", ""), opened.get("w", "")
     subject, parked = staged
     action = str(form.get("action", ""))
     if action == "change":
         return _consent_page(consent_token, parked, ask_email=True, garmin=True)
     if action == "resend":
-        return await _send_code(request, consent_token, email, heard)
+        return await _send_code(request, consent_token, email, heard, where)
     fingerprint = store.email_fingerprint(email)
     checked = store.check_email_code(fingerprint, str(form.get("code", "")))
     if checked == "wrong":
@@ -1996,8 +2016,8 @@ async def oauth_confirm(request: Request) -> Response:
     destination = OAUTH_PROVIDER.approve(consent_token)
     if destination is None:
         return _consent_expired()
-    if heard in {v for v, _ in HEARD_FROM}:
-        analytics.capture("heard_from", fingerprint, _with_source(request, {"answer": heard}))
+    if heard:
+        analytics.capture("heard_from", fingerprint, _with_source(request, _heard_properties(heard, where)))
     return RedirectResponse(destination, status_code=303)
 
 
