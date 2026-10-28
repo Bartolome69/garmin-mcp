@@ -12,7 +12,7 @@ from __future__ import annotations
 import html
 import re
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -232,10 +232,25 @@ def _short(name: str) -> str:
 
 # Both apps open a new chat with the question already typed, from a link.
 ASK_LINKS = {"Claude": "https://claude.ai/new?q=", "ChatGPT": "https://chatgpt.com/?q="}
+# What the email's button asks, by kind: a plan to build, or the week so far.
+QUESTIONS = {
+    "plan": "Build me a training plan from my recent running and put it on my Garmin.",
+    "week": "How's my training going this week?",
+}
 
 
-def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None) -> tuple[str, str, str]:
-    """(subject, plain text, html) for one person's Monday email."""
+def ask_link(app: str, kind: str) -> str:
+    """The chat link itself: a new chat in that app with the question typed."""
+    return ASK_LINKS[app] + quote(f"Ask Daash: {QUESTIONS[kind]}")
+
+
+def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
+            ask: Callable[[str, str], str] = ask_link) -> tuple[str, str, str]:
+    """(subject, plain text, html) for one person's Monday email.
+
+    `ask` makes each app's link from the app and the kind of question, so the
+    sender can route it through a page that counts the click.
+    """
     keys = s.get("key_sessions") or []
     block = s.get("block") or {}
     if keys:
@@ -250,11 +265,9 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None) -> tupl
         block.get("name"),
         f"week {block['week']} of {block['weeks']}" if block.get("week") and block.get("weeks") else None,
         f"{block['percent']}% of sessions done so far" if block.get("percent") is not None else None) if x)
-    question = ("Build me a training plan from my recent running and put it on my Garmin."
-                if s.get("no_plan") else "How's my training going this week?")
-    asked = f"Ask Daash: {question}"
-    links = {a: base + quote(asked) for a, base in ASK_LINKS.items()}
-    chosen = {app: links[app]} if app in links else links
+    kind = "plan" if s.get("no_plan") else "week"
+    question = QUESTIONS[kind]
+    chosen = {a: ask(a, kind) for a in ([app] if app in ASK_LINKS else ASK_LINKS)}
 
     # Plain text, line by line.
     parts: list[str] = []

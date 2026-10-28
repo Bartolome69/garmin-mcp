@@ -1004,7 +1004,9 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
             counts["nothing_to_say"] += 1
             continue
         link = unsubscribe_url(base, fingerprint)
-        subject, text, page_html = weekly.compose(said, link, oauth.app_for_user(user_token))
+        ask = ((lambda app, kind, f=fingerprint: weekly_ask_url(base, f, app, kind, monday))
+               if base else weekly.ask_link)
+        subject, text, page_html = weekly.compose(said, link, oauth.app_for_user(user_token), ask)
         try:
             send(email, subject, text, page_html, link)
             counts["sent"] += 1
@@ -1785,7 +1787,7 @@ def _consent_page(
           <input id=email name=email type=email required autocomplete=email value="{html.escape(email)}">
           <p class="note hint" id=email-hint role=status hidden></p>
           {f'<div class=err role=alert>{html.escape(email_error)}</div>' if email_error else ''}
-          <p class="note hint" style="margin-bottom:16px">To sign back in, and the odd Daash update. Easy to stop.</p>
+          <p class="note hint" style="margin-bottom:16px">To sign back in, a Monday note on your training week, and the odd Daash update. Easy to stop.</p>
     """ if ask_email else ""
     form = f"""
         <form method=post action=/oauth/consent style="margin-top:8px">
@@ -2126,6 +2128,36 @@ def _finish(
 def unsubscribe_url(base: str, email_hash: str) -> str:
     """The link every update email carries: one click to stop them."""
     return f"{base}/email/unsubscribe?u={email_hash}&s={store.unsubscribe_signature(email_hash)}"
+
+
+# The Monday email's "Ask Daash" links, by the word in their address.
+ASK_APPS = {"claude": "Claude", "chatgpt": "ChatGPT"}
+
+
+def weekly_ask_url(base: str, email_hash: str, app: str, kind: str, monday: str) -> str:
+    """The email's link into a chat, by way of /email/ask so the click is counted."""
+    return (f"{base}/email/ask?u={email_hash}&s={store.unsubscribe_signature(email_hash)}"
+            f"&a={app.lower()}&q={kind}&w={monday}")
+
+
+@mcp.custom_route("/email/ask", methods=["GET"])
+async def email_ask(request: Request) -> Response:
+    """Count a click on the Monday email's link, then open the chat it asks in.
+
+    Only the click is recorded: which app, which question and which week's
+    email. A link that isn't genuine still opens the chat, uncounted.
+    """
+    query = request.query_params
+    app = ASK_APPS.get(query.get("a", ""), "Claude")
+    kind = query.get("q", "")
+    kind = kind if kind in weekly.QUESTIONS else "week"
+    fingerprint, signature = query.get("u", ""), query.get("s", "")
+    week = query.get("w", "")
+    if fingerprint and hmac.compare_digest(signature, store.unsubscribe_signature(fingerprint)):
+        analytics.capture("weekly_email_clicked", fingerprint, {
+            "app": app, "question": kind, "week": week if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week) else None,
+            "$process_person_profile": False})
+    return RedirectResponse(weekly.ask_link(app, kind), status_code=302)
 
 
 @mcp.custom_route("/email/unsubscribe", methods=["GET", "POST"])

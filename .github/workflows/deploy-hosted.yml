@@ -206,7 +206,8 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         # Website sign-ups: "password", "official", or "split" (half each, per
         # browser, from Oct 26). The listed address is always official.
-        run: flyctl deploy --app "$FLY_APP" --remote-only --env GARMIN_MCP_SIGNUP=split
+        # WEEKLY_EMAIL=on sends the Monday email, from 2 Nov 2026.
+        run: flyctl deploy --app "$FLY_APP" --remote-only --env GARMIN_MCP_SIGNUP=split --env WEEKLY_EMAIL=on
 
       # `flyctl deploy` exiting 0 means the machine started, not that it serves
       # what we think it serves. These are the two pages that ask for a Garmin

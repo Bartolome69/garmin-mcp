@@ -1593,6 +1593,39 @@ async def main() -> int:
         check("a mail app's one-click unsubscribe works on the link itself",
               code == 200 and all(fp != other for _, _, fp in store.weekly_recipients()), str(code))
 
+        # The Monday email's Ask Daash link counts the click, then opens the chat.
+        def no_follow(path: str) -> tuple[int, str]:
+            import http.client
+            from urllib.parse import urlsplit
+            where = urlsplit(base)
+            conn = http.client.HTTPConnection(where.hostname, where.port, timeout=15)
+            conn.request("GET", path)
+            r = conn.getresponse()
+            return r.status, r.getheader("location") or ""
+
+        ask = hosted.weekly_ask_url(base, other, "ChatGPT", "week", "2026-11-02")
+        _s, ask_text, ask_page = weekly.compose(said, "x", "ChatGPT",
+                                                lambda app, kind: hosted.weekly_ask_url(base, other, app, kind, "2026-11-02"))
+        check("the email's button goes through Daash so the click is counted",
+              ask in ask_page.replace("&amp;", "&") and ask in ask_text and "chatgpt.com" not in ask_page, ask_page[-400:])
+        before = len(SENT)
+        code, location = await anyio_run(no_follow, ask[len(base):])
+        await asyncio.sleep(0.3)
+        clicked = [e for e in SENT[before:] if e["event"] == "weekly_email_clicked"]
+        check("and it opens ChatGPT with the question typed",
+              code == 302 and location == weekly.ask_link("ChatGPT", "week") and location.startswith("https://chatgpt.com/?q="),
+              f"{code} {location}")
+        check("the click is recorded with the app, the question and the week",
+              len(clicked) == 1 and clicked[0]["distinct_id"] == analytics.distinct_id(other)
+              and {k: clicked[0]["properties"].get(k) for k in ("app", "question", "week")}
+              == {"app": "ChatGPT", "question": "week", "week": "2026-11-02"}, str(clicked)[:300])
+        before = len(SENT)
+        code, location = await anyio_run(no_follow, f"/email/ask?u={other}&s={'0' * 24}&a=evil&q=plan&w=x")
+        await asyncio.sleep(0.3)
+        check("a link that isn't genuine still opens the chat, uncounted, and only Claude or ChatGPT",
+              code == 302 and location == weekly.ask_link("Claude", "plan")
+              and not any(e["event"] == "weekly_email_clicked" for e in SENT[before:]), f"{code} {location}")
+
         # Daash Crews. Three people of their own, so nothing above is touched:
         # Carol and Dave signed in with addresses kept, Bob's row predates that.
         from datetime import date as _date, timedelta as _td
