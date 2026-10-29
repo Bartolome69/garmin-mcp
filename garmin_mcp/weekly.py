@@ -233,6 +233,8 @@ def _short(name: str) -> str:
 # Both apps open a new chat with the question already typed, from a link.
 ASK_LINKS = {"Claude": "https://claude.ai/new?q=", "ChatGPT": "https://chatgpt.com/?q="}
 SUBJECT_PREFIX = "Daash - "
+# Replies go to hello@daash.run, which is passed on to Bart's inbox.
+FEEDBACK = "Got feedback or an idea for Daash? Just reply to this email. It comes straight to me. Bart"
 # What the email's button asks, by kind: a plan to build, or the week so far.
 QUESTIONS = {
     "plan": "Build me a training plan from my recent running and put it on my Garmin.",
@@ -291,6 +293,7 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
         parts.append(f"Nothing planned this week. Ask Daash to build you a plan from your recent {s['sport']}, "
                      "and every session goes on your watch.")
     parts.append(f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items()))
+    parts.append(FEEDBACK)
     foot = ("You get this because you connected Daash to your Garmin. "
             f"Stop these emails: {unsubscribe}")
     text = "\n\n".join(parts) + "\n\n—\nDaash\n" + foot + "\n"
@@ -341,6 +344,7 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
         "<div style=\"max-width:520px;margin:0 auto;padding:28px 20px;font:16px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#161B26\">"
         "<div style=\"font-weight:900;font-style:italic;font-size:24px;color:#E0312A;margin-bottom:14px\">Daash</div>"
         f"{body}"
+        f"<p style=\"margin:22px 0 0;color:#5B6270\">{e(FEEDBACK)}</p>"
         "<p style=\"margin:28px 0 0;font-size:13px;color:#5B6270\">You get this because you connected Daash to your Garmin. "
         f"<a href=\"{e(unsubscribe)}\" style=\"color:#5B6270\">Stop these emails</a>.</p>"
         "</div></body></html>"

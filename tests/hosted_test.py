@@ -1418,6 +1418,8 @@ async def main() -> int:
               "Mon  Rest" in text and "Tue  11 km easy\n" in text and "Wed  Sub-T 3 × 3 km (15.4 km)" in text
               and "3 sessions, 45.2 km" in text, text)
         _s, _t, claude_page = weekly.compose(said, "x", "Claude")
+        check("the email asks for feedback by reply, in both versions",
+              "Just reply to this email" in text and "Just reply to this email" in page_html)
         check("and its button opens the app they use, with the question typed in",
               "https://claude.ai/new?q=Ask%20Daash" in claude_page and "chatgpt.com" not in claude_page
               and "in Claude</a>" in claude_page)
