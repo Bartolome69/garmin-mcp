@@ -3086,13 +3086,21 @@ def _export_link() -> str:
     return f"{base}/garmin-export" if base else GARMIN_EXPORT
 
 
+GARMIN_ACTIVITIES = "https://connect.garmin.com/modern/activities"
+
+
 def _export_offer() -> str:
+    # The activities list's Export CSV (on a computer, not Connect's phone
+    # layout) is instant but holds only the rows loaded on the page: Oct 29,
+    # one with the page left as it opened held 20, from three weeks back.
     return (
-        "For their full history, they can ask Garmin for an export of their data "
-        f"({_export_link()}): Garmin emails a download link, usually within a day or two. "
-        "Dropping its activities file into this chat (in the zip's DI_CONNECT/DI-Connect-Fitness "
-        "folder, the one ending summarizedActivities.json) lets you read their past runs. "
-        "Offer this once, in a sentence, with the link."
+        "For their earlier runs, two ways, offered once, briefly, with the links. Quickest, on "
+        f"a computer: Garmin Connect's activities list ({GARMIN_ACTIVITIES}), scroll down until "
+        "the oldest runs they want have loaded, press Export CSV at the top right, and drop the "
+        "file into this chat. For everything, they can ask Garmin for an export of their data "
+        f"({_export_link()}): Garmin emails a download link, usually within a day or two, and "
+        "its activities file is in the zip's DI_CONNECT/DI-Connect-Fitness folder, the one "
+        "ending summarizedActivities.json. Either file lets you read their past runs."
     )
 
 

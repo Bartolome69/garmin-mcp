@@ -1682,6 +1682,7 @@ async def main() -> int:
         await asyncio.sleep(0.3)
         check("the export suggestion links through Daash, which counts the click and goes on to Garmin",
               f"{base}/garmin-export" in offer and "summarizedActivities.json" in offer
+              and "Export CSV" in offer and "scroll down" in offer
               and code == 302 and location == garmin_server.GARMIN_EXPORT
               and [e["event"] for e in SENT[before:]] == ["garmin_export_clicked"]
               and garmin_server._export_offer().count(garmin_server.GARMIN_EXPORT) == 1, f"{code} {location} {offer}")
