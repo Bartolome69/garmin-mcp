@@ -655,15 +655,24 @@ async def main() -> int:
               "Continue with Garmin" in refused and f"/official/signup?flow={urllib.parse.quote(flow_b, safe='')}&amp;via=blocked" in refused)
         check("and so does Garmin asking for a pause",
               "Continue with Garmin" in hosted._signin_error(Exception("429 Too Many Requests"), flow_b, paused=True))
-        check("but not a wrong password, nor a paused account, nor a page with no request behind it",
-              "Continue with Garmin" not in hosted._signin_error(Exception("401 Unauthorized"), flow_b)
-              and "Continue with Garmin" not in hosted._signin_error(Exception("403"), flow_b, account_paused=True)
-              and "Continue with Garmin" not in hosted._signin_error(Exception("403"), "", paused=False))
+        # Oct 29: a wrong password, then Garmin's lock, then gone. Garmin's
+        # page needs no password from someone signed in to Garmin already.
+        wrong = hosted._signin_error(Exception("401 Unauthorized"), flow_b)
+        locked = hosted._signin_error(Exception("403"), flow_b, account_paused=True)
+        check("so do a wrong password and Garmin's lock after one, each counted as such",
+              "Continue with Garmin" in wrong and "via=password" in wrong and "reset your password" in wrong
+              and "Continue with Garmin" in locked and "via=paused" in locked and "no wait" not in locked)
+        check("but not a page with no request behind it",
+              "Continue with Garmin" not in hosted._signin_error(Exception("403"), "", paused=False))
         _, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow_b)}&via=blocked"))
         check("taking it goes to Garmin, and is counted as coming from a refusal",
               "garmin" in headers.get("location", "")
               and [p for e, p in reported if e == "garmin_sign_in_started"][-1].get("via") == "blocked",
               str([p for e, p in reported if e == "garmin_sign_in_started"][-1:]))
+        flow_w, _ = await start()
+        await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow_w)}&via=paused"))
+        check("and from a lock, as a lock",
+              [p for e, p in reported if e == "garmin_sign_in_started"][-1].get("via") == "paused")
 
         print("\nwhen Garmin won't list what the account shared")
         official.time.sleep = lambda _s: None

@@ -1479,22 +1479,40 @@ def _fallback_ok(flow: str) -> bool:
     return bool(flow) and OAUTH_ENABLED and official.configured() and OAUTH_PROVIDER.pending(flow) is not None
 
 
-def _garmin_instead(flow: str) -> str:
-    """When Garmin turns password sign-ins away, the official route still works.
+# Why the Garmin button was offered, as garmin_sign_in_started records it.
+GARMIN_INSTEAD_WHY = ("blocked", "password", "paused")
+
+
+def _garmin_instead(flow: str, why: str = "blocked") -> str:
+    """When a password sign-in fails, the official route still works.
 
     Garmin refuses password sign-ins by the address they come from (mid
     October, 4 of 8 people refused never came back). Approving Daash on
     Garmin's own page isn't refused that way, so it is offered on the spot,
     for the same request. Someone who already has an account is matched to it
     by their email on the way back.
+
+    After a wrong password, or Garmin's lock that follows a few of them (Oct
+    29: wrong, then locked, then gone), Garmin's page needs no password from
+    someone already signed in to Garmin in that browser, and resets one for
+    anyone who isn't. It can't promise to skip the lock, so it doesn't.
     """
     if not _fallback_ok(flow):
         return ""
+    lead = {
+        "blocked": "<strong>Or connect on Garmin&rsquo;s own page, with no wait.</strong> "
+                   "You approve Daash on Garmin&rsquo;s site instead of typing your password here. ",
+        "password": "<strong>Or skip the password: connect on Garmin&rsquo;s own page.</strong> "
+                    "Already signed in to Garmin in this browser? It&rsquo;s one tap. If not, "
+                    "you can reset your password right there. ",
+        "paused": "<strong>Or connect on Garmin&rsquo;s own page.</strong> Already signed in to "
+                  "Garmin in this browser? You won&rsquo;t need your password, so you may not have "
+                  "to wait. ",
+    }[why]
     return (
-        '<div class=instead><strong>Or connect on Garmin&rsquo;s own page, with no wait.</strong> '
-        "You approve Daash on Garmin&rsquo;s site instead of typing your password here. "
+        f"<div class=instead>{lead}"
         "If you already use Daash, enter the same email afterwards and you keep everything."
-        f'<a class=button href="/official/signup?flow={quote(flow, safe="")}&amp;via=blocked">Continue with Garmin</a></div>'
+        f'<a class=button href="/official/signup?flow={quote(flow, safe="")}&amp;via={why}">Continue with Garmin</a></div>'
     )
 
 
@@ -1723,6 +1741,7 @@ def _signin_error(
             "<li>Wait about 30 minutes from your last try.</li>"
             "<li>Come back and sign in here with the password that worked.</li>"
             "</ol>"
+            + _garmin_instead(flow, "paused")
             + _try_again(flow)
         )
     others = tries - 1
@@ -1776,6 +1795,7 @@ def _signin_error(
             "If Garmin asks you for a code there, you have two-step verification "
             "on, and you'll be asked for the same code here.</div>"
             + typed
+            + _garmin_instead(flow, "password")
             + _try_again(flow)
         )
     return (
@@ -2624,7 +2644,7 @@ async def official_signup(request: Request) -> Response:
     if not (OAUTH_ENABLED and official.configured()) or OAUTH_PROVIDER.pending(flow) is None:
         return _consent_expired()
     via = request.query_params.get("via", "")
-    analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via == "blocked" else {}))
+    analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via in GARMIN_INSTEAD_WHY else {}))
     response = RedirectResponse(official.signup_url(flow), status_code=302)
     response.set_cookie(FLOW_COOKIE, _flow_mark(flow), max_age=1800, httponly=True,
                         secure=request.url.scheme == "https", samesite="lax")
