@@ -250,8 +250,22 @@
 // what the host called itself, and any error. Shown only if the plan hasn't
 // appeared after a few seconds, and removed the moment it does.
 (function () {
-  var d = window.__planDiag = { steps: [], errors: [], host: "", rendered: false, gotResult: false, initOk: false };
+  var d = window.__planDiag = { steps: [], errors: [], host: "", rendered: false, gotResult: false, initOk: false,
+    seen: "", told: "", start: Date.now() };
+  // Once per answer, when the card has drawn it or has failed to: tells Daash
+  // which, on the link the answer carried. The plan the card fetches for itself
+  // carries its own link. Nothing else leaves the frame.
+  function tell() {
+    if (!d.seen || d.told === d.seen || !window.fetch) return;
+    d.told = d.seen;
+    try {
+      fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "plan", ok: d.rendered && !d.errors.length, ms: Date.now() - d.start, host: d.host,
+        error: d.errors.join("; "), steps: d.steps.join(" > ") }) }).catch(function () {});
+    } catch (e) {}
+  }
   function show() {
+    tell();
     var box = document.getElementById("diag");
     if (!box) return;
     if (d.rendered && !d.errors.length) { box.hidden = true; return; }
@@ -443,6 +457,8 @@
   }
 
   function onResult(result) {
+    var answer = planOf(result);
+    if (answer && typeof answer._card === "string") D.seen = answer._card;
     try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
     reportSize();
   }

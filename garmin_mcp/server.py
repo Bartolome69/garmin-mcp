@@ -957,13 +957,31 @@ def _app_tool(view: str, note: str = VIEW_NOTE):
     return register
 
 
+def _view_meta() -> dict[str, Any] | None:
+    """What a view may reach outside its frame: the hosted server, and only to
+    say whether the card drew. Nothing on a server run at home."""
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        return None
+    return {"ui": {"csp": {"connectDomains": [base]}}}
+
+
 def _app_view(uri: str, filename: str, description: str) -> None:
     def read() -> str:
         return (_UI / filename).read_text(encoding="utf-8")
 
     read.__name__ = filename.split(".")[0] + "_view"
+    meta = _view_meta()
+
+    def resource(at: str, fn) -> None:
+        # An SDK too old for resource meta still serves the view, without it.
+        try:
+            mcp.resource(at, name=fn.__name__, description=description, mime_type=APP_MIME, meta=meta)(fn)
+        except TypeError:
+            mcp.resource(at, name=fn.__name__, description=description, mime_type=APP_MIME)(fn)
+
     try:
-        mcp.resource(uri, name=read.__name__, description=description, mime_type=APP_MIME)(read)
+        resource(uri, read)
     except TypeError:
         return
 
@@ -974,12 +992,7 @@ def _app_view(uri: str, filename: str, description: str) -> None:
 
     read_any.__name__ = read.__name__ + "_any_version"
     try:
-        mcp.resource(
-            uri.rsplit("/", 1)[0] + "/{version}",
-            name=read_any.__name__,
-            description=description,
-            mime_type=APP_MIME,
-        )(read_any)
+        resource(uri.rsplit("/", 1)[0] + "/{version}", read_any)
     except (TypeError, ValueError):
         log.debug("view template not registered", exc_info=True)
 

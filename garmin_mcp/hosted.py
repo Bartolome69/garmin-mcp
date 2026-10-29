@@ -42,6 +42,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response, Stream
 
 from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
 from . import server as server_mod
+from .formatting import drop_empty
 from .server import mcp
 from .session import (
     GarminError,
@@ -805,6 +806,23 @@ def _send_timings(hour: str) -> None:
 _UNEXPECTED = re.compile(r"Garmin request failed \((\w+)[:)]")
 
 
+def _with_card_check(name: str, result: Any, user: store.User) -> Any:
+    """A card's answer with the link it reports back to, and the sending counted.
+
+    Only for someone with an email fingerprint, since that is what the link
+    names: never the token, which would let anyone reading the chat in. Not on
+    the official API alone, whose answers go back as Garmin gave them.
+    """
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if name not in CARD_TOOLS or not base or not user.email_hash:
+        return result
+    if not isinstance(result, dict) or "error" in result:
+        return result
+    view = secrets.token_urlsafe(6)
+    analytics.capture("card_sent", user.email_hash, {"tool": name, "view": view, "account": user.email_masked})
+    return {**result, "_card": card_seen_url(base, user.email_hash, view)}
+
+
 def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> hooks.Hook:
     """The hook for one person's request: report the tool, carry any news.
 
@@ -871,6 +889,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
             )
         if alone:
             return result
+        result = _with_card_check(name, result, user)
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -2199,6 +2218,57 @@ async def unsubscribe(request: Request) -> Response:
         "<h1>You&rsquo;re unsubscribed</h1><p>No more Daash emails. Daash keeps "
         "working in Claude and ChatGPT as before.</p>",
     )
+
+
+# A card can fail where nothing here sees it: the tool answers, and the chat
+# never draws the card (an Android app sat on "Connecting to Daash" on Oct 29
+# while the server had long since answered). So each card answer carries a
+# link the card calls once it has drawn, or failed to: a card sent and never
+# reported is one that didn't appear.
+CARD_TOOLS = {"get_plan", "get_progress", "create_plan", "get_session"}
+_CARD_SEEN_LONGEST = 4000
+
+
+def card_signature(email_hash: str, view: str) -> str:
+    key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
+    return hmac.new(key, f"card:{email_hash}:{view}".encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def card_seen_url(base: str, email_hash: str, view: str) -> str:
+    return f"{base}/card/seen?u={email_hash}&v={view}&s={card_signature(email_hash, view)}"
+
+
+def _clip(value: Any, longest: int) -> str | None:
+    return str(value)[:longest] if value not in (None, "") else None
+
+
+@mcp.custom_route("/card/seen", methods=["POST"])
+async def card_seen(request: Request) -> Response:
+    """A card saying it drew, or what stopped it: the app, its steps, any error.
+
+    Sent as plain text so the frame needs no permission to send it. A link
+    that isn't genuine is ignored the same way, with nothing said back.
+    """
+    query = request.query_params
+    fingerprint, view, signature = query.get("u", ""), query.get("v", ""), query.get("s", "")
+    if not (fingerprint and view and hmac.compare_digest(signature, card_signature(fingerprint, view))):
+        return Response(status_code=204)
+    try:
+        said = json.loads((await request.body())[:_CARD_SEEN_LONGEST] or b"{}")
+    except ValueError:
+        said = {}
+    said = said if isinstance(said, dict) else {}
+    ms = said.get("ms")
+    analytics.capture("card_shown", fingerprint, drop_empty({
+        "view": view,
+        "card": _clip(said.get("card"), 20),
+        "ok": said.get("ok") is True,
+        "seconds": round(ms / 1000, 1) if isinstance(ms, (int, float)) else None,
+        "app": _clip(said.get("host"), 120),
+        "error": _clip(said.get("error"), 300),
+        "steps": _clip(said.get("steps"), 400),
+    }))
+    return Response(status_code=204)
 
 
 @mcp.custom_route("/disconnect", methods=["GET", "POST"])

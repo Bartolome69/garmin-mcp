@@ -92,7 +92,8 @@ window.addEventListener("message", (e) => {
   const reply = (r) => f.contentWindow.postMessage({ jsonrpc: "2.0", id: m.id, result: r }, "*");
   if (m.method === "ui/initialize") reply({ hostInfo: { name: "test" }, hostCapabilities: { openLinks: {} }, hostContext: { theme: "light", displayMode: "inline" } });
   if (m.method === "ui/notifications/initialized") f.contentWindow.postMessage({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: ${JSON.stringify(result)}, content: [] } }, "*");
-  if (m.method === "tools/call") reply({ structuredContent: m.params.name === "get_activity_details" ? ${JSON.stringify(DETAILS)} : { error: "not in this test" } });
+  if (m.method === "tools/call") reply({ structuredContent: m.params.name === "get_activity_details" ? ${JSON.stringify(DETAILS)}
+    : m.params.name === "get_plan" ? { ...${JSON.stringify(PLAN)}, _card: "https://daash.test/card/seen?u=f&v=view2&s=sig" } : { error: "not in this test" } });
   if (m.method === "ui/open-link") { window.opened = m.params.url; reply({}); }
   if (m.method === "ui/message") { window.asked.push((m.params.content[0] || m.params.content).text); reply({}); }
 });
@@ -110,10 +111,18 @@ function decode(url) {
   fs.writeFileSync(path.join(dir, "card.html"), CARD);
   const browser = await chromium.launch();
   const errors = [];
+  // What the cards report back on the link their answer carries.
+  const SEEN = "https://daash.test/card/seen?u=f&v=view1&s=sig";
+  const pings = [];
+  const listen = (page) => page.route("https://daash.test/**", (r) => {
+    pings.push({ url: r.request().url(), body: JSON.parse(r.request().postData() || "{}") });
+    return r.fulfill({ status: 204 });
+  });
   async function open(result) {
     fs.writeFileSync(path.join(dir, "host.html"), host(result));
     const page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
     page.on("pageerror", (e) => errors.push(e.message));
+    await listen(page);
     await page.goto("file://" + path.join(dir, "host.html"));
     await page.waitForTimeout(1200);
     return { page, card: page.frames()[1] };
@@ -121,13 +130,21 @@ function decode(url) {
 
   try {
     console.log("a progress answer");
-    let { page, card } = await open(PROGRESS);
+    let { page, card } = await open({ ...PROGRESS, _card: SEEN });
     let text = await card.evaluate(() => document.body.innerText);
     check("draws the card rather than the error box", !/didn.t load|not a function/.test(text) && /This week|Week/.test(text), text.slice(0, 200));
     await page.close();
 
+    check("it reports the progress answer, then the plan it fetched for itself, each once",
+      pings.map((p) => p.url.match(/v=(\w+)/)[1]).join() === "view1,view2" && pings.every((p) => p.body.ok), JSON.stringify(pings));
+    pings.length = 0;
+
     console.log("an opened run");
-    ({ page, card } = await open(PLAN));
+    ({ page, card } = await open({ ...PLAN, _card: SEEN }));
+    await page.waitForTimeout(8000);
+    check("the card reports once that it drew, with the app and how long it took",
+      pings.length === 1 && pings[0].url === SEEN && pings[0].body.card === "plan" && pings[0].body.ok === true
+      && /^test/.test(pings[0].body.host) && pings[0].body.ms > 0 && /result/.test(pings[0].body.steps), JSON.stringify(pings));
     await card.getByText(/sub-T/).first().click();
     await page.waitForTimeout(800);
     const bars = await card.evaluate(() => [...document.querySelectorAll(".splits span")].map((b) => ({
@@ -169,12 +186,16 @@ function decode(url) {
 
     console.log("the workout card");
     fs.writeFileSync(path.join(dir, "session.html"), SESSION_CARD);
-    fs.writeFileSync(path.join(dir, "host.html"), host(SESSION, "session.html"));
+    fs.writeFileSync(path.join(dir, "host.html"), host({ ...SESSION, _card: SEEN }, "session.html"));
     page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
     page.on("pageerror", (e) => errors.push(e.message));
+    await listen(page);
+    const before = pings.length;
     await page.goto("file://" + path.join(dir, "host.html"));
     await page.waitForTimeout(800);
     card = page.frames()[1];
+    check("and so does the workout card", pings.length === before + 1 && pings[before].body.card === "session"
+      && pings[before].body.ok === true && /^test/.test(pings[before].body.host), JSON.stringify(pings.slice(before)));
     const drawn = await card.evaluate(() => ({
       text: document.body.innerText,
       stats: document.querySelectorAll(".stat-v").length,

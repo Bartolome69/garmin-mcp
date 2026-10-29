@@ -1628,6 +1628,57 @@ async def main() -> int:
               code == 302 and location == weekly.ask_link("Claude", "plan")
               and not any(e["event"] == "weekly_email_clicked" for e in SENT[before:]), f"{code} {location}")
 
+        # A card answer carries the link the card reports back to once it has
+        # drawn, so a card sent and never shown can be counted.
+        erin_hash = store.email_fingerprint("erin@example.com")
+        erin = store.save_user("e***@example.com", json.dumps({"di_token": "erin"}),
+                               email_hash=erin_hash, email="erin@example.com")
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        try:
+            before = len(SENT)
+            plan_answer = await call(erin, "get_plan")
+            await asyncio.sleep(0.3)
+            link = plan_answer.get("_card", "")
+            sent = [e for e in SENT[before:] if e["event"] == "card_sent"]
+            check("a plan answer carries the card's report-back link, and the sending is counted",
+                  link.startswith(f"{base}/card/seen?u={erin_hash}&") and len(sent) == 1
+                  and sent[0]["properties"]["tool"] == "get_plan" and f"v={sent[0]['properties']['view']}" in link
+                  and erin not in link, f"{link} {sent}")
+            day_answer = await call(erin, "get_daily_summary", {"date": "2026-09-22"})
+            check("an answer without a card carries no link", "_card" not in day_answer)
+        finally:
+            os.environ.pop("GARMIN_MCP_BASE_URL", None)
+
+        def post_text(url: str, body: str) -> int:
+            import urllib.request
+            req = urllib.request.Request(url, data=body.encode(), headers={"content-type": "text/plain;charset=UTF-8"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return r.status
+
+        before = len(SENT)
+        code = await anyio_run(post_text, link, json.dumps(
+            {"card": "plan", "ok": True, "ms": 1840, "host": "Claude 1.0 android dark inline", "steps": "page > init sent"}))
+        await asyncio.sleep(0.3)
+        shown = [e for e in SENT[before:] if e["event"] == "card_shown"]
+        check("the card's report is recorded against the person, with the app and how long it took",
+              code == 204 and len(shown) == 1 and shown[0]["distinct_id"] == analytics.distinct_id(erin_hash)
+              and {k: shown[0]["properties"].get(k) for k in ("card", "ok", "seconds", "app")}
+              == {"card": "plan", "ok": True, "seconds": 1.8, "app": "Claude 1.0 android dark inline"}, str(shown)[:300])
+        before = len(SENT)
+        forged = link.rsplit("&s=", 1)[0] + "&s=" + "0" * 16
+        code = await anyio_run(post_text, forged, json.dumps({"ok": False}))
+        code_junk = await anyio_run(post_text, link, "not json")
+        await asyncio.sleep(0.3)
+        shown = [e for e in SENT[before:] if e["event"] == "card_shown"]
+        check("a forged link records nothing, and a garbled report still counts as not drawn",
+              code == 204 and code_junk == 204 and len(shown) == 1 and shown[0]["properties"]["ok"] is False, str(shown)[:300])
+        at_home = garmin_server._view_meta()
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        hosted_meta = garmin_server._view_meta()
+        os.environ.pop("GARMIN_MCP_BASE_URL", None)
+        check("the cards may send only to the hosted server, and only when it has an address",
+              at_home is None and hosted_meta == {"ui": {"csp": {"connectDomains": [base]}}}, str(hosted_meta))
+
         # Daash Crews. Three people of their own, so nothing above is touched:
         # Carol and Dave signed in with addresses kept, Bob's row predates that.
         from datetime import date as _date, timedelta as _td
