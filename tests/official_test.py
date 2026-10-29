@@ -572,6 +572,36 @@ def main() -> int:
     check("the official link moves to the new session",
           again != bart and store.official_link(again) is not None and store.official_link(bart) is None)
 
+    print("\nsigning in with a password after approving on Garmin's page")
+    joe = store.save_official_user("garmin-joe", {"access_token": "a", "refresh_token": "r",
+                                                  "access_expires_at": 0, "refresh_expires_at": 0}, ["ACTIVITY_EXPORT"])
+    store.set_user_email(joe, "joe@example.com", "j***@example.com")
+    check("an approval on Garmin's page alone reads only from the official API",
+          store.official_only(joe) == "garmin-joe" and not store.has_connect(joe))
+    joe_again = store.save_user("j***@example.com", "{}", email_hash=store.email_fingerprint("joe@example.com"),
+                                email="joe@example.com")
+    check("the password sign-in keeps the link, so Garmin's pushes still arrive",
+          joe_again != joe and store.official_link(joe_again).garmin_user_id == "garmin-joe")
+    check("but reads go back to Garmin Connect, which has the history",
+          store.has_connect(joe_again) and store.official_only(joe_again) is None)
+    store.set_official_only(joe_again, True)
+    store.save_user("j***@example.com", "{}", user_token=joe_again,
+                    email_hash=store.email_fingerprint("joe@example.com"), email="joe@example.com")
+    check("and signing in again with the password clears it again",
+          store.official_only(joe_again) is None)
+    only = store.save_official_user("garmin-only", {"access_token": "a", "refresh_token": "r",
+                                                    "access_expires_at": 0, "refresh_expires_at": 0}, None)
+    store.save_user("o***@example.com", "{}", email_hash="hash-other")
+    check("someone else's password sign-in leaves an official-only account alone",
+          store.official_only(only) == "garmin-only")
+    # Later checks count the accounts linked, so these go again.
+    import sqlite3 as _sqlite
+    with _sqlite.connect(DB) as conn:
+        for gone in ("garmin-joe", "garmin-only"):
+            conn.execute("DELETE FROM official_links WHERE garmin_user_id = ?", (gone,))
+        conn.execute("DELETE FROM users WHERE user_token IN (?, ?, ?) OR email_hash = 'hash-other'",
+                     (joe, joe_again, only))
+
     print("\nworkouts")
     model, _, _ = build_workout("Threshold", "running", [
         {"type": "warmup", "duration_seconds": 600},
