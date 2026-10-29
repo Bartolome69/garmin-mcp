@@ -2199,6 +2199,13 @@ async def email_ask(request: Request) -> Response:
     return RedirectResponse(weekly.ask_link(app, kind), status_code=302)
 
 
+@mcp.custom_route("/garmin-export", methods=["GET"])
+async def garmin_export(request: Request) -> Response:
+    """Count a click on the suggestion to export Garmin data, then go to Garmin's page."""
+    analytics.capture("garmin_export_clicked", None, {})
+    return RedirectResponse(server_mod.GARMIN_EXPORT, status_code=302)
+
+
 @mcp.custom_route("/email/unsubscribe", methods=["GET", "POST"])
 async def unsubscribe(request: Request) -> Response:
     """Stop update emails. GET asks, POST does: a mail scanner opening the link

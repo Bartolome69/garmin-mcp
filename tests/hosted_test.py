@@ -1672,6 +1672,20 @@ async def main() -> int:
         shown = [e for e in SENT[before:] if e["event"] == "card_shown"]
         check("a forged link records nothing, and a garbled report still counts as not drawn",
               code == 204 and code_junk == 204 and len(shown) == 1 and shown[0]["properties"]["ok"] is False, str(shown)[:300])
+        # Someone on Garmin's official API alone is told how to get their full
+        # history, by way of a link that counts the click.
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        offer = garmin_server._export_offer()
+        os.environ.pop("GARMIN_MCP_BASE_URL", None)
+        before = len(SENT)
+        code, location = await anyio_run(no_follow, "/garmin-export")
+        await asyncio.sleep(0.3)
+        check("the export suggestion links through Daash, which counts the click and goes on to Garmin",
+              f"{base}/garmin-export" in offer and "summarizedActivities.json" in offer
+              and code == 302 and location == garmin_server.GARMIN_EXPORT
+              and [e["event"] for e in SENT[before:]] == ["garmin_export_clicked"]
+              and garmin_server._export_offer().count(garmin_server.GARMIN_EXPORT) == 1, f"{code} {location} {offer}")
+
         at_home = garmin_server._view_meta()
         os.environ["GARMIN_MCP_BASE_URL"] = base
         hosted_meta = garmin_server._view_meta()

@@ -3075,6 +3075,27 @@ async def _with_next_steps(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+# Garmin's own export of everything an account holds, which the official API
+# can't send. On the hosted server the link goes by way of /garmin-export, so
+# the clicks are counted; that count says whether an import is worth building.
+GARMIN_EXPORT = "https://www.garmin.com/account/datamanagement/exportdata/"
+
+
+def _export_link() -> str:
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    return f"{base}/garmin-export" if base else GARMIN_EXPORT
+
+
+def _export_offer() -> str:
+    return (
+        "For their full history, they can ask Garmin for an export of their data "
+        f"({_export_link()}): Garmin emails a download link, usually within a day or two. "
+        "Dropping its activities file into this chat (in the zip's DI_CONNECT/DI-Connect-Fitness "
+        "folder, the one ending summarizedActivities.json) lets you read their past runs. "
+        "Offer this once, in a sentence, with the link."
+    )
+
+
 async def _training_log(today: date_cls) -> dict[str, Any]:
     first = training_plan.monday_of(today) - timedelta(weeks=training_plan.LOG_WEEKS - 1)
     activities = await _call(
@@ -3099,7 +3120,7 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
                     f"Connected through Garmin's official API on {since}. Garmin sends training from "
                     "then on, as the watch syncs, so earlier runs aren't here and nothing has arrived "
                     "yet. Say so in a sentence, then offer to build a plan and put it on their watch. "
-                    + ask_first
+                    + ask_first + " " + _export_offer()
                 )
             }
         return {
@@ -3113,6 +3134,7 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
         summary["note"] = (
             f"Connected through Garmin's official API on {since}: Garmin sends training from then on, "
             "so the weeks before that look empty here but weren't. Say so once, in a sentence. " + ask_first
+            + " " + _export_offer()
         )
     return summary
 
