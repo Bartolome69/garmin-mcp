@@ -1058,15 +1058,19 @@
   function fillDetail(panel, s, kind) {
     var key = (kind === "done" ? "a:" + s.activity_id : "w:" + s.workout_id);
     var name = cleanTitle(s), when = DAYS[dow(effDate(s))] + " " + parse(effDate(s)).getDate() + " " + MONTHS[parse(effDate(s)).getMonth()];
+    // A gym session or a swim isn't a run.
+    var sort = s.kind || s.sport, noun = { run: "run", ride: "ride", swim: "swim" }[sort] || "activity";
     var askBtn = kind === "done"
-      ? el("button", { class: "act", onclick: function (e) { ask("Tell me about my " + name + " on " + when + ": how it went, and what to take from it.", e.currentTarget); } }, ["Ask about this run"])
+      ? el("button", { class: "act", onclick: function (e) { ask("Tell me about my " + name + " on " + when + ": how it went, and what to take from it.", e.currentTarget); } }, ["Ask about this " + noun])
       : el("button", { class: "act", onclick: function (e) { ask("What is my " + name + " on " + when + " for, and what should it feel like?", e.currentTarget); } }, ["Ask about it"]);
     function draw(p) {
       panel.textContent = "";
       var parts = kind === "done" ? doneDetail(p, s) : plannedDetail(p);
       parts.forEach(function (x) { if (x) panel.appendChild(x); });
-      var shareBtn = kind === "done" && p && canShare()
-        ? el("button", { class: "act", onclick: function (e) { shareRun(p, s, e.currentTarget); } }, ["Share this run"]) : null;
+      // The share image is drawn from distance, pace and laps, so a strength
+      // session has nothing to put on it.
+      var shareBtn = kind === "done" && p && canShare() && sort !== "strength"
+        ? el("button", { class: "act", onclick: function (e) { shareRun(p, s, e.currentTarget); } }, ["Share this " + noun]) : null;
       panel.appendChild(shareBtn ? el("div", { class: "acts" }, [askBtn, shareBtn]) : askBtn);
       reportSize();
     }

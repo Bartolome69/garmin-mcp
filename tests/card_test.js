@@ -46,7 +46,8 @@ const DETAILS = {
 };
 const PLAN = {
   source: "calendar", current_plan: { label: "B1", goal: "Base block (Norwegian singles style): 4 weeks" },
-  weeks: [{ week: 1, starts: md(0), current: true, sessions: [{ date: md(2), day: "Wed", name: "Long 18km w 3x2km sub-T", type: "long",
+  weeks: [{ week: 1, starts: md(0), current: true, sessions: [{ date: md(0), day: "Mon", name: "Full body (runner) v2", type: "strength",
+    sport: "strength", kind: "strength", status: "done", activity_id: 8, actual: "38m 58s" }, { date: md(2), day: "Wed", name: "Long 18km w 3x2km sub-T", type: "long",
     sport: "run", status: "done", activity_id: 7, actual_km: 17.29, actual_pace: "4:41 /km", actual_bpm: 144, planned_km: 18.1 }] }],
   next_session: null,
 };
@@ -166,6 +167,12 @@ function decode(url) {
       run.run === 1 && /3 × 2 km/.test(run.t) && run.f.length === 4 && run.l.length === 8 && run.k === "Base block", JSON.stringify(run).slice(0, 300));
     check("with the reps' paces and heart rates, and no route ranking",
       run.n.length === 1 && /4:01, 4:00, 4:00/.test(run.n[0][1]) && !JSON.stringify(run).includes("Fastest"), JSON.stringify(run.n));
+
+    console.log("a gym session");
+    await card.getByText("Full body (runner) v2").first().click();
+    await page.waitForTimeout(800);
+    const acts = await card.evaluate(() => [...document.querySelectorAll(".detail .act")].map((b) => b.textContent));
+    check("asks about the activity, not a run, and offers no run image", acts.join() === "Ask about this activity", JSON.stringify(acts));
     await page.close();
 
     console.log("the share page");
