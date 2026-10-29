@@ -145,8 +145,10 @@ def main() -> int:
           store.official_link(bart).tokens["refresh_token"] == "refresh-2")
 
     print("\nwhat Garmin pushes")
-    day = {"userId": "garmin-user-1", "summaryId": "d-1", "calendarDate": "2026-10-21",
-           "startTimeInSeconds": 1792540800, "steps": 9000, "restingHeartRateInBeatsPerMinute": 48}
+    # Three days back, so it stays inside the week the resting heart rate is averaged over.
+    days_ago = int(time.time()) // 86400 * 86400 - 3 * 86400
+    day = {"userId": "garmin-user-1", "summaryId": "d-1", "calendarDate": time.strftime("%Y-%m-%d", time.gmtime(days_ago)),
+           "startTimeInSeconds": days_ago, "steps": 9000, "restingHeartRateInBeatsPerMinute": 48}
     stranger = {"userId": "somebody-else", "summaryId": "d-9", "startTimeInSeconds": 1792540800, "steps": 1}
     kept = official.handle_push(json.dumps({"dailies": [day, stranger]}).encode())
     check("a linked account's summaries are kept; a stranger's are dropped", kept == {"dailies": 1}, str(kept))
