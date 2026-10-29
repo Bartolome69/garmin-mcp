@@ -2953,12 +2953,13 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     if week_mode:
         since = min(since, training_plan.monday_of(today) - timedelta(weeks=HISTORY_WEEKS))
 
+    # The calendar view runs to this week even when its last session has
+    # passed, so its runs are read up to today.
     activities: list[dict[str, Any]] = []
     if first <= today:
+        until = today if code is None else min(today, last + timedelta(days=1))
         activities = await _call(
-            lambda c: c.get_activities_by_date(
-                since.isoformat(), min(today, last + timedelta(days=1)).isoformat()
-            )
+            lambda c: c.get_activities_by_date(since.isoformat(), until.isoformat())
         ) or []
 
     if weekly_km:

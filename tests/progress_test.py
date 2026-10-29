@@ -300,6 +300,27 @@ def main() -> int:
     check("every offer is one question, without dashes",
           all(o.endswith("?") and o.count("?") == 1 and "\u2014" not in o and " - " not in o for o in offers), str(offers))
 
+    print("\na calendar whose last session has passed")
+    # On Oct 29 an account on Garmin's official API, which sees only what
+    # Daash scheduled, had one 5 km on Oct 25: the card called that week
+    # "This week" and left out the three runs since.
+    from garmin_mcp.training_plan import summarise_calendar
+    today = date(2026, 10, 29)
+    item = {"id": 1, "date": "2026-10-25", "title": "5km easy", "workoutId": 9, "sportTypeKey": "running"}
+    ran = [{"activityId": n, "activityName": f"Run {n}", "startTimeLocal": f"2026-10-{d} 07:00:00",
+            "activityType": {"typeKey": "running"}, "duration": 3000, "distance": 10000.0}
+           for n, d in ((1, 24), (2, 27), (3, 28))]
+    cal = summarise_calendar([item], ran, today, planned_metres={9: 5000.0}, weekly_km=True)
+    weeks = cal["weeks"]
+    check("this week is there, marked current, after the week of the last session",
+          [w["starts"] for w in weeks] == ["2026-10-19", "2026-10-26"]
+          and [w["current"] for w in weeks] == [False, True], str([(w["starts"], w["current"]) for w in weeks]))
+    check("with this week's runs, though nothing was planned for it",
+          weeks[1]["sessions"] == [] and weeks[1]["run_km"] == 20.0 and len(weeks[1].get("extra", [])) == 2,
+          str(weeks[1]))
+    check("and the last session's week as before",
+          weeks[0]["run_km"] == 10.0 and weeks[0]["sessions"][0]["status"] == "done, moved", str(weeks[0]))
+
     print()
     if FAILED:
         print(f"{len(FAILED)} check(s) failed: {', '.join(FAILED)}")

@@ -1035,7 +1035,7 @@ def summarise_calendar(
     """
     result = summarise("", items, activities, today, planned_seconds=planned_seconds,
                        planned_metres=planned_metres, weekly_km=weekly_km, shapes=shapes, phases=phases,
-                       efforts=efforts)
+                       efforts=efforts, through=today)
     result.pop("label", None)
     for key in ("current_week", "weeks_total", "finished", "phases"):
         result.pop(key, None)
@@ -1094,12 +1094,15 @@ def summarise(
     shapes: Mapping[Any, Sequence[Mapping[str, Any]]] | None = None,
     phases: Mapping[Any, str] | None = None,
     efforts: Mapping[Any, str | None] | None = None,
+    through: date | None = None,
 ) -> dict[str, Any]:
     """The plan week by week, each session marked done, missed, today or ahead.
 
     With weekly_km, each week also carries the distance planned against the
     distance run, counting every run that week, and the runs that weren't on
-    the plan.
+    the plan. With through, every week up to the one holding that day is
+    there, run or not, so a calendar whose last session has passed still
+    shows this week.
     """
     planned_seconds = planned_seconds or {}
     planned_metres = planned_metres or {}
@@ -1138,7 +1141,7 @@ def summarise(
         for a in activities
         if _day(a.get("startTimeLocal"))
         and (monday_of(first) if weekly_km else first - timedelta(days=1))
-        <= _day(a.get("startTimeLocal")) <= last + timedelta(days=1)
+        <= _day(a.get("startTimeLocal")) <= max(last + timedelta(days=1), through or last)
     ]
     verdict = match(planned, actual, today)
     done = {row["name"]: row for row in verdict.done}
@@ -1204,6 +1207,13 @@ def summarise(
             number, {"week": number, "starts": monday_of(day).isoformat(), "sessions": []}
         )
         week["sessions"].append(row)
+    if through is not None:
+        monday = week_one
+        while monday <= monday_of(through):
+            number = (monday - week_one).days // 7 + 1
+            weeks.setdefault(number, {"week": number, "starts": monday.isoformat(), "sessions": []})
+            monday += timedelta(weeks=1)
+        weeks = dict(sorted(weeks.items()))
 
     for week in weeks.values():
         statuses = [s["status"] for s in week["sessions"]]

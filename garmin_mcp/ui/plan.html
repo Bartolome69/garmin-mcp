@@ -843,7 +843,10 @@
     if (isWeek) {
       var w0 = m.weeks[0];
       var hist = m.history || [];
-      var thisKm = m.mode === "log" ? w0.run_km : (w0.plannedKm || 0);
+      // A week with nothing planned (Garmin's official API shows only what
+      // Daash scheduled) draws what was run, as the log does.
+      var asRun = m.mode === "log" || !w0.plannedKm;
+      var thisKm = asRun ? (w0.run_km || 0) : w0.plannedKm;
       var peak = Math.max.apply(null, hist.map(function (h) { return h.run_km || 0; }).concat([thisKm, 1]));
       var avg = hist.length ? sum(hist, function (h) { return h.run_km; }) / hist.length : 0;
       hist.forEach(function (h, i) {
@@ -853,9 +856,9 @@
       cols = bars.length;
       var right = "";
       // A week in progress isn't compared with finished ones.
-      if (avg > 0 && thisKm > 0 && m.mode !== "log") { var pct = Math.round((thisKm / avg - 1) * 100); right = (pct >= 0 ? "+" : "") + pct + "% on your " + hist.length + "-week average"; }
+      if (avg > 0 && thisKm > 0 && !asRun) { var pct = Math.round((thisKm / avg - 1) * 100); right = (pct >= 0 ? "+" : "") + pct + "% on your " + hist.length + "-week average"; }
       else if (avg > 0) right = fmtKm(Math.round(avg)) + " km a week lately";
-      stats = { lead: fmtKm(thisKm) + " km", left: m.mode === "log" ? "so far this week" : "planned", right: right };
+      stats = { lead: fmtKm(thisKm) + " km", left: asRun ? "so far this week" : "planned", right: right };
     } else {
       var peakKm = Math.max.apply(null, kms.concat([1]));
       var started = m.today >= m.block.starts;
@@ -1293,7 +1296,7 @@
     var data = { v: 1, k: kind, t: title, s: sub, w: w.starts, a: [lead, label], r: rows };
     // Without a plan, only a day already gone can be called a rest day.
     if (m.mode === "log" && kind === "now") data.u = dow(m.today);
-    if (m.mode !== "block" && m.history && m.history.length) data.h = m.history.map(function (h) { return Math.round((h.run_km || 0) * 10) / 10; }).concat([Math.round((m.mode === "log" ? w.run_km : w.plannedKm || 0) * 10) / 10]);
+    if (m.mode !== "block" && m.history && m.history.length) data.h = m.history.map(function (h) { return Math.round((h.run_km || 0) * 10) / 10; }).concat([Math.round((m.mode === "log" || !w.plannedKm ? w.run_km || 0 : w.plannedKm) * 10) / 10]);
     return data;
   }
   // The whole plan rides along for the share page's PDF and its
