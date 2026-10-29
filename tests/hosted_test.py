@@ -1411,7 +1411,7 @@ async def main() -> int:
               and said["this_week"] == {"sessions": 3, "km": "45.2"}, str(said))
         subject, text, page_html = weekly.compose(said, "https://example.test/stop")
         check("its subject is the week's key sessions, and it ends with a way to stop",
-              subject == "Daash - This week: Sub-T 3 × 3 km Wed, Long 19 km Sun" and "key session" not in text
+              subject == "This week: Sub-T 3 × 3 km Wed, Long 19 km Sun" and "key session" not in text
               and "<li" not in page_html and "<strong>Sub-T 3 × 3 km</strong>" in page_html and "Ask Daash" in text and "Claude or ChatGPT" not in text and "https://example.test/stop" in text
               and "How's my training going this week?" in text and "Stop these emails" in page_html, subject)
         check("it lays out the whole week, rest days too, without repeating a distance the name says",
@@ -1427,7 +1427,7 @@ async def main() -> int:
             "goal": "Base block (Norwegian singles style): 4 weeks", "week": 3, "weeks_total": 4}}, monday)
         block_subject, block_text, _p = weekly.compose(block_said, "x")
         check("with a block running it says where in the block, in the subject and at the top",
-              block_subject.startswith("Daash - Week 3 of 4: ")
+              block_subject.startswith("Week 3 of 4: ")
               and block_text.startswith("Base block (Norwegian singles style) · week 3 of 4 · 90% of sessions done so far"),
               block_subject)
         # One thing last week showed, from the card's own numbers.
