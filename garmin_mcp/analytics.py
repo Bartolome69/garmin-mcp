@@ -63,7 +63,7 @@ def distinct_id(subject: str | None) -> str:
 
 
 _FRIENDS_TTL = 60
-_FRIENDS: dict[str, Any] = {"at": 0.0, "set": frozenset()}
+_FRIENDS: dict[str, Any] = {"at": float("-inf"), "set": frozenset()}
 
 
 def _friends() -> frozenset[str]:
@@ -86,7 +86,7 @@ def _friends() -> frozenset[str]:
 
 def forget_friends() -> None:
     """Read the friends again at the next event, after the list has changed."""
-    _FRIENDS["at"] = 0.0
+    _FRIENDS["at"] = float("-inf")
 
 
 def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:
