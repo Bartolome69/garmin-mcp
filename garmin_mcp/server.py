@@ -2697,6 +2697,11 @@ PLAN_SCAN_AHEAD = timedelta(weeks=training_plan.MAX_WEEKS_AHEAD + 1)
 # Past sessions whose planned length is looked up for matching; beyond this a
 # session counts on existence alone, which is the matcher's fallback anyway.
 PLAN_LOOKUPS = 40
+# A plan's workouts, once read, are kept this long, so each look at a long
+# plan reads PLAN_LOOKUPS more and the whole block fills in over a few: on
+# Oct 30 a 132-session block showed only its first six weeks' distances.
+# Anything that writes to Garmin drops them all.
+PLAN_WORKOUT_MEMORY = 6 * 3600
 # Weeks of running shown before this one when no block is running.
 HISTORY_WEEKS = 4
 
@@ -3006,9 +3011,9 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     following_meta: dict[str, Any] = {}
     # Every workout is read at once, then taken in the same nearest-first
     # order as before, so the goal and block notes still come from the first.
-    wanted = lookup_ids[:PLAN_LOOKUPS] or [sessions[0].get("workoutId")]
+    wanted = _plan_lookups(lookup_ids) or [sessions[0].get("workoutId")]
     details = await _together([
-        functools.partial(_read, ("workout", wid), WORKOUT_MEMORY, lambda c, w=wid: c.get_workout_by_id(w))
+        functools.partial(_read, ("workout", wid), PLAN_WORKOUT_MEMORY, lambda c, w=wid: c.get_workout_by_id(w))
         for wid in wanted
     ])
     for wid, detail in zip(wanted, details):
@@ -3042,10 +3047,10 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
             })
 
     if code is None:
-        result = await _with_next_steps(training_plan.summarise_calendar(
+        result = _mark_unread(await _with_next_steps(training_plan.summarise_calendar(
             sessions, activities, today, planned_seconds=seconds,
             planned_metres=metres, weekly_km=weekly_km, shapes=shapes, phases=phases, efforts=efforts,
-        ))
+        )), metres)
         if context:
             key = "current_plan" if context.pop("running") else "upcoming_plan"
             result[key] = drop_empty({**context, "goal": goal, **meta})
@@ -3058,13 +3063,42 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
         return result
     others = sorted(p for p in plans if p != code)
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
-    result = await _with_next_steps(training_plan.summarise(
+    result = _mark_unread(await _with_next_steps(training_plan.summarise(
         code, sessions, activities, today, goal=goal, planned_seconds=seconds,
         shapes=shapes, phases=phases, efforts=efforts, **extra
-    ))
+    )), metres)
     result.update(meta)
     if others:
         result["other_plans"] = others
+    return result
+
+
+def _plan_lookups(ids: list[Any]) -> list[Any]:
+    """The workouts to read for a plan, nearest first: every one already
+    remembered, which costs nothing, and PLAN_LOOKUPS more. Garmin's official
+    API answers from the store, so there everything is read."""
+    if _official_client() is not None:
+        return list(ids)
+    try:
+        known = {wid for wid in ids if session.knows(("workout", wid), PLAN_WORKOUT_MEMORY)}
+    except Exception:  # noqa: BLE001 - without a session to ask, read the nearest as before
+        known = set()
+    fresh = {wid for wid in ids if wid not in known}
+    fresh = set([wid for wid in ids if wid in fresh][:PLAN_LOOKUPS])
+    return [wid for wid in ids if wid in known or wid in fresh]
+
+
+def _mark_unread(result: dict[str, Any], metres: dict[Any, float]) -> dict[str, Any]:
+    """Count, per week, the runs whose planned distance wasn't read this time,
+    so the card shows those weeks as still to read rather than as empty."""
+    for week in result.get("weeks") or []:
+        unread = sum(
+            1 for s in week.get("sessions") or []
+            if s.get("kind", s.get("sport")) == "run" and s.get("planned_km") is None
+            and s.get("workout_id") is not None and s.get("workout_id") not in metres
+        )
+        if unread:
+            week["unread"] = unread
     return result
 
 

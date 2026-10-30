@@ -1757,6 +1757,17 @@ async def main() -> int:
               f"{named} {again} {marked} {gone}")
         garmin_server._friends_action("remove_friends", "bob@example.com")
 
+        # A long plan: the runs whose distance wasn't read are counted per
+        # week, so the card draws them as still to read, not as empty.
+        marked = garmin_server._mark_unread({"weeks": [
+            {"sessions": [{"kind": "run", "planned_km": 10, "workout_id": 1}]},
+            {"sessions": [{"kind": "run", "planned_km": None, "workout_id": 2},
+                          {"kind": "strength", "planned_km": None, "workout_id": 3},
+                          {"kind": "run", "planned_km": None, "workout_id": 4}]},
+        ]}, {1: 10000.0})
+        check("a long plan's weeks not read yet are marked so, strength aside",
+              "unread" not in marked["weeks"][0] and marked["weeks"][1]["unread"] == 2, str(marked))
+
         at_home = garmin_server._view_meta()
         os.environ["GARMIN_MCP_BASE_URL"] = base
         hosted_meta = garmin_server._view_meta()

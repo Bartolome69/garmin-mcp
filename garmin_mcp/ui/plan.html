@@ -96,8 +96,17 @@
   .tl-node { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .tl-dot { width: 8px; height: 8px; border-radius: 999px; border: 1.5px solid var(--muted); flex-shrink: 0; }
   .tl-dot.cur { background: var(--red); border-color: var(--red); }
-  .tl-a { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
-  .tl-b { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+  .tl-a { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-b { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-node > div { overflow: hidden; }
+  /* Several races on a narrow card: a short list, each on its own line,
+     rather than labels running into each other (Oct 30, four races). */
+  @media (max-width: 560px) {
+    .tl.many { flex-direction: column; align-items: stretch; gap: 6px; }
+    .tl.many .tl-line { display: none; }
+    .tl.many .tl-node > div { flex-direction: row !important; align-items: baseline; gap: 8px; }
+    .tl.many .tl-b::before { content: "\00b7 "; }
+  }
 
   /* ---- body: a 1px gap on the border colour draws the divider either way */
   .body { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); }
@@ -121,6 +130,9 @@
   .bar-box.on { background: var(--red); }
   .bar-box.on.started { background: var(--red-soft); }
   .bar-box.past { background: var(--bar-past); }
+  .bar-box.unread { background: transparent; border: 1.5px dashed var(--muted); opacity: 0.55; box-sizing: border-box; }
+  .bar-box.unread.sel { border-color: var(--red); opacity: 1; }
+  .unread-note { font-size: 11.5px; color: var(--muted); }
   .bar-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bar-done); }
   .bar-box.on .bar-fill { background: var(--red); }
   .bar-dot { position: absolute; left: 50%; bottom: 6px; margin-left: -3px; width: 6px; height: 6px; border-radius: 999px; background: var(--red); }
@@ -680,7 +692,7 @@
     var block = p.label ? p : (p.current_plan || null);
     var weeks = (p.weeks || []).map(function (w, i) {
       return { n: w.week || i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra),
-        planned: w.planned_km, run_km: w.run_km || 0, current: !!w.current || w.starts === thisMonday };
+        planned: w.planned_km, run_km: w.run_km || 0, unread: w.unread || 0, current: !!w.current || w.starts === thisMonday };
     });
     if (p.source === "log") {
       var cur = weeks.filter(function (w) { return w.current; })[0] || weeks[weeks.length - 1];
@@ -814,7 +826,7 @@
       ]),
     ]);
     var nodes = timeline(m);
-    var tl = nodes.length ? el("div", { class: "tl", "aria-label": "Goal timeline" }, nodes.reduce(function (acc, n, i) {
+    var tl = nodes.length ? el("div", { class: "tl" + (nodes.length > 3 ? " many" : ""), "aria-label": "Goal timeline" }, nodes.reduce(function (acc, n, i) {
       if (i) acc.push(el("span", { class: "tl-line" }));
       acc.push(el("div", { class: "tl-node" }, [
         el("span", { class: "tl-dot" + (n.cur ? " cur" : "") }),
@@ -851,7 +863,7 @@
     var isWeek = m.mode !== "block";
     var kms = m.weeks.map(function (w) { return w.plannedKm || 0; });
     var sel = state.sel, many = m.weeks.length > 6, gap = many ? 3 : 6;
-    var bars = [], stats, cols;
+    var bars = [], stats, cols, unreadWeeks = 0;
     var MAX = 64;
     if (isWeek) {
       var w0 = m.weeks[0];
@@ -875,7 +887,20 @@
     } else {
       var peakKm = Math.max.apply(null, kms.concat([1]));
       var started = m.today >= m.block.starts;
+      // A week whose sessions' distances weren't read this time (a long plan
+      // reads them a batch at a time) is drawn dashed at the plan's usual
+      // height, not as an empty week.
+      var readKms = kms.filter(function (k) { return k > 0; });
+      var usual = readKms.length ? sum(readKms, function (k) { return k; }) / readKms.length : peakKm / 2;
       m.weeks.forEach(function (w, i) {
+        var unread = !w.plannedKm && w.unread > 0;
+        if (unread) {
+          unreadWeeks++;
+          bars.push(barEl({ km: "", h: Math.round(usual / peakKm * MAX), cls: "unread" + (i === sel ? " sel" : ""), on: i === sel,
+            lbl: many ? String(w.n) : "W" + w.n, dot: i === m.nextWeek, r4: many,
+            aria: "Week " + w.n + ", " + w.total + " sessions, distance still to read", onclick: function () { state.sel = i; render(raw); } }));
+          return;
+        }
         var on = i === sel, h = Math.round((w.plannedKm || 0) / peakKm * MAX);
         var fill = w.plannedKm ? Math.round(h * Math.min(1, w.doneKm / w.plannedKm)) : 0;
         bars.push(barEl({ km: many && !on ? "" : fmtKm(w.plannedKm || 0), h: h, cls: on ? "on" + (started && fill < h ? " started" : "") : "", on: on,
@@ -923,6 +948,7 @@
       el("div", { class: "legend" }, legend.map(function (k) {
         var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), t.l]);
       })),
+      unreadWeeks ? el("div", { class: "unread-note", text: "Dashed weeks are planned; their distances load as you open the plan again." }) : null,
     ]);
   }
   function barEl(o) {

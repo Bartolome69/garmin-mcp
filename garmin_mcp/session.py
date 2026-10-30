@@ -383,6 +383,11 @@ class GarminSession:
         self._memo[key] = (now, value)
         return value
 
+    def knows(self, key: Any, ttl: float) -> bool:
+        """Whether an answer under key is remembered and still fresh, without fetching it."""
+        hit = self._memo.get(key)
+        return hit is not None and time.monotonic() - hit[0] < ttl
+
     def forget(self) -> None:
         """Drop everything remembered, after anything that writes to Garmin."""
         self._memo.clear()
@@ -479,6 +484,9 @@ class _ActiveSession:
 
     def remembered(self, key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
         return self._target().remembered(key, ttl, fn)
+
+    def knows(self, key: Any, ttl: float) -> bool:
+        return self._target().knows(key, ttl)
 
     def forget(self) -> None:
         self._target().forget()
