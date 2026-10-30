@@ -1841,6 +1841,13 @@ async def main() -> int:
               and not await _calls_with("metric") and not await _calls_with(None))
         check("a pace per mile is taken as one",
               round(_pp("8:00/mi")) == 298 and round(_pp("8:00 /mile")) == 298 and _pp("5:00 /km") == 300)
+        between = _tp.phase_spans([
+            {"week": 1, "sessions": [{"phase": "Endurance"}]}, {"week": 2, "unread": 3, "sessions": [{}]},
+            {"week": 3, "sessions": [{"phase": "Endurance"}]}, {"week": 4, "unread": 2, "sessions": [{}]},
+            {"week": 5, "sessions": [{"phase": "Taper"}]}])
+        check("a week not read between two weeks of one phase is in it; between two phases it stays blank",
+              between == [{"label": "Endurance", "from_week": 1, "to_week": 3}, {"label": "Taper", "from_week": 5, "to_week": 5}],
+              str(between))
         _today = _pd.today()
         _at = lambda n, wid, name: {"date": (_today + _pt(days=n)).isoformat(), "workoutId": wid, "title": name, "sportTypeKey": "running"}
         order = garmin_server._lookup_order([

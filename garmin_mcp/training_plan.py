@@ -863,6 +863,15 @@ def phase_spans(weeks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]] | No
     for i in range(len(labels) - 2, -1, -1):
         if not unknown[i]:
             labels[i] = labels[i] or labels[i + 1]
+    # A week not read between two of the same phase is in it: the cutback
+    # week in a run of Endurance, whose sessions' names gave their distance
+    # so none was read (Oct 30, Endurance drawn twice around a gap).
+    for i in range(len(labels)):
+        if labels[i] is None and unknown[i]:
+            before = next((labels[j] for j in range(i - 1, -1, -1) if labels[j]), None)
+            after = next((labels[j] for j in range(i + 1, len(labels)) if labels[j]), None)
+            if before and before == after:
+                labels[i] = before
     spans: list[dict[str, Any]] = []
     for week, label in zip(weeks, labels):
         if spans and spans[-1]["label"] == label:
