@@ -1095,9 +1095,13 @@ def summarise_log(activities: Iterable[Mapping[str, Any]], today: date, weeks: i
 
 
 def planned_metres(workout: Mapping[str, Any]) -> float:
-    """How far a workout is meant to be: Garmin's own figure, else its steps added up."""
+    """How far a workout is meant to be: Garmin's own figure, else its steps
+    added up, a ride's timed steps at riding speed rather than running."""
     given = float(workout.get("estimatedDistanceInMeters") or 0)
-    return given if given > 0 else planned_distance_m(dict(workout))
+    if given > 0:
+        return given
+    sport = ((workout.get("sportType") or {}).get("sportTypeKey") or "").lower()
+    return planned_distance_m(dict(workout), RIDE_MPS if is_ride(sport) else None)
 
 
 def summarise_calendar(
@@ -1140,14 +1144,46 @@ def _day(value: Any) -> date | None:
         return None
 
 
-def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequence[Mapping[str, Any]]) -> None:
-    """Planned km against run km for one week, and the runs nobody planned."""
+# One sport this much of a plan's runs, rides and swims, and the plan is that
+# sport's: a runner's odd spin doesn't turn the bars into hours.
+FOCUS_SHARE = 0.8
+
+
+def plan_focus(items: Iterable[Mapping[str, Any]]) -> str:
+    """What a plan's weekly bars measure: "run" or "ride" km for a plan that
+    is mostly one of them, "time" for a triathlon (or a swim plan), where
+    kilometres of each don't add up to anything."""
+    counts: dict[str, int] = defaultdict(int)
+    for i in items:
+        sport = activity_kind(i.get("sportTypeKey") or "running")
+        if sport in ("run", "ride", "swim"):
+            counts[sport] += 1
+    total = sum(counts.values())
+    if not total:
+        return "run"
+    top = max(counts, key=lambda k: counts[k])
+    return top if top != "swim" and counts[top] >= FOCUS_SHARE * total else "time"
+
+
+def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequence[Mapping[str, Any]],
+                  focus: str = "run") -> None:
+    """Planned km against km done for one week, and the runs nobody planned.
+
+    A ride plan counts its rides; a triathlon its training time, planned
+    against done, in minutes.
+    """
     start = date.fromisoformat(week["starts"])
     end = start + timedelta(days=7)
-    planned = sum(s.get("planned_km") or 0 for s in week["sessions"])
+    planned = sum(s.get("planned_km") or 0 for s in week["sessions"] if s.get("sport") == ("ride" if focus == "ride" else "run"))
     run = sum(a.metres for a in actual if a.sport == "run" and start <= a.day < end)
     week["planned_km"] = round(planned, 1) if planned else None
     week["run_km"] = round(run / 1000, 1)
+    if focus == "ride":
+        week["ride_km"] = round(sum(a.metres for a in actual if a.kind == "ride" and start <= a.day < end) / 1000, 1)
+    if focus == "time":
+        minutes = sum(s.get("planned_min") or 0 for s in week["sessions"])
+        week["planned_min"] = round(minutes) or None
+        week["done_min"] = round(sum(s.get("_done_seconds") or 0 for s in week["sessions"]) / 60)
     week["extra"] = [
         drop_empty({
             "date": row["date"],
@@ -1161,8 +1197,8 @@ def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequenc
         for row in extra
         if start <= date.fromisoformat(row["date"]) < end
     ] or None
-    for key in ("planned_km", "extra"):
-        if week[key] is None:
+    for key in ("planned_km", "extra", "planned_min"):
+        if key in week and week[key] is None:
             del week[key]
 
 
@@ -1235,6 +1271,7 @@ def summarise(
     week_one = monday_of(first)
     weeks: dict[int, dict[str, Any]] = {}
     rows: list[dict[str, Any]] = []
+    focus = plan_focus(sessions)
     for item in sessions:
         day = _day(item["date"])
         schedule_id = item.get("id")
@@ -1277,14 +1314,22 @@ def summarise(
                 "actual": duration(hit.get("actual_seconds")) if hit else None,
                 "workout_id": item.get("workoutId"),
                 "schedule_id": schedule_id,
-                # Distance only means something for a run: a timed strength
-                # session converted at running pace would add phantom km.
+                # Distance only means something for a run, or a ride in a
+                # ride plan: a timed strength session converted at running
+                # pace would add phantom km.
                 "planned_km": (
                     round(planned_metres[item.get("workoutId")] / 1000, 1)
                     if weekly_km and planned_metres.get(item.get("workoutId"))
-                    and category(item.get("sportTypeKey") or "running") == "run"
+                    and (category(sport_key) == "run" or focus == "ride" and is_ride(sport_key))
                     else None
                 ),
+                # A triathlon is measured in time: every session's, read
+                # from its workout.
+                "planned_min": (
+                    round(planned_seconds[wid] / 60)
+                    if focus == "time" and planned_seconds.get(wid) else None
+                ),
+                "_done_seconds": hit.get("actual_seconds") if focus == "time" and hit else None,
             }
         )
         rows.append(row)
@@ -1307,7 +1352,9 @@ def summarise(
         week["planned"] = len(statuses)
         week["current"] = week["starts"] == monday_of(today).isoformat()
         if weekly_km:
-            _add_distance(week, actual, verdict.extra)
+            _add_distance(week, actual, verdict.extra, focus)
+        for s in week["sessions"]:
+            s.pop("_done_seconds", None)
 
     past = [r for r in rows if r["status"] in ("done", "done, moved", "missed")]
     completed = sum(r["status"].startswith("done") for r in past)
@@ -1323,6 +1370,8 @@ def summarise(
         {
             "label": code,
             "goal": goal,
+            # What the weekly bars count, when it isn't run km.
+            "measure": {"ride": "ride_km", "time": "time"}.get(focus) if weekly_km else None,
             "phases": phase_spans(ordered_weeks),
             "starts": first.isoformat(),
             "ends": last.isoformat(),

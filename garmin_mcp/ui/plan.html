@@ -561,6 +561,17 @@
     return short(a) + " \u2013 " + short(b);
   }
   function fmtKm(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function fmtMin(n) { n = Math.round(n || 0); var h = Math.floor(n / 60), r = n % 60; return h ? h + "h" + (r ? " " + r + "m" : "") : r + "m"; }
+  // A week's total in the plan's own measure: km for a running or riding
+  // plan, training time for a triathlon, where km of each don't add up.
+  // Bare, for the top of a bar: the number alone, hours to a decimal.
+  function amt(n, bare) {
+    if (model && model.unit === "time") return bare ? fmtKm((n || 0) / 60) : fmtMin(n);
+    return bare ? fmtKm(n) : fmtKm(n) + " km";
+  }
+  function ofAmt(done, total) {
+    return model && model.unit === "time" ? fmtMin(done) + " of " + fmtMin(total) : fmtKm(done) + " of " + fmtKm(total) + " km";
+  }
   function sum(list, f) { return list.reduce(function (t, x) { return t + (f(x) || 0); }, 0); }
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -704,7 +715,7 @@
     var block = p.label ? p : (p.current_plan || null);
     var weeks = (p.weeks || []).map(function (w, i) {
       return { n: w.week || i + 1, wk: w.week || i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra),
-        planned: w.planned_km, run_km: w.run_km || 0, unread: w.unread || 0, current: !!w.current || w.starts === thisMonday };
+        planned: w.planned_km, run_km: w.run_km || 0, plannedMin: w.planned_min || 0, doneMin: w.done_min || 0, unread: w.unread || 0, current: !!w.current || w.starts === thisMonday };
     });
     if (p.source === "log") {
       var cur = weeks.filter(function (w) { return w.current; })[0] || weeks[weeks.length - 1];
@@ -720,7 +731,8 @@
       weeks.forEach(function (w, i) { w.n = i + 1; });
     }
     if (!weeks.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
-    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null, upcoming: p.label ? null : (p.upcoming_plan || null), phases: list(p.phases) }, p);
+    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null, upcoming: p.label ? null : (p.upcoming_plan || null), phases: list(p.phases),
+      unit: p.measure === "time" ? "time" : p.measure === "ride_km" ? "ride" : "km" }, p);
     var ci = weeks.findIndex(function (w) { return w.current; });
     if (ci < 0) ci = Math.max(0, weeks.findIndex(function (w) { return w.starts > today; }) - 1);
     if (ci < 0) ci = weeks.length - 1;
@@ -746,7 +758,11 @@
       w.ghosts = all.filter(function (s) { return s.status === "done, moved" && s.date >= w.starts && s.date < end && effDate(s) !== s.date; });
       var planned = w.rows.filter(function (s) { return !s.extra; });
       w.plannedKm = w.planned != null ? w.planned : Math.round(10 * sum(planned, function (s) { return s.planned_km; })) / 10;
-      w.doneKm = Math.round(10 * sum(w.rows.filter(isDone), function (s) { return s.actual_km; })) / 10;
+      // Done in the plan's own sport: a run plan's km are run km, a ride
+      // plan's ride km. A triathlon's are minutes, as the server sums them.
+      var sport = m.unit === "ride" ? "ride" : "run";
+      w.doneKm = Math.round(10 * sum(w.rows.filter(function (s) { return isDone(s) && (s.kind || s.sport) === sport; }), function (s) { return s.actual_km; })) / 10;
+      if (m.unit === "time") { w.plannedKm = w.plannedMin; w.doneKm = w.doneMin; }
       w.done = planned.filter(isDone).length;
       w.missed = planned.filter(function (s) { return s.status === "missed"; }).length;
       w.total = planned.length;
@@ -893,7 +909,7 @@
     if (m.mode !== "block") return [];
     var b = m.block, many = m.weeks.length > 6;
     var total = Math.round(sum(m.weeks, function (w) { return w.plannedKm; }));
-    var nodes = [{ a: "This block", b: many ? m.weeks.length + " weeks" : (total ? total + " km" : ""), cur: true }];
+    var nodes = [{ a: "This block", b: many ? m.weeks.length + " weeks" : (total ? amt(total) : ""), cur: true }];
     var marks = (b.milestones || []).slice(0, 4);
     if (marks.length) {
       marks.forEach(function (x) { nodes.push({ a: x.label, b: x.target || (x.date ? short(x.date) : "") }); });
@@ -959,9 +975,9 @@
         }
         var on = i === sel, h = Math.round((w.plannedKm || 0) / peakKm * MAX);
         var fill = w.plannedKm ? Math.round(h * Math.min(1, w.doneKm / w.plannedKm)) : 0;
-        bars.push(barEl({ km: many && !on ? "" : fmtKm(w.plannedKm || 0), h: h, cls: on ? "on" + (started && fill < h ? " started" : "") : "", on: on,
+        bars.push(barEl({ km: many && !on ? "" : amt(w.plannedKm || 0, true), h: h, cls: on ? "on" + (started && fill < h ? " started" : "") : "", on: on,
           fill: started ? fill : 0, lbl: weekLbl(w, i), dot: i === m.nextWeek, r4: many,
-          aria: "Week " + w.n + ", " + fmtKm(w.plannedKm || 0) + " km", onclick: function () { state.sel = i; render(raw); } }));
+          aria: "Week " + w.n + ", " + amt(w.plannedKm || 0), onclick: function () { state.sel = i; render(raw); } }));
       });
       cols = bars.length;
       var done = sum(m.weeks, function (w) { return w.done; }), total = sum(m.weeks, function (w) { return w.total; });
@@ -970,7 +986,7 @@
       var doneKm = Math.round(sum(m.weeks, function (w) { return w.doneKm; }));
       var firstDay = m.weeks[0].rows.length ? effDate(m.weeks[0].rows[0]) : m.block.starts;
       var rightTxt = !started ? "Starts " + DAYS[dow(firstDay)] + (between(m.today, firstDay) > 6 ? " " + short(firstDay) : "")
-        : many ? totalKm + " km \u00b7 peak " + Math.round(peakKm) : doneKm + " of " + totalKm + " km";
+        : many ? amt(totalKm) + " \u00b7 peak " + amt(Math.round(peakKm), m.unit !== "time") : ofAmt(doneKm, totalKm);
       // Done against what was due by now, not against the whole block: 17 of
       // 42 read as behind when it was 17 of the 18 so far. A session done
       // early was due the day it was done.
@@ -1011,7 +1027,7 @@
       el("div", { class: "legend" }, legend.map(function (k) {
         var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), t.l]);
       })),
-      unreadWeeks ? el("div", { class: "unread-note", text: "Dashed weeks are planned; their distances load as you open the plan again." }) : null,
+      unreadWeeks ? el("div", { class: "unread-note", text: "Dashed weeks are planned; their " + (m.unit === "time" ? "times" : "distances") + " load as you open the plan again." }) : null,
     ]);
   }
   function barEl(o) {
@@ -1028,8 +1044,8 @@
   function week(m) {
     var w = m.weeks[state.sel] || m.weeks[0];
     var isWeek = m.mode !== "block";
-    var kmTxt = w.doneKm > 0 && w.plannedKm ? fmtKm(w.doneKm) + " of " + fmtKm(w.plannedKm) + " km"
-      : w.plannedKm ? fmtKm(w.plannedKm) + " km" : (w.doneKm ? fmtKm(w.doneKm) + " km" : "");
+    var kmTxt = w.doneKm > 0 && w.plannedKm ? ofAmt(w.doneKm, w.plannedKm)
+      : w.plannedKm ? amt(w.plannedKm) : (w.doneKm ? amt(w.doneKm) : "");
     var meta = [range(w.starts, iso(addDays(parse(w.starts), 6))), kmTxt].filter(Boolean).join(" \u00b7 ");
     var away = !isWeek && m.nextWeek >= 0 && state.sel !== m.nextWeek;
     var head = el("div", { class: "week-head" }, [
@@ -1114,7 +1130,7 @@
           el("div", { class: "row-top" }, [el("span", { class: "miss" }), sportIcon(s), el("span", { class: "name muted", text: cleanTitle(s) })]),
           el("span", { class: "meta missed", text: "Missed" }),
         ]),
-        el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
+        el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + " km" : s.planned_min ? fmtMin(s.planned_min) : "" }),
       ]);
     }
     // Bars are to scale within the week, so the long run is the long one;
@@ -1127,7 +1143,7 @@
         el("div", { class: "row-top" }, [sportIcon(s), t.l ? el("span", { class: "type", style: "color:" + (t.t || t.v), text: t.l }) : null, el("span", { class: "name", text: cleanTitle(s) })]),
         shapeBar(s, false, share),
       ]),
-      el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : "" }),
+      el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : s.planned_min ? fmtMin(s.planned_min) : "" }),
     ]);
   }
   // ---------------------------------------------------------------- opening a session
@@ -1380,9 +1396,9 @@
     if (m.mode === "log") {
       lead = fmtKm(w.run_km) + " km"; label = kind === "now" ? "run so far this week" : "run";
     } else if (kind === "ahead" || kind === "now" && !w.done && !w.doneKm) {
-      lead = fmtKm(w.plannedKm) + " km"; label = "planned \u00b7 " + w.total + (w.total === 1 ? " session" : " sessions");
+      lead = amt(w.plannedKm); label = "planned \u00b7 " + w.total + (w.total === 1 ? " session" : " sessions");
     } else {
-      lead = (w.plannedKm ? fmtKm(w.doneKm) + " of " + fmtKm(w.plannedKm) : fmtKm(w.doneKm)) + " km";
+      lead = w.plannedKm ? ofAmt(w.doneKm, w.plannedKm) : amt(w.doneKm);
       label = w.done + " of " + w.total + " sessions done" + (w.missed ? " \u00b7 " + w.missed + " missed" : "");
     }
     var rows = w.rows.map(function (s) {

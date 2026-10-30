@@ -294,6 +294,18 @@ f.src = "card.html";</script></body>`);
       drawnLong.scrolls && drawnLong.seen, JSON.stringify(drawnLong));
     await page.close();
 
+    console.log("a triathlon plan");
+    ({ page, card } = await open({ label: "TRI", name: "70.3 build", goal: "Half Ironman", measure: "time", starts: md(7), ends: md(20),
+      weeks: [1, 2].map((n) => ({ week: n, starts: md(7 * n), planned_min: 420 + 60 * n, sessions: [
+        { date: md(7 * n), day: "Mon", name: "Swim 2km", type: "swim", sport: "swim", kind: "swim", status: "ahead", planned_min: 45 },
+        { date: md(7 * n + 1), day: "Tue", name: "Ride 90min", type: "easy", sport: "ride", kind: "ride", status: "ahead", planned_min: 90 },
+        { date: md(7 * n + 2), day: "Wed", name: "Run 10km", type: "easy", sport: "run", kind: "run", status: "ahead", planned_km: 10, planned_min: 50 }] })),
+      next_session: null, _card: SEEN }));
+    text = await card.evaluate(() => document.body.innerText);
+    check("a triathlon's weeks are drawn in hours, and its sessions in time or km",
+      /8h/.test(text) && /1h 30m/.test(text) && /10 km/.test(text) && !/480 km/.test(text), text.slice(0, 400));
+    await page.close();
+
     check("no page threw an error", errors.length === 0, errors.join(" | "));
   } finally {
     await browser.close();

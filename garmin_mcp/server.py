@@ -3080,7 +3080,7 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
         result = _mark_unread(await _with_next_steps(training_plan.summarise_calendar(
             sessions, activities, today, planned_seconds=seconds,
             planned_metres=metres, weekly_km=weekly_km, shapes=shapes, phases=phases, efforts=efforts,
-        )), metres)
+        )), metres, seconds)
         if context:
             key = "current_plan" if context.pop("running") else "upcoming_plan"
             result[key] = drop_empty({**context, "goal": goal, **meta})
@@ -3096,7 +3096,7 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     result = _mark_unread(await _with_next_steps(training_plan.summarise(
         code, sessions, activities, today, goal=goal, planned_seconds=seconds,
         shapes=shapes, phases=phases, efforts=efforts, **extra
-    )), metres)
+    )), metres, seconds)
     result.update(meta)
     if others:
         result["other_plans"] = others
@@ -3118,7 +3118,8 @@ def _plan_lookups(ids: list[Any]) -> list[Any]:
     return [wid for wid in ids if wid in known or wid in fresh]
 
 
-def _mark_unread(result: dict[str, Any], metres: dict[Any, float]) -> dict[str, Any]:
+def _mark_unread(result: dict[str, Any], metres: dict[Any, float],
+                 seconds: dict[Any, float] | None = None) -> dict[str, Any]:
     """Count, per week, the runs whose planned distance wasn't read this time,
     so the card shows those weeks as still to read rather than as empty.
 
@@ -3128,11 +3129,24 @@ def _mark_unread(result: dict[str, Any], metres: dict[Any, float]) -> dict[str, 
     banded again with the unread weeks known, so one isn't carried over
     weeks whose phase is still to read.
     """
+    if result.get("measure") == "time":
+        # A triathlon's bars are time, from every session's workout: the
+        # sessions whose workout wasn't read are the ones still to size.
+        for week in result.get("weeks") or []:
+            unread = sum(1 for s in week.get("sessions") or []
+                         if s.get("workout_id") is not None and s.get("workout_id") not in (seconds or {}))
+            week.pop("unread", None)
+            if unread and not week.get("planned_min"):
+                week["unread"] = unread
+        if result.get("phases"):
+            result["phases"] = training_plan.phase_spans(result["weeks"])
+        return result
+    sized = "ride" if result.get("measure") == "ride_km" else "run"
     unsized: dict[int, int] = {}
     for i, week in enumerate(result.get("weeks") or []):
         unread = 0
         for s in week.get("sessions") or []:
-            if not (s.get("kind", s.get("sport")) == "run" and s.get("planned_km") is None
+            if not (s.get("kind", s.get("sport")) == sized and s.get("planned_km") is None
                     and s.get("workout_id") is not None and s.get("workout_id") not in metres):
                 continue
             unread += 1

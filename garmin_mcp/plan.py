@@ -50,7 +50,7 @@ def category(type_key: str) -> str:
     return "other"
 
 
-def planned_distance_m(workout: dict[str, Any]) -> float:
+def planned_distance_m(workout: dict[str, Any], speed_mps: float | None = None) -> float:
     """Estimate how far a scheduled workout is, by walking its steps.
 
     Garmin's calendar carries no distance for a planned session, so it has to be
@@ -75,7 +75,7 @@ def planned_distance_m(workout: dict[str, Any]) -> float:
             elif condition == "time":
                 one, two = step.get("targetValueOne"), step.get("targetValueTwo")
                 target = (step.get("targetType") or {}).get("workoutTargetTypeKey")
-                speed = (one + two) / 2 if target == "pace.zone" and one and two else DEFAULT_MPS
+                speed = (one + two) / 2 if target == "pace.zone" and one and two else speed_mps or DEFAULT_MPS
                 total += value * speed
 
     segments = workout.get("workoutSegments") or []

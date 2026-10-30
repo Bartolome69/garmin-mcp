@@ -1801,6 +1801,29 @@ async def main() -> int:
         check("a week not read yet takes its runs' distances from their names, and only the rest stay dashed",
               w2.get("planned_km") == 32.0 and w2["sessions"][0].get("km_from_name") and w2.get("unread") == 1
               and w3.get("unread") == 1 and not w3.get("planned_km"), str(guessed["weeks"]))
+        # A triathlon's weeks are its training time; a running or riding
+        # plan's stay its km, a runner's odd spin aside.
+        from datetime import date as _pd, timedelta as _pt
+        _monday = _tp.monday_of(_pd.today()) + _pt(weeks=1)
+        _on = lambda n: (_monday + _pt(days=n)).isoformat()
+        tri = [{"date": _on(0), "id": 1, "workoutId": 11, "title": "Swim 2km \u00b7 TRI", "sportTypeKey": "lap_swimming"},
+               {"date": _on(1), "id": 2, "workoutId": 12, "title": "Ride 90min \u00b7 TRI", "sportTypeKey": "cycling"},
+               {"date": _on(2), "id": 3, "workoutId": 13, "title": "Run 10km \u00b7 TRI", "sportTypeKey": "running"},
+               {"date": _on(3), "id": 4, "workoutId": 14, "title": "Gym \u00b7 TRI", "sportTypeKey": "strength_training"}]
+        tri_plan = _tp.summarise("TRI", tri, [], _pd.today(), planned_seconds={11: 2400, 12: 5400, 13: 3000, 14: 1800},
+                                 planned_metres={11: 2000, 12: 40000, 13: 10000}, weekly_km=True)
+        ride_plan = _tp.summarise("RD", [dict(i, sportTypeKey="cycling") for i in tri[:3]], [], _pd.today(),
+                                  planned_metres={11: 30000, 12: 40000, 13: 50000}, weekly_km=True)
+        check("a triathlon is measured in training time, every session's, a ride plan in ride km, a run plan in run km",
+              tri_plan.get("measure") == "time" and tri_plan["weeks"][0].get("planned_min") == 210
+              and tri_plan["weeks"][0]["sessions"][1].get("planned_min") == 90
+              and ride_plan.get("measure") == "ride_km" and ride_plan["weeks"][0].get("planned_km") == 120.0
+              and _tp.plan_focus([{"sportTypeKey": "running"}] * 9 + [{"sportTypeKey": "cycling"}]) == "run"
+              and _tp.plan_focus([{"sportTypeKey": "lap_swimming"}] * 3) == "time",
+              f"{tri_plan.get('measure')} {tri_plan['weeks'][0]} {ride_plan.get('measure')}")
+        check("and a ride's timed steps are counted at riding speed, not running",
+              _tp.planned_metres({"sportType": {"sportTypeKey": "cycling"}, "workoutSegments": [{"workoutSteps": [
+                  {"endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 3600}]}]}) == 3600 * _tp.RIDE_MPS)
         check("and a phase isn't carried over weeks whose phase is still to read",
               guessed["phases"] == [{"label": "Base", "from_week": 1, "to_week": 1},
                                     {"label": "Taper", "from_week": 4, "to_week": 4}], str(guessed["phases"]))
