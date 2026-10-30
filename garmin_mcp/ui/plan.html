@@ -250,8 +250,22 @@
 // what the host called itself, and any error. Shown only if the plan hasn't
 // appeared after a few seconds, and removed the moment it does.
 (function () {
-  var d = window.__planDiag = { steps: [], errors: [], host: "", rendered: false, gotResult: false, initOk: false };
+  var d = window.__planDiag = { steps: [], errors: [], host: "", rendered: false, gotResult: false, initOk: false,
+    seen: "", told: "", start: Date.now() };
+  // Once per answer, when the card has drawn it or has failed to: tells Daash
+  // which, on the link the answer carried. The plan the card fetches for itself
+  // carries its own link. Nothing else leaves the frame.
+  function tell() {
+    if (!d.seen || d.told === d.seen || !window.fetch) return;
+    d.told = d.seen;
+    try {
+      fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "plan", ok: d.rendered && !d.errors.length, ms: Date.now() - d.start, host: d.host,
+        error: d.errors.join("; "), steps: d.steps.join(" > ") }) }).catch(function () {});
+    } catch (e) {}
+  }
   function show() {
+    tell();
     var box = document.getElementById("diag");
     if (!box) return;
     if (d.rendered && !d.errors.length) { box.hidden = true; return; }
@@ -280,9 +294,22 @@
   window.addEventListener("unhandledrejection", function (e) {
     d.fail((e.reason && e.reason.message) || "promise rejected");
   });
-  setTimeout(show, 8000);
+  // Before the plan arrives there is no link of its own to report on, so the
+  // card says it opened, and if it's still waiting at 8 seconds, how far it
+  // got, to the address the hosted server writes in. Nothing names anyone.
+  function early(stage) {
+    var at = window.__DAASH_CARD_OPENED__;
+    if (!at || !window.fetch) return;
+    try {
+      fetch(at, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "plan", stage: stage, ms: Date.now() - d.start, host: d.host, error: d.errors.join("; "),
+        steps: d.steps.join(" > ") }) }).catch(function () {});
+    } catch (e) {}
+  }
+  setTimeout(function () { if (!d.gotResult) early("waiting"); show(); }, 8000);
   setTimeout(show, 30000);
   d.step("page");
+  early("opened");
 })();
 </script>
 <script>
@@ -443,6 +470,8 @@
   }
 
   function onResult(result) {
+    var answer = planOf(result);
+    if (answer && typeof answer._card === "string") D.seen = answer._card;
     try { showResult(result); } catch (e) { D.fail("drawing: " + (e && e.message)); }
     reportSize();
   }
@@ -827,7 +856,10 @@
     if (isWeek) {
       var w0 = m.weeks[0];
       var hist = m.history || [];
-      var thisKm = m.mode === "log" ? w0.run_km : (w0.plannedKm || 0);
+      // A week with nothing planned (Garmin's official API shows only what
+      // Daash scheduled) draws what was run, as the log does.
+      var asRun = m.mode === "log" || !w0.plannedKm;
+      var thisKm = asRun ? (w0.run_km || 0) : w0.plannedKm;
       var peak = Math.max.apply(null, hist.map(function (h) { return h.run_km || 0; }).concat([thisKm, 1]));
       var avg = hist.length ? sum(hist, function (h) { return h.run_km; }) / hist.length : 0;
       hist.forEach(function (h, i) {
@@ -837,9 +869,9 @@
       cols = bars.length;
       var right = "";
       // A week in progress isn't compared with finished ones.
-      if (avg > 0 && thisKm > 0 && m.mode !== "log") { var pct = Math.round((thisKm / avg - 1) * 100); right = (pct >= 0 ? "+" : "") + pct + "% on your " + hist.length + "-week average"; }
+      if (avg > 0 && thisKm > 0 && !asRun) { var pct = Math.round((thisKm / avg - 1) * 100); right = (pct >= 0 ? "+" : "") + pct + "% on your " + hist.length + "-week average"; }
       else if (avg > 0) right = fmtKm(Math.round(avg)) + " km a week lately";
-      stats = { lead: fmtKm(thisKm) + " km", left: m.mode === "log" ? "so far this week" : "planned", right: right };
+      stats = { lead: fmtKm(thisKm) + " km", left: asRun ? "so far this week" : "planned", right: right };
     } else {
       var peakKm = Math.max.apply(null, kms.concat([1]));
       var started = m.today >= m.block.starts;
@@ -1039,15 +1071,19 @@
   function fillDetail(panel, s, kind) {
     var key = (kind === "done" ? "a:" + s.activity_id : "w:" + s.workout_id);
     var name = cleanTitle(s), when = DAYS[dow(effDate(s))] + " " + parse(effDate(s)).getDate() + " " + MONTHS[parse(effDate(s)).getMonth()];
+    // A gym session or a swim isn't a run.
+    var sort = s.kind || s.sport, noun = { run: "run", ride: "ride", swim: "swim" }[sort] || "activity";
     var askBtn = kind === "done"
-      ? el("button", { class: "act", onclick: function (e) { ask("Tell me about my " + name + " on " + when + ": how it went, and what to take from it.", e.currentTarget); } }, ["Ask about this run"])
+      ? el("button", { class: "act", onclick: function (e) { ask("Tell me about my " + name + " on " + when + ": how it went, and what to take from it.", e.currentTarget); } }, ["Ask about this " + noun])
       : el("button", { class: "act", onclick: function (e) { ask("What is my " + name + " on " + when + " for, and what should it feel like?", e.currentTarget); } }, ["Ask about it"]);
     function draw(p) {
       panel.textContent = "";
       var parts = kind === "done" ? doneDetail(p, s) : plannedDetail(p);
       parts.forEach(function (x) { if (x) panel.appendChild(x); });
-      var shareBtn = kind === "done" && p && canShare()
-        ? el("button", { class: "act", onclick: function (e) { shareRun(p, s, e.currentTarget); } }, ["Share this run"]) : null;
+      // The share image is drawn from distance, pace and laps, so a strength
+      // session has nothing to put on it.
+      var shareBtn = kind === "done" && p && canShare() && sort !== "strength"
+        ? el("button", { class: "act", onclick: function (e) { shareRun(p, s, e.currentTarget); } }, ["Share this " + noun]) : null;
       panel.appendChild(shareBtn ? el("div", { class: "acts" }, [askBtn, shareBtn]) : askBtn);
       reportSize();
     }
@@ -1277,7 +1313,7 @@
     var data = { v: 1, k: kind, t: title, s: sub, w: w.starts, a: [lead, label], r: rows };
     // Without a plan, only a day already gone can be called a rest day.
     if (m.mode === "log" && kind === "now") data.u = dow(m.today);
-    if (m.mode !== "block" && m.history && m.history.length) data.h = m.history.map(function (h) { return Math.round((h.run_km || 0) * 10) / 10; }).concat([Math.round((m.mode === "log" ? w.run_km : w.plannedKm || 0) * 10) / 10]);
+    if (m.mode !== "block" && m.history && m.history.length) data.h = m.history.map(function (h) { return Math.round((h.run_km || 0) * 10) / 10; }).concat([Math.round((m.mode === "log" || !w.plannedKm ? w.run_km || 0 : w.plannedKm) * 10) / 10]);
     return data;
   }
   // The whole plan rides along for the share page's PDF and its

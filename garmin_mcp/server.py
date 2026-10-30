@@ -43,9 +43,9 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
+from . import analytics, conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
-from .session import GarminError, session
+from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
 from .workouts import (
     SPORTS,
@@ -957,29 +957,58 @@ def _app_tool(view: str, note: str = VIEW_NOTE):
     return register
 
 
+def _view_meta() -> dict[str, Any] | None:
+    """What a view may reach outside its frame: the hosted server, and only to
+    say whether the card drew. Nothing on a server run at home."""
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        return None
+    return {"ui": {"csp": {"connectDomains": [base]}}}
+
+
+def _with_opened_address(page: str) -> str:
+    """The view as served, told where to say it opened, on the hosted server only.
+
+    The view reports drawing on a link its answer carries; before the answer
+    arrives it has none, so the address it reports opening to is written in.
+    """
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        return page
+    script = f"<script>window.__DAASH_CARD_OPENED__ = {json.dumps(base + '/card/opened')};</script>\n"
+    return page.replace("<script>", script + "<script>", 1)
+
+
 def _app_view(uri: str, filename: str, description: str) -> None:
     def read() -> str:
-        return (_UI / filename).read_text(encoding="utf-8")
+        hooks.view_read(name)
+        return _with_opened_address((_UI / filename).read_text(encoding="utf-8"))
 
-    read.__name__ = filename.split(".")[0] + "_view"
+    name = filename.split(".")[0]
+    read.__name__ = name + "_view"
+    meta = _view_meta()
+
+    def resource(at: str, fn) -> None:
+        # An SDK too old for resource meta still serves the view, without it.
+        try:
+            mcp.resource(at, name=fn.__name__, description=description, mime_type=APP_MIME, meta=meta)(fn)
+        except TypeError:
+            mcp.resource(at, name=fn.__name__, description=description, mime_type=APP_MIME)(fn)
+
     try:
-        mcp.resource(uri, name=read.__name__, description=description, mime_type=APP_MIME)(read)
+        resource(uri, read)
     except TypeError:
         return
 
     # A chat that kept an older tool list asks for an older address. It gets
     # the view as it is now rather than nothing, so a change never breaks one.
     def read_any(version: str) -> str:
-        return read()
+        hooks.view_read(name, version)
+        return _with_opened_address((_UI / filename).read_text(encoding="utf-8"))
 
     read_any.__name__ = read.__name__ + "_any_version"
     try:
-        mcp.resource(
-            uri.rsplit("/", 1)[0] + "/{version}",
-            name=read_any.__name__,
-            description=description,
-            mime_type=APP_MIME,
-        )(read_any)
+        resource(uri.rsplit("/", 1)[0] + "/{version}", read_any)
     except (TypeError, ValueError):
         log.debug("view template not registered", exc_info=True)
 
@@ -2940,12 +2969,13 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     if week_mode:
         since = min(since, training_plan.monday_of(today) - timedelta(weeks=HISTORY_WEEKS))
 
+    # The calendar view runs to this week even when its last session has
+    # passed, so its runs are read up to today.
     activities: list[dict[str, Any]] = []
     if first <= today:
+        until = today if code is None else min(today, last + timedelta(days=1))
         activities = await _call(
-            lambda c: c.get_activities_by_date(
-                since.isoformat(), min(today, last + timedelta(days=1)).isoformat()
-            )
+            lambda c: c.get_activities_by_date(since.isoformat(), until.isoformat())
         ) or []
 
     if weekly_km:
@@ -3061,6 +3091,35 @@ async def _with_next_steps(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+# Garmin's own export of everything an account holds, which the official API
+# can't send. On the hosted server the link goes by way of /garmin-export, so
+# the clicks are counted; that count says whether an import is worth building.
+GARMIN_EXPORT = "https://www.garmin.com/account/datamanagement/exportdata/"
+
+
+def _export_link() -> str:
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    return f"{base}/garmin-export" if base else GARMIN_EXPORT
+
+
+GARMIN_ACTIVITIES = "https://connect.garmin.com/modern/activities"
+
+
+def _export_offer() -> str:
+    # The activities list's Export CSV (on a computer, not Connect's phone
+    # layout) is instant but holds only the rows loaded on the page: Oct 29,
+    # one with the page left as it opened held 20, from three weeks back.
+    return (
+        "For their earlier runs, two ways, offered once, briefly, with the links. Quickest, on "
+        f"a computer: Garmin Connect's activities list ({GARMIN_ACTIVITIES}), scroll down until "
+        "the oldest runs they want have loaded, press Export CSV at the top right, and drop the "
+        "file into this chat. For everything, they can ask Garmin for an export of their data "
+        f"({_export_link()}): Garmin emails a download link, usually within a day or two, and "
+        "its activities file is in the zip's DI_CONNECT/DI-Connect-Fitness folder, the one "
+        "ending summarizedActivities.json. Either file lets you read their past runs."
+    )
+
+
 async def _training_log(today: date_cls) -> dict[str, Any]:
     first = training_plan.monday_of(today) - timedelta(weeks=training_plan.LOG_WEEKS - 1)
     activities = await _call(
@@ -3085,7 +3144,7 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
                     f"Connected through Garmin's official API on {since}. Garmin sends training from "
                     "then on, as the watch syncs, so earlier runs aren't here and nothing has arrived "
                     "yet. Say so in a sentence, then offer to build a plan and put it on their watch. "
-                    + ask_first
+                    + ask_first + " " + _export_offer()
                 )
             }
         return {
@@ -3099,6 +3158,7 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
         summary["note"] = (
             f"Connected through Garmin's official API on {since}: Garmin sends training from then on, "
             "so the weeks before that look empty here but weren't. Say so once, in a sentence. " + ask_first
+            + " " + _export_offer()
         )
     return summary
 
@@ -3714,9 +3774,30 @@ async def _weekly_email_test(user_token: str) -> dict[str, Any]:
     return {"sent_to": user.email_masked, "as_of_monday": monday.isoformat(), "subject": subject}
 
 
+def _friends_action(action: str, emails: str) -> dict[str, Any]:
+    named = [e.strip() for e in (emails or "").split(",") if "@" in e]
+    if action != "friends" and not named:
+        return {"error": "Give the addresses in `emails`, separated by commas."}
+    if action == "add_friends":
+        changed = store.add_friends([(e, mask_email(e) or "hidden") for e in named])
+    elif action == "remove_friends":
+        changed = store.remove_friends(named)
+    else:
+        changed = 0
+    analytics.forget_friends()
+    listed = [masked for _, masked in store.friends()]
+    return drop_empty({
+        "friends": listed, "count": len(listed),
+        "added": changed if action == "add_friends" else None,
+        "removed": changed if action == "remove_friends" else None,
+        "note": "Each one's PostHog profile is marked friend from their next use of Daash, "
+                "so the friends cohort fills as they come back.",
+    })
+
+
 @mcp.tool()
 @tool_errors
-async def garmin_official(action: str = "status", date: str = "tomorrow") -> dict[str, Any]:
+async def garmin_official(action: str = "status", date: str = "tomorrow", emails: str = "") -> dict[str, Any]:
     """Preview: Daash on Garmin's official API, tried with your own account first.
 
     Args:
@@ -3734,13 +3815,20 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             `date` for the following six weeks, to see whether it lists only
             what Daash scheduled or everything on the calendar;
             "weekly_email" sends this account's Monday email to its own
-            address now, as it would go out next Monday.
+            address now, as it would go out next Monday; "friends" lists
+            Bart's friends using Daash, and "add_friends" or
+            "remove_friends" changes that list from `emails`. A friend's
+            PostHog profile is marked friend, for the friends cohort.
         date: For test_workout, the day to schedule it on.
+        emails: For add_friends and remove_friends, addresses separated by
+            commas.
     """
     user_token = official.current()
     action = (action or "status").strip().lower()
     if action == "weekly_email" and user_token:
         return await _weekly_email_test(user_token)
+    if action in ("friends", "add_friends", "remove_friends"):
+        return _friends_action(action, emails)
     if user_token is None or not official.configured():
         return {"error": "Garmin's official API is only on the hosted server, once it's set up there."}
     if action in ("status", "connect"):

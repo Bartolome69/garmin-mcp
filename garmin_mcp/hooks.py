@@ -65,3 +65,19 @@ def after_tool(name: str, result: Any, seconds: float | None = None) -> Any:
     except Exception:  # noqa: BLE001 - a reporting hiccup must not lose an answer
         log.debug("tool hook failed for %s", name, exc_info=True)
         return result
+
+
+# Told whenever a chat app fetches a card's view, with which view and the
+# version it asked for (None for the current address). Set once by the hosted
+# server, to see how long after an answer the app asks for its card; it must
+# return at once, since the card waits on this read.
+on_view: Callable[[str, "str | None"], None] | None = None
+
+
+def view_read(name: str, version: str | None = None) -> None:
+    if on_view is None:
+        return
+    try:
+        on_view(name, version)
+    except Exception:  # noqa: BLE001 - counting a read must never stop the card
+        log.debug("view read hook failed", exc_info=True)

@@ -654,6 +654,41 @@ async def main() -> int:
         check("nor is a read sent alongside get_plan held back",
               hosted._before_tool_for(subject_of(listed_token), alone=True)("get_sleep_data") == 0.0)
 
+        print("\nGarmin's page first, then a password on another device")
+        # Oct 30: approved on Garmin's page on a tablet, then signed in with a
+        # password on a phone, and kept reading from the official API alone.
+        both = store.save_official_user("g-both", {"access_token": "t"}, ["ACTIVITY_EXPORT"])
+        both_hash = store.set_user_email(both, "both@example.com", "b***@example.com")
+        check("an account from Garmin's page reads from the official API alone",
+              not store.has_connect(both) and store.official_only(both) == "g-both")
+        again = store.save_user("b***@example.com", json.dumps({"di_token": "both"}), user_token=both,
+                                email_hash=both_hash, email="both@example.com")
+        check("signing in with a password on top reads Garmin Connect, keeping the Garmin link",
+              again == both and store.has_connect(both) and store.official_only(both) is None
+              and store.official_link(both) is not None)
+        stuck = store.save_official_user("g-stuck", {"access_token": "t"}, ["ACTIVITY_EXPORT"])
+        with store._connect() as conn:  # as the bug left them: a session stored, the mark kept
+            conn.execute("UPDATE users SET token_blob = ? WHERE user_token = ?",
+                         (store._cipher().encrypt(b'{"di_token": "stuck"}'), stuck))
+        alone = store.save_official_user("g-alone", {"access_token": "t"}, ["ACTIVITY_EXPORT"])
+        # The other way the bug left them: a fresh row from the password
+        # sign-in, with the link and its mark carried onto it.
+        carried = store.save_user("c***@example.com", json.dumps({"di_token": "carried"}))
+        with store._connect() as conn:
+            conn.execute("INSERT INTO official_links (user_token, garmin_user_id, tokens_enc, permissions, created_at, "
+                         "updated_at, official_only) VALUES (?, 'g-carried', ?, '[]', 0, 0, 1)",
+                         (carried, store._cipher().encrypt(b"{}")))
+        with store._connect() as conn:  # the first start since this repair arrived
+            conn.execute("DELETE FROM repairs WHERE name = 'official_only_carried'")
+        repaired = store.repair_password_on_official()
+        check("accounts already stuck either way are repaired, and true official-only ones left alone",
+              repaired == 2 and store.has_connect(stuck) and store.official_only(stuck) is None
+              and store.official_only(carried) is None
+              and not store.has_connect(alone) and store.official_only(alone) == "g-alone", str(repaired))
+        store.set_official_only(carried, True)
+        check("and the carried-over repair runs once, so the preview's own switch survives a restart",
+              store.repair_password_on_official() == 0 and store.official_only(carried) == "g-carried")
+
         print("\ncounting against Garmin's user limit")
         counted = hosted.report_official_users()
         sent = [p for e, p in reported if e == "official_users"][-1:]
@@ -668,15 +703,24 @@ async def main() -> int:
               "Continue with Garmin" in refused and f"/official/signup?flow={urllib.parse.quote(flow_b, safe='')}&amp;via=blocked" in refused)
         check("and so does Garmin asking for a pause",
               "Continue with Garmin" in hosted._signin_error(Exception("429 Too Many Requests"), flow_b, paused=True))
-        check("but not a wrong password, nor a paused account, nor a page with no request behind it",
-              "Continue with Garmin" not in hosted._signin_error(Exception("401 Unauthorized"), flow_b)
-              and "Continue with Garmin" not in hosted._signin_error(Exception("403"), flow_b, account_paused=True)
-              and "Continue with Garmin" not in hosted._signin_error(Exception("403"), "", paused=False))
+        # Oct 29: a wrong password, then Garmin's lock, then gone. Garmin's
+        # page needs no password from someone signed in to Garmin already.
+        wrong = hosted._signin_error(Exception("401 Unauthorized"), flow_b)
+        locked = hosted._signin_error(Exception("403"), flow_b, account_paused=True)
+        check("so do a wrong password and Garmin's lock after one, each counted as such",
+              "Continue with Garmin" in wrong and "via=password" in wrong and "reset your password" in wrong
+              and "Continue with Garmin" in locked and "via=paused" in locked and "no wait" not in locked)
+        check("but not a page with no request behind it",
+              "Continue with Garmin" not in hosted._signin_error(Exception("403"), "", paused=False))
         _, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow_b)}&via=blocked"))
         check("taking it goes to Garmin, and is counted as coming from a refusal",
               "garmin" in headers.get("location", "")
               and [p for e, p in reported if e == "garmin_sign_in_started"][-1].get("via") == "blocked",
               str([p for e, p in reported if e == "garmin_sign_in_started"][-1:]))
+        flow_w, _ = await start()
+        await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(flow_w)}&via=paused"))
+        check("and from a lock, as a lock",
+              [p for e, p in reported if e == "garmin_sign_in_started"][-1].get("via") == "paused")
 
         print("\nwhen Garmin won't list what the account shared")
         official.time.sleep = lambda _s: None

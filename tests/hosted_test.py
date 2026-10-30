@@ -1628,6 +1628,142 @@ async def main() -> int:
               code == 302 and location == weekly.ask_link("Claude", "plan")
               and not any(e["event"] == "weekly_email_clicked" for e in SENT[before:]), f"{code} {location}")
 
+        # A card answer carries the link the card reports back to once it has
+        # drawn, so a card sent and never shown can be counted.
+        erin_hash = store.email_fingerprint("erin@example.com")
+        erin = store.save_user("e***@example.com", json.dumps({"di_token": "erin"}),
+                               email_hash=erin_hash, email="erin@example.com")
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        try:
+            before = len(SENT)
+            plan_answer = await call(erin, "get_plan")
+            await asyncio.sleep(0.3)
+            link = plan_answer.get("_card", "")
+            sent = [e for e in SENT[before:] if e["event"] == "card_sent"]
+            check("a plan answer carries the card's report-back link, and the sending is counted",
+                  link.startswith(f"{base}/card/seen?u={erin_hash}&") and len(sent) == 1
+                  and sent[0]["properties"]["tool"] == "get_plan" and f"v={sent[0]['properties']['view']}" in link
+                  and erin not in link, f"{link} {sent}")
+            day_answer = await call(erin, "get_daily_summary", {"date": "2026-09-22"})
+            check("an answer without a card carries no link", "_card" not in day_answer)
+        finally:
+            os.environ.pop("GARMIN_MCP_BASE_URL", None)
+
+        def post_text(url: str, body: str) -> int:
+            import urllib.request
+            req = urllib.request.Request(url, data=body.encode(), headers={"content-type": "text/plain;charset=UTF-8"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return r.status
+
+        before = len(SENT)
+        code = await anyio_run(post_text, link, json.dumps(
+            {"card": "plan", "ok": True, "ms": 1840, "host": "Claude 1.0 android dark inline", "steps": "page > init sent"}))
+        await asyncio.sleep(0.3)
+        shown = [e for e in SENT[before:] if e["event"] == "card_shown"]
+        check("the card's report is recorded against the person, with the app and how long it took",
+              code == 204 and len(shown) == 1 and shown[0]["distinct_id"] == analytics.distinct_id(erin_hash)
+              and {k: shown[0]["properties"].get(k) for k in ("card", "ok", "seconds", "app")}
+              == {"card": "plan", "ok": True, "seconds": 1.8, "app": "Claude 1.0 android dark inline"}, str(shown)[:300])
+        before = len(SENT)
+        forged = link.rsplit("&s=", 1)[0] + "&s=" + "0" * 16
+        code = await anyio_run(post_text, forged, json.dumps({"ok": False}))
+        code_junk = await anyio_run(post_text, link, "not json")
+        await asyncio.sleep(0.3)
+        shown = [e for e in SENT[before:] if e["event"] == "card_shown"]
+        check("a forged link records nothing, and a garbled report still counts as not drawn",
+              code == 204 and code_junk == 204 and len(shown) == 1 and shown[0]["properties"]["ok"] is False, str(shown)[:300])
+        # Someone on Garmin's official API alone is told how to get their full
+        # history, by way of a link that counts the click.
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        offer = garmin_server._export_offer()
+        os.environ.pop("GARMIN_MCP_BASE_URL", None)
+        before = len(SENT)
+        code, location = await anyio_run(no_follow, "/garmin-export")
+        await asyncio.sleep(0.3)
+        check("the export suggestion links through Daash, which counts the click and goes on to Garmin",
+              f"{base}/garmin-export" in offer and "summarizedActivities.json" in offer
+              and "Export CSV" in offer and "scroll down" in offer
+              and code == 302 and location == garmin_server.GARMIN_EXPORT
+              and [e["event"] for e in SENT[before:]] == ["garmin_export_clicked"]
+              and garmin_server._export_offer().count(garmin_server.GARMIN_EXPORT) == 1, f"{code} {location} {offer}")
+
+        # Before its answer arrives a card says it opened, or that it is
+        # still waiting, to an address written into it, naming no one.
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        served = garmin_server._with_opened_address("<html><script>x()</script><script>y()</script>")
+        os.environ.pop("GARMIN_MCP_BASE_URL", None)
+        check("the hosted view is told where to say it opened, before its own script, and only there",
+              served.index(f'"{base}/card/opened"') < served.index("x()") and served.count("__DAASH_CARD_OPENED__") == 1
+              and garmin_server._with_opened_address("<script>x()</script>") == "<script>x()</script>", served)
+        before = len(SENT)
+        codes = [await anyio_run(post_text, f"{base}/card/opened", json.dumps(b)) for b in (
+            {"card": "plan", "stage": "opened", "ms": 40},
+            {"card": "plan", "stage": "waiting", "ms": 8000, "host": "ClaudeAndroid 1.2 mobile", "steps": "page > init sent"},
+            {"card": "plan", "stage": "elsewhere"})]
+        await asyncio.sleep(0.3)
+        early = [(e["event"], e["distinct_id"], e["properties"].get("seconds"), e["properties"].get("app")) for e in SENT[before:]]
+        check("an opened card and one still waiting are counted for no one, anything else not at all",
+              codes == [204, 204, 204] and early == [("card_opened", "anonymous", 0.0, None),
+                                                    ("card_waiting", "anonymous", 8.0, "ClaudeAndroid 1.2 mobile")], str(early))
+
+        # A chat app fetching a card's view is noted for no one, at once, and
+        # an older address is noted as such.
+        before = len(SENT)
+        older = garmin_server.PLAN_VIEW.rsplit("/", 1)[0] + "/0000000000"
+        async with streamable_http_client(f"{base}/u/{erin}/mcp") as (r, w):
+            async with ClientSession(r, w) as sess:
+                await sess.initialize()
+                started = time.perf_counter()
+                current = await sess.read_resource(garmin_server.PLAN_VIEW)
+                took = time.perf_counter() - started
+                kept = await sess.read_resource(older)
+        await asyncio.sleep(0.3)
+        reads = [(e["distinct_id"], e["properties"].get("card"), e["properties"].get("older_address"))
+                 for e in SENT[before:] if e["event"] == "card_view_read"]
+        check("fetching a card's view is counted for no one, the older address as such, and served as before",
+              reads == [("anonymous", "plan", None), ("anonymous", "plan", True)]
+              and "Loading your plan" in current.contents[0].text and "Loading your plan" in kept.contents[0].text
+              and took < 1.0, f"{reads} {took:.2f}s")
+
+        # Bart's friends, named only in a secret, get a PostHog profile marked
+        # friend; nobody else gets a profile at all.
+        os.environ["GARMIN_MCP_FRIENDS"] = " Erin@Example.com , someone@example.com"
+        analytics.forget_friends()
+        try:
+            before = len(SENT)
+            analytics.capture("friend_check", erin_hash, {"$process_person_profile": False})
+            analytics.capture("friend_check", store.email_fingerprint("stranger@example.com"), {})
+            analytics.capture("friend_check", None, {})
+            await asyncio.sleep(0.3)
+        finally:
+            os.environ.pop("GARMIN_MCP_FRIENDS", None)
+            analytics.forget_friends()
+        seen = [(e["properties"]["$process_person_profile"], e["properties"].get("$set")) for e in SENT[before:]
+                if e["event"] == "friend_check"]
+        check("a friend's events build a profile marked friend, anyone else's none",
+              seen == [(True, {"friend": True}), (False, None), (False, None)], str(seen))
+        # Friends named from a chat, with no secret to edit.
+        named = garmin_server._friends_action("add_friends", " Bob@Example.com, not-an-address , carol@example.com")
+        again = garmin_server._friends_action("add_friends", "bob@example.com")
+        before = len(SENT)
+        analytics.capture("friend_check", store.email_fingerprint("bob@example.com"), {})
+        await asyncio.sleep(0.3)
+        marked = [e["properties"].get("$set") for e in SENT[before:] if e["event"] == "friend_check"]
+        gone = garmin_server._friends_action("remove_friends", "carol@example.com")
+        check("friends are added from a chat, once each, marked at once, and removed the same way",
+              named.get("added") == 2 and again.get("added") == 0 and named["count"] == 2
+              and marked == [{"friend": True}] and gone.get("removed") == 1 and gone["count"] == 1
+              and "bob@example.com" not in str(named) and garmin_server._friends_action("add_friends", "").get("error"),
+              f"{named} {again} {marked} {gone}")
+        garmin_server._friends_action("remove_friends", "bob@example.com")
+
+        at_home = garmin_server._view_meta()
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        hosted_meta = garmin_server._view_meta()
+        os.environ.pop("GARMIN_MCP_BASE_URL", None)
+        check("the cards may send only to the hosted server, and only when it has an address",
+              at_home is None and hosted_meta == {"ui": {"csp": {"connectDomains": [base]}}}, str(hosted_meta))
+
         # Daash Crews. Three people of their own, so nothing above is touched:
         # Carol and Dave signed in with addresses kept, Bob's row predates that.
         from datetime import date as _date, timedelta as _td

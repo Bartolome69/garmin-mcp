@@ -188,10 +188,14 @@ jobs:
           GARMIN_OFFICIAL_CLIENT_ID: ${{ secrets.GARMIN_OFFICIAL_CLIENT_ID }}
           GARMIN_OFFICIAL_CLIENT_SECRET: ${{ secrets.GARMIN_OFFICIAL_CLIENT_SECRET }}
           GARMIN_MCP_PREVIEW: ${{ secrets.GARMIN_MCP_PREVIEW }}
+          # Bart's friends' addresses, comma-separated: their PostHog profiles
+          # are marked friend (analytics.py). Kept out of the public code.
+          GARMIN_MCP_FRIENDS: ${{ secrets.GARMIN_MCP_FRIENDS }}
         run: |
           pairs=()
           for name in RESEND_API_KEY RESEND_WEBHOOK_SECRET SUPPORT_FORWARD_TO \
-                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET GARMIN_MCP_PREVIEW; do
+                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET GARMIN_MCP_PREVIEW \
+                      GARMIN_MCP_FRIENDS; do
             if [ -n "${!name}" ]; then pairs+=("$name=${!name}"); fi
           done
           if [ ${#pairs[@]} -gt 0 ]; then
@@ -205,9 +209,12 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         # Website sign-ups: "password", "official", or "split" (half each, per
-        # browser, from Oct 26). The listed address is always official.
+        # browser, Oct 26-29). Official for everyone new from Oct 29, after
+        # password sign-ins kept meeting Garmin's blocks and locks; phones
+        # still get the password (see _signup_route). The listed address is
+        # always official.
         # WEEKLY_EMAIL=on sends the Monday email, from 2 Nov 2026.
-        run: flyctl deploy --app "$FLY_APP" --remote-only --env GARMIN_MCP_SIGNUP=split --env WEEKLY_EMAIL=on
+        run: flyctl deploy --app "$FLY_APP" --remote-only --env GARMIN_MCP_SIGNUP=official --env WEEKLY_EMAIL=on
 
       # `flyctl deploy` exiting 0 means the machine started, not that it serves
       # what we think it serves. These are the two pages that ask for a Garmin

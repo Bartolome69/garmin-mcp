@@ -62,6 +62,18 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN weekly_sent TEXT",
 )
 
+# Bart's friends using Daash, named from a chat (garmin_official's friends
+# actions): their PostHog profile is marked friend, so a cohort of them fills
+# itself. Fingerprints only, the way sign-in recognises a returning person,
+# and the masked address to tell the rows apart.
+FRIENDS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS friends (
+    email_hash    TEXT PRIMARY KEY,
+    email_masked  TEXT NOT NULL,
+    added_at      INTEGER NOT NULL
+);
+"""
+
 # OAuth state. Separate from `users`: a person is one row there however many
 # clients they authorise, and revoking a client must not touch their Garmin
 # session. `subject` on the token rows is the user_token that owns them.
@@ -190,6 +202,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.executescript(OAUTH_SCHEMA)
     conn.executescript(OFFICIAL_SCHEMA)
+    conn.executescript(FRIENDS_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -259,18 +272,71 @@ def save_user(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
-            "  email_hash = excluded.email_hash, route = NULL, "
-            "  email_enc = COALESCE(excluded.email_enc, users.email_enc)",
+            "  email_hash = excluded.email_hash, "
+            "  email_enc = COALESCE(excluded.email_enc, users.email_enc), "
+            "  route = NULL",
             (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out, tip_seen),
         )
-        # Someone who approved Daash on Garmin's page and now gives their
-        # password has a Connect session, which has their history; the official
-        # API has only what synced since they approved. The row stops being an
-        # official-route one (the connector reuses it, so its route said
-        # "official" with a session behind it) and its link stays, so Garmin's
-        # pushes still arrive, but the reads go back to Connect.
+        # A Garmin Connect session stands behind the row now, so it reads from
+        # Connect: full history, readiness, gear. Oct 30: someone who approved
+        # Daash on Garmin's page, then signed in with a password on their phone,
+        # kept the official-only mark and so read nothing from before that day.
         conn.execute("UPDATE official_links SET official_only = NULL WHERE user_token = ?", (user_token,))
     return user_token
+
+
+def repair_password_on_official() -> int:
+    """Lift the official-only mark from rows a password sign-in has since joined.
+
+    Before save_user cleared it (Oct 30), such a row kept route 'official' with
+    a Connect session stored and unused. Returns how many were repaired.
+    """
+    cipher = _cipher()
+    with _connect() as conn:
+        rows = conn.execute("SELECT user_token, token_blob FROM users WHERE route = 'official'").fetchall()
+        joined = []
+        for user_token, blob in rows:
+            try:
+                if cipher.decrypt(blob):
+                    joined.append(user_token)
+            except InvalidToken:
+                continue
+        for user_token in joined:
+            conn.execute("UPDATE users SET route = NULL WHERE user_token = ?", (user_token,))
+            conn.execute("UPDATE official_links SET official_only = NULL WHERE user_token = ?", (user_token,))
+        # A password sign-in that made a fresh row carried the link over with
+        # its mark still on (the same morning, on a phone). Once only, so the
+        # preview's own official-only switch isn't undone at every start.
+        conn.execute("CREATE TABLE IF NOT EXISTS repairs (name TEXT PRIMARY KEY, done_at INTEGER)")
+        if conn.execute("INSERT OR IGNORE INTO repairs VALUES ('official_only_carried', ?)",
+                        (int(time.time()),)).rowcount:
+            joined += [row[0] for row in conn.execute(
+                "SELECT l.user_token FROM official_links l JOIN users u ON u.user_token = l.user_token "
+                "WHERE l.official_only = 1 AND COALESCE(u.route, '') != 'official'").fetchall()]
+            conn.execute(
+                "UPDATE official_links SET official_only = NULL WHERE official_only = 1 AND user_token IN "
+                "(SELECT user_token FROM users WHERE COALESCE(route, '') != 'official')")
+    return len(joined)
+
+
+def add_friends(emails: list[tuple[str, str]]) -> int:
+    """Name (address, masked address) pairs as Bart's friends. Returns how many were new."""
+    now = int(time.time())
+    with _connect() as conn:
+        return sum(conn.execute("INSERT OR IGNORE INTO friends VALUES (?, ?, ?)",
+                                (email_fingerprint(email), masked, now)).rowcount for email, masked in emails)
+
+
+def remove_friends(emails: list[str]) -> int:
+    with _connect() as conn:
+        return sum(conn.execute("DELETE FROM friends WHERE email_hash = ?", (email_fingerprint(e),)).rowcount
+                   for e in emails)
+
+
+def friends() -> list[tuple[str, str]]:
+    """Every friend as (fingerprint, masked address), oldest first."""
+    with _connect() as conn:
+        return [(h, m) for h, m in conn.execute("SELECT email_hash, email_masked FROM friends ORDER BY added_at")]
 
 
 def email_hash_for(user_token: str) -> str | None:

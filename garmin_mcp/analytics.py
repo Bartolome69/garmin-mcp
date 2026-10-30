@@ -11,7 +11,9 @@ flags and the masked form of the account's email (first letter and domain, as
 the store keeps it), so the person running this can tell one friend's row from
 another's in a report. Never the full address, a token or any Garmin data. The
 distinct id is an HMAC of the user's token under the server secret, and person
-profiles are turned off so nothing accumulates against it.
+profiles are turned off so nothing accumulates against it, except for the few
+of Bart's friends (named from a chat, or in GARMIN_MCP_FRIENDS), whose profile
+only says friend.
 
 Off unless GARMIN_MCP_POSTHOG_KEY is set, so a self-hosted copy reports to
 nobody by default. Sending happens on a background thread and swallows every
@@ -60,10 +62,38 @@ def distinct_id(subject: str | None) -> str:
     return hmac.new(key, b"posthog:" + subject.encode(), hashlib.sha256).hexdigest()[:32]
 
 
+_FRIENDS_TTL = 60
+_FRIENDS: dict[str, Any] = {"at": 0.0, "set": frozenset()}
+
+
+def _friends() -> frozenset[str]:
+    """Fingerprints of Bart's friends using Daash: those named from a chat, kept
+    in the store, and any in GARMIN_MCP_FRIENDS. Read again each minute."""
+    now = time.monotonic()
+    if now - _FRIENDS["at"] > _FRIENDS_TTL:
+        named: set[str] = set()
+        try:
+            from . import store  # here, not at the top: the store reports nothing itself
+            named = {fingerprint for fingerprint, _ in store.friends()}
+        except Exception:  # noqa: BLE001 - analytics must never fail what it reports on
+            log.debug("friends unreadable", exc_info=True)
+        key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
+        named |= {hmac.new(key, entry.strip().lower().encode(), hashlib.sha256).hexdigest()
+                  for entry in os.environ.get("GARMIN_MCP_FRIENDS", "").split(",") if "@" in entry}
+        _FRIENDS.update(at=now, set=frozenset(named))
+    return _FRIENDS["set"]
+
+
+def forget_friends() -> None:
+    """Read the friends again at the next event, after the list has changed."""
+    _FRIENDS["at"] = 0.0
+
+
 def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:
     """Record one event. Returns at once; the request goes out on its own thread."""
     if not KEY:
         return
+    friend = bool(subject) and subject in _friends()
     payload = {
         "api_key": KEY,
         "event": event,
@@ -72,7 +102,10 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
         "properties": {
             **(properties or {}),
             # No person is built up from these; the id only lets uniq() work.
-            "$process_person_profile": False,
+            # Bart's friends are the exception: a profile marked friend, so
+            # the PostHog cohort of them fills itself.
+            "$process_person_profile": friend,
+            **({"$set": {"friend": True}} if friend else {}),
             "$lib": "garmin-mcp-hosted",
         },
     }
