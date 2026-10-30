@@ -260,10 +260,38 @@ def save_user(
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
             "  email_hash = excluded.email_hash, "
-            "  email_enc = COALESCE(excluded.email_enc, users.email_enc)",
+            "  email_enc = COALESCE(excluded.email_enc, users.email_enc), "
+            "  route = NULL",
             (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out, tip_seen),
         )
+        # A Garmin Connect session stands behind the row now, so it reads from
+        # Connect: full history, readiness, gear. Oct 30: someone who approved
+        # Daash on Garmin's page, then signed in with a password on their phone,
+        # kept the official-only mark and so read nothing from before that day.
+        conn.execute("UPDATE official_links SET official_only = NULL WHERE user_token = ?", (user_token,))
     return user_token
+
+
+def repair_password_on_official() -> int:
+    """Lift the official-only mark from rows a password sign-in has since joined.
+
+    Before save_user cleared it (Oct 30), such a row kept route 'official' with
+    a Connect session stored and unused. Returns how many were repaired.
+    """
+    cipher = _cipher()
+    with _connect() as conn:
+        rows = conn.execute("SELECT user_token, token_blob FROM users WHERE route = 'official'").fetchall()
+        joined = []
+        for user_token, blob in rows:
+            try:
+                if cipher.decrypt(blob):
+                    joined.append(user_token)
+            except InvalidToken:
+                continue
+        for user_token in joined:
+            conn.execute("UPDATE users SET route = NULL WHERE user_token = ?", (user_token,))
+            conn.execute("UPDATE official_links SET official_only = NULL WHERE user_token = ?", (user_token,))
+    return len(joined)
 
 
 def email_hash_for(user_token: str) -> str | None:

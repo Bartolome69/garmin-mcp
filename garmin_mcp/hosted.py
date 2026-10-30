@@ -3298,6 +3298,12 @@ def build_app() -> Any:
     an environment variable rather than a rollback. The URL mode stays the
     default until the OAuth one has been run against a real client.
     """
+    try:
+        repaired = store.repair_password_on_official()
+        if repaired:
+            log.info("lifted the official-only mark from %d account(s) with a password session", repaired)
+    except Exception:  # noqa: BLE001 - a repair must never stop the server starting
+        log.exception("official-only repair failed")
     if not OAUTH_ENABLED:
         app = mcp.streamable_http_app(
             streamable_http_path=MCP_PATH,

@@ -641,6 +641,28 @@ async def main() -> int:
         check("nor is a read sent alongside get_plan held back",
               hosted._before_tool_for(subject_of(listed_token), alone=True)("get_sleep_data") == 0.0)
 
+        print("\nGarmin's page first, then a password on another device")
+        # Oct 30: approved on Garmin's page on a tablet, then signed in with a
+        # password on a phone, and kept reading from the official API alone.
+        both = store.save_official_user("g-both", {"access_token": "t"}, ["ACTIVITY_EXPORT"])
+        both_hash = store.set_user_email(both, "both@example.com", "b***@example.com")
+        check("an account from Garmin's page reads from the official API alone",
+              not store.has_connect(both) and store.official_only(both) == "g-both")
+        again = store.save_user("b***@example.com", json.dumps({"di_token": "both"}), user_token=both,
+                                email_hash=both_hash, email="both@example.com")
+        check("signing in with a password on top reads Garmin Connect, keeping the Garmin link",
+              again == both and store.has_connect(both) and store.official_only(both) is None
+              and store.official_link(both) is not None)
+        stuck = store.save_official_user("g-stuck", {"access_token": "t"}, ["ACTIVITY_EXPORT"])
+        with store._connect() as conn:  # as the bug left them: a session stored, the mark kept
+            conn.execute("UPDATE users SET token_blob = ? WHERE user_token = ?",
+                         (store._cipher().encrypt(b'{"di_token": "stuck"}'), stuck))
+        alone = store.save_official_user("g-alone", {"access_token": "t"}, ["ACTIVITY_EXPORT"])
+        repaired = store.repair_password_on_official()
+        check("accounts already stuck that way are repaired, and true official-only ones left alone",
+              repaired == 1 and store.has_connect(stuck) and store.official_only(stuck) is None
+              and not store.has_connect(alone) and store.official_only(alone) == "g-alone", str(repaired))
+
         print("\ncounting against Garmin's user limit")
         counted = hosted.report_official_users()
         sent = [p for e, p in reported if e == "official_users"][-1:]
