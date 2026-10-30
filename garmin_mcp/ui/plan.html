@@ -136,6 +136,7 @@
   .bar-box.unread { background: transparent; border: 1.5px dashed var(--muted); opacity: 0.55; box-sizing: border-box; }
   .bar-box.unread.sel { border-color: var(--red); opacity: 1; }
   .unread-note { font-size: 11.5px; color: var(--muted); }
+  .bar-box.part { border-top: 2px dashed var(--muted); box-sizing: border-box; }
   .bar-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--bar-done); }
   .bar-box.on .bar-fill { background: var(--red); }
   .bar-dot { position: absolute; left: 50%; bottom: 6px; margin-left: -3px; width: 6px; height: 6px; border-radius: 999px; background: var(--red); }
@@ -992,9 +993,12 @@
             aria: "Week " + w.n + ", " + w.total + " sessions, distance still to read", onclick: function () { state.sel = i; render(raw); } }));
           return;
         }
+        // Some of the week still to read (a session its name can't size):
+        // drawn with a dashed top, so a short bar doesn't pass as whole.
+        if (w.unread > 0) unreadWeeks++;
         var on = i === sel, h = Math.round((w.plannedKm || 0) / peakKm * MAX);
         var fill = w.plannedKm ? Math.round(h * Math.min(1, w.doneKm / w.plannedKm)) : 0;
-        bars.push(barEl({ km: many && !on ? "" : amt(w.plannedKm || 0, true), h: h, cls: on ? "on" + (started && fill < h ? " started" : "") : "", on: on,
+        bars.push(barEl({ km: many && !on ? "" : amt(w.plannedKm || 0, true), h: h, cls: (on ? "on" + (started && fill < h ? " started" : "") : "") + (w.unread > 0 ? " part" : ""), on: on,
           fill: started ? fill : 0, lbl: weekLbl(w, i), dot: i === m.nextWeek, r4: many,
           aria: "Week " + w.n + ", " + amt(w.plannedKm || 0), onclick: function () { state.sel = i; render(raw); } }));
       });
@@ -1046,7 +1050,7 @@
       el("div", { class: "legend" }, legend.map(function (k) {
         var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), t.l]);
       })),
-      unreadWeeks ? el("div", { class: "unread-note", text: "Dashed weeks are planned; their " + (m.unit === "time" ? "times" : "distances") + " load as you open the plan again." }) : null,
+      unreadWeeks ? el("div", { class: "unread-note", text: "Dashed weeks are planned, some of their " + (m.unit === "time" ? "times" : "distances") + " still to load: they fill in as you open the plan again." }) : null,
     ]);
   }
   function barEl(o) {

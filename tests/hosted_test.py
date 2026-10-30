@@ -1841,6 +1841,13 @@ async def main() -> int:
               and not await _calls_with("metric") and not await _calls_with(None))
         check("a pace per mile is taken as one",
               round(_pp("8:00/mi")) == 298 and round(_pp("8:00 /mile")) == 298 and _pp("5:00 /km") == 300)
+        _today = _pd.today()
+        _at = lambda n, wid, name: {"date": (_today + _pt(days=n)).isoformat(), "workoutId": wid, "title": name, "sportTypeKey": "running"}
+        order = garmin_server._lookup_order([
+            _at(2, 1, "Easy 8km \u00b7 MAR"), _at(30, 2, "Long 30km \u00b7 MAR"), _at(31, 3, "Threshold 3x3km \u00b7 MAR"),
+            _at(90, 4, "VO2 5x1km \u00b7 MAR"), _at(10, 5, "Sub-T 4x2km \u00b7 MAR"), _at(-3, 6, "Recovery \u00b7 MAR")], _today)
+        check("a long plan reads the next two weeks first, then the runs whose names can't size them, then the rest",
+              order == [1, 6, 5, 3, 4, 2], str(order))
         check("and a phase isn't carried over weeks whose phase is still to read",
               guessed["phases"] == [{"label": "Base", "from_week": 1, "to_week": 1},
                                     {"label": "Taper", "from_week": 4, "to_week": 4}], str(guessed["phases"]))

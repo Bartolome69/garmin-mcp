@@ -3016,13 +3016,7 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
         ) or []
 
     if weekly_km:
-        # Nearest to today first, so the weeks that matter get their distance
-        # if the plan is longer than the lookups allowed.
-        lookup_ids = []
-        for item in sorted(sessions, key=lambda i: abs((date_cls.fromisoformat(i["date"][:10]) - today).days)):
-            wid = item.get("workoutId")
-            if wid and wid not in lookup_ids:
-                lookup_ids.append(wid)
+        lookup_ids = _lookup_order(sessions, today)
     else:
         # Planned length for the past sessions, newest first, and the goal from
         # whichever workout is read first.
@@ -3129,6 +3123,39 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     if others:
         result["other_plans"] = others
     return result
+
+
+# The sessions this close are read first, whatever their names say: the
+# card opens on them.
+PLAN_NEAR_DAYS = 14
+
+
+def _lookup_order(sessions: list[dict[str, Any]], today: date_cls) -> list[Any]:
+    """The workouts to read for a plan's weekly distance, in order: the next
+    two weeks, then every run whose name doesn't say how far it is, then the
+    rest, each nearest to today first.
+
+    A run named "Long 32km" is drawn from its name until it is read; one named
+    "Threshold 3x3km" can't be, so a long plan read nearest first left every
+    such session out of its later weeks, 15-18 km a week short with the bar
+    looking whole (Oct 30).
+    """
+    nearest = sorted(sessions, key=lambda i: abs((date_cls.fromisoformat(i["date"][:10]) - today).days))
+
+    def near(i: dict[str, Any]) -> bool:
+        return abs((date_cls.fromisoformat(i["date"][:10]) - today).days) <= PLAN_NEAR_DAYS
+
+    def unnamed(i: dict[str, Any]) -> bool:
+        return (training_plan.category(i.get("sportTypeKey") or "running") == "run"
+                and training_plan.km_from_name(i.get("title") or i.get("workoutName")) is None)
+
+    order: list[Any] = []
+    for group in ([i for i in nearest if near(i)], [i for i in nearest if unnamed(i)], nearest):
+        for item in group:
+            wid = item.get("workoutId")
+            if wid and wid not in order:
+                order.append(wid)
+    return order
 
 
 def _plan_lookups(ids: list[Any]) -> list[Any]:
