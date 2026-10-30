@@ -26,7 +26,7 @@ from .cycling import is_ride
 from .formatting import DateError, drop_empty, duration, pace_per_km, parse_date
 from .plan import DEFAULT_MPS, category, monday_of, planned_distance_m
 from .progress import Actual, Planned, match
-from .workouts import WorkoutError, build_workout, format_pace
+from .workouts import WorkoutError, build_strength_workout, build_workout, format_pace
 
 TAG_SEP = " · "
 LABEL_RE = re.compile(r"^[A-Z0-9]{2,8}$")
@@ -97,6 +97,8 @@ MAX_NAME = 40
 MAX_METHOD = 60
 MAX_MILESTONES = 4
 MAX_PHASE = 12
+# A plan with more phases than this is bands too thin to read.
+MAX_PHASES = 8
 
 
 def describe(
@@ -110,12 +112,15 @@ def describe(
     method: str | None = None,
     phase: str | None = None,
     milestones: Sequence[Mapping[str, Any]] | None = None,
+    phases: Sequence[Mapping[str, Any]] | None = None,
 ) -> str:
     """What each workout carries in its description, readable in Garmin Connect.
 
     The plan's name, method, this session's phase and the milestones ride
     along in plain lines, so the card can read them back from Garmin and
-    nothing about the plan is kept anywhere else.
+    nothing about the plan is kept anywhere else. Every workout also carries
+    the whole plan's phases by week, so a long plan read a batch at a time
+    still bands every week from the first workout read.
     """
     lines = [f"Plan {label}: {goal.strip()}, {first.isoformat()} to {last.isoformat()}."]
     block = " \u00b7 ".join(x.strip() for x in (name, method) if x and x.strip())
@@ -130,6 +135,10 @@ def describe(
             bits += [str(m[k]).strip() for k in ("date", "target") if m.get(k)]
             parts.append(", ".join(b for b in bits if b))
         lines.append("Milestones: " + " | ".join(parts))
+    if phases:
+        lines.append("Phases: " + " | ".join(
+            f"{p['label']} {p['from_week']}-{p['to_week']}" for p in phases
+        ))
     text = "\n".join(lines)
     return f"{note.strip()}\n\n{text}" if note and note.strip() else text
 
@@ -151,6 +160,66 @@ def block_from_description(text: str | None) -> dict[str, str]:
 def phase_from_description(text: str | None) -> str | None:
     found = _line(text, "Phase")
     return found[:MAX_PHASE] if found else None
+
+
+def phases_from_description(text: str | None) -> list[dict[str, Any]]:
+    """The plan's phases by week, [{label, from_week, to_week}], from a
+    workout's notes; empty for a plan made before they were written there."""
+    out: list[dict[str, Any]] = []
+    for part in (_line(text, "Phases") or "").split(" | "):
+        found = re.fullmatch(r"(.+?) (\d+)-(\d+)", part.strip())
+        if found:
+            out.append({"label": found.group(1)[:MAX_PHASE], "from_week": int(found.group(2)),
+                        "to_week": int(found.group(3))})
+    return out
+
+
+def plan_start_from_description(text: str | None, label: str) -> date | None:
+    found = re.search(rf"Plan {re.escape(label)}: .+?, (\d{{4}}-\d{{2}}-\d{{2}}) to", text or "")
+    try:
+        return date.fromisoformat(found.group(1)) if found else None
+    except ValueError:
+        return None
+
+
+def phase_by_week(prepared: Sequence[Mapping[str, Any]], first: date) -> list[dict[str, Any]]:
+    """The phases sessions were given, as runs of weeks from the plan's first.
+
+    A week takes the phase most of its sessions carry, and a week without
+    one stays in the phase before, as the card bands them. Too many phases
+    to band, or none, and nothing is written.
+    """
+    weeks = [{"week": (monday_of(p["date"]) - monday_of(first)).days // 7 + 1,
+              "sessions": [{"phase": p.get("phase")}]} for p in prepared]
+    merged: dict[int, dict[str, Any]] = {}
+    for w in weeks:
+        merged.setdefault(w["week"], {"week": w["week"], "sessions": []})["sessions"] += w["sessions"]
+    spans = phase_spans([merged[k] for k in sorted(merged)]) or []
+    return spans if len(spans) <= MAX_PHASES else []
+
+
+# A distance in a session's name: "Long 26km w 12km MP" is 26, the first
+# one, but "5x1km" is the reps, not the run, so a number after an x is not.
+_NAME_KM_RE = re.compile(r"(?<![x\u00d7\d.])(\d+(?:\.\d+)?)\s*(km|k|mi|miles?)\b", re.IGNORECASE)
+
+
+def km_from_name(name: str | None) -> float | None:
+    """A run's distance as its name gives it, for a session whose workout
+    hasn't been read yet: "Long 32km", "10k easy", "Tune-up half". A guess,
+    and None when the name doesn't say."""
+    text = strip_tag(name or "")
+    found = _NAME_KM_RE.search(text)
+    if found:
+        km = float(found.group(1)) * (1.609 if found.group(2).lower().startswith("mi") else 1)
+        return round(km, 1) if 0 < km <= 100 else None
+    low = text.lower()
+    if re.search(r"\bhalf\b", low):
+        return 21.1
+    if "marathon" in low:
+        return 42.2
+    if "parkrun" in low:
+        return 5.0
+    return None
 
 
 def milestones_from_description(text: str | None) -> list[dict[str, str]]:
@@ -334,11 +403,19 @@ def prepare(
         name = str(raw.get("name") or "").strip()
         if not name:
             raise PlanError(f"Session {index} needs a name.")
+        sport = str(raw.get("sport") or "running").strip().lower()
         try:
-            workout, summary, estimated = build_workout(
-                tagged(name, code), raw.get("sport") or "running", raw.get("steps") or [], None,
-                raw.get("pool_length_meters"), ftp,
-            )
+            if sport == "strength":
+                # A gym session: its exercises from Garmin's catalogue, as
+                # create_strength_workout builds them.
+                workout, summary, estimated = build_strength_workout(
+                    tagged(name, code), raw.get("exercises") or [], None,
+                )
+            else:
+                workout, summary, estimated = build_workout(
+                    tagged(name, code), sport, raw.get("steps") or [], None,
+                    raw.get("pool_length_meters"), ftp,
+                )
         except WorkoutError as exc:
             raise PlanError(f"Session {index} ({name}): {exc}") from exc
         phase = str(raw.get("phase") or "").strip()[:MAX_PHASE].replace("\n", " ") or None
@@ -349,10 +426,11 @@ def prepare(
 
     prepared.sort(key=lambda p: p["date"])
     first, last = prepared[0]["date"], prepared[-1]["date"]
+    spans = phase_by_week(prepared, first)
     for item in prepared:
         item["workout"].description = describe(
             goal, code, first, last, item["note"],
-            name=plan_name, method=plan_method, phase=item["phase"], milestones=marks,
+            name=plan_name, method=plan_method, phase=item["phase"], milestones=marks, phases=spans,
         )
     return code, prepared
 
@@ -764,27 +842,34 @@ def phase_spans(weeks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]] | No
 
     A week's phase is the one most of its sessions carry; weeks without one
     take the phase of the week before, so a rest week stays in its phase.
+    A week whose workouts weren't read this time ("unread") isn't known, so
+    it is left out rather than carried on: Build ran to race day over a
+    Peak and Taper still to read (Oct 30).
     """
     labels: list[str | None] = []
+    unknown: list[bool] = []
     for week in weeks:
         counts: dict[str, int] = defaultdict(int)
         for s in week.get("sessions") or []:
             if s.get("phase"):
                 counts[str(s["phase"])] += 1
         labels.append(max(counts, key=lambda k: counts[k]) if counts else None)
+        unknown.append(not counts and bool(week.get("unread")))
     if not any(labels):
         return None
     for i in range(1, len(labels)):
-        labels[i] = labels[i] or labels[i - 1]
+        if not unknown[i]:
+            labels[i] = labels[i] or labels[i - 1]
     for i in range(len(labels) - 2, -1, -1):
-        labels[i] = labels[i] or labels[i + 1]
+        if not unknown[i]:
+            labels[i] = labels[i] or labels[i + 1]
     spans: list[dict[str, Any]] = []
     for week, label in zip(weeks, labels):
         if spans and spans[-1]["label"] == label:
             spans[-1]["to_week"] = week["week"]
         else:
             spans.append({"label": label, "from_week": week["week"], "to_week": week["week"]})
-    return spans
+    return [sp for sp in spans if sp["label"]] or None
 
 
 # --------------------------------------------------------------------------

@@ -99,6 +99,9 @@
   .tl-a { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tl-b { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tl-node > div { overflow: hidden; }
+  /* Several races: a row of their own under the title, so the last isn't
+     cut off beside it on a wide card. */
+  .tl.many { flex-basis: 100%; }
   /* Several races on a narrow card: a short list, each on its own line,
      rather than labels running into each other (Oct 30, four races). */
   @media (max-width: 560px) {
@@ -143,6 +146,15 @@
   .bar-lbl.on { color: var(--text); }
   .bar-lbl.faint { color: var(--faint); }
   .phases { display: grid; }
+  /* A long plan's weeks scroll sideways inside the pane. */
+  .scroller { position: relative; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
+  .scroll-in { display: flex; flex-direction: column; gap: 6px; }
+  .chart.long { flex-basis: 360px; }
+  .chart.long .phase-lbl { font-size: 10px; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* The last phase has nothing after it: its name runs back to the left
+     rather than be cut short ("TAP\2026"). */
+  .chart.long .phase.last .phase-lbl { overflow: visible; direction: rtl; }
+  .phase.gap .phase-line { background: transparent; }
   .phase { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .phase-line { height: 2px; border-radius: 2px; background: var(--line); }
   .phase-lbl { font-size: 11px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
@@ -691,7 +703,7 @@
     var thisMonday = iso(mondayOf(new Date()));
     var block = p.label ? p : (p.current_plan || null);
     var weeks = (p.weeks || []).map(function (w, i) {
-      return { n: w.week || i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra),
+      return { n: w.week || i + 1, wk: w.week || i + 1, starts: w.starts, sessions: list(w.sessions), extra: list(w.extra),
         planned: w.planned_km, run_km: w.run_km || 0, unread: w.unread || 0, current: !!w.current || w.starts === thisMonday };
     });
     if (p.source === "log") {
@@ -708,7 +720,7 @@
       weeks.forEach(function (w, i) { w.n = i + 1; });
     }
     if (!weeks.length) return { error: "Nothing is scheduled on the Garmin calendar in the weeks around this one." };
-    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null, upcoming: p.label ? null : (p.upcoming_plan || null) }, p);
+    if (block) return finish({ mode: "block", block: block, weeks: weeks, next: p.next_session || null, upcoming: p.label ? null : (p.upcoming_plan || null), phases: list(p.phases) }, p);
     var ci = weeks.findIndex(function (w) { return w.current; });
     if (ci < 0) ci = Math.max(0, weeks.findIndex(function (w) { return w.starts > today; }) - 1);
     if (ci < 0) ci = weeks.length - 1;
@@ -758,7 +770,27 @@
 
   // Phase bands from the phase each session carries: a week takes the phase
   // most of its sessions have, and a week without one stays in its neighbours'.
-  function phaseSpans(weeks) {
+  // The server's phases, by week number, when it sends them: it knows the
+  // whole plan's phases from one workout, and leaves out weeks it hasn't
+  // read, so Build isn't carried over a Peak and Taper (Oct 30). A gap is
+  // drawn as an empty band.
+  function phaseSpans(m) {
+    var weeks = m.weeks;
+    if (m.phases && m.phases.length) {
+      var idx = {}, out = [], at = 0;
+      weeks.forEach(function (w, i) { idx[w.wk] = i; });
+      m.phases.forEach(function (p) {
+        var a = idx[p.from_week], b = idx[p.to_week];
+        if (a == null) a = weeks.findIndex(function (w) { return w.wk >= p.from_week; });
+        if (b == null) for (var k = weeks.length - 1; k >= 0; k--) { if (weeks[k].wk <= p.to_week) { b = k; break; } }
+        if (a == null || a < at || b == null || b < a) return;
+        if (a > at) out.push({ label: "", span: a - at, from: at });
+        out.push({ label: p.label, span: b - a + 1, from: a });
+        at = b + 1;
+      });
+      if (out.length && at < weeks.length) out.push({ label: "", span: weeks.length - at, from: at });
+      if (out.length) return out;
+    }
     var labels = weeks.map(function (w) {
       var counts = {};
       w.rows.forEach(function (s) { if (s.phase && !s.extra) counts[s.phase] = (counts[s.phase] || 0) + 1; });
@@ -790,11 +822,27 @@
     if (model.error) { fail(model.error); return; }
     if (state.sel == null) state.sel = model.nextWeek >= 0 ? model.nextWeek : Math.max(0, model.weeks.findIndex(function (w) { return w.current; }));
     var app = document.getElementById("app");
+    var was = app.querySelector(".scroller"), left = was ? was.scrollLeft : null;
     app.textContent = "";
     app.appendChild(header(model));
     app.appendChild(el("div", { class: "body" }, [chart(model), week(model)]));
+    showSelectedWeek(left);
     scrolledToNext = false;
     reportSize();
+  }
+
+  // A scrolling chart stays where it was, unless the chosen week is out of
+  // sight (first drawn, or "Next" tapped): then that week comes to the middle.
+  function showSelectedWeek(left) {
+    var sc = document.querySelector(".scroller");
+    if (!sc) return;
+    if (left != null) sc.scrollLeft = left;
+    var bar = sc.querySelectorAll(".bar")[state.sel];
+    if (!bar) return;
+    var from = bar.offsetLeft, to = from + bar.offsetWidth;
+    if (left == null || from < sc.scrollLeft || to > sc.scrollLeft + sc.clientWidth) {
+      sc.scrollLeft = Math.max(0, from - (sc.clientWidth - bar.offsetWidth) / 2);
+    }
   }
 
   function header(m) {
@@ -859,6 +907,10 @@
     return nodes.length > 1 ? nodes : [];
   }
 
+  // Past this many weeks a plan is long: its chart takes a wider pane, only
+  // every fourth week is numbered, and the bars scroll sideways if the pane
+  // still can't give each week MIN_COL pixels (a phone, 30 weeks).
+  var LONG_WEEKS = 12, MIN_COL = 10;
   function chart(m) {
     var isWeek = m.mode !== "block";
     var kms = m.weeks.map(function (w) { return w.plannedKm || 0; });
@@ -891,20 +943,24 @@
       // reads them a batch at a time) is drawn dashed at the plan's usual
       // height, not as an empty week.
       var readKms = kms.filter(function (k) { return k > 0; });
+      // A long plan numbers every fourth week and the chosen one, so the
+      // numbers don't run into each other.
+      var long = m.weeks.length > LONG_WEEKS;
+      var weekLbl = function (w, i) { return !many ? "W" + w.n : !long || i === sel || (w.n - 1) % 4 === 0 ? String(w.n) : ""; };
       var usual = readKms.length ? sum(readKms, function (k) { return k; }) / readKms.length : peakKm / 2;
       m.weeks.forEach(function (w, i) {
         var unread = !w.plannedKm && w.unread > 0;
         if (unread) {
           unreadWeeks++;
           bars.push(barEl({ km: "", h: Math.round(usual / peakKm * MAX), cls: "unread" + (i === sel ? " sel" : ""), on: i === sel,
-            lbl: many ? String(w.n) : "W" + w.n, dot: i === m.nextWeek, r4: many,
+            lbl: weekLbl(w, i), dot: i === m.nextWeek, r4: many,
             aria: "Week " + w.n + ", " + w.total + " sessions, distance still to read", onclick: function () { state.sel = i; render(raw); } }));
           return;
         }
         var on = i === sel, h = Math.round((w.plannedKm || 0) / peakKm * MAX);
         var fill = w.plannedKm ? Math.round(h * Math.min(1, w.doneKm / w.plannedKm)) : 0;
         bars.push(barEl({ km: many && !on ? "" : fmtKm(w.plannedKm || 0), h: h, cls: on ? "on" + (started && fill < h ? " started" : "") : "", on: on,
-          fill: started ? fill : 0, lbl: many ? String(w.n) : "W" + w.n, dot: i === m.nextWeek, r4: many,
+          fill: started ? fill : 0, lbl: weekLbl(w, i), dot: i === m.nextWeek, r4: many,
           aria: "Week " + w.n + ", " + fmtKm(w.plannedKm || 0) + " km", onclick: function () { state.sel = i; render(raw); } }));
       });
       cols = bars.length;
@@ -925,12 +981,18 @@
       stats = due ? { lead: done + " of " + due, left: missed ? "done \u00b7 " + missed + " missed" : "done so far", right: rightTxt }
         : { lead: total + (total === 1 ? " session" : " sessions"), left: "planned", right: rightTxt };
     }
-    var grid = el("div", { class: "bars", style: "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px" }, bars);
-    var spans = isWeek ? null : phaseSpans(m.weeks);
-    var bands = spans ? el("div", { class: "phases", style: "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px" },
+    // A long plan (London, 24 weeks) scrolls sideways at a fixed width a
+    // week, rather than squeezing every week into the pane until the week
+    // numbers run into each other.
+    var scroll = !isWeek && cols > LONG_WEEKS;
+    var colsCss = "grid-template-columns:repeat(" + cols + ",minmax(0,1fr));gap:" + gap + "px";
+    var grid = el("div", { class: "bars", style: colsCss }, bars);
+    var spans = isWeek ? null : phaseSpans(m);
+    var bands = spans ? el("div", { class: "phases", style: colsCss },
       spans.map(function (p) {
-        var on = sel >= p.from && sel < p.from + p.span;
-        return el("div", { class: "phase" + (on ? " on" : ""), style: "grid-column:span " + p.span }, [
+        var on = p.label && sel >= p.from && sel < p.from + p.span;
+        var lastOne = p === spans[spans.length - 1];
+        return el("div", { class: "phase" + (on ? " on" : "") + (p.label ? "" : " gap") + (lastOne ? " last" : ""), style: "grid-column:span " + p.span }, [
           el("span", { class: "phase-line" }), el("span", { class: "phase-lbl mono", text: String(p.label).toUpperCase() })]);
       })) : null;
     var present = {};
@@ -939,12 +1001,13 @@
     // ride or a plain run is easy, and an old sub is threshold.
     if (present.sub) present.threshold = true;
     var legend = ["easy", "threshold", "intervals", "race", "long", "strength", "swim"].filter(function (k) { return k === "easy" || present[k]; });
-    return el("div", { class: "pane chart" }, [
+    return el("div", { class: "pane chart" + (scroll ? " long" : "") }, [
       el("div", { class: "stats" }, [
         el("span", {}, [el("strong", { text: stats.lead }), " " + stats.left]),
         el("span", { text: stats.right }),
       ]),
-      el("div", { style: "display:flex;flex-direction:column;gap:6px" }, [grid, bands]),
+      scroll ? el("div", { class: "scroller" }, [el("div", { class: "scroll-in", style: "min-width:" + cols * (MIN_COL + gap) + "px" }, [grid, bands])])
+        : el("div", { style: "display:flex;flex-direction:column;gap:6px" }, [grid, bands]),
       el("div", { class: "legend" }, legend.map(function (k) {
         var t = TYPES[k]; return el("span", {}, [el("i", { class: "sw", style: "background:" + t.v }), t.l]);
       })),

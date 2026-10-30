@@ -742,7 +742,7 @@ class FakeGarmin:
             (w["workoutName"] for w in self.workouts if w["workoutId"] == int(workout_id)), "Workout")
         self.scheduled.append({"id": schedule_id, "itemType": "workout", "date": date_str,
                                "workoutId": int(workout_id), "title": title,
-                               "sportTypeKey": "running"})
+                               "sportTypeKey": ((self.uploaded.get(int(workout_id)) or {}).get("sportType") or {}).get("sportTypeKey") or "running"})
         return {"workoutScheduleId": schedule_id}
 
     def unschedule_workout(self, scheduled_workout_id: int) -> dict[str, Any]:

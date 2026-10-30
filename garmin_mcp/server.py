@@ -558,10 +558,12 @@ OFFICIAL_DESCRIPTIONS = {
         "  goal: What the block is for, e.g. \"Half marathon, 1:40, 15 November\".\n"
         "  sessions: One per session, any order, at most 150: \"date\" (YYYY-MM-DD, today to 30 "
         "weeks out), \"name\" (short, as on the watch: \"Long run 18k\"), \"steps\" (as for a "
-        "single workout), and optional \"sport\" (running by default), \"description\", "
+        "single workout), and optional \"sport\" (running by default; \"cycling\", \"swimming\" "
+        "or \"strength\" too, for a triathlon block or a runner's gym days), \"description\", "
         "\"pool_length_meters\" (25 by default) and \"phase\" (one short word such as \"Base\", "
-        "\"Build\", \"Peak\" or \"Taper\"; the card bands the weeks by it). Days without a "
-        "session are rest days.\n"
+        "\"Build\", \"Peak\" or \"Taper\", the taper included; the card bands the weeks by it). "
+        "A strength session has \"exercises\" (as for a strength workout) instead of \"steps\". "
+        "Days without a session are rest days.\n"
         "  label: 2 or 3 letters or digits for the plan code, e.g. \"HM\", \"10K\", \"MAR\". "
         "From the goal when omitted.\n"
         "  name: A short name for the block, shown as the card's title, e.g. \"Marathon build\".\n"
@@ -2762,11 +2764,13 @@ async def create_plan(
         sessions: One per session, any order: "date" (YYYY-MM-DD, today to
             30 weeks out), "name" (short, as on the watch: "Long run 18k"),
             "steps" (as for create_workout), and optional "sport" (running by
-            default), "description", "pool_length_meters" for a swim (25 by
-            default) and "phase": one short word such as "Base", "Build",
+            default; "cycling", "swimming" or "strength" too, for triathlon
+            or gym days), "description", "pool_length_meters" for a swim (25
+            by default) and "phase": one short word such as "Base", "Build",
             "Peak" or "Taper", the same for every session in that phase; the
-            card bands the weeks by it. Rest days are days with no session.
-            At most 150.
+            card bands the weeks by it. A strength session has "exercises"
+            (as for create_strength_workout), not "steps". Rest days are days
+            with no session. At most 150.
         label: 2 or 3 letters or digits for the plan code, short because it
             ends every workout name: "HM", "10K", "MAR", "B1" for a base
             block. From the goal when omitted.
@@ -2801,17 +2805,25 @@ async def create_plan(
 
     created: list[dict[str, Any]] = []
     written: dict[Any, dict[str, Any]] = {}
+    # The same session again (the Monday gym session, the Friday club run)
+    # is one workout scheduled on each date, not a copy per week: fewer
+    # workouts in the library and on the watch.
+    uploaded_as: dict[str, Any] = {}
     for item in prepared:
         payload = item["workout"].to_dict()
+        same = json.dumps(payload, sort_keys=True, default=str)
         try:
-            uploaded = await _call(lambda c, p=payload: c.upload_workout(p)) or {}
-            workout_id = first_present(uploaded, "workoutId", "id")
+            workout_id = uploaded_as.get(same)
             if workout_id is None:
-                raise RuntimeError("Garmin returned no workout id")
+                uploaded = await _call(lambda c, p=payload: c.upload_workout(p)) or {}
+                workout_id = first_present(uploaded, "workoutId", "id")
+                if workout_id is None:
+                    raise RuntimeError("Garmin returned no workout id")
+                uploaded_as[same] = workout_id
+                written[workout_id] = {**payload, **(uploaded if isinstance(uploaded, dict) else {})}
             scheduled = await _call(
                 lambda c, w=workout_id, d=item["date"].isoformat(): c.schedule_workout(w, d)
             ) or {}
-            written[workout_id] = {**payload, **(uploaded if isinstance(uploaded, dict) else {})}
         except GarminError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -3003,6 +3015,8 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     shapes: dict[Any, list[dict[str, Any]]] = {}
     efforts: dict[Any, str | None] = {}
     phases: dict[Any, str] = {}
+    phase_map: list[dict[str, Any]] = []
+    phase_start: date_cls | None = None
     meta: dict[str, Any] = {}
     goal_code = code or (context or {}).get("label")
     # The block after a running one: its name and goal come from its own
@@ -3035,6 +3049,9 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
             phase = training_plan.phase_from_description(text)
             if phase:
                 phases[wid] = phase
+            if not phase_map:
+                phase_map = training_plan.phases_from_description(text)
+                phase_start = training_plan.plan_start_from_description(text, goal_code)
             if not meta:
                 meta = drop_empty({
                     **training_plan.block_from_description(text),
@@ -3045,6 +3062,19 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
                 "goal": training_plan.goal_from_description(text, following["label"]),
                 **training_plan.block_from_description(text),
             })
+
+    # The plan's phases by week ride on every workout, so one read bands
+    # the sessions not read yet as well.
+    if phase_map and phase_start:
+        week_one = training_plan.monday_of(phase_start)
+        for item in sessions if code else plans.get(goal_code) or []:
+            wid = item.get("workoutId")
+            if not wid or wid in phases or training_plan.label_of(item.get("title") or item.get("workoutName")) != goal_code:
+                continue
+            n = (training_plan.monday_of(date_cls.fromisoformat(item["date"][:10])) - week_one).days // 7 + 1
+            found = next((p["label"] for p in phase_map if p["from_week"] <= n <= p["to_week"]), None)
+            if found:
+                phases[wid] = found
 
     if code is None:
         result = _mark_unread(await _with_next_steps(training_plan.summarise_calendar(
@@ -3090,15 +3120,40 @@ def _plan_lookups(ids: list[Any]) -> list[Any]:
 
 def _mark_unread(result: dict[str, Any], metres: dict[Any, float]) -> dict[str, Any]:
     """Count, per week, the runs whose planned distance wasn't read this time,
-    so the card shows those weeks as still to read rather than as empty."""
-    for week in result.get("weeks") or []:
-        unread = sum(
-            1 for s in week.get("sessions") or []
-            if s.get("kind", s.get("sport")) == "run" and s.get("planned_km") is None
-            and s.get("workout_id") is not None and s.get("workout_id") not in metres
-        )
+    so the card shows those weeks as still to read rather than as empty.
+
+    A run whose name gives its distance ("Long 32km") takes that meanwhile,
+    marked as from the name, so a long plan's later weeks aren't drawn as if
+    nothing were booked in them (Oct 30, 24 weeks to London). Phases are
+    banded again with the unread weeks known, so one isn't carried over
+    weeks whose phase is still to read.
+    """
+    unsized: dict[int, int] = {}
+    for i, week in enumerate(result.get("weeks") or []):
+        unread = 0
+        for s in week.get("sessions") or []:
+            if not (s.get("kind", s.get("sport")) == "run" and s.get("planned_km") is None
+                    and s.get("workout_id") is not None and s.get("workout_id") not in metres):
+                continue
+            unread += 1
+            km = training_plan.km_from_name(s.get("name"))
+            if km:
+                s["planned_km"] = km
+                s["km_from_name"] = True
+                week["planned_km"] = round((week.get("planned_km") or 0) + km, 1)
+            else:
+                unsized[i] = unsized.get(i, 0) + 1
         if unread:
             week["unread"] = unread
+    if result.get("phases"):
+        result["phases"] = training_plan.phase_spans(result["weeks"])
+    # The card dashes the runs it can't size at all: those whose name
+    # doesn't say either.
+    for i, week in enumerate(result.get("weeks") or []):
+        if unsized.get(i):
+            week["unread"] = unsized[i]
+        else:
+            week.pop("unread", None)
     return result
 
 

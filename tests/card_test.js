@@ -256,6 +256,44 @@ f.src = "card.html";</script></body>`);
       && /this week on my plan card/.test(asked[1]), JSON.stringify(asked));
     await page.close();
 
+    // Oct 30: a 24-week build to London. The week numbers ran into each
+    // other, the last race was cut off, and Build was carried to race day.
+    const longPlan = (n) => ({
+      label: "MAR", name: "London build", goal: "London Marathon, sub-2:40", starts: md(7), ends: md(7 * n + 5),
+      milestones: [{ label: "Half check", target: "1:21" }, { label: "Parkrun", target: "17:45" },
+        { label: "Tune-up half", target: "1:17" }, { label: "London", target: "sub-2:40" }],
+      phases: [{ label: "Base", from_week: 1, to_week: 8 }, { label: "Build", from_week: 9, to_week: 16 }, { label: "Taper", from_week: n - 1, to_week: n }],
+      weeks: Array.from({ length: n }, (_, i) => ({ week: i + 1, starts: md(7 * (i + 1)), planned_km: 50 + i,
+        sessions: [{ date: md(7 * (i + 1) + 1), day: "Tue", name: (10 + i) + "km easy", type: "easy", sport: "run", kind: "run", status: "ahead", planned_km: 50 + i }] })),
+      next_session: null,
+    });
+    console.log("a long plan");
+    ({ page, card } = await open({ ...longPlan(24), _card: SEEN }));
+    let drawnLong = await card.evaluate(() => {
+      const sc = document.querySelector(".scroller");
+      return { long: !!document.querySelector(".chart.long"), fits: sc && sc.scrollWidth <= sc.clientWidth,
+        lbls: [...document.querySelectorAll(".bars .bar-lbl")].map((l) => l.textContent).filter(Boolean),
+        bands: [...document.querySelectorAll(".phase")].map((p) => p.textContent + ":" + p.style.gridColumn),
+        races: [...document.querySelectorAll(".tl-node")].map((n) => n.getBoundingClientRect().right <= document.documentElement.clientWidth) };
+    });
+    check("a 24-week plan fits a phone without scrolling, every fourth week numbered",
+      drawnLong.long && drawnLong.fits && drawnLong.lbls.join() === "1,5,9,13,17,21", JSON.stringify(drawnLong));
+    check("its phases band from the server's weeks, with the weeks not known yet left blank",
+      drawnLong.bands.join() === "BASE:span 8,BUILD:span 8,:span 6,TAPER:span 2", JSON.stringify(drawnLong.bands));
+    check("and every race on the way is in sight", drawnLong.races.length === 5 && drawnLong.races.every(Boolean), JSON.stringify(drawnLong.races));
+    await page.close();
+    ({ page, card } = await open({ ...longPlan(30), _card: SEEN }));
+    await card.evaluate(() => [...document.querySelectorAll(".bars .bar")][27].click());
+    await page.waitForTimeout(200);
+    drawnLong = await card.evaluate(() => {
+      const sc = document.querySelector(".scroller"), bar = sc.querySelectorAll(".bar")[27];
+      return { scrolls: sc.scrollWidth > sc.clientWidth, left: sc.scrollLeft,
+        seen: bar.offsetLeft >= sc.scrollLeft && bar.offsetLeft + bar.offsetWidth <= sc.scrollLeft + sc.clientWidth };
+    });
+    check("30 weeks scroll sideways, and a week picked stays in view after the card redraws",
+      drawnLong.scrolls && drawnLong.seen, JSON.stringify(drawnLong));
+    await page.close();
+
     check("no page threw an error", errors.length === 0, errors.join(" | "));
   } finally {
     await browser.close();

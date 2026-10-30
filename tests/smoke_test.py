@@ -1711,7 +1711,34 @@ async def main() -> int:
             bad_name = payload(await sess.call_tool("create_plan", {
                 "goal": "10k", "sessions": block, "label": "T1", "milestones": [{"date": day(9)}]}))
             check("a milestone without a label is refused", "error" in bad_name and "label" in bad_name["error"], str(bad_name)[:160])
+            notes = payload(await sess.call_tool("get_workout", {"workout_id": thr_b1["workout_id"]}))
+            check("every workout carries the whole plan's phases by week, so one read bands them all",
+                  "\nPhases: Base 1-" in str(notes.get("description")) and "Build" in str(notes.get("description")).split("Phases:")[-1],
+                  str(notes.get("description"))[-160:])
             payload(await sess.call_tool("remove_plan", {"label": "B1", "confirm": "B1"}))
+
+            # Gym days in the same plan as the runs (Oct 30: "the plan tool
+            # only builds runs"), the same session each week one workout.
+            gym = [{"exercise": "Barbell Back Squat", "sets": 3, "reps": 8}]
+            mixed = payload(await sess.call_tool("create_plan", {
+                "goal": "10k, 40:00", "label": "GY", "sessions": [
+                    {"date": day(2), "name": "Easy 8k", "steps": easy},
+                    {"date": day(3), "name": "Full body", "sport": "strength", "exercises": gym},
+                    {"date": day(9), "name": "Easy 8k", "steps": easy},
+                    {"date": day(10), "name": "Full body", "sport": "strength", "exercises": gym},
+                ]}))
+            gym_rows = [s for w in mixed.get("weeks", []) for s in w["sessions"] if s["name"] == "Full body"]
+            check("a plan can hold strength sessions, the same one a single workout on each date",
+                  len(gym_rows) == 2 and all(s.get("kind") == "strength" for s in gym_rows)
+                  and gym_rows[0]["workout_id"] == gym_rows[1]["workout_id"]
+                  and gym_rows[0]["schedule_id"] != gym_rows[1]["schedule_id"], str(mixed)[:300])
+            no_moves = payload(await sess.call_tool("create_plan", {
+                "goal": "10k", "label": "GZ", "sessions": [
+                    {"date": day(3), "name": "Gym", "sport": "strength", "exercises": []},
+                    {"date": day(4), "name": "Easy", "steps": easy}]}))
+            check("a strength session without exercises is refused before anything is made",
+                  "Session 1" in str(no_moves.get("error")), str(no_moves)[:160])
+            payload(await sess.call_tool("remove_plan", {"label": "GY", "confirm": "GY"}))
             check_plan_summary(check)
             check_chart_config_read_only(check)
             await check_preview_gate(check)

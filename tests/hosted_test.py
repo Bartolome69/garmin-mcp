@@ -1781,6 +1781,30 @@ async def main() -> int:
         check("a long plan's weeks not read yet are marked so, strength aside",
               "unread" not in marked["weeks"][0] and marked["weeks"][1]["unread"] == 2, str(marked))
 
+        # Most of a long plan's runs say their distance in their name, so a
+        # week not read yet is drawn from that meanwhile rather than dashed
+        # (Oct 30: 24 weeks to London looked like only a few were booked).
+        from garmin_mcp import training_plan as _tp
+        check("a run's distance is read from its name, reps and all",
+              [_tp.km_from_name(n) for n in ("Long 26km w 12km MP \u00b7 MAR", "VO2 5x1.2km", "Threshold 2x6km",
+                                             "10k easy", "Tune-up half", "London Marathon", "Half marathon check",
+                                             "Parkrun tune-up", "6 mile easy", "Recovery jog")]
+              == [26.0, None, None, 10.0, 21.1, 42.2, 21.1, 5.0, 9.7, None])
+        guessed = garmin_server._mark_unread({"phases": [{"label": "Base", "from_week": 1, "to_week": 3}], "weeks": [
+            {"week": 1, "planned_km": 10, "sessions": [{"kind": "run", "planned_km": 10, "workout_id": 1, "phase": "Base"}]},
+            {"week": 2, "sessions": [{"kind": "run", "name": "Long 32km", "workout_id": 5},
+                                     {"kind": "run", "name": "VO2 5x1km", "workout_id": 6}]},
+            {"week": 3, "sessions": [{"kind": "run", "name": "Recovery", "workout_id": 7}]},
+            {"week": 4, "sessions": [{"kind": "run", "planned_km": 8, "workout_id": 8, "phase": "Taper"}]},
+        ]}, {1: 10000.0, 8: 8000.0})
+        w2, w3 = guessed["weeks"][1], guessed["weeks"][2]
+        check("a week not read yet takes its runs' distances from their names, and only the rest stay dashed",
+              w2.get("planned_km") == 32.0 and w2["sessions"][0].get("km_from_name") and w2.get("unread") == 1
+              and w3.get("unread") == 1 and not w3.get("planned_km"), str(guessed["weeks"]))
+        check("and a phase isn't carried over weeks whose phase is still to read",
+              guessed["phases"] == [{"label": "Base", "from_week": 1, "to_week": 1},
+                                    {"label": "Taper", "from_week": 4, "to_week": 4}], str(guessed["phases"]))
+
         at_home = garmin_server._view_meta()
         os.environ["GARMIN_MCP_BASE_URL"] = base
         hosted_meta = garmin_server._view_meta()
