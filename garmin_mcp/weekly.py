@@ -238,6 +238,7 @@ FEEDBACK = "Got feedback or an idea for Daash? Just reply to this email. It come
 QUESTIONS = {
     "plan": "Build me a training plan from my recent running and put it on my Garmin.",
     "week": "How's my training going this week?",
+    "run": "How did my last run go?",
 }
 
 
@@ -336,6 +337,79 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
         body += (f"<p style=\"margin:8px 0 0\">{label}: "
                  + " · ".join(f"<a href=\"{e(u)}\" style=\"color:#E0312A;font-weight:600\">in {e(a)}</a>" for a, u in chosen.items())
                  + "</p>")
+    page = (
+        "<!doctype html><html><body style=\"margin:0;background:#F7F8FA\">"
+        "<div style=\"max-width:520px;margin:0 auto;padding:28px 20px;font:16px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#161B26\">"
+        "<div style=\"font-weight:900;font-style:italic;font-size:24px;color:#E0312A;margin-bottom:14px\">Daash</div>"
+        f"{body}"
+        f"<p style=\"margin:22px 0 0;color:#5B6270\">{e(FEEDBACK)}</p>"
+        "<p style=\"margin:28px 0 0;font-size:13px;color:#5B6270\">You get this because you connected Daash to your Garmin. "
+        f"<a href=\"{e(unsubscribe)}\" style=\"color:#5B6270\">Stop these emails</a>.</p>"
+        "</div></body></html>"
+    )
+    return subject, text, page
+
+
+# The first activity from Garmin, to someone who signed up through Garmin's own
+# page: their first day looked empty, as Garmin sends only what syncs after
+# connecting, and some left then (Oct 30). This says it's arrived.
+_NOUNS = (("swim", "swim"), ("cycl", "ride"), ("bik", "ride"), ("ride", "ride"), ("run", "run"),
+          ("walk", "walk"), ("hik", "hike"), ("strength", "workout"))
+
+
+def _noun(type_key: str) -> str:
+    key = (type_key or "").lower()
+    return next((noun for part, noun in _NOUNS if part in key), "activity")
+
+
+def compose_first_run(activity: dict[str, Any], unsubscribe: str, app: str | None = None,
+                      ask: Callable[[str, str], str] = ask_link, history: str | None = None) -> tuple[str, str, str]:
+    """(subject, plain text, html) for the email that someone's first activity has arrived.
+
+    `activity` is Garmin's summary as it was pushed. `history` is the link to
+    add their past runs from Garmin Connect's CSV, when there is one.
+    """
+    noun = _noun(str(activity.get("activityType") or ""))
+    km = activity.get("distanceInMeters")
+    seconds = activity.get("durationInSeconds")
+    bits = []
+    if isinstance(km, (int, float)) and km >= 100 and noun != "workout":
+        bits.append(f"{km / 1000:.1f} km")
+    if isinstance(seconds, (int, float)) and seconds > 0:
+        m, sec = divmod(int(seconds), 60)
+        h, m = divmod(m, 60)
+        bits.append(f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}")
+    what = f"Your {noun}" + (f" ({', '.join(bits)})" if bits else "")
+    subject = f"Your first {noun} is in Daash"
+    question = QUESTIONS["run"] if noun == "run" else f"How did my last {noun} go?"
+    chosen = {a: ask(a, "run") for a in ([app] if app in ASK_LINKS else ASK_LINKS)}
+    lead = (f"{what} just arrived from Garmin, so Daash can see your training now. "
+            "Everything you record from here on comes through as your watch syncs.")
+    past = ("Want Daash to know your training from before you connected? On a computer, open Garmin "
+            "Connect's activities list, press Export CSV at the top right, and add the file here: "
+            f"{history}") if history else None
+    parts = [lead, f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items())]
+    if past:
+        parts.append(past)
+    parts.append(FEEDBACK)
+    foot = f"You get this because you connected Daash to your Garmin. Stop these emails: {unsubscribe}"
+    text = "\n\n".join(parts) + "\n\n—\nDaash\n" + foot + "\n"
+
+    e = html.escape
+    label = f"Ask Daash about your {noun}"
+    if len(chosen) == 1:
+        (only, url), = chosen.items()
+        button = (f"<p style=\"margin:8px 0 0\"><a href=\"{e(url)}\" style=\"display:inline-block;background:#E0312A;"
+                  f"color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:10px\">{e(label)} in {e(only)}</a></p>")
+    else:
+        button = (f"<p style=\"margin:8px 0 0\">{e(label)}: "
+                  + " · ".join(f"<a href=\"{e(u)}\" style=\"color:#E0312A;font-weight:600\">in {e(a)}</a>" for a, u in chosen.items())
+                  + "</p>")
+    body = f"<p style=\"margin:0 0 16px\">{e(lead)}</p>" + button
+    if history:
+        body += ("<p style=\"margin:22px 0 0\">Want Daash to know your training from before you connected? On a "
+                 "computer, open Garmin Connect's activities list, press <strong>Export CSV</strong> at the top right, "
+                 f"and <a href=\"{e(history)}\" style=\"color:#E0312A;font-weight:600\">add the file here</a>.</p>")
     page = (
         "<!doctype html><html><body style=\"margin:0;background:#F7F8FA\">"
         "<div style=\"max-width:520px;margin:0 auto;padding:28px 20px;font:16px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#161B26\">"

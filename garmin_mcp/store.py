@@ -66,6 +66,16 @@ MIGRATIONS = (
 # actions): their PostHog profile is marked friend, so a cohort of them fills
 # itself. Fingerprints only, the way sign-in recognises a returning person,
 # and the masked address to tell the rows apart.
+# Things done once per key, whatever restarts happen: the first-run email.
+NOTICES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS notices (
+    kind  TEXT NOT NULL,
+    key   TEXT NOT NULL,
+    at    INTEGER NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+"""
+
 FRIENDS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS friends (
     email_hash    TEXT PRIMARY KEY,
@@ -203,6 +213,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(OAUTH_SCHEMA)
     conn.executescript(OFFICIAL_SCHEMA)
     conn.executescript(FRIENDS_SCHEMA)
+    conn.executescript(NOTICES_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -458,6 +469,41 @@ def unsubscribe_signature(email_hash: str) -> str:
     """What makes an unsubscribe link genuine: only this server can sign one."""
     key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
     return hmac.new(key, f"unsubscribe:{email_hash}".encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def claim_notice(kind: str, key: str) -> bool:
+    """True the first time only: whoever claims it does it, nobody else."""
+    with _connect() as conn:
+        return conn.execute(
+            "INSERT OR IGNORE INTO notices (kind, key, at) VALUES (?, ?, ?)", (kind, key, int(time.time()))
+        ).rowcount > 0
+
+
+def history_signature(garmin_user_id: str) -> str:
+    """What makes a link to add someone's past runs genuine: only this server can sign one."""
+    key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
+    return hmac.new(key, f"history:{garmin_user_id}".encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def email_recipient(user_token: str) -> tuple[str, str] | None:
+    """(email, email_hash) for someone who can be emailed, else None."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT email_enc, email_hash FROM users WHERE user_token = ? AND email_enc IS NOT NULL "
+            "AND email_hash IS NOT NULL",
+            (user_token,),
+        ).fetchone()
+        if not row:
+            return None
+        out = conn.execute(
+            "SELECT MAX(COALESCE(email_opt_out, 0)) FROM users WHERE email_hash = ?", (row[1],)
+        ).fetchone()
+    if out and out[0]:
+        return None
+    try:
+        return _cipher().decrypt(row[0]).decode(), row[1]
+    except InvalidToken:
+        return None
 
 
 def opt_out_of_email(email_hash: str) -> bool:

@@ -547,8 +547,9 @@
         Garmin doesn&rsquo;t share your email address that way, so Daash asks
         for it on its own page. It&rsquo;s kept encrypted and used to recognise
         you if you connect again, for a Monday email on your training week (your
-        last week, the week ahead and a link to ask Daash about it), and for the
-        odd update email. Either stops with one click. If the address already has a Daash account, Daash
+        last week, the week ahead and a link to ask Daash about it), for one
+        email when your first activity arrives from Garmin, and for the
+        odd update email. Any of them stops with one click. If the address already has a Daash account, Daash
         emails it a 6-digit code first, so nobody can join someone else&rsquo;s
         account by typing their address. The code is kept only as a scrambled
         check, and only for ten minutes.
@@ -570,7 +571,11 @@
         your own questions. The workouts and plans Daash writes to that
         account are kept here too, because Garmin&rsquo;s API doesn&rsquo;t let
         Daash read them back: the sessions themselves, and the dates they sit
-        on. Disconnecting here, or removing Daash in Garmin Connect, deletes
+        on. If you add your past activities from the CSV that Garmin
+        Connect&rsquo;s activities list exports, Daash keeps each one&rsquo;s
+        type, title, date, distance, time, heart rate, calories and climb the
+        same way, encrypted, so every chat can see your training from before
+        you connected; the file itself isn&rsquo;t kept. Disconnecting here, or removing Daash in Garmin Connect, deletes
         all of it, and Daash tells Garmin you have gone.
       </p>
     </div>
@@ -608,8 +613,9 @@
         note was shown, when a plan or workout card was sent to the chat and
         whether it then drew (the app it drew in, how long it took, and any
         error the card hit, never what it showed; a card that opened, or was still waiting for its
-        answer, is counted with no one&rsquo;s name or address on it), when a Monday email was sent and when its link to ask
-        Daash was clicked (which app and which week, nothing else), when someone
+        answer, is counted with no one&rsquo;s name or address on it), when a Monday email or a first-activity email was sent and when its link to ask
+        Daash was clicked (which app and which week, nothing else), how many
+        past activities were added from a CSV (with no one&rsquo;s name on it), when someone
         unsubscribed from update emails, and when
         a connection could not be renewed, by Claude or by Garmin, so it would
         need connecting again. If you answer the optional &ldquo;How did you

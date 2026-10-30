@@ -253,6 +253,7 @@
   .foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0 10px; border-top: 1px solid var(--row-line); }
   .foot span { font-size: 13px; color: var(--muted); }
   .foot .act { height: 34px; padding: 0 14px; flex-shrink: 0; }
+  .foot.waiting { flex-wrap: wrap; border-top: 0; }
 
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 
@@ -851,6 +852,7 @@
 
   function render(plan) {
     MI = !!(plan && plan.units === "mi");
+    if (plan && plan.source === "waiting") { waiting(plan); return; }
     model = normalise(plan);
     if (model.error) { fail(model.error); return; }
     if (state.sel == null) state.sel = model.nextWeek >= 0 ? model.nextWeek : Math.max(0, model.weeks.findIndex(function (w) { return w.current; }));
@@ -1374,6 +1376,41 @@
       ]),
     ]);
     return card;
+  }
+
+  // Signed up through Garmin's own page, nothing synced yet: Garmin sends
+  // what the watch records from now on. Oct 30, people found nothing on day
+  // one and left; the card says what's coming and offers what works today.
+  function waiting(p) {
+    var app = document.getElementById("app");
+    app.textContent = "";
+    var connected = p.since ? "Connected " + short(p.since) + ". " : "";
+    var acts = [el("button", { class: "act", onclick: function (e) {
+      ask("Build me a workout for tomorrow and put it on my watch.", e.currentTarget); } }, ["Build tomorrow\u2019s workout"])];
+    if (p.upload) acts.push(el("button", { class: "act", onclick: function (e) { openUrl(p.upload, e.currentTarget); } }, ["Add past runs"]));
+    app.appendChild(el("div", { class: "head" }, [el("div", { class: "head-l" }, [
+      el("div", { class: "brand" }, [el("span", { class: "wordmark", text: "Daash" }), el("span", { class: "kicker mono", text: "GETTING STARTED" })]),
+      el("div", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" }, [
+        el("h3", { class: "title", text: "Your first run is on its way" }),
+        el("span", { class: "sub", text: connected + "Garmin sends what your watch records from now on, as it syncs." }),
+      ]),
+    ])]));
+    app.appendChild(el("div", { class: "pane", style: "padding:4px 16px 6px" }, [el("div", { class: "foot waiting" }, [
+      el("span", { text: p.upload ? "Until then, a workout on your watch, or your past runs from Garmin Connect\u2019s CSV." : "Until then, a workout on your watch." }),
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, acts),
+    ])]));
+    reportSize();
+  }
+  function openUrl(url, btn) {
+    var opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    opened.then(function () { flash(btn, "Opens in the browser"); }).catch(function () { flash(btn, "This chat app didn\u2019t open the link"); });
   }
 
   // ---------------------------------------------------------------- actions

@@ -1051,6 +1051,58 @@ def _weekly_email_forever() -> None:
         time.sleep(WEEKLY_EVERY)
 
 
+# ------------------------------------------------------- first-run email
+# Someone who signed up through Garmin's own page sees nothing on day one:
+# Garmin sends only what syncs after connecting. Oct 30, five people asked for
+# their runs, found none and left. When their first activity arrives, one
+# email says so, with the question to ask and the link to add their past runs.
+FIRST_RUN_DAYS = 14
+
+
+def history_url(base: str, garmin_user_id: str) -> str:
+    """The page to add someone's past runs from Garmin Connect's CSV."""
+    return f"{base}/history?u={quote(garmin_user_id)}&s={store.history_signature(garmin_user_id)}"
+
+
+def first_run_email(garmin_user_id: str, activities: list[dict], send: Callable[..., None] | None = None,
+                    now: float | None = None) -> bool:
+    """Email someone that their first activity has arrived, once. True if it went."""
+    link = store.official_link_for_garmin_user(garmin_user_id)
+    now = now or time.time()
+    if link is None or now - link.created_at > FIRST_RUN_DAYS * 86400 or not activities:
+        return False
+    if not store.official_only(link.user_token):
+        return False
+    recipient = store.email_recipient(link.user_token)
+    if recipient is None:
+        return False
+    email, fingerprint = recipient
+    if not store.claim_notice("first_run", garmin_user_id):
+        return False
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    today = datetime.now(ZoneInfo("Europe/London")).date().isoformat()
+    unsubscribe = unsubscribe_url(base, fingerprint)
+    ask = ((lambda app, kind: weekly_ask_url(base, fingerprint, app, kind, today)) if base else weekly.ask_link)
+    newest = max(activities, key=lambda a: a.get("startTimeInSeconds") or 0)
+    subject, text, page_html = weekly.compose_first_run(
+        newest, unsubscribe, oauth.app_for_user(link.user_token), ask,
+        history=history_url(base, garmin_user_id) if base else None)
+    try:
+        (send or support_mail.send_weekly)(email, subject, text, page_html, unsubscribe)
+    except OSError:
+        return False
+    analytics.capture("first_run_email_sent", fingerprint, {
+        "kind": str(newest.get("activityType") or "").lower() or None,
+        "days_since_connecting": round((now - link.created_at) / 86400, 1), "$process_person_profile": False})
+    return True
+
+
+def _activities_arrived(garmin_user_id: str, activities: list[dict]) -> None:
+    """Garmin waits on its push: the email goes from its own thread."""
+    threading.Thread(target=first_run_email, args=(garmin_user_id, activities),
+                     name="first-run-email", daemon=True).start()
+
+
 # Garmin's starter access to its official API allows this many users. Past it
 # Daash needs Garmin's paid access, so the count is reported with every
 # keep-alive pass, for a chart against the limit and an alert well before it.
@@ -1867,10 +1919,20 @@ def _consent_page(
           {f'<div class=err role=alert>{html.escape(email_error)}</div>' if email_error else ''}
           <p class="note hint" style="margin-bottom:16px">To sign back in, a Monday note on your training week, and the odd Daash update. Easy to stop.</p>
     """ if ask_email else ""
+    # After Garmin's approval, the one moment someone is on daash.run with a
+    # fresh account: their past runs, if they have the CSV to hand. Optional,
+    # closed, and never in the way of Allow.
+    past_runs = f"""
+          <details style="margin:0 0 18px">
+            <summary class=note style="cursor:pointer">Add your past runs <span style="opacity:.7">Optional</span></summary>
+            <div style="margin-top:8px">{_history_fields()}</div>
+          </details>
+    """ if garmin else ""
     form = f"""
-        <form method=post action=/oauth/consent style="margin-top:8px">
+        <form method=post action=/oauth/consent enctype=multipart/form-data style="margin-top:8px">
           <input type=hidden name=consent value="{html.escape(consent_token)}">
           {email_field}
+          {past_runs}
           <style>
             .chips {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }}
             .chips .chip {{ display: inline-block; margin: 0; font-weight: 400; }}
@@ -1953,6 +2015,12 @@ async def oauth_consent(request: Request) -> Response:
         if staged is None:
             return _consent_expired()
         parked = staged[1]
+        link = store.official_link(subject)
+        if link is not None:
+            # A bad file never stands between someone and their chat: they
+            # can add it later from the link Daash gives them.
+            with contextlib.suppress(Exception):
+                import_history(link.garmin_user_id, form.get("history"), str(form.get("units")) == "mi", "signup")
         if store.email_for(subject) is None:
             email = str(form.get("email", "")).strip()
             if not _EMAIL_RE.fullmatch(email) or len(email) > 254:
@@ -2243,6 +2311,77 @@ async def garmin_export(request: Request) -> Response:
     """Count a click on the suggestion to export Garmin data, then go to Garmin's page."""
     analytics.capture("garmin_export_clicked", None, {"via": "full"})
     return RedirectResponse(server_mod.GARMIN_EXPORT, status_code=302)
+
+
+HISTORY_LONGEST = 5 * 1024 * 1024
+_HISTORY_HOW = ("On a computer, open <a href=\"https://connect.garmin.com/modern/activities\" rel=noopener>Garmin "
+                "Connect's activities list</a>, scroll down until the oldest runs you want have loaded, then press "
+                "<strong>Export CSV</strong> at the top right.")
+
+
+def _history_fields(units: bool = True) -> str:
+    unit_choice = ("<p class=note style=\"margin:10px 0 0\">Your Garmin shows distances in "
+                   "<label style=\"display:inline;font-weight:400\"><input type=radio name=units value=km checked> km</label> "
+                   "<label style=\"display:inline;font-weight:400\"><input type=radio name=units value=mi> miles</label></p>"
+                   ) if units else ""
+    return (f"<p class=note>{_HISTORY_HOW}</p>"
+            "<input type=file name=history accept=\".csv,text/csv\" aria-label=\"Your activities CSV\">" + unit_choice)
+
+
+def import_history(garmin_user_id: str, upload: Any, miles: bool, via: str) -> dict[str, Any] | None:
+    """Keep the past runs in an uploaded activities CSV. None when nothing was chosen."""
+    if upload is None or not hasattr(upload, "file"):
+        return None
+    raw = upload.file.read(HISTORY_LONGEST + 1)
+    if not raw:
+        return None
+    if len(raw) > HISTORY_LONGEST:
+        return {"error": "That file is bigger than an activities CSV should be (5 MB)."}
+    try:
+        result = official_data.import_csv(garmin_user_id, raw.decode("utf-8-sig", errors="replace"), miles=miles)
+    except ValueError as exc:
+        analytics.capture("history_imported", None, {"ok": False, "via": via, "$process_person_profile": False})
+        return {"error": str(exc)}
+    analytics.capture("history_imported", None, {"ok": True, "via": via, "count": result["imported"],
+                                                 "$process_person_profile": False})
+    return result
+
+
+@mcp.custom_route("/history", methods=["GET", "POST"])
+async def history(request: Request) -> Response:
+    """Add past runs from Garmin Connect's activities CSV, from a link this server signed."""
+    form = await request.form() if request.method == "POST" else request.query_params
+    garmin_user_id, signature = str(form.get("u", "")), str(form.get("s", ""))
+    if not garmin_user_id or not hmac.compare_digest(signature, store.history_signature(garmin_user_id)) \
+            or store.official_link_for_garmin_user(garmin_user_id) is None:
+        return page("Link not valid", "<div class=err>That link isn't valid any more. Ask Daash in your chat "
+                    "for a new one.</div>", 400, noindex=True)
+    done = ""
+    if request.method == "POST":
+        result = import_history(garmin_user_id, form.get("history"), str(form.get("units")) == "mi", "page")
+        if result is None:
+            done = "<div class=err>Choose your activities CSV first.</div>"
+        elif "error" in result:
+            done = f"<div class=err>{html.escape(result['error'])}</div>"
+        else:
+            return page("Past runs added", f"<h1>Added {result['imported']} activities</h1><p>From "
+                        f"{html.escape(result['from'])} to {html.escape(result['to'])}. Go back to your chat and ask "
+                        "Daash how your training's been going: it can see them now, in every chat.</p>", noindex=True)
+    have = official_data.imported_count(garmin_user_id)
+    body = f"""
+        <h1>Add your past runs</h1>
+        <p>Garmin sends Daash what your watch records from the day you connected. Add a CSV of your
+        earlier activities and Daash can see your training from before, in every chat.</p>
+        {f'<p class=note>{have} activities added so far. Adding a newer file adds to them.</p>' if have else ''}
+        {done}
+        <form method=post action=/history enctype=multipart/form-data style="margin-top:12px">
+          <input type=hidden name=u value="{html.escape(garmin_user_id)}">
+          <input type=hidden name=s value="{html.escape(signature)}">
+          {_history_fields()}
+          <button style="margin-top:16px">Add past runs</button>
+        </form>
+    """
+    return page("Add your past runs", body, noindex=True)
 
 
 @mcp.custom_route("/garmin-activities", methods=["GET"])
@@ -3430,6 +3569,7 @@ def main() -> None:
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
     if WEEKLY_EMAIL and support_mail.can_send():
         threading.Thread(target=_weekly_email_forever, name="weekly-email", daemon=True).start()
+        official.on_activities = _activities_arrived
     if analytics.enabled():
         threading.Thread(target=_signin_check_forever, name="signin-check", daemon=True).start()
     if official.configured():

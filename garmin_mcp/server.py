@@ -19,6 +19,7 @@ from contextvars import ContextVar
 from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from urllib.parse import quote
 
 import anyio
 from mcp import types
@@ -1080,13 +1081,26 @@ OFFICIAL_NOTHING = "Garmin's official API hasn't sent this yet: it arrives as th
 # nothing, checked the connection and left; a workout or a plan wasn't
 # enough to stay for. Their past runs are a CSV away, so that leads.
 def _official_meanwhile() -> str:
+    upload = _history_link()
     return (
         "Then offer, as one question, the quickest way to make Daash useful today: their past runs, "
         f"from Garmin Connect's activities list on a computer ({_activities_link()}), Export CSV at "
-        "the top right, dropped into this chat, which you then read to see their training and plan "
-        "from; or a workout on their watch for tomorrow, or a plan for their next race. Offer the "
-        "CSV once in a chat, not in every answer."
+        "the top right, "
+        + (f"added once at {upload} so every chat has them, or dropped into this chat for this one; "
+           if upload else "dropped into this chat, which you then read to see their training and plan from; ")
+        + "or a workout on their watch for tomorrow, or a plan for their next race. Offer the CSV once "
+        "in a chat, not in every answer."
     )
+
+
+def _history_link() -> str | None:
+    """This account's page to add past runs from Garmin Connect's CSV, kept for
+    every chat (hosted, on Garmin's official API alone)."""
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    garmin_user = _official_only() if base else None
+    if not garmin_user:
+        return None
+    return f"{base}/history?u={quote(garmin_user)}&s={store.history_signature(garmin_user)}"
 
 
 def _connected_on() -> str | None:
@@ -3286,8 +3300,10 @@ def _export_offer() -> str:
     return (
         "For their earlier runs, two ways, offered once, briefly, with the links. Quickest, on "
         f"a computer: Garmin Connect's activities list ({_activities_link()}), scroll down until "
-        "the oldest runs they want have loaded, press Export CSV at the top right, and drop the "
-        "file into this chat. For everything, they can ask Garmin for an export of their data "
+        "the oldest runs they want have loaded, press Export CSV at the top right, and "
+        + (f"add the file at {_history_link()}, which keeps it for every chat, or drop it into this chat. "
+           if _history_link() else "drop the file into this chat. ")
+        + "For everything, they can ask Garmin for an export of their data "
         f"({_export_link()}): Garmin emails a download link, usually within a day or two, and "
         "its activities file is in the zip's DI_CONNECT/DI-Connect-Fitness folder, the one "
         "ending summarizedActivities.json. Either file lets you read their past runs."
@@ -3313,14 +3329,20 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
     )
     if not activities:
         if since:
-            return {
+            # Drawn as a card that says what's coming and offers the two
+            # things that work today: a workout, and adding past runs.
+            return drop_empty({
+                "source": "waiting",
+                "since": since,
+                "upload": _history_link(),
                 "note": (
                     f"Connected through Garmin's official API on {since}. Garmin sends training from "
                     "then on, as the watch syncs, so earlier runs aren't here and nothing has arrived "
-                    "yet. Say so in a sentence, then offer to build a plan and put it on their watch. "
+                    "yet. The card says so and offers tomorrow's workout and adding past runs: add a "
+                    "sentence, then offer to build a plan and put it on their watch. "
                     + ask_first + " " + _export_offer()
-                )
-            }
+                ),
+            })
         return {
             "error": (
                 "Nothing is scheduled on the Garmin calendar, and nothing was recorded "
@@ -3328,7 +3350,13 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
             )
         }
     summary = training_plan.summarise_log(activities, today)
-    if since and isinstance(summary, dict):
+    imported = any(int(a.get("activityId") or 0) >= official_data.IMPORTED_IDS for a in activities
+                   if str(a.get("activityId") or "").isdigit())
+    if since and imported and isinstance(summary, dict):
+        summary["note"] = (
+            f"Connected through Garmin's official API on {since}; the runs before that are theirs, added "
+            "from Garmin Connect's CSV, so the weeks are whole.")
+    elif since and isinstance(summary, dict):
         summary["note"] = (
             f"Connected through Garmin's official API on {since}: Garmin sends training from then on, "
             "so the weeks before that look empty here but weren't. Say so once, in a sentence. " + ask_first

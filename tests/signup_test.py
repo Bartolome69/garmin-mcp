@@ -20,6 +20,7 @@ import re
 import secrets
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -107,6 +108,39 @@ def http(method: str, path: str, body=None, headers=None, as_json=False):
             return r.status, r.read().decode(), dict(r.headers)
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode(), dict(e.headers)
+
+
+def multipart(fields: dict, files: dict) -> tuple[bytes, dict]:
+    """A form as a browser posts one with a file in it."""
+    edge = "----daash-test-boundary"
+    out = b""
+    for name, value in fields.items():
+        out += f'--{edge}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+    for name, (filename, content) in files.items():
+        out += (f'--{edge}\r\nContent-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                "Content-Type: text/csv\r\n\r\n").encode() + content + b"\r\n"
+    return out + f"--{edge}--\r\n".encode(), {"content-type": f"multipart/form-data; boundary={edge}"}
+
+
+def raw_post(path: str, data: bytes, headers: dict):
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+
+    request = urllib.request.Request(f"{BASE}{path}", data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as r:
+            return r.status, r.read().decode(), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(), dict(e.headers)
+
+
+# Two runs from Garmin Connect's activities CSV, as Export CSV writes it.
+PAST_RUNS = (
+    "Activity Type,Date,Favorite,Title,Distance,Calories,Time,Avg HR,Max HR,Total Ascent,Moving Time\n"
+    'Running,2026-09-20 07:10:00,false,"Long run","21.10","1,450","01:52:30","142","160","120","01:51:00"\n'
+    'Pool Swim,2026-09-18 18:00:00,false,"Pool","1,500","400","00:35:00","130","150","--","00:33:00"\n'
+).encode()
 
 
 # Garmin, stubbed: which Garmin account the next approval is, and what it allows.
@@ -332,10 +366,64 @@ async def main() -> int:
             "consent": consent, "decision": "allow", "email": "not-an-email"}))
         check("an address that isn't one is sent back with a note", code == 200
               and "look like an email address" in body and consent_of(body) == consent)
-        code, _, headers = await run(lambda: http("POST", "/oauth/consent", {
-            "consent": consent, "decision": "allow", "email": "sam@example.com", "heard": "friend"}))
+        check("the Allow page offers to add past runs, closed and optional, in the same form",
+              'name=history' in body and "enctype=multipart/form-data" in body and "Add your past runs" in body
+              and "<details" in body)
+        data, head = multipart({"consent": consent, "decision": "allow", "email": "sam@example.com",
+                                "heard": "friend", "units": "km"}, {"history": ("Activities.csv", PAST_RUNS)})
+        code, _, headers = await run(lambda: raw_post("/oauth/consent", data, head))
         back = headers.get("location", "")
         check("with an email, Allow goes back to the app", code == 303 and back.startswith(REDIRECT), f"{code} {back[:80]}")
+        from garmin_mcp import official_data
+        past = [official_data.connect_activity(a) for a in official_data.activity_rows("g-new-1")]
+        check("and the past runs added with it are the account's, every chat's",
+              [(a["activityType"]["typeKey"], a["distance"], a["startTimeLocal"]) for a in past]
+              == [("running", 21100.0, "2026-09-20 07:10:00"), ("lap_swimming", 1500.0, "2026-09-18 18:00:00")],
+              str(past))
+        history_link = hosted.history_url(BASE, "g-new-1")
+        code, page_body, _ = await run(lambda: http("GET", history_link.replace(BASE, "")))
+        bad, _b, _ = await run(lambda: http("GET", "/history?u=g-new-1&s=nope"))
+        check("its own page to add more says how many it has, and a link not signed here is refused",
+              code == 200 and "2 activities added so far" in page_body and 'name=history' in page_body and bad == 400,
+              f"{code} {bad}")
+        newer = PAST_RUNS.replace(b"2026-09-20 07:10:00", b"2026-09-27 07:10:00")
+        data, head = multipart({"u": "g-new-1", "s": store.history_signature("g-new-1"), "units": "mi"},
+                               {"history": ("Activities.csv", newer)})
+        code, page_body, _ = await run(lambda: raw_post("/history", data, head))
+        miles = next(a for a in (official_data.connect_activity(a) for a in official_data.activity_rows("g-new-1"))
+                     if a["startTimeLocal"] == "2026-09-27 07:10:00")
+        data, head = multipart({"u": "g-new-1", "s": store.history_signature("g-new-1")},
+                               {"history": ("notes.csv", b"what,ever\n1,2\n")})
+        code_bad, bad_body, _ = await run(lambda: raw_post("/history", data, head))
+        check("a file added there in miles is read in miles, and a file that isn't the CSV is said so",
+              code == 200 and "Added 2 activities" in page_body and round(miles["distance"]) == 33957
+              and code_bad == 200 and "activities CSV: it needs the Activity Type" in bad_body, f"{miles} {bad_body[-300:]}")
+
+        # Its first run from Garmin, emailed once, with what to ask and where to add past runs.
+        sent_mail = []
+        first = {"activityType": "RUNNING", "distanceInMeters": 8000, "durationInSeconds": 2400, "startTimeInSeconds": 1}
+        went = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
+        again = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
+        late = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a), now=time.time() + 30 * 86400)
+        check("a new account's first run is emailed once, saying it's in and how to add past runs",
+              went and not again and not late and len(sent_mail) == 1 and sent_mail[0][0] == "sam@example.com"
+              and sent_mail[0][1] == "Your first run is in Daash" and "8.0 km" in sent_mail[0][2]
+              and "/history?u=g-new-1" in sent_mail[0][2] and "How did my last run go" in sent_mail[0][2],
+              str(sent_mail)[:400])
+        import calendar as _cal
+        pushed_at = _cal.timegm(time.strptime("2026-09-20 06:10:30", "%Y-%m-%d %H:%M:%S"))
+        store.save_official_summaries("g-new-1", "activities", [("p-1", pushed_at, {
+            "summaryId": "p-1", "activityId": 777, "activityType": "RUNNING", "startTimeInSeconds": pushed_at,
+            "startTimeOffsetInSeconds": 3600, "distanceInMeters": 21150})])
+        that_day = [a for a in official_data.activity_rows("g-new-1", "2026-09-20", "2026-09-20")]
+        check("a run in the CSV that Garmin also sent is Garmin's, once",
+              [a.get("activityId") for a in that_day] == [777], str(that_day))
+        with store._connect() as conn:
+            conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ? AND summary_id = ?", ("g-new-1", "p-1"))
+        # The checks after this are of an account with nothing yet.
+        with store._connect() as conn:
+            conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ? AND kind = ?",
+                         ("g-new-1", official_data.IMPORTED))
         connected = [p for e, p in reported if e == "connector_connected"]
         check("and is reported as an official sign-up, with the address",
               connected and connected[-1].get("route") == "official" and connected[-1].get("email") == "sam@example.com"

@@ -32,7 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Callable
 
 from cryptography.fernet import InvalidToken
 
@@ -446,6 +446,12 @@ def _start(summary: dict) -> int | None:
     return None
 
 
+# Told of each account's activities as they arrive, after they're kept: the
+# hosted server sends a new account its first-run email from here. It must
+# return at once, as Garmin waits on the push.
+on_activities: Callable[[str, list[dict]], None] | None = None
+
+
 def handle_push(body: bytes) -> dict[str, int]:
     """Keep what Garmin pushed, for accounts linked here. Returns counts per kind.
 
@@ -495,6 +501,11 @@ def handle_push(body: bytes) -> dict[str, int]:
             if store.official_link_for_garmin_user(garmin_user_id) is None:
                 continue
             kept[kind] = kept.get(kind, 0) + store.save_official_summaries(garmin_user_id, kind, rows)
+            if kind == "activities" and on_activities is not None:
+                try:
+                    on_activities(garmin_user_id, [row for _, _, row in rows])
+                except Exception:  # noqa: BLE001 - a notice never loses what Garmin sent
+                    log.exception("on_activities failed")
     return kept
 
 

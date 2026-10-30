@@ -308,6 +308,21 @@ f.src = "card.html";</script></body>`);
       /This block\s+4 weeks/.test(text) && /Half check/.test(text) && /London/.test(text) && /BASE/.test(text), text.slice(0, 500));
     await page.close();
 
+    // Oct 30: on Garmin's page, day one had nothing to show, and people left.
+    console.log("a new account with nothing yet");
+    ({ page, card } = await open({ source: "waiting", since: md(0), upload: "https://daash.test/history?u=g&s=x", note: "x", _card: SEEN }));
+    text = await card.evaluate(() => document.body.innerText);
+    await card.getByText("Build tomorrow\u2019s workout").click();
+    await page.waitForTimeout(300);
+    const askedWaiting = await page.evaluate(() => window.asked.slice(-1)[0]);
+    await card.getByText("Add past runs").click();
+    await page.waitForTimeout(300);
+    const openedWaiting = await page.evaluate(() => window.opened);
+    check("a new account's card says the first run is coming, and offers a workout and past runs",
+      /first run is on its way/.test(text) && /from now on/.test(text) && /workout for tomorrow/.test(askedWaiting || "")
+      && openedWaiting === "https://daash.test/history?u=g&s=x", JSON.stringify({ text: text.slice(0, 200), askedWaiting, openedWaiting }));
+    await page.close();
+
     console.log("a triathlon plan");
     ({ page, card } = await open({ label: "TRI", name: "70.3 build", goal: "Half Ironman", measure: "time", starts: md(7), ends: md(20),
       weeks: [1, 2].map((n) => ({ week: n, starts: md(7 * n), planned_min: 420 + 60 * n, sessions: [

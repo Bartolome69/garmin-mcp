@@ -11,6 +11,8 @@ arrives, as the privacy page says.
 from __future__ import annotations
 
 import calendar
+import csv
+import io
 import time
 from typing import Any, Iterable
 
@@ -20,8 +22,10 @@ from .formatting import drop_empty, duration, pace_per_km
 # The kinds Daash keeps, by the key Garmin pushes them under.
 KEPT = {"dailies", "sleeps", "hrv", "stressDetails", "userMetrics", "bodyComps", "pulseOx", "allDayRespiration",
         "activities", "manuallyUpdatedActivities", "activityDetails"}
-# Kinds Daash makes itself: the figures read from an activity's FIT file.
-OWN = {"activityFit"}
+# Kinds Daash makes itself: the figures read from an activity's FIT file, and
+# the past runs someone imported from Garmin Connect's activities CSV.
+IMPORTED = "importedActivities"
+OWN = {"activityFit", IMPORTED}
 # Curves and streams dropped from what is kept, by kind.
 _DROP_FIELDS = {
     "dailies": ("timeOffsetHeartRateSamples",),
@@ -32,7 +36,7 @@ _DROP_FIELDS = {
     "stressDetails": ("timeOffsetStressLevelValues", "timeOffsetBodyBatteryValues",
                       "bodyBatteryActivityEventList", "bodyBatteryDynamicFeedbackEvent"),
 }
-ACTIVITY_KINDS = ("activities", "manuallyUpdatedActivities")
+ACTIVITY_KINDS = ("activities", "manuallyUpdatedActivities", IMPORTED)
 
 
 def _values(curve: Any) -> list[float]:
@@ -455,13 +459,127 @@ def activity_rows(garmin_user_id: str, start: str | None = None, end: str | None
     since = calendar_seconds(start) - 86400 if start else 0
     seen: dict[str, dict] = {}
     for kind in ACTIVITY_KINDS:
-        for a in store.official_summaries(garmin_user_id, kind, since, limit=2000):
+        for a in store.official_summaries(garmin_user_id, kind, since, limit=CSV_LONGEST if kind == IMPORTED else 2000):
             seen[str(a.get("activityId") or a.get("summaryId"))] = a
+    # An imported run Garmin has also sent is Garmin's: the same start, to
+    # a few minutes, on the clock it was run by.
+    sent = [_wall(a.get("startTimeInSeconds"), _offset(a)) for a in seen.values() if not a.get("imported")]
+    sent_at = sorted(calendar.timegm(time.strptime(w, "%Y-%m-%d %H:%M:%S")) for w in sent if w)
+    for key in [k for k, a in seen.items() if a.get("imported")]:
+        at = seen[key].get("startTimeInSeconds") or 0
+        if any(abs(at - t) <= SAME_START for t in sent_at):
+            del seen[key]
     rows = sorted(seen.values(), key=lambda a: a.get("startTimeInSeconds") or 0, reverse=True)
     if start or end:
         rows = [a for a in rows if (_wall(a.get("startTimeInSeconds"), _offset(a)) or "")[:10] >= (start or "")
                 and (_wall(a.get("startTimeInSeconds"), _offset(a)) or "")[:10] <= (end or "9999")]
     return rows
+
+
+# --------------------------------------------------------------------------
+# Past runs from Garmin Connect's activities CSV
+# --------------------------------------------------------------------------
+
+# Garmin's official API sends only what syncs after someone connects, and
+# history only to Enterprise Access. Garmin Connect's activities list exports
+# a CSV on a computer (Export CSV, top right): imported, those runs read as
+# everything else does, so every chat has them, not just the one it was
+# dropped into (Oct 30).
+CSV_ID = "csv-"
+# An imported activity's id: a number, as every activity id is, above any
+# Garmin gives (theirs are around 2.5e10), from its start.
+IMPORTED_IDS = 10**12
+SAME_START = 180
+CSV_LONGEST = 5000
+# The CSV's activity types as Garmin's type keys.
+_CSV_TYPES = {
+    "running": "running", "trail running": "trail_running", "treadmill running": "treadmill_running",
+    "track running": "track_running", "indoor running": "indoor_running", "virtual running": "virtual_run",
+    "cycling": "cycling", "road cycling": "road_biking", "indoor cycling": "indoor_cycling",
+    "virtual cycling": "virtual_ride", "mountain biking": "mountain_biking", "gravel cycling": "gravel_cycling",
+    "pool swim": "lap_swimming", "open water swimming": "open_water_swimming",
+    "strength training": "strength_training", "walking": "walking", "hiking": "hiking", "yoga": "yoga",
+    "hiit": "hiit", "cardio": "cardio_training", "pilates": "pilates",
+}
+
+
+def _csv_number(text: Any) -> float | None:
+    value = str(text or "").strip().lstrip("'").replace(",", "")
+    try:
+        return float(value) if value not in ("", "--") else None
+    except ValueError:
+        return None
+
+
+def _csv_seconds(text: Any) -> float | None:
+    """'00:49:21', '49:21' or '00:00:02.8' as seconds."""
+    parts = str(text or "").strip().split(":")
+    try:
+        numbers = [float(p) for p in parts]
+    except ValueError:
+        return None
+    total = 0.0
+    for n in numbers:
+        total = total * 60 + n
+    return total or None
+
+
+def import_csv(garmin_user_id: str, text: str, miles: bool = False) -> dict[str, Any]:
+    """Keep the activities in Garmin Connect's activities CSV as this account's past.
+
+    Distances are in the units the account's Garmin Connect shows: km (a
+    swim in metres), or miles (a swim in yards) for a Garmin set to miles.
+    The CSV's times are the local clock, kept as such. Raises ValueError for
+    a file that isn't that CSV.
+    """
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    if not {"Activity Type", "Date", "Distance", "Time"} <= set(reader.fieldnames or []):
+        raise ValueError("That isn't Garmin Connect's activities CSV: it needs the Activity Type, Date, "
+                         "Distance and Time columns that Export CSV writes.")
+    rows: list[tuple[str, int | None, dict]] = []
+    for line in reader:
+        if len(rows) >= CSV_LONGEST:
+            break
+        try:
+            start = calendar.timegm(time.strptime(str(line.get("Date") or "").strip()[:19], "%Y-%m-%d %H:%M:%S"))
+        except ValueError:
+            continue
+        kind = str(line.get("Activity Type") or "").strip().lower()
+        key = _CSV_TYPES.get(kind, kind.replace(" ", "_") or "other")
+        swim = "swim" in key
+        distance = _csv_number(line.get("Distance"))
+        if distance is not None:
+            distance *= (0.9144 if miles else 1.0) if swim else (1609.344 if miles else 1000.0)
+        seconds = _csv_seconds(line.get("Time"))
+        moving = _csv_seconds(line.get("Moving Time")) or seconds
+        ascent = _csv_number(line.get("Total Ascent"))
+        summary_id = CSV_ID + time.strftime("%Y%m%d%H%M%S", time.gmtime(start))
+        rows.append((summary_id, start, drop_empty({
+            "summaryId": summary_id,
+            "activityId": IMPORTED_IDS + start,
+            "activityName": str(line.get("Title") or "").strip()[:80] or None,
+            "activityType": key,
+            "startTimeInSeconds": start,
+            "startTimeOffsetInSeconds": 0,
+            "durationInSeconds": seconds,
+            "distanceInMeters": round(distance, 1) if distance else None,
+            "averageSpeedInMetersPerSecond": round(distance / moving, 3) if distance and moving else None,
+            "averageHeartRateInBeatsPerMinute": _csv_number(line.get("Avg HR")),
+            "maxHeartRateInBeatsPerMinute": _csv_number(line.get("Max HR")),
+            "activeKilocalories": _csv_number(line.get("Calories")),
+            "totalElevationGainInMeters": ascent * (0.3048 if miles else 1.0) if ascent is not None else None,
+            "averageRunCadenceInStepsPerMinute": _csv_number(line.get("Avg Run Cadence")),
+            "imported": "csv",
+        })))
+    if not rows:
+        raise ValueError("No activities were found in that file.")
+    store.save_official_summaries(garmin_user_id, IMPORTED, rows)
+    days = sorted(time.strftime("%Y-%m-%d", time.gmtime(start)) for _, start, _ in rows if start)
+    return {"imported": len(rows), "from": days[0], "to": days[-1]}
+
+
+def imported_count(garmin_user_id: str) -> int:
+    return len(store.official_summaries(garmin_user_id, IMPORTED, 0, limit=CSV_LONGEST))
 
 
 def fit_figures(garmin_user_id: str) -> dict[str, dict]:
