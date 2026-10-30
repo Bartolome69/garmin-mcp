@@ -43,9 +43,9 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
+from . import analytics, conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
-from .session import GarminError, session
+from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
 from .workouts import (
     SPORTS,
@@ -3774,9 +3774,30 @@ async def _weekly_email_test(user_token: str) -> dict[str, Any]:
     return {"sent_to": user.email_masked, "as_of_monday": monday.isoformat(), "subject": subject}
 
 
+def _friends_action(action: str, emails: str) -> dict[str, Any]:
+    named = [e.strip() for e in (emails or "").split(",") if "@" in e]
+    if action != "friends" and not named:
+        return {"error": "Give the addresses in `emails`, separated by commas."}
+    if action == "add_friends":
+        changed = store.add_friends([(e, mask_email(e) or "hidden") for e in named])
+    elif action == "remove_friends":
+        changed = store.remove_friends(named)
+    else:
+        changed = 0
+    analytics.forget_friends()
+    listed = [masked for _, masked in store.friends()]
+    return drop_empty({
+        "friends": listed, "count": len(listed),
+        "added": changed if action == "add_friends" else None,
+        "removed": changed if action == "remove_friends" else None,
+        "note": "Each one's PostHog profile is marked friend from their next use of Daash, "
+                "so the friends cohort fills as they come back.",
+    })
+
+
 @mcp.tool()
 @tool_errors
-async def garmin_official(action: str = "status", date: str = "tomorrow") -> dict[str, Any]:
+async def garmin_official(action: str = "status", date: str = "tomorrow", emails: str = "") -> dict[str, Any]:
     """Preview: Daash on Garmin's official API, tried with your own account first.
 
     Args:
@@ -3794,13 +3815,20 @@ async def garmin_official(action: str = "status", date: str = "tomorrow") -> dic
             `date` for the following six weeks, to see whether it lists only
             what Daash scheduled or everything on the calendar;
             "weekly_email" sends this account's Monday email to its own
-            address now, as it would go out next Monday.
+            address now, as it would go out next Monday; "friends" lists
+            Bart's friends using Daash, and "add_friends" or
+            "remove_friends" changes that list from `emails`. A friend's
+            PostHog profile is marked friend, for the friends cohort.
         date: For test_workout, the day to schedule it on.
+        emails: For add_friends and remove_friends, addresses separated by
+            commas.
     """
     user_token = official.current()
     action = (action or "status").strip().lower()
     if action == "weekly_email" and user_token:
         return await _weekly_email_test(user_token)
+    if action in ("friends", "add_friends", "remove_friends"):
+        return _friends_action(action, emails)
     if user_token is None or not official.configured():
         return {"error": "Garmin's official API is only on the hosted server, once it's set up there."}
     if action in ("status", "connect"):

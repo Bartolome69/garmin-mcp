@@ -1728,6 +1728,7 @@ async def main() -> int:
         # Bart's friends, named only in a secret, get a PostHog profile marked
         # friend; nobody else gets a profile at all.
         os.environ["GARMIN_MCP_FRIENDS"] = " Erin@Example.com , someone@example.com"
+        analytics.forget_friends()
         try:
             before = len(SENT)
             analytics.capture("friend_check", erin_hash, {"$process_person_profile": False})
@@ -1736,10 +1737,25 @@ async def main() -> int:
             await asyncio.sleep(0.3)
         finally:
             os.environ.pop("GARMIN_MCP_FRIENDS", None)
+            analytics.forget_friends()
         seen = [(e["properties"]["$process_person_profile"], e["properties"].get("$set")) for e in SENT[before:]
                 if e["event"] == "friend_check"]
         check("a friend's events build a profile marked friend, anyone else's none",
               seen == [(True, {"friend": True}), (False, None), (False, None)], str(seen))
+        # Friends named from a chat, with no secret to edit.
+        named = garmin_server._friends_action("add_friends", " Bob@Example.com, not-an-address , carol@example.com")
+        again = garmin_server._friends_action("add_friends", "bob@example.com")
+        before = len(SENT)
+        analytics.capture("friend_check", store.email_fingerprint("bob@example.com"), {})
+        await asyncio.sleep(0.3)
+        marked = [e["properties"].get("$set") for e in SENT[before:] if e["event"] == "friend_check"]
+        gone = garmin_server._friends_action("remove_friends", "carol@example.com")
+        check("friends are added from a chat, once each, marked at once, and removed the same way",
+              named.get("added") == 2 and again.get("added") == 0 and named["count"] == 2
+              and marked == [{"friend": True}] and gone.get("removed") == 1 and gone["count"] == 1
+              and "bob@example.com" not in str(named) and garmin_server._friends_action("add_friends", "").get("error"),
+              f"{named} {again} {marked} {gone}")
+        garmin_server._friends_action("remove_friends", "bob@example.com")
 
         at_home = garmin_server._view_meta()
         os.environ["GARMIN_MCP_BASE_URL"] = base

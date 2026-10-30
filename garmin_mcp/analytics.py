@@ -12,7 +12,8 @@ the store keeps it), so the person running this can tell one friend's row from
 another's in a report. Never the full address, a token or any Garmin data. The
 distinct id is an HMAC of the user's token under the server secret, and person
 profiles are turned off so nothing accumulates against it, except for the few
-of Bart's friends named in GARMIN_MCP_FRIENDS, whose profile only says friend.
+of Bart's friends (named from a chat, or in GARMIN_MCP_FRIENDS), whose profile
+only says friend.
 
 Off unless GARMIN_MCP_POSTHOG_KEY is set, so a self-hosted copy reports to
 nobody by default. Sending happens on a background thread and swallows every
@@ -61,22 +62,31 @@ def distinct_id(subject: str | None) -> str:
     return hmac.new(key, b"posthog:" + subject.encode(), hashlib.sha256).hexdigest()[:32]
 
 
+_FRIENDS_TTL = 60
+_FRIENDS: dict[str, Any] = {"at": 0.0, "set": frozenset()}
+
+
 def _friends() -> frozenset[str]:
-    """Fingerprints of the people in GARMIN_MCP_FRIENDS, Bart's friends using Daash.
-
-    Their addresses live only in that secret, never in the code; they are
-    compared as fingerprints, the way sign-in recognises a returning person.
-    """
-    configured = os.environ.get("GARMIN_MCP_FRIENDS", "")
-    if configured != _FRIENDS[0]:
+    """Fingerprints of Bart's friends using Daash: those named from a chat, kept
+    in the store, and any in GARMIN_MCP_FRIENDS. Read again each minute."""
+    now = time.monotonic()
+    if now - _FRIENDS["at"] > _FRIENDS_TTL:
+        named: set[str] = set()
+        try:
+            from . import store  # here, not at the top: the store reports nothing itself
+            named = {fingerprint for fingerprint, _ in store.friends()}
+        except Exception:  # noqa: BLE001 - analytics must never fail what it reports on
+            log.debug("friends unreadable", exc_info=True)
         key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
-        _FRIENDS[:] = [configured, frozenset(
-            hmac.new(key, entry.strip().lower().encode(), hashlib.sha256).hexdigest()
-            for entry in configured.split(",") if "@" in entry)]
-    return _FRIENDS[1]
+        named |= {hmac.new(key, entry.strip().lower().encode(), hashlib.sha256).hexdigest()
+                  for entry in os.environ.get("GARMIN_MCP_FRIENDS", "").split(",") if "@" in entry}
+        _FRIENDS.update(at=now, set=frozenset(named))
+    return _FRIENDS["set"]
 
 
-_FRIENDS: list[Any] = ["", frozenset()]
+def forget_friends() -> None:
+    """Read the friends again at the next event, after the list has changed."""
+    _FRIENDS["at"] = 0.0
 
 
 def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:

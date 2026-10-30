@@ -62,6 +62,18 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN weekly_sent TEXT",
 )
 
+# Bart's friends using Daash, named from a chat (garmin_official's friends
+# actions): their PostHog profile is marked friend, so a cohort of them fills
+# itself. Fingerprints only, the way sign-in recognises a returning person,
+# and the masked address to tell the rows apart.
+FRIENDS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS friends (
+    email_hash    TEXT PRIMARY KEY,
+    email_masked  TEXT NOT NULL,
+    added_at      INTEGER NOT NULL
+);
+"""
+
 # OAuth state. Separate from `users`: a person is one row there however many
 # clients they authorise, and revoking a client must not touch their Garmin
 # session. `subject` on the token rows is the user_token that owns them.
@@ -190,6 +202,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.executescript(OAUTH_SCHEMA)
     conn.executescript(OFFICIAL_SCHEMA)
+    conn.executescript(FRIENDS_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -304,6 +317,26 @@ def repair_password_on_official() -> int:
                 "UPDATE official_links SET official_only = NULL WHERE official_only = 1 AND user_token IN "
                 "(SELECT user_token FROM users WHERE COALESCE(route, '') != 'official')")
     return len(joined)
+
+
+def add_friends(emails: list[tuple[str, str]]) -> int:
+    """Name (address, masked address) pairs as Bart's friends. Returns how many were new."""
+    now = int(time.time())
+    with _connect() as conn:
+        return sum(conn.execute("INSERT OR IGNORE INTO friends VALUES (?, ?, ?)",
+                                (email_fingerprint(email), masked, now)).rowcount for email, masked in emails)
+
+
+def remove_friends(emails: list[str]) -> int:
+    with _connect() as conn:
+        return sum(conn.execute("DELETE FROM friends WHERE email_hash = ?", (email_fingerprint(e),)).rowcount
+                   for e in emails)
+
+
+def friends() -> list[tuple[str, str]]:
+    """Every friend as (fingerprint, masked address), oldest first."""
+    with _connect() as conn:
+        return [(h, m) for h, m in conn.execute("SELECT email_hash, email_masked FROM friends ORDER BY added_at")]
 
 
 def email_hash_for(user_token: str) -> str | None:
