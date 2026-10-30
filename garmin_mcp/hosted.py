@@ -2241,8 +2241,16 @@ async def email_ask(request: Request) -> Response:
 @mcp.custom_route("/garmin-export", methods=["GET"])
 async def garmin_export(request: Request) -> Response:
     """Count a click on the suggestion to export Garmin data, then go to Garmin's page."""
-    analytics.capture("garmin_export_clicked", None, {})
+    analytics.capture("garmin_export_clicked", None, {"via": "full"})
     return RedirectResponse(server_mod.GARMIN_EXPORT, status_code=302)
+
+
+@mcp.custom_route("/garmin-activities", methods=["GET"])
+async def garmin_activities(request: Request) -> Response:
+    """Count a click on the suggestion to export the activities CSV, then go
+    to Garmin Connect's activities list, where its Export CSV is."""
+    analytics.capture("garmin_export_clicked", None, {"via": "csv"})
+    return RedirectResponse(server_mod.GARMIN_ACTIVITIES, status_code=302)
 
 
 @mcp.custom_route("/email/unsubscribe", methods=["GET", "POST"])

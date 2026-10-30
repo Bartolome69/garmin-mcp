@@ -1686,6 +1686,18 @@ async def main() -> int:
               and code == 302 and location == garmin_server.GARMIN_EXPORT
               and [e["event"] for e in SENT[before:]] == ["garmin_export_clicked"]
               and garmin_server._export_offer().count(garmin_server.GARMIN_EXPORT) == 1, f"{code} {location} {offer}")
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        meanwhile = garmin_server._official_meanwhile()
+        os.environ.pop("GARMIN_MCP_BASE_URL", None)
+        before = len(SENT)
+        code, location = await anyio_run(no_follow, "/garmin-activities")
+        await asyncio.sleep(0.3)
+        check("an empty day one on Garmin's page leads with the activities CSV, its click counted on the way to Garmin",
+              f"{base}/garmin-activities" in meanwhile and "Export CSV" in meanwhile
+              and meanwhile.index("CSV") < meanwhile.index("workout")
+              and code == 302 and location == garmin_server.GARMIN_ACTIVITIES
+              and [(e["event"], e["properties"].get("via")) for e in SENT[before:]] == [("garmin_export_clicked", "csv")],
+              f"{code} {location} {SENT[before:]}")
 
         # Before its answer arrives a card says it opened, or that it is
         # still waiting, to an address written into it, naming no one.

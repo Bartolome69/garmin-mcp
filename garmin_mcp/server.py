@@ -1076,8 +1076,17 @@ OFFICIAL_NOTHING = "Garmin's official API hasn't sent this yet: it arrives as th
 # watch. Oct 26: of the first four people on Garmin's page, three went looking
 # for last night and today, found nothing, checked the connection, and none
 # built a workout; half the password sign-ins that day built one.
-OFFICIAL_MEANWHILE = ("Meanwhile, offer what works from day one, as one question: a workout on their watch "
-                      "for tomorrow, or a plan for their next race (asking first about their recent running).")
+# Oct 30: five people on Garmin's page asked for their runs on day one, got
+# nothing, checked the connection and left; a workout or a plan wasn't
+# enough to stay for. Their past runs are a CSV away, so that leads.
+def _official_meanwhile() -> str:
+    return (
+        "Then offer, as one question, the quickest way to make Daash useful today: their past runs, "
+        f"from Garmin Connect's activities list on a computer ({_activities_link()}), Export CSV at "
+        "the top right, dropped into this chat, which you then read to see their training and plan "
+        "from; or a workout on their watch for tomorrow, or a plan for their next race. Offer the "
+        "CSV once in a chat, not in every answer."
+    )
 
 
 def _connected_on() -> str | None:
@@ -1100,7 +1109,7 @@ def _official_nothing(day: str, night: bool = False) -> str:
     if since and (day < since or (night and day == since)):
         return (f"This is from before the account connected Daash on {since}. Garmin's official API "
                 "only sends what syncs after that, so it won't arrive. Say so plainly, in a sentence. "
-                + OFFICIAL_MEANWHILE)
+                + _official_meanwhile())
     return OFFICIAL_NOTHING
 
 
@@ -1405,7 +1414,7 @@ def _no_activities_yet(start: str | None) -> str:
     if since and (start is None or start <= since):
         return (f"No activities have synced since the account connected Daash on {since}. Garmin's official "
                 "API sends activities from then on, as the watch syncs, so earlier ones won't show; the next "
-                "one recorded will. Say so in a sentence. " + OFFICIAL_MEANWHILE)
+                "one recorded will. Say so in a sentence. " + _official_meanwhile())
     return OFFICIAL_NOTHING
 
 
@@ -3263,13 +3272,20 @@ def _export_link() -> str:
 GARMIN_ACTIVITIES = "https://connect.garmin.com/modern/activities"
 
 
+def _activities_link() -> str:
+    """Garmin Connect's activities list, by way of the hosted server so a
+    click on the CSV suggestion is counted."""
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    return f"{base}/garmin-activities" if base else GARMIN_ACTIVITIES
+
+
 def _export_offer() -> str:
     # The activities list's Export CSV (on a computer, not Connect's phone
     # layout) is instant but holds only the rows loaded on the page: Oct 29,
     # one with the page left as it opened held 20, from three weeks back.
     return (
         "For their earlier runs, two ways, offered once, briefly, with the links. Quickest, on "
-        f"a computer: Garmin Connect's activities list ({GARMIN_ACTIVITIES}), scroll down until "
+        f"a computer: Garmin Connect's activities list ({_activities_link()}), scroll down until "
         "the oldest runs they want have loaded, press Export CSV at the top right, and drop the "
         "file into this chat. For everything, they can ask Garmin for an export of their data "
         f"({_export_link()}): Garmin emails a download link, usually within a day or two, and "
@@ -4251,7 +4267,7 @@ async def get_connection_status() -> dict[str, Any]:
                   "what_to_expect": ("Connected and working. Garmin's official API sends what the watch syncs "
                                      "from the moment the account connected, nothing from before, so a new "
                                      "account looks empty until the next sync. Writing workouts and plans to "
-                                     "the watch works straight away. " + OFFICIAL_MEANWHILE)}
+                                     "the watch works straight away. " + _official_meanwhile())}
         if not official.can_write(client.user_token):
             status["note"] = ("Putting workouts on the watch was left off when this account approved Daash in "
                               "Garmin. It can be turned on in Garmin Connect's connected apps settings.")
