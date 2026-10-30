@@ -981,9 +981,11 @@ def _with_opened_address(page: str) -> str:
 
 def _app_view(uri: str, filename: str, description: str) -> None:
     def read() -> str:
+        hooks.view_read(name)
         return _with_opened_address((_UI / filename).read_text(encoding="utf-8"))
 
-    read.__name__ = filename.split(".")[0] + "_view"
+    name = filename.split(".")[0]
+    read.__name__ = name + "_view"
     meta = _view_meta()
 
     def resource(at: str, fn) -> None:
@@ -1001,7 +1003,8 @@ def _app_view(uri: str, filename: str, description: str) -> None:
     # A chat that kept an older tool list asks for an older address. It gets
     # the view as it is now rather than nothing, so a change never breaks one.
     def read_any(version: str) -> str:
-        return read()
+        hooks.view_read(name, version)
+        return _with_opened_address((_UI / filename).read_text(encoding="utf-8"))
 
     read_any.__name__ = read.__name__ + "_any_version"
     try:

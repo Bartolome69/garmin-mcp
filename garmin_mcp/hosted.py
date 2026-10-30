@@ -2298,6 +2298,16 @@ async def card_seen(request: Request) -> Response:
     return Response(status_code=204)
 
 
+def _note_view_read(name: str, version: str | None) -> None:
+    """A chat app fetching a card's view: when, which, and whether it asked by
+    an older address (a chat holding an earlier tool list). For no one: set
+    beside card_sent and card_opened, it shows how long an app takes to ask."""
+    analytics.capture("card_view_read", None, drop_empty({"card": name, "older_address": True if version else None}))
+
+
+hooks.on_view = _note_view_read
+
+
 @mcp.custom_route("/card/opened", methods=["POST"])
 async def card_opened(request: Request) -> Response:
     """A card saying it opened, or that it is still waiting for its answer.

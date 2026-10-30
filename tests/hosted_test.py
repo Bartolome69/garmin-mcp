@@ -1706,6 +1706,25 @@ async def main() -> int:
               codes == [204, 204, 204] and early == [("card_opened", "anonymous", 0.0, None),
                                                     ("card_waiting", "anonymous", 8.0, "ClaudeAndroid 1.2 mobile")], str(early))
 
+        # A chat app fetching a card's view is noted for no one, at once, and
+        # an older address is noted as such.
+        before = len(SENT)
+        older = garmin_server.PLAN_VIEW.rsplit("/", 1)[0] + "/0000000000"
+        async with streamable_http_client(f"{base}/u/{erin}/mcp") as (r, w):
+            async with ClientSession(r, w) as sess:
+                await sess.initialize()
+                started = time.perf_counter()
+                current = await sess.read_resource(garmin_server.PLAN_VIEW)
+                took = time.perf_counter() - started
+                kept = await sess.read_resource(older)
+        await asyncio.sleep(0.3)
+        reads = [(e["distinct_id"], e["properties"].get("card"), e["properties"].get("older_address"))
+                 for e in SENT[before:] if e["event"] == "card_view_read"]
+        check("fetching a card's view is counted for no one, the older address as such, and served as before",
+              reads == [("anonymous", "plan", None), ("anonymous", "plan", True)]
+              and "Loading your plan" in current.contents[0].text and "Loading your plan" in kept.contents[0].text
+              and took < 1.0, f"{reads} {took:.2f}s")
+
         at_home = garmin_server._view_meta()
         os.environ["GARMIN_MCP_BASE_URL"] = base
         hosted_meta = garmin_server._view_meta()
