@@ -1126,7 +1126,9 @@ def summarise_calendar(
                        planned_metres=planned_metres, weekly_km=weekly_km, shapes=shapes, phases=phases,
                        efforts=efforts, through=today)
     result.pop("label", None)
-    for key in ("current_week", "weeks_total", "finished", "phases"):
+    # Phases stay: weeks of a plan made here band by its phases, any other
+    # week is left blank.
+    for key in ("current_week", "weeks_total", "finished"):
         result.pop(key, None)
     result["source"] = "calendar"
     result["note"] = (

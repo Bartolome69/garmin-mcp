@@ -925,8 +925,11 @@
     if (m.mode !== "block") return [];
     var b = m.block, many = m.weeks.length > 6;
     var total = Math.round(sum(m.weeks, function (w) { return w.plannedKm; }));
-    var nodes = [{ a: "This block", b: many ? m.weeks.length + " weeks" : (total ? amt(total) : ""), cur: true }];
-    var marks = (b.milestones || []).slice(0, 4);
+    var nodes = [{ a: "This block", b: many ? (b.weeks_total || m.weeks.length) + " weeks" : (total ? amt(total) : ""), cur: true }];
+    // On the calendar, a block that leads into the next plan (a base block
+    // before a marathon build) has no races of its own: the next plan's are
+    // the ones coming up (Oct 30).
+    var marks = (b.milestones && b.milestones.length ? b.milestones : (m.upcoming && m.upcoming.milestones) || []).slice(0, 4);
     if (marks.length) {
       marks.forEach(function (x) { nodes.push({ a: x.label, b: x.target || (x.date ? short(x.date) : "") }); });
     } else if (b.goal && b.name) {

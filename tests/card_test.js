@@ -294,6 +294,20 @@ f.src = "card.html";</script></body>`);
       drawnLong.scrolls && drawnLong.seen, JSON.stringify(drawnLong));
     await page.close();
 
+    // Oct 30: the calendar showed the base block running now, with no
+    // races: they were the London build's, the block that follows it.
+    console.log("a lead-in block on the calendar");
+    ({ page, card } = await open({ source: "calendar", current_plan: { label: "B1", goal: "Base block: 4 weeks to 8 Nov", weeks_total: 4 },
+      upcoming_plan: { label: "MAR", name: "London build", starts: md(14), milestones: [{ label: "Half check", target: "1:21" }, { label: "London", target: "sub-2:40" }] },
+      phases: [{ label: "Base", from_week: 3, to_week: 8 }],
+      weeks: Array.from({ length: 8 }, (_, i) => ({ week: i + 1, starts: md(7 * (i - 1)), current: i === 1, planned_km: 50,
+        sessions: [{ date: md(7 * (i - 1) + 1), day: "Tue", name: "10km easy", type: "easy", sport: "run", kind: "run", status: i < 1 ? "done" : "ahead", planned_km: 10 }] })),
+      next_session: null, _card: SEEN }));
+    text = await card.evaluate(() => document.body.innerText);
+    check("a block leading into the next plan shows that plan's races, and its phases",
+      /This block\s+4 weeks/.test(text) && /Half check/.test(text) && /London/.test(text) && /BASE/.test(text), text.slice(0, 500));
+    await page.close();
+
     console.log("a triathlon plan");
     ({ page, card } = await open({ label: "TRI", name: "70.3 build", goal: "Half Ironman", measure: "time", starts: md(7), ends: md(20),
       weeks: [1, 2].map((n) => ({ week: n, starts: md(7 * n), planned_min: 420 + 60 * n, sessions: [

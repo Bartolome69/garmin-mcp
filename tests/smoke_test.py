@@ -1739,6 +1739,28 @@ async def main() -> int:
             check("a strength session without exercises is refused before anything is made",
                   "Session 1" in str(no_moves.get("error")), str(no_moves)[:160])
             payload(await sess.call_tool("remove_plan", {"label": "GY", "confirm": "GY"}))
+
+            # A base block leading into a marathon build: the calendar view
+            # names the build's races and bands its phases (Oct 30, "why
+            # can't I see my races?").
+            lead = payload(await sess.call_tool("create_plan", {"goal": "Base block", "label": "LB", "sessions": [
+                {"date": day(0), "name": "Easy 8k", "steps": easy}, {"date": day(2), "name": "Easy 9k", "steps": easy},
+                {"date": day(4), "name": "Easy 10k", "steps": easy}]}))
+            build = payload(await sess.call_tool("create_plan", {
+                "goal": "Marathon, sub-3", "label": "MB", "name": "Marathon build",
+                "milestones": [{"label": "Half check", "date": day(30), "target": "1:25"}, {"label": "Race", "date": day(60)}],
+                "sessions": [{"date": day(d), "name": f"Easy {d}", "steps": easy, "phase": "Base" if d < 30 else "Build"}
+                             for d in (14, 21, 28, 35, 42)]}))
+            cal = payload(await sess.call_tool("get_plan", {}))
+            rows_cal = [x for w in cal.get("weeks", []) for x in w["sessions"]]
+            check("the calendar names the next plan's races and bands its phases",
+                  "error" not in lead and "error" not in build
+                  and [m_["label"] for m_ in (cal.get("upcoming_plan") or {}).get("milestones", [])] == ["Half check", "Race"]
+                  and [p_["label"] for p_ in cal.get("phases") or []][-2:] == ["Base", "Build"]
+                  and any(x.get("phase") == "Build" for x in rows_cal),
+                  f"{cal.get('upcoming_plan')} {cal.get('phases')}")
+            payload(await sess.call_tool("remove_plan", {"label": "LB", "confirm": "LB"}))
+            payload(await sess.call_tool("remove_plan", {"label": "MB", "confirm": "MB"}))
             check_plan_summary(check)
             check_chart_config_read_only(check)
             await check_preview_gate(check)

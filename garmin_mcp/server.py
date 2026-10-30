@@ -3035,8 +3035,9 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     shapes: dict[Any, list[dict[str, Any]]] = {}
     efforts: dict[Any, str | None] = {}
     phases: dict[Any, str] = {}
-    phase_map: list[dict[str, Any]] = []
-    phase_start: date_cls | None = None
+    # Each plan's phases by week, as its workouts carry them: the one running
+    # and, on the calendar, the one that follows it.
+    phase_maps: dict[str, tuple[list[dict[str, Any]], date_cls]] = {}
     meta: dict[str, Any] = {}
     goal_code = code or (context or {}).get("label")
     # The block after a running one: its name and goal come from its own
@@ -3064,37 +3065,44 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
             shapes[wid] = shape
         efforts[wid] = training_plan.workout_effort(detail)
         text = detail.get("description")
+        for plan_code in (goal_code, (following or {}).get("label")):
+            if plan_code and f"Plan {plan_code}:" in (text or ""):
+                phase = training_plan.phase_from_description(text)
+                if phase:
+                    phases[wid] = phase
+                found_map = training_plan.phases_from_description(text)
+                found_start = training_plan.plan_start_from_description(text, plan_code)
+                if found_map and found_start and plan_code not in phase_maps:
+                    phase_maps[plan_code] = (found_map, found_start)
         if goal_code and f"Plan {goal_code}:" in (text or ""):
             goal = goal or training_plan.goal_from_description(text, goal_code)
-            phase = training_plan.phase_from_description(text)
-            if phase:
-                phases[wid] = phase
-            if not phase_map:
-                phase_map = training_plan.phases_from_description(text)
-                phase_start = training_plan.plan_start_from_description(text, goal_code)
             if not meta:
                 meta = drop_empty({
                     **training_plan.block_from_description(text),
                     "milestones": training_plan.milestones_from_description(text) or None,
                 })
         elif following and not following_meta and f"Plan {following['label']}:" in (text or ""):
+            # Its races too: on the calendar they're the ones coming up
+            # when the block running now is a lead-in to it (Oct 30).
             following_meta = drop_empty({
                 "goal": training_plan.goal_from_description(text, following["label"]),
                 **training_plan.block_from_description(text),
+                "milestones": training_plan.milestones_from_description(text) or None,
             })
 
-    # The plan's phases by week ride on every workout, so one read bands
-    # the sessions not read yet as well.
-    if phase_map and phase_start:
-        week_one = training_plan.monday_of(phase_start)
-        for item in sessions if code else plans.get(goal_code) or []:
-            wid = item.get("workoutId")
-            if not wid or wid in phases or training_plan.label_of(item.get("title") or item.get("workoutName")) != goal_code:
-                continue
-            n = (training_plan.monday_of(date_cls.fromisoformat(item["date"][:10])) - week_one).days // 7 + 1
-            found = next((p["label"] for p in phase_map if p["from_week"] <= n <= p["to_week"]), None)
-            if found:
-                phases[wid] = found
+    # A plan's phases by week ride on every workout, so one read bands the
+    # sessions not read yet as well.
+    for item in sessions:
+        wid = item.get("workoutId")
+        plan_code = training_plan.label_of(item.get("title") or item.get("workoutName"))
+        if not wid or wid in phases or plan_code not in phase_maps:
+            continue
+        phase_map, phase_start = phase_maps[plan_code]
+        n = (training_plan.monday_of(date_cls.fromisoformat(item["date"][:10]))
+             - training_plan.monday_of(phase_start)).days // 7 + 1
+        found = next((p["label"] for p in phase_map if p["from_week"] <= n <= p["to_week"]), None)
+        if found:
+            phases[wid] = found
 
     if code is None:
         result = _mark_unread(await _with_next_steps(training_plan.summarise_calendar(
