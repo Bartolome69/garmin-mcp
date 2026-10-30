@@ -948,7 +948,10 @@ def _app_tool(view: str, note: str = VIEW_NOTE):
     def register(fn):
         @functools.wraps(fn)
         async def answered(*args, **kwargs):
-            return _for_view(await fn(*args, **kwargs), note)
+            result = await fn(*args, **kwargs)
+            if isinstance(result, dict) and "error" not in result and await _in_miles():
+                result = {**result, "units": "mi", "units_note": MILES_NOTE}
+            return _for_view(result, note)
 
         try:
             mcp.tool(meta=meta)(answered)
@@ -957,6 +960,23 @@ def _app_tool(view: str, note: str = VIEW_NOTE):
         return fn
 
     return register
+
+
+MILES_NOTE = (
+    "The user's Garmin is set to miles: the card shows miles and paces per mile, so say "
+    "distances and paces in miles too. The numbers here are in km; a pace given to a "
+    "workout may be per mile, as \"8:00/mi\"."
+)
+
+
+async def _in_miles() -> bool:
+    """Whether the person's Garmin is set to miles (statute), as Garmin
+    reads it at sign-in; km whenever it can't say."""
+    try:
+        system = await _call(lambda c: getattr(c, "unit_system", None))
+    except Exception:  # noqa: BLE001 - the answer stands in km without it
+        return False
+    return str(system or "").lower().startswith("statute")
 
 
 def _view_meta() -> dict[str, Any] | None:

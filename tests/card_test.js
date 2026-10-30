@@ -306,6 +306,29 @@ f.src = "card.html";</script></body>`);
       /8h/.test(text) && /1h 30m/.test(text) && /10 km/.test(text) && !/480 km/.test(text), text.slice(0, 400));
     await page.close();
 
+    console.log("a workout in miles");
+    fs.writeFileSync(path.join(dir, "host.html"), host({ ...SESSION, units: "mi", _card: SEEN }, "session.html"));
+    page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await listen(page);
+    await page.goto("file://" + path.join(dir, "host.html"));
+    await page.waitForTimeout(800);
+    text = await page.frames()[1].evaluate(() => document.body.innerText);
+    check("the workout card in miles too: its total, steps and paces",
+      /\bmi\b/.test(text) && /\/mi/.test(text) && !/\d\s?km\b|\/km/.test(text.replace(/Sub-T 3 × \d km/g, "")), text.slice(0, 500));
+    await page.close();
+
+    console.log("a plan in miles");
+    ({ page, card } = await open({ ...longPlan(3), units: "mi", weeks: [{ week: 1, starts: md(7), planned_km: 32.2, sessions: [
+      { date: md(8), day: "Tue", name: "Steady", type: "easy", sport: "run", kind: "run", status: "ahead", planned_km: 16.1 },
+      { date: md(9), day: "Wed", name: "Tempo", type: "threshold", sport: "run", kind: "run", status: "ahead", planned_km: 16.1 }] }],
+      next_session: { date: md(8), day: "Tue", name: "Steady", type: "easy", sport: "run", kind: "run", status: "ahead", planned_km: 16.1,
+        target: "5:00–5:10/km", steps: [{ kind: "interval", label: "Run", amount: "16.1 km", target: "5:00–5:10/km" }] }, _card: SEEN }));
+    text = await card.evaluate(() => document.body.innerText);
+    check("a Garmin set to miles sees miles and paces per mile, not km",
+      /10 mi/.test(text) && /20 mi/.test(text) && /8:03–8:19\/mi/.test(text) && !/\bkm\b/.test(text), text.slice(0, 600));
+    await page.close();
+
     check("no page threw an error", errors.length === 0, errors.join(" | "));
   } finally {
     await browser.close();

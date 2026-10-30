@@ -8,6 +8,7 @@ it lands in your account.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping, Sequence
 
 from garminconnect import workout as gw
@@ -61,11 +62,15 @@ class WorkoutError(ValueError):
 
 
 def parse_pace(value: Any) -> float:
-    """'4:05', '4:05 /km' or 245 -> seconds per kilometre."""
+    """'4:05', '4:05 /km', '6:35 /mi' or 245 -> seconds per kilometre."""
+    per_mile = False
     if isinstance(value, (int, float)):
         seconds = float(value)
     else:
-        text = str(value).strip().lower().replace("/km", "").replace("min", "").strip()
+        text = str(value).strip().lower()
+        # A runner in miles says their pace per mile.
+        per_mile = bool(re.search(r"/\s*(mi|mile)\b", text))
+        text = re.sub(r"/\s*(km|mi|mile)\b", "", text).replace("min", "").strip()
         if ":" in text:
             minutes, _, secs = text.partition(":")
             try:
@@ -77,8 +82,10 @@ def parse_pace(value: Any) -> float:
                 seconds = float(text) * 60
             except ValueError as exc:
                 raise WorkoutError(
-                    f"Could not read {value!r} as a pace. Use 'M:SS' per km."
+                    f"Could not read {value!r} as a pace. Use 'M:SS' per km, or 'M:SS/mi'."
                 ) from exc
+    if per_mile:
+        seconds /= 1.609344
     if not 90 <= seconds <= 1800:
         raise WorkoutError(
             f"Pace {value!r} works out as {seconds:.0f} s/km, which is outside the "

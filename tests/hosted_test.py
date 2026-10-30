@@ -1824,6 +1824,23 @@ async def main() -> int:
         check("and a ride's timed steps are counted at riding speed, not running",
               _tp.planned_metres({"sportType": {"sportTypeKey": "cycling"}, "workoutSegments": [{"workoutSteps": [
                   {"endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 3600}]}]}) == 3600 * _tp.RIDE_MPS)
+        # Miles: a Garmin set to statute units gets its cards in miles, and
+        # a pace may be given per mile.
+        from garmin_mcp.workouts import parse_pace as _pp
+        _real_call = garmin_server._call
+        async def _calls_with(system):
+            async def fake(fn):
+                return fn(type("Client", (), {"unit_system": system})())
+            garmin_server._call = fake
+            try:
+                return await garmin_server._in_miles()
+            finally:
+                garmin_server._call = _real_call
+        check("a Garmin set to miles is read as miles, metric or unknown as km",
+              await _calls_with("statute_uk") and await _calls_with("statute_us")
+              and not await _calls_with("metric") and not await _calls_with(None))
+        check("a pace per mile is taken as one",
+              round(_pp("8:00/mi")) == 298 and round(_pp("8:00 /mile")) == 298 and _pp("5:00 /km") == 300)
         check("and a phase isn't carried over weeks whose phase is still to read",
               guessed["phases"] == [{"label": "Base", "from_week": 1, "to_week": 1},
                                     {"label": "Taper", "from_week": 4, "to_week": 4}], str(guessed["phases"]))

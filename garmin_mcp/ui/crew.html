@@ -201,8 +201,12 @@
   function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
   function dow(s) { return (parse(s).getDay() + 6) % 7; }
   function longDay(s) { var d = parse(s); return DAYS[dow(s)] + " " + d.getDate() + " " + MONTHS[d.getMonth()]; }
-  function km(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
-  function kmRange(lo, hi) { if (!lo) return ""; return (hi && hi !== lo) ? km(lo) + " to " + km(hi) + " km" : km(lo) + " km"; }
+  // A Garmin set to miles (the answer's "units"): the crew's distances in
+  // miles, from the km the answer carries.
+  var MI = false, KM_PER_MI = 1.609344;
+  function km(n) { if (n == null) return ""; n = MI ? n / KM_PER_MI : n; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function KM() { return MI ? " mi" : " km"; }
+  function kmRange(lo, hi) { if (!lo) return ""; return (hi && hi !== lo) ? km(lo) + " to " + km(hi) + KM() : km(lo) + KM(); }
   function el(tag, attrs, kids) {
     var n = document.createElement(tag);
     Object.keys(attrs || {}).forEach(function (k) {
@@ -230,6 +234,7 @@
         if (result.content[i].type === "text") { try { d = JSON.parse(result.content[i].text); break; } catch (e) {} }
       }
     }
+    MI = !!(d && d.units === "mi");
     var app = document.getElementById("app");
     app.textContent = "";
     if (!d || d.error || !d.crew) { app.appendChild(el("div", { class: "empty", text: (d && d.error) || "The crew could not be loaded." })); size(); return; }
@@ -300,7 +305,7 @@
         var label = top ? (top.kind === "hard" ? "hard" : top.kind === "club" ? "club" : top.kind) : "";
         var same = top && top.kind !== "club" && matched[m.name + "|" + date];
         grid.appendChild(el("div", { class: "cell" + (top ? " " + top.kind : "") + (past ? " past" : "") + (same ? " match" : ""),
-          "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + " km" : "") + (top.done ? ", done" : "") + (same ? ", same day as others" : "") : m.name + ", " + DAYS[j] + ": nothing" },
+          "aria-label": top ? m.name + ", " + DAYS[j] + ": " + label + (top.km ? " " + km(top.km) + KM() : "") + (top.done ? ", done" : "") + (same ? ", same day as others" : "") : m.name + ", " + DAYS[j] + ": nothing" },
           top ? [top.km ? el("b", { text: km(top.km) }) : (top.when ? el("b", { text: top.when.map(function (w) { return WHEN[w]; }).join(" ") }) : null),
             el("span", { class: "k", text: label })] : []));
       });

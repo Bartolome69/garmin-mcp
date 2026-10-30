@@ -560,17 +560,32 @@
     if (x.getMonth() === y.getMonth()) return x.getDate() + "\u2013" + y.getDate() + " " + MONTHS[y.getMonth()];
     return short(a) + " \u2013 " + short(b);
   }
-  function fmtKm(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  function num(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  // A Garmin set to miles (the answer's "units"): every distance, pace and
+  // speed shown in miles, from the km the answers carry. KM() is the unit
+  // after a distance; units() turns a pace, speed or distance in text.
+  var MI = false, KM_PER_MI = 1.609344;
+  function fmtKm(n) { return n == null ? "" : num(MI ? n / KM_PER_MI : n); }
+  function KM() { return MI ? " mi" : " km"; }
+  function units(t) {
+    if (!MI || !t) return t;
+    return String(t)
+      .replace(/(\d+):(\d{2})(?=[^/]*\/\s?km)/g, function (_, m, sec) {
+        var v = Math.round((+m * 60 + +sec) * KM_PER_MI); return Math.floor(v / 60) + ":" + String(v % 60).padStart(2, "0"); })
+      .replace(/\/\s?km\b/g, "/mi")
+      .replace(/(\d+(?:\.\d+)?)\s?km\/h/g, function (_, v) { return num(v / KM_PER_MI) + " mph"; })
+      .replace(/(\d+(?:\.\d+)?)\s?km\b/g, function (_, v) { return num(v / KM_PER_MI) + " mi"; });
+  }
   function fmtMin(n) { n = Math.round(n || 0); var h = Math.floor(n / 60), r = n % 60; return h ? h + "h" + (r ? " " + r + "m" : "") : r + "m"; }
   // A week's total in the plan's own measure: km for a running or riding
   // plan, training time for a triathlon, where km of each don't add up.
   // Bare, for the top of a bar: the number alone, hours to a decimal.
   function amt(n, bare) {
-    if (model && model.unit === "time") return bare ? fmtKm((n || 0) / 60) : fmtMin(n);
-    return bare ? fmtKm(n) : fmtKm(n) + " km";
+    if (model && model.unit === "time") return bare ? num((n || 0) / 60) : fmtMin(n);
+    return bare ? fmtKm(n) : fmtKm(n) + KM();
   }
   function ofAmt(done, total) {
-    return model && model.unit === "time" ? fmtMin(done) + " of " + fmtMin(total) : fmtKm(done) + " of " + fmtKm(total) + " km";
+    return model && model.unit === "time" ? fmtMin(done) + " of " + fmtMin(total) : fmtKm(done) + " of " + fmtKm(total) + KM();
   }
   function sum(list, f) { return list.reduce(function (t, x) { return t + (f(x) || 0); }, 0); }
   function el(tag, attrs, children) {
@@ -672,7 +687,7 @@
     (TYPE_WORDS[s.type] || []).concat(s.sport === "ride" && s.type !== "ride" ? TYPE_WORDS.ride : []).forEach(function (w) { n = n.replace(new RegExp("(^|\\s)" + w + "(?=\\s|$|[,:\u00b7-])", "gi"), "$1"); });
     n = n.replace(/^\s*(run|session|workout)\b/i, "").replace(/\b(run|session|workout)\s*$/i, "");
     n = n.replace(/\s{2,}/g, " ").replace(/^[\s,:\u00b7-]+|[\s,:\u00b7-]+$/g, "");
-    if (!n) { var km = s.planned_km || s.actual_km; n = km ? fmtKm(km) + " km" : String(s.name || "Session"); }
+    if (!n) { var km = s.planned_km || s.actual_km; n = km ? fmtKm(km) + KM() : String(s.name || "Session"); }
     return n.charAt(0).toUpperCase() + n.slice(1);
   }
   // A goal reads "what, the rest": "Base block (Norwegian singles), 6
@@ -834,6 +849,7 @@
   }
 
   function render(plan) {
+    MI = !!(plan && plan.units === "mi");
     model = normalise(plan);
     if (model.error) { fail(model.error); return; }
     if (state.sel == null) state.sel = model.nextWeek >= 0 ? model.nextWeek : Math.max(0, model.weeks.findIndex(function (w) { return w.current; }));
@@ -943,15 +959,15 @@
       var peak = Math.max.apply(null, hist.map(function (h) { return h.run_km || 0; }).concat([thisKm, 1]));
       var avg = hist.length ? sum(hist, function (h) { return h.run_km; }) / hist.length : 0;
       hist.forEach(function (h, i) {
-        bars.push(barEl({ km: fmtKm(h.run_km || 0), h: Math.round((h.run_km || 0) / peak * MAX), cls: "past", lbl: i === hist.length - 1 ? "Last" : (hist.length - i) + " wks ago", faint: true, still: true, wrap: true, aria: fmtKm(h.run_km || 0) + " km run, week of " + short(h.starts) }));
+        bars.push(barEl({ km: fmtKm(h.run_km || 0), h: Math.round((h.run_km || 0) / peak * MAX), cls: "past", lbl: i === hist.length - 1 ? "Last" : (hist.length - i) + " wks ago", faint: true, still: true, wrap: true, aria: fmtKm(h.run_km || 0) + KM() + " run, week of " + short(h.starts) }));
       });
-      bars.push(barEl({ km: fmtKm(thisKm), h: Math.round(thisKm / peak * MAX), cls: "on", on: true, lbl: "This week", dot: m.nextWeek === 0, still: true, wrap: true, aria: "This week, " + fmtKm(thisKm) + " km" }));
+      bars.push(barEl({ km: fmtKm(thisKm), h: Math.round(thisKm / peak * MAX), cls: "on", on: true, lbl: "This week", dot: m.nextWeek === 0, still: true, wrap: true, aria: "This week, " + fmtKm(thisKm) + KM() }));
       cols = bars.length;
       var right = "";
       // A week in progress isn't compared with finished ones.
       if (avg > 0 && thisKm > 0 && !asRun) { var pct = Math.round((thisKm / avg - 1) * 100); right = (pct >= 0 ? "+" : "") + pct + "% on your " + hist.length + "-week average"; }
-      else if (avg > 0) right = fmtKm(Math.round(avg)) + " km a week lately";
-      stats = { lead: fmtKm(thisKm) + " km", left: asRun ? "so far this week" : "planned", right: right };
+      else if (avg > 0) right = fmtKm(Math.round(avg)) + KM() + " a week lately";
+      stats = { lead: fmtKm(thisKm) + KM(), left: asRun ? "so far this week" : "planned", right: right };
     } else {
       var peakKm = Math.max.apply(null, kms.concat([1]));
       var started = m.today >= m.block.starts;
@@ -1103,11 +1119,11 @@
     if (isDone(s)) {
       var bits = [];
       if (s.extra) bits.push("Not on the plan");
-      if (s.actual_pace) bits.push(s.actual_pace.replace(" /km", " /km"));
+      if (s.actual_pace) bits.push(units(s.actual_pace));
       if (s.actual_bpm) bits.push(s.actual_bpm + " bpm");
       if (!s.actual_pace && s.actual) bits.push(s.actual);
-      if (s.pace && !s.actual_pace) bits.push(s.pace);
-      if (s.speed) bits.push(s.speed);
+      if (s.pace && !s.actual_pace) bits.push(units(s.pace));
+      if (s.speed) bits.push(units(s.speed));
       var movedTxt = s.status === "done, moved" ? movedLine(s, w) : null;
       return el("div", tapAttrs(s, "done"), [
         el("span", { class: "row-day mono", text: day }),
@@ -1120,7 +1136,7 @@
           bits.length ? el("span", { class: "meta", text: bits.join(" \u00b7 ") }) : null,
           movedTxt ? el("span", { class: "meta" }, [el("span", { class: "moved" }, [svg(ICON.arrow, 12), movedTxt])]) : null,
         ]),
-        el("span", { class: "km soft", text: s.actual_km ? fmtKm(s.actual_km) + " km" : (s.actual || "") }),
+        el("span", { class: "km soft", text: s.actual_km ? fmtKm(s.actual_km) + KM() : (s.actual || "") }),
       ]);
     }
     if (s.status === "missed") {
@@ -1130,7 +1146,7 @@
           el("div", { class: "row-top" }, [el("span", { class: "miss" }), sportIcon(s), el("span", { class: "name muted", text: cleanTitle(s) })]),
           el("span", { class: "meta missed", text: "Missed" }),
         ]),
-        el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + " km" : s.planned_min ? fmtMin(s.planned_min) : "" }),
+        el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + KM() : s.planned_min ? fmtMin(s.planned_min) : "" }),
       ]);
     }
     // Bars are to scale within the week, so the long run is the long one;
@@ -1143,7 +1159,7 @@
         el("div", { class: "row-top" }, [sportIcon(s), t.l ? el("span", { class: "type", style: "color:" + (t.t || t.v), text: t.l }) : null, el("span", { class: "name", text: cleanTitle(s) })]),
         shapeBar(s, false, share),
       ]),
-      el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + " km" : s.planned_min ? fmtMin(s.planned_min) : "" }),
+      el("span", { class: "km", text: s.planned_km ? fmtKm(s.planned_km) + KM() : s.planned_min ? fmtMin(s.planned_min) : "" }),
     ]);
   }
   // ---------------------------------------------------------------- opening a session
@@ -1225,9 +1241,9 @@
   function doneDetail(p, s) {
     var sum = (p && p.summary) || {}, hr = sum.heart_rate || {};
     var facts = el("div", { class: "facts" }, [
-      fact("km", sum.distance_km != null ? fmtKm(sum.distance_km) : (s.actual_km != null ? fmtKm(s.actual_km) : null)),
+      fact(MI ? "mi" : "km", sum.distance_km != null ? fmtKm(sum.distance_km) : (s.actual_km != null ? fmtKm(s.actual_km) : null)),
       fact("", sum.moving_time || sum.duration || s.actual || null),
-      fact("", sum.pace_per_km || s.actual_pace || null),
+      fact("", units(sum.pace_per_km || s.actual_pace) || null),
       fact("bpm" + (hr.max_bpm ? ", " + hr.max_bpm + " max" : ""), hr.average_bpm || s.actual_bpm || null),
       fact("m climb", sum.elevation_gain_m),
       fact("spm", sum.avg_cadence_spm),
@@ -1248,18 +1264,18 @@
       var kids = splits.map(function (x, i) {
         var v = secs[i], h = v == null ? 8 : height(v);
         var wide = clockSecs(x.duration) || (x.distance_km ? x.distance_km * 300 : 0) || 1;
-        var label = (x.split != null ? "Lap " + x.split : "km " + (x.km || i + 1)) + (x.distance_km ? " \u00b7 " + fmtKm(x.distance_km) + " km" : "") +
+        var label = (x.split != null ? "Lap " + x.split : "km " + (x.km || i + 1)) + (x.distance_km ? " \u00b7 " + fmtKm(x.distance_km) + KM() : "") +
           " \u00b7 " + x.pace_per_km + (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "");
         return el("span", { class: (work[i] ? "" : "rest ") + (v === lo ? "best" : ""),
           style: "flex-grow:" + Math.round(wide) + ";height:" + Math.round(h) + "%;background:" + colour, title: label });
       });
       var avg = paceSecs(sum.pace_per_km);
       if (avg != null && avg > top && avg < bottom) {
-        kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + sum.pace_per_km.replace(/\s*\/km$/, "") })]));
+        kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + units(sum.pace_per_km).replace(/\s*\/(km|mi)$/, "") })]));
       }
       bars = el("div", { class: "splits", role: "img", "aria-label": splits.length + " laps" }, kids);
       var fast = secs.indexOf(lo), slow = secs.indexOf(hi);
-      line = el("span", { class: "dnote", text: "Fastest " + splits[fast].pace_per_km + " (" + (splits[fast].split != null ? "lap " + splits[fast].split : "km " + (splits[fast].km || fast + 1)) + "), slowest " + splits[slow].pace_per_km + " (" + (splits[slow].split != null ? "lap " + splits[slow].split : "km " + (splits[slow].km || slow + 1)) + ")" });
+      line = el("span", { class: "dnote", text: "Fastest " + units(splits[fast].pace_per_km) + " (" + (splits[fast].split != null ? "lap " + splits[fast].split : "km " + (splits[fast].km || fast + 1)) + "), slowest " + units(splits[slow].pace_per_km) + " (" + (splits[slow].split != null ? "lap " + splits[slow].split : "km " + (splits[slow].km || slow + 1)) + ")" });
     }
     var zones = p.hr_zones && p.hr_zones.length ? p.hr_zones.filter(function (z) { return z.percent >= 5; }).map(function (z) { return "Z" + z.zone + " " + Math.round(z.percent) + "%"; }).join(" \u00b7 ") : null;
     return [facts, bars, line, zones ? el("span", { class: "dnote", text: "Heart rate zones: " + zones }) : null];
@@ -1267,7 +1283,7 @@
   function plannedDetail(p) {
     if (!p) return [el("span", { class: "dnote", text: "The steps need the chat: ask below." })];
     var facts = el("div", { class: "facts" }, [
-      fact("", p.estimated_duration), fact("km", p.estimated_distance_km != null ? fmtKm(p.estimated_distance_km) : null), fact("", p.main_target),
+      fact("", p.estimated_duration), fact(MI ? "mi" : "km", p.estimated_distance_km != null ? fmtKm(p.estimated_distance_km) : null), fact("", units(p.main_target)),
     ].filter(Boolean));
     var items = [];
     (p.steps || []).forEach(function (st) {
@@ -1280,7 +1296,7 @@
   }
   function stepLine(st, inRep) {
     return el("li", { class: inRep ? "rep" : "" }, [el("b", { text: st.label || st.kind || "Step" }),
-      el("span", { text: [st.amount, st.target].filter(Boolean).join(" at ") + (st.note ? " \u00b7 " + st.note : "") })]);
+      el("span", { text: [units(st.amount), units(st.target)].filter(Boolean).join(" at ") + (st.note ? " \u00b7 " + st.note : "") })]);
   }
 
   function movedLine(s, w) {
@@ -1333,7 +1349,7 @@
     var diff = between(m.today, s.date);
     var when = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : diff > 1 ? "In " + diff + " days" : "Overdue";
     var meta = [];
-    if (s.target) meta.push(el("span", {}, [svg(/bpm/.test(s.target) ? ICON.heart : ICON.gauge, 13, "var(--red-text)"), s.target]));
+    if (s.target) meta.push(el("span", {}, [svg(/bpm/.test(s.target) ? ICON.heart : ICON.gauge, 13, "var(--red-text)"), units(s.target)]));
     meta.push(el("span", {}, [svg(ICON.watch, 13), "Ready to sync"]));
     var name = cleanTitle(s), when2 = DAYS[dow(s.date)] + " " + d.getDate() + " " + MONTHS[d.getMonth()];
     var card = el("div", { class: "next" }, [
@@ -1394,7 +1410,7 @@
       if (m.block === raw) sub = "Week " + w.n + " of " + m.weeks.length + " \u00b7 " + sub;
     }
     if (m.mode === "log") {
-      lead = fmtKm(w.run_km) + " km"; label = kind === "now" ? "run so far this week" : "run";
+      lead = fmtKm(w.run_km) + KM(); label = kind === "now" ? "run so far this week" : "run";
     } else if (kind === "ahead" || kind === "now" && !w.done && !w.doneKm) {
       lead = amt(w.plannedKm); label = "planned \u00b7 " + w.total + (w.total === 1 ? " session" : " sessions");
     } else {
@@ -1407,7 +1423,7 @@
         r.st = "d"; r.km = s.actual_km || null;
         var bits = [];
         if (s.extra) bits.push("Not on the plan");
-        if (s.actual_pace || s.pace) bits.push(s.actual_pace || s.pace); else if (s.speed) bits.push(s.speed); else if (s.actual) bits.push(s.actual);
+        if (s.actual_pace || s.pace) bits.push(units(s.actual_pace || s.pace)); else if (s.speed) bits.push(units(s.speed)); else if (s.actual) bits.push(s.actual);
         if (bits.length) r.p = bits.join(" \u00b7 ");
       } else {
         r.st = s.status === "missed" ? "m" : "p"; r.km = s.planned_km || null;
@@ -1445,7 +1461,7 @@
           var done = isDone(s), r = [dow(effDate(s)), colourOf(s), typeOf(s).l, cleanTitle(s).slice(0, 40)];
           r.push(done ? s.actual_km || null : s.planned_km || null);
           r.push(s.extra ? "x" : done ? "d" : s.status === "missed" ? "m" : "p");
-          if (done && (s.actual_pace || s.pace || s.speed)) r.push(s.actual_pace || s.pace || s.speed);
+          if (done && (s.actual_pace || s.pace || s.speed)) r.push(units(s.actual_pace || s.pace || s.speed));
           return r;
         })];
       }),
@@ -1471,9 +1487,10 @@
     var km = sum.distance_km != null ? sum.distance_km : s.actual_km;
     var pace = sum.pace_per_km || s.actual_pace;
     var facts = [
-      km != null ? [fmtKm(km), "km"] : null,
+      km != null ? [fmtKm(km), MI ? "mi" : "km"] : null,
       clockSecs(sum.duration) || sum.duration_seconds ? [clock(sum.duration_seconds || clockSecs(sum.duration)), "time"] : null,
-      pace ? [pace.replace(/\s*\/km$/, ""), "/km average"] : sum.avg_speed_kmh ? [String(sum.avg_speed_kmh), "km/h average"] : null,
+      pace ? [units(pace).replace(/\s*\/(km|mi)$/, ""), (MI ? "/mi" : "/km") + " average"]
+        : sum.avg_speed_kmh ? (MI ? [num(sum.avg_speed_kmh / KM_PER_MI), "mph average"] : [String(sum.avg_speed_kmh), "km/h average"]) : null,
       hr.average_bpm || s.actual_bpm ? [String(hr.average_bpm || s.actual_bpm), "bpm average"] : null,
     ].filter(Boolean);
     var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || []).filter(function (x) { return x && x.pace_per_km; });
@@ -1488,7 +1505,7 @@
       });
       var reps = splits.filter(function (x, i) { return work[i]; });
       if (reps.length > 1 && reps.length < splits.length && reps.length <= 8) {
-        var line = "Reps at " + reps.map(function (x) { return x.pace_per_km.replace(/\s*\/km$/, ""); }).join(", ") + " /km";
+        var line = "Reps at " + reps.map(function (x) { return units(x.pace_per_km).replace(/\s*\/(km|mi)$/, ""); }).join(", ") + (MI ? " /mi" : " /km");
         if (reps.every(function (x) { return x.avg_hr; })) line += " \u00b7 heart rate " + reps.map(function (x) { return x.avg_hr; }).join(", ");
         notes.push(["c", line]);
       }
