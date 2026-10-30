@@ -966,9 +966,22 @@ def _view_meta() -> dict[str, Any] | None:
     return {"ui": {"csp": {"connectDomains": [base]}}}
 
 
+def _with_opened_address(page: str) -> str:
+    """The view as served, told where to say it opened, on the hosted server only.
+
+    The view reports drawing on a link its answer carries; before the answer
+    arrives it has none, so the address it reports opening to is written in.
+    """
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        return page
+    script = f"<script>window.__DAASH_CARD_OPENED__ = {json.dumps(base + '/card/opened')};</script>\n"
+    return page.replace("<script>", script + "<script>", 1)
+
+
 def _app_view(uri: str, filename: str, description: str) -> None:
     def read() -> str:
-        return (_UI / filename).read_text(encoding="utf-8")
+        return _with_opened_address((_UI / filename).read_text(encoding="utf-8"))
 
     read.__name__ = filename.split(".")[0] + "_view"
     meta = _view_meta()

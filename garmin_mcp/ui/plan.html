@@ -294,9 +294,22 @@
   window.addEventListener("unhandledrejection", function (e) {
     d.fail((e.reason && e.reason.message) || "promise rejected");
   });
-  setTimeout(show, 8000);
+  // Before the plan arrives there is no link of its own to report on, so the
+  // card says it opened, and if it's still waiting at 8 seconds, how far it
+  // got, to the address the hosted server writes in. Nothing names anyone.
+  function early(stage) {
+    var at = window.__DAASH_CARD_OPENED__;
+    if (!at || !window.fetch) return;
+    try {
+      fetch(at, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "plan", stage: stage, ms: Date.now() - d.start, host: d.host, error: d.errors.join("; "),
+        steps: d.steps.join(" > ") }) }).catch(function () {});
+    } catch (e) {}
+  }
+  setTimeout(function () { if (!d.gotResult) early("waiting"); show(); }, 8000);
   setTimeout(show, 30000);
   d.step("page");
+  early("opened");
 })();
 </script>
 <script>

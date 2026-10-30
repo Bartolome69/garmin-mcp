@@ -1687,6 +1687,25 @@ async def main() -> int:
               and [e["event"] for e in SENT[before:]] == ["garmin_export_clicked"]
               and garmin_server._export_offer().count(garmin_server.GARMIN_EXPORT) == 1, f"{code} {location} {offer}")
 
+        # Before its answer arrives a card says it opened, or that it is
+        # still waiting, to an address written into it, naming no one.
+        os.environ["GARMIN_MCP_BASE_URL"] = base
+        served = garmin_server._with_opened_address("<html><script>x()</script><script>y()</script>")
+        os.environ.pop("GARMIN_MCP_BASE_URL", None)
+        check("the hosted view is told where to say it opened, before its own script, and only there",
+              served.index(f'"{base}/card/opened"') < served.index("x()") and served.count("__DAASH_CARD_OPENED__") == 1
+              and garmin_server._with_opened_address("<script>x()</script>") == "<script>x()</script>", served)
+        before = len(SENT)
+        codes = [await anyio_run(post_text, f"{base}/card/opened", json.dumps(b)) for b in (
+            {"card": "plan", "stage": "opened", "ms": 40},
+            {"card": "plan", "stage": "waiting", "ms": 8000, "host": "ClaudeAndroid 1.2 mobile", "steps": "page > init sent"},
+            {"card": "plan", "stage": "elsewhere"})]
+        await asyncio.sleep(0.3)
+        early = [(e["event"], e["distinct_id"], e["properties"].get("seconds"), e["properties"].get("app")) for e in SENT[before:]]
+        check("an opened card and one still waiting are counted for no one, anything else not at all",
+              codes == [204, 204, 204] and early == [("card_opened", "anonymous", 0.0, None),
+                                                    ("card_waiting", "anonymous", 8.0, "ClaudeAndroid 1.2 mobile")], str(early))
+
         at_home = garmin_server._view_meta()
         os.environ["GARMIN_MCP_BASE_URL"] = base
         hosted_meta = garmin_server._view_meta()

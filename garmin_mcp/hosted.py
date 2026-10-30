@@ -2298,6 +2298,34 @@ async def card_seen(request: Request) -> Response:
     return Response(status_code=204)
 
 
+@mcp.custom_route("/card/opened", methods=["POST"])
+async def card_opened(request: Request) -> Response:
+    """A card saying it opened, or that it is still waiting for its answer.
+
+    Before the answer arrives the card has no link naming anyone, so these are
+    counted for no one: set against card_sent and card_shown by the hour,
+    they say whether a card that never drew never opened at all (the chat app)
+    or opened and never got its answer.
+    """
+    try:
+        said = json.loads((await request.body())[:_CARD_SEEN_LONGEST] or b"{}")
+    except ValueError:
+        said = {}
+    said = said if isinstance(said, dict) else {}
+    stage = said.get("stage")
+    if stage not in ("opened", "waiting"):
+        return Response(status_code=204)
+    ms = said.get("ms")
+    analytics.capture("card_opened" if stage == "opened" else "card_waiting", None, drop_empty({
+        "card": _clip(said.get("card"), 20),
+        "seconds": round(ms / 1000, 1) if isinstance(ms, (int, float)) else None,
+        "app": _clip(said.get("host"), 120),
+        "error": _clip(said.get("error"), 300),
+        "steps": _clip(said.get("steps"), 400),
+    }))
+    return Response(status_code=204)
+
+
 @mcp.custom_route("/disconnect", methods=["GET", "POST"])
 async def disconnect(request: Request) -> Response:
     """Let someone destroy their own stored session, using their URL as proof."""

@@ -403,7 +403,21 @@
         card: "session", ok: !error, ms: Date.now() - started, host: hostName, error: error || "" }) }).catch(function () {});
     } catch (e) {}
   }
+  // Before the session arrives: that the card opened, and if it's still
+  // waiting at 8 seconds, that too. Nothing names anyone.
+  var gotResult = false;
+  function early(stage) {
+    var at = window.__DAASH_CARD_OPENED__;
+    if (!at || !window.fetch) return;
+    try {
+      fetch(at, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "session", stage: stage, ms: Date.now() - started, host: hostName }) }).catch(function () {});
+    } catch (e) {}
+  }
+  early("opened");
+  setTimeout(function () { if (!gotResult) early("waiting"); }, 8000);
   function onResult(result) {
+    gotResult = true;
     var data = dataOf(result);
     try { render(data); } catch (e) { fail("drawing: " + (e && e.message)); tell(data && data._card, "drawing: " + (e && e.message)); return; }
     tell(data && data._card, "");
