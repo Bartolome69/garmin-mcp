@@ -1725,6 +1725,22 @@ async def main() -> int:
               and "Loading your plan" in current.contents[0].text and "Loading your plan" in kept.contents[0].text
               and took < 1.0, f"{reads} {took:.2f}s")
 
+        # Bart's friends, named only in a secret, get a PostHog profile marked
+        # friend; nobody else gets a profile at all.
+        os.environ["GARMIN_MCP_FRIENDS"] = " Erin@Example.com , someone@example.com"
+        try:
+            before = len(SENT)
+            analytics.capture("friend_check", erin_hash, {"$process_person_profile": False})
+            analytics.capture("friend_check", store.email_fingerprint("stranger@example.com"), {})
+            analytics.capture("friend_check", None, {})
+            await asyncio.sleep(0.3)
+        finally:
+            os.environ.pop("GARMIN_MCP_FRIENDS", None)
+        seen = [(e["properties"]["$process_person_profile"], e["properties"].get("$set")) for e in SENT[before:]
+                if e["event"] == "friend_check"]
+        check("a friend's events build a profile marked friend, anyone else's none",
+              seen == [(True, {"friend": True}), (False, None), (False, None)], str(seen))
+
         at_home = garmin_server._view_meta()
         os.environ["GARMIN_MCP_BASE_URL"] = base
         hosted_meta = garmin_server._view_meta()

@@ -11,7 +11,8 @@ flags and the masked form of the account's email (first letter and domain, as
 the store keeps it), so the person running this can tell one friend's row from
 another's in a report. Never the full address, a token or any Garmin data. The
 distinct id is an HMAC of the user's token under the server secret, and person
-profiles are turned off so nothing accumulates against it.
+profiles are turned off so nothing accumulates against it, except for the few
+of Bart's friends named in GARMIN_MCP_FRIENDS, whose profile only says friend.
 
 Off unless GARMIN_MCP_POSTHOG_KEY is set, so a self-hosted copy reports to
 nobody by default. Sending happens on a background thread and swallows every
@@ -60,10 +61,29 @@ def distinct_id(subject: str | None) -> str:
     return hmac.new(key, b"posthog:" + subject.encode(), hashlib.sha256).hexdigest()[:32]
 
 
+def _friends() -> frozenset[str]:
+    """Fingerprints of the people in GARMIN_MCP_FRIENDS, Bart's friends using Daash.
+
+    Their addresses live only in that secret, never in the code; they are
+    compared as fingerprints, the way sign-in recognises a returning person.
+    """
+    configured = os.environ.get("GARMIN_MCP_FRIENDS", "")
+    if configured != _FRIENDS[0]:
+        key = os.environ.get("GARMIN_MCP_SECRET", "").encode()
+        _FRIENDS[:] = [configured, frozenset(
+            hmac.new(key, entry.strip().lower().encode(), hashlib.sha256).hexdigest()
+            for entry in configured.split(",") if "@" in entry)]
+    return _FRIENDS[1]
+
+
+_FRIENDS: list[Any] = ["", frozenset()]
+
+
 def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:
     """Record one event. Returns at once; the request goes out on its own thread."""
     if not KEY:
         return
+    friend = bool(subject) and subject in _friends()
     payload = {
         "api_key": KEY,
         "event": event,
@@ -72,7 +92,10 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
         "properties": {
             **(properties or {}),
             # No person is built up from these; the id only lets uniq() work.
-            "$process_person_profile": False,
+            # Bart's friends are the exception: a profile marked friend, so
+            # the PostHog cohort of them fills itself.
+            "$process_person_profile": friend,
+            **({"$set": {"friend": True}} if friend else {}),
             "$lib": "garmin-mcp-hosted",
         },
     }

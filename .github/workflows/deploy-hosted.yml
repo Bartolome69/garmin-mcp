@@ -188,10 +188,14 @@ jobs:
           GARMIN_OFFICIAL_CLIENT_ID: ${{ secrets.GARMIN_OFFICIAL_CLIENT_ID }}
           GARMIN_OFFICIAL_CLIENT_SECRET: ${{ secrets.GARMIN_OFFICIAL_CLIENT_SECRET }}
           GARMIN_MCP_PREVIEW: ${{ secrets.GARMIN_MCP_PREVIEW }}
+          # Bart's friends' addresses, comma-separated: their PostHog profiles
+          # are marked friend (analytics.py). Kept out of the public code.
+          GARMIN_MCP_FRIENDS: ${{ secrets.GARMIN_MCP_FRIENDS }}
         run: |
           pairs=()
           for name in RESEND_API_KEY RESEND_WEBHOOK_SECRET SUPPORT_FORWARD_TO \
-                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET GARMIN_MCP_PREVIEW; do
+                      GARMIN_OFFICIAL_CLIENT_ID GARMIN_OFFICIAL_CLIENT_SECRET GARMIN_MCP_PREVIEW \
+                      GARMIN_MCP_FRIENDS; do
             if [ -n "${!name}" ]; then pairs+=("$name=${!name}"); fi
           done
           if [ ${#pairs[@]} -gt 0 ]; then
