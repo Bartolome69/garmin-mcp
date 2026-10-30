@@ -1862,8 +1862,19 @@ async def main() -> int:
         try:
             on_sunday = crews.week(today=_date(2026, 10, 18))
             on_saturday = crews.week(today=_date(2026, 10, 17))
+            # Bart's friends list takes his whole crew at once: the crewmates on
+            # Daash, not those added by hand on the page, and never himself.
+            crewed = garmin_server._friends_action("add_friends", "crew")
         finally:
             crews.reset(tok)
+        listed = {h for h, _ in store.friends()}
+        check("adding 'crew' to the friends list adds the crewmates on Daash, not the one asking",
+              crewed.get("added", 0) >= 1 and store.get_user(dave).email_hash in listed
+              and store.get_user(carol).email_hash not in listed and "d***@example.com" in crewed["friends"],
+              str(crewed))
+        for h, _ in store.friends():
+            with store._connect() as conn:
+                conn.execute("DELETE FROM friends WHERE email_hash = ?", (h,))
         check("on a Sunday the card shows the week ahead",
               on_sunday["week"]["starts"] == "2026-10-19" and on_saturday["week"]["starts"] == "2026-10-12",
               f"{on_sunday['week']} {on_saturday['week']}")
