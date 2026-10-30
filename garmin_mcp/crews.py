@@ -185,6 +185,19 @@ def _me() -> Member:
     return member
 
 
+def crewmates() -> list[str]:
+    """The fingerprints of the asking member's crewmates on Daash, not those added by hand."""
+    me = _me()
+    with _connect() as conn:
+        row = conn.execute("SELECT crew_id FROM crew_members WHERE member = ?", (me.key,)).fetchone()
+        if not row:
+            return []
+        rows = conn.execute(
+            "SELECT member FROM crew_members WHERE crew_id = ? AND member != ? AND COALESCE(by_hand, 0) = 0",
+            (row[0], me.key)).fetchall()
+    return [member for (member,) in rows if not member.startswith("t:")]
+
+
 def in_crew(key: str | None = None) -> bool:
     key = key or (_current.get().key if _current.get() else None)
     if not key:

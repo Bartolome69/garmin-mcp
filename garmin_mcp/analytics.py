@@ -63,14 +63,16 @@ def distinct_id(subject: str | None) -> str:
 
 
 _FRIENDS_TTL = 60
-_FRIENDS: dict[str, Any] = {"at": float("-inf"), "set": frozenset()}
+# "at" is None until first read: a machine up for less than the TTL (a fresh
+# CI runner) would otherwise never read the list at all.
+_FRIENDS: dict[str, Any] = {"at": None, "set": frozenset()}
 
 
 def _friends() -> frozenset[str]:
     """Fingerprints of Bart's friends using Daash: those named from a chat, kept
     in the store, and any in GARMIN_MCP_FRIENDS. Read again each minute."""
     now = time.monotonic()
-    if now - _FRIENDS["at"] > _FRIENDS_TTL:
+    if _FRIENDS["at"] is None or now - _FRIENDS["at"] > _FRIENDS_TTL:
         named: set[str] = set()
         try:
             from . import store  # here, not at the top: the store reports nothing itself
@@ -86,7 +88,7 @@ def _friends() -> frozenset[str]:
 
 def forget_friends() -> None:
     """Read the friends again at the next event, after the list has changed."""
-    _FRIENDS["at"] = float("-inf")
+    _FRIENDS["at"] = None
 
 
 def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:

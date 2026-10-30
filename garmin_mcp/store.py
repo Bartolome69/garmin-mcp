@@ -327,6 +327,20 @@ def add_friends(emails: list[tuple[str, str]]) -> int:
                                 (email_fingerprint(email), masked, now)).rowcount for email, masked in emails)
 
 
+def add_friends_by_fingerprint(fingerprints: list[str]) -> int:
+    """Name people already on Daash as friends by their fingerprint, with the masked
+    address their account shows. Returns how many were new."""
+    now = int(time.time())
+    with _connect() as conn:
+        added = 0
+        for fingerprint in fingerprints:
+            row = conn.execute("SELECT email_masked FROM users WHERE email_hash = ? ORDER BY created_at DESC",
+                               (fingerprint,)).fetchone()
+            added += conn.execute("INSERT OR IGNORE INTO friends VALUES (?, ?, ?)",
+                                  (fingerprint, row[0] if row else "hidden", now)).rowcount
+    return added
+
+
 def remove_friends(emails: list[str]) -> int:
     with _connect() as conn:
         return sum(conn.execute("DELETE FROM friends WHERE email_hash = ?", (email_fingerprint(e),)).rowcount

@@ -3775,11 +3775,18 @@ async def _weekly_email_test(user_token: str) -> dict[str, Any]:
 
 
 def _friends_action(action: str, emails: str) -> dict[str, Any]:
-    named = [e.strip() for e in (emails or "").split(",") if "@" in e]
-    if action != "friends" and not named:
-        return {"error": "Give the addresses in `emails`, separated by commas."}
+    entries = [e.strip() for e in (emails or "").split(",")]
+    named = [e for e in entries if "@" in e]
+    crew = action == "add_friends" and "crew" in (e.lower() for e in entries)
+    if action != "friends" and not named and not crew:
+        return {"error": "Give the addresses in `emails`, separated by commas, or 'crew' for everyone in your crew."}
     if action == "add_friends":
         changed = store.add_friends([(e, mask_email(e) or "hidden") for e in named])
+        if crew:
+            try:
+                changed += store.add_friends_by_fingerprint(crews.crewmates())
+            except crews.CrewError as exc:
+                return {"error": str(exc)}
     elif action == "remove_friends":
         changed = store.remove_friends(named)
     else:
@@ -3821,7 +3828,7 @@ async def garmin_official(action: str = "status", date: str = "tomorrow", emails
             PostHog profile is marked friend, for the friends cohort.
         date: For test_workout, the day to schedule it on.
         emails: For add_friends and remove_friends, addresses separated by
-            commas.
+            commas; "crew" among them adds everyone in your crew on Daash.
     """
     user_token = official.current()
     action = (action or "status").strip().lower()
