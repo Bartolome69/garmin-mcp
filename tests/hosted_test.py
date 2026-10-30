@@ -1742,6 +1742,19 @@ async def main() -> int:
                 if e["event"] == "friend_check"]
         check("a friend's events build a profile marked friend, anyone else's none",
               seen == [(True, {"friend": True}), (False, None), (False, None)], str(seen))
+        # A machine up for under a minute (a fresh CI runner) has a monotonic
+        # clock below the refresh interval: the first read must still happen.
+        os.environ["GARMIN_MCP_FRIENDS"] = "erin@example.com"
+        analytics.forget_friends()
+        analytics._FRIENDS["set"] = frozenset()
+        real_monotonic, analytics.time.monotonic = analytics.time.monotonic, lambda: 5.0
+        try:
+            young = analytics._friends()
+        finally:
+            analytics.time.monotonic = real_monotonic
+            os.environ.pop("GARMIN_MCP_FRIENDS", None)
+            analytics.forget_friends()
+        check("friends are read on a machine that has only just started", erin_hash in young, str(young))
         # Friends named from a chat, with no secret to edit.
         named = garmin_server._friends_action("add_friends", " Bob@Example.com, not-an-address , carol@example.com")
         again = garmin_server._friends_action("add_friends", "bob@example.com")
