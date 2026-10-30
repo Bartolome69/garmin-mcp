@@ -589,6 +589,19 @@ def main() -> int:
                     email_hash=store.email_fingerprint("joe@example.com"), email="joe@example.com")
     check("and signing in again with the password clears it again",
           store.official_only(joe_again) is None)
+    # The connector's own path: it reuses the account the address already has
+    # (hosted._finish passes it as user_token), so the row is the official-route
+    # one with a session written into it.
+    sam = store.save_official_user("garmin-sam", {"access_token": "a", "refresh_token": "r",
+                                                  "access_expires_at": 0, "refresh_expires_at": 0}, None)
+    store.set_user_email(sam, "sam@example.com", "s***@example.com")
+    sam_hash = store.email_fingerprint("sam@example.com")
+    kept = store.save_user("s***@example.com", "{}", user_token=store.tokens_for(sam_hash)[-1],
+                           email_hash=sam_hash, email="sam@example.com")
+    check("signing in over the account an approval made keeps that account and its link",
+          kept == sam and store.official_link(sam).garmin_user_id == "garmin-sam")
+    check("and it stops being official-route: a session stands behind it and reads use it",
+          store.has_connect(sam) and store.official_only(sam) is None)
     only = store.save_official_user("garmin-only", {"access_token": "a", "refresh_token": "r",
                                                     "access_expires_at": 0, "refresh_expires_at": 0}, None)
     store.save_user("o***@example.com", "{}", email_hash="hash-other")
@@ -597,10 +610,10 @@ def main() -> int:
     # Later checks count the accounts linked, so these go again.
     import sqlite3 as _sqlite
     with _sqlite.connect(DB) as conn:
-        for gone in ("garmin-joe", "garmin-only"):
+        for gone in ("garmin-joe", "garmin-sam", "garmin-only"):
             conn.execute("DELETE FROM official_links WHERE garmin_user_id = ?", (gone,))
-        conn.execute("DELETE FROM users WHERE user_token IN (?, ?, ?) OR email_hash = 'hash-other'",
-                     (joe, joe_again, only))
+        conn.execute("DELETE FROM users WHERE user_token IN (?, ?, ?, ?) OR email_hash = 'hash-other'",
+                     (joe, joe_again, sam, only))
 
     print("\nworkouts")
     model, _, _ = build_workout("Threshold", "running", [

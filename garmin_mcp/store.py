@@ -259,19 +259,17 @@ def save_user(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
-            "  email_hash = excluded.email_hash, "
+            "  email_hash = excluded.email_hash, route = NULL, "
             "  email_enc = COALESCE(excluded.email_enc, users.email_enc)",
             (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out, tip_seen),
         )
         # Someone who approved Daash on Garmin's page and now gives their
         # password has a Connect session, which has their history; the official
-        # API has only what synced since they approved. Their link stays, so
-        # Garmin's pushes still arrive, but the reads go back to Connect.
-        conn.execute(
-            "UPDATE official_links SET official_only = NULL WHERE user_token = ? "
-            "AND EXISTS (SELECT 1 FROM users WHERE user_token = ? AND COALESCE(route, '') != 'official')",
-            (user_token, user_token),
-        )
+        # API has only what synced since they approved. The row stops being an
+        # official-route one (the connector reuses it, so its route said
+        # "official" with a session behind it) and its link stays, so Garmin's
+        # pushes still arrive, but the reads go back to Connect.
+        conn.execute("UPDATE official_links SET official_only = NULL WHERE user_token = ?", (user_token,))
     return user_token
 
 
