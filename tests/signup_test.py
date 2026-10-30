@@ -658,10 +658,23 @@ async def main() -> int:
             conn.execute("UPDATE users SET token_blob = ? WHERE user_token = ?",
                          (store._cipher().encrypt(b'{"di_token": "stuck"}'), stuck))
         alone = store.save_official_user("g-alone", {"access_token": "t"}, ["ACTIVITY_EXPORT"])
+        # The other way the bug left them: a fresh row from the password
+        # sign-in, with the link and its mark carried onto it.
+        carried = store.save_user("c***@example.com", json.dumps({"di_token": "carried"}))
+        with store._connect() as conn:
+            conn.execute("INSERT INTO official_links (user_token, garmin_user_id, tokens_enc, permissions, created_at, "
+                         "updated_at, official_only) VALUES (?, 'g-carried', ?, '[]', 0, 0, 1)",
+                         (carried, store._cipher().encrypt(b"{}")))
+        with store._connect() as conn:  # the first start since this repair arrived
+            conn.execute("DELETE FROM repairs WHERE name = 'official_only_carried'")
         repaired = store.repair_password_on_official()
-        check("accounts already stuck that way are repaired, and true official-only ones left alone",
-              repaired == 1 and store.has_connect(stuck) and store.official_only(stuck) is None
+        check("accounts already stuck either way are repaired, and true official-only ones left alone",
+              repaired == 2 and store.has_connect(stuck) and store.official_only(stuck) is None
+              and store.official_only(carried) is None
               and not store.has_connect(alone) and store.official_only(alone) == "g-alone", str(repaired))
+        store.set_official_only(carried, True)
+        check("and the carried-over repair runs once, so the preview's own switch survives a restart",
+              store.repair_password_on_official() == 0 and store.official_only(carried) == "g-carried")
 
         print("\ncounting against Garmin's user limit")
         counted = hosted.report_official_users()

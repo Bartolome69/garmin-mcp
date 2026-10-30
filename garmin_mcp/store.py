@@ -291,6 +291,18 @@ def repair_password_on_official() -> int:
         for user_token in joined:
             conn.execute("UPDATE users SET route = NULL WHERE user_token = ?", (user_token,))
             conn.execute("UPDATE official_links SET official_only = NULL WHERE user_token = ?", (user_token,))
+        # A password sign-in that made a fresh row carried the link over with
+        # its mark still on (the same morning, on a phone). Once only, so the
+        # preview's own official-only switch isn't undone at every start.
+        conn.execute("CREATE TABLE IF NOT EXISTS repairs (name TEXT PRIMARY KEY, done_at INTEGER)")
+        if conn.execute("INSERT OR IGNORE INTO repairs VALUES ('official_only_carried', ?)",
+                        (int(time.time()),)).rowcount:
+            joined += [row[0] for row in conn.execute(
+                "SELECT l.user_token FROM official_links l JOIN users u ON u.user_token = l.user_token "
+                "WHERE l.official_only = 1 AND COALESCE(u.route, '') != 'official'").fetchall()]
+            conn.execute(
+                "UPDATE official_links SET official_only = NULL WHERE official_only = 1 AND user_token IN "
+                "(SELECT user_token FROM users WHERE COALESCE(route, '') != 'official')")
     return len(joined)
 
 
