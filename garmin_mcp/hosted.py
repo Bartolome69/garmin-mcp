@@ -1391,9 +1391,10 @@ document.querySelectorAll("form[data-wait]").forEach(function (f) {
 </script>"""
 
 
-def page(title: str, body: str, status: int = 200) -> HTMLResponse:
+def page(title: str, body: str, status: int = 200, noindex: bool = False) -> HTMLResponse:
     return HTMLResponse(
         f"<!doctype html><html lang=en><head><meta charset=utf-8>"
+        f'{"<meta name=robots content=\"noindex, nofollow\">" if noindex else ""}'
         f'<meta name=viewport content="width=device-width,initial-scale=1">'
         f'<meta name=theme-color content="#ffffff">'
         f"<title>{title} · Daash</title><style>{_STYLE}</style></head>"
@@ -1439,6 +1440,44 @@ async def index(request: Request) -> Response:
         target=_blank rel=noopener>Privacy</a></p>
         """,
     )
+
+
+@mcp.custom_route("/friends", methods=["GET"])
+async def friends_page(request: Request) -> Response:
+    """The address that always signs in with a Garmin password, for people sent here by hand.
+
+    Garmin's own sign-in only shares what syncs from the moment of connecting,
+    so a friend who wants their history uses this one. Linked from nowhere,
+    kept out of search engines, and not counted in analytics: it is for whoever
+    is handed the link.
+    """
+    if not OAUTH_ENABLED:
+        return Response("Not found", status_code=404, media_type="text/plain")
+    response = page(
+        "Daash for friends",
+        f"""
+        <h1>Daash for friends</h1>
+        <p>This connects Daash to your Garmin with your Garmin email and password, so
+        Claude or ChatGPT can read your whole history, not only what syncs from today.</p>
+        <p>Add this address as a custom connector:</p>
+        <div class=url>{base_url(request)}{oauth.PASSWORD_PATH}</div>
+        <ol class=steps>
+          <li><strong>Claude:</strong> Settings &rarr; Connectors &rarr; Add custom connector.</li>
+          <li><strong>ChatGPT:</strong> Settings &rarr; Apps, and add it as a custom app
+          (turn on developer mode in the advanced settings if you don&rsquo;t see that).</li>
+          <li>It brings you back here to sign in to Garmin, once. Use the same Garmin
+          email you always do.</li>
+        </ol>
+        <p class=note>Already added Daash another way? Add this as a new connector and
+        remove the old one. Signing in with the same Garmin email keeps your account.</p>
+        <p class=note>Your Garmin password goes straight to Garmin and is never stored.
+        <a href="{PRIVACY_URL}" target=_blank rel=noopener>What is stored</a></p>
+        """,
+        noindex=True,
+    )
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _connect_url(flow: str) -> str:

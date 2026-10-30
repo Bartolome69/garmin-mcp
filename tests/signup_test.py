@@ -579,6 +579,19 @@ async def main() -> int:
         check("and it serves the same tools as the usual address", "get_fitness" in names and "get_plan" in names,
               str(sorted(names))[:200])
 
+        print("\nthe friends page")
+        code, body, headers = await run(lambda: http("GET", "/friends"))
+        check("a hidden page hands out the password address",
+              code == 200 and pw_address in body and "custom connector" in body, f"{code} {body[:120]}")
+        check("kept out of search engines and caches, and not set up with a cookie",
+              "noindex" in headers.get("x-robots-tag", "") and "no-store" in headers.get("cache-control", "")
+              and "set-cookie" not in {k.lower() for k in headers}, str(headers))
+        check("and says so in the page too", 'name=robots content="noindex, nofollow"' in body)
+        code, _, _ = await run(lambda: http("GET", "/sitemap.xml"))
+        check("this server publishes no sitemap for it to be in", code == 404, str(code))
+        _, home, _ = await run(lambda: http("GET", "/"))
+        check("nothing else links to it", "/friends" not in home)
+
         print("\nthe listed address")
         code, body, _ = await run(lambda: http("GET", "/.well-known/openai-apps-challenge"))
         check("OpenAI's domain check finds its token alone, as plain text",
