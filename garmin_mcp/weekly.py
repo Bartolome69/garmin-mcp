@@ -421,3 +421,49 @@ def compose_first_run(activity: dict[str, Any], unsubscribe: str, app: str | Non
         "</div></body></html>"
     )
     return subject, text, page
+
+
+# Approved on Garmin's page, but the app never collected its sign-in: Oct 31,
+# Claude's iPhone app did this four times to one person, who then gave up.
+# Seven days before, 4 of 11 such phone sign-ins with Claude got through.
+CONNECTOR_SETTINGS = {
+    "Claude": ("claude.ai", "https://claude.ai/settings/connectors", "Settings, then Connectors"),
+    "ChatGPT": ("chatgpt.com", "https://chatgpt.com/#settings/Connectors", "Settings, then Apps & Connectors"),
+}
+
+
+def compose_stuck(app: str | None, unsubscribe: str) -> tuple[str, str, str]:
+    """(subject, plain text, html) for someone whose app didn't finish connecting."""
+    name = app if app in CONNECTOR_SETTINGS else "your assistant"
+    subject = f"Finish connecting Daash to {name}"
+    lead = (f"You approved Daash on Garmin's page, but {name} didn't finish connecting it. This happens "
+            "sometimes in a phone app after the trip to Garmin's sign-in, and it's nothing you did.")
+    if app in CONNECTOR_SETTINGS:
+        site, link, where = CONNECTOR_SETTINGS[app]
+        fix = (f"The quickest fix: on a computer, open {site}, go to {where} ({link}), find Daash and press "
+               f"Connect, then approve on Garmin's page. Once it's connected there, it works in the {app} app "
+               "on your phone too.")
+    else:
+        fix = ("The quickest fix: connect Daash again from your assistant on a computer, in its connector "
+               "settings. Once it's connected there, it works in its phone app too.")
+    help_line = "If it still won't connect, just reply to this email and I'll help. Bart"
+    foot = f"You get this because you connected Daash to your Garmin. Stop these emails: {unsubscribe}"
+    text = "\n\n".join([lead, fix, help_line]) + "\n\n—\nDaash\n" + foot + "\n"
+    e = html.escape
+    body = f"<p style=\"margin:0 0 16px\">{e(lead)}</p><p style=\"margin:0 0 16px\">{e(fix)}</p>"
+    if app in CONNECTOR_SETTINGS:
+        site, link, _where = CONNECTOR_SETTINGS[app]
+        body += (f"<p style=\"margin:8px 0 0\"><a href=\"{e(link)}\" style=\"display:inline-block;background:#E0312A;"
+                 f"color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:10px\">Open {e(site)} "
+                 "connectors</a></p>")
+    page = (
+        "<!doctype html><html><body style=\"margin:0;background:#F7F8FA\">"
+        "<div style=\"max-width:520px;margin:0 auto;padding:28px 20px;font:16px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#161B26\">"
+        "<div style=\"font-weight:900;font-style:italic;font-size:24px;color:#E0312A;margin-bottom:14px\">Daash</div>"
+        f"{body}"
+        f"<p style=\"margin:22px 0 0;color:#5B6270\">{e(help_line)}</p>"
+        "<p style=\"margin:28px 0 0;font-size:13px;color:#5B6270\">You get this because you connected Daash to your Garmin. "
+        f"<a href=\"{e(unsubscribe)}\" style=\"color:#5B6270\">Stop these emails</a>.</p>"
+        "</div></body></html>"
+    )
+    return subject, text, page

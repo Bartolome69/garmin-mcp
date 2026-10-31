@@ -217,6 +217,12 @@ def _own_resource() -> str | None:
     return resource_url_from_server_url(AnyHttpUrl(base))
 
 
+# When each account's app last collected its sign-in, by user token, since
+# this process started: the hosted server emails someone whose app approved on
+# Garmin's page but never collected it (Oct 31, Claude's iPhone app, 4 times).
+COLLECTED: dict[str, float] = {}
+
+
 class GarminOAuthProvider(OAuthAuthorizationServerProvider):
     """Storage and the Garmin sign-in step; the SDK does the protocol."""
 
@@ -425,6 +431,7 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         # The last step of connecting, done by Claude or ChatGPT itself: without
         # it a person approved on our page but the app never got through.
         user = store.get_user(authorization_code.subject or "")
+        COLLECTED[authorization_code.subject or ""] = time.time()
         analytics.capture("connector_token_issued", (user.email_hash or user.user_token) if user else None,
                           {"client": app_for_client(client.client_id)})
         return self._issue(

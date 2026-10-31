@@ -420,6 +420,25 @@ async def main() -> int:
               [a.get("activityId") for a in that_day] == [777], str(that_day))
         with store._connect() as conn:
             conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ? AND summary_id = ?", ("g-new-1", "p-1"))
+        # Oct 31: after Garmin's page, Claude's iPhone app didn't collect the sign-in.
+        from types import SimpleNamespace
+        from garmin_mcp import oauth as _oauth
+        claude_parked = {"params": SimpleNamespace(redirect_uri=_oauth.CLAUDE_CALLBACK), "client_id": "c"}
+        on_phone = bytes(hosted._consent_page("t", claude_parked, garmin=True, phone=True).body).decode()
+        on_computer = bytes(hosted._consent_page("t", claude_parked, garmin=True).body).decode()
+        check("on a phone, the Allow page says what to do if Claude doesn't finish connecting; not on a computer",
+              "connect it from claude.ai on a computer" in on_phone and "claude.ai on a computer" not in on_computer)
+        stuck_mail = []
+        token = new_account.user_token
+        picked_up = time.time()
+        _oauth.COLLECTED[token] = picked_up
+        collected = hosted.stuck_connection_email(token, picked_up - 5, "Claude", "phone", send=lambda *a: stuck_mail.append(a))
+        stuck = hosted.stuck_connection_email(token, picked_up + 5, "Claude", "phone", send=lambda *a: stuck_mail.append(a))
+        again = hosted.stuck_connection_email(token, picked_up + 6, "Claude", "phone", send=lambda *a: stuck_mail.append(a))
+        check("an approval Claude never collected is emailed how to finish, once a day; one it collected isn't",
+              not collected and stuck and not again and len(stuck_mail) == 1
+              and stuck_mail[0][1] == "Finish connecting Daash to Claude" and "claude.ai/settings/connectors" in stuck_mail[0][2],
+              str(stuck_mail)[:300])
         # The checks after this are of an account with nothing yet.
         with store._connect() as conn:
             conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ? AND kind = ?",

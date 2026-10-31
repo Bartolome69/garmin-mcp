@@ -1897,7 +1897,7 @@ def _signin_error(
 
 def _consent_page(
     consent_token: str, parked: dict[str, Any], *, ask_email: bool = False, garmin: bool = False,
-    email: str = "", email_error: str = "",
+    email: str = "", email_error: str = "", phone: bool = False,
 ) -> Response:
     """Ask, by name, before handing a client access to this Garmin session.
 
@@ -1962,11 +1962,17 @@ def _consent_page(
     if app in ("Claude", "ChatGPT"):
         host = urlparse(destination).hostname or ""
         opening = "Garmin approved." if garmin else f"You started this from {app}."
+        # Oct 31: after Garmin's page, Claude's phone app often never
+        # finished connecting. Said before Allow, so it isn't a surprise.
+        phone_note = (f"<p class=note>If {app} doesn&rsquo;t show Daash as connected after this, connect it "
+                      "from claude.ai on a computer instead. "
+                      f"It then works in the {app} app on your phone too.</p>") if garmin and phone and app == "Claude" else ""
         body = f"""
         <h1>Connect Daash to {app}?</h1>
         <p class=secure>{_TICK if garmin else _LOCK}<span>{opening} {app} will be able
         to read your Garmin data and add or change workouts on your watch.</span></p>
         <p class=note>Access goes back to {html.escape(host)} only.</p>
+        {phone_note}
         {form}
         """
         response = page(f"Connect Daash to {app}?", body)
@@ -2025,6 +2031,7 @@ async def oauth_consent(request: Request) -> Response:
             email = str(form.get("email", "")).strip()
             if not _EMAIL_RE.fullmatch(email) or len(email) > 254:
                 return _consent_page(consent_token, parked, ask_email=True, garmin=True, email=email,
+                                     phone=_device(request).get("device") == "phone",
                                      email_error="That doesn't look like an email address.")
             fingerprint = store.email_fingerprint(email)
             if [t for t in store.tokens_for(fingerprint) if t != subject]:
@@ -2079,6 +2086,44 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
         "listed": bool(parked.get("listed")),
         "workouts": official.can_write(user_token),
     }))
+    _watch_pickup(user_token, app, _device(request).get("device"))
+
+
+# Approved here, then the app has to collect its sign-in itself. Oct 31,
+# Claude's iPhone app didn't, four times for one person, who gave up; in the
+# week before, 4 of 11 phone sign-ins through Garmin's page with Claude got
+# through. Ten minutes on, someone whose app still hasn't is emailed how to
+# finish, once a day at most. Kept in memory: a deploy in between loses one.
+STUCK_AFTER = 600
+
+
+def _watch_pickup(user_token: str, app: str | None, device: str | None) -> None:
+    timer = threading.Timer(STUCK_AFTER, stuck_connection_email, args=(user_token, time.time(), app, device))
+    timer.daemon = True
+    timer.start()
+
+
+def stuck_connection_email(user_token: str, approved_at: float, app: str | None, device: str | None,
+                           send: Callable[..., None] | None = None) -> bool:
+    """Email someone whose app never collected the sign-in they approved. True if it went."""
+    if oauth.COLLECTED.get(user_token, 0) >= approved_at or not (WEEKLY_EMAIL or send):
+        return False
+    recipient = store.email_recipient(user_token)
+    if recipient is None:
+        return False
+    email, fingerprint = recipient
+    if not store.claim_notice("stuck", f"{fingerprint}:{datetime.now(ZoneInfo('Europe/London')).date().isoformat()}"):
+        return False
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    unsubscribe = unsubscribe_url(base, fingerprint)
+    subject, text, page_html = weekly.compose_stuck(app, unsubscribe)
+    try:
+        (send or support_mail.send_weekly)(email, subject, text, page_html, unsubscribe)
+    except OSError:
+        return False
+    analytics.capture("stuck_connection_email_sent", fingerprint, {"app": app, "device": device,
+                                                                  "$process_person_profile": False})
+    return True
 
 
 def _code_page(sealed: str, email: str, *, error: str = "", note: str = "") -> Response:
@@ -2140,7 +2185,8 @@ async def oauth_confirm(request: Request) -> Response:
     subject, parked = staged
     action = str(form.get("action", ""))
     if action == "change":
-        return _consent_page(consent_token, parked, ask_email=True, garmin=True)
+        return _consent_page(consent_token, parked, ask_email=True, garmin=True,
+                             phone=_device(request).get("device") == "phone")
     if action == "resend":
         return await _send_code(request, consent_token, email, heard, where)
     fingerprint = store.email_fingerprint(email)
@@ -2914,7 +2960,7 @@ async def _signup_callback(request: Request, code: str, state: str, flow: str) -
     for stale in [t for t, at in _GARMIN_CONSENTS.items() if at < now - 3600]:
         _GARMIN_CONSENTS.pop(stale, None)
     _GARMIN_CONSENTS[consent_token] = now
-    return _consent_page(consent_token, parked, garmin=True,
+    return _consent_page(consent_token, parked, garmin=True, phone=_device(request).get("device") == "phone",
                          ask_email=store.email_for(approval.user_token) is None)
 
 
