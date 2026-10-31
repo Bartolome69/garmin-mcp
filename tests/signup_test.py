@@ -397,7 +397,34 @@ async def main() -> int:
         code_bad, bad_body, _ = await run(lambda: raw_post("/history", data, head))
         check("a file added there in miles is read in miles, and a file that isn't the CSV is said so",
               code == 200 and "Added 2 activities" in page_body and round(miles["distance"]) == 33957
-              and code_bad == 200 and "activities CSV: it needs the Activity Type" in bad_body, f"{miles} {bad_body[-300:]}")
+              and code_bad == 200 and "activities CSV. On a computer, open the activities list" in bad_body, f"{miles} {bad_body[-300:]}")
+
+        # Oct 31: an Italian and a French sign-up each had three files refused.
+        # Garmin Connect writes the CSV in the account's language and numbers.
+        italian = ("Tipo di attività;Data;Preferito;Titolo;Distanza;Calorie;Tempo;FC Media;FC max\n"
+                   "Corsa;2026-09-10 12:11:21;false;Corsa;5,01;360;00:30:19;117;129\n"
+                   "Nuoto in piscina;2026-09-09 18:00:00;false;Piscina;1.500;1.200;00:35:00;130;150\n").encode()
+        french = ('"Type d\'activité","Date","Favori","Titre","Distance","Calories","Durée"\n'
+                  '"Course à pied","08/09/2026 12:11","false","Footing","10,02","650","00:52:00"\n').encode("utf-16")
+        data, head = multipart({"u": "g-new-1", "s": store.history_signature("g-new-1")},
+                               {"history": ("Attività.csv", italian)})
+        code_it, _b, _ = await run(lambda: raw_post("/history", data, head))
+        data, head = multipart({"u": "g-new-1", "s": store.history_signature("g-new-1")},
+                               {"history": ("Activités.csv", french)})
+        code_fr, _b, _ = await run(lambda: raw_post("/history", data, head))
+        local = {a["startTimeLocal"]: (a["activityType"]["typeKey"], a["distance"], a["calories"])
+                 for a in (official_data.connect_activity(a) for a in official_data.activity_rows("g-new-1"))}
+        data, head = multipart({"u": "g-new-1", "s": store.history_signature("g-new-1")},
+                               {"history": ("export.zip", b"PK\x03\x04rest")})
+        await run(lambda: raw_post("/history", data, head))
+        refused = [p for e, p in reported if e == "history_imported" and p.get("ok") is False]
+        check("a CSV in Italian or French, with decimal commas, is read right, and a refusal says why",
+              code_it == 200 and code_fr == 200
+              and local.get("2026-09-10 12:11:21") == ("running", 5010.0, 360.0)
+              and local.get("2026-09-09 18:00:00") == ("lap_swimming", 1500.0, 1200.0)
+              and local.get("2026-09-08 12:11:00") == ("running", 10020.0, 650.0)
+              and refused and refused[-1].get("reason") == "zip" and refused[-1].get("name") == "zip",
+              f"{local} {refused[-1:]}")
 
         # Its first run from Garmin, emailed once, with what to ask and where to add past runs.
         sent_mail = []

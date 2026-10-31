@@ -503,17 +503,91 @@ _CSV_TYPES = {
 }
 
 
-def _csv_number(text: Any) -> float | None:
-    value = str(text or "").strip().lstrip("'").replace(",", "")
+# Garmin Connect writes the CSV in the account's own language and number
+# format: Italian or French column names and types, "5,01" for 5.01 km,
+# "1.450" for 1450 kcal (Oct 31: an Italian and a French sign-up had three
+# files refused each). Known names are read in any of these languages, and
+# where a name isn't known the columns are read by position, which Export
+# CSV keeps the same in every language.
+_CSV_COLUMNS = {
+    "type": ("activity type", "tipo di attività", "type d'activité", "aktivitätstyp", "tipo de actividad",
+             "activiteitstype", "tipo de atividade"),
+    "date": ("date", "data", "datum", "fecha"),
+    "title": ("title", "titolo", "titre", "titel", "título", "nome"),
+    "distance": ("distance", "distanza", "distanz", "distancia", "afstand", "distância"),
+    "calories": ("calories", "calorie", "kalorien", "calorías", "calorieën", "calorias"),
+    "time": ("time", "tempo", "temps", "durée", "zeit", "dauer", "tiempo", "duración", "tijd", "duur"),
+    "avg_hr": ("avg hr", "fc media", "fréquence cardiaque moyenne", "fc moyenne", "ø herzfrequenz",
+               "durchschnittliche herzfrequenz", "gem. hartslag", "fc média"),
+    "max_hr": ("max hr", "fc max", "fc max.", "fréquence cardiaque maximale", "max. herzfrequenz",
+               "maximale herzfrequenz", "fc máxima", "max. hartslag"),
+    "ascent": ("total ascent", "salita totale", "dénivelé positif", "gesamtanstieg", "ascenso total",
+               "totale stijging", "subida total"),
+    "moving": ("moving time", "tempo in movimento", "temps de déplacement", "bewegungszeit",
+               "tiempo en movimiento", "bewegingstijd", "tempo em movimento"),
+    "cadence": ("avg run cadence", "cadenza di corsa media", "cadence de course moyenne",
+                "ø lauf-schrittfrequenz", "cadencia de carrera media"),
+}
+# Where Export CSV puts each column, read when the names aren't known.
+_CSV_POSITIONS = {"type": 0, "date": 1, "title": 3, "distance": 4, "calories": 5, "time": 6,
+                  "avg_hr": 7, "max_hr": 8}
+# An activity type in any language, by the words in it, checked in order.
+_CSV_TYPE_WORDS = (
+    ("lap_swimming", ("pool", "piscina", "piscine", "schwimmbad", "zwembad")),
+    ("open_water_swimming", ("open water", "acque libere", "eau libre", "freiwasser", "aguas abiertas",
+                             "águas abertas")),
+    ("treadmill_running", ("treadmill", "tapis", "laufband", "cinta", "loopband", "esteira")),
+    ("trail_running", ("trail",)),
+    ("indoor_cycling", ("indoor cycling", "ciclismo indoor", "cyclisme en salle", "indoor-radfahren",
+                        "ciclismo en interior", "indoor fietsen")),
+    ("virtual_ride", ("virtual",)),
+    ("strength_training", ("strength", "forza", "musculation", "renforcement", "kraft", "fuerza", "kracht", "força")),
+    ("running", ("run", "corsa", "course", "lauf", "carrera", "correr", "hardlop", "corrida")),
+    ("cycling", ("cycl", "bike", "cicl", "vélo", "velo", "rad", "fiets", "bici")),
+    ("lap_swimming", ("swim", "nuoto", "natation", "schwimm", "natación", "zwem", "natação")),
+    ("hiking", ("hik", "escursion", "randonnée", "wander", "senderismo", "caminhada")),
+    ("walking", ("walk", "camminat", "marche", "gehen", "caminar", "wandel")),
+    ("yoga", ("yoga",)),
+    ("pilates", ("pilates",)),
+)
+_CSV_DATES = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
+              "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M")
+_CSV_US_DATES = ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M")
+
+
+class CsvError(ValueError):
+    """A file that couldn't be read as Garmin Connect's activities CSV, and why, as a short code."""
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+def _csv_number(text: Any, comma_decimal: bool = False) -> float | None:
+    """A number as the CSV writes it: "1,450" or "5.01" in English, "1.450" or "5,01" elsewhere."""
+    value = str(text or "").strip().lstrip("'").replace("\u00a0", "").replace(" ", "")
+    if value in ("", "--"):
+        return None
+    if "," in value and "." in value:
+        # Whichever comes last is the decimal point.
+        decimal = "," if value.rfind(",") > value.rfind(".") else "."
+        value = value.replace("." if decimal == "," else ",", "").replace(",", ".")
+    elif "," in value:
+        # English writes a comma only between thousands; a comma before one or
+        # two digits is a decimal comma whatever the language.
+        whole, _, part = value.rpartition(",")
+        value = value.replace(",", ".") if comma_decimal or len(part) != 3 else value.replace(",", "")
+    elif "." in value and comma_decimal and len(value.rpartition(".")[2]) == 3:
+        value = value.replace(".", "")
     try:
-        return float(value) if value not in ("", "--") else None
+        return float(value)
     except ValueError:
         return None
 
 
 def _csv_seconds(text: Any) -> float | None:
-    """'00:49:21', '49:21' or '00:00:02.8' as seconds."""
-    parts = str(text or "").strip().split(":")
+    """'00:49:21', '49:21', '00:00:02.8' or '0:00:02,8' as seconds."""
+    parts = str(text or "").strip().replace(",", ".").split(":")
     try:
         numbers = [float(p) for p in parts]
     except ValueError:
@@ -524,55 +598,112 @@ def _csv_seconds(text: Any) -> float | None:
     return total or None
 
 
+def _csv_start(text: Any, english: bool) -> int | None:
+    value = " ".join(str(text or "").split())[:19]
+    for pattern in _CSV_DATES + (_CSV_US_DATES if english else ()):
+        try:
+            return calendar.timegm(time.strptime(value, pattern))
+        except ValueError:
+            continue
+    return None
+
+
+def _csv_type(text: Any) -> str:
+    kind = " ".join(str(text or "").strip().lower().split())
+    if kind in _CSV_TYPES:
+        return _CSV_TYPES[kind]
+    for key, words in _CSV_TYPE_WORDS:
+        if any(w in kind for w in words):
+            return key
+    return kind.replace(" ", "_") or "other"
+
+
+def csv_text(raw: bytes) -> str:
+    """The file's text, in whichever encoding Garmin Connect or a spreadsheet saved it."""
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16", errors="replace")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252", errors="replace")
+
+
 def import_csv(garmin_user_id: str, text: str, miles: bool = False) -> dict[str, Any]:
     """Keep the activities in Garmin Connect's activities CSV as this account's past.
 
     Distances are in the units the account's Garmin Connect shows: km (a
     swim in metres), or miles (a swim in yards) for a Garmin set to miles.
-    The CSV's times are the local clock, kept as such. Raises ValueError for
-    a file that isn't that CSV.
+    The CSV's times are the local clock, kept as such. The file can be in any
+    of the languages Garmin Connect writes it in. Raises CsvError for a file
+    that isn't that CSV.
     """
-    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
-    if not {"Activity Type", "Date", "Distance", "Time"} <= set(reader.fieldnames or []):
-        raise ValueError("That isn't Garmin Connect's activities CSV: it needs the Activity Type, Date, "
-                         "Distance and Time columns that Export CSV writes.")
+    text = text.lstrip("\ufeff")
+    if text.startswith("PK"):
+        raise CsvError("zip", "That's a zip file, like Garmin's full data export. Use Export CSV on Garmin "
+                              "Connect's activities list instead, which saves one .csv file.")
+    first = text.split("\n", 1)[0]
+    delimiter = max((";", ",", "\t"), key=first.count)
+    table = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    if len(table) < 2:
+        raise CsvError("empty", "No activities were found in that file.")
+    header = [" ".join(h.strip().lower().split()) for h in table[0]]
+    english = "activity type" in header
+    where: dict[str, int] = {}
+    for column, names in _CSV_COLUMNS.items():
+        found = next((i for i, h in enumerate(header) if h in names), None)
+        if found is not None:
+            where[column] = found
+    # Names not known: Export CSV's own column order, when its second column
+    # holds dates.
+    if not {"type", "date", "distance", "time"} <= set(where):
+        sample = next((r for r in table[1:] if len(r) > 6), None)
+        if sample is None or _csv_start(sample[1], english) is None:
+            raise CsvError("not_activities_csv", "That isn't Garmin Connect's activities CSV. On a computer, "
+                           "open the activities list and press Export CSV at the top right.")
+        where = {**_CSV_POSITIONS, **{k: v for k, v in where.items() if k in ("ascent", "moving", "cadence")}}
+    comma_decimal = not english and (delimiter == ";" or any(
+        "," in (r[where["distance"]] if len(r) > where["distance"] else "") and
+        len((r[where["distance"]]).rpartition(",")[2]) != 3 for r in table[1:50]))
+
+    def cell(line: list[str], column: str) -> str:
+        i = where.get(column)
+        return line[i] if i is not None and i < len(line) else ""
+
     rows: list[tuple[str, int | None, dict]] = []
-    for line in reader:
+    for line in table[1:]:
         if len(rows) >= CSV_LONGEST:
             break
-        try:
-            start = calendar.timegm(time.strptime(str(line.get("Date") or "").strip()[:19], "%Y-%m-%d %H:%M:%S"))
-        except ValueError:
+        start = _csv_start(cell(line, "date"), english)
+        if start is None:
             continue
-        kind = str(line.get("Activity Type") or "").strip().lower()
-        key = _CSV_TYPES.get(kind, kind.replace(" ", "_") or "other")
+        key = _csv_type(cell(line, "type"))
         swim = "swim" in key
-        distance = _csv_number(line.get("Distance"))
+        distance = _csv_number(cell(line, "distance"), comma_decimal)
         if distance is not None:
             distance *= (0.9144 if miles else 1.0) if swim else (1609.344 if miles else 1000.0)
-        seconds = _csv_seconds(line.get("Time"))
-        moving = _csv_seconds(line.get("Moving Time")) or seconds
-        ascent = _csv_number(line.get("Total Ascent"))
+        seconds = _csv_seconds(cell(line, "time"))
+        moving = _csv_seconds(cell(line, "moving")) or seconds
+        ascent = _csv_number(cell(line, "ascent"), comma_decimal)
         summary_id = CSV_ID + time.strftime("%Y%m%d%H%M%S", time.gmtime(start))
         rows.append((summary_id, start, drop_empty({
             "summaryId": summary_id,
             "activityId": IMPORTED_IDS + start,
-            "activityName": str(line.get("Title") or "").strip()[:80] or None,
+            "activityName": cell(line, "title").strip()[:80] or None,
             "activityType": key,
             "startTimeInSeconds": start,
             "startTimeOffsetInSeconds": 0,
             "durationInSeconds": seconds,
             "distanceInMeters": round(distance, 1) if distance else None,
             "averageSpeedInMetersPerSecond": round(distance / moving, 3) if distance and moving else None,
-            "averageHeartRateInBeatsPerMinute": _csv_number(line.get("Avg HR")),
-            "maxHeartRateInBeatsPerMinute": _csv_number(line.get("Max HR")),
-            "activeKilocalories": _csv_number(line.get("Calories")),
+            "averageHeartRateInBeatsPerMinute": _csv_number(cell(line, "avg_hr"), comma_decimal),
+            "maxHeartRateInBeatsPerMinute": _csv_number(cell(line, "max_hr"), comma_decimal),
+            "activeKilocalories": _csv_number(cell(line, "calories"), comma_decimal),
             "totalElevationGainInMeters": ascent * (0.3048 if miles else 1.0) if ascent is not None else None,
-            "averageRunCadenceInStepsPerMinute": _csv_number(line.get("Avg Run Cadence")),
+            "averageRunCadenceInStepsPerMinute": _csv_number(cell(line, "cadence"), comma_decimal),
             "imported": "csv",
         })))
     if not rows:
-        raise ValueError("No activities were found in that file.")
+        raise CsvError("no_dates", "No activities with a date were found in that file.")
     store.save_official_summaries(garmin_user_id, IMPORTED, rows)
     days = sorted(time.strftime("%Y-%m-%d", time.gmtime(start)) for _, start, _ in rows if start)
     return {"imported": len(rows), "from": days[0], "to": days[-1]}

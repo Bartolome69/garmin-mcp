@@ -2391,11 +2391,20 @@ def import_history(garmin_user_id: str, upload: Any, miles: bool, via: str) -> d
     if not raw:
         return None
     if len(raw) > HISTORY_LONGEST:
+        analytics.capture("history_imported", None, {"ok": False, "via": via, "reason": "too_big",
+                                                     "$process_person_profile": False})
         return {"error": "That file is bigger than an activities CSV should be (5 MB)."}
     try:
-        result = official_data.import_csv(garmin_user_id, raw.decode("utf-8-sig", errors="replace"), miles=miles)
+        result = official_data.import_csv(garmin_user_id, official_data.csv_text(raw), miles=miles)
     except ValueError as exc:
-        analytics.capture("history_imported", None, {"ok": False, "via": via, "$process_person_profile": False})
+        # Why, as a short code, and the file's first line's shape (column
+        # count and delimiter, never its contents), to see what people send.
+        first = official_data.csv_text(raw[:400]).split("\n", 1)[0]
+        analytics.capture("history_imported", None, {
+            "ok": False, "via": via, "reason": getattr(exc, "reason", "unreadable"),
+            "name": (getattr(upload, "filename", "") or "").rsplit(".", 1)[-1][:8].lower() or None,
+            "columns": max(first.count(","), first.count(";"), first.count("\t")) + 1,
+            "$process_person_profile": False})
         return {"error": str(exc)}
     analytics.capture("history_imported", None, {"ok": True, "via": via, "count": result["imported"],
                                                  "$process_person_profile": False})
