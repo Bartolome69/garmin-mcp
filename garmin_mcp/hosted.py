@@ -1073,6 +1073,15 @@ def first_run_email(garmin_user_id: str, activities: list[dict], send: Callable[
         return False
     if not store.official_only(link.user_token):
         return False
+    # First means first: an account that already had activities from Garmin
+    # before this push has seen its runs, and is never told otherwise (Oct 31,
+    # the first morning live, it went to accounts days old).
+    arrived = {str(a.get("summaryId") or a.get("activityId")) for a in activities}
+    earlier = [a for a in store.official_summaries(garmin_user_id, "activities", 0, limit=50)
+               if str(a.get("summaryId") or a.get("activityId")) not in arrived]
+    if earlier:
+        store.claim_notice("first_run", garmin_user_id)
+        return False
     recipient = store.email_recipient(link.user_token)
     if recipient is None:
         return False

@@ -405,6 +405,17 @@ async def main() -> int:
         went = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
         again = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
         late = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a), now=time.time() + 30 * 86400)
+        # An account that already had activities from Garmin isn't told its next one is its first.
+        store.save_official_summaries("g-new-1", "activities", [("a-1", 1, {"summaryId": "a-1"})])
+        with store._connect() as conn:
+            conn.execute("DELETE FROM notices WHERE kind = 'first_run' AND key = 'g-new-1'")
+        not_first = hosted.first_run_email("g-new-1", [{"summaryId": "a-2", "activityType": "RUNNING"}],
+                                           send=lambda *a: sent_mail.append(("old",) + a))
+        with store._connect() as conn:
+            conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = 'g-new-1' AND kind = 'activities'")
+            conn.execute("DELETE FROM notices WHERE kind = 'first_run' AND key = 'g-new-1'")
+        check("an account that already had runs from Garmin isn't told its next one is its first",
+              not not_first and all(m[0] != "old" for m in sent_mail), str(sent_mail)[:200])
         check("a new account's first run is emailed once, saying it's in and how to add past runs",
               went and not again and not late and len(sent_mail) == 1 and sent_mail[0][0] == "sam@example.com"
               and sent_mail[0][1] == "Your first run is in Daash" and "8.0 km" in sent_mail[0][2]
