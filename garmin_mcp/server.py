@@ -705,6 +705,10 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False):
             update[field] = _untitled(getattr(tool, field))
     if tool.name in _TITLES:
         update["title"] = _TITLES[tool.name]
+    # Preview accounts see the redesigned plan card while it's being tried.
+    view = ((getattr(tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
+    if preview_on and not alone and view == PLAN_VIEW:
+        update["meta"] = {**tool.meta, "ui": {**tool.meta["ui"], "resourceUri": PLAN2_VIEW}, "ui/resourceUri": PLAN2_VIEW}
     if text:
         update["description"] = text
     return tool.model_copy(update=update)
@@ -855,6 +859,8 @@ def _versioned(name: str, filename: str) -> str:
 
 
 PLAN_VIEW = _versioned("plan", "plan.html")
+# The redesigned plan card (Nov 2026), for preview accounts until it's the card.
+PLAN2_VIEW = _versioned("plan2", "plan2.html")
 SESSION_VIEW = _versioned("session", "session.html")
 CREW_VIEW = _versioned("crew", "crew.html")
 
@@ -1044,6 +1050,15 @@ try:
     )
 except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
     log.debug("plan view not registered", exc_info=True)
+
+try:
+    _app_view(
+        PLAN2_VIEW,
+        "plan2.html",
+        "The training plan, redesigned: goal race, this week, the whole block and each week's sessions.",
+    )
+except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
+    log.debug("plan2 view not registered", exc_info=True)
 
 try:
     _app_view(
