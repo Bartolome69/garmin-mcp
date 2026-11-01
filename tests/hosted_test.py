@@ -50,6 +50,14 @@ from garmin_mcp import server as garmin_server  # noqa: E402
 
 # Every event the server would have sent to PostHog, kept for inspection.
 SENT: list[dict] = []
+
+
+def _raises(fn) -> bool:
+    try:
+        fn()
+    except Exception:  # noqa: BLE001
+        return True
+    return False
 analytics._post = SENT.append
 from garmin_mcp import store  # noqa: E402
 from garmin_mcp.session import GarminSession  # noqa: E402
@@ -1860,6 +1868,36 @@ async def main() -> int:
         check("a week not read between two weeks of one phase is in it; between two phases it stays blank",
               between == [{"label": "Endurance", "from_week": 1, "to_week": 3}, {"label": "Taper", "from_week": 5, "to_week": 5}],
               str(between))
+        # What the card draws, worked out on the server (the redesign).
+        plan_answer = {"measure": None, "phases": [{"label": "Base", "from_week": 1, "to_week": 1},
+                                                   {"label": "Build", "from_week": 2, "to_week": 3}],
+                       "weeks": [
+            {"week": 1, "starts": "2026-11-02", "planned_km": 60, "sessions": []},
+            {"week": 2, "starts": "2026-11-09", "planned_km": 40, "current": True, "run_km": 49.7,
+             "sessions": [{"date": "2026-11-10", "status": "done", "sport": "run", "planned_km": 11},
+                          {"date": "2026-11-12", "done_on": "2026-11-11", "status": "done, moved", "sport": "run", "planned_km": 10},
+                          {"date": "2026-11-13", "done_on": "2026-11-14", "status": "done, moved", "sport": "run", "planned_km": 9},
+                          {"date": "2026-11-14", "status": "skipped", "optional": True, "sport": "run", "planned_km": 5},
+                          {"date": "2026-11-15", "status": "ahead", "sport": "run", "planned_km": 18.8, "type": "race",
+                           "name": "Parkrun tune-up"}],
+             "extra": [{"date": "2026-11-11", "kind": "run", "actual_km": 5.0}]},
+            {"week": 3, "starts": "2026-11-16", "planned_km": 70, "sessions": []}]}
+        _tp.card_extras(plan_answer, [{"label": "Goal half", "date": "2026-11-21", "target": "1:25"}])
+        wk = plan_answer["weeks"][1]
+        check("the card's extras: states, a cutback week, phases' short names, this week, races",
+              [x["state"] for x in wk["sessions"]] == ["done", "early", "moved", "skipped", "ahead"]
+              and wk["extra"][0]["state"] == "extra" and wk.get("cutback")
+              and [p["short"] for p in plan_answer["phases"]] == ["Ba", "Bu"]
+              and plan_answer["this_week"] == {"week": 2, "unit": "km", "done": 50, "extra": 5, "to_go": 19,
+                                               "projected": 69, "planned": 40}
+              and [(r["name"], r["tier"], r.get("week")) for r in plan_answer["races"]]
+              == [("Parkrun tune-up", "tune", 2), ("Goal half", "goal", 3)],
+              str({k: plan_answer.get(k) for k in ("this_week", "races", "phases")}))
+        check("a milestone's tier survives the round trip through a workout's notes, and a wrong one is refused",
+              _tp.milestones_from_description(_tp.describe("g", "X", _pd(2026, 1, 1), _pd(2026, 2, 1), None,
+                  milestones=_tp.check_milestones([{"label": "Big Half", "date": "2026-01-10", "tier": "key"}])))
+              == [{"label": "Big Half", "date": "2026-01-10", "tier": "key"}]
+              and _raises(lambda: _tp.check_milestones([{"label": "x", "tier": "huge"}])))
         _today = _pd.today()
         _at = lambda n, wid, name: {"date": (_today + _pt(days=n)).isoformat(), "workoutId": wid, "title": name, "sportTypeKey": "running"}
         order = garmin_server._lookup_order([

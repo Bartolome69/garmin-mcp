@@ -1148,12 +1148,14 @@
         el("span", { class: "km soft", text: s.actual_km ? fmtKm(s.actual_km) + KM() : (s.actual || "") }),
       ]);
     }
-    if (s.status === "missed") {
+    // An optional session not done is skipped: said so, never "Missed".
+    if (s.status === "missed" || s.status === "skipped") {
+      var skipped = s.status === "skipped";
       return el("div", { class: "row" }, [
         el("span", { class: "row-day mono faint", text: day }),
         el("div", { class: "row-mid tight" }, [
-          el("div", { class: "row-top" }, [el("span", { class: "miss" }), sportIcon(s), el("span", { class: "name muted", text: cleanTitle(s) })]),
-          el("span", { class: "meta missed", text: "Missed" }),
+          el("div", { class: "row-top" }, [el("span", { class: skipped ? "" : "miss" }), sportIcon(s), el("span", { class: "name muted", text: cleanTitle(s) })]),
+          el("span", { class: "meta" + (skipped ? "" : " missed"), text: skipped ? "Optional \u00b7 skipped" : "Missed" }),
         ]),
         el("span", { class: "km struck", text: s.planned_km ? fmtKm(s.planned_km) + KM() : s.planned_min ? fmtMin(s.planned_min) : "" }),
       ]);

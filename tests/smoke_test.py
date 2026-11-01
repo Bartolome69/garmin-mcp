@@ -1740,6 +1740,31 @@ async def main() -> int:
                   "Session 1" in str(no_moves.get("error")), str(no_moves)[:160])
             payload(await sess.call_tool("remove_plan", {"label": "GY", "confirm": "GY"}))
 
+            # What the redesigned card draws comes worked out in the answer, so
+            # the model reads the same numbers: races with tiers, this week's
+            # done, to go and projected, each session's state, optional ones.
+            rt = payload(await sess.call_tool("create_plan", {
+                "goal": "Half, 1:25", "label": "RT", "name": "Race test",
+                "milestones": [{"label": "Parkrun", "date": day(7)}, {"label": "Big Half", "date": day(14), "tier": "key"},
+                               {"label": "Goal half", "date": day(21), "target": "1:25"}],
+                "sessions": [{"date": day(0), "name": "Easy 8k", "steps": easy},
+                             {"date": day(1), "name": "Shakeout", "steps": easy, "optional": True},
+                             {"date": day(7), "name": "Parkrun", "steps": easy},
+                             {"date": day(21), "name": "Goal half", "steps": easy}]}))
+            rt_rows = [x for w in rt.get("weeks", []) for x in w["sessions"]]
+            check("races come with their tier: the last is the goal, a parkrun a tune-up, as set otherwise",
+                  [(r["name"], r["tier"]) for r in rt.get("races", [])]
+                  == [("Parkrun", "tune"), ("Big Half", "key"), ("Goal half", "goal")]
+                  and all(r.get("week") for r in rt["races"]), str(rt.get("races")))
+            check("an optional session is named so, for the watch too, and has a state like every session",
+                  any(x["name"] == "Shakeout (optional)" and x.get("optional") for x in rt_rows)
+                  and all(x.get("state") for x in rt_rows), str(rt_rows)[:300])
+            tw = rt.get("this_week") or {}
+            check("this week's numbers add up: done plus to go is projected, the optional run left out",
+                  tw.get("projected") == tw.get("done", 0) + tw.get("to_go", 0) and tw.get("unit") == "km",
+                  str(tw))
+            payload(await sess.call_tool("remove_plan", {"label": "RT", "confirm": "RT"}))
+
             # A base block leading into a marathon build: the calendar view
             # names the build's races and bands its phases (Oct 30, "why
             # can't I see my races?").

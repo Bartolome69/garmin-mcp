@@ -99,6 +99,10 @@ MAX_MILESTONES = 4
 MAX_PHASE = 12
 # A plan with more phases than this is bands too thin to read.
 MAX_PHASES = 8
+# How much a race matters, for its marker on the card: the goal race, a key
+# race on the way, a tune-up, anything else.
+RACE_TIERS = ("goal", "key", "tune", "other")
+TIER_MARK = "tier:"
 
 
 def describe(
@@ -133,6 +137,8 @@ def describe(
         for m in milestones:
             bits = [str(m.get("label", "")).strip()]
             bits += [str(m[k]).strip() for k in ("date", "target") if m.get(k)]
+            if m.get("tier"):
+                bits.append(f"{TIER_MARK}{m['tier']}")
             parts.append(", ".join(b for b in bits if b))
         lines.append("Milestones: " + " | ".join(parts))
     if phases:
@@ -203,6 +209,14 @@ def phase_by_week(prepared: Sequence[Mapping[str, Any]], first: date) -> list[di
 _NAME_KM_RE = re.compile(r"(?<![x\u00d7\d.])(\d+(?:\.\d+)?)\s*(km|k|mi|miles?)\b", re.IGNORECASE)
 
 
+_OPTIONAL_RE = re.compile(r"\boptional\b|\bopzionale\b|\bfacultati(?:f|ve)\b", re.IGNORECASE)
+
+
+def is_optional(name: str | None) -> bool:
+    """A session its name says is optional: "5km easy (optional)"."""
+    return bool(_OPTIONAL_RE.search(name or ""))
+
+
 def km_from_name(name: str | None) -> float | None:
     """A run's distance as its name gives it, for a session whose workout
     hasn't been read yet: "Long 32km", "10k easy", "Tune-up half". A guess,
@@ -233,6 +247,8 @@ def milestones_from_description(text: str | None) -> list[dict[str, str]]:
         for bit in bits[1:]:
             if re.fullmatch(r"\d{4}-\d{2}-\d{2}", bit):
                 m["date"] = bit
+            elif bit.startswith(TIER_MARK) and bit[len(TIER_MARK):] in RACE_TIERS:
+                m["tier"] = bit[len(TIER_MARK):]
             else:
                 m["target"] = bit
         out.append(m)
@@ -257,6 +273,11 @@ def check_milestones(milestones: Any) -> list[dict[str, str]]:
                 raise PlanError(f"Milestone {i}: {exc}") from exc
         if m.get("target"):
             row["target"] = str(m["target"]).strip()[:20].replace("|", "/").replace(",", " ")
+        if m.get("tier"):
+            tier = str(m["tier"]).strip().lower()
+            if tier not in RACE_TIERS:
+                raise PlanError(f"Milestone {i}: tier is one of {', '.join(RACE_TIERS)}.")
+            row["tier"] = tier
         out.append(row)
     return out
 
@@ -403,6 +424,10 @@ def prepare(
         name = str(raw.get("name") or "").strip()
         if not name:
             raise PlanError(f"Session {index} needs a name.")
+        # Optional rides in the name, the one place Garmin keeps it, so the
+        # watch says so too and the card never counts it as missed.
+        if raw.get("optional") and not is_optional(name):
+            name = f"{name} (optional)"
         sport = str(raw.get("sport") or "running").strip().lower()
         try:
             if sport == "strength":
@@ -1113,6 +1138,139 @@ def planned_metres(workout: Mapping[str, Any]) -> float:
     return planned_distance_m(dict(workout), RIDE_MPS if is_ride(sport) else None)
 
 
+# --------------------------------------------------------------------------
+# What the card draws, worked out once
+# --------------------------------------------------------------------------
+
+# The card and the model's written answer read the same numbers, so anything
+# the card shows is worked out here, not in the card (Oct 31: the card added
+# up "49.7 of 64.2" itself, and Claude repeated it, with a week landing at 68).
+_TUNE_RE = re.compile(r"tune|parkrun|time trial|\btt\b|test", re.IGNORECASE)
+_KEY_RE = re.compile(r"half|marathon|\b10 ?k|\b5 ?k|race|check|ultra", re.IGNORECASE)
+# A week this far below both its neighbours is a planned cutback.
+CUTBACK_SHARE = 0.85
+_STATES = {"done": "done", "missed": "missed", "skipped": "skipped", "today": "today", "ahead": "ahead"}
+
+
+def _race_tier(name: str) -> str:
+    return "tune" if _TUNE_RE.search(name or "") else "key" if _KEY_RE.search(name or "") else "other"
+
+
+def races(result: Mapping[str, Any], milestones: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    """The plan's races, by date, each with its week, day and tier.
+
+    From the plan's milestones (the last is the goal unless one says
+    otherwise), and from race sessions on the calendar that no milestone
+    names, which is all a coach's plan has.
+    """
+    weeks = [w for w in result.get("weeks") or [] if w.get("starts")]
+
+    # Counted from the first week shown, so a race in a week with no
+    # sessions (race week after a rest, say) still has its week.
+    first = weeks[0] if weeks else None
+
+    def place(day: str) -> tuple[int | None, int | None]:
+        if first is None:
+            return None, None
+        when = date.fromisoformat(day)
+        n = (monday_of(when) - date.fromisoformat(first["starts"])).days // 7 + int(first.get("week") or 1)
+        return n, when.weekday()
+
+    sessions = [s for w in weeks for s in w.get("sessions") or []]
+    out: list[dict[str, Any]] = []
+    dated = [m for m in milestones or [] if m.get("date")]
+    goal_day = max((m["date"] for m in dated), default=None)
+    has_goal = any(m.get("tier") == "goal" for m in dated)
+    for m in dated:
+        week, day = place(m["date"])
+        near = next((s for s in sessions if s.get("type") == "race"
+                     and abs((date.fromisoformat(s["date"]) - date.fromisoformat(m["date"])).days) <= 1), None)
+        tier = m.get("tier") or ("goal" if not has_goal and m["date"] == goal_day else _race_tier(m.get("label", "")))
+        out.append(drop_empty({
+            "name": m.get("label"), "date": m["date"], "week": week, "day": day, "tier": tier,
+            "target": m.get("target"),
+            "distance_km": km_from_name(m.get("label")) or (near or {}).get("planned_km"),
+        }))
+    named = {r["date"] for r in out}
+    for s in sessions:
+        if s.get("type") != "race" or any(abs((date.fromisoformat(s["date"]) - date.fromisoformat(d)).days) <= 1
+                                           for d in named):
+            continue
+        week, day = place(s["date"])
+        out.append(drop_empty({"name": s.get("name"), "date": s["date"], "week": week, "day": day,
+                               "tier": _race_tier(s.get("name", "")),
+                               "distance_km": km_from_name(s.get("name")) or s.get("planned_km")}))
+    return sorted(out, key=lambda r: r["date"])
+
+
+def this_week(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    """This week's done, extra, to go and projected, in the plan's measure.
+
+    Done is everything done in the plan's sport, unplanned runs included and
+    said apart as extra; to go is what's still planned, optional sessions
+    aside; projected is the two together. Totals are whole numbers, and
+    projected is the sum of the rounded two, so the card's sum adds up.
+    """
+    week = next((w for w in result.get("weeks") or [] if w.get("current")), None)
+    if week is None:
+        return None
+    measure = result.get("measure")
+    sport = "ride" if measure == "ride_km" else "run"
+    ahead = [s for s in week.get("sessions") or [] if s.get("status") in ("today", "ahead") and not s.get("optional")]
+    extras = week.get("extra") or []
+    if measure == "time":
+        unit = "min"
+        extra = sum(x.get("actual_min") or 0 for x in extras)
+        done = (week.get("done_min") or 0) + extra
+        to_go = sum(s.get("planned_min") or 0 for s in ahead)
+        planned = week.get("planned_min") or 0
+    else:
+        unit = "km"
+        extra = sum(x.get("actual_km") or 0 for x in extras if x.get("kind", x.get("sport")) == sport)
+        done = week.get("ride_km" if sport == "ride" else "run_km") or 0
+        to_go = sum(s.get("planned_km") or 0 for s in ahead if s.get("sport") == sport)
+        planned = week.get("planned_km") or 0
+    return drop_empty({
+        "week": week.get("week"), "unit": unit,
+        "done": round(done), "extra": round(extra) or None, "to_go": round(to_go),
+        "projected": round(done) + round(to_go), "planned": round(planned),
+        "still_adding_up": bool(week.get("unread")) or None,
+    })
+
+
+def card_extras(result: dict[str, Any], milestones: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
+    """Add what the card draws to a plan answer: each session's state, cutback
+    weeks, phases' short names, this week's numbers and the races."""
+    weeks = result.get("weeks") or []
+    for i, week in enumerate(weeks):
+        for s in week.get("sessions") or []:
+            status = s.get("status") or ""
+            if status == "done, moved":
+                s["state"] = "early" if (s.get("done_on") or "") < (s.get("date") or "") else "moved"
+            else:
+                s["state"] = _STATES.get(status, status or None)
+        for x in week.get("extra") or []:
+            x["state"] = "extra"
+        if 0 < i < len(weeks) - 1:
+            here, before, after = (w.get("planned_km") or w.get("planned_min") or 0 for w in (week, weeks[i - 1], weeks[i + 1]))
+            if here and before and after and here < CUTBACK_SHARE * min(before, after):
+                week["cutback"] = True
+    # A phase's short name for a band too narrow for the whole: its initial,
+    # or its first two letters when another phase shares it (Base, Build).
+    labels = [str(p.get("label") or "") for p in result.get("phases") or []]
+    initials = [label[:1].upper() for label in labels]
+    for phase, label, initial in zip(result.get("phases") or [], labels, initials):
+        clash = len({l for l, i in zip(labels, initials) if i == initial}) > 1
+        phase.setdefault("short", label[:2].capitalize() if clash else initial)
+    summary = this_week(result)
+    if summary:
+        result["this_week"] = summary
+    found = races(result, milestones)
+    if found:
+        result["races"] = found
+    return result
+
+
 def summarise_calendar(
     items: Sequence[Mapping[str, Any]],
     activities: Sequence[Mapping[str, Any]],
@@ -1185,14 +1343,15 @@ def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequenc
     """
     start = date.fromisoformat(week["starts"])
     end = start + timedelta(days=7)
-    planned = sum(s.get("planned_km") or 0 for s in week["sessions"] if s.get("sport") == ("ride" if focus == "ride" else "run"))
+    planned = sum(s.get("planned_km") or 0 for s in week["sessions"]
+                  if s.get("sport") == ("ride" if focus == "ride" else "run") and not s.get("optional"))
     run = sum(a.metres for a in actual if a.sport == "run" and start <= a.day < end)
     week["planned_km"] = round(planned, 1) if planned else None
     week["run_km"] = round(run / 1000, 1)
     if focus == "ride":
         week["ride_km"] = round(sum(a.metres for a in actual if a.kind == "ride" and start <= a.day < end) / 1000, 1)
     if focus == "time":
-        minutes = sum(s.get("planned_min") or 0 for s in week["sessions"])
+        minutes = sum(s.get("planned_min") or 0 for s in week["sessions"] if not s.get("optional"))
         week["planned_min"] = round(minutes) or None
         week["done_min"] = round(sum(s.get("_done_seconds") or 0 for s in week["sessions"]) / 60)
     week["extra"] = [
@@ -1204,6 +1363,7 @@ def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequenc
             "kind": row.get("kind"),
             "actual_km": row.get("actual_km"),
             "actual": duration(row.get("actual_seconds")),
+            "actual_min": round(row["actual_seconds"] / 60) if row.get("actual_seconds") else None,
         })
         for row in extra
         if start <= date.fromisoformat(row["date"]) < end
@@ -1293,11 +1453,16 @@ def summarise(
             status = "today" if day == today else "missed"
         else:
             status = "today" if day == today else "ahead"
+        title = strip_tag(item.get("title") or item.get("workoutName") or "Workout")
+        optional = is_optional(title)
+        # An optional session not done is skipped, never missed.
+        if optional and status == "missed":
+            status = "skipped"
         number = (monday_of(day) - week_one).days // 7 + 1
         wid = item.get("workoutId")
         sport_key = item.get("sportTypeKey") or "running"
         shape = shapes.get(wid)
-        name = strip_tag(item.get("title") or item.get("workoutName") or "Workout")
+        name = title
         done_activity = by_activity.get(hit.get("activity_id")) if hit else None
         moving = float((done_activity or {}).get("movingDuration") or (done_activity or {}).get("duration") or 0)
         row = drop_empty(
@@ -1311,6 +1476,7 @@ def summarise(
                 "phase": phases.get(wid),
                 "shape": list(shape) if shape else None,
                 "status": status,
+                "optional": optional or None,
                 "actual_pace": (
                     pace_per_km(float(done_activity.get("distance") or 0), moving)
                     if done_activity and category(sport_key) == "run" and moving else None
@@ -1334,12 +1500,9 @@ def summarise(
                     and (category(sport_key) == "run" or focus == "ride" and is_ride(sport_key))
                     else None
                 ),
-                # A triathlon is measured in time: every session's, read
-                # from its workout.
-                "planned_min": (
-                    round(planned_seconds[wid] / 60)
-                    if focus == "time" and planned_seconds.get(wid) else None
-                ),
+                # Every session's planned time, read from its workout: what
+                # a triathlon is measured in, and a gym session's size.
+                "planned_min": round(planned_seconds[wid] / 60) if planned_seconds.get(wid) else None,
                 "_done_seconds": hit.get("actual_seconds") if focus == "time" and hit else None,
             }
         )
@@ -1348,13 +1511,15 @@ def summarise(
             number, {"week": number, "starts": monday_of(day).isoformat(), "sessions": []}
         )
         week["sessions"].append(row)
-    if through is not None:
-        monday = week_one
-        while monday <= monday_of(through):
-            number = (monday - week_one).days // 7 + 1
-            weeks.setdefault(number, {"week": number, "starts": monday.isoformat(), "sessions": []})
-            monday += timedelta(weeks=1)
-        weeks = dict(sorted(weeks.items()))
+    # Every week from the first to the last, a week with nothing in it too
+    # (a full rest week reads as one, not as a gap), and with through, every
+    # week up to the one holding that day.
+    monday = week_one
+    while monday <= monday_of(max(last, through or last)):
+        number = (monday - week_one).days // 7 + 1
+        weeks.setdefault(number, {"week": number, "starts": monday.isoformat(), "sessions": []})
+        monday += timedelta(weeks=1)
+    weeks = dict(sorted(weeks.items()))
 
     for week in weeks.values():
         statuses = [s["status"] for s in week["sessions"]]

@@ -231,7 +231,7 @@ class _Server(MCPServer):
 # session's shape and icon) is left out of the model's copy: the card reads
 # the structured copy, which keeps everything. Measured on a 12-week block,
 # the text went from about 12,000 tokens to about 3,000.
-_CARD_ONLY = {"shape", "kind"}
+_CARD_ONLY = {"shape", "kind", "state"}
 
 
 def _slim_rows(rows: Any) -> Any:
@@ -2812,8 +2812,9 @@ async def create_plan(
             by default) and "phase": one short word such as "Base", "Build",
             "Peak" or "Taper", the same for every session in that phase; the
             card bands the weeks by it. A strength session has "exercises"
-            (as for create_strength_workout), not "steps". Rest days are days
-            with no session. At most 150.
+            (as for create_strength_workout), not "steps"; "optional": true
+            if skipping it isn't missing it. Rest days are days with no
+            session. At most 150.
         label: 2 or 3 letters or digits for the plan code, short because it
             ends every workout name: "HM", "10K", "MAR", "B1" for a base
             block. From the goal when omitted.
@@ -2823,7 +2824,8 @@ async def create_plan(
             "Norwegian singles", "80/20", "Pfitzinger 18/55".
         milestones: Up to 4 points on the way to the goal, drawn as a
             timeline: {"label": "Half check", "date": "2026-11-29", "target":
-            "1:22"}, date and target optional. The goal race is usually last.
+            "1:22"}, date and target optional, and "tier": goal, key, tune or
+            other. The goal race is usually last.
     """
     today = date_cls.today()
     sessions = [
@@ -3135,7 +3137,7 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
             result["history"] = training_plan.weekly_run_km(
                 activities, training_plan.monday_of(today), HISTORY_WEEKS
             )
-        return result
+        return training_plan.card_extras(result, meta.get("milestones") or following_meta.get("milestones"))
     others = sorted(p for p in plans if p != code)
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
     result = _mark_unread(await _with_next_steps(training_plan.summarise(
@@ -3145,7 +3147,7 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     result.update(meta)
     if others:
         result["other_plans"] = others
-    return result
+    return training_plan.card_extras(result, meta.get("milestones"))
 
 
 # The sessions this close are read first, whatever their names say: the
