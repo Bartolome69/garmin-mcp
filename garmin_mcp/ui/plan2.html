@@ -17,7 +17,7 @@
     --card: #FFFFFF; --text: #1F1E1B; --muted: #6B6A64; --faint: #73726C; --border: #E6E4DD; --subtle: #F0EEE8;
     --btn-border: #D9D7CF; --red: #E0312A; --red-text: #C8261F; --red-tint: #FDF0EE; --red-bd: #F2C9C4;
     --bar-done: #9A9993; --bar-plan: #E0DED7; --on-red: #FFFFFF;
-    --easy: #3F8A47; --long: #2F68B0; --hard: #C27A12; --rec: #C9C7C0; --strength: #7E57C2; --race: #E0312A;
+    --easy: #3F8A47; --long: #2F68B0; --hard: #C27A12; --rec: #C9C7C0; --strength: #7E57C2; --race: #E0312A; --hard-text: #8F5A0B;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -25,7 +25,7 @@
       --card: #30302E; --text: #F4F3EE; --muted: #A6A59F; --faint: #9A9993; --border: #3D3D3A; --subtle: #3A3936;
       --btn-border: #4A4844; --red: #E8322B; --red-text: #FF6A61; --red-tint: rgba(232,50,43,.14); --red-bd: rgba(255,106,97,.45);
       --bar-done: #8E8C86; --bar-plan: #4A4844;
-      --easy: #8CC08F; --long: #74A3DB; --hard: #E3B23F; --rec: #5A5954; --strength: #A98BE0; --race: #E8322B;
+      --easy: #8CC08F; --long: #74A3DB; --hard: #E3B23F; --rec: #5A5954; --strength: #A98BE0; --race: #E8322B; --hard-text: #E3B23F;
     }
   }
   :root[data-theme="dark"] {
@@ -33,7 +33,7 @@
     --card: #30302E; --text: #F4F3EE; --muted: #A6A59F; --faint: #9A9993; --border: #3D3D3A; --subtle: #3A3936;
     --btn-border: #4A4844; --red: #E8322B; --red-text: #FF6A61; --red-tint: rgba(232,50,43,.14); --red-bd: rgba(255,106,97,.45);
     --bar-done: #8E8C86; --bar-plan: #4A4844;
-    --easy: #8CC08F; --long: #74A3DB; --hard: #E3B23F; --rec: #5A5954; --strength: #A98BE0; --race: #E8322B;
+    --easy: #8CC08F; --long: #74A3DB; --hard: #E3B23F; --rec: #5A5954; --strength: #A98BE0; --race: #E8322B; --hard-text: #E3B23F;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: transparent; }
@@ -104,7 +104,7 @@
   .grid { display: grid; column-gap: 4px; }
   .marks { height: 12px; align-items: center; justify-items: center; }
   .bars { height: 100px; align-items: end; }
-  .bar { all: unset; box-sizing: border-box; cursor: pointer; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 4px; }
+  .bar { all: unset; box-sizing: border-box; cursor: pointer; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 4px; width: 100%; max-width: 40px; justify-self: center; }
   .bar .b { display: block; border-radius: 3px 3px 0 0; min-height: 3px; }
   .bar .b + .b { border-radius: 0; }
   .bar .b:last-child { border-radius: 0 0 3px 3px; }
@@ -118,7 +118,7 @@
   .nums-row { align-items: center; justify-items: center; font-size: 11px; color: var(--faint); min-height: 14px; }
   .nums-row .cur { color: var(--red-text); font-weight: 600; }
   .bands { height: 24px; }
-  .band { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  .band { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden;
     border-radius: 6px; background: var(--subtle); font-size: 10.5px; letter-spacing: .06em; color: var(--muted); white-space: nowrap;
     border-bottom: 2px solid transparent; }
   .band.on { background: transparent; border-bottom-color: var(--red); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
@@ -669,7 +669,9 @@
     if (head.length > 28) head = head.slice(0, 27).replace(/\s+\S*$/, "") + "\u2026";
     return cap(head);
   }
-  function effDate(s) { return s.done_on && s.status === "done, moved" ? s.done_on : s.date; }
+  // A session stays on its planned day, moved or early: its row says when it
+  // was done (the handoff's "Moved · done Thu 29" on Wednesday's row).
+  function effDate(s) { return s.date; }
   function isDone(s) { return String(s.status || "").indexOf("done") === 0 || s.status === "logged" || s.extra; }
 
   // ---------------------------------------------------------------- model
@@ -1095,9 +1097,13 @@
         parts.push(el("i", { class: "b plan", style: "height:" + px(v.planned) }));
       }
       var race = byWeek[w.wk];
-      var amount = v.now != null ? tot(v.now + (v.rest || 0)) : v.done != null ? tot(v.done) : v.none ? "" : tot(v.planned);
+      // Read aloud the way the bar reads: "Week 7, 57 km planned".
+      var amount = v.none ? "not loaded yet"
+        : v.now != null ? tot(v.now) + unitWord() + " done" + (v.rest ? ", " + tot(v.rest) + unitWord() + " to go" : "") + (v.unk ? ", still adding up" : "")
+        : v.done != null ? tot(v.done) + unitWord() + " done"
+        : (v.unk ? "at least " : "") + tot(v.planned) + unitWord() + " planned" + (v.unk ? ", still loading" : "");
       return el("button", { class: "bar" + (i === state.sel ? " sel" : ""), "aria-pressed": i === state.sel ? "true" : "false",
-        "aria-label": "Week " + w.n + (amount ? ", " + amount + unitWord() : ", not loaded yet") + (race ? ", " + race.name : ""),
+        "aria-label": "Week " + w.n + ", " + amount + (race ? ", " + race.name : ""),
         onclick: function () { selectWeek(i); } }, parts);
     });
     var labels = m.weeks.map(function (w, i) {
@@ -1116,9 +1122,8 @@
       var room = s.span * col + (s.span - 1) * gap, label = String(s.label || "");
       var fits = room >= label.length * 7 + 14;
       var shown = fits ? label.toUpperCase() : (phaseOf[label] && phaseOf[label].short || label.slice(0, 1)).toUpperCase();
-      return el("button", { class: "band mono" + (on ? " on" : "") + (label ? "" : " unk"), style: "grid-column:span " + s.span,
-        "aria-label": label ? label + ", weeks " + m.weeks[s.from].n + " to " + m.weeks[s.from + s.span - 1].n : "Phase not loaded yet",
-        onclick: function () { if (label) selectWeek(s.from); } }, [label ? shown : ""]);
+      return el("span", { class: "band mono" + (on ? " on" : "") + (label ? "" : " unk"), style: "grid-column:span " + s.span,
+        title: label ? label + ", weeks " + m.weeks[s.from].n + " to " + m.weeks[s.from + s.span - 1].n : "Phase not loaded yet" }, [label ? shown : ""]);
     }) : null;
     var inner = el("div", { style: "display:flex;flex-direction:column;gap:6px;" + width }, [
       el("div", { class: "grid marks", style: cols }, marks),
@@ -1275,7 +1280,7 @@
     var meta = "", metaRed = false, value = "", valueCls = "val";
     if (st === "done" || st === "early" || st === "moved") {
       var bits = [];
-      if (st === "early") bits.push("Done early · " + DAYS[dow(s.done_on)] + " " + parse(s.done_on).getDate());
+      if (st === "early") bits.push(between(s.done_on, s.date) === 1 ? "Done a day early" : "Done early · " + DAYS[dow(s.done_on)] + " " + parse(s.done_on).getDate());
       if (st === "moved") bits.push("Moved · done " + DAYS[dow(s.done_on)] + " " + parse(s.done_on).getDate());
       if (s.actual_pace) bits.push(units(s.actual_pace));
       if (s.actual_bpm) bits.push(s.actual_bpm + " bpm");
@@ -1301,7 +1306,7 @@
     var key = keyOf(s), isOpen = openable && state.open === key;
     var line1 = el("div", { class: "line1" }, [
       el("span", { class: "sicon" }, [svg(SPORT_ICON[kind] || SPORT_ICON.other, 14, "var(--muted)")]),
-      look.l ? el("span", { class: "typ", style: "color:" + look.v, text: isRace ? "Race" : look.l }) : null,
+      look.l ? el("span", { class: "typ", style: "color:" + (look.v === "var(--hard)" ? "var(--hard-text)" : look.v), text: isRace ? "Race" : look.l }) : null,
       el("span", { class: "ttl" + (st === "missed" || st === "skipped" ? " dim" : "") + (st === "removed" ? " struck" : ""), text: title }),
     ]);
     var mid = el("div", { class: "mid" }, [line1, ahead && kind !== "strength" ? shapeBarNew(s) : null,
@@ -1386,9 +1391,27 @@
     var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
     var known = secs.filter(function (v) { return v != null; }), lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
     var work = workLaps(splits, secs, lo, hi), colour = typeLook(s).v;
+    var reps = work.filter(Boolean).length, mixed = reps > 0 && reps < splits.length;
+    // A session with work in it: the steady stretches between reps draw as
+    // one grey block each (a long run's easy km, then its marathon-pace km).
+    if (mixed) {
+      var merged = [], mergedSecs = [], mergedWork = [];
+      splits.forEach(function (x, i) {
+        var last = merged.length - 1;
+        if (!work[i] && last >= 0 && !mergedWork[last]) {
+          var a = merged[last], t = (clockSecs(a.duration) || 0) + (clockSecs(x.duration) || 0), d = (a.distance_km || 0) + (x.distance_km || 0);
+          var per = d ? Math.round(t / d) : null;
+          merged[last] = { split: a.split, km: a.km, distance_km: d, duration: t + "s", avg_hr: a.avg_hr, joined: true,
+            pace_per_km: per ? Math.floor(per / 60) + ":" + String(per % 60).padStart(2, "0") + " /km" : a.pace_per_km };
+          mergedSecs[last] = d ? t / d : mergedSecs[last];
+        } else { merged.push(x); mergedSecs.push(secs[i]); mergedWork.push(work[i]); }
+      });
+      var repRows = splits.map(function (x, i) { return work[i] ? x : null; }).filter(Boolean);
+      splits = merged; secs = mergedSecs; work = mergedWork;
+    }
     var top = lo - Math.max(8, (hi - lo) * 0.08), bottom = hi + Math.max(12, (hi - lo) * 0.15);
     var height = function (v) { return 8 + 80 * (bottom - v) / (bottom - top); };
-    var reps = work.filter(Boolean).length, labelReps = reps > 1 && reps <= 8 && reps < splits.length;
+    var labelReps = reps > 1 && reps <= 8 && mixed;
     var kids = splits.map(function (x, i) {
       var v = secs[i], wide = clockSecs(x.duration) || (x.distance_km ? x.distance_km * (v || 300) : 0) || 1;
       return el("span", { class: work[i] ? "" : "rest", style: "flex-grow:" + Math.round(wide) + ";height:" + Math.round(v == null ? 8 : height(v)) + "%;background:" + colour,
@@ -1396,11 +1419,25 @@
         work[i] && labelReps ? [el("em", { text: units(x.pace_per_km).replace(/\s*\/(km|mi)$/, "") })] : []);
     });
     var avg = paceSecs(sum.pace_per_km);
-    if (avg != null && avg > top && avg < bottom) kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + units(sum.pace_per_km).replace(/\s*\/(km|mi)$/, "") })]));
+    // The average line only means something against reps; an easy run's km
+    // are all near it.
+    if (mixed && avg != null && avg > top && avg < bottom) kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + units(sum.pace_per_km).replace(/\s*\/(km|mi)$/, "") })]));
     var fast = secs.indexOf(lo), slow = secs.indexOf(hi);
     var lapName = function (k) { return splits[k].split != null ? (work[k] && labelReps ? "rep " + (work.slice(0, k + 1).filter(Boolean).length) : "lap " + splits[k].split) : "km " + (splits[k].km || k + 1); };
-    return [facts, el("div", { class: "chart", role: "img", "aria-label": splits.length + " laps" }, kids),
-      el("span", { class: "dnote", text: "Fastest " + units(splits[fast].pace_per_km) + " (" + lapName(fast) + "), slowest " + units(splits[slow].pace_per_km) + " (" + lapName(slow) + ")." })];
+    var chart = el("div", { class: "chart", role: "img", "aria-label": splits.length + " laps" }, kids);
+    if (mixed) {
+      // The reps as rows: distance or time, pace and heart rate, as Garmin has them.
+      var items = repRows.slice(0, 16).map(function (x, k) {
+        return el("li", {}, [el("i", { style: "background:" + colour }), el("b", { text: (reps <= 8 ? "Rep " : "km ") + (reps <= 8 ? k + 1 : x.km || x.split || k + 1) }),
+          el("span", { text: [x.distance_km ? one(x.distance_km) + " " + (MI ? "mi" : "km") : clockShort(x.duration), units(x.pace_per_km), x.avg_hr ? x.avg_hr + " bpm" : ""].filter(Boolean).join(" · ") })]);
+      });
+      return [facts, chart, el("ul", { class: "steps" }, items)];
+    }
+    // An easy run: its splits in one line.
+    var line = splits.length <= 12
+      ? "Splits " + splits.map(function (x) { return units(x.pace_per_km).replace(/\s*\/(km|mi)$/, ""); }).join(" · ") + (hr.average_bpm ? " · " + hr.average_bpm + " bpm avg" : "")
+      : "Fastest " + units(splits[fast].pace_per_km) + " (" + lapName(fast) + "), slowest " + units(splits[slow].pace_per_km) + " (" + lapName(slow) + ").";
+    return [facts, chart, el("span", { class: "dnote", text: line })];
   }
   function plannedParts(p, s) {
     if (!p) return [el("span", { class: "dnote", text: "The steps need the chat: ask below." })];

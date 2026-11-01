@@ -120,7 +120,7 @@ f.src = "card.html";
       /31 km\s*Done/.test(got.text) && /19 km\s*To go/.test(got.text) && /~50 km\s*Projected/.test(got.text)
       && /53 km planned\. Done includes 5 km extra\./.test(got.text), got.text.slice(300, 800));
     check("the block: a bar per week, each a labelled button, race markers by tier, unknown weeks dashed",
-      got.bars === 20 && /^Week 7, \d+ km$/.test(got.aria[6]) && got.aria[3].includes("parkrun")
+      got.bars === 20 && /^Week 7, \d+ km planned$/.test(got.aria[6]) && got.aria[3].includes("parkrun")
       && got.marks.some((c) => /goal-m/.test(c)) && got.marks.some((c) => /\bkey\b/.test(c)) && got.marks.some((c) => /tune/.test(c))
       && got.dashed >= 3, JSON.stringify(got.aria.slice(0, 8)) + JSON.stringify(got.marks));
     check("past 1,150px at 390 wide, this week's finished rows fold behind one line; skipped optional ones with them, missed stay out",
@@ -129,7 +129,7 @@ f.src = "card.html";
     await page.waitForTimeout(300);
     got.rows = await card.evaluate(() => [...document.querySelectorAll(".srow")].map((r) => r.innerText.replace(/\s+/g, " ").trim()));
     const want = [/^MON .*Strength Full body.*35m/, /^TUE .*Easy 11 km.*5:12 \/km · 133 bpm 11\.1/, /^WED .*Missed/,
-      /^THU .*Optional · skipped, not counted/, /Not in the plan · 30m 19s 5/, /Done early · Thu/, /^FRI Rest Planned rest · Fri to Sat/, /^SUN .*Long.*Tomorrow|^SUN .*ready for your watch/];
+      /^THU .*Optional · skipped, not counted/, /Not in the plan · 30m 19s 5/, /^FRI .*Done a day early/, /^SAT Rest Planned rest$/, /^SUN .*Long.*Tomorrow|^SUN .*ready for your watch/];
     check("every state has an icon and its words: done, missed, skipped, extra, early, rest, next",
       want.every((re) => got.rows.some((r) => re.test(r))), JSON.stringify(got.rows));
     check("the next session opens by default, with its steps, and nothing else is open", got.open === 1 && /125–150 bpm/.test(got.text), got.open);
@@ -144,6 +144,7 @@ f.src = "card.html";
     await page.waitForTimeout(300);
     got = await card.evaluate(() => document.querySelector(".week").innerText);
     check("the next-week button moves the chosen week, with its total", /Week 4/.test(got) && /\d+ km planned/.test(got), got.slice(0, 120));
+    check("rest days in a row share one row", /Planned rest · Wed to Sun/.test(got) && (got.match(/Planned rest/g) || []).length === 2, got.slice(0, 300));
     await card.getByRole("button", { name: /^Goal race/ }).click();
     await page.waitForTimeout(300);
     got = await card.evaluate(() => ({ week: document.querySelector(".week").innerText, sel: [...document.querySelectorAll(".bars .bar")].findIndex((b) => b.classList.contains("sel")) }));
