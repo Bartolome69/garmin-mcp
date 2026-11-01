@@ -773,7 +773,8 @@ class FakeGarmin:
 
 
 # A gym session, its sets as Garmin keeps them (weights in grams, rests
-# between), and an interval run whose laps Garmin marked.
+# between), and an interval run as Garmin marks one: warm-up, recoveries
+# and cool-down marked, the reps themselves left as plain "active" laps.
 STRENGTH_ID = 3333
 INTERVALS_ID = 5555
 EXERCISE_SETS = {"activityId": STRENGTH_ID, "exerciseSets": [
@@ -789,10 +790,10 @@ EXERCISE_SETS = {"activityId": STRENGTH_ID, "exerciseSets": [
 ]}
 INTERVAL_SPLITS = {"lapDTOs": [
     {"lapIndex": 1, "intensityType": "WARMUP", "distance": 3000.0, "duration": 990.0, "averageHR": 130},
-    {"lapIndex": 2, "intensityType": "INTERVAL", "distance": 3000.0, "duration": 810.0, "averageHR": 156},
+    {"lapIndex": 2, "intensityType": "ACTIVE", "distance": 3000.0, "duration": 810.0, "averageHR": 156},
     {"lapIndex": 3, "intensityType": "RECOVERY", "distance": 290.0, "duration": 120.0, "averageHR": 140},
-    {"lapIndex": 4, "intensityType": "INTERVAL", "distance": 3000.0, "duration": 795.0, "averageHR": 158},
+    {"lapIndex": 4, "intensityType": "ACTIVE", "distance": 3000.0, "duration": 795.0, "averageHR": 158},
     {"lapIndex": 5, "intensityType": "RECOVERY", "distance": 290.0, "duration": 118.0, "averageHR": 141},
-    {"lapIndex": 6, "intensityType": "INTERVAL", "distance": 3000.0, "duration": 780.0, "averageHR": 160},
+    {"lapIndex": 6, "intensityType": "ACTIVE", "distance": 3000.0, "duration": 780.0, "averageHR": 160},
     {"lapIndex": 7, "intensityType": "COOLDOWN", "distance": 2500.0, "duration": 800.0, "averageHR": 138},
 ]}

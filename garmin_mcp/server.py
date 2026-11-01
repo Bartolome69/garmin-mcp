@@ -1752,7 +1752,13 @@ def _reps(laps: list[dict[str, Any]], ride: bool = False) -> dict[str, Any] | No
     """A structured session's work reps together, from the laps Garmin marked
     as intervals: how many, their average pace (or speed) and heart rate, and
     the fastest and slowest. None for a run without marked reps."""
-    work = [lap for lap in laps if _lap_intensity(lap) == "interval"]
+    marks = [_lap_intensity(lap) for lap in laps]
+    work = [lap for lap, m in zip(laps, marks) if m == "interval"]
+    if not work and any(m in ("recovery", "rest") for m in marks):
+        # Garmin often leaves a structured workout's reps unmarked ("active")
+        # and marks only what's around them (Nov 1, a 3x3km): the unmarked
+        # laps between the recoveries are the reps.
+        work = [lap for lap, m in zip(laps, marks) if m is None]
     if len(work) < 2:
         return None
     dist = sum(lap.get("distance") or 0 for lap in work)
