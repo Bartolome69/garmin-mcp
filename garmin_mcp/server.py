@@ -2770,6 +2770,19 @@ async def _plan_calendar(start: date_cls, end: date_cls) -> list[dict[str, Any]]
     return training_plan.calendar_items(await _calendar_months(start, end))
 
 
+async def _plan_events(today: date_cls) -> list[dict[str, Any]]:
+    """The races people add as events in Garmin Connect, drawn with the plan's
+    own (Nov 1). The months are the ones the plan scan just read, so this asks
+    Garmin for nothing new; if they can't be read the card goes without."""
+    try:
+        months = await _calendar_months(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
+    except Exception:  # noqa: BLE001 - the card stands without them
+        log.debug("could not read calendar events", exc_info=True)
+        return []
+    return training_plan.calendar_events(
+        months, today - PLAN_SCAN_BACK, today + timedelta(weeks=training_plan.RACE_WEEKS_AHEAD))
+
+
 async def _calendar_months(start: date_cls, end: date_cls) -> list[Any]:
     # Every month at once: a plan scan reads a dozen, which one after another
     # was most of the card's wait.
@@ -3006,6 +3019,7 @@ async def _with_situation(result: Any) -> Any:
 async def _plan_answer(label: str | None) -> dict[str, Any]:
     today = date_cls.today()
     items = await _plan_calendar(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
+    events = await _plan_events(today)
     plans = training_plan.plans_in(items)
     code: str | None = None
     context: dict[str, Any] | None = None
@@ -3152,7 +3166,7 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
             result["history"] = training_plan.weekly_run_km(
                 activities, training_plan.monday_of(today), HISTORY_WEEKS
             )
-        return training_plan.card_extras(result, meta.get("milestones") or following_meta.get("milestones"))
+        return training_plan.card_extras(result, meta.get("milestones") or following_meta.get("milestones"), events)
     others = sorted(p for p in plans if p != code)
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
     result = _mark_unread(await _with_next_steps(training_plan.summarise(
@@ -3162,7 +3176,7 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     result.update(meta)
     if others:
         result["other_plans"] = others
-    return training_plan.card_extras(result, meta.get("milestones"))
+    return training_plan.card_extras(result, meta.get("milestones"), events)
 
 
 # The sessions this close are read first, whatever their names say: the

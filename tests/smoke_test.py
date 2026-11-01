@@ -936,6 +936,11 @@ async def check_calendar_fallback(check) -> None:
                   and racing["situation"]["race"]["name"] == "Berlin Half"
                   and "Berlin Half is in 10 weeks" in racing["situation"]["offer"],
                   str(racing.get("situation")))
+            with_event = await scenario([on(61, -2), on(62, 2)])
+            berlin = next((r for r in with_event.get("races") or [] if r.get("name") == "Berlin Half"), None)
+            check("a race added as a Garmin event is one of the plan's races, with its week and distance",
+                  berlin is not None and berlin.get("week") and berlin.get("distance_km") == 21.1 and berlin.get("on_garmin"),
+                  str(with_event.get("races")))
 
             async def down(start, end):
                 raise RuntimeError("calendar unavailable")

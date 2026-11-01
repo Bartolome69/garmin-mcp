@@ -1156,12 +1156,15 @@ def _race_tier(name: str) -> str:
     return "tune" if _TUNE_RE.search(name or "") else "key" if _KEY_RE.search(name or "") else "other"
 
 
-def races(result: Mapping[str, Any], milestones: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+def races(result: Mapping[str, Any], milestones: Sequence[Mapping[str, Any]] | None,
+          events: Sequence[Mapping[str, Any]] | None = None) -> list[dict[str, Any]]:
     """The plan's races, by date, each with its week, day and tier.
 
     From the plan's milestones (the last is the goal unless one says
-    otherwise), and from race sessions on the calendar that no milestone
-    names, which is all a coach's plan has.
+    otherwise), the events on the Garmin calendar (a primary event is the
+    goal when no milestone is), and race sessions on the calendar that
+    neither names, which is all a coach's plan has. Within a day of each
+    other they're the same race, named by the plan.
     """
     weeks = [w for w in result.get("weeks") or [] if w.get("starts")]
 
@@ -1191,6 +1194,23 @@ def races(result: Mapping[str, Any], milestones: Sequence[Mapping[str, Any]] | N
             "target": m.get("target"),
             "distance_km": km_from_name(m.get("label")) or (near or {}).get("planned_km"),
         }))
+    def near_one(day: str) -> dict[str, Any] | None:
+        when = date.fromisoformat(day)
+        return next((r for r in out if abs((date.fromisoformat(r["date"]) - when).days) <= 1), None)
+
+    goal_taken = any(r.get("tier") == "goal" for r in out)
+    for e in events or []:
+        same = near_one(e["date"])
+        if same is not None:
+            if e.get("distance_km") and not same.get("distance_km"):
+                same["distance_km"] = e["distance_km"]
+            same["on_garmin"] = True
+            continue
+        week, day = place(e["date"])
+        tier = "goal" if e.get("primary") and not goal_taken else _race_tier(e.get("name", ""))
+        goal_taken = goal_taken or tier == "goal"
+        out.append(drop_empty({"name": e.get("name"), "date": e["date"], "week": week, "day": day, "tier": tier,
+                               "distance_km": e.get("distance_km"), "on_garmin": True}))
     named = {r["date"] for r in out}
     for s in sessions:
         if s.get("type") != "race" or any(abs((date.fromisoformat(s["date"]) - date.fromisoformat(d)).days) <= 1
@@ -1238,7 +1258,8 @@ def this_week(result: Mapping[str, Any]) -> dict[str, Any] | None:
     })
 
 
-def card_extras(result: dict[str, Any], milestones: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
+def card_extras(result: dict[str, Any], milestones: Sequence[Mapping[str, Any]] | None = None,
+                events: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Add what the card draws to a plan answer: each session's state, cutback
     weeks, phases' short names, this week's numbers and the races."""
     weeks = result.get("weeks") or []
@@ -1265,7 +1286,7 @@ def card_extras(result: dict[str, Any], milestones: Sequence[Mapping[str, Any]] 
     summary = this_week(result)
     if summary:
         result["this_week"] = summary
-    found = races(result, milestones)
+    found = races(result, milestones, events)
     if found:
         result["races"] = found
     return result
@@ -1606,10 +1627,27 @@ RACE_WEEKS_AHEAD = 26
 REGULAR_IN_LOG = 4
 
 
-def upcoming_events(payloads: Iterable[Any], today: date, weeks: int = RACE_WEEKS_AHEAD) -> list[dict[str, Any]]:
-    """Races and other events on the Garmin calendar in the weeks ahead, soonest first."""
+def _event_km(item: Mapping[str, Any]) -> float | None:
+    """An event's distance in km: Garmin's distance (metres), its completion
+    target, or the number in its name."""
+    target = item.get("completionTarget") if isinstance(item.get("completionTarget"), Mapping) else {}
+    metres = item.get("distance")
+    if not metres and target.get("unitType") == "distance" and target.get("value"):
+        unit = str(target.get("unit") or "meter").lower()
+        factor = {"kilometer": 1000, "km": 1000, "mile": 1609.344, "mi": 1609.344}.get(unit, 1)
+        metres = float(target["value"]) * factor
+    try:
+        km = round(float(metres) / 1000, 1) if metres else None
+    except (TypeError, ValueError):
+        km = None
+    return km or km_from_name(item.get("title"))
+
+
+def calendar_events(payloads: Iterable[Any], start: date, end: date) -> list[dict[str, Any]]:
+    """The events on the Garmin calendar between two days, by date: races and
+    other events people add in Garmin Connect, with the one they've made their
+    primary event marked."""
     found: dict[Any, dict[str, Any]] = {}
-    last = today + timedelta(weeks=weeks)
     for payload in payloads:
         items = payload if isinstance(payload, list) else (payload or {}).get("calendarItems", [])
         for item in items or []:
@@ -1618,15 +1656,24 @@ def upcoming_events(payloads: Iterable[Any], today: date, weeks: int = RACE_WEEK
             if item.get("itemType") not in ("event", "race") and not item.get("isRace"):
                 continue
             day = _day(item.get("date"))
-            if not day or not today <= day <= last:
+            if not day or not start <= day <= end:
                 continue
             key = item.get("id") or (item.get("date"), item.get("title"))
-            found.setdefault(key, {
+            found.setdefault(key, drop_empty({
                 "name": str(item.get("title") or "").strip()[:80] or "Your race",
                 "date": day.isoformat(),
-                "weeks_away": (day - today).days // 7,
-            })
+                "distance_km": _event_km(item),
+                "primary": bool(item.get("primaryEvent")) or None,
+            }))
     return sorted(found.values(), key=lambda e: e["date"])
+
+
+def upcoming_events(payloads: Iterable[Any], today: date, weeks: int = RACE_WEEKS_AHEAD) -> list[dict[str, Any]]:
+    """Races and other events on the Garmin calendar in the weeks ahead, soonest first."""
+    return [
+        {"name": e["name"], "date": e["date"], "weeks_away": (date.fromisoformat(e["date"]) - today).days // 7}
+        for e in calendar_events(payloads, today, today + timedelta(weeks=weeks))
+    ]
 
 
 def _when(weeks_away: int) -> str:

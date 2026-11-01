@@ -275,6 +275,38 @@ def main() -> int:
     check("races ahead are read from the calendar, soonest first, each once",
           [e["name"] for e in race] == ["Valencia Half", "Xmas 10k"] and race[0]["weeks_away"] == 9, str(race))
 
+    print("\nGarmin calendar events as the plan's races")
+    from garmin_mcp.training_plan import calendar_events, races
+    events = calendar_events([{"calendarItems": [
+        {"id": 1, "itemType": "workout", "date": "2026-10-01", "title": "Easy 8k"},
+        {"id": 2, "itemType": "event", "date": "2026-11-29", "title": "Valencia Half", "distance": 21097.5},
+        {"id": 6, "itemType": "event", "date": "2026-10-17", "title": "Club relay",
+         "completionTarget": {"value": 5, "unit": "kilometer", "unitType": "distance"}},
+        {"id": 7, "isRace": True, "date": "2026-10-24", "title": "Autumn 10k parkrun special"},
+        {"id": 8, "itemType": "event", "date": "2027-02-21", "title": "Seville Marathon", "primaryEvent": True},
+        {"id": 3, "itemType": "event", "date": "2026-09-01", "title": "Before the window"},
+    ]}], TODAY - timedelta(days=14), TODAY + timedelta(weeks=26))
+    check("events are read with their distance, from metres, a target or the name, and the primary one marked",
+          [(e["name"], e.get("distance_km"), e.get("primary")) for e in events]
+          == [("Club relay", 5.0, None), ("Autumn 10k parkrun special", 10.0, None),
+              ("Valencia Half", 21.1, None), ("Seville Marathon", 42.2, True)], str(events))
+    week1 = (TODAY - timedelta(days=TODAY.weekday())).isoformat()
+    result = {"weeks": [{"week": 1, "starts": week1, "sessions": [
+        {"date": "2026-10-24", "type": "race", "name": "10k race", "planned_km": 10}]}]}
+    found = races(result, [{"label": "Valencia Half", "date": "2026-11-28", "target": "1:25"}], events)
+    names = [(r["name"], r["tier"]) for r in found]
+    check("an event within a day of a plan's race is that race, named by the plan, with Garmin's distance",
+          names.count(("Valencia Half", "goal")) == 1 and next(r for r in found if r["name"] == "Valencia Half").get("distance_km") == 21.1,
+          str(found))
+    check("a race session on an event's day isn't drawn twice", not any(r["name"] == "10k race" for r in found), str(names))
+    check("the primary event isn't a second goal beside the plan's",
+          ("Seville Marathon", "key") in names and sum(t == "goal" for _, t in names) == 1, str(names))
+    check("events the plan doesn't name are its races too, tiered by name",
+          ("Club relay", "other") in names and ("Autumn 10k parkrun special", "tune") in names, str(names))
+    found = races(result, None, events)
+    check("with no plan races, the primary event is the goal",
+          [r["name"] for r in found if r["tier"] == "goal"] == ["Seville Marathon"], str(found))
+
     log = {"source": "log", "primary": "run", "runs": 2, "rides": 0}
     here = situation(log, TODAY, race)
     check("nothing scheduled with a race ahead offers a block for it",
