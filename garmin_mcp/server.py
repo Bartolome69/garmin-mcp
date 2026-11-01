@@ -45,7 +45,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import analytics, conditions, crews, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
+from . import analytics, conditions, crews, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
@@ -304,8 +304,7 @@ _DESCRIPTIONS = {
         "Call it first for any general question about training or a plan "
         "(\"how's my training going\", \"how am I doing\", \"this week\", "
         "\"show my plan\", \"what's next\", \"today's session\", \"am I on "
-        "track\"), wherever the plan came from: a coach, an app, Garmin Coach or "
-        "create_plan. Call it alone: its situation says where the user is (a "
+        "track\"), any plan, a coach's too. Call it alone: its situation says where the user is (a "
         "block under way, about to start or just done; a race ahead with nothing "
         "scheduled; regular running; or getting going) and offers one next step. "
         "Recovery, readiness or fitness follow only when asked, or when the user "
@@ -1749,6 +1748,31 @@ def _lap_intensity(lap: dict[str, Any]) -> str | None:
     return kind if kind in ("warmup", "interval", "recovery", "rest", "cooldown") else None
 
 
+def _reps(laps: list[dict[str, Any]], ride: bool = False) -> dict[str, Any] | None:
+    """A structured session's work reps together, from the laps Garmin marked
+    as intervals: how many, their average pace (or speed) and heart rate, and
+    the fastest and slowest. None for a run without marked reps."""
+    work = [lap for lap in laps if _lap_intensity(lap) == "interval"]
+    if len(work) < 2:
+        return None
+    dist = sum(lap.get("distance") or 0 for lap in work)
+    secs = sum(first_present(lap, "duration", "movingDuration", "elapsedDuration") or 0 for lap in work)
+    timed = [(lap.get("averageHR"), first_present(lap, "duration", "movingDuration") or 0) for lap in work]
+    hr = sum(h * t for h, t in timed if h) / sum(t for h, t in timed if h) if any(h for h, _ in timed) else None
+    speeds = [(lap.get("distance") or 0) / s for lap in work
+              if (s := first_present(lap, "duration", "movingDuration", "elapsedDuration"))]
+    out: dict[str, Any] = {"count": len(work), "total_km": km(dist), "time": duration(secs),
+                           "avg_hr": round(hr) if hr else None}
+    if ride:
+        out["avg_speed_kmh"] = rounded(dist / secs * 3.6, 1) if dist and secs else None
+    else:
+        out["avg_pace_per_km"] = pace_per_km(dist, secs)
+        if speeds and max(speeds) > 0:
+            out["fastest_pace_per_km"] = pace_per_km(1000, 1000 / max(speeds))
+            out["slowest_pace_per_km"] = pace_per_km(1000, 1000 / min(speeds)) if min(speeds) > 0 else None
+    return drop_empty(out)
+
+
 def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[str, Any]:
     distance = lap.get("distance")
     secs = first_present(lap, "duration", "movingDuration", "elapsedDuration")
@@ -1796,7 +1820,7 @@ def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[
 @mcp.tool()
 @tool_errors
 async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
-    """Splits and heart-rate detail for one activity.
+    """Splits, reps and heart rate for one activity; for a gym session, its sets and weights.
 
     Args:
         activity_id: The activityId from get_activities.
@@ -1887,6 +1911,18 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             "warnings": warnings or None,
         })
 
+    if strength.is_strength(type_key):
+        # A gym session: what was lifted. Weather, shoes, terrain and route
+        # don't apply indoors, so they aren't asked for.
+        lifted = await _optional("sets", lambda c: c.get_activity_exercise_sets(activity_id))
+        return drop_empty({
+            "activity_id": activity_id,
+            "summary": _summarise_activity(flat) or None,
+            "hr_zones": hr_zones(zones),
+            "strength": strength.sets(lifted),
+            "warnings": warnings or None,
+        })
+
     ride = cycling.is_ride(type_key)
     try:
         # Per-km pace and lap drift are a run's questions; a ride's are in terrain.
@@ -1899,17 +1935,16 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
     if ride:
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 
+    lap_rows = [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)]
     return _with_share_image(drop_empty(
         {
             "activity_id": activity_id,
             "summary": _with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)) or None,
             **around.get("first", {}),
             "hr_zones": hr_zones(zones),
+            "reps": _reps(laps, ride),
             "splits_count": len(laps) or None,
-            "splits": [
-                _summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)
-            ]
-            or None,
+            "splits": lap_rows or None,
             "inside": inside,
             **around.get("last", {}),
             "warnings": warnings or None,

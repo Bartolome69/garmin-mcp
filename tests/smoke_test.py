@@ -1382,6 +1382,22 @@ async def main() -> int:
             plain_run = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
             check("an ordinary account's run has its weather, shoes, terrain and route",
                   {"weather", "shoes", "same_route", "terrain"} <= set(plain_run), str(sorted(plain_run)))
+            from fake_garmin import STRENGTH_ID, INTERVALS_ID
+            gym = payload(await sess.call_tool("get_activity_details", {"activity_id": STRENGTH_ID}))
+            lifts = (gym.get("strength") or {}).get("exercises") or []
+            check("a gym session comes back as its exercises, each with its sets, reps and kg, supersets grouped",
+                  [e["exercise"] for e in lifts] == ["Dumbbell bulgarian split squat", "Dumbbell bench press", "Pull up"]
+                  and lifts[0]["sets"] == [{"reps": 8, "kg": 20.0}, {"reps": 8, "kg": 20.0}]
+                  and lifts[1]["sets"] == [{"reps": 10, "kg": 22.5}] and lifts[2]["sets"] == [{"reps": 6}]
+                  and gym["strength"]["total_sets"] == 4 and gym["strength"]["volume_kg"] == 545, str(gym.get("strength"))[:300])
+            check("and isn't asked about weather, shoes or a route, which don't apply indoors",
+                  not {"weather", "shoes", "same_route", "terrain", "share_image"} & set(gym), str(sorted(gym)))
+            reps = payload(await sess.call_tool("get_activity_details", {"activity_id": INTERVALS_ID})).get("reps") or {}
+            check("an interval run's marked reps are summed up: count, average and range of pace, heart rate",
+                  reps.get("count") == 3 and reps.get("total_km") == 9.0 and reps.get("avg_pace_per_km", "").startswith("4:25")
+                  and reps.get("fastest_pace_per_km", "").startswith("4:20") and reps.get("slowest_pace_per_km", "").startswith("4:30")
+                  and reps.get("avg_hr") == 158, str(reps))
+            check("a run without marked reps has no rep summary", "reps" not in plain_run)
             shared = (plain_run.get("share_image") or {}).get("url", "")
             check("a run comes with a link to its share image", shared.startswith("https://garmin.daash.run/share/#"), shared[:80])
             check("and a ride doesn't", "share_image" not in plain_ride)

@@ -370,6 +370,7 @@ class FakeGarmin:
         self.unit_system = "metric"
         self.profile_id = 4242
         self.unscheduled: list[int] = []
+        self.calls_seen: list[str] = []
         self.deleted: list[int] = []
         # What upload_workout and schedule_workout have written, so a plan that
         # was just created can be read back through the calendar like the real
@@ -476,6 +477,10 @@ class FakeGarmin:
         return list(ACTIVITIES)
 
     def get_activity(self, activity_id: int) -> dict[str, Any]:
+        if int(activity_id) == STRENGTH_ID:
+            return {"activityId": STRENGTH_ID, "activityName": "Full body",
+                    "activityTypeDTO": {"typeKey": "strength_training"},
+                    "summaryDTO": {"startTimeLocal": "2026-09-28T18:00:00.0", "duration": 2100.0, "averageHR": 98}}
         if int(activity_id) == 2222:
             ride = dict(ACTIVITIES[1])
             return {"activityId": 2222, "activityName": ride["activityName"],
@@ -505,7 +510,11 @@ class FakeGarmin:
         }
 
     def get_activity_splits(self, activity_id: int) -> dict[str, Any]:
-        return SPLITS
+        return INTERVAL_SPLITS if int(activity_id) == INTERVALS_ID else SPLITS
+
+    def get_activity_exercise_sets(self, activity_id: Any) -> dict[str, Any]:
+        self.calls_seen.append("exercise_sets")
+        return dict(EXERCISE_SETS)
 
     def get_activity_hr_in_timezones(self, activity_id: int) -> list[dict[str, Any]]:
         return list(HR_ZONES)
@@ -524,6 +533,7 @@ class FakeGarmin:
                 {"zoneNumber": 3, "secsInZone": 900.0, "zoneLowBoundary": 188}]
 
     def get_activity_weather(self, activity_id: Any) -> dict[str, Any]:
+        self.calls_seen.append("weather")
         return dict(WEATHER)
 
     def get_activity_gear(self, activity_id: Any) -> list[dict[str, Any]]:
@@ -760,3 +770,29 @@ class FakeGarmin:
             w for w in self.workouts if int(w["workoutId"]) != int(workout_id)
         ]
         return {}
+
+
+# A gym session, its sets as Garmin keeps them (weights in grams, rests
+# between), and an interval run whose laps Garmin marked.
+STRENGTH_ID = 3333
+INTERVALS_ID = 5555
+EXERCISE_SETS = {"activityId": STRENGTH_ID, "exerciseSets": [
+    {"setType": "ACTIVE", "repetitionCount": 8, "weight": 20000.0, "duration": 40.0,
+     "exercises": [{"category": "SQUAT", "name": "DUMBBELL_BULGARIAN_SPLIT_SQUAT", "probability": 100.0}]},
+    {"setType": "REST", "duration": 30.0, "exercises": []},
+    {"setType": "ACTIVE", "repetitionCount": 10, "weight": 22500.0, "duration": 35.0,
+     "exercises": [{"category": "BENCH_PRESS", "name": "DUMBBELL_BENCH_PRESS", "probability": 90.0}]},
+    {"setType": "ACTIVE", "repetitionCount": 8, "weight": 20000.0, "duration": 40.0,
+     "exercises": [{"category": "SQUAT", "name": "DUMBBELL_BULGARIAN_SPLIT_SQUAT", "probability": 100.0}]},
+    {"setType": "ACTIVE", "repetitionCount": 6, "weight": None, "duration": 30.0,
+     "exercises": [{"category": "PULL_UP", "name": None, "probability": 80.0}]},
+]}
+INTERVAL_SPLITS = {"lapDTOs": [
+    {"lapIndex": 1, "intensityType": "WARMUP", "distance": 3000.0, "duration": 990.0, "averageHR": 130},
+    {"lapIndex": 2, "intensityType": "INTERVAL", "distance": 3000.0, "duration": 810.0, "averageHR": 156},
+    {"lapIndex": 3, "intensityType": "RECOVERY", "distance": 290.0, "duration": 120.0, "averageHR": 140},
+    {"lapIndex": 4, "intensityType": "INTERVAL", "distance": 3000.0, "duration": 795.0, "averageHR": 158},
+    {"lapIndex": 5, "intensityType": "RECOVERY", "distance": 290.0, "duration": 118.0, "averageHR": 141},
+    {"lapIndex": 6, "intensityType": "INTERVAL", "distance": 3000.0, "duration": 780.0, "averageHR": 160},
+    {"lapIndex": 7, "intensityType": "COOLDOWN", "distance": 2500.0, "duration": 800.0, "averageHR": 138},
+]}
