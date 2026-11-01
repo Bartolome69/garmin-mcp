@@ -615,7 +615,13 @@ async def main() -> int:
         code, _, _ = await run(lambda: http("POST", "/token", {
             "grant_type": "authorization_code", "code": "never-issued", "redirect_uri": REDIRECT,
             "client_id": client_id, "code_verifier": "x" * 43}))
-        refused = [p for e, p in reported if e == "connector_token_failed"]
+        # The server reports the refusal after it has answered, so the answer
+        # can arrive here first (Nov 1, CI): wait for the report a moment.
+        for _ in range(40):
+            refused = [p for e, p in reported if e == "connector_token_failed"]
+            if refused:
+                break
+            await asyncio.sleep(0.05)
         check("an app turned away collecting its sign-in is counted, with why, never the code",
               code == 400 and refused and refused[-1].get("error") == "invalid_grant"
               and refused[-1].get("grant_type") == "authorization_code" and "never-issued" not in str(refused[-1]),
