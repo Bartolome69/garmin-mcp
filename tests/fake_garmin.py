@@ -371,6 +371,9 @@ class FakeGarmin:
         self.profile_id = 4242
         self.unscheduled: list[int] = []
         self.calls_seen: list[str] = []
+        # Shoes retired or added through update_shoes, as Garmin would keep them.
+        self.retired_gear: set[str] = set()
+        self.added_gear: list[dict[str, Any]] = []
         self.deleted: list[int] = []
         # What upload_workout and schedule_workout have written, so a plan that
         # was just created can be read back through the calendar like the real
@@ -569,7 +572,25 @@ class FakeGarmin:
 
     def get_gear(self, profile_number: Any) -> list[dict[str, Any]]:
         assert int(profile_number) == 4242
-        return [dict(g) for g in GEAR]
+        out = [dict(g) for g in GEAR] + [dict(g) for g in self.added_gear]
+        for g in out:
+            if g.get("uuid") in self.retired_gear:
+                g["gearStatusName"] = "retired"
+        return out
+
+    @property
+    def client(self) -> "_FakeHttp":
+        return _FakeHttp(self)
+
+    def create_gear(self, gear_type: str, brand: str, model: str, name: str, first_use_date: str,
+                    max_usage_distance_km: float | None = None, activity_type_keys: list[str] | None = None,
+                    **_: Any) -> dict[str, Any]:
+        made = {"uuid": f"new-{len(self.added_gear) + 1}", "displayName": name, "gearMakeName": brand,
+                "gearModelName": model, "gearTypeName": "Shoes" if gear_type == "SHOES" else gear_type,
+                "gearStatusName": "active", "maximumMeters": (max_usage_distance_km or 0) * 1000,
+                "dateBegin": f"{first_use_date}T00:00:00.0"}
+        self.added_gear.append(made)
+        return dict(made)
 
     def get_gear_defaults(self, profile_number: Any) -> list[dict[str, Any]]:
         return [{"uuid": SHOE_A, "activityTypePk": 1, "defaultGear": True}]
@@ -797,3 +818,19 @@ INTERVAL_SPLITS = {"lapDTOs": [
     {"lapIndex": 6, "intensityType": "ACTIVE", "distance": 3000.0, "duration": 780.0, "averageHR": 160},
     {"lapIndex": 7, "intensityType": "COOLDOWN", "distance": 2500.0, "duration": 800.0, "averageHR": 138},
 ]}
+
+
+class _FakeHttp:
+    """The library's HTTP client, for the calls Daash makes on it directly:
+    retiring a pair is a PUT of the pair with its status changed."""
+
+    def __init__(self, owner: "FakeGarmin") -> None:
+        self.owner = owner
+
+    def put(self, _domain: str, path: str, json: Any = None, api: bool = False, **_: Any) -> Any:
+        if path.startswith("/gear-service/gear/") and isinstance(json, dict):
+            uuid = path.rsplit("/", 1)[-1]
+            if json.get("gearStatusName") == "retired" and json.get("uuid") == uuid:
+                self.owner.retired_gear.add(uuid)
+            return dict(json)
+        raise RuntimeError(f"unexpected PUT {path}")

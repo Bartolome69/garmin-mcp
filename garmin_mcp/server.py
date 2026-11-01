@@ -112,7 +112,7 @@ _INSTRUCTIONS = (
 # aren't listed for them; called anyway, they say so.
 OFFICIAL_MISSING = {
     "get_fitness", "get_fitness_trends", "get_recovery_trends",
-    "get_heart_rate", "get_profile", "get_shoes", "update_activity",
+    "get_heart_rate", "get_profile", "get_shoes", "update_activity", "update_shoes",
 }
 _OFFICIAL_INSTRUCTIONS = (
     "The user's own Garmin account, through Garmin's official API. Garmin sends "
@@ -290,7 +290,8 @@ CREW_WRITES = {"join_crew", "update_crew", "leave_crew"}
 
 # Tools only preview accounts are offered yet. None at the moment: everything
 # built so far is everyone's. The mechanism stays for the next new thing.
-_PREVIEW_ONLY: set[str] = {"garmin_official", "get_session"}
+# update_shoes until its retire is confirmed on real accounts (Nov 1).
+_PREVIEW_ONLY: set[str] = {"garmin_official", "get_session", "update_shoes"}
 
 
 # What a tool is for, as the model should read it. The model chooses a tool by
@@ -755,6 +756,7 @@ _ANNOTATION_TITLES = {
     "create_workout": "Create workout",
     "schedule_workout": "Schedule workout",
     "update_activity": "Update activity details",
+    "update_shoes": "Add or retire shoes",
     "join_crew": "Join or start crew",
     "update_crew": "Update crew",
     "delete_workout": "Delete workout",
@@ -1228,7 +1230,7 @@ async def _read(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
 WRITES = {
     "create_workout", "update_workout", "create_strength_workout", "schedule_workout",
     "unschedule_workout", "delete_workout", "create_plan", "remove_plan", "update_activity",
-    "garmin_official",
+    "garmin_official", "update_shoes",
 }
 
 
@@ -3923,6 +3925,57 @@ async def get_shoes() -> dict[str, Any]:
         "retired": retired_shown or None,
         "warnings": sorted(set(warnings)) or None,
         "note": "Most running shoes last 500 to 800 km; lighter racing shoes less.",
+    })
+
+
+@mcp.tool()
+@tool_errors
+async def update_shoes(shoes: str, retire: bool = False, limit_km: float | None = None) -> dict[str, Any]:
+    """Add a pair of running shoes to Garmin, or retire one; a retired pair keeps its km.
+
+    Args:
+        shoes: A pair's name from get_shoes to retire; to add, brand and model, e.g. "Asics Metaspeed Tokyo".
+        retire: True retires that pair; otherwise it is added.
+        limit_km: For a new pair, the km at which it counts as worn out.
+    """
+    wanted = (shoes or "").strip()
+    if not wanted:
+        return {"error": "Say which shoes."}
+    number = await _call(
+        lambda c: getattr(c, "profile_id", None) or (c.get_device_last_used() or {}).get("userProfileNumber")
+    )
+    mine = [g for g in (await _call(lambda c: c.get_gear(number)) or []) if isinstance(g, Mapping) and gear.is_shoe(g)]
+    active = [g for g in mine if str(g.get("gearStatusName") or "active").lower() != "retired"]
+
+    if retire:
+        target = _match_shoe(active, wanted)
+        uuid = str(target.get("uuid") or "")
+        today = parse_date("today")
+        # Garmin Connect retires a pair by saving it back with its status and
+        # end date changed; everything else is sent as it came.
+        body = {**target, "gearStatusName": "retired", "dateEnd": f"{today}T00:00:00.0"}
+        await _call(lambda c: c.client.put("connectapi", f"/gear-service/gear/{uuid}", json=body, api=True))
+        again = [g for g in (await _call(lambda c: c.get_gear(number)) or []) if isinstance(g, Mapping)]
+        now = next((g for g in again if str(g.get("uuid")) == uuid), {})
+        if str(now.get("gearStatusName") or "").lower() != "retired":
+            return {"error": (f"Garmin didn't take the change: {gear.name_of(target)} is still active. "
+                              "It can be retired in Garmin Connect under Gear.")}
+        return {"retired": gear.name_of(target), "on": today,
+                "note": "Its km stay with it, listed under retired in get_shoes."}
+
+    same = [g for g in active if wanted.lower() in gear.name_of(g).lower() or gear.name_of(g).lower() in wanted.lower()]
+    if same:
+        return {"error": f"{gear.name_of(same[0])} is already in Garmin. To add another pair, give it a different name."}
+    words = wanted.split()
+    brand, model = (words[0], " ".join(words[1:])) if len(words) > 1 else (wanted, wanted)
+    made = await _call(lambda c: c.create_gear(
+        "SHOES", brand, model, wanted[:60], parse_date("today"),
+        max_usage_distance_km=float(limit_km) if limit_km else None, activity_type_keys=["running"],
+    ))
+    return drop_empty({
+        "added": wanted[:60], "limit_km": limit_km,
+        "uuid": (made or {}).get("uuid") if isinstance(made, Mapping) else None,
+        "note": "Garmin now offers it for new runs. To put it on earlier runs, use update_activity.",
     })
 
 

@@ -624,6 +624,7 @@ async def check_preview_gate(check) -> None:
         check("without preview, get_plan still has its output schema",
               next(t for t in tools if t.name == "get_plan").output_schema is not None)
         check("without preview, the chart tool the view replaces is not offered", "get_plan_chart" not in names)
+        check("without preview, adding or retiring shoes isn't offered yet", "update_shoes" not in names)
         check("without preview, shoes and recovery trends are offered",
               {"get_shoes", "get_recovery_trends"} <= names, str(sorted(names)))
         plain_details = next(t for t in tools if t.name == "get_activity_details").description
@@ -2306,6 +2307,21 @@ async def main() -> int:
                   flats.get("km_left") == 530 and "typical" in flats.get("limit_is", ""), str(flats))
             check("retired pairs are listed by name and km",
                   shoes.get("retired") == [{"name": "Old Ghosts", "km": 803.0, "retired": "2026-02-28"}], str(shoes.get("retired")))
+
+            print("\npreview account, adding and retiring shoes")
+            listed_here = {t.name for t in (await sess.list_tools()).tools}
+            check("a preview account can add or retire shoes", "update_shoes" in listed_here)
+            added = payload(await sess.call_tool("update_shoes", {"shoes": "Asics Metaspeed Tokyo", "limit_km": 400}))
+            check("a new pair is added to Garmin, for running, with its limit",
+                  added.get("added") == "Asics Metaspeed Tokyo" and added.get("limit_km") == 400, str(added))
+            twice = payload(await sess.call_tool("update_shoes", {"shoes": "Metaspeed Tokyo"}))
+            check("the same pair isn't added twice", "already in Garmin" in str(twice.get("error")), str(twice))
+            gone = payload(await sess.call_tool("update_shoes", {"shoes": "metaspeed", "retire": True}))
+            check("a pair is retired by name, and Garmin is checked to have taken it",
+                  gone.get("retired") == "Asics Metaspeed Tokyo" and gone.get("on"), str(gone))
+            nothing = payload(await sess.call_tool("update_shoes", {"shoes": "Clifton", "retire": True}))
+            check("retiring a pair that isn't there names the ones that are",
+                  "No active shoes match" in str(nothing.get("error")) and "Pegasus" in str(nothing.get("error")), str(nothing))
 
             print("\npreview account, recovery trends")
             trends = payload(await sess.call_tool("get_recovery_trends", {"weeks": 4}))
