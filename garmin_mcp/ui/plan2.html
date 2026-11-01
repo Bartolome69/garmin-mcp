@@ -67,6 +67,9 @@
   .count span { font-size: 12.5px; margin-left: 4px; }
   .also { font-size: 12.5px; color: var(--muted); }
   .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pills[data-fit] { flex-wrap: nowrap; overflow: hidden; }
+  .pills[data-fit] .pill { flex: 0 0 auto; }
+  .pills[data-fit] .pill:not(.more):only-of-type, .pills[data-fit] .pill:first-child:nth-last-child(2) { flex-shrink: 1; min-width: 0; }
   .pill { all: unset; box-sizing: border-box; cursor: pointer; height: 44px; padding: 0 14px; border-radius: 999px;
     border: 1px solid var(--btn-border); display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
   .pill small { font-weight: 400; color: var(--muted); font-size: 12.5px; }
@@ -120,6 +123,7 @@
     border-bottom: 2px solid transparent; }
   .band.on { background: transparent; border-bottom-color: var(--red); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
   .band.unk { background: transparent; border: 1.5px dashed var(--faint); }
+  .band.gap { background: transparent; border: 0; cursor: default; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
 
@@ -888,6 +892,7 @@
     app.appendChild(block(model));
     app.appendChild(weekView(model));
     showSelectedWeek(left);
+    fitPills();
     scrolledToNext = false;
     reportSize();
     // Taller than a chat wants at phone width: this week's done rows fold
@@ -926,9 +931,9 @@
   // ---------------------------------------------------------------- 1. header
   function header(m, p) {
     var b = m.block || {};
-    // A block without a name is titled by its goal up to the first colon:
-    // "Base block (Norwegian singles style)", not the whole sentence.
-    var title = b.name || goalTitle(b.goal).replace(/\s*:.*$/, "") || "Training plan";
+    // A block without a name is titled by its goal up to the first colon,
+    // without asides: "Base block", not the whole sentence.
+    var title = b.name || goalTitle(b.goal).replace(/\s*:.*$/, "").replace(/\s*\([^)]*\)/g, "") || "Training plan";
     // The calendar runs on into the plan that follows: say which.
     var then = b !== raw && raw.upcoming_plan && raw.upcoming_plan.label !== b.label
       ? "Then " + (raw.upcoming_plan.name || goalTitle(raw.upcoming_plan.goal).replace(/\s*:.*$/, "")) : "";
@@ -996,8 +1001,29 @@
     if (rest > 0) pills.push(el("button", { class: "pill more", onclick: function () { state.moreRaces = true; render(raw); } }, ["+" + rest + " more"]));
     return el("div", { style: "display:flex;flex-direction:column;gap:8px" }, [
       el("span", { class: "also", text: goal ? "Also racing · " + before + " before the goal" : "Races" }),
-      el("div", { class: "pills" }, pills),
+      el("div", { class: "pills", "data-fit": state.moreRaces ? null : "1" }, pills),
     ]);
+  }
+  // Called once the card is drawn: drop pills off the end until the row is
+  // one line, folding them into "+N more" (Nov 1: three races stacked one per
+  // line at phone width, 150px before the plan began).
+  function fitPills() {
+    var row = document.querySelector(".pills[data-fit]");
+    if (!row) return;
+    var more = row.querySelector(".pill.more");
+    var hidden = more ? +more.textContent.replace(/\D/g, "") : 0;
+    var wraps = function () { return row.scrollWidth > row.clientWidth + 1; };
+    while (wraps()) {
+      var races = row.querySelectorAll(".pill:not(.more)");
+      if (races.length <= 1) break;
+      races[races.length - 1].remove();
+      hidden++;
+      if (!more) {
+        more = el("button", { class: "pill more", onclick: function () { state.moreRaces = true; render(raw); } }, [""]);
+        row.appendChild(more);
+      }
+      more.textContent = "+" + hidden + " more";
+    }
   }
 
   // ---------------------------------------------------------------- 2. this week
@@ -1082,6 +1108,10 @@
     var phaseOf = {};
     (raw.phases || []).forEach(function (ph) { phaseOf[ph.label] = ph; });
     var bands = spans ? spans.map(function (s) {
+      // Weeks outside every phase (before a plan starts, between plans) are
+      // simply unbanded: dashed is kept for weeks not read yet.
+      if (!s.label && !m.weeks.slice(s.from, s.from + s.span).some(function (w) { return w.unread; }))
+        return el("span", { class: "band gap", style: "grid-column:span " + s.span, "aria-hidden": "true" });
       var on = s.label && state.sel >= s.from && state.sel < s.from + s.span;
       var room = s.span * col + (s.span - 1) * gap, label = String(s.label || "");
       var fits = room >= label.length * 7 + 14;
@@ -1171,14 +1201,20 @@
         if (!items.some(function (s) { return effDate(s) === day; })) items.push({ rest: true, date: day });
       }
       items.sort(function (x, y) { var a = x.rest ? x.date : effDate(x), b = y.rest ? y.date : effDate(y); return a < b ? -1 : a > b ? 1 : 0; });
+      items = items.reduce(function (acc, s) {
+        var last = acc[acc.length - 1];
+        if (s.rest && last && last.rest) last.to = s.date; else acc.push(s.rest ? { rest: true, date: s.date } : s);
+        return acc;
+      }, []);
     }
     // This week's finished rows fold behind one line when the card runs long.
     var fold = state.collapse && w.current && !state.showDone;
-    var doneRows = fold ? items.filter(function (s) { return !s.rest && isDone(s); }) : [];
+    // Skipped optional sessions fold with them: nothing to do about either.
+    var doneRows = fold ? items.filter(function (s) { return !s.rest && (isDone(s) || s.status === "skipped"); }) : [];
     var out = [], lastDay = null;
     if (doneRows.length > 1) {
       out.push(el("button", { class: "collapsed", onclick: function () { state.showDone = true; render(raw); } },
-        [el("b", { text: doneRows.length + " done this week" }), " · Show"]));
+        [el("b", { text: foldWords(doneRows) }), " · Show"]));
       items = items.filter(function (s) { return doneRows.indexOf(s) < 0; });
     }
     items.forEach(function (s) {
@@ -1187,6 +1223,10 @@
       lastDay = day;
     });
     return el("div", { class: "rows" }, out);
+  }
+  function foldWords(rows) {
+    var skipped = rows.filter(function (s) { return s.status === "skipped"; }).length, done = rows.length - skipped;
+    return [done ? done + " done" : "", skipped ? skipped + " skipped" : ""].filter(Boolean).join(", ") + " this week";
   }
   function stateOf(s) {
     if (s.rest) return "rest";
@@ -1223,7 +1263,8 @@
     var dayTxt = showDay ? DAYS[dow(s.rest ? s.date : effDate(s))].toUpperCase() : "";
     if (s.rest) {
       return [el("div", { class: "srow" }, [el("span", { class: "day mono", text: dayTxt }), statusIcon("rest"),
-        el("div", { class: "mid" }, [el("span", { class: "ttl dim", text: "Rest" }), el("span", { class: "meta", text: "Planned rest" })]),
+        el("div", { class: "mid" }, [el("span", { class: "ttl dim", text: "Rest" }),
+          el("span", { class: "meta", text: s.to ? "Planned rest · " + DAYS[dow(s.date)] + " to " + DAYS[dow(s.to)] : "Planned rest" })]),
         el("span"), el("span")])];
     }
     var st = stateOf(s), look = typeLook(s), kind = kindOf(s);
@@ -1375,7 +1416,8 @@
         (st.steps || []).forEach(function (inner) { items.push(stepItem(inner, true, stepColour(inner))); });
       } else items.push(stepItem(st, false, stepColour(st)));
     });
-    return [facts, items.length ? el("ul", { class: "steps" }, items) : null];
+    var single = (p.steps || []).length === 1 && p.steps[0].kind !== "repeat";
+    return [facts, items.length && !single ? el("ul", { class: "steps" }, items) : null];
   }
   function stepItem(st, inRep, colour) {
     return el("li", { class: inRep ? "rep" : "" }, [el("i", { style: "background:" + colour }), el("b", { text: st.label || st.kind || "Step" }),

@@ -123,13 +123,13 @@ f.src = "card.html";
       got.bars === 20 && /^Week 7, \d+ km$/.test(got.aria[6]) && got.aria[3].includes("parkrun")
       && got.marks.some((c) => /goal-m/.test(c)) && got.marks.some((c) => /\bkey\b/.test(c)) && got.marks.some((c) => /tune/.test(c))
       && got.dashed >= 3, JSON.stringify(got.aria.slice(0, 8)) + JSON.stringify(got.marks));
-    check("past 1,150px at 390 wide, this week's finished rows fold behind one line; missed and skipped stay out",
-      /^4 done this week\s*·\s*Show$/.test(await card.evaluate(() => (document.querySelector(".collapsed") || {}).textContent)) && got.rows.some((r) => /^WED .*Missed/.test(r)) && got.rows.some((r) => /skipped/.test(r)), await card.evaluate(() => (document.querySelector(".collapsed") || {}).innerText));
-    await card.getByRole("button", { name: /done this week/ }).click();
+    check("past 1,150px at 390 wide, this week's finished rows fold behind one line; skipped optional ones with them, missed stay out",
+      /^4 done, 1 skipped this week\s*·\s*Show$/.test(await card.evaluate(() => (document.querySelector(".collapsed") || {}).textContent)) && got.rows.some((r) => /^WED .*Missed/.test(r)), await card.evaluate(() => (document.querySelector(".collapsed") || {}).innerText));
+    await card.getByRole("button", { name: /this week · Show/ }).click();
     await page.waitForTimeout(300);
     got.rows = await card.evaluate(() => [...document.querySelectorAll(".srow")].map((r) => r.innerText.replace(/\s+/g, " ").trim()));
     const want = [/^MON .*Strength Full body.*35m/, /^TUE .*Easy 11 km.*5:12 \/km · 133 bpm 11\.1/, /^WED .*Missed/,
-      /^THU .*Optional · skipped, not counted/, /Not in the plan · 30m 19s 5/, /Done early · Thu/, /^SAT Rest Planned rest/, /^SUN .*Long.*Tomorrow|^SUN .*ready for your watch/];
+      /^THU .*Optional · skipped, not counted/, /Not in the plan · 30m 19s 5/, /Done early · Thu/, /^FRI Rest Planned rest · Fri to Sat/, /^SUN .*Long.*Tomorrow|^SUN .*ready for your watch/];
     check("every state has an icon and its words: done, missed, skipped, extra, early, rest, next",
       want.every((re) => got.rows.some((r) => re.test(r))), JSON.stringify(got.rows));
     check("the next session opens by default, with its steps, and nothing else is open", got.open === 1 && /125–150 bpm/.test(got.text), got.open);
