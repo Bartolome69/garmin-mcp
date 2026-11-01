@@ -106,6 +106,8 @@
   .bars { height: 100px; align-items: end; }
   .bar { all: unset; box-sizing: border-box; cursor: pointer; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; border-radius: 4px; width: 100%; max-width: 40px; justify-self: center; }
   .bar .b { display: block; border-radius: 3px 3px 0 0; min-height: 3px; }
+  .bar .bk { display: block; font-size: 10px; line-height: 12px; margin-bottom: 2px; text-align: center; color: var(--muted); white-space: nowrap; overflow: visible; }
+  .bar .bk.on { color: var(--text); font-weight: 600; }
   .bar .b + .b { border-radius: 0; }
   .bar .b:last-child { border-radius: 0 0 3px 3px; }
   .bar .b:only-child { border-radius: 3px; }
@@ -1078,7 +1080,11 @@
     var natural = (avail - (n - 1) * gap) / n, col = Math.max(12, natural), scroll = natural < 12;
     var cols = "grid-template-columns:repeat(" + n + "," + (scroll ? col + "px" : "minmax(0,1fr)") + ")";
     var width = scroll ? "width:" + (n * col + (n - 1) * gap) + "px" : "";
-    var px = function (v) { return Math.max(3, Math.round(100 * v / top)) + "px"; };
+    // Each bar's total sits on top of it when the bars are wide enough for
+    // three digits; narrower, only the chosen week and this week say theirs.
+    // The bars leave room for it.
+    var labelAll = !scroll && natural >= 26;
+    var px = function (v) { return Math.max(3, Math.round(86 * v / top)) + "px"; };
     var thisMonday = iso(mondayOf(new Date()));
     // Race markers above the bars, the most important race of each week.
     var byWeek = {};
@@ -1102,6 +1108,10 @@
         : v.now != null ? tot(v.now) + unitWord() + " done" + (v.rest ? ", " + tot(v.rest) + unitWord() + " to go" : "") + (v.unk ? ", still adding up" : "")
         : v.done != null ? tot(v.done) + unitWord() + " done"
         : (v.unk ? "at least " : "") + tot(v.planned) + unitWord() + " planned" + (v.unk ? ", still loading" : "");
+      var total = v.none ? null : v.now != null ? (v.now || 0) + (v.rest || 0) : v.done != null ? v.done : v.planned;
+      if (total != null && (labelAll || i === state.sel || w.current))
+        parts.unshift(el("span", { class: "bk mono" + (i === state.sel || w.current ? " on" : ""), "aria-hidden": "true",
+          text: tot(total) + (v.unk ? "+" : "") }));
       return el("button", { class: "bar" + (i === state.sel ? " sel" : ""), "aria-pressed": i === state.sel ? "true" : "false",
         "aria-label": "Week " + w.n + ", " + amount + (race ? ", " + race.name : ""),
         onclick: function () { selectWeek(i); } }, parts);

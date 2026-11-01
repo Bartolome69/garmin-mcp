@@ -882,6 +882,17 @@ def phase_spans(weeks: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]] | No
         unknown.append(not counts and bool(week.get("unread")))
     if not any(labels):
         return None
+    # Plans don't go back a phase: a Base week after Peak is a workout reused
+    # from the base weeks, still carrying the phase it was made for (Nov 1),
+    # so that week is taken as not known.
+    seen: list[str] = []
+    for i, label in enumerate(labels):
+        if label is None:
+            continue
+        if label in seen and seen[-1] != label:
+            labels[i], unknown[i] = None, True
+        elif not seen or seen[-1] != label:
+            seen.append(label)
     for i in range(1, len(labels)):
         if not unknown[i]:
             labels[i] = labels[i] or labels[i - 1]

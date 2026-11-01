@@ -128,6 +128,9 @@ f.src = "card.html";
     await card.getByRole("button", { name: /this week · Show/ }).click();
     await page.waitForTimeout(300);
     got.rows = await card.evaluate(() => [...document.querySelectorAll(".srow")].map((r) => r.innerText.replace(/\s+/g, " ").trim()));
+    const labels = await card.evaluate(() => [...document.querySelectorAll(".bars .bar")].map((b) => (b.querySelector(".bk") || {}).textContent || ""));
+    check("at phone width only the chosen week and this week say their km over the bar",
+      labels.filter(Boolean).length === 1 && /^\d+$/.test(labels[2]), JSON.stringify(labels));
     const want = [/^MON .*Strength Full body.*35m/, /^TUE .*Easy 11 km.*5:12 \/km · 133 bpm 11\.1/, /^WED .*Missed/,
       /^THU .*Optional · skipped, not counted/, /Not in the plan · 30m 19s 5/, /^FRI .*Done a day early/, /^SAT Rest Planned rest$/, /^SUN .*Long.*Tomorrow|^SUN .*ready for your watch/];
     check("every state has an icon and its words: done, missed, skipped, extra, early, rest, next",

@@ -8,6 +8,7 @@ the password or the cached token.
 from __future__ import annotations
 
 import functools
+from collections import defaultdict
 import inspect
 import json
 import hashlib
@@ -3203,8 +3204,24 @@ def _lookup_order(sessions: list[dict[str, Any]], today: date_cls) -> list[Any]:
         return (training_plan.category(i.get("sportTypeKey") or "running") == "run"
                 and training_plan.km_from_name(i.get("title") or i.get("workoutName")) is None)
 
+    # One workout from every week, early on: each carries its week's phase,
+    # so the chart bands every week (Nov 1: weeks 20, 22 and 24 of a 24-week
+    # plan had none read and drew blank). A workout used in one week only,
+    # since a reused one carries the phase of the week it was made for; one
+    # whose name can't give its distance first, as it has to be read anyway.
+    weeks_of: dict[Any, set[date_cls]] = defaultdict(set)
+    for item in sessions:
+        if item.get("workoutId"):
+            weeks_of[item["workoutId"]].add(training_plan.monday_of(date_cls.fromisoformat(item["date"][:10])))
+    per_week: dict[date_cls, dict[str, Any]] = {}
+    for item in sorted(nearest, key=lambda i: not unnamed(i)):
+        wid = item.get("workoutId")
+        if wid and len(weeks_of[wid]) == 1:
+            per_week.setdefault(next(iter(weeks_of[wid])), item)
+    week_picks = sorted(per_week.values(), key=lambda i: abs((date_cls.fromisoformat(i["date"][:10]) - today).days))
+
     order: list[Any] = []
-    for group in ([i for i in nearest if near(i)], [i for i in nearest if unnamed(i)], nearest):
+    for group in ([i for i in nearest if near(i)], week_picks, [i for i in nearest if unnamed(i)], nearest):
         for item in group:
             wid = item.get("workoutId")
             if wid and wid not in order:

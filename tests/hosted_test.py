@@ -1905,6 +1905,18 @@ async def main() -> int:
             _at(90, 4, "VO2 5x1km \u00b7 MAR"), _at(10, 5, "Sub-T 4x2km \u00b7 MAR"), _at(-3, 6, "Recovery \u00b7 MAR")], _today)
         check("a long plan reads the next two weeks first, then the runs whose names can't size them, then the rest",
               order == [1, 6, 5, 3, 4, 2], str(order))
+        order = garmin_server._lookup_order([
+            _at(2, 1, "Easy 8km \u00b7 MAR"), _at(60, 7, "Long 20km \u00b7 MAR"), _at(61, 8, "MLR 18km \u00b7 MAR"),
+            _at(80, 9, "Threshold 3x3km \u00b7 MAR"), _at(100, 10, "Sharpener \u00b7 MAR"), _at(3, 10, "Sharpener \u00b7 MAR")], _today)
+        check("one workout from every week is read early, for its phase, never one reused from another week",
+              order == [1, 10, 7, 9, 8], str(order))
+        backwards = _tp.phase_spans([
+            {"week": 1, "sessions": [{"phase": "Base"}]}, {"week": 2, "sessions": [{"phase": "Peak"}]},
+            {"week": 3, "unread": 2, "sessions": [{"phase": "Base"}]}, {"week": 4, "sessions": [{"phase": "Peak"}]},
+            {"week": 5, "sessions": [{"phase": "Taper"}]}])
+        check("a plan doesn't go back a phase: Base after Peak is a reused workout, and the week stays in Peak",
+              backwards == [{"label": "Base", "from_week": 1, "to_week": 1}, {"label": "Peak", "from_week": 2, "to_week": 4},
+                            {"label": "Taper", "from_week": 5, "to_week": 5}], str(backwards))
         check("and a phase isn't carried over weeks whose phase is still to read",
               guessed["phases"] == [{"label": "Base", "from_week": 1, "to_week": 1},
                                     {"label": "Taper", "from_week": 4, "to_week": 4}], str(guessed["phases"]))
