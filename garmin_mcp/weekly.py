@@ -239,7 +239,11 @@ QUESTIONS = {
     "plan": "Build me a training plan from my recent running and put it on my Garmin.",
     "week": "How's my training going this week?",
     "run": "How did my last run go?",
+    "crew": "Start a Daash crew for me and the friends I run with.",
 }
+# For someone in no crew yet: crews are how Daash spreads between friends, and
+# two weeks after they launched 3 people had opened one (Nov 2).
+CREW_LINE = "Run with friends? Start a Daash crew and see who's running when, and which runs you could do together."
 
 
 def ask_link(app: str, kind: str) -> str:
@@ -248,11 +252,12 @@ def ask_link(app: str, kind: str) -> str:
 
 
 def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
-            ask: Callable[[str, str], str] = ask_link) -> tuple[str, str, str]:
+            ask: Callable[[str, str], str] = ask_link, in_crew: bool = True) -> tuple[str, str, str]:
     """(subject, plain text, html) for one person's Monday email.
 
     `ask` makes each app's link from the app and the kind of question, so the
-    sender can route it through a page that counts the click.
+    sender can route it through a page that counts the click. Someone in no
+    crew gets a line asking them to start one.
     """
     keys = s.get("key_sessions") or []
     block = s.get("block") or {}
@@ -291,6 +296,9 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
         parts.append(f"Nothing planned this week. Ask Daash to build you a plan from your recent {s['sport']}, "
                      "and every session goes on your watch.")
     parts.append(f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items()))
+    crew_links = {} if in_crew else {a: ask(a, "crew") for a in chosen}
+    if crew_links:
+        parts.append(CREW_LINE + "\n" + "\n".join(f"{a}: {u}" for a, u in crew_links.items()))
     parts.append(FEEDBACK)
     foot = ("You get this because you connected Daash to your Garmin. "
             f"Stop these emails: {unsubscribe}")
@@ -336,6 +344,11 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
     else:
         body += (f"<p style=\"margin:8px 0 0\">{label}: "
                  + " · ".join(f"<a href=\"{e(u)}\" style=\"color:#E0312A;font-weight:600\">in {e(a)}</a>" for a, u in chosen.items())
+                 + "</p>")
+    if crew_links:
+        body += (f"<p style=\"margin:22px 0 0\">{e(CREW_LINE)} "
+                 + " · ".join(f"<a href=\"{e(u)}\" style=\"color:#E0312A;font-weight:600\">"
+                              f"Start a crew{'' if len(crew_links) == 1 else ' in ' + e(a)}</a>" for a, u in crew_links.items())
                  + "</p>")
     page = (
         "<!doctype html><html><body style=\"margin:0;background:#F7F8FA\">"

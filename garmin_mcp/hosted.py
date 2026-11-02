@@ -1026,12 +1026,17 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
         link = unsubscribe_url(base, fingerprint)
         ask = ((lambda app, kind, f=fingerprint: weekly_ask_url(base, f, app, kind, monday))
                if base else weekly.ask_link)
-        subject, text, page_html = weekly.compose(said, link, oauth.app_for_user(user_token), ask)
+        try:
+            crewed = crews.in_crew(crews.member_key(user_token, fingerprint))
+        except Exception:  # noqa: BLE001 - no line rather than no email
+            crewed = True
+        subject, text, page_html = weekly.compose(said, link, oauth.app_for_user(user_token), ask, in_crew=crewed)
         try:
             send(email, subject, text, page_html, link)
             counts["sent"] += 1
             analytics.capture("weekly_email_sent", fingerprint, {
                 "key_sessions": len(said.get("key_sessions") or []), "no_plan": bool(said.get("no_plan")),
+                "crew_line": not crewed,
                 "$process_person_profile": False})
         except OSError:
             counts["failed"] += 1
