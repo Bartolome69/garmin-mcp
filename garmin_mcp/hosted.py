@@ -2359,11 +2359,47 @@ async def email_ask(request: Request) -> Response:
     kind = kind if kind in weekly.QUESTIONS else "week"
     fingerprint, signature = query.get("u", ""), query.get("s", "")
     week = query.get("w", "")
+    device = _device(request).get("device")
     if fingerprint and hmac.compare_digest(signature, store.unsubscribe_signature(fingerprint)):
         analytics.capture("weekly_email_clicked", fingerprint, {
             "app": app, "question": kind, "week": week if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week) else None,
-            "$process_person_profile": False})
+            "device": device, "$process_person_profile": False})
+    if app == "Claude" and device in ("phone", "tablet"):
+        return _claude_on_phone(kind)
     return RedirectResponse(weekly.ask_link(app, kind), status_code=302)
+
+
+def _claude_on_phone(kind: str) -> Response:
+    """The Monday email's Claude link, opened on a phone.
+
+    claude.ai/new?q= types the question in a browser, but the Claude apps
+    don't open a chat from it, so on a phone it landed in the mail app's
+    browser, often signed out, and Daash never answered: 4 of 7 people who
+    clicked it on Nov 2 got nothing, some clicking four times. This copies
+    the question and opens the Claude app, where Daash is connected, to paste
+    it into a new chat; the browser stays one tap away.
+    """
+    question = f"Ask Daash: {weekly.QUESTIONS[kind]}"
+    web = weekly.ask_link("Claude", kind)
+    return page(
+        "Ask in the Claude app",
+        f"""
+        <h1>Ask in the Claude app</h1>
+        <p>Daash answers in the app you connected it to. Tap below to copy the question and open Claude,
+        then paste it into a new chat.</p>
+        <p class=note id=q style="font-size:17px;color:inherit">{html.escape(question)}</p>
+        <a class=button id=go href="claude://">Copy and open Claude</a>
+        <p class=note id=done hidden>Copied. In Claude, start a new chat and paste.</p>
+        <p class=fine><a href="{html.escape(web)}">Use Claude in the browser instead</a></p>
+        <script>
+        document.getElementById("go").addEventListener("click", function () {{
+          try {{ navigator.clipboard.writeText({json.dumps(question)}); }} catch (e) {{}}
+          document.getElementById("done").hidden = false;
+        }});
+        </script>
+        """,
+        noindex=True,
+    )
 
 
 @mcp.custom_route("/garmin-export", methods=["GET"])

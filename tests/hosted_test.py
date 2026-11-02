@@ -1640,6 +1640,33 @@ async def main() -> int:
               code == 302 and location == weekly.ask_link("Claude", "plan")
               and not any(e["event"] == "weekly_email_clicked" for e in SENT[before:]), f"{code} {location}")
 
+        def with_agent(path: str, agent: str) -> tuple[int, str, str]:
+            import http.client
+            from urllib.parse import urlsplit
+            where = urlsplit(base)
+            conn = http.client.HTTPConnection(where.hostname, where.port, timeout=15)
+            conn.request("GET", path, headers={"user-agent": agent})
+            r = conn.getresponse()
+            return r.status, r.getheader("location") or "", r.read().decode()
+
+        iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+        mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/141.0 Safari/537.36"
+        claude_ask = hosted.weekly_ask_url(base, other, "Claude", "plan", "2026-11-02")[len(base):]
+        before = len(SENT)
+        code, location, body = await anyio_run(with_agent, claude_ask, iphone)
+        await asyncio.sleep(0.3)
+        check("on a phone, the Claude link copies the question and opens the Claude app, the browser a tap away",
+              code == 200 and 'href="claude://"' in body and "clipboard.writeText" in body
+              and "Ask Daash: Build me a training plan" in body and "claude.ai/new?q=" in body, f"{code} {location} {body[:200]}")
+        phone_click = [e for e in SENT[before:] if e["event"] == "weekly_email_clicked"]
+        check("and the click says it came from a phone",
+              phone_click and phone_click[0]["properties"].get("device") == "phone", str(phone_click)[:200])
+        code, location, _b = await anyio_run(with_agent, claude_ask, mac)
+        check("on a computer it still goes straight to Claude with the question typed",
+              code == 302 and location == weekly.ask_link("Claude", "plan"), f"{code} {location}")
+        code, location, _b = await anyio_run(with_agent, hosted.weekly_ask_url(base, other, "ChatGPT", "week", "2026-11-02")[len(base):], iphone)
+        check("and ChatGPT on a phone is unchanged", code == 302 and location.startswith("https://chatgpt.com/?q="), f"{code} {location}")
+
         # A card answer carries the link the card reports back to once it has
         # drawn, so a card sent and never shown can be counted.
         erin_hash = store.email_fingerprint("erin@example.com")
