@@ -41,9 +41,12 @@ only knows the API below.
 
 - `garmin_mcp/app.py`: the app's routes on the hosted server.
   - `GET /app`, `/app/*`: the web app, static files from `garmin_mcp/app/`.
-  - `GET /app/api/today`, `/app/api/session/{date}`, `/app/api/run/{activity_id}`:
+  - `GET /app/api/today`, `/app/api/session/{date}`, `/app/api/run/{activity_id}`,
+    `/app/api/plan?week=`, `/app/api/crew`, `/app/api/you`:
     JSON shaped for the screens, built from the tool functions.
   - `POST /app/api/session/{date}/move|easier|undo|resend`: the edits above.
+  - `POST /app/api/you/times`: your usual run times, as the crew uses them.
+  - `POST /app/api/you/delete`: delete the account, the same as `/disconnect`.
 - `garmin_mcp/analysis.py`: planned against run for one session, worked out
   from the raw laps and the workout's steps. No model, so the same run always
   gets the same verdict, and every number comes from the same laps so they add up.
@@ -81,13 +84,25 @@ readiness, sleep, resting HR and HRV, the run's laps, splits and share image,
 and every edit.
 
 Not shown rather than mocked:
-- the watch's model and last sync time: Garmin's calendar says a workout is
-  scheduled, not when the watch collected it. The app says "Scheduled.
-  Arrives at its next sync." instead of a time it doesn't have;
+- on the session screen, when the watch collected the workout: Garmin's
+  calendar says a workout is scheduled, not when the watch picked it up. The
+  app says "Scheduled. Arrives at its next sync." The watch's model and its
+  last upload are real, on You, from Garmin's last-used device;
 - the "why this session" line when a workout has no note of its own.
 
-Labelled "Not built yet" in the app: Plan, Crew and You. The crew line on
-Today is real, from `crews.week()`, and only shows for someone in a crew.
+Every screen is built; nothing is labelled "Not built yet".
+
+You is real too: the watch and its last upload, which assistants hold a
+live sign-in, units, heart rate zones and threshold pace from Garmin
+(`get_fitness`), the goal race from the plan, the crew, and the account.
+
+Crew is real, from `crews.week()`: the same matching the chat's crew card
+uses (same day, a time of day they share, easy or long, a hard run always
+alone). It never carries pace, heart rate, routes or distances. Opening
+Today, Plan or Crew in the app refreshes your own runs in the crew from
+your plan, as a Claude read of the plan does. Ask the group on WhatsApp
+opens WhatsApp with "Easy run Tue morning? Ellie is out too. What time?" and
+the crew's page link, or its invite code when the link is off.
 
 ## Differences from the designs, so far
 
@@ -100,26 +115,51 @@ Today is real, from `crews.week()`, and only shows for someone in a crew.
   least 5 s/km either side (4:00-4:08 is stored as 3:59-4:09).
 - Readiness says "From Garmin" without a time: the time in the design is the
   watch's sync time, which Daash doesn't have.
-- The week verdict on Today and the run verdict are worked out by rule, not
-  written per week or per run.
+- The week verdict on Today, the block verdict and the run verdict are worked
+  out by rule, not written per week or per run. A past week counts as close
+  to plan at 85% of its planned distance.
 - Easier takes a third off each rep's distance (3 x 3 km becomes 3 x 2 km),
   rounded to the nearest 100 m, and leaves the pace alone. With no reps it
   takes a fifth off the main steps. Strength has no Easier.
 - Recoveries are one "Jogs" row under the kilometre splits, as in the
   design; the kilometres are of the running only, so it all adds up.
+- You:
+  - "Sync now" is **Refresh**: Daash can't make the watch sync, only read
+    Garmin again.
+  - Export says "Not yet", since there's no export. Past runs say what's
+    true for the account: read from Garmin as needed, or, on Garmin's
+    official connection, a link to add earlier runs from Garmin's export.
+  - Delete my training data and Delete account are one row, Delete account:
+    Daash keeps no training history of its own apart from what the official
+    connection sends, and there's no way yet to delete that alone.
+  - Connect for Claude or ChatGPT links to daash.run; there's no page yet
+    that adds the connector in one step.
+  - No "Running since": Daash doesn't know it. No Terms link: there are none.
+  - Week starts is always Monday, as Daash's weeks are.
 - Signing in shows Daash's existing consent page ("Daash app is asking to
   read your Garmin data"). For Daash's own app that step could be skipped.
 
 ## Not designed yet, used the nearest pattern
 
-- Move: a sheet of the next eight days as pills ("Pick a day. The watch
-  follows."). Hold to move on Plan is still to build.
+- Move from the session screen: a sheet of the next eight days as pills
+  ("Pick a day. The watch follows."). On Plan, hold a row and drag it to
+  another day; days already past dim and refuse the drop. A short tap still
+  opens the session.
+- Plan's week has arrows to the weeks either side, in the header where the
+  design has Plan next week; Plan next week sits under the list, and only on
+  the current week.
 - A missed session: an amber "Not recorded" card on the preview and an amber
   ring on the week strip.
 - No plan on the calendar: Today says so and offers Build a plan with Claude.
 - A day with two sessions: the preview leads with the main one and links the
   other under "Also this day".
 - Sign-in, signed-out and error states.
+- Crew with no matches: a card saying runs that line up show there. Not in a
+  crew: what a crew is, and Start a crew with Claude (joining with a code
+  goes through the assistant too). One crew per person, so several crews
+  can't happen.
+- Crew's grid places a Daash member's run at their usual time of day for
+  weekdays or weekends; a run with no usual time fills all three slots.
 
 ## Running it locally
 
@@ -130,4 +170,5 @@ Today is real, from `crews.week()`, and only shows for someone in a crew.
 starts the hosted server against a demo Garmin account (`tests/demo_garmin.py`,
 a 12-week half-marathon block around today) and prints a signed-in link.
 `DEMO_RAN=1` shows today's session as run, for the analysis screen;
-`DEMO_READINESS=low` shows the low-readiness state.
+`DEMO_READINESS=low` shows the low-readiness state; `DEMO_CREW=0` leaves the
+demo runner out of the demo crew.

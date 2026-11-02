@@ -2587,6 +2587,22 @@ async def card_opened(request: Request) -> Response:
     return Response(status_code=204)
 
 
+async def forget_person(token: str) -> bool:
+    """Delete someone's stored session and everything kept for them. True if there was one."""
+    _SESSIONS.pop(token, None)
+    gone = store.get_user(token)
+    if gone is not None and official.configured():
+        # Garmin's official link goes too, told to Garmin as well as deleted here.
+        await anyio.to_thread.run_sync(official.disconnect, token)
+    removed = store.delete_user(token)
+    if removed and gone is not None:
+        # Disconnect deletes everything, crews included.
+        crews.forget(crews.member_key(token, gone.email_hash))
+        # And every sign-in to it: Claude, ChatGPT and the app alike.
+        store.delete_tokens_for_subject(token)
+    return removed
+
+
 @mcp.custom_route("/disconnect", methods=["GET", "POST"])
 async def disconnect(request: Request) -> Response:
     """Let someone destroy their own stored session, using their URL as proof."""
@@ -2607,16 +2623,7 @@ async def disconnect(request: Request) -> Response:
         )
 
     form = await request.form()
-    token = str(form.get("t", "")).strip()
-    _SESSIONS.pop(token, None)
-    gone = store.get_user(token)
-    if gone is not None and official.configured():
-        # Garmin's official link goes too, told to Garmin as well as deleted here.
-        await anyio.to_thread.run_sync(official.disconnect, token)
-    removed = store.delete_user(token)
-    if removed and gone is not None:
-        # Disconnect deletes everything, crews included.
-        crews.forget(crews.member_key(token, gone.email_hash))
+    removed = await forget_person(str(form.get("t", "")).strip())
     return page(
         "Disconnected",
         "<h1>Disconnected</h1><p>Your stored session has been deleted and the "

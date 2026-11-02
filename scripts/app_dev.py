@@ -3,6 +3,7 @@
     .venv/bin/python scripts/app_dev.py            # http://localhost:8787
     DEMO_RAN=1 .venv/bin/python scripts/app_dev.py  # today's session already run
     DEMO_READINESS=low ...                          # a poor night
+    DEMO_CREW=0 ...                                 # not in a crew
 
 It is the real hosted server, with OAuth on, and only the Garmin client
 swapped for tests/demo_garmin.py, so the app's sign-in, its API and every
@@ -55,6 +56,12 @@ def main() -> None:
     user_token = store.save_user(session_mod.mask_email(email), '{"di_token": "demo"}',
                                  email_hash=store.email_fingerprint(email),
                                  email=email)
+    # A crew, so the Crew screen has runs to line up. DEMO_CREW=0 leaves you out of one.
+    if os.environ.get("DEMO_CREW") != "0":
+        from garmin_mcp import crews
+        from tests.demo_garmin import seed_crew
+
+        seed_crew(crews.member_key(user_token, store.email_fingerprint(email)))
     token = secrets.token_urlsafe(32)
     store.save_oauth_token(token, kind="access", client_id="daash-app-dev", subject=user_token,
                            scopes="", resource=None, expires_at=int(time.time()) + 30 * 86400)

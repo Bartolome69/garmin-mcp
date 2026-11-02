@@ -25,7 +25,7 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, training_plan
+from . import analysis, crews, store, training_plan
 from . import server as server_mod
 from .formatting import drop_empty
 from .server import mcp
@@ -373,6 +373,7 @@ async def today_payload() -> dict[str, Any]:
     if isinstance(plan, Exception) or _error(plan):
         return {"error": str(plan) if isinstance(plan, Exception) else _error(plan)}
     ready = None if isinstance(readiness, Exception) else _readiness(readiness)
+    _keep_crew_current(plan, today)
     if plan.get("source") == "log":
         return {"today": today.isoformat(), "kicker": _short_date(today).upper(), "headline": "No plan on the calendar",
                 "empty": True, "readiness": ready,
@@ -547,6 +548,421 @@ def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
             r["colour"] = colour
         else:
             r["colour"] = "long" if len(parts) < 2 or (r.get("target") or "") == slowest else "hard"
+
+
+# -- the plan: one week, and the block ------------------------------------------
+
+# A past week within this share of its planned distance was run close to plan.
+CLOSE_TO_PLAN = 0.85
+
+
+def _plan_week(current: Mapping[str, Any], monday: date) -> int | None:
+    """A week's number in the running block, counted from its first Monday."""
+    if not current.get("starts"):
+        return None
+    first = date.fromisoformat(current["starts"])
+    n = (monday - (first - timedelta(days=first.weekday()))).days // 7 + 1
+    return n if 1 <= n <= int(current.get("weeks_total") or 0) else None
+
+
+def _phase_of(phases: Any, n: int | None) -> str | None:
+    return next((p["label"] for p in phases or [] if n and p.get("from_week", 0) <= n <= p.get("to_week", 0)), None)
+
+
+def _range(monday: date) -> str:
+    sunday = monday + timedelta(days=6)
+    return f"{monday.day} {MONTHS[monday.month - 1]} to {sunday.day} {MONTHS[sunday.month - 1]}"
+
+
+def _row(s: Mapping[str, Any], today: date, next_id: Any) -> dict[str, Any]:
+    d = date.fromisoformat(s["date"])
+    status = str(s.get("status") or "")
+    done = status.startswith("done")
+    is_next = s.get("schedule_id") == next_id
+    if done and s.get("done_on"):
+        meta = f"Run on {DAY_NAMES[date.fromisoformat(s['done_on']).weekday()]}"
+    elif done:
+        meta = " · ".join(x for x in (s.get("actual_pace"), f"{s['actual_bpm']} bpm" if s.get("actual_bpm") else None) if x) or None
+    elif is_next and d <= today + timedelta(days=1):
+        meta = f"{'Today' if d == today else 'Tomorrow'} · on your watch"
+    elif status == "missed":
+        meta = "Not recorded"
+    elif status == "skipped":
+        meta = "Optional, skipped"
+    else:
+        meta = None
+    strength = s.get("type") == "strength" or not (s.get("planned_km") or s.get("actual_km"))
+    value = (s.get("actual_km") if done else s.get("planned_km"))
+    return drop_empty({
+        "date": s["date"], "name": _display(s.get("name")), **_type(s.get("type")),
+        "state": "done" if done else "next" if is_next else status or "ahead",
+        "meta": meta, "missed": status == "missed" or None,
+        "segments": None if done else _segments(s.get("shape"), s.get("type")),
+        "v": (f"{s['planned_min']}" if s.get("planned_min") else "") if strength else f"{float(value):g}" if value else "",
+        "u": "min" if strength and s.get("planned_min") else "" if strength else "km",
+        "movable": (not done and d >= today) or None,
+        "schedule_id": s.get("schedule_id"), "activity_id": s.get("activity_id") if done else None,
+    })
+
+
+def _week_view(plan: Mapping[str, Any], monday: date, today: date) -> dict[str, Any]:
+    weeks = {w["starts"]: w for w in plan.get("weeks") or [] if w.get("starts")}
+    week = weeks.get(monday.isoformat()) or {}
+    sessions = week.get("sessions") or []
+    nxt = _next(plan, today)
+    current = plan.get("current_plan") or plan.get("upcoming_plan") or {}
+    n = _plan_week(current, monday)
+    phase = _phase_of(plan.get("phases"), n)
+    days = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        here = sorted((s for s in sessions if s.get("date") == d.isoformat()), key=training_plan._rank)
+        days.append({
+            "date": d.isoformat(), "dow": DAY_NAMES[i][:3].upper(), "n": d.day, "today": d == today,
+            "past": d < today, "sessions": [_row(s, today, (nxt or {}).get("schedule_id")) for s in here],
+        })
+    run, planned = week.get("run_km"), week.get("planned_km")
+    later = monday + timedelta(weeks=1)
+    return drop_empty({
+        "starts": monday.isoformat(),
+        "title": f"Week {n}" + (f" · {phase}" if phase else "") if n else f"Week of {monday.day} {MONTHS[monday.month - 1]}",
+        "done": round(run) if run is not None else None, "planned": round(planned) if planned else None,
+        "range": _range(monday), "current": monday == today - timedelta(days=today.weekday()) or None,
+        "days": days,
+        "previous": (monday - timedelta(weeks=1)).isoformat() if (monday - timedelta(weeks=1)).isoformat() in weeks else None,
+        "next": later.isoformat() if later.isoformat() in weeks else None,
+        "ask_next": _ask_links(f"Use Daash to plan next week, the week of {later.isoformat()}, "
+                               "and adjust it to how this week has gone."),
+        "ask": _ask_links(f"Use Daash to look at my training week of {monday.isoformat()}. "
+                          "Is it balanced, and is anything worth changing?"),
+    })
+
+
+def _block_view(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
+    """The running block a bar a week: planned against run, the phases, one line on how it's going."""
+    current = plan.get("current_plan") or plan.get("upcoming_plan")
+    if not current or not current.get("weeks_total"):
+        return None
+    total = int(current["weeks_total"])
+    first = date.fromisoformat(current["starts"])
+    first_monday = first - timedelta(days=first.weekday())
+    by_monday = {w["starts"]: w for w in plan.get("weeks") or [] if w.get("starts")}
+    this_monday = today - timedelta(days=today.weekday())
+    bars = []
+    for n in range(1, total + 1):
+        monday = first_monday + timedelta(weeks=n - 1)
+        w = by_monday.get(monday.isoformat()) or {}
+        bars.append({"n": n, "starts": monday.isoformat(), "planned": round(w.get("planned_km") or 0, 1),
+                     "run": round(w.get("run_km") or 0, 1), "current": monday == this_monday,
+                     "past": monday < this_monday, "cutback": w.get("cutback") or None})
+    top = max((b["planned"] for b in bars), default=0) or 1
+    peak = max(bars, key=lambda b: b["planned"])
+    for b in bars:
+        b["h"] = round(b["planned"] / top, 3)
+        b["fill"] = min(1.0, round(b["run"] / b["planned"], 3)) if b["planned"] and (b["past"] or b["current"]) else 0
+        b["label"] = str(round(b["planned"])) if b["current"] or b is peak else ""
+    phases = [{"label": p["label"], "weeks": p["to_week"] - p["from_week"] + 1,
+               "current": any(b["current"] and p["from_week"] <= b["n"] <= p["to_week"] for b in bars) or None}
+              for p in plan.get("phases") or [] if p.get("from_week") and p.get("to_week")]
+    race = next((r for r in plan.get("races") or [] if r.get("tier") == "goal"), None)
+    ends = date.fromisoformat(race["date"]) if race else date.fromisoformat(current["ends"])
+    name = current.get("name") or current.get("goal") or "plan"
+    return drop_empty({
+        "title": f"{total} weeks to race day" if race else f"{total}-week block",
+        "bars": bars, "phases": phases or None,
+        "verdict": _block_verdict(bars, plan.get("phases") or []),
+        "name": f"Your {name[:1].lower() + name[1:]}" if not name[:2].isupper() else f"Your {name}",
+        "dates": f"{'Started' if first <= today else 'Starts'} {_short_date(first)} · "
+                 + (f"race {_short_date(ends)}" if race else f"ends {_short_date(ends)}"),
+        "ask": _ask_links(f"Use Daash to show my {current.get('label') or ''} plan. I'd like to change it.".replace("  ", " ")),
+    })
+
+
+def _block_verdict(bars: list[dict[str, Any]], phases: list[Mapping[str, Any]]) -> str:
+    past = [b for b in bars if b["past"] and b["planned"]]
+    now = next((b for b in bars if b["current"]), None)
+    if not past:
+        head, first = "Early days.", "Nothing to compare with the plan yet"
+    else:
+        close = [b for b in past if b["run"] >= CLOSE_TO_PLAN * b["planned"]]
+        n = len(past)
+        head = "On track." if len(close) == n else "Mostly on track." if len(close) * 2 >= n else "Behind the plan so far."
+        first = (f"{_word(n).capitalize()} week{'s' if n > 1 else ''} done close to plan" if len(close) == n
+                 else f"{_word(len(close)).capitalize()} of {_word(n)} weeks done close to plan")
+    remark = None
+    if now:
+        phase = _phase_of(phases, now["n"])
+        same = [b for b in bars if _phase_of(phases, b["n"]) == phase] if phase else []
+        before = next((b for b in bars if b["n"] == now["n"] - 1), None)
+        if now.get("cutback"):
+            remark = "this week is a lighter one"
+        elif phase and before and _phase_of(phases, before["n"]) != phase:
+            remark = f"this week starts the {phase.lower()} phase"
+        elif phase and same and now["planned"] >= max(b["planned"] for b in same):
+            remark = f"this week is the biggest of the {phase.lower()} phase"
+    return f"{head} {first}; {remark}." if remark else f"{head} {first}."
+
+
+async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
+    today = date.today()
+    plan = await server_mod.get_plan()
+    if _error(plan):
+        return {"error": _error(plan)}
+    if plan.get("source") == "log":
+        return {"empty": True, "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
+    try:
+        anchor = date.fromisoformat(week_of) if week_of else today
+    except ValueError:
+        anchor = today
+    monday = anchor - timedelta(days=anchor.weekday())
+    return drop_empty({"today": today.isoformat(), "week": _week_view(plan, monday, today),
+                       "block": _block_view(plan, today), "assistant": assistant()})
+
+
+# -- the crew: who runs when, and the runs that line up -------------------------
+# Days and times of easy and long runs only. Never pace, heart rate, routes
+# or totals, and nothing here sets a time: that's agreed in the group chat.
+
+SLOT_NAMES = ("morning", "afternoon", "evening")
+_KIND_RUNS = {"long": "long runs", "easy": "easy runs", "mixed": "runs"}
+_KIND_RUN = {"long": "Long run", "easy": "Easy run", "mixed": "Run"}
+_KIND_LABEL = {"long": ("Long", "long"), "easy": ("Easy", "easy"), "mixed": ("Easy and long", "easy")}
+
+
+def _with_you(names: list[str], me: str | None) -> list[str]:
+    return (["You"] if me in names else []) + [n for n in names if n != me]
+
+
+def _crew_cells(member: Mapping[str, Any], days: list[date], today: date,
+                together: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    # Someone on Daash runs at their usual times, said in words on the crew's
+    # card; someone added by hand picked the times of each run.
+    words = [w.strip() for w in str(member.get("times") or "").split(",") if w.strip()]
+    usual = [code for code, said in crews._TIME_WORDS.items() if said in words]
+    cells = []
+    for day, runs in zip(days, member.get("days") or []):
+        segs = []
+        for slot in SLOT_NAMES:
+            # A run with no known time of day could be at any of them.
+            here = next((r for r in runs if slot in (r.get("when") or crews._slot_for(day, usual) or SLOT_NAMES)), None)
+            kind = (here or {}).get("kind")
+            kind = "easy" if kind == "club" else kind
+            match = bool(here) and kind != "hard" and any(
+                t["date"] == day.isoformat() and (t.get("when") in (slot, None)) and member["name"] in t.get("who", [])
+                for t in together)
+            segs.append(drop_empty({"kind": kind, "match": match or None}))
+        cells.append({"past": day < today or None, "segs": segs})
+    return cells
+
+
+def _keep_crew_current(plan: Any, today: date) -> None:
+    """Your runs in the crew, from the plan just read, as a chat read of it keeps them."""
+    member = crews.current()
+    if member is None or not isinstance(plan, dict) or _error(plan):
+        return
+    try:
+        crews.capture(member.key, plan, today)
+    except Exception:  # noqa: BLE001 - the crew's copy is a convenience, never a reason to fail a screen
+        log.exception("crew capture failed")
+
+
+async def crew_payload() -> dict[str, Any]:
+    today = date.today()
+    if not crews.available() or not crews.in_crew():
+        return {"none": True, "assistant": assistant(), "ask": _ask_links(
+            "Use Daash to start a crew for me and the friends I run with, or to join one with the code a friend sent me.")}
+    _keep_crew_current(await server_mod.get_plan(), today)
+    week = crews.week(today=today)
+    days = [date.fromisoformat(week["week"]["starts"]) + timedelta(days=i) for i in range(7)]
+    members = week.get("members") or []
+    me = next((m["name"] for m in members if m.get("you")), None)
+    colour = {m["name"]: i for i, m in enumerate(m for m in members if not m.get("you"))}
+    together = [t for t in week.get("together") or [] if t["date"] >= today.isoformat()]
+
+    def faces(names: list[str]) -> list[dict[str, Any]]:
+        return [{"i": "Y" if n == me else n[:1].upper(), "you": n == me or None, "c": None if n == me else colour.get(n, 0) % 4}
+                for n in sorted(names, key=lambda n: n != me)]
+
+    def match(t: Mapping[str, Any]) -> dict[str, Any]:
+        d = date.fromisoformat(t["date"])
+        label, tone = _KIND_LABEL.get(t.get("kind"), _KIND_LABEL["mixed"])
+        others = [n for n in t["who"] if n != me]
+        return drop_empty({
+            "date": t["date"], "dow": DAY_NAMES[d.weekday()][:3].upper(), "n": d.day,
+            "slot": (t.get("when") or "").capitalize() or None, "type_label": label, "colour": tone,
+            "tag": "Today" if d == today else "Tomorrow" if d == today + timedelta(days=1) else None,
+            "names": _join(_with_you(t["who"], me)), "faces": faces(t["who"]), "you_in": t.get("you_in"), "_others": others,
+        })
+
+    main = next((t for t in together if t.get("you_in")), together[0] if together else None)
+    crew = week.get("crew") or {}
+    link = server_mod.crew_page_url(crew["link"]) if crew.get("link") else None
+    hero = None
+    if main:
+        m = match(main)
+        d = date.fromisoformat(main["date"])
+        when = f"{DAY_NAMES[d.weekday()][:3]} {main['when']}" if main.get("when") else DAY_NAMES[d.weekday()]
+        others = m.pop("_others")
+        ask = (f"{_KIND_RUN.get(main.get('kind'), 'Run')} {when}? {_join(others)} {'is' if len(others) == 1 else 'are'} out too. What time?"
+               if main.get("you_in") else f"{_join(others)} are out {when}. Anyone else?")
+        ask += f"\n{link}" if link else (f"\nNew to the crew? Tell your Daash the code {crew['code']}." if crew.get("code") else "")
+        hero = {**m, "kicker": f"{_short_date(d).upper()}" + (f" \u00b7 {main['when'].upper()}" if main.get("when") else ""),
+                "line": f"{_word(len(main['who'])).capitalize()} {_KIND_RUNS.get(main.get('kind'), 'runs')} on the same "
+                        f"{main['when'] if main.get('when') else 'day'}. Agree a start in the group chat.",
+                "whatsapp": "https://wa.me/?text=" + quote(ask, safe="")}
+    also = []
+    for t in together:
+        if t is main:
+            continue
+        m = match(t)
+        m.pop("_others", None)
+        also.append(m)
+    people = [{"name": "You" if m.get("you") else m["name"], "you": m.get("you") or None, "by_hand": m.get("by_hand") or None,
+               "c": None if m.get("you") else colour.get(m["name"], 0) % 4, "cells": _crew_cells(m, days, today, together)}
+              for m in sorted(members, key=lambda m: not m.get("you"))]
+    first, last = days[0], days[-1]
+    return drop_empty({
+        "kicker": f"{crew.get('name', 'Crew').upper()} \u00b7 {crew.get('members', len(members))} PEOPLE \u00b7 {_range(first).upper()}",
+        "headline": "Run together this week" if together else "No runs line up yet",
+        "hero": hero, "also": also or None,
+        "days": [{"letter": "MTWTFSS"[i], "n": d.day, "today": d == today, "past": d < today} for i, d in enumerate(days)],
+        "people": people,
+        "invite": {"url": link, "shown": link.split("://", 1)[-1] if link else None, "code": crew.get("code")},
+        "assistant": assistant(),
+        "ask": _ask_links("Use Daash to show my crew this week."),
+    })
+
+
+# -- You: the watch, the doors, the settings and the data ------------------------
+
+SITE = "https://daash.run"
+PRIVACY = "https://garmin.daash.run/privacy/"
+USUAL_TIMES = [(code, said[:1].upper() + said[1:]) for code, said in crews._TIME_WORDS.items()]
+
+
+def _synced(ms: Any, today: date) -> str | None:
+    try:
+        at = datetime.fromtimestamp(float(ms) / 1000)
+    except (TypeError, ValueError, OSError):
+        return None
+    return f"Synced {at.strftime('%H:%M')}" + (" today" if at.date() == today else f", {_short_date(at.date())}")
+
+
+def _times_said(words: Any) -> str | None:
+    """weekday mornings, weekend mornings as Mornings; anything else as it is, capitalised."""
+    picked = [code for code, said in crews._TIME_WORDS.items() if said in str(words or "")]
+    if not picked:
+        return None
+    parts = []
+    for slot in SLOT_NAMES:
+        both = {f"weekday_{slot}", f"weekend_{slot}"}
+        if both <= set(picked):
+            parts.append(f"{slot}s")
+            picked = [c for c in picked if c not in both]
+    parts += [crews._TIME_WORDS[c] for c in picked]
+    text = ", ".join(parts)
+    return text[:1].upper() + text[1:]
+
+
+async def you_payload() -> dict[str, Any]:
+    from . import oauth, official
+
+    today = date.today()
+    user_token = official.current() or ""
+    user = store.get_user(user_token)
+    device, fitness, plan, miles, full_name = await asyncio.gather(
+        server_mod._call(lambda c: c.get_device_last_used()), server_mod.get_fitness(),
+        server_mod.get_plan(), server_mod._in_miles(),
+        server_mod._call(lambda c: getattr(c, "full_name", None)), return_exceptions=True)
+    device = device if isinstance(device, dict) else {}
+    fitness = fitness if isinstance(fitness, dict) and not fitness.get("error") else {}
+    plan = plan if isinstance(plan, dict) and not _error(plan) else {}
+
+    member = None
+    if crews.available() and crews.in_crew():
+        week = crews.week(today=today)
+        me = next((m for m in week.get("members") or [] if m.get("you")), {})
+        member = {"crew": (week.get("crew") or {}).get("name"), "people": (week.get("crew") or {}).get("members"),
+                  "name": me.get("name"), "times": me.get("times")}
+    name = (member or {}).get("name") or (full_name if isinstance(full_name, str) else "")
+    name = str(name).split(" ")[0] if name else (user.email_masked if user else "You")
+    since = datetime.fromtimestamp(user.created_at) if user else None
+
+    apps = {oauth.app_for_client(c) for c in store.clients_for(user_token)} if user_token else set()
+    threshold = (fitness.get("lactate_threshold") or {})
+    zones = ((fitness.get("zones") or {}).get("heart_rate") or {}).get("zones") or []
+    race = next((r for r in plan.get("races") or [] if r.get("tier") == "goal" and r.get("date", "") >= today.isoformat()), None)
+    history = server_mod._history_link()
+    email = store.email_for(user_token) if user_token else None
+
+    def row(label, value=None, **extra):
+        return drop_empty({"l": label, "v": value, **extra})
+
+    groups = [
+        ("Assistants", [
+            row("Claude", "Connected" if "Claude" in apps else "Connect", tone="ok" if "Claude" in apps else "red",
+                href=None if "Claude" in apps else SITE),
+            row("ChatGPT", "Connected" if "ChatGPT" in apps else "Connect", tone="ok" if "ChatGPT" in apps else "red",
+                href=None if "ChatGPT" in apps else SITE),
+        ]),
+        ("Training", [
+            row("Units", "Miles" if miles is True else "km", sub="From Garmin"),
+            row("Week starts", "Monday"),
+            row("Usual run time", _times_said((member or {}).get("times")) or ("Not set" if member else "Set in a crew"),
+                sub="Used on the crew page" if member else None, action="times" if member else None),
+            row("Heart rate zones", "From Garmin",
+                sub=", ".join(f"Z{z['zone']} {z['bpm'][0]}" for z in zones) + " bpm" if zones else None),
+            row("Threshold pace", threshold.get("pace_per_km") or "Not measured yet",
+                sub=f"From Garmin, updated {_short_date(date.fromisoformat(threshold['as_of']))}" if threshold.get("as_of") else "From Garmin"),
+        ]),
+        ("Goal race", [
+            row(race["name"][:1].upper() + race["name"][1:], _short_date(date.fromisoformat(race["date"])),
+                sub=f"Target {race['target']}" if race.get("target") else None,
+                ask="change") if race else row("No goal race", "Set one", ask="set", tone="red"),
+        ]),
+        ("Crew", [
+            row(member["crew"], f"{member['people']} people", href="#/crew",
+                sub="They see days and times of your easy and long runs. Never pace, heart rate or routes.")
+            if member else row("Not in a crew", "Start one", href="#/crew", tone="red"),
+        ]),
+        ("Your data", [
+            row("Past runs", "Add from Garmin", href=history,
+                sub="Garmin's official connection sends new runs only. Add earlier ones from Garmin Connect's export.")
+            if history else row("Past runs", "Read from Garmin", sub="Daash reads them from Garmin when it needs them and keeps no copy."),
+            row("Export", "Not yet", sub="Your runs are in Garmin Connect, which exports them."),
+        ]),
+        ("Account", [
+            row("Email", email or (user.email_masked if user else None)),
+            row("Sign out", action="signout"),
+            row("Delete account", action="delete", danger=True,
+                sub="Disconnects Garmin and deletes everything Daash keeps for you, crew included."),
+        ]),
+    ]
+    goal_prompt = ("Use Daash to change my goal race." if race else "Use Daash to set my goal race and build a plan to it.")
+    return drop_empty({
+        "name": name, "initial": name[:1].upper() if name else "Y",
+        "since": f"On Daash since {MONTHS[since.month - 1]}" + (f" {since.year}" if since.year != today.year else "") if since else None,
+        "watch": {"name": device.get("lastUsedDeviceName") or "Your watch",
+                  "synced": _synced(device.get("lastUsedDeviceUploadTime"), today),
+                  "line": "Workouts go to your watch. Runs, sleep and readiness come back from Garmin."},
+        "groups": [{"title": t, "rows": rows} for t, rows in groups],
+        "times": {"options": [{"code": c, "label": l} for c, l in USUAL_TIMES],
+                  "chosen": [c for c, said in crews._TIME_WORDS.items() if said in str((member or {}).get("times") or "")]} if member else None,
+        "assistant": assistant(), "ask": _ask_links(goal_prompt),
+        "privacy": PRIVACY,
+    })
+
+
+async def set_usual_times(times: Any) -> dict[str, Any]:
+    crews.update(times=list(times or []))
+    return {"message": "Saved. The crew sees your runs at these times."}
+
+
+async def delete_account() -> dict[str, Any]:
+    from . import hosted, official
+
+    await hosted.forget_person(official.current() or "")
+    return {"message": "Deleted. Daash no longer has your Garmin session or anything kept for you."}
 
 
 # -- edits ---------------------------------------------------------------------
@@ -763,6 +1179,45 @@ async def api_run(request: Request) -> Response:
     except (KeyError, ValueError):
         return _json({"error": "An activity id."}, 400)
     return _json(await run_payload(activity_id))
+
+
+@mcp.custom_route(API_PREFIX + "plan", methods=["GET"])
+async def api_plan(request: Request) -> Response:
+    week = request.query_params.get("week")
+    return _json(await plan_payload(week if week and _DAY_RE.match(week) else None))
+
+
+@mcp.custom_route(API_PREFIX + "crew", methods=["GET"])
+async def api_crew(request: Request) -> Response:
+    try:
+        return _json(await crew_payload())
+    except crews.CrewError as exc:
+        return _json({"error": str(exc)}, 409)
+
+
+@mcp.custom_route(API_PREFIX + "you", methods=["GET"])
+async def api_you(request: Request) -> Response:
+    return _json(await you_payload())
+
+
+@mcp.custom_route(API_PREFIX + "you/times", methods=["POST"])
+async def api_times(request: Request) -> Response:
+    try:
+        body = await request.json()
+        return _json(await set_usual_times((body or {}).get("times")))
+    except (ValueError, crews.CrewError) as exc:
+        return _json({"error": str(exc) or "Pick times of day."}, 400)
+
+
+@mcp.custom_route(API_PREFIX + "you/delete", methods=["POST"])
+async def api_delete(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    if (body or {}).get("confirm") != "delete":
+        return _json({"error": "Say delete to confirm."}, 400)
+    return _json(await delete_account())
 
 
 _EDITS = {"move": move, "easier": make_easier, "undo": undo_easier, "resend": resend}

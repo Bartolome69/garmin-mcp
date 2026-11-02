@@ -168,11 +168,72 @@ def api_checks() -> None:
     check("the session screen has its steps", len(session.get("steps") or []) >= 3, str(session.get("error")))
     check("its why line is the workout's note", (session.get("why") or "").startswith("Builds the pace"))
 
+    plan = client.get("/app/api/plan", headers=auth).json()
+    week, block = plan.get("week") or {}, plan.get("block") or {}
+    check("the plan's week has seven days", len(week.get("days") or []) == 7, str(plan.get("error")))
+    check("it is named by the block's week and phase", week.get("title") == "Week 4 \u00b7 Base", week.get("title"))
+    check("the moved session is on its new day there",
+          any(r["name"] == "3 \u00d7 3 km" for d in week["days"] if d["date"] == later for r in d["sessions"]))
+    check("done sessions can't be moved", not any(r.get("movable") for d in week["days"] for r in d["sessions"]
+                                                    if r["state"] == "done"))
+    earlier = client.get(f"/app/api/plan?week={week['previous']}", headers=auth).json()["week"]
+    check("the week before is all done", all(r["state"] == "done" for d in earlier["days"] for r in d["sessions"]))
+    check("the block has a bar a week", len(block.get("bars") or []) == 12)
+    check("the block's verdict is plain", plain(block.get("verdict", "")) and block["verdict"].startswith("On track."),
+          block.get("verdict"))
+    check("the block's phases fill its weeks", sum(p["weeks"] for p in block["phases"]) == 12)
+
+    alone = client.get("/app/api/crew", headers=auth).json()
+    check("no crew, an offer to start one", alone.get("none") is True and "claude" in alone.get("ask", {}), str(alone)[:120])
+    from garmin_mcp import crews
+    from tests.demo_garmin import seed_crew
+
+    seed_crew(crews.member_key(user_token, store.email_fingerprint(email)))
+    crew = client.get("/app/api/crew", headers=auth).json()
+    check("the crew screen answers", not crew.get("error") and crew.get("people"), str(crew.get("error")))
+    check("a row for each of the six", len(crew["people"]) == 6)
+    check("you first", crew["people"][0]["name"] == "You")
+    check("someone added by hand is marked", any(p.get("by_hand") for p in crew["people"]))
+    check("the main match has you in it", (crew.get("hero") or {}).get("names", "").startswith("You"))
+    check("WhatsApp opens with the question and the link",
+          "wa.me/?text=" in crew["hero"]["whatsapp"] and "What%20time%3F" in crew["hero"]["whatsapp"]
+          and "%2Fcrew%2F" in crew["hero"]["whatsapp"])
+    text = __import__("json").dumps(crew)
+    check("the crew never shows pace, heart rate or distance",
+          not re.search(r"/km|bpm|\"km\"|pace|heart", text.replace("never pace, heart rate", "")), text[:80])
+    check("a hard run is never a match", not any(s.get("match") and s.get("kind") == "hard"
+                                              for p in crew["people"] for c in p["cells"] for s in c["segs"]))
+    check("Today's crew line agrees", client.get("/app/api/today", headers=auth).json().get("crew", {}).get("date")
+          == crew["hero"]["date"])
+
     done = next(a for a in DEMO.demo_activities.values() if a["activityName"] == "3 x 3 km")
     run = client.get(f"/app/api/run/{done['activityId']}", headers=auth).json()
     check("the run screen has a verdict", bool(run.get("verdict")), str(run.get("error")))
     check("it counts as done", (run.get("effect") or {}).get("head") == "Counts as done")
     check("it offers the share image", (run.get("share_url") or "").startswith("http"))
+
+    you = client.get("/app/api/you", headers=auth).json()
+    rows = {r["l"]: r for g in you.get("groups") or [] for r in g["rows"]}
+    check("You names the watch and when it synced", you.get("watch", {}).get("synced", "").startswith("Synced 07:12"),
+          str(you.get("error") or you.get("watch")))
+    check("the usual time reads plainly", rows.get("Usual run time", {}).get("v") == "Mornings", str(rows.get("Usual run time")))
+    check("the goal race comes from the plan", rows.get("Half marathon", {}).get("sub") == "Target under 1:35")
+    check("the crew row has its size", rows.get("HCRC", {}).get("v") == "6 people")
+    check("You's copy is plain", plain(__import__("json").dumps(you)))
+    r = client.post("/app/api/you/times", headers=auth, json={"times": ["weekday_evening", "weekend_morning"]})
+    check("usual times save", r.status_code == 200, r.text[:120])
+    grid = client.get("/app/api/crew", headers=auth).json()["people"][0]["cells"]
+    tuesday = next(c for c, d in zip(grid, client.get("/app/api/crew", headers=auth).json()["days"]) if d["letter"] == "T")
+    check("the crew sees a weekday run in the evening now", [bool(x.get("kind")) for x in tuesday["segs"]] == [False, False, True],
+          str(tuesday))
+    check("an unknown time is refused", client.post("/app/api/you/times", headers=auth, json={"times": ["noon"]}).status_code == 400)
+
+    check("delete needs saying", client.post("/app/api/you/delete", headers=auth, json={}).status_code == 400)
+    r = client.post("/app/api/you/delete", headers=auth, json={"confirm": "delete"})
+    check("delete answers", r.status_code == 200, r.text[:120])
+    check("the account is gone", store.get_user(user_token) is None)
+    check("its sign-ins stop working", client.get("/app/api/today", headers=auth).status_code == 401)
+    check("and it has left the crew", not crews.in_crew(crews.member_key(user_token, store.email_fingerprint(email))))
 
 
 def main() -> int:

@@ -740,6 +740,16 @@ def load_oauth_token(token: str, kind: str) -> dict | None:
     }
 
 
+def clients_for(subject: str) -> list[str]:
+    """The clients that hold a sign-in for someone that hasn't lapsed: what they've connected Daash to."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT client_id FROM oauth_tokens WHERE subject = ? AND (expires_at IS NULL OR expires_at > ?)",
+            (subject, int(time.time())),
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
 def peek_oauth_token(token: str, kind: str) -> dict | None:
     """A token's row even if it has expired, for saying why it was refused.
 

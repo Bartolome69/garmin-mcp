@@ -260,6 +260,11 @@ class DemoGarmin(FakeGarmin):
             self.scheduled[-1]["sportTypeKey"] = sport
         return result
 
+    def get_device_last_used(self) -> dict[str, Any]:
+        synced = datetime.combine(self.today, datetime.min.time()).replace(hour=7, minute=12)
+        return {"userProfileNumber": self.profile_id, "lastUsedDeviceName": "Forerunner 265",
+                "lastUsedDeviceUploadTime": int(synced.timestamp() * 1000)}
+
     # -- the morning ---------------------------------------------------------
 
     def get_training_readiness(self, day: str) -> list[dict[str, Any]]:
@@ -289,3 +294,47 @@ class DemoGarmin(FakeGarmin):
             dto["sleepTimeSeconds"] = 27720
             dto["sleepScores"]["overall"] = {"value": 81, "qualifierKey": "GOOD"}
         return sleep
+
+
+# -- a crew to run with ------------------------------------------------------------
+
+# Friends' weeks, by weekday: (day, type). Their usual times are what places
+# each run in the morning, afternoon or evening.
+FRIENDS = [
+    ("Tom", ["weekday_evening", "weekend_morning"], [(1, "easy"), (2, "easy"), (3, "threshold"), (6, "long")]),
+    ("Priya", ["weekday_morning", "weekend_morning"], [(0, "easy"), (2, "easy"), (3, "easy"), (4, "easy"), (6, "long")]),
+    ("Nic", ["weekday_morning", "weekend_afternoon"], [(1, "threshold"), (3, "easy"), (5, "easy"), (6, "long")]),
+    ("Jo", ["weekday_evening", "weekend_evening"], [(0, "easy"), (2, "threshold"), (4, "easy")]),
+]
+
+
+def _friend_plan(monday: date, runs: list[tuple[int, str]]) -> dict[str, Any]:
+    sessions = [{"date": (monday + timedelta(days=d, weeks=w)).isoformat(), "type": t, "sport": "run", "kind": "run",
+                 "status": "ahead", "planned_km": 16.0 if t == "long" else 8.0} for w in (0, 1) for d, t in runs]
+    return {"weeks": [{"starts": (monday + timedelta(weeks=w)).isoformat(),
+                       "sessions": [s for s in sessions if s["date"][:10] >= (monday + timedelta(weeks=w)).isoformat()
+                                    and s["date"][:10] < (monday + timedelta(weeks=w + 1)).isoformat()]} for w in (0, 1)]}
+
+
+def seed_crew(member_key: str, today: date | None = None) -> str:
+    """Start HCRC with the demo runner in it, four friends on Daash and one added by hand. Returns its code."""
+    from garmin_mcp import crews
+
+    today = today or date.today()
+    monday = today - timedelta(days=today.weekday())
+    token = crews.use(crews.Member(member_key))
+    try:
+        code = crews.start("HCRC", "Sam", ["weekday_morning", "weekend_morning"])["code"]
+        link = crews.set_link(True)
+    finally:
+        crews.reset(token)
+    for name, times, runs in FRIENDS:
+        key = f"demo:{name.lower()}"
+        token = crews.use(crews.Member(key))
+        try:
+            crews.join(code, name, times)
+        finally:
+            crews.reset(token)
+        crews.capture(key, _friend_plan(monday, runs), today)
+    crews.add_runner(link, "Ellie", "2468", ["tue_morning", "sat_morning"], today)
+    return code

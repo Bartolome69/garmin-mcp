@@ -415,21 +415,335 @@ function moveSheet(day, sid, name) {
   });
 }
 
-// -- not built yet: labelled, nearest pattern ---------------------------------
+// -- Plan: the week, with hold to move, and the block ---------------------------
 
-function stub(tab, title, line) {
-  tabs(tab);
-  $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">${esc(title.toUpperCase())}</span><h1 class="headline">${esc(title)}</h1></header>
-    <div class="card pad stack-tight"><span><span class="sample">NOT BUILT YET</span></span><span class="meta" style="line-height:1.5">${esc(line)}</span></div>`;
+function planRow(r, day, first) {
+  const href = r.state === "done" && r.activity_id ? `#/run/${r.activity_id}?from=plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan`;
+  const mark = r.state === "done" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
+    : r.state === "next" ? `<span class="ring" style="width:14px;height:14px"></span>`
+    : r.missed ? `<span class="miss-ring" style="width:12px;height:12px"></span>` : "";
+  return `<a class="plan-row ${first ? "" : "same-day"} ${r.state === "next" ? "is-next" : ""}" href="${href}" data-date="${day.date}"
+      data-sid="${r.schedule_id || ""}" ${r.movable ? 'data-movable="1"' : ""} data-name="${esc(r.name)}">
+    <span class="day ${first ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
+    <span class="body"><span class="type c-${esc(r.colour)}">${mark}${esc(r.type_label)}</span>
+      <span class="name ${r.state === "done" ? "dim" : ""}">${esc(r.name)}</span>
+      ${r.meta ? `<span class="meta ${r.state === "next" ? "red" : r.missed ? "soft" : ""}">${esc(r.meta)}</span>` : ""}
+      ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
+    <span class="val ${r.state === "done" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span></a>`;
 }
 
-function youView() {
+function weekView(d) {
+  const w = d.week;
+  const ask = askLink({ ...d, ask: w.ask });
+  const askNext = askLink({ ...d, ask: w.ask_next }, "Plan next week");
+  const rows = w.days.map((day) => day.sessions.length
+    ? day.sessions.map((r, i) => planRow(r, day, i === 0)).join("")
+    : `<div class="plan-row rest" data-date="${day.date}"><span class="day"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
+        <span class="body"><span class="type c-rec">Rest</span><span class="name dim">Rest day</span></span><span></span></div>`).join("");
+  const nav = (to, label, icon) => to ? `<a class="pill icon" href="#/plan?week=${to}" aria-label="${label}">${icon}</a>` : `<span class="pill icon" aria-hidden="true" style="visibility:hidden">${icon}</span>`;
+  return `<div class="week-head"><div class="stack-tight" style="gap:2px;min-width:0"><span class="section-title">${esc(w.title)}</span>
+      <span class="meta">${w.planned ? `<strong style="color:var(--ink);font-weight:600">${esc(w.done ?? 0)}</strong> of ${esc(w.planned)} km · ` : ""}${esc(w.range)}</span></div>
+      <div class="pills" style="flex:0 0 auto">${nav(w.previous, "Week before", ICON.left())}${nav(w.next, "Week after", ICON.right())}</div></div>
+    <div class="card plan-list" id="plan-list">${rows}</div>
+    <div class="week-foot"><span class="meta" style="flex:1;font-size:13.5px;line-height:1.4">Change anything here and the watch follows. Hold a row to move it.</span>${ask.html.replace("pill red tall", "pill red")}</div>
+    ${w.current ? `<div style="display:flex">${askNext.html.replace("pill red tall", "pill")}</div>` : ""}`;
+}
+
+function blockView(d) {
+  const b = d.block;
+  if (!b) {
+    const ask = askLink(d, `Build a block with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
+    return `<div class="card pad stack"><span class="strong">No training block on the calendar.</span><span class="meta">A block built with Daash shows here week by week.</span>${ask.html}</div>`;
+  }
+  const cols = `repeat(${b.bars.length}, minmax(0, 1fr))`;
+  const bars = b.bars.map((x) => `<div class="bar-col"><span class="bar-label ${x.current ? "red" : ""}">${esc(x.label)}</span>
+      <div class="bar ${x.current ? "now" : x.past ? "past" : ""}" style="height:${Math.max(4, Math.round(x.h * 120))}px">
+        <span style="height:${Math.round(x.fill * 100)}%"></span></div></div>`).join("");
+  const phases = b.phases ? `<div class="phases" style="grid-template-columns:${b.phases.map((p) => `${p.weeks}fr`).join(" ")}">
+      ${b.phases.map((p) => `<span class="${p.current ? "now" : ""}">${esc(p.label.toUpperCase())}</span>`).join("")}</div>` : "";
+  const ask = askLink(d, "Edit the plan");
+  return `<div class="card block-card"><div class="section-head"><span class="section-title">${esc(b.title)}</span><span class="meta">km per week</span></div>
+      <div class="bars" style="grid-template-columns:${cols}" role="img" aria-label="Planned and run distance for each week of the block">${bars}</div>
+      <div class="bar-nums" style="grid-template-columns:${cols}">${b.bars.map((x) => `<span class="${x.current ? "red" : ""}">${x.n}</span>`).join("")}</div>
+      ${phases}
+      <div class="legend"><span><i style="background:var(--muted)"></i>Run</span><span><i style="background:var(--red)"></i>This week</span><span><i class="planned"></i>Planned</span></div>
+      <span class="block-verdict">${esc(b.verdict)}</span></div>
+    <div class="week-foot"><div class="stack-tight" style="gap:2px;flex:1;min-width:0"><span class="strong">${esc(b.name)}</span><span class="meta">${esc(b.dates)}</span></div>
+      ${ask.html.replace("pill red tall", "pill")}</div>`;
+}
+
+async function showPlan(view, params) {
+  tabs("plan");
+  loading();
+  try {
+    const week = params.get("week");
+    const d = await api(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`);
+    const seg = (id, label) => `<a href="#/plan${id === "block" ? "/block" : ""}" class="${view === id ? "on" : ""}" ${view === id ? 'aria-current="page"' : ""}>${label}</a>`;
+    const head = `<header class="stack" style="gap:12px"><h1 class="headline">Plan</h1><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
+    if (d.empty) {
+      const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
+      $("screen").innerHTML = head + `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>${ask.html}</div>`;
+      return;
+    }
+    $("screen").innerHTML = head + (view === "block" ? blockView(d) : weekView(d));
+    if (view !== "block") holdToMove($("plan-list"), d.today);
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    failed(e.message, () => showPlan(view, params));
+  }
+}
+
+// Hold a row, drag it to another day, let go: the same move as the session's
+// Move button. A short tap still opens the session.
+const HOLD_MS = 450;
+let dragging = null;
+document.addEventListener("touchmove", (e) => { if (dragging) e.preventDefault(); }, { passive: false });
+
+function holdToMove(list, today) {
+  if (!list) return;
+  let timer = null, start = null, justDropped = false;
+  const rows = () => [...list.querySelectorAll(".plan-row")];
+  const clear = () => {
+    clearTimeout(timer); timer = null;
+    if (dragging) {
+      dragging.row.classList.remove("lifted");
+      dragging.row.style.transform = "";
+    }
+    rows().forEach((r) => r.classList.remove("drop", "no-drop"));
+    list.classList.remove("dragging");
+    dragging = null;
+  };
+  const dayRows = (date) => rows().filter((r) => r.dataset.date === date);
+  list.addEventListener("contextmenu", (e) => { if (e.target.closest("[data-movable]")) e.preventDefault(); });
+  list.addEventListener("pointerdown", (e) => {
+    const row = e.target.closest(".plan-row[data-movable]");
+    if (!row || e.button > 0) return;
+    start = { x: e.clientX, y: e.clientY };
+    timer = setTimeout(() => {
+      dragging = { row, from: row.dataset.date, to: null, pointer: e.pointerId };
+      try { row.setPointerCapture(e.pointerId); } catch { /* the move still tracks without it */ }
+      row.classList.add("lifted");
+      list.classList.add("dragging");
+      rows().forEach((r) => { if (r.dataset.date < today) r.classList.add("no-drop"); });
+      if (navigator.vibrate) navigator.vibrate(10);
+    }, HOLD_MS);
+  });
+  list.addEventListener("pointermove", (e) => {
+    if (!dragging) {
+      if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) { clearTimeout(timer); timer = null; }
+      return;
+    }
+    e.preventDefault();
+    dragging.row.style.transform = `translateY(${e.clientY - start.y}px)`;
+    const under = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest && el.closest(".plan-row"))
+      .find((el) => el && el !== dragging.row && list.contains(el));
+    rows().forEach((r) => r.classList.remove("drop"));
+    const to = under && under.dataset.date;
+    dragging.to = to && to !== dragging.from && to >= today ? to : null;
+    if (dragging.to) dayRows(dragging.to).forEach((r) => r.classList.add("drop"));
+  });
+  const finish = async () => {
+    if (!dragging) { clearTimeout(timer); timer = null; return; }
+    const { row, from, to } = dragging;
+    justDropped = true;
+    setTimeout(() => { justDropped = false; }, 400);
+    clear();
+    if (!to) return;
+    try {
+      const r = await api(`session/${from}/move`, { method: "POST", body: JSON.stringify({ to, schedule_id: Number(row.dataset.sid) || null }) });
+      toast(r.message);
+      route();
+    } catch (err) {
+      if (err instanceof SignedOut) return route();
+      toast(err.message);
+    }
+  };
+  list.addEventListener("pointerup", finish);
+  list.addEventListener("pointercancel", clear);
+  list.addEventListener("click", (e) => { if (justDropped) { e.preventDefault(); e.stopPropagation(); } }, true);
+}
+
+// -- Crew: runs to join, and who runs when (view only) --------------------------
+
+function face(f, size = 30, ring = "var(--surface)") {
+  const bg = f.you ? "var(--red)" : FACE[f.c ?? 0];
+  return `<span class="face" style="width:${size}px;height:${size}px;background:${bg};color:${f.you ? "#FFFFFF" : "var(--ground)"};border-color:${ring};font-size:${Math.round(size * 0.4)}px">${esc(f.i)}</span>`;
+}
+
+function crewView(d) {
+  const parts = [`<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1></header>`];
+  if (d.hero) {
+    const h = d.hero;
+    parts.push(`<section class="card red" style="gap:12px" aria-label="Your best match this week">
+      <div class="next-top"><span class="kicker red" style="font-weight:500;letter-spacing:0.08em">${esc(h.kicker)}</span><span class="chip chip-${esc(h.colour)}">${esc(h.type_label)}</span></div>
+      <div style="display:flex;align-items:center;gap:12px"><div class="faces">${h.faces.map((f) => face(f, 36, "var(--red-soft)")).join("")}</div>
+        <span style="font-size:22px;font-weight:700;letter-spacing:-0.025em;line-height:1.15">${esc(h.names)}</span></div>
+      <span style="font-size:14px;line-height:1.45;color:var(--ink-2)">${esc(h.line)}</span>
+      <a class="pill red" href="${esc(h.whatsapp)}" target="_blank" rel="noopener">Ask the group on WhatsApp</a></section>`);
+  } else {
+    parts.push(`<div class="card pad stack-tight"><span class="strong">Nothing lines up yet</span><span class="meta" style="line-height:1.45">When two of you have an easy or long run at the same time of day, it shows here.</span></div>`);
+  }
+  if (d.also) {
+    parts.push(`<section class="stack"><span class="section-title">Also lining up</span><div class="card plan-list">${d.also.map((m) => `
+      <div class="crew-match"><span class="day"><span class="d">${esc(m.dow)}</span><span class="n">${m.n}</span></span>
+        <span class="stack-tight" style="gap:2px;min-width:0"><span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${m.slot ? `<span class="strong">${esc(m.slot)}</span>` : ""}<span class="c-${esc(m.colour)}" style="font-size:12px;font-weight:600">${esc(m.type_label)}</span>
+          ${m.tag ? `<span style="font-size:12px;font-weight:600;color:var(--red-text)">${esc(m.tag)}</span>` : ""}</span>
+          <span class="meta ellipsis">${esc(m.names)}</span></span>
+        <div class="faces">${m.faces.map((f) => face(f, 28)).join("")}</div></div>`).join("")}</div></section>`);
+  }
+  const eye = svg('<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>', 13);
+  const seg = (x) => {
+    if (!x.kind) return `<i></i>`;
+    if (x.kind === "hard") return `<i class="hard"></i>`;
+    return `<i class="bg-${x.kind === "long" ? "long" : "easy"} ${x.match ? "match" : ""}"></i>`;
+  };
+  parts.push(`<section class="stack"><div class="section-head" style="align-items:center"><span class="section-title">Who runs when</span><span class="view-only">${eye}View only</span></div>
+    <div class="crew-grid" role="table" aria-label="Crew calendar, view only">
+      <div class="grid-row head" role="row"><span class="slots" aria-hidden="true"><span>AM</span><span>PM</span><span>EVE</span></span>
+        ${d.days.map((x) => `<span class="grid-day ${x.past ? "past" : ""}" role="columnheader"><span class="d">${x.letter}</span><span class="n ${x.today ? "today" : ""}">${x.n}</span></span>`).join("")}</div>
+      ${d.people.map((p) => `<div class="grid-row" role="row"><span class="who" role="rowheader"><span class="name ${p.you ? "you" : ""}">${esc(p.name)}</span>${p.by_hand ? `<span class="hand">by hand</span>` : ""}</span>
+        ${p.cells.map((c) => `<span class="cell ${c.past ? "past" : ""}" role="cell">${c.segs.map(seg).join("")}</span>`).join("")}</div>`).join("")}
+      <div class="legend" style="padding-top:8px;border-top:1px solid var(--hairline);font-size:12px"><span><i class="lg bg-easy"></i>Easy</span><span><i class="lg bg-long"></i>Long</span>
+        <span><i class="lg hard"></i>Hard, runs alone</span><span><i class="lg bg-easy match"></i>Same time</span></div></div>
+    <span class="meta" style="line-height:1.45;text-wrap:pretty">Runs fill in from each person's watch or plan. Yours follow your plan; <a href="#/plan">change them in Plan</a>.</span></section>`);
+  const inv = d.invite || {};
+  const value = inv.url || inv.code || "";
+  parts.push(`<div class="card pad stack" style="gap:10px"><span class="strong">Invite a friend</span>
+    <span class="meta" style="font-size:13.5px;line-height:1.45">${inv.url ? "They see days and times of easy and long runs. Never pace, heart rate or routes. No watch needed."
+      : "They tell their Daash the crew's code to join. They see days and times of easy and long runs, never pace, heart rate or routes."}</span>
+    <div style="display:flex;gap:8px;align-items:center"><span class="copy-field">${esc(inv.shown || inv.code || "")}</span>
+      <button class="pill" id="copy" data-value="${esc(value)}" style="flex-shrink:0">${inv.url ? "Copy link" : "Copy code"}</button></div></div>`);
+  return parts.join("");
+}
+
+async function showCrew() {
+  tabs("crew");
+  loading();
+  try {
+    const d = await api("crew");
+    if (d.none) {
+      const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
+      $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends</h1></header>
+        <div class="card pad stack"><span class="strong">You're not in a crew yet.</span>
+        <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}</div>`;
+      return;
+    }
+    $("screen").innerHTML = crewView(d);
+    const copy = $("copy");
+    if (copy) copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(copy.dataset.value); toast(copy.textContent.includes("link") ? "Link copied." : "Code copied."); }
+      catch { toast("Couldn't copy. Press and hold the link to copy it."); }
+    };
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    failed(e.message, showCrew);
+  }
+}
+
+// -- You: the watch, the doors, settings and data -------------------------------
+
+function youRow(r, d, i) {
+  const tone = r.tone === "ok" ? "var(--easy)" : r.tone === "red" ? "var(--red-text)" : "var(--muted)";
+  const href = r.href || (r.ask ? askLink(d).href : null);
+  const inner = `<span class="grow"><span style="font-size:15px;font-weight:500;${r.danger ? "color:var(--red-text)" : ""}">${esc(r.l)}</span>
+      ${r.sub ? `<span class="meta" style="font-size:12.5px;line-height:1.4">${esc(r.sub)}</span>` : ""}</span>
+    ${r.v ? `<span class="you-v" style="color:${tone}">${esc(r.v)}</span>` : ""}
+    ${(href || r.action) && !r.danger && r.action !== "signout" ? ICON.right(16, "var(--muted)") : ""}`;
+  const cls = `you-row ${i ? "" : "first"}`;
+  if (href) {
+    const outside = /^https?:/.test(href);
+    return `<a class="${cls}" href="${esc(href)}" ${outside ? 'target="_blank" rel="noopener"' : ""}>${inner}</a>`;
+  }
+  if (r.action) return `<button class="${cls}" data-you="${esc(r.action)}">${inner}</button>`;
+  return `<div class="${cls}">${inner}</div>`;
+}
+
+function youView(d) {
+  return `<header style="display:flex;align-items:center;gap:12px"><span class="avatar">${esc(d.initial)}</span>
+      <span class="stack-tight" style="gap:2px;min-width:0"><h1 class="headline">${esc(d.name)}</h1>${d.since ? `<span class="meta">${esc(d.since)}</span>` : ""}</span></header>
+    <div class="card pad stack" style="gap:12px"><div style="display:flex;align-items:center;gap:12px">
+      <span class="watch-icon" style="width:40px;height:40px;color:var(--ink)">${ICON.watch(20)}</span>
+      <span class="grow"><span style="font-size:16px;font-weight:600">${esc(d.watch.name)}</span>
+        ${d.watch.synced ? `<span style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--easy)"><span class="dot bg-easy" style="width:8px;height:8px"></span>${esc(d.watch.synced)}</span>`
+          : `<span class="meta">Sync time not available</span>`}</span>
+      <button class="pill" id="refresh" style="flex-shrink:0;padding:0 14px">Refresh</button></div>
+      <span class="meta" style="font-size:13.5px;line-height:1.45;padding-top:10px;border-top:1px solid var(--hairline)">${esc(d.watch.line)}</span></div>
+    ${d.groups.map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
+      <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
+    <p class="small" style="text-align:center">Daash 0.1 · <a href="${esc(d.privacy)}" target="_blank" rel="noopener">Privacy</a><br>Daash is independent and not made or endorsed by Garmin.</p>`;
+}
+
+function sheet(html, wire) {
+  const holder = $("sheet");
+  holder.innerHTML = `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">${html}</div></div>`;
+  const close = () => { holder.innerHTML = ""; };
+  $("scrim").onclick = (e) => { if (e.target.id === "scrim") close(); };
+  holder.querySelectorAll("[data-close]").forEach((b) => { b.onclick = close; });
+  wire(holder, close);
+  const first = holder.querySelector("button");
+  if (first) first.focus();
+}
+
+function timesSheet(d) {
+  const chosen = new Set(d.times.chosen);
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Usual run time</span>
+      <span class="meta">When you usually run. The crew uses it to line runs up.</span></div>
+    <div class="times-grid">${d.times.options.map((o) => `<button class="pill" data-code="${o.code}" aria-pressed="${chosen.has(o.code)}">${esc(o.label)}</button>`).join("")}</div>
+    <div class="pills"><button class="pill" data-close>Cancel</button><button class="pill light" id="times-save">Save</button></div>`, (holder, close) => {
+    holder.querySelectorAll("[data-code]").forEach((b) => {
+      b.onclick = () => { b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")); };
+    });
+    $("times-save").onclick = async () => {
+      const times = [...holder.querySelectorAll('[data-code][aria-pressed="true"]')].map((b) => b.dataset.code);
+      try {
+        const r = await api("you/times", { method: "POST", body: JSON.stringify({ times }) });
+        close(); toast(r.message); route();
+      } catch (e) { toast(e.message); }
+    };
+  });
+}
+
+function deleteSheet() {
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Delete your Daash account?</span>
+      <span class="meta" style="line-height:1.5">This disconnects Garmin and deletes your stored session, what Daash keeps for you and your place in your crew. Claude and ChatGPT lose access too. Your Garmin account and the workouts on your watch stay as they are. It can't be undone.</span></div>
+    <div class="pills"><button class="pill" data-close>Cancel</button><button class="pill red" id="delete-go">Delete account</button></div>`, (holder, close) => {
+    $("delete-go").onclick = async () => {
+      $("delete-go").disabled = true;
+      try {
+        await api("you/delete", { method: "POST", body: JSON.stringify({ confirm: "delete" }) });
+        close(); token.clear(); store.drop("daash.client");
+        signInView("Your Daash account is deleted.");
+      } catch (e) { close(); toast(e.message); }
+    };
+  });
+}
+
+async function signOut() {
+  const access = token.access, client = store.get("daash.client");
+  token.clear();
+  if (access && client) {
+    // Revoked as well as forgotten, so the token can't be used again from anywhere.
+    fetch("/revoke", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: access, client_id: client }) }).catch(() => {});
+  }
+  signInView("Signed out.");
+}
+
+async function showYou() {
   tabs("you");
-  $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">YOU</span><h1 class="headline">You</h1></header>
-    <div class="card pad stack-tight"><span><span class="sample">NOT BUILT YET</span></span><span class="meta" style="line-height:1.5">Your watch, assistants, training settings and data come here next.</span></div>
-    <button class="pill" id="signout" style="align-self:flex-start">Sign out</button>
-    <p class="small">Daash is independent and not made or endorsed by Garmin. Garmin is a trademark of Garmin Ltd.</p>`;
-  $("signout").onclick = () => { token.clear(); route(); };
+  loading();
+  try {
+    const d = await api("you");
+    $("screen").innerHTML = youView(d);
+    $("refresh").onclick = () => { toast("Checked Garmin again."); showYou(); };
+    $("screen").querySelectorAll("[data-you]").forEach((b) => {
+      b.onclick = () => (b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut());
+    });
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    failed(e.message, showYou);
+  }
 }
 
 function signInView(message) {
@@ -465,9 +779,9 @@ async function route() {
   window.scrollTo(0, 0);
   if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return showSession(arg, params);
   if (screen === "run" && /^\d+$/.test(arg || "")) return showRun(arg, params);
-  if (screen === "plan") return stub("plan", "Plan", "The week and the training block, with hold to move, come next. For now, open any day from the week on Today.");
-  if (screen === "crew") return stub("crew", "Crew", "Friends' easy and long runs to join come here. Ask Claude to show your crew in the meantime.");
-  if (screen === "you") return youView();
+  if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
+  if (screen === "crew") return showCrew();
+  if (screen === "you") return showYou();
   return showToday();
 }
 
