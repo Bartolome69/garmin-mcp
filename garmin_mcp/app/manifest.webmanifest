@@ -1,0 +1,14 @@
+{
+  "name": "Daash",
+  "short_name": "Daash",
+  "description": "Your training plan, from Claude or ChatGPT, on your watch.",
+  "start_url": "/app/#/today",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#161614",
+  "theme_color": "#161614",
+  "icons": [
+    {"src": "/app/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/app/icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+  ]
+}

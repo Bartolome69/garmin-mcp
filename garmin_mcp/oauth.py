@@ -97,6 +97,12 @@ def strict_redirects() -> bool:
     return os.environ.get("GARMIN_MCP_STRICT_REDIRECTS", "").strip() == "1"
 
 
+def app_callback() -> str | None:
+    """Where the companion app at /app collects its sign-in, on this server."""
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    return f"{base}/app/callback" if base else None
+
+
 def app_for_redirect(uri: str) -> str:
     """Which app a sign-in is for, read from where its code is sent.
 
@@ -108,6 +114,8 @@ def app_for_redirect(uri: str) -> str:
 
     parsed = urlparse(str(uri))
     host = (parsed.hostname or "").lower()
+    if str(uri) == app_callback():
+        return "Daash app"
     if parsed.scheme == "http" and host in LOOPBACK_HOSTS:
         return "Desktop or command line"
     for app, domains in (("Claude", ("claude.ai", "claude.com")), ("ChatGPT", ("chatgpt.com", "openai.com"))):
@@ -159,6 +167,8 @@ def recognised_redirect(uri: str) -> bool:
 
     uri = str(uri)
     if uri == CLAUDE_CALLBACK or CHATGPT_CALLBACK.fullmatch(uri) or uri in _extra_redirects():
+        return True
+    if uri == app_callback():
         return True
     parsed = urlparse(uri)
     return parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS

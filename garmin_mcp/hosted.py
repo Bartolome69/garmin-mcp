@@ -38,9 +38,10 @@ from urllib.parse import quote, urlparse
 import anyio
 from starlette.requests import Request
 from starlette.background import BackgroundTask
-from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
+from . import app as app_routes
 from . import server as server_mod
 from .formatting import drop_empty
 from .server import mcp
@@ -3422,6 +3423,15 @@ async def _directory(scope: Any, receive: Any, send: Any) -> None:
     await JSONResponse(reply, headers=cors)(scope, receive, send)
 
 
+def _bearer(scope: Any) -> str:
+    """The bearer token on a request, or an empty string."""
+    for key, value in scope.get("headers", []):
+        if key.lower() == b"authorization":
+            header = value.decode("latin-1")
+            return header[7:].strip() if header.lower().startswith("bearer ") else ""
+    return ""
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 
@@ -3451,7 +3461,17 @@ class SessionBinding:
             scope = {**scope, "path": "/mcp", "raw_path": b"/mcp"}
             send = _pointing_at_named(send, named)
 
-        if OAUTH_ENABLED:
+        for_app = scope.get("path", "").startswith(app_routes.API_PREFIX)
+        if for_app:
+            # The companion app's API: the same bearer tokens as /mcp, from the
+            # same sign-in, checked here because no SDK stands in front of it.
+            row = store.load_oauth_token(_bearer(scope), "access") if _bearer(scope) else None
+            user_token = row["subject"] if row else None
+            app = "Daash app"
+            if not user_token or store.get_user(user_token) is None:
+                await JSONResponse({"error": "Signed out."}, status_code=401)(scope, receive, send)
+                return
+        elif OAUTH_ENABLED:
             # Everyone shares one path; who is asking comes from the bearer
             # token the SDK has already verified, not from the URL.
             if scope.get("path", "").rstrip("/") != "/mcp":
@@ -3524,7 +3544,10 @@ class SessionBinding:
         token = use_session(session_for(user_token))
         preview_token = preview.use(_preview_for(user))
         alone = not store.has_connect(user_token)
-        hook_token = hooks.use(_after_tool_for(user_token, user, alone), _before_tool_for(user_token, alone))
+        # The chat's hooks pace and count answers for a conversation; the
+        # app's screens are not one, so they run without them.
+        hook_token = (hooks.use(None, None) if for_app else
+                      hooks.use(_after_tool_for(user_token, user, alone), _before_tool_for(user_token, alone)))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
         alone_token = server_mod.use_alone(alone)

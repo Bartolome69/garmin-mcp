@@ -1,0 +1,5 @@
+Geist and Geist Mono (geist-latin.woff2, geist-mono-latin.woff2, renamed here)
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
+
+These fonts are licensed under the SIL Open Font License, Version 1.1.
+The full licence text is at https://openfontlicense.org/open-font-license-official-text/

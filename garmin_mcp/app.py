@@ -1,0 +1,821 @@
+"""The companion app: the web app's files and the JSON its screens read.
+
+A third door onto the same plan, beside the MCP server and its cards. Every
+answer here is built from the tool functions Claude calls, inside the same
+per-person context SessionBinding sets up from a bearer token, and every
+edit goes through the same Garmin writes. Nothing about the plan is kept
+here: what the app changes is what Claude reads next, and what the watch
+gets at its next sync. See APP.md.
+
+There is no model behind any of it. Wording is by rule, plain, and never
+medical advice.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Mapping
+from urllib.parse import quote
+
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse, Response
+
+from . import analysis, crews, training_plan
+from . import server as server_mod
+from .formatting import drop_empty
+from .server import mcp
+
+log = logging.getLogger(__name__)
+
+APP_DIR = Path(__file__).resolve().parent / "app"
+API_PREFIX = "/app/api/"
+
+# What each session type is called and which colour draws it. The chat cards
+# call a threshold session "Threshold" too, so the two doors agree.
+TYPES: dict[str, tuple[str, str]] = {
+    "easy": ("Easy", "easy"), "recovery": ("Recovery", "easy"), "long": ("Long", "long"),
+    "threshold": ("Threshold", "hard"), "sub": ("Threshold", "hard"), "intervals": ("Intervals", "hard"),
+    "race": ("Race", "hard"), "strength": ("Strength", "strength"), "swim": ("Swim", "long"),
+    "ride": ("Ride", "easy"), "other": ("Other", "rec"),
+}
+HARD_TYPES = {"threshold", "sub", "intervals", "race"}
+DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+# Readiness below this is low: Garmin's own LOW band ends at 49.
+LOW_READINESS = 50
+# The line an easier copy carries, so undoing it needs nothing kept here.
+EASIER_MARK = "Made easier in Daash from workout"
+EASIER_RE = re.compile(re.escape(EASIER_MARK) + r" (\d+)\.")
+# How much shorter Easier makes each rep, and a single main step.
+EASIER_REP_SHARE = 2 / 3
+EASIER_STEP_SHARE = 0.8
+
+
+def _type(key: str | None) -> dict[str, str]:
+    label, colour = TYPES.get(key or "", ("Run", "easy"))
+    return {"type": key or "run", "type_label": label, "colour": colour}
+
+
+def _short_date(d: date) -> str:
+    return f"{d.strftime('%a')} {d.day} {MONTHS[d.month - 1]}"
+
+
+def _display(name: str | None) -> str:
+    """A session's name as the screens show it: no plan code, a real times sign."""
+    text = training_plan.strip_tag(str(name or "Workout"))
+    return re.sub(r"(?<=\d)\s*x\s*(?=\d)", " × ", text)
+
+
+def _when(d: date, today: date) -> str:
+    if d == today:
+        return "today"
+    if d == today + timedelta(days=1):
+        return "tomorrow"
+    return DAY_NAMES[d.weekday()] if 0 < (d - today).days < 7 else _short_date(d)
+
+
+def _join(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _error(result: Any) -> str | None:
+    if not isinstance(result, dict):
+        return "No answer from Garmin."
+    return result.get("error")
+
+
+async def _workout(workout_id: Any) -> dict[str, Any] | None:
+    if not workout_id:
+        return None
+    wid = int(workout_id)
+    return await server_mod._read(("workout", wid), server_mod.WORKOUT_MEMORY,
+                                  lambda c: c.get_workout_by_id(wid)) or None
+
+
+def _note(workout: Mapping[str, Any] | None) -> str | None:
+    """Why this session: the note its maker wrote, before the plan's own lines."""
+    text = str((workout or {}).get("description") or "").strip()
+    text = EASIER_RE.sub("", text).strip()
+    head = re.split(r"\n\s*\nPlan [A-Z0-9]{2,8}:|^Plan [A-Z0-9]{2,8}:", text)[0].strip()
+    return head or None
+
+
+def _segments(shape: Any, kind: str | None) -> list[dict[str, Any]] | None:
+    """The shape bar: easy, work and recovery, each by its share of the distance."""
+    if not shape:
+        return None
+    out = []
+    for seg in shape:
+        k = seg.get("k")
+        size = seg.get("km") or (seg.get("s") or 0) / 300
+        if not size:
+            continue
+        colour = "rec" if k == "rec" else "hard" if k == "work" else ("long" if kind == "long" else "easy")
+        out.append({"w": round(float(size), 2), "h": 20 if k == "work" else 5 if k == "rec" else 10,
+                    "colour": colour, "label": "" if k == "rec" else f"{float(seg.get('km') or 0):g} km"
+                    if seg.get("km") else ""})
+    return out or None
+
+
+def _stats(totals: Mapping[str, Any] | None, kind: str | None, workout: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    totals = totals or {}
+    if kind == "strength":
+        steps = training_plan.workout_steps(workout) or []
+        return [s for s in [
+            {"v": str(totals["minutes"]), "u": "min", "l": "Time"} if totals.get("minutes") else None,
+            {"v": str(len(steps)), "u": "", "l": "Exercises"} if steps else None,
+        ] if s]
+    out = []
+    if totals.get("km"):
+        out.append({"v": f"{totals['km']:g}", "u": "km", "l": "Total"})
+    if totals.get("minutes"):
+        out.append({"v": f"~{totals['minutes']}", "u": "min", "l": "Time"})
+    rep = totals.get("rep")
+    if rep:
+        hard = kind in HARD_TYPES
+        out.append({"v": str(rep["value"]).replace("/km", ""), "u": "",
+                    "l": rep["label"] if hard else rep["label"].replace("Rep pace", "Pace").replace("Rep target", "Target")})
+    return out
+
+
+def _step_rows(steps: Any, kind: str | None, indent: int = 0) -> list[dict[str, Any]]:
+    """The structure list: each step with its target and its length, repeats grouped."""
+    rows: list[dict[str, Any]] = []
+    for step in steps or []:
+        if step.get("kind") == "repeat":
+            rows.append({"label": f"{step['times']} ×", "sub": "Repeat", "head": True, "colour": None})
+            rows.extend(_step_rows(step.get("steps"), kind, indent + 16))
+            continue
+        k = step.get("kind")
+        if k in ("recovery", "rest"):
+            colour = "rec"
+        elif k in ("warmup", "cooldown"):
+            colour = "easy"
+        elif kind == "strength":
+            colour = "strength"
+        else:
+            colour = "hard" if kind in HARD_TYPES else "long" if kind == "long" else "easy"
+        rows.append(drop_empty({
+            "label": step.get("label") or "Run",
+            "target": str(step["target"]).replace("/km", " /km") if step.get("target") else None,
+            "sub": step.get("note") or ("Easy, recover" if k in ("recovery", "rest") and not step.get("target") else None),
+            "right": step.get("amount") or "",
+            "colour": colour,
+            "indent": indent or None,
+        }))
+    return rows
+
+
+def _ask(app: str, prompt: str) -> str:
+    base = "https://claude.ai/new?q=" if app == "claude" else "https://chatgpt.com/?q="
+    return base + quote(prompt, safe="")
+
+
+def _ask_links(prompt: str) -> dict[str, str]:
+    return {"claude": _ask("claude", prompt), "chatgpt": _ask("chatgpt", prompt)}
+
+
+def assistant() -> str:
+    """Claude or ChatGPT: whichever the person last connected Daash from, Claude if neither."""
+    from . import oauth, official
+
+    user_token = official.current()
+    return (oauth.app_for_user(user_token) if user_token else None) or "Claude"
+
+
+def app_url(base: str, route: str) -> str:
+    """The app's screen for a route like session/2026-11-03, for "Open in Daash"."""
+    return f"{base.rstrip('/')}/app/#/{route.lstrip('/')}"
+
+
+# -- readiness -----------------------------------------------------------------
+
+def _hours(text: Any) -> str | None:
+    """7h 42m 00s as 7:42."""
+    m = re.match(r"\s*(\d+)h\s*(\d+)m", str(text or ""))
+    return f"{int(m.group(1))}:{int(m.group(2)):02d}" if m else None
+
+
+def _sentence(text: str) -> str:
+    return text[:1].upper() + text[1:] + "."
+
+
+def _readiness(r: Mapping[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(r, Mapping) or r.get("error"):
+        return None
+    score = (r.get("readiness") or {}).get("score")
+    sleep = r.get("sleep") or {}
+    rhr = r.get("resting_hr") or {}
+    hrv = r.get("hrv") or {}
+    if score is None and not sleep and not rhr:
+        return None
+    low = score is not None and score < LOW_READINESS
+    up = (rhr.get("today") - rhr.get("seven_day_avg")) if rhr.get("today") and rhr.get("seven_day_avg") else None
+    hrv_status = str(hrv.get("status") or "").lower()
+    tiles = [
+        {"l": "Readiness", "v": str(round(score)) if score is not None else "–",
+         "note": ("Take it easier" if low else "Ready for hard work" if score >= 70 else "Fine for steady work")
+         if score is not None else "Needs a night of sleep data"},
+        {"l": "Sleep", "v": _hours(sleep.get("total")) or "–",
+         "note": f"Score {sleep['score']}" if sleep.get("score") else "No score"},
+        {"l": "Resting HR", "v": str(rhr["today"]) if rhr.get("today") else "–",
+         "note": f"Up {up} on usual" if up and up >= 3 else "HRV in range" if hrv_status == "balanced"
+         else f"HRV {hrv_status}" if hrv_status else "Usual for you"},
+    ]
+    reasons = []
+    if sleep.get("score") and sleep["score"] < 60:
+        reasons.append("Short night" if (_hours(sleep.get("total")) or "9")[0] < "7" else "Poor sleep")
+    if up and up >= 3:
+        reasons.append(f"resting HR up {up}")
+    if hrv_status in ("unbalanced", "low", "poor"):
+        reasons.append("HRV below range")
+    if low:
+        head, sub = "Readiness is low today", (_sentence(_join(reasons)) if reasons else "Garmin reads today as a low day.")
+    elif score is not None:
+        bits = [f"Slept {_hours(sleep.get('total'))}" if _hours(sleep.get("total")) else None,
+                f"resting HR {rhr['today']}" if rhr.get("today") else None,
+                "HRV in range" if hrv_status == "balanced" else None]
+        head, sub = "Good to go", ", ".join(b for b in bits if b) + "."
+    else:
+        head, sub = "Readiness needs a night of sleep data", "Wear the watch overnight and it shows here."
+    return {"score": round(score) if score is not None else None, "low": low, "head": head, "sub": sub,
+            "tiles": tiles, "source": "From Garmin"}
+
+
+# -- the plan ------------------------------------------------------------------
+
+def _sessions(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [s for w in plan.get("weeks") or [] for s in w.get("sessions") or []]
+
+
+def _next(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
+    ahead = sorted({s["date"] for s in _sessions(plan) if s.get("status") in ("today", "ahead") and s.get("date")})
+    for day in ahead:
+        lead, on_day = training_plan.day_sessions(plan, day)
+        waiting = [s for s in on_day if s.get("status") in ("today", "ahead")]
+        if waiting:
+            return lead if lead in waiting else min(waiting, key=training_plan._rank)
+    return None
+
+
+def _headline(plan: Mapping[str, Any], today: date) -> tuple[str, str]:
+    current = plan.get("current_plan") or {}
+    kicker = _short_date(today).upper()
+    if current.get("week") and current.get("weeks_total"):
+        kicker += f" · WEEK {current['week']} OF {current['weeks_total']}"
+    goal = next((r for r in plan.get("races") or [] if r.get("tier") == "goal" and r.get("date", "") >= today.isoformat()), None)
+    if goal:
+        days = (date.fromisoformat(goal["date"]) - today).days
+        name = str(goal.get("name") or "Race")
+        name = name[:1].upper() + name[1:]
+        return kicker, (f"{name} today" if days == 0 else f"{name} tomorrow" if days == 1 else f"{name} in {days} days")
+    if current.get("week"):
+        return kicker, f"Week {current['week']} of {current['weeks_total']}"
+    return kicker, "This week"
+
+
+def _week_strip(plan: Mapping[str, Any], today: date, next_day: str | None) -> dict[str, Any] | None:
+    week = next((w for w in plan.get("weeks") or [] if w.get("current")), None)
+    monday = today - timedelta(days=today.weekday())
+    sessions = (week or {}).get("sessions") or []
+    days = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        here = [s for s in sessions if s.get("date") == d.isoformat()]
+        lead = min(here, key=training_plan._rank) if here else None
+        state = ("rest" if not here else "done" if all(str(s.get("status", "")).startswith("done") or
+                                                        s.get("status") == "skipped" for s in here)
+                 else "next" if d.isoformat() == next_day else "missed" if lead.get("status") == "missed" else "plan")
+        days.append({
+            "date": d.isoformat(), "letter": "MTWTFSS"[i], "n": d.day, "today": d == today, "state": state,
+            "colour": _type(lead.get("type"))["colour"] if lead else None,
+            "dots": [_type(s.get("type"))["colour"] for s in sorted(here, key=training_plan._rank)],
+        })
+    summary = plan.get("this_week") or {}
+    return {"days": days, "done": summary.get("done"), "planned": summary.get("planned"),
+            "unit": summary.get("unit") or "km", "verdict": _week_verdict(days, sessions)}
+
+
+def _week_verdict(days: list[dict[str, Any]], sessions: list[dict[str, Any]]) -> str | None:
+    """One line on the shape of the week, by rule: hard days, rest, and where the long run sits."""
+    if not sessions:
+        return None
+    hard = sorted({s["date"] for s in sessions if s.get("type") in HARD_TYPES and s.get("type") != "race"})
+    rest = [DAY_NAMES[i] for i, d in enumerate(days) if d["state"] == "rest"]
+    long_day = next((date.fromisoformat(s["date"]) for s in sessions if s.get("type") == "long"), None)
+    parts = []
+    if hard:
+        parts.append(f"{_word(len(hard))} hard day{'s' if len(hard) > 1 else ''}")
+    if rest:
+        parts.append(f"rest on {_join(rest)}")
+    if long_day:
+        before = [d for d in days if d["date"] < long_day.isoformat()][-2:]
+        easy_before = all(d["state"] == "rest" or d["colour"] in ("easy", "strength") for d in before)
+        parts.append(f"the long run on {DAY_NAMES[long_day.weekday()]}"
+                     + (f" with {'two easy days' if len(before) == 2 else 'an easy day'} before it" if easy_before and before else ""))
+    head = "No rest day this week." if not rest else "A heavy week." if len(hard) >= 3 else "Balanced."
+    if not parts:
+        return head
+    line = ", ".join(parts[:-1]) + (", and " if len(parts) > 2 else " and ") + parts[-1] if len(parts) > 1 else parts[0]
+    return f"{head} {line[:1].upper() + line[1:]}."
+
+
+def _word(n: int) -> str:
+    return ["no", "one", "two", "three", "four", "five", "six", "seven"][n] if 0 <= n <= 7 else str(n)
+
+
+def _crew_line(today: date) -> dict[str, Any] | None:
+    """Friends out on the same day as your next easy or long run. Never pace, HR or routes."""
+    if not crews.available() or not crews.in_crew():
+        return None
+    week = crews.week(today=today)
+    me = next((m["name"] for m in week.get("members") or [] if m.get("you")), None)
+    for t in week.get("together") or []:
+        others = [n for n in t.get("who") or [] if n != me]
+        if not t.get("you_in") or not others or t["date"] < today.isoformat():
+            continue
+        d = date.fromisoformat(t["date"])
+        kind = {"long": "Long runs", "easy": "Easy runs"}.get(t.get("kind"), "Easy and long runs")
+        return {"line": f"{_join(others)} {'is' if len(others) == 1 else 'are'} out {_when(d, today) if d == today or d == today + timedelta(days=1) else 'on ' + _when(d, today)} too",
+                "sub": f"{kind}, no start time yet", "faces": [n[:1].upper() for n in others[:3]], "date": t["date"]}
+    return None
+
+
+async def _done_today(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
+    done = [s for s in _sessions(plan) if s.get("date") == today.isoformat()
+            and str(s.get("status", "")).startswith("done") and s.get("activity_id")]
+    if not done:
+        return None
+    s = min(done, key=training_plan._rank)
+    aid = int(s["activity_id"])
+    laps, workout, activity = await asyncio.gather(
+        server_mod._call(lambda c: c.get_activity_splits(aid)), _workout(s.get("workout_id")),
+        server_mod._call(lambda c: c.get_activity(aid)), return_exceptions=True)
+    short = None
+    if not isinstance(laps, Exception):
+        result = analysis.analyse(None if isinstance(workout, Exception) else workout, laps, s.get("type"))
+        short = result.get("short")
+    started = str(((activity if isinstance(activity, dict) else {}).get("summaryDTO") or {}).get("startTimeLocal") or "")
+    at = started[11:16] if len(started) >= 16 else None
+    return drop_empty({"activity_id": aid, "name": _display(s.get("name")), "at": at,
+                       "line": f"{_display(s.get('name'))} · {short}" if short else _display(s.get("name")),
+                       "colour": _type(s.get("type"))["colour"]})
+
+
+async def today_payload() -> dict[str, Any]:
+    today = date.today()
+    plan, readiness = await asyncio.gather(server_mod.get_plan(), server_mod.get_readiness(), return_exceptions=True)
+    if isinstance(plan, Exception) or _error(plan):
+        return {"error": str(plan) if isinstance(plan, Exception) else _error(plan)}
+    ready = None if isinstance(readiness, Exception) else _readiness(readiness)
+    if plan.get("source") == "log":
+        return {"today": today.isoformat(), "kicker": _short_date(today).upper(), "headline": "No plan on the calendar",
+                "empty": True, "readiness": ready,
+                "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
+    kicker, headline = _headline(plan, today)
+    nxt = _next(plan, today)
+    card = None
+    if nxt:
+        workout = await _workout(nxt.get("workout_id"))
+        totals = training_plan.session_totals(workout, training_plan.easy_speed(plan)) if workout else None
+        d = date.fromisoformat(nxt["date"])
+        card = {
+            "date": nxt["date"], "kicker": f"NEXT · {_when(d, today).upper()}", "name": _display(nxt.get("name")),
+            **_type(nxt.get("type")), "stats": _stats(totals, nxt.get("type"), workout),
+            "segments": _segments(nxt.get("shape"), nxt.get("type")), "on_watch": True,
+            "schedule_id": nxt.get("schedule_id"),
+            "easier": _easier_state(workout),
+        }
+    try:
+        crew = _crew_line(today)
+    except Exception:  # noqa: BLE001 - the crew line never stops the morning glance
+        log.exception("crew line failed")
+        crew = None
+    done = await _done_today(plan, today)
+    return drop_empty({
+        "today": today.isoformat(), "kicker": kicker, "headline": headline, "done_today": done, "next": card,
+        "crew": crew, "readiness": ready, "week": _week_strip(plan, today, (nxt or {}).get("date")),
+        "assistant": assistant(),
+        "ask": _ask_links(f"Use Daash to look at my training week of {today - timedelta(days=today.weekday())}. "
+                          "How is it going, and is anything worth changing?"),
+    })
+
+
+# -- one session ---------------------------------------------------------------
+
+def _easier_state(workout: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not workout:
+        return None
+    if EASIER_RE.search(str(workout.get("description") or "")):
+        return {"applied": True, "label": "Undo easier"}
+    made = easier(workout)
+    if made is None:
+        return None
+    return {"applied": False, "label": "Easier", "preview": _display(made["workoutName"])}
+
+
+async def _session_parts(day: str, schedule_id: int | None = None):
+    today = date.today()
+    plan = await server_mod.get_plan()
+    if _error(plan):
+        return None, None, None, None, _error(plan)
+    lead, on_day = training_plan.day_sessions(plan, day)
+    chosen = next((s for s in on_day if schedule_id and s.get("schedule_id") == schedule_id), lead)
+    workout = await _workout((chosen or {}).get("workout_id"))
+    return plan, chosen, on_day, workout, None
+
+
+async def session_payload(day: str, schedule_id: int | None = None) -> dict[str, Any]:
+    today = date.today()
+    plan, chosen, on_day, workout, error = await _session_parts(day, schedule_id)
+    if error:
+        return {"error": error}
+    d = date.fromisoformat(day)
+    if not chosen:
+        following = _next(plan, d) if plan else None
+        return drop_empty({"date": day, "rest": True, "kicker": _short_date(d).upper(),
+                           "next": {"date": following["date"], "name": _display(following.get("name"))} if following else None})
+    kind = chosen.get("type")
+    status = str(chosen.get("status") or "")
+    if status.startswith("done") and chosen.get("activity_id"):
+        return {"date": day, "done": True, "activity_id": chosen["activity_id"]}
+    totals = training_plan.session_totals(workout, training_plan.easy_speed(plan)) if workout else None
+    card = training_plan.session_card(plan, day, today.isoformat(), workout)
+    is_today = d == today
+    ready = None
+    if is_today:
+        try:
+            ready = _readiness(await server_mod.get_readiness())
+        except Exception:  # noqa: BLE001
+            ready = None
+    t = _type(kind)
+    easier_state = _easier_state(workout)
+    name = _display(chosen.get("name"))
+    prompt = (f"Use Daash to look at my {name} session on {day} (workout {chosen.get('workout_id')}). "
+              "Talk me through it, and say if it should change.")
+    return drop_empty({
+        "date": day, "today": is_today, "status": status,
+        "kicker": ("TODAY · " if is_today else "") + f"{_short_date(d).upper()} · {t['type_label'].upper()}",
+        "name": name, **t,
+        "km": (totals or {}).get("km"), "minutes": (totals or {}).get("minutes"),
+        "estimated": (totals or {}).get("estimated"),
+        "why": _note(workout),
+        "segments": _segments(card.get("segments"), kind),
+        "structure_title": "Exercises" if kind == "strength" else "Structure",
+        "steps": _step_rows(card.get("steps"), kind),
+        "readiness": ready,
+        "watch": {"head": "On your watch",
+                  "sub": "Changed. Ready to sync." if (easier_state or {}).get("applied")
+                  else "Scheduled. Arrives at its next sync.",
+                  "changed": bool((easier_state or {}).get("applied"))},
+        "easier": easier_state,
+        "workout_id": chosen.get("workout_id"), "schedule_id": chosen.get("schedule_id"),
+        "also": [{"name": _display(s.get("name")), "schedule_id": s.get("schedule_id"), **_type(s.get("type"))}
+                 for s in on_day if s is not chosen] or None,
+        "missed": status == "missed" or None,
+        "assistant": assistant(),
+        "ask": _ask_links(prompt),
+    })
+
+
+async def run_payload(activity_id: int) -> dict[str, Any]:
+    plan = await server_mod.get_plan()
+    row = next((s for s in _sessions(plan) if s.get("activity_id") == activity_id), None) if not _error(plan) else None
+    laps, details, workout = await asyncio.gather(
+        server_mod._call(lambda c: c.get_activity_splits(activity_id)),
+        server_mod.get_activity_details(activity_id),
+        _workout((row or {}).get("workout_id")), return_exceptions=True)
+    if isinstance(laps, Exception):
+        return {"error": f"The run's laps couldn't be read: {laps}"}
+    details = details if isinstance(details, dict) and not details.get("error") else {}
+    workout = None if isinstance(workout, Exception) else workout
+    kind = (row or {}).get("type") or (details.get("summary") or {}).get("type")
+    result = analysis.analyse(workout, laps, kind)
+    summary = details.get("summary") or {}
+    started = None
+    activity = await server_mod._call(lambda c: c.get_activity(activity_id))
+    start_text = str(((activity or {}).get("summaryDTO") or {}).get("startTimeLocal") or "")
+    if start_text:
+        started = datetime.fromisoformat(start_text.replace(" ", "T").split(".")[0])
+    t = _type(kind)
+    _row_colours(result.get("planned_and_run") or [], t["colour"])
+    name = _display((row or {}).get("name") or summary.get("name") or "Run")
+    kicker = (f"{_short_date(started.date()).upper()} · {started.strftime('%H:%M')}" if started else "") + f" · {t['type_label'].upper()}"
+    effect = None
+    if row:
+        today = date.today()
+        nxt = _next(plan, today)
+        status = str(row.get("status") or "")
+        moved = status == "done, moved" and row.get("done_on")
+        week = next((w for w in plan.get("weeks") or [] if row in (w.get("sessions") or [])), {})
+        if week.get("current"):
+            rest = "The rest of the week stays as planned." + (
+                f" Next: {_when(date.fromisoformat(nxt['date']), today)}, {_display(nxt.get('name'))}." if nxt else "")
+        else:
+            rest = f"{week.get('done', 1)} of {week.get('planned', 1)} sessions done that week."
+        effect = {
+            "head": "Counts as done",
+            "sub": (f"Run on {DAY_NAMES[date.fromisoformat(row['done_on']).weekday()]} instead of "
+                    f"{DAY_NAMES[date.fromisoformat(row['date']).weekday()]}, and it still counts. " if moved else "") + rest,
+        }
+    else:
+        effect = {"head": "Not on the plan", "sub": "It counts toward this week's distance. Nothing on the plan changes."}
+    share = (details.get("share_image") or {}).get("url")
+    return drop_empty({
+        "activity_id": activity_id, "date": (row or {}).get("date"), "kicker": kicker.strip(" ·"),
+        "name": name, **t, **{k: v for k, v in result.items() if k != "short"},
+        "effect": effect, "share_url": share,
+        "assistant": assistant(),
+        "ask": _ask_links(f"Use Daash to look at my run {activity_id} ({name}). How did it go against the plan?"),
+    })
+
+
+def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
+    """Warm-up and cool-down easy, reps in the session's colour; of a long run's
+    parts, the steady ones long and the quicker ones (a goal-pace finish) hard."""
+    parts = [r for r in rows if r.get("kind") == "interval" and not r.get("rep")]
+    slowest = max((r.get("target") or "" for r in parts), default="")
+    for r in rows:
+        if r.get("kind") in ("warmup", "cooldown"):
+            r["colour"] = "easy"
+        elif r.get("rep") or colour != "long":
+            r["colour"] = colour
+        else:
+            r["colour"] = "long" if len(parts) < 2 or (r.get("target") or "") == slowest else "hard"
+
+
+# -- edits ---------------------------------------------------------------------
+
+def _scaled(steps: list[dict[str, Any]], share: float, only_repeats: bool) -> bool:
+    """Shorten work steps by a share, in place. True if anything changed."""
+    changed = False
+    for step in steps:
+        if step.get("type") == "RepeatGroupDTO" or step.get("numberOfIterations"):
+            changed |= _scaled(step.get("workoutSteps") or [], share, False)
+            continue
+        if only_repeats:
+            continue
+        kind = ((step.get("stepType") or {}).get("stepTypeKey") or "").lower()
+        cond = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
+        value = float(step.get("endConditionValue") or 0)
+        if kind != "interval" or not value or cond not in ("distance", "time"):
+            continue
+        step["endConditionValue"] = (round(value * share / 100) * 100) if cond == "distance" else round(value * share / 15) * 15
+        changed = changed or step["endConditionValue"] != value
+    return changed
+
+
+def easier(workout: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The same session, easier: each rep a third shorter, or the main step a fifth, same pace.
+
+    None for anything it can't sensibly shorten (strength, a workout with no
+    work steps set by distance or time).
+    """
+    sport = ((workout.get("sportType") or {}).get("sportTypeKey") or "running").lower()
+    if sport not in ("running", "trail_running", "treadmill_running", "cycling", "road_biking"):
+        return None
+    made = json.loads(json.dumps(dict(workout)))
+    made.pop("workoutId", None)
+    steps = [s for seg in made.get("workoutSegments") or [] for s in seg.get("workoutSteps") or []]
+    has_repeat = any(s.get("type") == "RepeatGroupDTO" or s.get("numberOfIterations") for s in steps)
+    if has_repeat:
+        changed = any(_scaled([s], EASIER_REP_SHARE, False) for s in steps
+                      if s.get("type") == "RepeatGroupDTO" or s.get("numberOfIterations"))
+    else:
+        changed = _scaled(steps, EASIER_STEP_SHARE, False)
+    if not changed:
+        return None
+    name = str(workout.get("workoutName") or "Workout")
+    code = training_plan.label_of(name)
+    bare = training_plan.strip_tag(name)
+    first = next((s for s in _flat(steps) if ((s.get("stepType") or {}).get("stepTypeKey") or "") == "interval"
+                  and ((s.get("endCondition") or {}).get("conditionTypeKey") or "") == "distance"), None)
+    if first is not None:
+        km = float(first["endConditionValue"]) / 1000
+        bare = re.sub(r"(\d+\s*[x×]\s*)\d+(?:\.\d+)?\s*km", lambda m: f"{m.group(1)}{km:g} km", bare, count=1)
+        if not has_repeat:
+            total = sum(float(s.get("endConditionValue") or 0) for s in _flat(steps)
+                        if ((s.get("endCondition") or {}).get("conditionTypeKey") or "") == "distance")
+            bare = re.sub(r"\d+(?:\.\d+)?\s*km", f"{round(total / 100) / 10:g} km", bare, count=1)
+    made["workoutName"] = training_plan.tagged(bare, code) if code else bare
+    made["description"] = (str(workout.get("description") or "").rstrip()
+                           + f"\n\n{EASIER_MARK} {workout.get('workoutId')}.").strip()
+    for key in ("estimatedDurationInSecs", "estimatedDistanceInMeters", "workoutProvider", "createdDate", "updatedDate"):
+        made.pop(key, None)
+    for seg in made.get("workoutSegments") or []:
+        _drop_ids(seg.get("workoutSteps") or [])
+    return made
+
+
+def _flat(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for s in steps:
+        if s.get("type") == "RepeatGroupDTO" or s.get("numberOfIterations"):
+            out.extend(_flat(s.get("workoutSteps") or []))
+        else:
+            out.append(s)
+    return out
+
+
+def _drop_ids(steps: list[dict[str, Any]]) -> None:
+    for s in steps:
+        s.pop("stepId", None)
+        _drop_ids(s.get("workoutSteps") or [])
+
+
+class EditError(Exception):
+    pass
+
+
+async def _chosen(day: str, schedule_id: int | None) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    plan, chosen, _, workout, error = await _session_parts(day, schedule_id)
+    if error:
+        raise EditError(error)
+    if not chosen or not chosen.get("schedule_id"):
+        raise EditError(f"Nothing is planned on {day}.")
+    if str(chosen.get("status") or "").startswith("done"):
+        raise EditError("That session is already done.")
+    return chosen, workout
+
+
+async def move(day: str, to: str, schedule_id: int | None = None) -> dict[str, Any]:
+    """unschedule_workout then schedule_workout, as the plan's how_to_adapt says."""
+    chosen, _ = await _chosen(day, schedule_id)
+    target = date.fromisoformat(to)
+    if target < date.today():
+        raise EditError("Sessions move to today or later.")
+    gone = await server_mod.unschedule_workout(schedule_id=chosen["schedule_id"])
+    if _error(gone):
+        raise EditError(_error(gone))
+    placed = await server_mod.schedule_workout(chosen["workout_id"], target.isoformat())
+    if _error(placed):
+        raise EditError(_error(placed))
+    return {"date": target.isoformat(), "schedule_id": placed.get("schedule_id"),
+            "message": f"Moved to {_when(target, date.today())}. The watch follows at its next sync."}
+
+
+async def make_easier(day: str, schedule_id: int | None = None) -> dict[str, Any]:
+    """A copy of the workout for this one day, easier, in its place on the calendar.
+
+    A plan's sessions share one workout across their dates (create_plan
+    schedules the same workout each week), so changing it in place would
+    change every week. The copy carries the plan code, so the plan still
+    counts it, and a line naming the original, so Undo needs nothing kept here.
+    """
+    chosen, workout = await _chosen(day, schedule_id)
+    if not workout:
+        raise EditError("That session's workout couldn't be read.")
+    if EASIER_RE.search(str(workout.get("description") or "")):
+        raise EditError("It's already the easier version.")
+    made = easier(workout)
+    if made is None:
+        raise EditError("This session has nothing to shorten.")
+    uploaded = await server_mod._call(lambda c: c.upload_workout(made)) or {}
+    new_id = uploaded.get("workoutId") or uploaded.get("id")
+    if not new_id:
+        raise EditError("Garmin returned no workout id.")
+    await server_mod._call(lambda c: c.unschedule_workout(int(chosen["schedule_id"])))
+    placed = await server_mod._call(lambda c: c.schedule_workout(int(new_id), day)) or {}
+    server_mod.session.forget()
+    return {"workout_id": new_id, "schedule_id": placed.get("workoutScheduleId") or placed.get("id"),
+            "message": f"Now {_display(made['workoutName'])} at the same pace. Ready to sync."}
+
+
+async def undo_easier(day: str, schedule_id: int | None = None) -> dict[str, Any]:
+    chosen, workout = await _chosen(day, schedule_id)
+    found = EASIER_RE.search(str((workout or {}).get("description") or ""))
+    if not found:
+        raise EditError("This session hasn't been made easier.")
+    original = int(found.group(1))
+    back = await server_mod._call(lambda c: c.get_workout_by_id(original)) or {}
+    if not back.get("workoutName"):
+        raise EditError("The original workout is no longer in Garmin.")
+    await server_mod._call(lambda c: c.unschedule_workout(int(chosen["schedule_id"])))
+    placed = await server_mod._call(lambda c: c.schedule_workout(original, day)) or {}
+    try:
+        await server_mod._call(lambda c: c.delete_workout(int(chosen["workout_id"])))
+    except Exception:  # noqa: BLE001 - a copy left in the library is untidy, not wrong
+        log.warning("couldn't delete the easier copy %s", chosen["workout_id"])
+    server_mod.session.forget()
+    return {"workout_id": original, "schedule_id": placed.get("workoutScheduleId") or placed.get("id"),
+            "message": f"Back to {_display(back['workoutName'])}. Ready to sync."}
+
+
+async def resend(day: str, schedule_id: int | None = None) -> dict[str, Any]:
+    """Put the same workout on the same day again, which sends it to the watch afresh."""
+    chosen, _ = await _chosen(day, schedule_id)
+    await server_mod._call(lambda c: c.unschedule_workout(int(chosen["schedule_id"])))
+    placed = await server_mod._call(lambda c: c.schedule_workout(int(chosen["workout_id"]), day)) or {}
+    server_mod.session.forget()
+    return {"schedule_id": placed.get("workoutScheduleId") or placed.get("id"),
+            "message": "Sent. On your watch at its next sync."}
+
+
+# -- routes --------------------------------------------------------------------
+
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+          ".css": "text/css; charset=utf-8", ".webmanifest": "application/manifest+json",
+          ".woff2": "font/woff2", ".png": "image/png", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8"}
+
+
+def _json(body: Any, status: int = 200) -> JSONResponse:
+    if isinstance(body, dict) and body.get("error") and status == 200:
+        status = 502
+    return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
+
+
+def _day(request: Request) -> str | None:
+    day = request.path_params.get("day", "")
+    return day if _DAY_RE.match(day) else None
+
+
+def _schedule_id(request: Request, body: Mapping[str, Any] | None = None) -> int | None:
+    raw = (body or {}).get("schedule_id") or request.query_params.get("schedule_id")
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+@mcp.custom_route(API_PREFIX + "today", methods=["GET"])
+async def api_today(request: Request) -> Response:
+    return _json(await today_payload())
+
+
+@mcp.custom_route(API_PREFIX + "session/{day}", methods=["GET"])
+async def api_session(request: Request) -> Response:
+    day = _day(request)
+    if not day:
+        return _json({"error": "A date like 2026-11-03."}, 400)
+    return _json(await session_payload(day, _schedule_id(request)))
+
+
+@mcp.custom_route(API_PREFIX + "run/{activity_id}", methods=["GET"])
+async def api_run(request: Request) -> Response:
+    try:
+        activity_id = int(request.path_params["activity_id"])
+    except (KeyError, ValueError):
+        return _json({"error": "An activity id."}, 400)
+    return _json(await run_payload(activity_id))
+
+
+_EDITS = {"move": move, "easier": make_easier, "undo": undo_easier, "resend": resend}
+
+
+@mcp.custom_route(API_PREFIX + "session/{day}/{action}", methods=["POST"])
+async def api_edit(request: Request) -> Response:
+    day, action = _day(request), request.path_params.get("action")
+    if not day or action not in _EDITS:
+        return _json({"error": "Unknown edit."}, 400)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    try:
+        if action == "move":
+            to = str(body.get("to") or "")
+            if not _DAY_RE.match(to):
+                return _json({"error": "Move needs a date to move to."}, 400)
+            result = await move(day, to, _schedule_id(request, body))
+        else:
+            result = await _EDITS[action](day, _schedule_id(request, body))
+    except EditError as exc:
+        return _json({"error": str(exc)}, 409)
+    return _json(result)
+
+
+# The web app's own files, registered last so the API's routes match first.
+
+@mcp.custom_route("/app", methods=["GET"])
+async def app_index(request: Request) -> Response:
+    return _file("index.html")
+
+
+@mcp.custom_route("/app/callback", methods=["GET"])
+async def app_callback(request: Request) -> Response:
+    return _file("index.html")
+
+
+@mcp.custom_route("/app/{path:path}", methods=["GET"])
+async def app_file(request: Request) -> Response:
+    path = request.path_params.get("path", "")
+    if path.startswith("api/"):
+        return _json({"error": "Not found"}, 404)
+    return _file(path or "index.html")
+
+
+def _file(path: str) -> Response:
+    target = (APP_DIR / path).resolve()
+    if APP_DIR not in target.parents and target != APP_DIR or not target.is_file():
+        target = APP_DIR / "index.html"
+    headers = {"Cache-Control": "no-cache"}
+    if target.name == "sw.js":
+        headers["Service-Worker-Allowed"] = "/app/"
+    return FileResponse(target, media_type=_TYPES.get(target.suffix), headers=headers)
