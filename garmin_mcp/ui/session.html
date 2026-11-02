@@ -377,11 +377,26 @@
     });
     app.appendChild(watchLine(c));
     app.appendChild(actions(c, name, whenText));
+    if (c.app_url) {
+      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget); } }, ["Open in Daash"]));
+    }
     var f = foot(c); if (f) app.appendChild(f);
     reportSize();
   }
 
   // ---------------------------------------------------------------- actions
+  // Open in Daash: the same session in the companion app, in the browser.
+  function openUrl(url, button) {
+    var opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    opened.then(function () { note(button, "Opens in the browser"); }).catch(function () { note(button, "This chat app didn\u2019t open the link"); });
+  }
   function ask(text, button) {
     if (!host) { note(button, "Would ask: “" + text + "”"); return; }
     var block = { type: "text", text: text };

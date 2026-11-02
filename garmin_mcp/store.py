@@ -76,6 +76,17 @@ CREATE TABLE IF NOT EXISTS notices (
 );
 """
 
+# Single-use codes that carry a sign-in from the chat to the companion app:
+# the session card's Open in Daash link holds one, so tapping it opens the
+# app already signed in. Short-lived, used once, kept only as a hash.
+APP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS app_handoffs (
+    code_hash   TEXT PRIMARY KEY,
+    subject     TEXT NOT NULL,
+    expires_at  INTEGER NOT NULL
+);
+"""
+
 FRIENDS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS friends (
     email_hash    TEXT PRIMARY KEY,
@@ -214,6 +225,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(OFFICIAL_SCHEMA)
     conn.executescript(FRIENDS_SCHEMA)
     conn.executescript(NOTICES_SCHEMA)
+    conn.executescript(APP_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -738,6 +750,41 @@ def load_oauth_token(token: str, kind: str) -> dict | None:
         "resource": resource,
         "expires_at": expires_at,
     }
+
+
+HANDOFF_LIFETIME = 30 * 60
+
+
+def new_handoff(subject: str, lifetime: int = HANDOFF_LIFETIME) -> str:
+    """A code that signs the companion app in as this person, once, within the lifetime."""
+    code = secrets.token_urlsafe(24)
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute("DELETE FROM app_handoffs WHERE expires_at < ?", (now,))
+        conn.execute("INSERT INTO app_handoffs (code_hash, subject, expires_at) VALUES (?, ?, ?)",
+                     (token_hash(code), subject, now + lifetime))
+    return code
+
+
+def take_handoff(code: str) -> str | None:
+    """Whose sign-in a code carries, spending it. None if unknown, used or expired."""
+    with _connect() as conn:
+        row = conn.execute("SELECT subject, expires_at FROM app_handoffs WHERE code_hash = ?",
+                           (token_hash(code),)).fetchone()
+        conn.execute("DELETE FROM app_handoffs WHERE code_hash = ?", (token_hash(code),))
+    if not row or row[1] < time.time():
+        return None
+    return row[0]
+
+
+def clients_for(subject: str) -> list[str]:
+    """The clients that hold a sign-in for someone that hasn't lapsed: what they've connected Daash to."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT client_id FROM oauth_tokens WHERE subject = ? AND (expires_at IS NULL OR expires_at > ?)",
+            (subject, int(time.time())),
+        ).fetchall()
+    return [r[0] for r in rows]
 
 
 def peek_oauth_token(token: str, kind: str) -> dict | None:

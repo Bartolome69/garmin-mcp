@@ -2189,7 +2189,17 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     if wid:
         detail = await _read(("workout", int(wid)), WORKOUT_MEMORY, lambda c: c.get_workout_by_id(int(wid))) or None
     change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
-    return training_plan.session_card(answer, day, today, detail, change)
+    card = training_plan.session_card(answer, day, today, detail, change)
+    # The same session in the companion app, for the card's Open in Daash.
+    # Preview accounts only, until the app is ready for everyone.
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if base and preview.enabled() and not card.get("rest"):
+        # It carries a single-use code, so it opens the app already signed in
+        # as this person: no second sign-in for someone who uses the connector.
+        who = official.current()
+        login = f"?login={store.new_handoff(who)}" if who else ""
+        card["app_url"] = f"{base}/app/#/session/{day}{login}"
+    return card
 
 
 async def _ftp_for(*step_lists: Any) -> float | None:
