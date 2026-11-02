@@ -135,8 +135,44 @@ function shapeBar(segments, height = 22, labels = true) {
 function askLink(data, label) {
   const app = data.assistant === "ChatGPT" ? "chatgpt" : "claude";
   const name = data.assistant === "ChatGPT" ? "ChatGPT" : "Claude";
-  return { href: data.ask?.[app], name, html: `<a class="pill red tall" href="${esc(data.ask?.[app])}" target="_blank" rel="noopener">${esc(label || `Ask ${name}`)}${ICON.out()}</a>` };
+  const inApp = app === "claude" && data.ask?.claude_app ? ` data-app="${esc(data.ask.claude_app)}"` : "";
+  return { href: data.ask?.[app], name, html: `<a class="pill red tall" href="${esc(data.ask?.[app])}" target="_blank" rel="noopener"${inApp}>${esc(label || `Ask ${name}`)}${ICON.out()}</a>` };
 }
+
+// Ask Claude opens Claude's desktop app when it's there. A page can't ask
+// whether an app is installed, so it tries the app's claude:// link and
+// watches for the page losing focus, which is what opening an app does. If
+// nothing takes it within a second, the web link opens instead, and that
+// answer is remembered: You lets the person switch it back.
+const OPENS = "daash.opens";
+const onComputer = () => !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) && !window.matchMedia("(pointer: coarse)").matches;
+
+function openAssistant(appUrl, webUrl) {
+  if (!appUrl || !onComputer() || store.get(OPENS) === "web") {
+    window.open(webUrl, "_blank", "noopener");
+    return;
+  }
+  let left = false;
+  const away = () => { left = true; };
+  window.addEventListener("blur", away);
+  document.addEventListener("visibilitychange", away);
+  location.href = appUrl;
+  setTimeout(() => {
+    window.removeEventListener("blur", away);
+    document.removeEventListener("visibilitychange", away);
+    if (left) { store.set(OPENS, "app"); return; }
+    store.set(OPENS, "web");
+    const opened = window.open(webUrl, "_blank", "noopener");
+    if (!opened) toast("The Claude app didn't open. Ask Claude again to open it in the browser.");
+  }, 1000);
+}
+
+document.addEventListener("click", (e) => {
+  const link = e.target.closest && e.target.closest("a[data-app]");
+  if (!link || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
+  e.preventDefault();
+  openAssistant(link.dataset.app, link.href);
+});
 
 // At 1024px and wider the app is laid out for a desktop: a top bar instead
 // of tabs, Today as a calendar, and sessions in a side panel.
@@ -157,11 +193,12 @@ function topbar(current) {
   const name = me.assistant === "ChatGPT" ? "ChatGPT" : "Claude";
   const prompt = "Use Daash to look at my training this week. How is it going, and is anything worth changing?";
   const href = (name === "ChatGPT" ? "https://chatgpt.com/?q=" : "https://claude.ai/new?q=") + encodeURIComponent(prompt);
+  const inApp = name === "Claude" ? ` data-app="claude://claude.ai/new?q=${encodeURIComponent(prompt)}"` : "";
   bar.innerHTML = `<span class="topbar-mark">Daash</span>
     <nav class="topbar-tabs" aria-label="Sections">${[["today", "Today"], ["plan", "Plan"], ["crew", "Crew"], ["you", "You"]]
       .map(([id, label]) => `<a href="#/${id}" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>
     <span style="flex:1"></span>
-    <a class="pill red" href="${esc(href)}" target="_blank" rel="noopener" style="height:40px">Ask ${name}${ICON.out()}</a>
+    <a class="pill red" href="${esc(href)}" target="_blank" rel="noopener" style="height:40px"${inApp}>Ask ${name}${ICON.out()}</a>
     <a class="avatar small" href="#/you" aria-label="You">${esc(me.initial || "Y")}</a>`;
 }
 
@@ -637,15 +674,18 @@ function blockView(d) {
       <div class="bar ${x.current ? "now" : x.past ? "past" : ""}" style="height:${Math.max(4, Math.round(x.h * 120))}px">
         <span style="height:${Math.round(x.fill * 100)}%"></span></div></div>`).join("");
   const phases = b.phases ? `<div class="phases" style="grid-template-columns:${b.phases.map((p) => `${p.weeks}fr`).join(" ")}">
-      ${b.phases.map((p) => `<span class="${p.current ? "now" : ""}">${esc(p.label.toUpperCase())}</span>`).join("")}</div>` : "";
+      ${b.phases.map((p) => p.label
+        ? `<span class="${p.current ? "now" : ""}" title="${esc(p.label)}">${esc((p.weeks * 3 < b.bars.length / 4 ? p.label.slice(0, 2) : p.label).toUpperCase())}</span>`
+        : `<span class="gap"></span>`).join("")}</div>` : "";
   const ask = askLink(d, "Edit the plan");
   return `<div class="card block-card"><div class="section-head"><span class="section-title">${esc(b.title)}</span><span class="meta">km per week</span></div>
       <div class="bars" style="grid-template-columns:${cols}" role="img" aria-label="Planned and run distance for each week of the block">${bars}</div>
-      <div class="bar-nums" style="grid-template-columns:${cols}">${b.bars.map((x) => `<span class="${x.current ? "red" : ""}">${x.n}</span>`).join("")}</div>
+      <div class="bar-nums" style="grid-template-columns:${cols}">${b.bars.map((x) => `<span class="${x.current ? "red" : ""}">${x.show_n ? x.n : ""}</span>`).join("")}</div>
       ${phases}
       <div class="legend"><span><i style="background:var(--muted)"></i>Run</span><span><i style="background:var(--red)"></i>This week</span><span><i class="planned"></i>Planned</span></div>
       <span class="block-verdict">${esc(b.verdict)}</span></div>
-    <div class="week-foot"><div class="stack-tight" style="gap:2px;flex:1;min-width:0"><span class="strong">${esc(b.name)}</span><span class="meta">${esc(b.dates)}</span></div>
+    <div class="week-foot"><div class="stack-tight" style="gap:2px;flex:1;min-width:0"><span class="strong">${esc(b.name)}</span><span class="meta">${esc(b.dates)}</span>
+      ${(b.blocks || []).map((x) => `<span class="meta" style="font-size:12.5px">${esc(x.name)}${x.dates ? ` · ${esc(x.dates)}` : ""}</span>`).join("")}</div>
       ${ask.html.replace("pill red tall", "pill")}</div>`;
 }
 
@@ -869,7 +909,9 @@ function youView(d) {
           : `<span class="meta">Sync time not available</span>`}</span>
       <button class="pill" id="refresh" style="flex-shrink:0;padding:0 14px">Refresh</button></div>
       <span class="meta" style="font-size:13.5px;line-height:1.45;padding-top:10px;border-top:1px solid var(--hairline)">${esc(d.watch.line)}</span></div>
-    ${d.groups.map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
+    ${d.groups.map((g) => g.title === "Assistants" && onComputer() ? { ...g, rows: [...g.rows,
+      { l: "Ask Claude opens in", v: store.get(OPENS) === "web" ? "The browser" : "The Claude app", sub: "Tap to switch", action: "opens" }] } : g)
+      .map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
       <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
     <p class="small" style="text-align:center">Daash 0.1 · <a href="${esc(d.privacy)}" target="_blank" rel="noopener">Privacy</a><br>Daash is independent and not made or endorsed by Garmin.</p>`;
 }
@@ -939,7 +981,14 @@ async function showYou() {
     $("screen").innerHTML = youView(d);
     $("refresh").onclick = () => { toast("Checked Garmin again."); showYou(); };
     $("screen").querySelectorAll("[data-you]").forEach((b) => {
-      b.onclick = () => (b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut());
+      b.onclick = () => {
+          if (b.dataset.you === "opens") {
+            store.set(OPENS, store.get(OPENS) === "web" ? "app" : "web");
+            toast(store.get(OPENS) === "web" ? "Ask Claude opens in the browser." : "Ask Claude opens the Claude app, or the browser without it.");
+            return showYou();
+          }
+          return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut();
+        };
     });
   } catch (e) {
     if (e instanceof SignedOut) return route();

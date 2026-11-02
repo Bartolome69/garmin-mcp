@@ -7,7 +7,7 @@
   --ground: #161614; --surface: #222220; --sunken: #2C2B28; --hairline: #3A3936; --button: #4A4844;
   --ink: #F4F3EE; --ink-2: #E2E1DB; --muted: #A6A59F;
   --red: #E8322B; --red-text: #FF6A61; --red-soft: #2E2422; --red-soft-line: #6B3530;
-  --easy: #8CC08F; --hard: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --rec: #4A4844;
+  --easy: #8CC08F; --hard: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --rec: #4A4844; --race: #E8322B;
   --amber-soft: #2A2520; --amber-soft-line: #5C4A33;
   --radius: 12px;
   --sans: "Geist", -apple-system, system-ui, sans-serif;
@@ -84,6 +84,8 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .shape-labels { display: flex; gap: 2px; }
 .shape-labels span { flex-basis: 0; min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; }
 
+/* Races in red, as the chat's plan card draws them; the text is the lighter red for contrast. */
+.c-race { color: var(--red-text); } .bg-race { background: var(--race); }
 .c-easy { color: var(--easy); } .c-hard { color: var(--hard); } .c-long { color: var(--long); } .c-strength { color: var(--strength); } .c-rec { color: var(--muted); }
 .bg-easy { background: var(--easy); } .bg-hard { background: var(--hard); } .bg-long { background: var(--long); } .bg-strength { background: var(--strength); } .bg-rec { background: var(--rec); }
 
@@ -213,6 +215,7 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .phases span { height: 24px; border-radius: 4px; background: var(--sunken); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--muted);
   display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .phases span.now { color: var(--ink); }
+.phases span.gap { background: transparent; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 2px; }
@@ -349,7 +352,7 @@ body.desk .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 
 .cal-v { font-size: 11.5px; color: #C9C8C2; }
 .cal-crew { font-size: 11.5px; line-height: 1.3; color: var(--muted); }
 .tint-easy { background: #22352A; } .tint-hard { background: #3A2A1A; } .tint-long { background: #1F2C3E; }
-.tint-strength { background: #2E2740; } .tint-rec { background: var(--sunken); }
+.tint-strength { background: #2E2740; } .tint-race { background: #3A2422; } .tint-rec { background: var(--sunken); }
 
 #panel { position: fixed; top: 60px; right: 0; bottom: 0; width: 520px; max-width: 100vw; z-index: 15; }
 .panel { height: 100%; background: #1C1C1A; border-left: 1px solid var(--hairline); display: flex; flex-direction: column; animation: slide-in 0.18s ease-out; }

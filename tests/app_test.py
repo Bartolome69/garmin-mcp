@@ -125,10 +125,15 @@ def api_checks() -> None:
     check("the app's callback is a recognised redirect", oauth.recognised_redirect("http://localhost/app/callback"))
 
     today = client.get("/app/api/today", headers=auth).json()
-    check("today has a headline", today.get("headline", "").startswith("Half marathon in"), str(today.get("error")))
+    check("today counts down to the goal race, in the block after this one",
+          today.get("headline", "").startswith("London Marathon in"), str(today.get("headline") or today.get("error")))
+    check("and numbers the week across the whole plan", today.get("kicker", "").endswith("WEEK 4 OF 28"), today.get("kicker"))
     check("today's next session is today", (today.get("next") or {}).get("kicker") == "NEXT · TODAY")
     check("the week has seven days", len(today["week"]["days"]) == 7)
     check("ask opens Claude with a prompt", today["ask"]["claude"].startswith("https://claude.ai/new?q="))
+    check("and offers the same chat in Claude's desktop app",
+          today["ask"].get("claude_app", "").startswith("claude://claude.ai/new?q=")
+          and today["ask"]["claude_app"].split("?q=")[1] == today["ask"]["claude"].split("?q=")[1])
     cal = today.get("calendar") or []
     check("the desktop calendar has last week, this week and next", len(cal) == 3 and cal[1].get("current") and cal[0].get("past"))
     check("each with seven days", all(len(w["days"]) == 7 for w in cal))
@@ -186,10 +191,21 @@ def api_checks() -> None:
                                                     if r["state"] == "done"))
     earlier = client.get(f"/app/api/plan?week={week['previous']}", headers=auth).json()["week"]
     check("the week before is all done", all(r["state"] == "done" for d in earlier["days"] for r in d["sessions"]))
-    check("the block has a bar a week", len(block.get("bars") or []) == 12)
+    last = client.get(f"/app/api/plan?week={block['bars'][-1]['starts']}", headers=auth).json()["week"]
+    race = next((r for d in last["days"] for r in d["sessions"] if r["type"] == "race"), {})
+    check("a race is red, as on the chat's plan card", race.get("colour") == "race", str(race)[:120])
+    check("and so is its shape", all(g["colour"] in ("race", "easy", "rec") for g in race.get("segments") or [])
+          and any(g["colour"] == "race" for g in race.get("segments") or []), str(race.get("segments"))[:120])
+    check("the block chart runs the whole plan to race day, both blocks", len(block.get("bars") or []) == 28,
+          str(len(block.get("bars") or [])))
+    check("its title counts to race day", block.get("title") == "28 weeks to race day", block.get("title"))
+    check("both blocks are named under it", len(block.get("blocks") or []) == 2)
+    far = client.get(f"/app/api/plan?week={block['bars'][24]['starts']}", headers=auth).json()["week"]
+    check("a week past the calendar's horizon has its sessions", any(d["sessions"] for d in far["days"]), far.get("title"))
+    check("and its number in the whole plan", far.get("title", "").startswith("Week 25"), far.get("title"))
     check("the block's verdict is plain", plain(block.get("verdict", "")) and block["verdict"].startswith("On track."),
           block.get("verdict"))
-    check("the block's phases fill its weeks", sum(p["weeks"] for p in block["phases"]) == 12)
+    check("the block's phases fill its weeks", sum(p["weeks"] for p in block["phases"]) == len(block["bars"]))
 
     alone = client.get("/app/api/crew", headers=auth).json()
     check("no crew, an offer to start one", alone.get("none") is True and "claude" in alone.get("ask", {}), str(alone)[:120])
@@ -291,7 +307,8 @@ def api_checks() -> None:
     check("You names the watch and when it synced", you.get("watch", {}).get("synced", "").startswith("Synced 07:12"),
           str(you.get("error") or you.get("watch")))
     check("the usual time reads plainly", rows.get("Usual run time", {}).get("v") == "Mornings", str(rows.get("Usual run time")))
-    check("the goal race comes from the plan", rows.get("Half marathon", {}).get("sub") == "Target under 1:35")
+    check("the goal race comes from the plan", rows.get("London Marathon", {}).get("sub") == "Target sub 3:00",
+          str([r for r in rows if "arathon" in r]))
     check("the crew row has its size", rows.get("HCRC", {}).get("v") == "6 people")
     check("You's copy is plain", plain(__import__("json").dumps(you)))
     r = client.post("/app/api/you/times", headers=auth, json={"times": ["weekday_evening", "weekend_morning"]})
