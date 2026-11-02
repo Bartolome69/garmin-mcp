@@ -38,9 +38,10 @@ from urllib.parse import quote, urlparse
 import anyio
 from starlette.requests import Request
 from starlette.background import BackgroundTask
-from starlette.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
+from . import app as app_routes
 from . import server as server_mod
 from .formatting import drop_empty
 from .server import mcp
@@ -2285,6 +2286,11 @@ def _finish(
         staged = OAUTH_PROVIDER.stage(flow, user_token)
         if staged:
             consent_token, parked = staged
+            if oauth.first_party(parked):
+                # Daash's own app, back to its own page: nothing to ask.
+                destination = OAUTH_PROVIDER.approve(consent_token)
+                if destination:
+                    return RedirectResponse(destination, status_code=303)
             return _consent_page(consent_token, parked)
         return page(
             "Sign-in expired",
@@ -2591,6 +2597,22 @@ async def card_opened(request: Request) -> Response:
     return Response(status_code=204)
 
 
+async def forget_person(token: str) -> bool:
+    """Delete someone's stored session and everything kept for them. True if there was one."""
+    _SESSIONS.pop(token, None)
+    gone = store.get_user(token)
+    if gone is not None and official.configured():
+        # Garmin's official link goes too, told to Garmin as well as deleted here.
+        await anyio.to_thread.run_sync(official.disconnect, token)
+    removed = store.delete_user(token)
+    if removed and gone is not None:
+        # Disconnect deletes everything, crews included.
+        crews.forget(crews.member_key(token, gone.email_hash))
+        # And every sign-in to it: Claude, ChatGPT and the app alike.
+        store.delete_tokens_for_subject(token)
+    return removed
+
+
 @mcp.custom_route("/disconnect", methods=["GET", "POST"])
 async def disconnect(request: Request) -> Response:
     """Let someone destroy their own stored session, using their URL as proof."""
@@ -2611,16 +2633,7 @@ async def disconnect(request: Request) -> Response:
         )
 
     form = await request.form()
-    token = str(form.get("t", "")).strip()
-    _SESSIONS.pop(token, None)
-    gone = store.get_user(token)
-    if gone is not None and official.configured():
-        # Garmin's official link goes too, told to Garmin as well as deleted here.
-        await anyio.to_thread.run_sync(official.disconnect, token)
-    removed = store.delete_user(token)
-    if removed and gone is not None:
-        # Disconnect deletes everything, crews included.
-        crews.forget(crews.member_key(token, gone.email_hash))
+    removed = await forget_person(str(form.get("t", "")).strip())
     return page(
         "Disconnected",
         "<h1>Disconnected</h1><p>Your stored session has been deleted and the "
@@ -3427,6 +3440,15 @@ async def _directory(scope: Any, receive: Any, send: Any) -> None:
     await JSONResponse(reply, headers=cors)(scope, receive, send)
 
 
+def _bearer(scope: Any) -> str:
+    """The bearer token on a request, or an empty string."""
+    for key, value in scope.get("headers", []):
+        if key.lower() == b"authorization":
+            header = value.decode("latin-1")
+            return header[7:].strip() if header.lower().startswith("bearer ") else ""
+    return ""
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 
@@ -3456,7 +3478,21 @@ class SessionBinding:
             scope = {**scope, "path": "/mcp", "raw_path": b"/mcp"}
             send = _pointing_at_named(send, named)
 
-        if OAUTH_ENABLED:
+        for_app = scope.get("path", "").startswith(app_routes.API_PREFIX)
+        if scope.get("path", "").startswith(app_routes.SIGN_IN_PREFIX):
+            # Signing in is how a token is had, so it can't ask for one.
+            await self.app(scope, receive, send)
+            return
+        if for_app:
+            # The companion app's API: the same bearer tokens as /mcp, from the
+            # same sign-in, checked here because no SDK stands in front of it.
+            row = store.load_oauth_token(_bearer(scope), "access") if _bearer(scope) else None
+            user_token = row["subject"] if row else None
+            app = "Daash app"
+            if not user_token or store.get_user(user_token) is None:
+                await JSONResponse({"error": "Signed out."}, status_code=401)(scope, receive, send)
+                return
+        elif OAUTH_ENABLED:
             # Everyone shares one path; who is asking comes from the bearer
             # token the SDK has already verified, not from the URL.
             if scope.get("path", "").rstrip("/") != "/mcp":
@@ -3529,7 +3565,10 @@ class SessionBinding:
         token = use_session(session_for(user_token))
         preview_token = preview.use(_preview_for(user))
         alone = not store.has_connect(user_token)
-        hook_token = hooks.use(_after_tool_for(user_token, user, alone), _before_tool_for(user_token, alone))
+        # The chat's hooks pace and count answers for a conversation; the
+        # app's screens are not one, so they run without them.
+        hook_token = (hooks.use(None, None) if for_app else
+                      hooks.use(_after_tool_for(user_token, user, alone), _before_tool_for(user_token, alone)))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
         alone_token = server_mod.use_alone(alone)
@@ -3584,6 +3623,7 @@ def build_app() -> Any:
 
     from mcp.server.auth.provider import ProviderTokenVerifier
 
+    oauth.ensure_app_client()
     mcp._auth_server_provider = OAUTH_PROVIDER
     # The constructor derives this from the provider; attaching the provider
     # afterwards skips that, and a server with no verifier authenticates

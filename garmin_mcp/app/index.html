@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161614">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Daash">
+<meta name="description" content="Your training plan, from Claude or ChatGPT, on your watch.">
+<title>Daash</title>
+<link rel="manifest" href="/app/manifest.webmanifest">
+<link rel="icon" href="/app/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/app/icons/apple-touch-icon.png">
+<link rel="preload" href="/app/fonts/Geist.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app/app.css">
+</head>
+<body>
+<header class="topbar" id="topbar" hidden></header>
+<div class="shell">
+  <main id="screen" aria-live="polite"></main>
+</div>
+<nav class="tabs" id="tabs" aria-label="Sections" hidden></nav>
+<div class="toast" id="toast" role="status" hidden></div>
+<div id="sheet"></div>
+<div id="panel" hidden></div>
+<script type="module" src="/app/app.js"></script>
+</body>
+</html>

@@ -97,6 +97,38 @@ def strict_redirects() -> bool:
     return os.environ.get("GARMIN_MCP_STRICT_REDIRECTS", "").strip() == "1"
 
 
+def app_callback() -> str | None:
+    """Where the companion app at /app collects its sign-in, on this server."""
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    return f"{base}/app/callback" if base else None
+
+
+# The companion app's client id. Registration hands out random ids, so no
+# one else can register this one: a sign-in for it, sent to the app's own
+# callback, is Daash signing in to Daash and needs no consent screen.
+APP_CLIENT_ID = "daash-app"
+
+
+def ensure_app_client() -> None:
+    """Register the companion app as a client of this server, pointing at its callback."""
+    callback = app_callback()
+    if not callback:
+        return
+    client = OAuthClientInformationFull(
+        client_id=APP_CLIENT_ID, client_name="Daash app", redirect_uris=[callback],
+        grant_types=["authorization_code", "refresh_token"], response_types=["code"],
+        token_endpoint_auth_method="none",
+    )
+    store.save_oauth_client(APP_CLIENT_ID, client.model_dump_json())
+
+
+def first_party(parked: dict[str, Any] | None) -> bool:
+    """Whether a waiting sign-in is the companion app's own, back to its own callback."""
+    if not parked or parked.get("client_id") != APP_CLIENT_ID:
+        return False
+    return str(parked["params"].redirect_uri) == app_callback()
+
+
 def app_for_redirect(uri: str) -> str:
     """Which app a sign-in is for, read from where its code is sent.
 
@@ -108,6 +140,8 @@ def app_for_redirect(uri: str) -> str:
 
     parsed = urlparse(str(uri))
     host = (parsed.hostname or "").lower()
+    if str(uri) == app_callback():
+        return "Daash app"
     if parsed.scheme == "http" and host in LOOPBACK_HOSTS:
         return "Desktop or command line"
     for app, domains in (("Claude", ("claude.ai", "claude.com")), ("ChatGPT", ("chatgpt.com", "openai.com"))):
@@ -159,6 +193,8 @@ def recognised_redirect(uri: str) -> bool:
 
     uri = str(uri)
     if uri == CLAUDE_CALLBACK or CHATGPT_CALLBACK.fullmatch(uri) or uri in _extra_redirects():
+        return True
+    if uri == app_callback():
         return True
     parsed = urlparse(uri)
     return parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS
@@ -475,6 +511,11 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
             scopes=scopes or refresh_token.scopes,
             resource=_issued_for(refresh_token.resource),
         )
+
+    def issue_for_app(self, subject: str) -> OAuthToken:
+        """Tokens for the companion app, for a sign-in it proved another way:
+        a code from the chat's Open in Daash link, or one sent by email."""
+        return self._issue(client_id=APP_CLIENT_ID, subject=subject, scopes=[], resource=_issued_for(None))
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         row = store.load_oauth_token(token, "access")
