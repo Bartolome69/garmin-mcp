@@ -42,7 +42,7 @@ SIGN_IN_PREFIX = API_PREFIX + "sign-in/"
 TYPES: dict[str, tuple[str, str]] = {
     "easy": ("Easy", "easy"), "recovery": ("Recovery", "easy"), "long": ("Long", "long"),
     "threshold": ("Threshold", "hard"), "sub": ("Threshold", "hard"), "intervals": ("Intervals", "hard"),
-    "race": ("Race", "hard"), "strength": ("Strength", "strength"), "swim": ("Swim", "long"),
+    "race": ("Race", "race"), "strength": ("Strength", "strength"), "swim": ("Swim", "long"),
     "ride": ("Ride", "easy"), "other": ("Other", "rec"),
 }
 HARD_TYPES = {"threshold", "sub", "intervals", "race"}
@@ -61,6 +61,18 @@ EASIER_STEP_SHARE = 0.8
 def _type(key: str | None) -> dict[str, str]:
     label, colour = TYPES.get(key or "", ("Run", "easy"))
     return {"type": key or "run", "type_label": label, "colour": colour}
+
+
+def _day_of(value: Any) -> date | None:
+    """A date from Garmin's date or date-and-time text, or None."""
+    try:
+        return date.fromisoformat(str(value)[:10]) if value else None
+    except ValueError:
+        return None
+
+
+def _capital(text: str) -> str:
+    return text[:1].upper() + text[1:]
 
 
 def _short_date(d: date) -> str:
@@ -117,7 +129,11 @@ def _segments(shape: Any, kind: str | None) -> list[dict[str, Any]] | None:
         size = seg.get("km") or (seg.get("s") or 0) / 300
         if not size:
             continue
-        colour = "rec" if k == "rec" else "hard" if k == "work" else ("long" if kind == "long" else "easy")
+        # A race is red outside its warm-up and cool-down, however its steps are paced.
+        if kind == "race" and k != "rec" and seg.get("part") not in ("wu", "cd"):
+            colour = "race"
+        else:
+            colour = "rec" if k == "rec" else "hard" if k == "work" else ("long" if kind == "long" else "easy")
         out.append({"w": round(float(size), 2), "h": 20 if k == "work" else 5 if k == "rec" else 10,
                     "colour": colour, "label": "" if k == "rec" else f"{float(seg.get('km') or 0):g} km"
                     if seg.get("km") else ""})
@@ -161,7 +177,8 @@ def _step_rows(steps: Any, kind: str | None, indent: int = 0) -> list[dict[str, 
         elif kind == "strength":
             colour = "strength"
         else:
-            colour = "hard" if kind in HARD_TYPES else "long" if kind == "long" else "easy"
+            colour = ("race" if kind == "race" else "hard" if kind in HARD_TYPES
+                      else "long" if kind == "long" else "easy")
         rows.append(drop_empty({
             "label": step.get("label") or "Run",
             "target": str(step["target"]).replace("/km", " /km") if step.get("target") else None,
@@ -179,7 +196,10 @@ def _ask(app: str, prompt: str) -> str:
 
 
 def _ask_links(prompt: str) -> dict[str, str]:
-    return {"claude": _ask("claude", prompt), "chatgpt": _ask("chatgpt", prompt)}
+    # claude_app opens the same new chat in Claude's desktop app, which takes
+    # claude://claude.ai/<path> as that page; the app falls back to the web.
+    return {"claude": _ask("claude", prompt), "chatgpt": _ask("chatgpt", prompt),
+            "claude_app": "claude://claude.ai/new?q=" + quote(prompt, safe="")}
 
 
 def assistant() -> str:
@@ -227,7 +247,8 @@ def _readiness(r: Mapping[str, Any]) -> dict[str, Any] | None:
          "note": f"Score {sleep['score']}" if sleep.get("score") else "No score"},
         {"l": "Resting HR", "v": str(rhr["today"]) if rhr.get("today") else "–",
          "note": f"Up {up} on usual" if up and up >= 3 else "HRV in range" if hrv_status == "balanced"
-         else f"HRV {hrv_status}" if hrv_status else "Usual for you"},
+         else f"HRV {hrv_status}" if hrv_status in ("low", "unbalanced", "poor")
+         else "No HRV status yet" if hrv_status in ("none", "no_status") else "Usual for you"},
     ]
     reasons = []
     if sleep.get("score") and sleep["score"] < 60:
@@ -268,16 +289,19 @@ def _next(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
 def _headline(plan: Mapping[str, Any], today: date) -> tuple[str, str]:
     current = plan.get("current_plan") or {}
     kicker = _short_date(today).upper()
-    if current.get("week") and current.get("weeks_total"):
-        kicker += f" · WEEK {current['week']} OF {current['weeks_total']}"
-    goal = next((r for r in plan.get("races") or [] if r.get("tier") == "goal" and r.get("date", "") >= today.isoformat()), None)
+    season = _season(plan)
+    n = _season_week(season, today - timedelta(days=today.weekday())) if season and plan.get("current_plan") else None
+    if n:
+        kicker += f" · WEEK {n} OF {season['total']}"
+    goal = _goal_race(plan)
+    goal = goal if goal and goal.get("date", "") >= today.isoformat() else None
     if goal:
         days = (date.fromisoformat(goal["date"]) - today).days
         name = str(goal.get("name") or "Race")
         name = name[:1].upper() + name[1:]
         return kicker, (f"{name} today" if days == 0 else f"{name} tomorrow" if days == 1 else f"{name} in {days} days")
-    if current.get("week"):
-        return kicker, f"Week {current['week']} of {current['weeks_total']}"
+    if n:
+        return kicker, f"Week {n} of {season['total']}"
     return kicker, "This week"
 
 
@@ -371,14 +395,14 @@ def _crew_days(crew: tuple[dict[str, Any], str | None] | None, today: date) -> d
 def _calendar(plan: Mapping[str, Any], today: date, crew_days: Mapping[str, str]) -> list[dict[str, Any]]:
     """Last week, this week and next, a cell a day, for the desktop calendar."""
     by_monday = {w["starts"]: w for w in plan.get("weeks") or [] if w.get("starts")}
-    current = plan.get("current_plan") or plan.get("upcoming_plan") or {}
+    season = _season(plan)
     nxt = _next(plan, today)
     this_monday = today - timedelta(days=today.weekday())
     weeks = []
     for shift in (-1, 0, 1):
         monday = this_monday + timedelta(weeks=shift)
         week = by_monday.get(monday.isoformat()) or {}
-        n = _plan_week(current, monday)
+        n = _season_week(season, monday)
         run, planned = round(week.get("run_km") or 0), round(week.get("planned_km") or 0)
         km = (f"{planned} km planned" if shift > 0 else f"{run} of {planned} km") if planned else (f"{run} km" if run else "")
         days = []
@@ -616,17 +640,79 @@ def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
 CLOSE_TO_PLAN = 0.85
 
 
-def _plan_week(current: Mapping[str, Any], monday: date) -> int | None:
-    """A week's number in the running block, counted from its first Monday."""
-    if not current.get("starts"):
+def _season(plan: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The whole plan to race day: the block running now and the one after it, counted as one.
+
+    A long build is often two blocks (a base block, then the build to the
+    race), and the person thinks of it as one plan. Week numbers, the block
+    chart and its phases run from the first block's start to the goal race.
+    """
+    current = plan.get("current_plan") or plan.get("upcoming_plan")
+    first = _day_of((current or {}).get("starts"))
+    if not first:
         return None
-    first = date.fromisoformat(current["starts"])
-    n = (monday - (first - timedelta(days=first.weekday()))).days // 7 + 1
-    return n if 1 <= n <= int(current.get("weeks_total") or 0) else None
+    following = plan.get("upcoming_plan") if plan.get("current_plan") else None
+    goal = _goal_race(plan)
+    last = max(d for d in (_day_of(current.get("ends")), _day_of((following or {}).get("ends")),
+                           _day_of((goal or {}).get("date")), first) if d)
+    first_monday = first - timedelta(days=first.weekday())
+    total = ((last - timedelta(days=last.weekday())) - first_monday).days // 7 + 1
+    return {"first": first, "first_monday": first_monday, "last": last, "total": total, "goal": goal,
+            "blocks": [b for b in (current, following) if b]}
 
 
-def _phase_of(phases: Any, n: int | None) -> str | None:
-    return next((p["label"] for p in phases or [] if n and p.get("from_week", 0) <= n <= p.get("to_week", 0)), None)
+def _goal_race(plan: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The race the whole plan builds to: the goal among its races, or the next block's.
+
+    The plan answer lists the races of the block running now; a marathon at
+    the end of the block after it is only in that block's milestones.
+    """
+    goal = next((r for r in plan.get("races") or [] if r.get("tier") == "goal"), None)
+    if goal:
+        return goal
+    for block in (plan.get("upcoming_plan"), plan.get("current_plan")):
+        marked = [m for m in (block or {}).get("milestones") or [] if m.get("date")]
+        found = next((m for m in marked if m.get("tier") == "goal"), None) or (max(marked, key=lambda m: m["date"]) if marked else None)
+        if found:
+            return {"name": found.get("label"), "date": found["date"], "tier": "goal", "target": found.get("target")}
+    return None
+
+
+def _season_week(season: Mapping[str, Any] | None, monday: date) -> int | None:
+    """A week's number in the whole plan, counted from its first Monday."""
+    if not season:
+        return None
+    n = (monday - season["first_monday"]).days // 7 + 1
+    return n if 1 <= n <= season["total"] else None
+
+
+async def _season_weeks(plan: Mapping[str, Any], season: Mapping[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Every week of the plan by its Monday, read past the calendar's horizon where it has to be.
+
+    The calendar answer reaches 16 weeks ahead. A plan to a race further
+    off is read whole, block by block, the way Claude reads it by its code.
+    """
+    weeks = {w["starts"]: w for w in plan.get("weeks") or [] if w.get("starts")}
+    if not season:
+        return weeks
+    last_monday = season["last"] - timedelta(days=season["last"].weekday())
+    if weeks and max(weeks) >= last_monday.isoformat():
+        return weeks
+    for block in season["blocks"]:
+        if not block.get("label"):
+            continue
+        whole = await server_mod.get_plan(block["label"])
+        if isinstance(whole, dict) and not _error(whole):
+            for w in whole.get("weeks") or []:
+                if w.get("starts"):
+                    weeks.setdefault(w["starts"], w)
+    return weeks
+
+
+def _week_phase(week: Mapping[str, Any] | None) -> str | None:
+    """The phase most of a week's sessions are in."""
+    found = [x.get("phase") for x in (week or {}).get("sessions") or [] if x.get("phase")]
+    return max(set(found), key=found.count) if found else None
 
 
 def _range(monday: date) -> str:
@@ -665,14 +751,13 @@ def _row(s: Mapping[str, Any], today: date, next_id: Any) -> dict[str, Any]:
     })
 
 
-def _week_view(plan: Mapping[str, Any], monday: date, today: date) -> dict[str, Any]:
-    weeks = {w["starts"]: w for w in plan.get("weeks") or [] if w.get("starts")}
+def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], season: Mapping[str, Any] | None,
+               monday: date, today: date) -> dict[str, Any]:
     week = weeks.get(monday.isoformat()) or {}
     sessions = week.get("sessions") or []
     nxt = _next(plan, today)
-    current = plan.get("current_plan") or plan.get("upcoming_plan") or {}
-    n = _plan_week(current, monday)
-    phase = _phase_of(plan.get("phases"), n)
+    n = _season_week(season, monday)
+    phase = _week_phase(week)
     days = []
     for i in range(7):
         d = monday + timedelta(days=i)
@@ -682,15 +767,16 @@ def _week_view(plan: Mapping[str, Any], monday: date, today: date) -> dict[str, 
             "past": d < today, "sessions": [_row(s, today, (nxt or {}).get("schedule_id")) for s in here],
         })
     run, planned = week.get("run_km"), week.get("planned_km")
-    later = monday + timedelta(weeks=1)
+    earlier, later = monday - timedelta(weeks=1), monday + timedelta(weeks=1)
+    within = lambda m: m.isoformat() in weeks or _season_week(season, m) is not None  # noqa: E731
     return drop_empty({
         "starts": monday.isoformat(),
         "title": f"Week {n}" + (f" · {phase}" if phase else "") if n else f"Week of {monday.day} {MONTHS[monday.month - 1]}",
         "done": round(run) if run is not None else None, "planned": round(planned) if planned else None,
         "range": _range(monday), "current": monday == today - timedelta(days=today.weekday()) or None,
         "days": days,
-        "previous": (monday - timedelta(weeks=1)).isoformat() if (monday - timedelta(weeks=1)).isoformat() in weeks else None,
-        "next": later.isoformat() if later.isoformat() in weeks else None,
+        "previous": earlier.isoformat() if within(earlier) else None,
+        "next": later.isoformat() if within(later) else None,
         "ask_next": _ask_links(f"Use Daash to plan next week, the week of {later.isoformat()}, "
                                "and adjust it to how this week has gone."),
         "ask": _ask_links(f"Use Daash to look at my training week of {monday.isoformat()}. "
@@ -698,47 +784,70 @@ def _week_view(plan: Mapping[str, Any], monday: date, today: date) -> dict[str, 
     })
 
 
-def _block_view(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
-    """The running block a bar a week: planned against run, the phases, one line on how it's going."""
-    current = plan.get("current_plan") or plan.get("upcoming_plan")
-    if not current or not current.get("weeks_total"):
+def _block_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], season: Mapping[str, Any] | None,
+                today: date) -> dict[str, Any] | None:
+    """The whole plan a bar a week, to race day: planned against run, the phases, one line on how it's going."""
+    if not season:
         return None
-    total = int(current["weeks_total"])
-    first = date.fromisoformat(current["starts"])
-    first_monday = first - timedelta(days=first.weekday())
-    by_monday = {w["starts"]: w for w in plan.get("weeks") or [] if w.get("starts")}
     this_monday = today - timedelta(days=today.weekday())
-    bars = []
-    for n in range(1, total + 1):
-        monday = first_monday + timedelta(weeks=n - 1)
-        w = by_monday.get(monday.isoformat()) or {}
+    bars, phase = [], None
+    for n in range(1, season["total"] + 1):
+        monday = season["first_monday"] + timedelta(weeks=n - 1)
+        w = weeks.get(monday.isoformat()) or {}
+        # A week with no sessions (a rest week, a week not read) stays in the phase before it.
+        phase = _week_phase(w) or phase
         bars.append({"n": n, "starts": monday.isoformat(), "planned": round(w.get("planned_km") or 0, 1),
                      "run": round(w.get("run_km") or 0, 1), "current": monday == this_monday,
-                     "past": monday < this_monday, "cutback": w.get("cutback") or None})
+                     "past": monday < this_monday, "cutback": w.get("cutback") or None, "phase": phase})
     top = max((b["planned"] for b in bars), default=0) or 1
     peak = max(bars, key=lambda b: b["planned"])
+    many = len(bars) > 16
     for b in bars:
         b["h"] = round(b["planned"] / top, 3)
         b["fill"] = min(1.0, round(b["run"] / b["planned"], 3)) if b["planned"] and (b["past"] or b["current"]) else 0
         b["label"] = str(round(b["planned"])) if b["current"] or b is peak else ""
-    phases = [{"label": p["label"], "weeks": p["to_week"] - p["from_week"] + 1,
-               "current": any(b["current"] and p["from_week"] <= b["n"] <= p["to_week"] for b in bars) or None}
-              for p in plan.get("phases") or [] if p.get("from_week") and p.get("to_week")]
-    race = next((r for r in plan.get("races") or [] if r.get("tier") == "goal"), None)
-    ends = date.fromisoformat(race["date"]) if race else date.fromisoformat(current["ends"])
-    name = current.get("name") or current.get("goal") or "plan"
+        # On a long plan every fourth week is numbered, with the first, this week and the last.
+        b["show_n"] = (not many or b["n"] == 1 or b["n"] % 4 == 0 or b["current"] or b["n"] == len(bars)) or None
+    phases: list[dict[str, Any]] = []
+    for b in bars:
+        if not b["phase"]:
+            continue
+        if phases and phases[-1]["label"] == b["phase"] and phases[-1]["to"] == b["n"] - 1:
+            phases[-1]["to"] = b["n"]
+        else:
+            phases.append({"label": b["phase"], "from": b["n"], "to": b["n"]})
+    spans = []
+    covered = 1
+    for ph in phases:
+        if ph["from"] > covered:
+            spans.append({"label": "", "weeks": ph["from"] - covered})
+        spans.append(drop_empty({"label": ph["label"], "weeks": ph["to"] - ph["from"] + 1,
+                                 "current": any(b["current"] and ph["from"] <= b["n"] <= ph["to"] for b in bars) or None}))
+        covered = ph["to"] + 1
+    if phases and covered <= len(bars):
+        spans.append({"label": "", "weeks": len(bars) - covered + 1})
+    goal, blocks, first = season["goal"], season["blocks"], season["first"]
+    name = blocks[0].get("name") or blocks[0].get("goal") or "plan"
+    title_name = (f"Your plan to {goal['name']}" if goal and goal.get("name") and len(blocks) > 1
+                  else f"Your {name[:1].lower() + name[1:]}" if not name[:2].isupper() else f"Your {name}")
     return drop_empty({
-        "title": f"{total} weeks to race day" if race else f"{total}-week block",
-        "bars": bars, "phases": phases or None,
-        "verdict": _block_verdict(bars, plan.get("phases") or []),
-        "name": f"Your {name[:1].lower() + name[1:]}" if not name[:2].isupper() else f"Your {name}",
+        "title": f"{len(bars)} weeks to race day" if goal else f"{len(bars)}-week plan",
+        "bars": bars, "phases": spans or None,
+        "verdict": _block_verdict(bars),
+        "name": title_name,
         "dates": f"{'Started' if first <= today else 'Starts'} {_short_date(first)} · "
-                 + (f"race {_short_date(ends)}" if race else f"ends {_short_date(ends)}"),
-        "ask": _ask_links(f"Use Daash to show my {current.get('label') or ''} plan. I'd like to change it.".replace("  ", " ")),
+                 + (f"race {_short_date(_day_of(goal['date']))}" if goal and _day_of(goal.get("date"))
+                    else f"ends {_short_date(season['last'])}"),
+        # Two blocks: each named, with its dates, under the chart.
+        "blocks": [drop_empty({"name": _capital(str(b.get("name") or b.get("goal") or b.get("label") or "Block")),
+                               "dates": f"{_short_date(_day_of(b['starts']))} to {_short_date(_day_of(b['ends']))}"
+                               if _day_of(b.get("starts")) and _day_of(b.get("ends")) else None})
+                   for b in blocks] if len(blocks) > 1 else None,
+        "ask": _ask_links("Use Daash to show my whole training plan to race day. I'd like to change it."),
     })
 
 
-def _block_verdict(bars: list[dict[str, Any]], phases: list[Mapping[str, Any]]) -> str:
+def _block_verdict(bars: list[dict[str, Any]]) -> str:
     past = [b for b in bars if b["past"] and b["planned"]]
     now = next((b for b in bars if b["current"]), None)
     if not past:
@@ -751,12 +860,12 @@ def _block_verdict(bars: list[dict[str, Any]], phases: list[Mapping[str, Any]]) 
                  else f"{_word(len(close)).capitalize()} of {_word(n)} weeks done close to plan")
     remark = None
     if now:
-        phase = _phase_of(phases, now["n"])
-        same = [b for b in bars if _phase_of(phases, b["n"]) == phase] if phase else []
+        phase = now.get("phase")
+        same = [b for b in bars if b.get("phase") == phase] if phase else []
         before = next((b for b in bars if b["n"] == now["n"] - 1), None)
         if now.get("cutback"):
             remark = "this week is a lighter one"
-        elif phase and before and _phase_of(phases, before["n"]) != phase:
+        elif phase and before and before.get("phase") != phase:
             remark = f"this week starts the {phase.lower()} phase"
         elif phase and same and now["planned"] >= max(b["planned"] for b in same):
             remark = f"this week is the biggest of the {phase.lower()} phase"
@@ -770,13 +879,12 @@ async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
         return {"error": _error(plan)}
     if plan.get("source") == "log":
         return {"empty": True, "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
-    try:
-        anchor = date.fromisoformat(week_of) if week_of else today
-    except ValueError:
-        anchor = today
+    anchor = _day_of(week_of) or today
     monday = anchor - timedelta(days=anchor.weekday())
-    return drop_empty({"today": today.isoformat(), "week": _week_view(plan, monday, today),
-                       "block": _block_view(plan, today), "assistant": assistant()})
+    season = _season(plan)
+    weeks = await _season_weeks(plan, season)
+    return drop_empty({"today": today.isoformat(), "week": _week_view(plan, weeks, season, monday, today),
+                       "block": _block_view(plan, weeks, season, today), "assistant": assistant()})
 
 
 # -- the crew: who runs when, and the runs that line up -------------------------
@@ -951,7 +1059,8 @@ async def you_payload() -> dict[str, Any]:
     apps = {oauth.app_for_client(c) for c in store.clients_for(user_token)} if user_token else set()
     threshold = (fitness.get("lactate_threshold") or {})
     zones = ((fitness.get("zones") or {}).get("heart_rate") or {}).get("zones") or []
-    race = next((r for r in plan.get("races") or [] if r.get("tier") == "goal" and r.get("date", "") >= today.isoformat()), None)
+    race = _goal_race(plan) if plan else None
+    race = race if race and race.get("date", "") >= today.isoformat() else None
     history = server_mod._history_link()
     email = store.email_for(user_token) if user_token else None
 
@@ -973,10 +1082,10 @@ async def you_payload() -> dict[str, Any]:
             row("Heart rate zones", "From Garmin",
                 sub=", ".join(f"Z{z['zone']} {z['bpm'][0]}" for z in zones) + " bpm" if zones else None),
             row("Threshold pace", threshold.get("pace_per_km") or "Not measured yet",
-                sub=f"From Garmin, updated {_short_date(date.fromisoformat(threshold['as_of']))}" if threshold.get("as_of") else "From Garmin"),
+                sub=f"From Garmin, updated {_short_date(_day_of(threshold['as_of']))}" if _day_of(threshold.get("as_of")) else "From Garmin"),
         ]),
         ("Goal race", [
-            row(race["name"][:1].upper() + race["name"][1:], _short_date(date.fromisoformat(race["date"])),
+            row(_capital(race.get("name") or "Goal race"), _short_date(_day_of(race["date"])),
                 sub=f"Target {race['target']}" if race.get("target") else None,
                 ask="change") if race else row("No goal race", "Set one", ask="set", tone="red"),
         ]),
@@ -1200,6 +1309,21 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
           ".woff2": "font/woff2", ".png": "image/png", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8"}
 
 
+def _safe(handler):
+    """An app route that answers a readable error instead of crashing, and logs why."""
+    import functools
+
+    @functools.wraps(handler)
+    async def answered(request: Request) -> Response:
+        try:
+            return await handler(request)
+        except Exception:  # noqa: BLE001 - one screen's failure is reported, never a bare 500
+            log.exception("app route %s failed", request.url.path)
+            return _json({"error": "Daash couldn't load this just now. Try again in a moment."}, 500)
+
+    return answered
+
+
 def _json(body: Any, status: int = 200) -> JSONResponse:
     if isinstance(body, dict) and body.get("error") and status == 200:
         status = 502
@@ -1220,11 +1344,13 @@ def _schedule_id(request: Request, body: Mapping[str, Any] | None = None) -> int
 
 
 @mcp.custom_route(API_PREFIX + "today", methods=["GET"])
+@_safe
 async def api_today(request: Request) -> Response:
     return _json(await today_payload())
 
 
 @mcp.custom_route(API_PREFIX + "session/{day}", methods=["GET"])
+@_safe
 async def api_session(request: Request) -> Response:
     day = _day(request)
     if not day:
@@ -1233,6 +1359,7 @@ async def api_session(request: Request) -> Response:
 
 
 @mcp.custom_route(API_PREFIX + "run/{activity_id}", methods=["GET"])
+@_safe
 async def api_run(request: Request) -> Response:
     try:
         activity_id = int(request.path_params["activity_id"])
@@ -1242,12 +1369,14 @@ async def api_run(request: Request) -> Response:
 
 
 @mcp.custom_route(API_PREFIX + "plan", methods=["GET"])
+@_safe
 async def api_plan(request: Request) -> Response:
     week = request.query_params.get("week")
     return _json(await plan_payload(week if week and _DAY_RE.match(week) else None))
 
 
 @mcp.custom_route(API_PREFIX + "crew", methods=["GET"])
+@_safe
 async def api_crew(request: Request) -> Response:
     try:
         return _json(await crew_payload())
@@ -1256,11 +1385,13 @@ async def api_crew(request: Request) -> Response:
 
 
 @mcp.custom_route(API_PREFIX + "you", methods=["GET"])
+@_safe
 async def api_you(request: Request) -> Response:
     return _json(await you_payload())
 
 
 @mcp.custom_route(API_PREFIX + "you/times", methods=["POST"])
+@_safe
 async def api_times(request: Request) -> Response:
     try:
         body = await request.json()
@@ -1270,6 +1401,7 @@ async def api_times(request: Request) -> Response:
 
 
 @mcp.custom_route(API_PREFIX + "you/delete", methods=["POST"])
+@_safe
 async def api_delete(request: Request) -> Response:
     try:
         body = await request.json()
@@ -1284,6 +1416,7 @@ _EDITS = {"move": move, "easier": make_easier, "undo": undo_easier, "resend": re
 
 
 @mcp.custom_route(API_PREFIX + "session/{day}/{action}", methods=["POST"])
+@_safe
 async def api_edit(request: Request) -> Response:
     day, action = _day(request), request.path_params.get("action")
     if not day or action not in _EDITS:

@@ -79,6 +79,38 @@ def _sessions(week: int) -> list[tuple[int, str, str, list[dict[str, Any]], str]
     return out
 
 
+MAR_LABEL = "MAR"
+MAR_WEEKS = 16
+MAR_PHASES = [{"label": "Base", "from_week": 1, "to_week": 4}, {"label": "Build", "from_week": 5, "to_week": 10},
+              {"label": "Peak", "from_week": 11, "to_week": 13}, {"label": "Taper", "from_week": 14, "to_week": 16}]
+MAR_LONG_KM = [18, 20, 22, 18, 24, 26, 28, 22, 30, 32, 30, 34, 32, 26, 20, 0]
+
+
+def _mar_phase(week: int) -> str:
+    return next(p["label"] for p in MAR_PHASES if p["from_week"] <= week <= p["to_week"])
+
+
+def _marathon_sessions(week: int) -> list[tuple[int, str, list[dict[str, Any]]]]:
+    """(weekday, name, steps) for one week of the marathon build."""
+    out = [
+        (1, "Easy run 10 km", [{"type": "interval", "distance_meters": 10000, "pace": EASY}]),
+        (2, "4 x 2 km", [
+            {"type": "warmup", "distance_meters": 2000, "hr": [120, 145]},
+            {"type": "repeat", "times": 4, "steps": [
+                {"type": "interval", "distance_meters": 2000, "pace": SUB_T},
+                {"type": "recovery", "duration_seconds": 90}]},
+            {"type": "cooldown", "distance_meters": 2000, "hr": [120, 145]}]),
+        (3, "Easy run 8 km", [{"type": "interval", "distance_meters": 8000, "pace": EASY}]),
+        (5, "Easy run 6 km", [{"type": "interval", "distance_meters": 6000, "pace": EASY}]),
+    ]
+    long_km = MAR_LONG_KM[week - 1]
+    if long_km:
+        out.append((6, f"Long run {long_km} km", [{"type": "interval", "distance_meters": long_km * 1000, "pace": ["5:00", "5:25"]}]))
+    else:
+        out.append((6, "London Marathon", [{"type": "interval", "distance_meters": 42195, "pace": ["4:12", "4:18"]}]))
+    return out
+
+
 def _flat(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """A built workout's steps with repeats unrolled, in the order the watch runs them."""
     out: list[dict[str, Any]] = []
@@ -139,7 +171,7 @@ class DemoGarmin(FakeGarmin):
         monday = self.today - timedelta(days=self.today.weekday())
         first = monday - timedelta(weeks=THIS_WEEK - 1)
         last = first + timedelta(weeks=WEEKS - 1, days=6)
-        race = {"label": "Half marathon", "date": last.isoformat(), "target": "under 1:35", "tier": "goal"}
+        race = {"label": "Half marathon", "date": last.isoformat(), "target": "under 1:35", "tier": "key"}
         self.scheduled = []
         self.demo_activities: dict[int, dict[str, Any]] = {}
         self.demo_laps: dict[int, list[dict[str, Any]]] = {}
@@ -170,6 +202,23 @@ class DemoGarmin(FakeGarmin):
                 if day < self.today or (day == self.today and self.ran_today):
                     self._record(next_activity, day, wid, sport, name)
                     next_activity += 1
+
+        # Then the build to the marathon, a block of its own, as a long plan is:
+        # it runs past the calendar's 16 weeks, so the app has to read it whole.
+        m_first = last + timedelta(days=1)
+        m_last = m_first + timedelta(weeks=MAR_WEEKS - 1, days=6)
+        marathon = {"label": "London Marathon", "date": m_last.isoformat(), "target": "sub 3:00", "tier": "goal"}
+        for week in range(1, MAR_WEEKS + 1):
+            for weekday, name, steps in _marathon_sessions(week):
+                description = training_plan.describe(
+                    "Marathon sub 3:00", MAR_LABEL, m_first, m_last, None, name="16-week marathon build",
+                    phase=_mar_phase(week), milestones=[marathon], phases=MAR_PHASES)
+                title = training_plan.tagged(name, MAR_LABEL)
+                key = (title, _mar_phase(week))
+                if key not in built:
+                    model, _, _ = build_workout(title, "running", steps, description)
+                    built[key] = self.upload_workout(model.to_dict())["workoutId"]
+                self.schedule_workout(built[key], (m_first + timedelta(weeks=week - 1, days=weekday)).isoformat())
 
     # -- recorded runs ------------------------------------------------------
 
@@ -259,6 +308,13 @@ class DemoGarmin(FakeGarmin):
         if sport:
             self.scheduled[-1]["sportTypeKey"] = sport
         return result
+
+    def get_lactate_threshold(self, **kwargs: Any) -> dict[str, Any]:
+        # Garmin dates this with a time of day, as the real account does.
+        found = copy.deepcopy(super().get_lactate_threshold(**kwargs))
+        if isinstance(found, dict) and found.get("speed_and_heart_rate"):
+            found["speed_and_heart_rate"]["calendarDate"] = "2026-09-21T08:24:41.0"
+        return found
 
     def get_device_last_used(self) -> dict[str, Any]:
         synced = datetime.combine(self.today, datetime.min.time()).replace(hour=7, minute=12)
