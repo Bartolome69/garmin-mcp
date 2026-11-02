@@ -138,7 +138,39 @@ function askLink(data, label) {
   return { href: data.ask?.[app], name, html: `<a class="pill red tall" href="${esc(data.ask?.[app])}" target="_blank" rel="noopener">${esc(label || `Ask ${name}`)}${ICON.out()}</a>` };
 }
 
+// At 1024px and wider the app is laid out for a desktop: a top bar instead
+// of tabs, Today as a calendar, and sessions in a side panel.
+const WIDE = window.matchMedia("(min-width: 1024px)");
+const desktop = () => WIDE.matches;
+WIDE.addEventListener("change", () => { base = null; route(); });
+
+// What the top bar shows, kept from the last answers that said it.
+const me = { initial: store.get("daash.initial") || "", assistant: store.get("daash.assistant") || "Claude" };
+function remember(d) {
+  if (d.initial) { me.initial = d.initial; store.set("daash.initial", d.initial); }
+  if (d.assistant) { me.assistant = d.assistant; store.set("daash.assistant", d.assistant); }
+}
+
+function topbar(current) {
+  const bar = $("topbar");
+  bar.hidden = false;
+  const name = me.assistant === "ChatGPT" ? "ChatGPT" : "Claude";
+  const prompt = "Use Daash to look at my training this week. How is it going, and is anything worth changing?";
+  const href = (name === "ChatGPT" ? "https://chatgpt.com/?q=" : "https://claude.ai/new?q=") + encodeURIComponent(prompt);
+  bar.innerHTML = `<span class="topbar-mark">Daash</span>
+    <nav class="topbar-tabs" aria-label="Sections">${[["today", "Today"], ["plan", "Plan"], ["crew", "Crew"], ["you", "You"]]
+      .map(([id, label]) => `<a href="#/${id}" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>
+    <span style="flex:1"></span>
+    <a class="pill red" href="${esc(href)}" target="_blank" rel="noopener" style="height:40px">Ask ${name}${ICON.out()}</a>
+    <a class="avatar small" href="#/you" aria-label="You">${esc(me.initial || "Y")}</a>`;
+}
+
 function tabs(current) {
+  if (desktop()) {
+    $("tabs").hidden = true;
+    return topbar(current);
+  }
+  $("topbar").hidden = true;
   const nav = $("tabs");
   nav.hidden = false;
   nav.innerHTML = [["today", "Today"], ["plan", "Plan"], ["crew", "Crew"], ["you", "You"]]
@@ -156,19 +188,19 @@ function failed(message, retry) {
 
 // -- Today --------------------------------------------------------------------
 
-function todayView(d) {
-  const parts = [`<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1></header>`];
+function todayParts(d) {
+  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1></header>` };
   if (d.done_today) {
     const r = d.done_today;
-    parts.push(`<a class="row-button" href="#/run/${r.activity_id}?from=today">
+    p.done = `<a class="row-button" href="#/run/${r.activity_id}?from=today">
       <span class="tick bg-${esc(r.colour)}">${ICON.check()}</span>
       <span class="grow"><span class="kicker" style="font-size:11.5px">DONE TODAY${r.at ? ` · ${esc(r.at)}` : ""}</span><span class="strong">${esc(r.line)}</span></span>
-      ${ICON.right(18, "var(--muted)")}</a>`);
+      ${ICON.right(18, "var(--muted)")}</a>`;
   }
   if (d.next) {
     const n = d.next;
     const open = `#/session/${n.date}?from=today`;
-    parts.push(`<section class="card red" aria-label="Next session">
+    p.next = `<section class="card red" aria-label="Next session">
       <div class="next-top"><span class="kicker red" style="font-weight:500;letter-spacing:0.08em">${esc(n.kicker)}</span>
         ${n.on_watch ? `<span class="watch-tag">${ICON.watch(13)}on your watch</span>` : ""}</div>
       <a class="next-name" href="${open}"><span class="stack-tight" style="gap:2px;min-width:0">
@@ -179,26 +211,24 @@ function todayView(d) {
       <div class="pills"><a class="pill light" href="${open}" style="flex:1.3">See the session</a>
         ${n.easier ? `<button class="pill" data-act="${n.easier.applied ? "undo" : "easier"}" data-day="${n.date}" data-sid="${n.schedule_id || ""}">${esc(n.easier.applied ? "Undo easier" : "Easier")}</button>` : ""}
         <button class="pill" data-act="move" data-day="${n.date}" data-sid="${n.schedule_id || ""}" data-name="${esc(n.name)}">Move</button></div>
-    </section>`);
+    </section>`;
   } else if (!d.empty) {
-    parts.push(`<div class="card pad stack-tight"><span class="strong">Nothing else planned</span><span class="meta">The plan on your Garmin calendar has no more sessions.</span></div>`);
+    p.next = `<div class="card pad stack-tight"><span class="strong">Nothing else planned</span><span class="meta">The plan on your Garmin calendar has no more sessions.</span></div>`;
   }
   if (d.empty) {
     const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
-    parts.push(`<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>
-      <span class="meta">Ask ${esc(ask.name)} to build a plan with Daash. It lands here and on your watch.</span>${ask.html}</div>`);
+    p.next = `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>
+      <span class="meta">Ask ${esc(ask.name)} to build a plan with Daash. It lands here and on your watch.</span>${ask.html}</div>`;
   }
   if (d.crew) {
-    parts.push(`<div class="card crew-line"><div class="faces">${d.crew.faces.map((f, i) => `<span class="face" style="background:${FACE[i % 4]}">${esc(f)}</span>`).join("")}</div>
+    p.crew = `<div class="card crew-line"><div class="faces">${d.crew.faces.map((f, i) => `<span class="face" style="background:${FACE[i % 4]}">${esc(f)}</span>`).join("")}</div>
       <span class="grow" style="gap:1px"><span style="font-size:14.5px;font-weight:600;line-height:1.3">${esc(d.crew.line)}</span><span class="meta" style="font-size:12.5px">${esc(d.crew.sub)}</span></span>
-      <a class="pill" href="#/crew" style="flex-shrink:0;padding:0 14px">Line up</a></div>`);
+      <a class="pill" href="#/crew" style="flex-shrink:0;padding:0 14px">Line up</a></div>`;
   }
-  if (d.readiness) {
-    parts.push(`<section class="stack" aria-label="Readiness"><div class="section-head"><span class="section-title">Readiness</span><span class="mono-label">FROM GARMIN</span></div>
-      <div class="card trio">${d.readiness.tiles.map((t) => `<div><span class="l">${esc(t.l)}</span><span class="v">${esc(t.v)}</span><span class="n">${esc(t.note)}</span></div>`).join("")}</div></section>`);
-  } else {
-    parts.push(`<section class="stack"><span class="section-title">Readiness</span><div class="card pad meta">Readiness needs a night of sleep data. Wear the watch overnight and it shows here.</div></section>`);
-  }
+  p.ready = d.readiness
+    ? `<section class="stack" aria-label="Readiness"><div class="section-head"><span class="section-title">Readiness</span><span class="mono-label">FROM GARMIN</span></div>
+      <div class="card trio">${d.readiness.tiles.map((t) => `<div><span class="l">${esc(t.l)}</span><span class="v">${esc(t.v)}</span><span class="n">${esc(t.note)}</span></div>`).join("")}</div></section>`
+    : `<section class="stack"><span class="section-title">Readiness</span><div class="card pad meta">Readiness needs a night of sleep data. Wear the watch overnight and it shows here.</div></section>`;
   if (d.week) {
     const w = d.week;
     const total = w.planned ? `<span class="meta"><strong style="color:var(--ink);font-weight:600">${esc(w.done ?? 0)}</strong> of ${esc(w.planned)} ${esc(w.unit)}</span>` : "";
@@ -207,20 +237,108 @@ function todayView(d) {
       : day.state === "missed" ? `<span class="miss-ring" title="Missed"></span>`
       : day.dots.map((c) => `<span class="dot bg-${esc(c)}"></span>`).join("");
     const label = (day) => `${day.n}, ${day.state === "rest" ? "rest day" : day.state}`;
-    parts.push(`<section class="stack" aria-label="This week"><div class="section-head"><span class="section-title">This week</span>${total}</div>
+    p.week = `<section class="stack" aria-label="This week"><div class="section-head"><span class="section-title">This week</span>${total}</div>
       <div class="card strip-card"><div class="strip">${w.days.map((day) => `<a href="${day.state === "rest" ? "#/today" : `#/session/${day.date}?from=today`}" aria-label="${esc(label(day))}" ${day.state === "rest" ? 'tabindex="-1" style="pointer-events:none"' : ""}>
         <span class="d">${day.letter}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span><span class="mark">${mark(day)}</span></a>`).join("")}</div>
-        ${w.verdict ? `<span class="strip-verdict">${esc(w.verdict)}</span>` : ""}</div></section>`);
+        ${w.verdict ? `<span class="strip-verdict">${esc(w.verdict)}</span>` : ""}</div></section>`;
+    p.verdict = w.verdict ? `<p class="meta" style="font-size:13.5px;line-height:1.45">${esc(w.verdict)}</p>` : "";
   }
-  return parts.join("");
+  return p;
 }
+
+function todayView(d) {
+  const p = todayParts(d);
+  return [p.head, p.done, p.next, p.crew, p.ready, p.week].filter(Boolean).join("");
+}
+
+// Desktop: three weeks as a calendar, the phone's cards on the right.
+function calendarView(d) {
+  const dows = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+  const chip = (c, day) => {
+    const href = c.state === "done" && c.activity_id ? `#/run/${c.activity_id}?from=today` : `#/session/${day.date}?sid=${c.schedule_id}&from=today`;
+    const now = day.today && c.state !== "done";
+    return `<a class="cal-chip tint-${esc(c.colour)} ${now ? "now" : ""}" href="${href}" ${c.movable ? `draggable="true" data-sid="${c.schedule_id}" data-from="${day.date}"` : ""}>
+      <span class="cal-name c-${esc(c.colour)}">${c.state === "done" ? `<span class="tick bg-${esc(c.colour)}" style="width:13px;height:13px;margin-top:2px">${ICON.check(8)}</span>` : ""}
+        ${c.missed ? `<span class="miss-ring" style="width:10px;height:10px;margin-top:3px" title="Not recorded"></span>` : ""}<span>${esc(c.name)}</span></span>
+      ${c.v ? `<span class="cal-v">${esc(c.v)}</span>` : ""}</a>`;
+  };
+  return `<div class="cal-top"><div class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" style="font-size:28px">${esc(d.headline)}</h1></div>
+      <span class="meta">Drag a session to move it. The watch follows.</span></div>
+    <div class="cal" id="cal"><div class="cal-row cal-head"><span></span>${dows.map((x) => `<span class="mono-label" style="font-size:11.5px;letter-spacing:0.06em;padding-left:4px">${x}</span>`).join("")}</div>
+    ${(d.calendar || []).map((w) => `<div class="cal-row"><div class="cal-week"><span class="strong" style="font-size:13px;${w.current ? "color:var(--red-text)" : ""}">${esc(w.label)}</span>
+        ${w.km ? `<span class="meta" style="font-size:12.5px">${esc(w.km)}</span>` : ""}</div>
+      ${w.days.map((day) => `<div class="cal-day ${day.today ? "today" : ""} ${w.past ? "done-week" : ""}" data-date="${day.date}" ${day.past ? 'data-past="1"' : ""}>
+        <span class="cal-n">${day.n}</span>
+        ${day.chips.length ? day.chips.map((c) => chip(c, day)).join("") : `<span class="cal-chip rest">Rest</span>`}
+        ${day.crew ? `<span class="cal-crew">${esc(day.crew)}</span>` : ""}</div>`).join("")}</div>`).join("")}</div>`;
+}
+
+function todayDesk(d) {
+  const p = todayParts(d);
+  return `<div class="desk-today"><div class="desk-main">${d.empty ? p.head + p.next : calendarView(d)}</div>
+    <aside class="desk-side">${[p.done, d.empty ? "" : p.next, p.ready, p.crew, p.verdict].filter(Boolean).join("")}</aside></div>`;
+}
+
+// Drag a session's chip to another day: the same move as the Move button.
+// Done runs can't be dragged, and nothing drops on a day already past.
+function dragToMove(cal) {
+  if (!cal) return;
+  let from = null;
+  cal.addEventListener("dragstart", (e) => {
+    const chip = e.target.closest(".cal-chip[draggable]");
+    if (!chip) return;
+    from = { sid: chip.dataset.sid, date: chip.dataset.from };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", from.sid);
+    cal.classList.add("dragging");
+  });
+  const target = (e) => {
+    const day = e.target.closest(".cal-day");
+    return day && from && !day.dataset.past && day.dataset.date !== from.date ? day : null;
+  };
+  cal.addEventListener("dragover", (e) => {
+    const day = target(e);
+    cal.querySelectorAll(".cal-day.drop").forEach((x) => { if (x !== day) x.classList.remove("drop"); });
+    if (!day) return;
+    e.preventDefault();
+    day.classList.add("drop");
+  });
+  cal.addEventListener("dragend", () => {
+    cal.classList.remove("dragging");
+    cal.querySelectorAll(".cal-day.drop").forEach((x) => x.classList.remove("drop"));
+    from = null;
+  });
+  cal.addEventListener("drop", async (e) => {
+    const day = target(e);
+    if (!day) return;
+    e.preventDefault();
+    const moving = from;
+    try {
+      const r = await api(`session/${moving.date}/move`, { method: "POST", body: JSON.stringify({ to: day.dataset.date, schedule_id: Number(moving.sid) || null }) });
+      toast(r.message);
+      showToday();
+    } catch (err) {
+      if (err instanceof SignedOut) return route();
+      toast(err.message);
+    }
+  });
+}
+
+let base = null;  // the desktop screen under the side panel
 
 async function showToday() {
   tabs("today");
-  loading();
+  if (base !== "today") loading();
   try {
     const d = await api("today");
-    $("screen").innerHTML = todayView(d);
+    remember(d);
+    if (desktop()) {
+      $("screen").innerHTML = todayDesk(d);
+      dragToMove($("cal"));
+    } else {
+      $("screen").innerHTML = todayView(d);
+    }
+    base = "today";
     wire($("screen"));
   } catch (e) {
     if (e instanceof SignedOut) return route();
@@ -239,12 +357,12 @@ function stepRow(s) {
     <span class="right">${esc(right)}</span></div>`;
 }
 
-function previewView(d, from) {
+function previewView(d, from, panel = false) {
   const back = from === "plan" ? "Plan" : "Today";
   const ask = askLink(d);
   const r = d.readiness;
-  const parts = [`<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${back}</a>`,
-    `<header class="stack-8"><span class="kicker ${d.today ? "red" : ""}">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1>
+  const parts = [panel ? "" : `<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${back}</a>`,
+    `<header class="stack-8">${panel ? "" : `<span class="kicker ${d.today ? "red" : ""}">${esc(d.kicker)}</span>`}<h1 class="title-xl">${esc(d.name)}</h1>
       ${d.km ? `<span class="size">${esc(d.km)} km<span style="color:var(--muted);font-weight:500"> · ~${esc(d.minutes)} min</span></span>`
         : d.minutes ? `<span class="size">~${esc(d.minutes)} min</span>` : ""}
       ${d.why ? `<p class="why">${esc(d.why)}</p>` : ""}</header>`];
@@ -299,9 +417,10 @@ async function showSession(day, params) {
 
 // -- the session: analysis after the run --------------------------------------
 
-function analysisView(d, from) {
+function analysisView(d, from, panel = false) {
   const back = from === "plan" ? "Plan" : "Today";
   const ask = askLink(d, `Ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"} about it`);
+  if (panel) return analysisPanel(d, ask);
   const parts = [`<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${back}</a>`,
     `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1></header>`,
     `<p class="verdict">${esc(d.verdict)}</p>`,
@@ -329,6 +448,72 @@ function analysisView(d, from) {
   parts.push(`<div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this run</a>` : `<span></span>`}${ask.html}</div>`);
   return parts.join("");
 }
+
+// The panel's analysis: planned and run beside the splits, the splits open.
+function analysisPanel(d, ask) {
+  const rows = (d.planned_and_run || []).map((c) => `<div class="pcmp"><span class="bar bg-${esc(c.colour)}"></span>
+      <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14px;font-weight:600">${esc(c.label)}</span>
+        <span class="meta ${c.soft ? "soft" : ""}" style="font-size:12px">${esc(c.soft ? c.note : [c.note, c.target].filter(Boolean).join(" · "))}</span></span>
+      <span class="stack-tight" style="gap:1px;align-items:flex-end"><span class="${c.soft && c.miss !== "high" ? "soft" : ""}" style="font-size:14px;font-weight:600">${esc(c.pace || "–")}</span>
+        <span class="meta ${c.miss === "high" ? "soft" : ""}" style="font-size:12px">${c.hr ? `${esc(c.hr)} bpm` : ""}</span></span></div>`).join("");
+  const splits = (d.splits || []).map((s) => `<div class="psplit"><span class="meta">${esc(s.rest ? "Jogs" : s.km)}</span>
+      <span style="font-weight:600;white-space:nowrap">${esc(s.rest ? s.pace.replace(" for ", " · ") : s.partial ? `${s.time} (${s.pace})` : s.pace)}</span><span class="meta" style="text-align:right">${esc(s.hr || "–")}</span></div>`).join("");
+  return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>
+    <p class="verdict" style="font-size:19px">${esc(d.verdict)}</p>
+    <div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>
+    <div class="panel-two">${rows ? `<section class="stack-8"><span class="strong">Planned and run</span><div class="card table">${rows}</div></section>` : ""}
+      ${splits ? `<section class="stack-8"><span class="strong">Splits<span style="font-weight:500;color:var(--muted)"> · ${esc(d.km)} km</span></span>
+        <div class="card table"><div class="psplit head"><span>KM</span><span>PACE</span><span style="text-align:right">HR</span></div>${splits}</div></section>` : ""}</div>
+    ${d.effect ? `<div class="card effect"><span class="tick bg-${esc(d.colour)}">${ICON.check()}</span>
+      <span class="stack-tight" style="gap:2px"><span class="strong">${esc(d.effect.head)}</span><span class="meta" style="font-size:13.5px;line-height:1.45">${esc(d.effect.sub)}</span></span></div>` : ""}
+    <div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this run</a>` : `<span></span>`}${ask.html}</div>`;
+}
+
+// Desktop: a session or run opens in a panel over the calendar, and closing
+// it leaves you where you were.
+async function showPanel(kind, id, params) {
+  if (base !== "today" && base !== "plan") await showToday();
+  const holder = $("panel");
+  holder.innerHTML = `<div class="panel" role="dialog" aria-modal="false" aria-labelledby="panel-kicker">
+    <div class="panel-head"><span class="kicker" id="panel-kicker"></span>
+      <button class="pill icon" id="panel-close" aria-label="Close" style="border:0">${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button></div>
+    <div class="panel-body" id="panel-body"><div class="skeleton" style="min-height:300px"></div></div></div>`;
+  holder.hidden = false;
+  $("panel-close").onclick = closePanel;
+  try {
+    let d;
+    if (kind === "session") {
+      const sid = params.get("sid");
+      d = await api(`session/${id}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}`);
+      if (d.done && d.activity_id) { location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`); return; }
+    } else {
+      d = await api(`run/${encodeURIComponent(id)}`);
+    }
+    $("panel-kicker").textContent = d.kicker || "";
+    $("panel-kicker").classList.toggle("red", !!d.today);
+    $("panel-body").innerHTML = kind === "run" ? analysisView(d, "today", true) : d.rest ? restView(d, "today").replace(/<a class="back"[^]*?<\/a>/, "") : previewView(d, "today", true);
+    wire($("panel-body"));
+    $("panel-close").focus();
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    $("panel-body").innerHTML = `<div class="empty"><span class="strong">${esc(e.message)}</span></div>`;
+  }
+}
+
+// An edit made in the panel shows on the calendar under it straight away.
+function refreshUnderPanel() {
+  if (!desktop() || $("panel").hidden) return;
+  if (base === "today") showToday();
+  else if (base === "plan") showPlan("week", new URLSearchParams());
+}
+
+function closePanel() {
+  $("panel").hidden = true;
+  $("panel").innerHTML = "";
+  location.hash = base === "plan" ? "#/plan" : "#/today";
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("panel").hidden) closePanel(); });
 
 async function showRun(id, params) {
   tabs(params.get("from") === "plan" ? "plan" : "today");
@@ -363,6 +548,7 @@ async function act(action, day, sid, button) {
   try {
     const r = await api(`session/${day}/${action}`, { method: "POST", body: JSON.stringify({ schedule_id: sid ? Number(sid) : null }) });
     toast(r.message);
+    refreshUnderPanel();
     route();
   } catch (e) {
     if (e instanceof SignedOut) return route();
@@ -395,6 +581,7 @@ function moveSheet(day, sid, name) {
         const r = await api(`session/${day}/move`, { method: "POST", body: JSON.stringify({ to: b.dataset.to, schedule_id: sid ? Number(sid) : null }) });
         close();
         toast(r.message);
+        refreshUnderPanel();
         location.hash = `#/session/${r.date}?from=today`;
       } catch (e) {
         close();
@@ -464,7 +651,7 @@ function blockView(d) {
 
 async function showPlan(view, params) {
   tabs("plan");
-  loading();
+  if (base !== "plan") loading();
   try {
     const week = params.get("week");
     const d = await api(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`);
@@ -475,8 +662,15 @@ async function showPlan(view, params) {
       $("screen").innerHTML = head + `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>${ask.html}</div>`;
       return;
     }
-    $("screen").innerHTML = head + (view === "block" ? blockView(d) : weekView(d));
-    if (view !== "block") holdToMove($("plan-list"), d.today);
+    remember(d);
+    base = "plan";
+    if (desktop()) {
+      $("screen").innerHTML = `<header><h1 class="headline" style="font-size:28px">Plan</h1></header>
+        <div class="desk-plan"><div class="stack">${weekView(d)}</div><div class="stack">${blockView(d)}</div></div>`;
+    } else {
+      $("screen").innerHTML = head + (view === "block" ? blockView(d) : weekView(d));
+    }
+    if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
   } catch (e) {
     if (e instanceof SignedOut) return route();
     failed(e.message, () => showPlan(view, params));
@@ -560,27 +754,27 @@ function face(f, size = 30, ring = "var(--surface)") {
   return `<span class="face" style="width:${size}px;height:${size}px;background:${bg};color:${f.you ? "#FFFFFF" : "var(--ground)"};border-color:${ring};font-size:${Math.round(size * 0.4)}px">${esc(f.i)}</span>`;
 }
 
-function crewView(d) {
-  const parts = [`<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1></header>`];
+function crewParts(d, desk = false) {
+  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" ${desk ? 'style="font-size:28px"' : ""}>${esc(d.headline)}</h1></header>` };
   if (d.hero) {
     const h = d.hero;
-    parts.push(`<section class="card red" style="gap:12px" aria-label="Your best match this week">
+    p.hero = `<section class="card red" style="gap:12px" aria-label="Your best match this week">
       <div class="next-top"><span class="kicker red" style="font-weight:500;letter-spacing:0.08em">${esc(h.kicker)}</span><span class="chip chip-${esc(h.colour)}">${esc(h.type_label)}</span></div>
-      <div style="display:flex;align-items:center;gap:12px"><div class="faces">${h.faces.map((f) => face(f, 36, "var(--red-soft)")).join("")}</div>
+      <div style="display:flex;align-items:center;gap:12px"><div class="faces">${h.faces.map((f) => face(f, desk ? 38 : 36, "var(--red-soft)")).join("")}</div>
         <span style="font-size:22px;font-weight:700;letter-spacing:-0.025em;line-height:1.15">${esc(h.names)}</span></div>
       <span style="font-size:14px;line-height:1.45;color:var(--ink-2)">${esc(h.line)}</span>
-      <a class="pill red" href="${esc(h.whatsapp)}" target="_blank" rel="noopener">Ask the group on WhatsApp</a></section>`);
+      <a class="pill red" href="${esc(h.whatsapp)}" target="_blank" rel="noopener">Ask the group on WhatsApp</a></section>`;
   } else {
-    parts.push(`<div class="card pad stack-tight"><span class="strong">Nothing lines up yet</span><span class="meta" style="line-height:1.45">When two of you have an easy or long run at the same time of day, it shows here.</span></div>`);
+    p.hero = `<div class="card pad stack-tight"><span class="strong">Nothing lines up yet</span><span class="meta" style="line-height:1.45">When two of you have an easy or long run at the same time of day, it shows here.</span></div>`;
   }
   if (d.also) {
-    parts.push(`<section class="stack"><span class="section-title">Also lining up</span><div class="card plan-list">${d.also.map((m) => `
+    p.also = `<section class="stack"><span class="section-title">Also lining up</span><div class="card plan-list">${d.also.map((m) => `
       <div class="crew-match"><span class="day"><span class="d">${esc(m.dow)}</span><span class="n">${m.n}</span></span>
         <span class="stack-tight" style="gap:2px;min-width:0"><span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${m.slot ? `<span class="strong">${esc(m.slot)}</span>` : ""}<span class="c-${esc(m.colour)}" style="font-size:12px;font-weight:600">${esc(m.type_label)}</span>
           ${m.tag ? `<span style="font-size:12px;font-weight:600;color:var(--red-text)">${esc(m.tag)}</span>` : ""}</span>
           <span class="meta ellipsis">${esc(m.names)}</span></span>
-        <div class="faces">${m.faces.map((f) => face(f, 28)).join("")}</div></div>`).join("")}</div></section>`);
+        <div class="faces">${m.faces.map((f) => face(f, 28)).join("")}</div></div>`).join("")}</div></section>`;
   }
   const eye = svg('<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>', 13);
   const seg = (x) => {
@@ -588,30 +782,46 @@ function crewView(d) {
     if (x.kind === "hard") return `<i class="hard"></i>`;
     return `<i class="bg-${x.kind === "long" ? "long" : "easy"} ${x.match ? "match" : ""}"></i>`;
   };
-  parts.push(`<section class="stack"><div class="section-head" style="align-items:center"><span class="section-title">Who runs when</span><span class="view-only">${eye}View only</span></div>
-    <div class="crew-grid" role="table" aria-label="Crew calendar, view only">
-      <div class="grid-row head" role="row"><span class="slots" aria-hidden="true"><span>AM</span><span>PM</span><span>EVE</span></span>
-        ${d.days.map((x) => `<span class="grid-day ${x.past ? "past" : ""}" role="columnheader"><span class="d">${x.letter}</span><span class="n ${x.today ? "today" : ""}">${x.n}</span></span>`).join("")}</div>
-      ${d.people.map((p) => `<div class="grid-row" role="row"><span class="who" role="rowheader"><span class="name ${p.you ? "you" : ""}">${esc(p.name)}</span>${p.by_hand ? `<span class="hand">by hand</span>` : ""}</span>
-        ${p.cells.map((c) => `<span class="cell ${c.past ? "past" : ""}" role="cell">${c.segs.map(seg).join("")}</span>`).join("")}</div>`).join("")}
+  const key = `<span class="slot-key" aria-hidden="true"><span>AM</span><span>PM</span><span>EVE</span></span>`;
+  const who = (person) => desk
+    ? `<span class="who desk" role="rowheader">${face({ i: person.name[0], you: person.you, c: person.c }, 26, "transparent")}
+        <span class="stack-tight" style="gap:0;flex:1;min-width:0"><span class="name ${person.you ? "you" : ""}">${esc(person.name)}</span>${person.by_hand ? `<span class="hand">by hand</span>` : ""}</span>${key}</span>`
+    : `<span class="who" role="rowheader"><span class="name ${person.you ? "you" : ""}">${esc(person.name)}</span>${person.by_hand ? `<span class="hand">by hand</span>` : ""}</span>`;
+  p.grid = `<section class="stack"><div class="section-head" style="align-items:center${desk ? ";padding-top:30px" : ""}"><span class="section-title" ${desk ? 'style="font-size:17px"' : ""}>Who runs when</span><span class="view-only">${eye}View only</span></div>
+    <div class="crew-grid ${desk ? "desk" : ""}" role="table" aria-label="Crew calendar, view only">
+      <div class="grid-row head" role="row">${desk ? "<span></span>" : `<span class="slots" aria-hidden="true"><span>AM</span><span>PM</span><span>EVE</span></span>`}
+        ${d.days.map((x) => `<span class="grid-day ${x.past ? "past" : ""}" role="columnheader"><span class="d">${desk ? ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"][d.days.indexOf(x)] : x.letter}</span><span class="n ${x.today ? "today" : ""}">${x.n}</span></span>`).join("")}</div>
+      ${d.people.map((person) => `<div class="grid-row" role="row">${who(person)}
+        ${person.cells.map((c) => `<span class="cell ${c.past ? "past" : ""}" role="cell">${c.segs.map(seg).join("")}</span>`).join("")}</div>`).join("")}
       <div class="legend" style="padding-top:8px;border-top:1px solid var(--hairline);font-size:12px"><span><i class="lg bg-easy"></i>Easy</span><span><i class="lg bg-long"></i>Long</span>
         <span><i class="lg hard"></i>Hard, runs alone</span><span><i class="lg bg-easy match"></i>Same time</span></div></div>
-    <span class="meta" style="line-height:1.45;text-wrap:pretty">Runs fill in from each person's watch or plan. Yours follow your plan; <a href="#/plan">change them in Plan</a>.</span></section>`);
+    <span class="meta" style="line-height:1.45;text-wrap:pretty">Runs fill in from each person's watch or plan. Yours follow your plan; <a href="#/plan">change them in Plan</a>.</span></section>`;
   const inv = d.invite || {};
   const value = inv.url || inv.code || "";
-  parts.push(`<div class="card pad stack" style="gap:10px"><span class="strong">Invite a friend</span>
+  p.invite = `<div class="card pad stack" style="gap:10px"><span class="strong">Invite a friend</span>
     <span class="meta" style="font-size:13.5px;line-height:1.45">${inv.url ? "They see days and times of easy and long runs. Never pace, heart rate or routes. No watch needed."
       : "They tell their Daash the crew's code to join. They see days and times of easy and long runs, never pace, heart rate or routes."}</span>
     <div style="display:flex;gap:8px;align-items:center"><span class="copy-field">${esc(inv.shown || inv.code || "")}</span>
-      <button class="pill" id="copy" data-value="${esc(value)}" style="flex-shrink:0">${inv.url ? "Copy link" : "Copy code"}</button></div></div>`);
-  return parts.join("");
+      <button class="pill" id="copy" data-value="${esc(value)}" style="flex-shrink:0">${inv.url ? "Copy link" : "Copy code"}</button></div></div>`;
+  return p;
+}
+
+function crewView(d) {
+  if (desktop()) {
+    const p = crewParts(d, true);
+    return `<div class="desk-crew"><div class="stack" style="gap:16px">${[p.head, p.hero, p.also, p.invite].filter(Boolean).join("")}</div><div>${p.grid}</div></div>`;
+  }
+  const p = crewParts(d);
+  return [p.head, p.hero, p.also, p.grid, p.invite].filter(Boolean).join("");
 }
 
 async function showCrew() {
   tabs("crew");
   loading();
+  base = "crew";
   try {
     const d = await api("crew");
+    remember(d);
     if (d.none) {
       const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends</h1></header>
@@ -723,6 +933,7 @@ async function signOut() {
 async function showYou() {
   tabs("you");
   loading();
+  base = "you";
   try {
     const d = await api("you");
     $("screen").innerHTML = youView(d);
@@ -745,6 +956,8 @@ async function signInPost(path, body) {
 
 function signInView(message, step = "start", email = "") {
   $("tabs").hidden = true;
+  $("topbar").hidden = true;
+  base = null;
   const head = `<div class="wordmark"><img src="/app/icons/favicon.svg" width="32" height="32" alt="">Daash</div>`;
   const note = message ? `<div class="card pad meta" role="status">${esc(message)}</div>` : "";
   const foot = `<p class="small">Daash is independent and not made or endorsed by Garmin.</p>`;
@@ -828,9 +1041,13 @@ async function route() {
   const [path, query] = (location.hash.replace(/^#\/?/, "") || "today").split("?");
   const params = new URLSearchParams(query || "");
   const [screen, arg] = path.split("/");
-  window.scrollTo(0, 0);
-  if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return showSession(arg, params);
-  if (screen === "run" && /^\d+$/.test(arg || "")) return showRun(arg, params);
+  const wide = desktop();
+  document.body.classList.toggle("desk", wide);
+  document.body.dataset.screen = screen || "today";
+  const panelled = wide && (screen === "session" || screen === "run");
+  if (!panelled) { $("panel").hidden = true; $("panel").innerHTML = ""; window.scrollTo(0, 0); }
+  if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return wide ? showPanel("session", arg, params) : showSession(arg, params);
+  if (screen === "run" && /^\d+$/.test(arg || "")) return wide ? showPanel("run", arg, params) : showRun(arg, params);
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
   if (screen === "crew") return showCrew();
   if (screen === "you") return showYou();

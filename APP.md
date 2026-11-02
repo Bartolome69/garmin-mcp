@@ -5,8 +5,8 @@ app is the daily place to see, check and lightly adjust the plan that Claude
 or ChatGPT built. It has no chatbot and makes no model calls: "Ask Claude"
 opens Claude with the context filled in.
 
-Designs: `design_handoff_daash_mvp_v2` (pass 2). This file says how the app
-plugs into what the server already does.
+Designs: `design_handoff_daash_mvp_v2` (pass 2, with the desktop screens
+3a to 3c). This file says how the app plugs into what the server already does.
 
 ## One plan, three surfaces
 
@@ -153,6 +153,30 @@ the crew's page link, or its invite code when the link is off.
   - No "Running since": Daash doesn't know it. No Terms link: there are none.
   - Week starts is always Monday, as Daash's weeks are.
 
+## Desktop, 1024px and wider
+
+- A top bar replaces the tabs: the wordmark, Today, Plan, Crew and You, Ask
+  Claude (or ChatGPT) about this week, and your initial.
+- **Today** is last week, this week and next as a calendar, from the same
+  `get_plan` answer (`calendar` on `/app/api/today`), with the phone's cards
+  on the right: Done today, the next session, readiness, the crew line and
+  the week's verdict. Each day says which friends are out with you.
+  **Drag a session to another day to move it**: the same move as the Move
+  button. Done runs can't be dragged, and days already past refuse the drop.
+  The next-session card drops Move there, as the design does.
+- **A session or run opens in a 520px panel** over the calendar, closed with
+  the cross or Esc, and never leaves the calendar. A run shows planned and
+  run beside the splits, open. An edit made in the panel shows on the
+  calendar at once.
+- **Crew** is two columns: the matches and the invite on the left, the
+  view-only calendar on the right with each person's initial and an AM, PM,
+  EVE key.
+- **Plan** shows the week and the block side by side; **You** sits in a
+  720px column. Neither was designed for desktop.
+- From 1024 to 1279px the same layout tightens (a 300px side column, smaller
+  chips) so session names still wrap by word. Below 1024px it's the phone
+  layout, centred.
+
 ## Not designed yet, used the nearest pattern
 
 - Move from the session screen: a sheet of the next eight days as pills
@@ -168,6 +192,8 @@ the crew's page link, or its invite code when the link is off.
 - A day with two sessions: the preview leads with the main one and links the
   other under "Also this day".
 - Sign-in, signed-out and error states.
+- Desktop: dragging sessions (its rules as above), Plan and You, and the
+  calendar with no plan (the phone's "No sessions" card in the main column).
 - Crew with no matches: a card saying runs that line up show there. Not in a
   crew: what a crew is, and Start a crew with Claude (joining with a code
   goes through the assistant too). One crew per person, so several crews

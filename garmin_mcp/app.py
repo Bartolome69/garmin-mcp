@@ -331,12 +331,19 @@ def _word(n: int) -> str:
     return ["no", "one", "two", "three", "four", "five", "six", "seven"][n] if 0 <= n <= 7 else str(n)
 
 
-def _crew_line(today: date) -> dict[str, Any] | None:
-    """Friends out on the same day as your next easy or long run. Never pace, HR or routes."""
+def _crew_week(today: date) -> tuple[dict[str, Any], str | None] | None:
+    """The crew's week and your name in it, or None for someone not in a crew."""
     if not crews.available() or not crews.in_crew():
         return None
     week = crews.week(today=today)
-    me = next((m["name"] for m in week.get("members") or [] if m.get("you")), None)
+    return week, next((m["name"] for m in week.get("members") or [] if m.get("you")), None)
+
+
+def _crew_line(crew: tuple[dict[str, Any], str | None] | None, today: date) -> dict[str, Any] | None:
+    """Friends out on the same day as your next easy or long run. Never pace, HR or routes."""
+    if not crew:
+        return None
+    week, me = crew
     for t in week.get("together") or []:
         others = [n for n in t.get("who") or [] if n != me]
         if not t.get("you_in") or not others or t["date"] < today.isoformat():
@@ -346,6 +353,51 @@ def _crew_line(today: date) -> dict[str, Any] | None:
         return {"line": f"{_join(others)} {'is' if len(others) == 1 else 'are'} out {_when(d, today) if d == today or d == today + timedelta(days=1) else 'on ' + _when(d, today)} too",
                 "sub": f"{kind}, no start time yet", "faces": [n[:1].upper() for n in others[:3]], "date": t["date"]}
     return None
+
+
+def _crew_days(crew: tuple[dict[str, Any], str | None] | None, today: date) -> dict[str, str]:
+    """Each day you're running with friends, as the calendar says it: Tom and Priya out too."""
+    if not crew:
+        return {}
+    week, me = crew
+    out = {}
+    for t in week.get("together") or []:
+        others = [n for n in t.get("who") or [] if n != me]
+        if t.get("you_in") and others and t["date"] >= today.isoformat():
+            out[t["date"]] = f"{_join(others)} out too"
+    return out
+
+
+def _calendar(plan: Mapping[str, Any], today: date, crew_days: Mapping[str, str]) -> list[dict[str, Any]]:
+    """Last week, this week and next, a cell a day, for the desktop calendar."""
+    by_monday = {w["starts"]: w for w in plan.get("weeks") or [] if w.get("starts")}
+    current = plan.get("current_plan") or plan.get("upcoming_plan") or {}
+    nxt = _next(plan, today)
+    this_monday = today - timedelta(days=today.weekday())
+    weeks = []
+    for shift in (-1, 0, 1):
+        monday = this_monday + timedelta(weeks=shift)
+        week = by_monday.get(monday.isoformat()) or {}
+        n = _plan_week(current, monday)
+        run, planned = round(week.get("run_km") or 0), round(week.get("planned_km") or 0)
+        km = (f"{planned} km planned" if shift > 0 else f"{run} of {planned} km") if planned else (f"{run} km" if run else "")
+        days = []
+        for i in range(7):
+            d = monday + timedelta(days=i)
+            here = sorted((x for x in week.get("sessions") or [] if x.get("date") == d.isoformat()), key=training_plan._rank)
+            chips = []
+            for x in here:
+                row = _row(x, today, (nxt or {}).get("schedule_id"))
+                chips.append(drop_empty({
+                    "name": row["name"], "colour": row["colour"], "state": row["state"], "missed": row.get("missed"),
+                    "v": f"{row['v']} {row['u']}".strip() if row.get("v") else None,
+                    "movable": row.get("movable"), "schedule_id": row.get("schedule_id"), "activity_id": row.get("activity_id"),
+                }))
+            days.append(drop_empty({"date": d.isoformat(), "n": d.day, "today": d == today or None, "past": d < today or None,
+                                    "chips": chips, "crew": crew_days.get(d.isoformat())}))
+        weeks.append(drop_empty({"label": f"Week {n}" if n else f"{monday.day} {MONTHS[monday.month - 1]}", "km": km or None,
+                                 "current": shift == 0 or None, "past": shift < 0 or None, "days": days}))
+    return weeks
 
 
 async def _done_today(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
@@ -371,7 +423,9 @@ async def _done_today(plan: Mapping[str, Any], today: date) -> dict[str, Any] | 
 
 async def today_payload() -> dict[str, Any]:
     today = date.today()
-    plan, readiness = await asyncio.gather(server_mod.get_plan(), server_mod.get_readiness(), return_exceptions=True)
+    plan, readiness, full_name = await asyncio.gather(
+        server_mod.get_plan(), server_mod.get_readiness(),
+        server_mod._call(lambda c: getattr(c, "full_name", None)), return_exceptions=True)
     if isinstance(plan, Exception) or _error(plan):
         return {"error": str(plan) if isinstance(plan, Exception) else _error(plan)}
     ready = None if isinstance(readiness, Exception) else _readiness(readiness)
@@ -395,14 +449,18 @@ async def today_payload() -> dict[str, Any]:
             "easier": _easier_state(workout),
         }
     try:
-        crew = _crew_line(today)
-    except Exception:  # noqa: BLE001 - the crew line never stops the morning glance
-        log.exception("crew line failed")
-        crew = None
+        crew_week = _crew_week(today)
+    except Exception:  # noqa: BLE001 - the crew never stops the morning glance
+        log.exception("crew week failed")
+        crew_week = None
+    crew = _crew_line(crew_week, today)
     done = await _done_today(plan, today)
     return drop_empty({
         "today": today.isoformat(), "kicker": kicker, "headline": headline, "done_today": done, "next": card,
         "crew": crew, "readiness": ready, "week": _week_strip(plan, today, (nxt or {}).get("date")),
+        # The desktop's three weeks; the phone shows the strip above.
+        "calendar": _calendar(plan, today, _crew_days(crew_week, today)),
+        "initial": ((crew_week[1] if crew_week else None) or (full_name if isinstance(full_name, str) else "") or "Y")[:1].upper(),
         "assistant": assistant(),
         "ask": _ask_links(f"Use Daash to look at my training week of {today - timedelta(days=today.weekday())}. "
                           "How is it going, and is anything worth changing?"),
@@ -600,7 +658,7 @@ def _row(s: Mapping[str, Any], today: date, next_id: Any) -> dict[str, Any]:
         "state": "done" if done else "next" if is_next else status or "ahead",
         "meta": meta, "missed": status == "missed" or None,
         "segments": None if done else _segments(s.get("shape"), s.get("type")),
-        "v": (f"{s['planned_min']}" if s.get("planned_min") else "") if strength else f"{float(value):g}" if value else "",
+        "v": (f"{s['planned_min']}" if s.get("planned_min") else "") if strength else f"{round(float(value), 1):g}" if value else "",
         "u": "min" if strength and s.get("planned_min") else "" if strength else "km",
         "movable": (not done and d >= today) or None,
         "schedule_id": s.get("schedule_id"), "activity_id": s.get("activity_id") if done else None,

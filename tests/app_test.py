@@ -129,6 +129,14 @@ def api_checks() -> None:
     check("today's next session is today", (today.get("next") or {}).get("kicker") == "NEXT · TODAY")
     check("the week has seven days", len(today["week"]["days"]) == 7)
     check("ask opens Claude with a prompt", today["ask"]["claude"].startswith("https://claude.ai/new?q="))
+    cal = today.get("calendar") or []
+    check("the desktop calendar has last week, this week and next", len(cal) == 3 and cal[1].get("current") and cal[0].get("past"))
+    check("each with seven days", all(len(w["days"]) == 7 for w in cal))
+    chips = [c for w in cal for d in w["days"] for c in d["chips"]]
+    check("done runs can't be dragged", not any(c.get("movable") for c in chips if c["state"] == "done"))
+    check("days ahead can", any(c.get("movable") for c in cal[2]["days"][0]["chips"]))
+    check("a run's distance has one decimal at most",
+          all(len(c["v"].split(" ")[0].split(".")[-1]) <= 1 for c in chips if c.get("v") and "." in c["v"]))
     day = today["next"]["date"]
 
     def claude_reads(on: str) -> list[str]:
