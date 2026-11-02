@@ -48,6 +48,11 @@ fake_garmin._FakeHttp.dumps = lambda self: '{"di_token": "demo"}'
 session_mod.build_client = lambda **_: DEMO
 
 import garmin_mcp.hosted as hosted  # noqa: E402
+from garmin_mcp import support_mail  # noqa: E402
+
+# No mail goes out locally: a sign-in code is printed instead.
+support_mail.can_send = lambda: True
+support_mail.send_code = lambda to, code: print(f"\n  Sign-in code for {to}: {code}\n", flush=True)
 from garmin_mcp import store  # noqa: E402
 
 
@@ -65,7 +70,10 @@ def main() -> None:
     token = secrets.token_urlsafe(32)
     store.save_oauth_token(token, kind="access", client_id="daash-app-dev", subject=user_token,
                            scopes="", resource=None, expires_at=int(time.time()) + 30 * 86400)
-    print(f"\n  Daash app, signed in as the demo runner:\n  http://localhost:{PORT}/app/#dev-token={token}\n", flush=True)
+    print(f"\n  Daash app, signed in as the demo runner:\n  http://localhost:{PORT}/app/#dev-token={token}\n"
+          f"\n  Or as Open in Daash does from a chat card (single use, 30 minutes):\n"
+          f"  http://localhost:{PORT}/app/#/today?login={store.new_handoff(user_token)}\n"
+          f"\n  Or sign in with the email {email}: the code prints here.\n", flush=True)
     hosted.main()
 
 

@@ -294,3 +294,10 @@ nav.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; }
 .signin { min-height: 100vh; padding: 64px 16px 32px; display: flex; flex-direction: column; gap: 20px; max-width: 480px; margin: 0 auto; }
 .wordmark { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; letter-spacing: -0.03em; }
 .small { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.field-label { font-size: 14px; font-weight: 600; }
+.field { height: 48px; padding: 0 16px; border-radius: var(--radius); border: 1px solid var(--button); background: var(--surface); color: var(--ink);
+  font: inherit; font-size: 16px; }
+.field:focus { outline: 2px solid var(--red-text); outline-offset: 1px; border-color: transparent; }
+#code { font-family: var(--mono); font-size: 22px; letter-spacing: 0.3em; }
+.or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; margin-top: 4px; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }

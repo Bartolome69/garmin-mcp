@@ -34,6 +34,8 @@ log = logging.getLogger(__name__)
 
 APP_DIR = Path(__file__).resolve().parent / "app"
 API_PREFIX = "/app/api/"
+# Signing in: no token yet, so SessionBinding lets these through unbound.
+SIGN_IN_PREFIX = API_PREFIX + "sign-in/"
 
 # What each session type is called and which colour draws it. The chat cards
 # call a threshold session "Threshold" too, so the two doors agree.
@@ -1244,6 +1246,92 @@ async def api_edit(request: Request) -> Response:
     except EditError as exc:
         return _json({"error": str(exc)}, 409)
     return _json(result)
+
+
+# -- signing in without signing in to Garmin again -------------------------------
+# Someone who already uses Daash is in two ways that don't ask for Garmin:
+# the session card's Open in Daash link carries a single-use code, and a
+# 6-digit code by email proves the address their account is under. Garmin's
+# own sign-in, through /authorize, is for someone new.
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _tokens(subject: str) -> dict[str, Any]:
+    from . import hosted, oauth
+
+    issued = hosted.OAUTH_PROVIDER.issue_for_app(subject)
+    return {"access_token": issued.access_token, "refresh_token": issued.refresh_token,
+            "client_id": oauth.APP_CLIENT_ID}
+
+
+@mcp.custom_route(SIGN_IN_PREFIX + "handoff", methods=["POST"])
+async def sign_in_handoff(request: Request) -> Response:
+    # Not paced like the email code: 32 random characters can't be guessed,
+    # and someone tapping Open in Daash a few times shouldn't be locked out.
+    try:
+        code = str((await request.json() or {}).get("code") or "")
+    except ValueError:
+        code = ""
+    subject = store.take_handoff(code) if code else None
+    if not subject or store.get_user(subject) is None:
+        return _json({"error": "That link has been used or has expired."}, 401)
+    return _json(_tokens(subject))
+
+
+@mcp.custom_route(SIGN_IN_PREFIX + "email", methods=["POST"])
+async def sign_in_email(request: Request) -> Response:
+    """Send a code to an address with a Daash account. Says the same either way."""
+    from . import hosted, support_mail
+
+    try:
+        email = str((await request.json() or {}).get("email") or "").strip()
+    except ValueError:
+        email = ""
+    if not EMAIL_RE.match(email):
+        return _json({"error": "That doesn't look like an email address."}, 400)
+    if hosted._too_many_attempts(hosted._client_address(request)):
+        return _json({"error": "Too many tries from here. Wait a few minutes."}, 429)
+    said = {"message": "If that email has a Daash account, a 6-digit code is on its way."}
+    fingerprint = store.email_fingerprint(email)
+    if not store.tokens_for(fingerprint):
+        return _json(said)
+    if not support_mail.can_send():
+        return _json({"error": "Daash can't send codes just now. Sign in with Garmin instead."}, 503)
+    code = store.new_email_code(fingerprint)
+    if code is None:
+        if store.code_wait(fingerprint) == "day":
+            return _json({"error": "That address has had its codes for today. Sign in with Garmin instead."}, 429)
+        return _json({"message": "A code went out under a minute ago. Use that one."})
+    try:
+        await asyncio.to_thread(support_mail.send_code, email, code)
+    except (OSError, KeyError):
+        log.warning("app sign-in code not sent")
+        return _json({"error": "Daash couldn't send the code just now. Try again in a minute."}, 502)
+    return _json(said)
+
+
+@mcp.custom_route(SIGN_IN_PREFIX + "verify", methods=["POST"])
+async def sign_in_verify(request: Request) -> Response:
+    from . import hosted
+
+    if hosted._too_many_attempts(hosted._client_address(request)):
+        return _json({"error": "Too many tries from here. Wait a few minutes."}, 429)
+    try:
+        body = await request.json() or {}
+    except ValueError:
+        body = {}
+    email, code = str(body.get("email") or "").strip(), re.sub(r"\D", "", str(body.get("code") or ""))
+    fingerprint = store.email_fingerprint(email) if email else ""
+    checked = store.check_email_code(fingerprint, code) if fingerprint and code else "missing"
+    if checked == "wrong":
+        return _json({"error": "That code isn't right. Check the latest email."}, 401)
+    if checked != "ok":
+        return _json({"error": "That code has expired or had too many tries. Send a new one."}, 401)
+    accounts = store.tokens_for(fingerprint)
+    if not accounts:
+        return _json({"error": "That email has no Daash account. Sign in with Garmin instead."}, 401)
+    return _json(_tokens(accounts[-1]))
 
 
 # The web app's own files, registered last so the API's routes match first.

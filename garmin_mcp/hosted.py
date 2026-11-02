@@ -2281,6 +2281,11 @@ def _finish(
         staged = OAUTH_PROVIDER.stage(flow, user_token)
         if staged:
             consent_token, parked = staged
+            if oauth.first_party(parked):
+                # Daash's own app, back to its own page: nothing to ask.
+                destination = OAUTH_PROVIDER.approve(consent_token)
+                if destination:
+                    return RedirectResponse(destination, status_code=303)
             return _consent_page(consent_token, parked)
         return page(
             "Sign-in expired",
@@ -3469,6 +3474,10 @@ class SessionBinding:
             send = _pointing_at_named(send, named)
 
         for_app = scope.get("path", "").startswith(app_routes.API_PREFIX)
+        if scope.get("path", "").startswith(app_routes.SIGN_IN_PREFIX):
+            # Signing in is how a token is had, so it can't ask for one.
+            await self.app(scope, receive, send)
+            return
         if for_app:
             # The companion app's API: the same bearer tokens as /mcp, from the
             # same sign-in, checked here because no SDK stands in front of it.
@@ -3609,6 +3618,7 @@ def build_app() -> Any:
 
     from mcp.server.auth.provider import ProviderTokenVerifier
 
+    oauth.ensure_app_client()
     mcp._auth_server_provider = OAUTH_PROVIDER
     # The constructor derives this from the provider; attaching the provider
     # afterwards skips that, and a server with no verifier authenticates

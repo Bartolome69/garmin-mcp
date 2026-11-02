@@ -56,16 +56,32 @@ only knows the API below.
 
 ## Sign-in
 
-The app is an OAuth 2.1 client of the server's own authorisation server, the
-same one Claude and ChatGPT use: it registers itself, sends the person to
-`/authorize` with PKCE, and gets a bearer token on `/app/callback`. Someone
-who already uses the connector signs in to the same Daash account through the
-same Garmin step, and lands on their plan with no new setup. Someone new
-connects Garmin there and adds Claude or ChatGPT later.
+There is one Daash account per person, and every door signs in to it. Three
+ways in, the first two without Garmin:
 
-`SessionBinding` already turns a bearer token into that person's Garmin
-session, crew membership and official-API context for `/mcp`; it does the same
-for `/app/api/*`, so every tool function runs exactly as it does for Claude.
+1. **Open in Daash from a chat card.** The session card's link carries a
+   single-use code (30 minutes, stored as a hash). Tapping it opens the app
+   already signed in as the person who was talking to Claude: nothing to type.
+2. **An email code.** "Already use Daash? Your email" sends a 6-digit code to
+   the address the account is under, using the same codes, limits and mail as
+   the sign-up step (`store.new_email_code`, `support_mail.send_code`). The
+   answer is the same whether or not the address has an account.
+3. **Sign in with Garmin**, for someone new: the server's own OAuth 2.1 with
+   PKCE, through Daash's Garmin page. The app is a client of its own,
+   `daash-app` (`oauth.APP_CLIENT_ID`), registered at start-up. Registration
+   hands out random ids, so nobody else can be it, and its sign-ins back to
+   its own callback skip the consent page. Any other client pointing at the
+   same callback still gets consent.
+
+All three issue the same tokens as Claude's connector, against the same
+account (`_finish` keeps one identity per email), and a refresh token lasts a
+year, so a phone signs in once. Existing connections in Claude and ChatGPT
+are untouched.
+
+`SessionBinding` turns a bearer token into that person's Garmin session, crew
+membership and official-API context for `/mcp`; it does the same for
+`/app/api/*`, so every tool function runs exactly as it does for Claude. The
+sign-in routes under `/app/api/sign-in/` are the only ones without a token.
 
 ## The doors between app and chat
 
@@ -73,9 +89,9 @@ for `/app/api/*`, so every tool function runs exactly as it does for Claude.
   with a prompt naming the session (date, name, workout id) or the run
   (activity id), and asking it to use Daash. The answer happens in the chat.
 - **Open in Daash**: `get_session` answers carry `app_url`, the matching screen
-  (`/app/#/session/2026-11-03`), and the session card shows an Open in Daash
-  link. Preview accounts only, until the app is ready for everyone. The plan
-  card's link is still to do.
+  with a single-use sign-in code (`/app/#/session/2026-11-03?login=…`), and
+  the session card shows an Open in Daash link. Preview accounts only, until
+  the app is ready for everyone. The plan card's link is still to do.
 
 ## What is real and what is mock
 
@@ -136,8 +152,6 @@ the crew's page link, or its invite code when the link is off.
     that adds the connector in one step.
   - No "Running since": Daash doesn't know it. No Terms link: there are none.
   - Week starts is always Monday, as Daash's weeks are.
-- Signing in shows Daash's existing consent page ("Daash app is asking to
-  read your Garmin data"). For Daash's own app that step could be skipped.
 
 ## Not designed yet, used the nearest pattern
 
@@ -168,7 +182,8 @@ the crew's page link, or its invite code when the link is off.
 ```
 
 starts the hosted server against a demo Garmin account (`tests/demo_garmin.py`,
-a 12-week half-marathon block around today) and prints a signed-in link.
+a 12-week half-marathon block around today) and prints a signed-in link,
+an Open in Daash style link, and, for the email sign-in, the code itself.
 `DEMO_RAN=1` shows today's session as run, for the analysis screen;
 `DEMO_READINESS=low` shows the low-readiness state; `DEMO_CREW=0` leaves the
 demo runner out of the demo crew.

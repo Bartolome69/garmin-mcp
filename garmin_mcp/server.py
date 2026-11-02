@@ -2194,7 +2194,11 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     # Preview accounts only, until the app is ready for everyone.
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     if base and preview.enabled() and not card.get("rest"):
-        card["app_url"] = f"{base}/app/#/session/{day}"
+        # It carries a single-use code, so it opens the app already signed in
+        # as this person: no second sign-in for someone who uses the connector.
+        who = official.current()
+        login = f"?login={store.new_handoff(who)}" if who else ""
+        card["app_url"] = f"{base}/app/#/session/{day}{login}"
     return card
 
 

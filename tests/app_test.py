@@ -212,6 +212,72 @@ def api_checks() -> None:
     check("it counts as done", (run.get("effect") or {}).get("head") == "Counts as done")
     check("it offers the share image", (run.get("share_url") or "").startswith("http"))
 
+    # -- signing in without Garmin again --------------------------------
+    from garmin_mcp import support_mail
+    from tests import fake_garmin
+
+    handoff = store.new_handoff(user_token)
+    r = client.post("/app/api/sign-in/handoff", json={"code": handoff})
+    handed = r.json()
+    check("Open in Daash's code signs the app in", r.status_code == 200 and handed.get("client_id") == "daash-app", r.text[:120])
+    check("as the same person", client.get("/app/api/today", headers={"Authorization": f"Bearer {handed.get('access_token')}"})
+          .status_code == 200)
+    check("the code works once", client.post("/app/api/sign-in/handoff", json={"code": handoff}).status_code == 401)
+    late = store.new_handoff(user_token, lifetime=-1)
+    check("and not after it expires", client.post("/app/api/sign-in/handoff", json={"code": late}).status_code == 401)
+    refreshed = client.post("/token", data={"grant_type": "refresh_token", "refresh_token": handed.get("refresh_token", ""),
+                                             "client_id": "daash-app"})
+    check("the app's sign-in refreshes like any other", refreshed.status_code == 200 and refreshed.json().get("access_token"),
+          refreshed.text[:120])
+
+    sent: list[tuple[str, str]] = []
+    support_mail.can_send = lambda: True
+    support_mail.send_code = lambda to, code: sent.append((to, code))
+    r = client.post("/app/api/sign-in/email", json={"email": "nobody@example.test"})
+    check("an unknown email gets the same answer, and no mail",
+          r.status_code == 200 and "If that email" in r.json().get("message", "") and not sent, r.text[:120])
+    r = client.post("/app/api/sign-in/email", json={"email": email})
+    check("an account's email gets a code", r.status_code == 200 and len(sent) == 1 and sent[0][0] == email, r.text[:120])
+    code = sent[-1][1] if sent else ""
+    wrong = "000000" if code != "000000" else "111111"
+    check("a wrong code is refused", client.post("/app/api/sign-in/verify", json={"email": email, "code": wrong}).status_code == 401)
+    r = client.post("/app/api/sign-in/verify", json={"email": email, "code": code})
+    check("the right code signs in", r.status_code == 200 and r.json().get("access_token"), r.text[:120])
+    check("as the account under that email",
+          store.load_oauth_token(r.json().get("access_token", ""), "access")["subject"] == user_token)
+    check("a code works once", client.post("/app/api/sign-in/verify", json={"email": email, "code": code}).status_code == 401)
+
+    # Signing in with Garmin from the app: Daash's own client goes straight back, no consent page.
+    fake_garmin._FakeHttp.dumps = lambda self: '{"di_token": "x"}'
+    hosted._ATTEMPTS.clear()  # the email checks above count as sign-in attempts from this address
+    import base64, hashlib, urllib.parse
+    verifier = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    callback = "http://localhost/app/callback"
+    r = client.get("/authorize?" + urllib.parse.urlencode({
+        "response_type": "code", "client_id": "daash-app", "redirect_uri": callback, "code_challenge": challenge,
+        "code_challenge_method": "S256", "state": "s1", "resource": "http://localhost/mcp"}), follow_redirects=False)
+    flow = urllib.parse.parse_qs(urllib.parse.urlparse(r.headers.get("location", "")).query).get("flow", [""])[0]
+    check("the app's Garmin sign-in starts at Daash's page", bool(flow), f"{r.status_code} {r.headers.get('location', '')[:80]}")
+    r = client.post("/connect", data={"email": email, "password": "pw", "flow": flow}, follow_redirects=False)
+    back = r.headers.get("location", "")
+    check("and comes straight back with a code, no consent page",
+          r.status_code in (302, 303) and back.startswith(callback + "?code="), f"{r.status_code} {back[:80]} {r.text[:80]}")
+    got = urllib.parse.parse_qs(urllib.parse.urlparse(back).query)
+    r = client.post("/token", data={"grant_type": "authorization_code", "code": got.get("code", [""])[0],
+                                    "redirect_uri": callback, "client_id": "daash-app", "code_verifier": verifier})
+    check("which exchanges for the same account", r.status_code == 200
+          and store.load_oauth_token(r.json().get("access_token", ""), "access")["subject"] == user_token, r.text[:120])
+    other = client.post("/register", json={"client_name": "x", "redirect_uris": [callback], "grant_types": ["authorization_code"],
+                                           "response_types": ["code"], "token_endpoint_auth_method": "none"}).json()
+    r = client.get("/authorize?" + urllib.parse.urlencode({
+        "response_type": "code", "client_id": other.get("client_id", ""), "redirect_uri": callback, "code_challenge": challenge,
+        "code_challenge_method": "S256", "state": "s2", "resource": "http://localhost/mcp"}), follow_redirects=False)
+    flow = urllib.parse.parse_qs(urllib.parse.urlparse(r.headers.get("location", "")).query).get("flow", [""])[0]
+    r = client.post("/connect", data={"email": email, "password": "pw", "flow": flow}, follow_redirects=False)
+    check("another client pointing at the app's callback still gets the consent page",
+          r.status_code == 200 and "Allow access?" in r.text, f"{r.status_code} {r.text[:80]}")
+
     you = client.get("/app/api/you", headers=auth).json()
     rows = {r["l"]: r for g in you.get("groups") or [] for r in g["rows"]}
     check("You names the watch and when it synced", you.get("watch", {}).get("synced", "").startswith("Synced 07:12"),

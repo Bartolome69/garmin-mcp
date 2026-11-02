@@ -60,22 +60,12 @@ function b64url(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-async function clientId() {
-  const known = store.get("daash.client");
-  if (known) return known;
-  const res = await fetch("/register", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_name: "Daash app", redirect_uris: [CALLBACK], grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"], token_endpoint_auth_method: "none" }),
-  });
-  if (!res.ok) throw new Error("Daash couldn't start the sign-in.");
-  const id = (await res.json()).client_id;
-  store.set("daash.client", id);
-  return id;
-}
+// Daash's own app is a client of its own on the server (oauth.APP_CLIENT_ID),
+// so its sign-ins skip the consent page that third-party apps get.
+const CLIENT_ID = "daash-app";
 
 async function signIn() {
-  const id = await clientId();
+  const id = CLIENT_ID;
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
@@ -96,7 +86,7 @@ async function finishSignIn() {
   const res = await fetch("/token", {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "authorization_code", code: q.get("code"), redirect_uri: CALLBACK,
-      client_id: store.get("daash.client") || "", code_verifier: saved.verifier }),
+      client_id: CLIENT_ID, code_verifier: saved.verifier }),
   });
   history.replaceState(null, "", `/app/${saved.back || "#/today"}`);
   if (!res.ok) return "That sign-in didn't complete. Try again.";
@@ -105,10 +95,10 @@ async function finishSignIn() {
 }
 
 async function refreshed() {
-  if (!token.refresh || !store.get("daash.client")) return false;
+  if (!token.refresh) return false;
   const res = await fetch("/token", {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: token.refresh, client_id: store.get("daash.client") }),
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: token.refresh, client_id: CLIENT_ID }),
   });
   if (!res.ok) return false;
   token.save(await res.json());
@@ -712,7 +702,7 @@ function deleteSheet() {
       $("delete-go").disabled = true;
       try {
         await api("you/delete", { method: "POST", body: JSON.stringify({ confirm: "delete" }) });
-        close(); token.clear(); store.drop("daash.client");
+        close(); token.clear();
         signInView("Your Daash account is deleted.");
       } catch (e) { close(); toast(e.message); }
     };
@@ -720,9 +710,9 @@ function deleteSheet() {
 }
 
 async function signOut() {
-  const access = token.access, client = store.get("daash.client");
+  const access = token.access, client = CLIENT_ID;
   token.clear();
-  if (access && client) {
+  if (access) {
     // Revoked as well as forgotten, so the token can't be used again from anywhere.
     fetch("/revoke", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token: access, client_id: client }) }).catch(() => {});
@@ -746,20 +736,80 @@ async function showYou() {
   }
 }
 
-function signInView(message) {
+async function signInPost(path, body) {
+  const res = await fetch(API + "sign-in/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const out = await res.json().catch(() => ({ error: "Daash didn't answer. Try again in a moment." }));
+  if (!res.ok || out.error) throw new Error(out.error || "Something went wrong.");
+  return out;
+}
+
+function signInView(message, step = "start", email = "") {
   $("tabs").hidden = true;
-  $("screen").innerHTML = `<div class="signin">
-    <div class="wordmark"><img src="/app/icons/favicon.svg" width="32" height="32" alt="">Daash</div>
+  const head = `<div class="wordmark"><img src="/app/icons/favicon.svg" width="32" height="32" alt="">Daash</div>`;
+  const note = message ? `<div class="card pad meta" role="status">${esc(message)}</div>` : "";
+  const foot = `<p class="small">Daash is independent and not made or endorsed by Garmin.</p>`;
+  if (step === "code") {
+    $("screen").innerHTML = `<div class="signin">${head}<h1 class="headline">Check your email</h1>
+      <p class="why">If ${esc(email)} has a Daash account, a 6-digit code is on its way to it. It works for 10 minutes.</p>${note}
+      <form id="code-form" class="stack"><label class="field-label" for="code">Code</label>
+        <input id="code" class="field" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required>
+        <button class="pill red tall" type="submit">Sign in</button></form>
+      <div class="pills"><button class="pill" id="resend">Send a new code</button><button class="pill" id="other">Use another email</button></div>${foot}</div>`;
+    $("code").focus();
+    $("code-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const button = e.target.querySelector("button"); button.disabled = true;
+      try {
+        token.save(await signInPost("verify", { email, code: $("code").value }));
+        history.replaceState(null, "", "/app/#/today");
+        route();
+      } catch (err) { signInView(err.message, "code", email); }
+    };
+    $("resend").onclick = async () => {
+      try { await signInPost("email", { email }); signInView("Sent a new code. Use the latest one.", "code", email); }
+      catch (err) { signInView(err.message, "code", email); }
+    };
+    $("other").onclick = () => signInView(null, "start");
+    return;
+  }
+  $("screen").innerHTML = `<div class="signin">${head}
     <h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
     <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>
-    ${message ? `<div class="card pad amber meta" role="alert">${esc(message)}</div>` : ""}
-    <button class="pill red tall" id="signin">Sign in</button>
-    <p class="small">Already use Daash in Claude or ChatGPT? It's the same account, so your plan is waiting. New to Daash? Connect Garmin here and add Claude or ChatGPT later.</p>
-    <p class="small">Daash is independent and not made or endorsed by Garmin.</p></div>`;
-  $("signin").onclick = async () => {
-    $("signin").disabled = true;
-    try { await signIn(); } catch (e) { signInView(e.message); }
+    ${note}
+    <form id="email-form" class="stack"><label class="field-label" for="email">Already use Daash? Your email</label>
+      <input id="email" class="field" type="email" autocomplete="email" value="${esc(email)}" required>
+      <button class="pill red tall" type="submit">Email me a code</button></form>
+    <p class="small">The email your Daash account is under, usually your Garmin one. Your plan, crew and settings are waiting.</p>
+    <div class="or"><span>New to Daash?</span></div>
+    <button class="pill tall" id="garmin">Sign in with Garmin</button>
+    <p class="small">Connects your Garmin account. You can add Claude or ChatGPT later.</p>${foot}</div>`;
+  $("email-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const address = $("email").value.trim();
+    e.target.querySelector("button").disabled = true;
+    try { await signInPost("email", { email: address }); signInView(null, "code", address); }
+    catch (err) { signInView(err.message, "start", address); }
   };
+  $("garmin").onclick = async () => {
+    $("garmin").disabled = true;
+    try { await signIn(); } catch (err) { signInView(err.message); }
+  };
+}
+
+// Open in Daash from a chat card carries a single-use code (login=…): it
+// signs the app in as the person who tapped it, with nothing to type.
+async function handOff() {
+  const m = location.hash.match(/[?&]login=([\w-]+)/);
+  if (!m) return null;
+  const clean = location.hash.replace(/[?&]login=[\w-]+/, "").replace(/\?$/, "");
+  history.replaceState(null, "", `/app/${clean || "#/today"}`);
+  if (token.access) return null;
+  try {
+    token.save(await signInPost("handoff", { code: m[1] }));
+    return null;
+  } catch (err) {
+    return `${err.message} Sign in once here and the app remembers you.`;
+  }
 }
 
 // -- routing ------------------------------------------------------------------
@@ -772,6 +822,8 @@ async function route() {
     token.save({ access_token: dev[1] });
     history.replaceState(null, "", "/app/#/today");
   }
+  const handed = await handOff();
+  if (handed) return signInView(handed);
   if (!token.access) return signInView();
   const [path, query] = (location.hash.replace(/^#\/?/, "") || "today").split("?");
   const params = new URLSearchParams(query || "");
