@@ -1425,6 +1425,10 @@ async def main() -> int:
         check("it lays out the whole week, rest days too, without repeating a distance the name says",
               "Mon  Rest" in text and "Tue  11 km easy\n" in text and "Wed  Sub-T 3 × 3 km (15.4 km)" in text
               and "3 sessions, 45.2 km" in text, text)
+        _s, lone_text, lone_page = weekly.compose(said, "x", "Claude", in_crew=False)
+        check("someone in no crew is asked to start one, by a link that asks Daash for them",
+              "Start a Daash crew" in lone_text and "Start a crew</a>" in lone_page
+              and "Start%20a%20Daash%20crew" in lone_page and "Start a Daash crew" not in text, lone_text[-500:])
         _s, _t, claude_page = weekly.compose(said, "x", "Claude")
         check("the email asks for feedback by reply, in both versions",
               "Just reply to this email" in text and "Just reply to this email" in page_html)
@@ -1967,6 +1971,9 @@ async def main() -> int:
         names_before = await tool_names(carol)
         check("everyone on the hosted connector is offered every crew tool, in a crew or not",
               {"join_crew", "get_crew", "update_crew", "leave_crew"} <= names_before, str(sorted(names_before))[:200])
+        lone_plan = await call(carol, "get_plan")
+        check("someone in no crew gets a hint to mention crews only if they talk about running with friends",
+              "running with friends" in str(lone_plan.get("crew_tip")), str(lone_plan.get("crew_tip")))
         outsider = await call(carol, "get_crew", {})
         check("asking for a crew before joining one says how to join",
               "not in a crew" in str(outsider.get("error")) and "code" in str(outsider.get("error")), str(outsider)[:160])
@@ -1992,6 +1999,8 @@ async def main() -> int:
         joined = await call(dave, "join_crew", {"your_name": "Dave", "code": code.lower().replace("-", " "),
                                                 "usual_times": ["weekday_evening", "weekend_morning"]})
         check("joining by code, however it's typed", joined.get("just", {}).get("action") == "joined", str(joined)[:160])
+        crewed_plan = await call(dave, "get_plan")
+        check("and someone in a crew gets no such hint", "crew_tip" not in crewed_plan, str(crewed_plan)[:200])
         clash = await call(bob, "join_crew", {"your_name": "dave", "code": code})
         check("two members can't share a name", "already called dave" in str(clash.get("error")), str(clash)[:120])
         await call(bob, "join_crew", {"your_name": "Bob", "code": code, "usual_times": ["weekend_morning"]})
