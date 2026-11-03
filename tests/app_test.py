@@ -40,7 +40,8 @@ except ImportError:
 
 from cryptography.fernet import Fernet  # noqa: E402
 
-os.environ["GARMIN_MCP_DB"] = str(SCRATCH / f"test-{int(time.time())}.sqlite3")
+# Named at random, not by the time: the clock above stands still on Monday.
+os.environ["GARMIN_MCP_DB"] = str(SCRATCH / f"test-{secrets.token_hex(6)}.sqlite3")
 os.environ["GARMIN_MCP_SECRET"] = Fernet.generate_key().decode()
 os.environ["GARMIN_MCP_OAUTH"] = "1"
 os.environ["GARMIN_MCP_BASE_URL"] = "http://localhost"
