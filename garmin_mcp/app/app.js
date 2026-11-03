@@ -91,8 +91,33 @@ async function finishSignIn() {
   history.replaceState(null, "", `/app/${saved.back || "#/today"}`);
   if (!res.ok) return "That sign-in didn't complete. Try again.";
   token.save(await res.json());
+  track("signed_in", { method: "garmin" });
   return null;
 }
+
+// What only the page sees, for the app's analytics: never what a screen showed.
+function track(name, properties = {}) {
+  if (!token.access) return;
+  fetch(API + "event", {
+    method: "POST", keepalive: true,
+    headers: { Authorization: `Bearer ${token.access}`, "Content-Type": "application/json", "X-Daash-Layout": desktop() ? "desktop" : "phone" },
+    body: JSON.stringify({ name, properties }),
+  }).catch(() => {});
+}
+
+// Ask Claude or ChatGPT, and Share this run, wherever they appear.
+document.addEventListener("click", (e) => {
+  const link = e.target.closest && e.target.closest("a[href]");
+  if (!link) return;
+  const where = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "today";
+  if (/^https:\/\/(claude\.ai|chatgpt\.com)\//.test(link.href)) {
+    track("ask_clicked", { to: link.href.includes("chatgpt") ? "chatgpt" : "claude", where,
+      opens: link.dataset.app ? (store.get("daash.opens") || "app") : "web" });
+  } else if (link.href.includes("/share/#")) {
+    track("share_clicked", { where });
+  }
+}, true);
+window.addEventListener("appinstalled", () => track("installed"));
 
 async function refreshed() {
   if (!token.refresh) return false;
@@ -110,7 +135,10 @@ class SignedOut extends Error {}
 async function api(path, options = {}, retry = true) {
   const res = await fetch(API + path, {
     ...options,
-    headers: { Authorization: `Bearer ${token.access}`, ...(options.body ? { "Content-Type": "application/json" } : {}) },
+    headers: { Authorization: `Bearer ${token.access}`, "X-Daash-Layout": desktop() ? "desktop" : "phone",
+      // Fetched ahead of a tap: not counted as a screen opened.
+      ...(options.ahead ? { "X-Daash-Ahead": "1" } : {}),
+      ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
   if (res.status === 401) {
     if (retry && await refreshed()) return api(path, options, false);
@@ -159,10 +187,10 @@ const cache = {
 const inflight = new Map();
 // Bumped by every edit, so an answer fetched before it isn't kept after it.
 let epoch = 0;
-function fresh(path) {
+function fresh(path, ahead = false) {
   if (inflight.has(path)) return inflight.get(path);
   const asked = epoch;
-  const p = api(path).then((d) => { if (asked === epoch) cache.put(path, d); return d; })
+  const p = api(path, { ahead }).then((d) => { if (asked === epoch) cache.put(path, d); return d; })
     .finally(() => { if (inflight.get(path) === p) inflight.delete(path); });
   inflight.set(path, p);
   return p;
@@ -199,10 +227,10 @@ function warm() {
   if (warmed) return;
   warmed = true;
   const go = () => {
-    ["today", "plan", "crew", "you"].forEach((p) => { if (!inflight.has(p) && !cache.get(p)) fresh(p).catch(() => {}); });
+    ["today", "plan", "crew", "you"].forEach((p) => { if (!inflight.has(p) && !cache.get(p)) fresh(p, true).catch(() => {}); });
     // And the next few sessions on screen, the ones most likely tapped.
     [...new Set([...document.querySelectorAll('#screen a[href^="#/session/"]')].map((a) => apiPathFor(a.getAttribute("href"))))]
-      .filter((p) => p && !cache.get(p)).slice(0, 3).forEach((p) => fresh(p).catch(() => {}));
+      .filter((p) => p && !cache.get(p)).slice(0, 3).forEach((p) => fresh(p, true).catch(() => {}));
   };
   (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(go);
 }
@@ -217,7 +245,7 @@ function apiPathFor(href) {
 document.addEventListener("pointerdown", (e) => {
   const a = e.target.closest && e.target.closest('a[href^="#/session/"], a[href^="#/run/"]');
   const path = a && apiPathFor(a.getAttribute("href"));
-  if (path && !cache.get(path)) fresh(path).catch(() => {});
+  if (path && !cache.get(path)) fresh(path, true).catch(() => {});
 }, { passive: true });
 
 // -- shared parts (also what the chat cards draw) -----------------------------
@@ -449,7 +477,7 @@ function dragToMove(cal) {
     e.preventDefault();
     const moving = from;
     try {
-      const r = await api(`session/${moving.date}/move`, { method: "POST", body: JSON.stringify({ to: day.dataset.date, schedule_id: Number(moving.sid) || null }) });
+      const r = await api(`session/${moving.date}/move`, { method: "POST", body: JSON.stringify({ to: day.dataset.date, schedule_id: Number(moving.sid) || null, via: "drag" }) });
       toast(r.message);
       showToday();
     } catch (err) {
@@ -1024,7 +1052,7 @@ function holdToMove(list, today) {
     const said = [];
     try {
       for (const m of moves) {
-        await api(`session/${m.from}/move`, { method: "POST", body: JSON.stringify({ to: m.to, schedule_id: Number(m.r.dataset.sid) || null }) });
+        await api(`session/${m.from}/move`, { method: "POST", body: JSON.stringify({ to: m.to, schedule_id: Number(m.r.dataset.sid) || null, via: "hold" }) });
         const dow = (week.label[m.to] || "").match(/>(\w{3})</);
         const key = dow ? dow[1].slice(0, 1).toUpperCase() + dow[1].slice(1).toLowerCase() : "";
         said.push(`${m.r.dataset.name} to ${DAY_NAMES[key] || key || m.to}`);
@@ -1199,14 +1227,23 @@ function timesSheet(d) {
   });
 }
 
+// Deleting the account can't be undone, so it takes typing the word, not a tap:
+// the button stays off until "delete" is typed, and the server checks the word too.
 function deleteSheet() {
   sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Delete your Daash account?</span>
       <span class="meta" style="line-height:1.5">This disconnects Garmin and deletes your stored session, what Daash keeps for you and your place in your crew. Claude and ChatGPT lose access too. Your Garmin account and the workouts on your watch stay as they are. It can't be undone.</span></div>
-    <div class="pills"><button class="pill" data-close>Cancel</button><button class="pill red" id="delete-go">Delete account</button></div>`, (holder, close) => {
-    $("delete-go").onclick = async () => {
-      $("delete-go").disabled = true;
+    <label class="field-label" for="delete-word">Type <b>delete</b> to confirm</label>
+    <input id="delete-word" class="field" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="pills"><button class="pill" data-close>Cancel</button><button class="pill red" id="delete-go" disabled>Delete account</button></div>`, (holder, close) => {
+    const word = $("delete-word"), go = $("delete-go");
+    const said = () => word.value.trim().toLowerCase() === "delete";
+    word.oninput = () => { go.disabled = !said(); };
+    holder.querySelector("[data-close]").focus();
+    go.onclick = async () => {
+      if (!said()) return;
+      go.disabled = true;
       try {
-        await api("you/delete", { method: "POST", body: JSON.stringify({ confirm: "delete" }) });
+        await api("you/delete", { method: "POST", body: JSON.stringify({ confirm: word.value.trim().toLowerCase() }) });
         close(); token.clear();
         signInView("Your Daash account is deleted.");
       } catch (e) { close(); toast(e.message); }

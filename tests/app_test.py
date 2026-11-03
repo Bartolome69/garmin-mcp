@@ -45,7 +45,8 @@ os.environ["GARMIN_MCP_DB"] = str(SCRATCH / f"test-{secrets.token_hex(6)}.sqlite
 os.environ["GARMIN_MCP_SECRET"] = Fernet.generate_key().decode()
 os.environ["GARMIN_MCP_OAUTH"] = "1"
 os.environ["GARMIN_MCP_BASE_URL"] = "http://localhost"
-os.environ.pop("GARMIN_MCP_POSTHOG_KEY", None)
+# Analytics on, so the app's events can be checked; the network call is replaced below.
+os.environ["GARMIN_MCP_POSTHOG_KEY"] = "phc_test_key"
 os.environ.pop("DEMO_RAN", None)
 os.environ.pop("DEMO_READINESS", None)
 
@@ -56,7 +57,16 @@ DEMO = DemoGarmin()
 session_mod.build_client = lambda **_: DEMO
 
 import garmin_mcp.hosted as hosted  # noqa: E402
-from garmin_mcp import analysis, oauth, store  # noqa: E402
+from garmin_mcp import analysis, analytics, oauth, store  # noqa: E402
+
+SENT: list[dict] = []
+analytics._post = SENT.append
+
+
+def posted(event: str) -> list[dict]:
+    """The events of one name sent so far; they go out on threads, so wait for them a moment."""
+    time.sleep(0.3)
+    return [e for e in SENT if e["event"] == event]
 from garmin_mcp import app as app_routes  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
@@ -100,12 +110,22 @@ def analysis_checks() -> None:
     check("its note says by how much", "slower than range" in first["note"], first["note"])
     check("the verdict says two of three", missed["verdict"].startswith("Two of three reps on target"), missed["verdict"])
 
-    # Laps that don't line up with the steps aren't guessed at.
-    odd = {"lapDTOs": DEMO.get_activity_splits(aid)["lapDTOs"][:-1]}
-    unmatched = analysis.analyse(DEMO.get_workout_by_id(wid), odd, "threshold")
-    check("unmatched laps put nothing against a target", not unmatched.get("planned_and_run"))
-    check("and their splits still add up",
-          sum(s["seconds"] for s in unmatched["splits"]) == unmatched["seconds"])
+    # Stopped before the cool-down: the steps run are compared, the rest say so.
+    short = {"lapDTOs": DEMO.get_activity_splits(aid)["lapDTOs"][:-1]}
+    stopped = analysis.analyse(DEMO.get_workout_by_id(wid), short, "threshold")
+    rows = stopped.get("planned_and_run") or []
+    check("a run stopped early still has its reps compared", sum(1 for r in rows if r.get("rep") and r.get("pace")) == 3)
+    check("and says the cool-down wasn't run", rows and rows[-1]["label"] == "Cool down" and rows[-1]["note"] == "Not run",
+          str(rows[-1:]))
+    check("and its splits still add up", sum(s["seconds"] for s in stopped["splits"]) == stopped["seconds"])
+
+    # A lap pressed by hand mid-rep shifts every lap after it: not guessed at.
+    pressed = DEMO.get_activity_splits(aid)["lapDTOs"]
+    rep = dict(pressed[1])
+    halves = [dict(rep, distance=rep["distance"] / 2, duration=rep["duration"] / 2, movingDuration=rep["duration"] / 2)] * 2
+    shifted = {"lapDTOs": pressed[:1] + halves + pressed[2:]}
+    check("laps that don't line up put nothing against a target",
+          not analysis.analyse(DEMO.get_workout_by_id(wid), shifted, "threshold").get("planned_and_run"))
 
     # Running on after the last step adds a lap; the steps still pair, and the
     # extra shows as its own row with no target against it.
@@ -117,6 +137,48 @@ def analysis_checks() -> None:
     check("and the extra is its own row, untargeted",
           rows and rows[-1]["label"] == "Ran on" and not rows[-1].get("target") and "0.5 km" in rows[-1]["note"], str(rows[-1:]))
     check("and the splits still add up", sum(s["seconds"] for s in ran_on["splits"]) == ran_on["seconds"])
+
+    real_run_checks()
+
+
+def real_run_checks() -> None:
+    """A real long run (Nov 1): 11 laps for a 10-step workout, and a recording whose kilometres differ."""
+    from garmin_mcp.workouts import build_workout
+    from tests.fake_garmin import _stream
+
+    model, _, _ = build_workout("Long 19km w 4x2km sub-T", "running", [
+        {"type": "warmup", "distance_meters": 5500},
+        {"type": "repeat", "times": 4, "steps": [
+            {"type": "interval", "distance_meters": 2000, "pace": ["4:00", "4:08"]},
+            {"type": "recovery", "duration_seconds": 60}]},
+        {"type": "cooldown", "distance_meters": 4500},
+    ])
+    workout = model.to_dict()
+    laps = [("WARMUP", 5500, 1661, 127), ("ACTIVE", 2000, 485, 158), ("RECOVERY", 160, 60, 155),
+            ("ACTIVE", 2000, 484, 163), ("RECOVERY", 160, 60, 161), ("ACTIVE", 2000, 484, 165),
+            ("RECOVERY", 180, 60, 137), ("ACTIVE", 2000, 484, 164), ("RECOVERY", 170, 60, 161),
+            ("COOLDOWN", 4500, 1340, 140), ("COOLDOWN", 460, 139, 144)]
+    raw = {"lapDTOs": [{"lapIndex": i + 1, "intensityType": m, "distance": float(d), "duration": float(t),
+                        "averageHR": h} for i, (m, d, t, h) in enumerate(laps)]}
+    # The warm-up's kilometres at their own paces, as the watch recorded them.
+    warm = [(1000.0, 313.0, 110.0, 118.0), (1000.0, 300.0, 124.0, 128.0), (1000.0, 299.0, 128.0, 130.0),
+            (1000.0, 300.0, 129.0, 131.0), (1000.0, 298.0, 130.0, 132.0), (500.0, 151.0, 132.0, 134.0)]
+    rest = [(float(d), float(t), float(h), float(h)) for _, d, t, h in laps[1:]]
+    result = analysis.analyse(workout, raw, "threshold", _stream(warm + rest, step=1.0))
+    rows = result.get("planned_and_run") or []
+    check("a run that went on after the last step is still compared", len(rows) == 7, str([r["label"] for r in rows]))
+    ran_on = rows[-1] if rows else {}
+    check("the run on is its own row after the cool-down",
+          ran_on.get("label") == "Ran on" and rows[-2]["label"] == "Cool down" and "0.5 km" in ran_on.get("note", ""),
+          str(rows[-2:]))
+    check("all four reps on target", result["verdict"].startswith("Hit all four reps on target"), result["verdict"])
+    km = [s for s in result["splits"] if not s.get("rest") and not s.get("partial")]
+    check("the warm-up's kilometres are each their own pace", len({s["pace"] for s in km[:5]}) > 1,
+          str([s["pace"] for s in km[:5]]))
+    check("the first is the slow one, as recorded", km[0]["pace"] == "5:13", km[0]["pace"])
+    check("and the splits still add up to the run", sum(s["seconds"] for s in result["splits"]) == result["seconds"],
+          f"{sum(s['seconds'] for s in result['splits'])} vs {result['seconds']}")
+
 
 
 def easier_checks() -> None:
@@ -248,6 +310,31 @@ def api_checks() -> None:
           block.get("verdict"))
     check("the block's phases fill its weeks", sum(p["weeks"] for p in block["phases"]) == len(block["bars"]))
 
+    before = len(posted("app_viewed"))
+    client.get("/app/api/crew", headers={**auth, "X-Daash-Ahead": "1"})
+    check("a screen fetched ahead of a tap isn't counted as opened", len(posted("app_viewed")) == before)
+    viewed = posted("app_viewed")
+    check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
+          str([e["properties"].get("screen") for e in viewed])[:120])
+    check("against the same person as the connector's events",
+          viewed and viewed[0]["properties"].get("account") == session_mod.mask_email(email))
+    check("never with what the screen showed", not any(k in e["properties"] for e in viewed
+                                                       for k in ("plan", "sessions", "pace", "headline")))
+    edits = posted("app_edit")
+    check("each edit is recorded, with how it was made",
+          {e["properties"]["action"] for e in edits} >= {"easier", "undo", "move"}
+          and all(e["properties"].get("via") == "button" for e in edits), str([e["properties"] for e in edits])[:160])
+    client.post(f"/app/api/session/{later}/move", headers={**auth, "X-Daash-Layout": "desktop"},
+                json={"to": later, "via": "drag"})
+    check("a drag on the calendar says so, and the layout",
+          any(e["properties"].get("via") == "drag" and e["properties"].get("layout") == "desktop" for e in posted("app_edit")))
+    r = client.post("/app/api/event", headers=auth, json={"name": "ask_clicked", "properties": {"to": "claude", "where": "today", "secret": "x"}})
+    asked = posted("app_ask_clicked")
+    check("Ask Claude pressed is recorded", r.status_code == 200 and asked and asked[-1]["properties"].get("to") == "claude")
+    check("and only the properties it may carry", asked and "secret" not in asked[-1]["properties"])
+    check("an unknown event is refused", client.post("/app/api/event", headers=auth, json={"name": "anything"}).status_code == 400)
+    check("and nothing is recorded without a token", client.post("/app/api/event", json={"name": "installed"}).status_code == 401)
+
     alone = client.get("/app/api/crew", headers=auth).json()
     check("no crew, an offer to start one", alone.get("none") is True and "claude" in alone.get("ask", {}), str(alone)[:120])
     from garmin_mcp import crews
@@ -311,6 +398,11 @@ def api_checks() -> None:
     check("as the account under that email",
           store.load_oauth_token(r.json().get("access_token", ""), "access")["subject"] == user_token)
     check("a code works once", client.post("/app/api/sign-in/verify", json={"email": email, "code": code}).status_code == 401)
+    methods = {e["properties"].get("method") for e in posted("app_signed_in")}
+    check("signing in is recorded, by how", methods >= {"chat link", "email"}, str(methods))
+    failed = {(e["properties"].get("method"), e["properties"].get("reason")) for e in posted("app_sign_in_failed")}
+    check("and failed sign-ins, with why", ("email", "wrong code") in failed and ("chat link", "used or expired") in failed,
+          str(failed))
 
     # Signing in with Garmin from the app: Daash's own client goes straight back, no consent page.
     fake_garmin._FakeHttp.dumps = lambda self: '{"di_token": "x"}'
@@ -363,9 +455,12 @@ def api_checks() -> None:
     check("an unknown time is refused", client.post("/app/api/you/times", headers=auth, json={"times": ["noon"]}).status_code == 400)
 
     check("delete needs saying", client.post("/app/api/you/delete", headers=auth, json={}).status_code == 400)
-    r = client.post("/app/api/you/delete", headers=auth, json={"confirm": "delete"})
+    check("a wrong word doesn't delete", client.post("/app/api/you/delete", headers=auth, json={"confirm": "yes"}).status_code == 400
+          and store.get_user(user_token) is not None)
+    r = client.post("/app/api/you/delete", headers=auth, json={"confirm": " Delete "})
     check("delete answers", r.status_code == 200, r.text[:120])
     check("the account is gone", store.get_user(user_token) is None)
+    check("deleting the account is recorded", bool(posted("app_account_deleted")))
     check("its sign-ins stop working", client.get("/app/api/today", headers=auth).status_code == 401)
     check("and it has left the crew", not crews.in_crew(crews.member_key(user_token, store.email_fingerprint(email))))
 
