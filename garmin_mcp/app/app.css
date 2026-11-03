@@ -177,7 +177,7 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .plan-list { overflow: hidden; }
 .plan-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; min-height: 60px;
   color: var(--ink); text-decoration: none; border-top: 1px solid var(--hairline); background: var(--surface); position: relative;
-  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
 .plan-row:first-child, .plan-row.same-day { border-top-color: transparent; }
 .plan-row:hover { color: var(--ink); }
 .plan-row.is-next { background: var(--red-soft); }
@@ -196,6 +196,8 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .mini-shape { display: flex; align-items: flex-end; gap: 1.5px; height: 10px; margin-top: 4px; max-width: 200px; }
 .mini-shape i { flex-basis: 0; border-radius: 2px; min-width: 2px; }
 .plan-list.dragging .plan-row { transition: background 0.1s; }
+/* Once a row is lifted the page doesn't scroll under the finger. */
+.plan-list.dragging, .plan-list.dragging .plan-row { touch-action: none; }
 .plan-row.lifted { z-index: 3; outline: 2px solid var(--red-text); outline-offset: -2px; border-radius: 10px; background: var(--sunken); }
 .plan-row.drop { background: var(--red-soft); }
 .plan-row.no-drop { opacity: 0.45; }

@@ -717,6 +717,9 @@
       r.p = r.km ? Math.round(s / r.km) : part.length === 1 ? part[0].p : null;
     });
     rn.reps = reps;
+    // Reps are work, whatever the session was called: "Steady 3 x 8 min"
+    // names no colour, so it drew in easy green (Nov 3).
+    if (rn.c === "easy") rn.c = "threshold";
     var split = reps.some(function (r) { return r.to > r.from; }), beatsAll = reps.every(function (r) { return r.hr; });
     if (reps.length <= 8 && (split || beatsAll)) {
       var paces = "Reps at " + reps.map(function (r) { return r.p ? paceText(r.p) : "?"; }).join(" \u00b7 ") + " /km";

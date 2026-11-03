@@ -636,7 +636,7 @@ function planRow(r, day, first) {
   const mark = r.state === "done" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
     : r.state === "next" ? `<span class="ring" style="width:14px;height:14px"></span>`
     : r.missed ? `<span class="miss-ring" style="width:12px;height:12px"></span>` : "";
-  return `<a class="plan-row ${first ? "" : "same-day"} ${r.state === "next" ? "is-next" : ""}" href="${href}" data-date="${day.date}"
+  return `<a class="plan-row ${first ? "" : "same-day"} ${r.state === "next" ? "is-next" : ""}" href="${href}" data-date="${day.date}" draggable="false"
       data-sid="${r.schedule_id || ""}" ${r.movable ? 'data-movable="1"' : ""} data-name="${esc(r.name)}">
     <span class="day ${first ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
     <span class="body"><span class="type c-${esc(r.colour)}">${mark}${esc(r.type_label)}</span>
@@ -739,6 +739,10 @@ function holdToMove(list, today) {
   };
   const dayRows = (date) => rows().filter((r) => r.dataset.date === date);
   list.addEventListener("contextmenu", (e) => { if (e.target.closest("[data-movable]")) e.preventDefault(); });
+  // A held link is something the phone drags itself (Android shows the link
+  // as a bubble), which cancels this drag, so the row lifted but never
+  // dropped (Nov 3). The browser's own drag of a row is stopped here.
+  list.addEventListener("dragstart", (e) => { if (e.target.closest && e.target.closest(".plan-row")) e.preventDefault(); });
   list.addEventListener("pointerdown", (e) => {
     const row = e.target.closest(".plan-row[data-movable]");
     if (!row || e.button > 0) return;
@@ -752,20 +756,30 @@ function holdToMove(list, today) {
       if (navigator.vibrate) navigator.vibrate(10);
     }, HOLD_MS);
   });
+  const follow = (x, y) => {
+    dragging.row.style.transform = `translateY(${y - start.y}px)`;
+    const under = document.elementsFromPoint(x, y).map((el) => el.closest && el.closest(".plan-row"))
+      .find((el) => el && el !== dragging.row && list.contains(el));
+    rows().forEach((r) => r.classList.remove("drop"));
+    const to = under && under.dataset.date;
+    dragging.to = to && to !== dragging.from && to >= today ? to : null;
+    if (dragging.to) dayRows(dragging.to).forEach((r) => r.classList.add("drop"));
+  };
   list.addEventListener("pointermove", (e) => {
     if (!dragging) {
       if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) { clearTimeout(timer); timer = null; }
       return;
     }
     e.preventDefault();
-    dragging.row.style.transform = `translateY(${e.clientY - start.y}px)`;
-    const under = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest && el.closest(".plan-row"))
-      .find((el) => el && el !== dragging.row && list.contains(el));
-    rows().forEach((r) => r.classList.remove("drop"));
-    const to = under && under.dataset.date;
-    dragging.to = to && to !== dragging.from && to >= today ? to : null;
-    if (dragging.to) dayRows(dragging.to).forEach((r) => r.classList.add("drop"));
+    follow(e.clientX, e.clientY);
   });
+  // A phone can still cancel the pointer once a row is lifted (Nov 3: it
+  // lifted but never dropped). The touch carries on regardless, so a lifted
+  // row follows the finger and drops on the touch's own events too.
+  list.addEventListener("touchmove", (e) => {
+    if (dragging && dragging.cancelled && e.touches[0]) follow(e.touches[0].clientX, e.touches[0].clientY);
+  });
+  list.addEventListener("touchend", () => { if (dragging && dragging.cancelled) finish(); });
   const finish = async () => {
     if (!dragging) { clearTimeout(timer); timer = null; return; }
     const { row, from, to } = dragging;
@@ -783,7 +797,10 @@ function holdToMove(list, today) {
     }
   };
   list.addEventListener("pointerup", finish);
-  list.addEventListener("pointercancel", clear);
+  list.addEventListener("pointercancel", (e) => {
+    if (dragging && e.pointerType === "touch") { dragging.cancelled = true; return; }
+    clear();
+  });
   list.addEventListener("click", (e) => { if (justDropped) { e.preventDefault(); e.stopPropagation(); } }, true);
 }
 
