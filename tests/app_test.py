@@ -107,6 +107,17 @@ def analysis_checks() -> None:
     check("and their splits still add up",
           sum(s["seconds"] for s in unmatched["splits"]) == unmatched["seconds"])
 
+    # Running on after the last step adds a lap; the steps still pair, and the
+    # extra shows as its own row with no target against it.
+    on = DEMO.get_activity_splits(aid)
+    on = {"lapDTOs": on["lapDTOs"] + [{**on["lapDTOs"][-1], "distance": 460.0, "duration": 139.0, "movingDuration": 139.0}]}
+    ran_on = analysis.analyse(DEMO.get_workout_by_id(wid), on, "threshold")
+    rows = ran_on.get("planned_and_run") or []
+    check("a run on past the workout still pairs its steps", len([r for r in rows if r.get("rep")]) == 3, str(rows))
+    check("and the extra is its own row, untargeted",
+          rows and rows[-1]["label"] == "Ran on" and not rows[-1].get("target") and "0.5 km" in rows[-1]["note"], str(rows[-1:]))
+    check("and the splits still add up", sum(s["seconds"] for s in ran_on["splits"]) == ran_on["seconds"])
+
 
 def easier_checks() -> None:
     wid = next(w for w, up in DEMO.uploaded.items() if up["workoutName"].startswith("3 x 3 km"))

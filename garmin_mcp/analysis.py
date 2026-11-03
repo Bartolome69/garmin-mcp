@@ -120,14 +120,33 @@ def planned_steps(workout: Mapping[str, Any] | None) -> list[dict[str, Any]]:
     return out
 
 
+_STEP_MARKS = {"warmup": {"warmup"}, "cooldown": {"cooldown"},
+               "recovery": {"recovery", "rest"}, "rest": {"recovery", "rest"}}
+
+
+def _fits(step: Mapping[str, Any], lap: Mapping[str, Any]) -> bool:
+    """Whether the lap's own mark (when Garmin gave one) is the step's kind."""
+    mark = lap["mark"]
+    if not mark:
+        return True
+    if step["kind"] in _STEP_MARKS:
+        return mark in _STEP_MARKS[step["kind"]]
+    return mark not in ("warmup", "cooldown", "recovery", "rest")
+
+
 def _paired(steps: list[dict[str, Any]], laps: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]] | None:
     """Each step with the lap the watch recorded for it, or None when they don't line up.
 
-    A structured workout laps once per step, so the counts match. When they
-    don't (a lap pressed by hand, a workout stopped early), guessing would put
-    the wrong numbers against a target, so nothing is paired.
+    A structured workout laps once per step, so the counts match. Running on
+    after the last step adds laps at the end (the watch keeps recording until
+    it's saved), so with more laps than steps the first ones are paired, as
+    long as every lap's mark agrees with its step. Otherwise (a lap pressed
+    by hand, a workout stopped early) guessing would put the wrong numbers
+    against a target, so nothing is paired.
     """
     if steps and len(steps) == len(laps):
+        return list(zip(steps, laps))
+    if steps and len(laps) > len(steps) and all(_fits(s, l) for s, l in zip(steps, laps)):
         return list(zip(steps, laps))
     return None
 
@@ -338,6 +357,17 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
     total_s = sum(l["seconds"] for l in laps)
     pairs = _paired(planned_steps(workout), laps) if workout else None
     rows = _rows(pairs) if pairs else []
+    after = laps[len(pairs):] if pairs else []
+    after_m = sum(l["metres"] for l in after)
+    after_s = sum(l["seconds"] for l in after)
+    if after_m >= STUB_METRES:
+        hr = _weighted_hr(after)
+        rows.append(drop_empty({
+            "label": "Ran on", "kind": "extra",
+            "note": f"{after_m / 1000:.1f} km after the workout",
+            "pace": pace(after_s / after_m * 1000),
+            "hr": round(hr) if hr else None,
+        }))
     split_rows = splits(laps)
     reps = [r["_lap"] for r in rows if r.get("rep")]
     if len(reps) >= 2:

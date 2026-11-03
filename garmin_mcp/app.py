@@ -626,7 +626,7 @@ def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
     parts = [r for r in rows if r.get("kind") == "interval" and not r.get("rep")]
     slowest = max((r.get("target") or "" for r in parts), default="")
     for r in rows:
-        if r.get("kind") in ("warmup", "cooldown"):
+        if r.get("kind") in ("warmup", "cooldown", "extra"):
             r["colour"] = "easy"
         elif r.get("rep") or colour != "long":
             r["colour"] = colour
