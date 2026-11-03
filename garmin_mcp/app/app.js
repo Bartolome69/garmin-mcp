@@ -343,7 +343,7 @@ function todayParts(d) {
         ${ICON.right(22, "var(--red-text)")}</a>
       <div class="stats3">${(n.stats || []).map((s) => `<div class="stack-tight" style="gap:1px"><span class="stat-v">${esc(s.v)}${s.u ? `<span class="stat-u"> ${esc(s.u)}</span>` : ""}</span><span class="stat-l">${esc(s.l)}</span></div>`).join("")}</div>
       ${shapeBar(n.segments)}
-      <div class="pills"><a class="pill light" href="${open}" style="flex:1.3">See the session</a>
+      <div class="pills next-pills"><a class="pill light" href="${open}">See the session</a>
         ${n.easier ? `<button class="pill" data-act="${n.easier.applied ? "undo" : "easier"}" data-day="${n.date}" data-sid="${n.schedule_id || ""}">${esc(n.easier.applied ? "Undo easier" : "Easier")}</button>` : ""}
         <button class="pill" data-act="move" data-day="${n.date}" data-sid="${n.schedule_id || ""}" data-name="${esc(n.name)}">Move</button></div>
     </section>`;

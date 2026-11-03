@@ -61,6 +61,12 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .pill[disabled] { opacity: 0.5; cursor: default; }
 .pills { display: flex; gap: 8px; }
 .pills > * { flex: 1; min-width: 0; }
+/* The next session's buttons: each as wide as its words, the spare shared; on the
+   narrowest phones See the session takes a row of its own. */
+.next-pills { flex-wrap: wrap; }
+.next-pills > * { flex: 1 0 auto; padding: 0 14px; }
+.next-pills > .light { flex-grow: 1.6; }
+@media (max-width: 359px) { .next-pills > .light { flex-basis: 100%; } }
 
 .link-button { all: unset; box-sizing: border-box; cursor: pointer; }
 .back { align-self: flex-start; margin: -10px 0 -6px -8px; height: 44px; padding: 0 8px; border: 0; background: transparent;
