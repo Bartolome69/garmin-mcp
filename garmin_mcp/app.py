@@ -205,7 +205,7 @@ def _ask_links(prompt: str) -> dict[str, str]:
 
 
 def assistant() -> str:
-    """Claude or ChatGPT: whichever the person last connected Daash from, Claude if neither."""
+    """Claude or ChatGPT: whichever of the two the person used Daash from last, Claude if neither."""
     from . import oauth, official
 
     user_token = official.current()

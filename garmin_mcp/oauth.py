@@ -177,10 +177,16 @@ def app_for_client(client_id: str) -> str:
 
 
 def app_for_user(user_token: str) -> str | None:
-    """The app an account last connected from, when it's one we recognise."""
-    client = store.last_client(user_token)
-    app = app_for_client(client) if client else None
-    return app if app in ("Claude", "ChatGPT") else None
+    """Claude or ChatGPT: whichever of the two the account used Daash from last.
+
+    Not simply the newest sign-in: the Daash app renews its own every hour it's
+    open, and a ChatGPT-only runner was being sent to Claude (Nov 3).
+    """
+    for client in store.clients_by_use(user_token):
+        app = app_for_client(client)
+        if app in ("Claude", "ChatGPT"):
+            return app
+    return None
 
 
 def recognised_redirect(uri: str) -> bool:

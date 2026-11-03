@@ -698,13 +698,16 @@ def take_oauth_code(code: str) -> str | None:
     return row[0] if row else None
 
 
-def last_client(subject: str) -> str | None:
-    """The client (Claude, ChatGPT…) this account was most recently connected from."""
+def clients_by_use(subject: str) -> list[str]:
+    """The clients (Claude, ChatGPT, the Daash app…) this account has held a
+    sign-in from, the one that took a token most recently first. A client in
+    use renews its token every hour or so, so this is the one used last."""
     with _connect() as conn:
-        row = conn.execute(
-            "SELECT client_id FROM oauth_tokens WHERE subject = ? ORDER BY created_at DESC LIMIT 1", (subject,)
-        ).fetchone()
-    return row[0] if row else None
+        rows = conn.execute(
+            "SELECT client_id FROM oauth_tokens WHERE subject = ? GROUP BY client_id ORDER BY MAX(created_at) DESC",
+            (subject,),
+        ).fetchall()
+    return [r[0] for r in rows]
 
 
 def save_oauth_token(
