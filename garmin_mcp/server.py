@@ -1755,12 +1755,31 @@ def _reps(laps: list[dict[str, Any]], ride: bool = False) -> dict[str, Any] | No
     as intervals: how many, their average pace (or speed) and heart rate, and
     the fastest and slowest. None for a run without marked reps."""
     marks = [_lap_intensity(lap) for lap in laps]
-    work = [lap for lap, m in zip(laps, marks) if m == "interval"]
-    if not work and any(m in ("recovery", "rest") for m in marks):
+    is_work = [m == "interval" for m in marks]
+    if not any(is_work) and any(m in ("recovery", "rest") for m in marks):
         # Garmin often leaves a structured workout's reps unmarked ("active")
         # and marks only what's around them (Nov 1, a 3x3km): the unmarked
         # laps between the recoveries are the reps.
-        work = [lap for lap, m in zip(laps, marks) if m is None]
+        is_work = [m is None for m in marks]
+    # A watch lapping every km splits a rep in two (Nov 3, a 3 x 8 min read
+    # as six reps): work laps with nothing between them are one rep.
+    # Only where there are two reps or more: one long run of work keeps its laps.
+    groups = sum(1 for w, before in zip(is_work, [False] + is_work[:-1]) if w and not before)
+    work: list[dict[str, Any]] = []
+    for lap, w, before in zip(laps, is_work, [False] + is_work[:-1]):
+        if not w:
+            continue
+        if before and groups > 1:
+            last = work[-1]
+            took = (first_present(last, "duration", "movingDuration", "elapsedDuration") or 0) + \
+                (first_present(lap, "duration", "movingDuration", "elapsedDuration") or 0)
+            hr_a, hr_b = last.get("averageHR"), lap.get("averageHR")
+            t_a = first_present(last, "duration", "movingDuration") or 0
+            t_b = first_present(lap, "duration", "movingDuration") or 0
+            work[-1] = {"distance": (last.get("distance") or 0) + (lap.get("distance") or 0), "duration": took,
+                        "averageHR": (hr_a * t_a + hr_b * t_b) / (t_a + t_b) if hr_a and hr_b and t_a + t_b else hr_a or hr_b}
+        else:
+            work.append(lap)
     if len(work) < 2:
         return None
     dist = sum(lap.get("distance") or 0 for lap in work)

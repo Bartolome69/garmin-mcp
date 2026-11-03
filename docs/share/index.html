@@ -671,8 +671,9 @@
   // ---------------------------------------------------------------- one run
   // The card's "Share this run" sends { v, run, t, s, k, c, f, l, a, n }: the
   // title, the date and place, a kicker, the session's colour, up to four
-  // [figure, words] facts, the laps as [seconds, pace s/km, work, km], the
-  // average pace in s/km, and up to three [colour, line] notes.
+  // [figure, words] facts, the laps as [seconds, pace s/km, work, km, bpm]
+  // (bpm since Nov 3), the average pace in s/km, and up to three [colour,
+  // line] notes.
   function cleanRun(d) {
     if (!d || d.v !== 1 || d.run !== 1) return null;
     var t = str(d.t, 80); if (!t) return null;
@@ -683,12 +684,45 @@
     var laps = Array.isArray(d.l) ? d.l.slice(0, 60).map(function (l) {
       if (!Array.isArray(l)) return null;
       var secs = num(l[0], 1, 36000), pace = num(l[1], 60, 1800);
-      return secs ? { s: secs, p: pace, w: l[2] === 1, km: num(l[3], 0, 500) } : null;
+      return secs ? { s: secs, p: pace, w: l[2] === 1, km: num(l[3], 0, 500), hr: num(l[4], 30, 240) } : null;
     }).filter(Boolean) : [];
     var notes = Array.isArray(d.n) ? d.n.slice(0, 3).map(function (n) {
       return Array.isArray(n) ? { c: n[0] === "c" ? c : COLOURS.indexOf(n[0]) >= 0 ? n[0] : "other", t: str(n[1], 90) } : null;
     }).filter(function (n) { return n && n.t; }) : [];
-    return { run: true, t: t, s: str(d.s, 60), k: str(d.k, 40) || "Run recap", c: c, f: facts, l: laps, a: num(d.a, 60, 1800), n: notes };
+    return joinReps({ run: true, t: t, s: str(d.s, 60), k: str(d.k, 40) || "Run recap", c: c, f: facts, l: laps, a: num(d.a, 60, 1800), n: notes });
+  }
+  // A watch that laps every km splits an 8-minute rep in two: Roo's 3 x 8 min
+  // drew as six reps with their paces printed over each other (Nov 3). Work
+  // laps with nothing between them are one rep: their time and distance added,
+  // pace and heart rate over the whole. The reps' line is then written from
+  // the joined reps, paces on one line and heart rates on the next.
+  function joinReps(rn) {
+    var laps = rn.l;
+    // Only where there are two reps or more: one long run of work (a
+    // marathon-pace finish) keeps its km as bars.
+    var groups = laps.filter(function (l, i) { return l.w && !(laps[i - 1] || {}).w; }).length;
+    if (groups < 2 || laps.every(function (l) { return l.w; })) return rn;
+    var out = [];
+    laps.forEach(function (l) {
+      var last = out[out.length - 1];
+      if (l.w && last && last.w) {
+        var s = last.s + l.s, km = last.km != null && l.km != null ? last.km + l.km : null;
+        last.hr = last.hr && l.hr ? Math.round((last.hr * last.s + l.hr * l.s) / s) : null;
+        last.p = km ? Math.round(s / km) : last.p && l.p ? Math.round((last.p * last.s + l.p * l.s) / s) : last.p || l.p;
+        last.s = s; last.km = km; last.joined = true;
+      } else out.push({ s: l.s, p: l.p, w: l.w, km: l.km, hr: l.hr });
+    });
+    var reps = out.filter(function (l) { return l.w; });
+    var joined = out.length < laps.length, beats = reps.every(function (l) { return l.hr; });
+    if (reps.length > 1 && reps.length <= 8 && (joined || beats)) {
+      var paces = "Reps at " + reps.map(function (l) { return l.p ? paceText(l.p) : "?"; }).join(" \u00b7 ") + " /km";
+      var notes = rn.n.filter(function (n) { return !/^Reps at /.test(n.t); });
+      var mine = [{ c: rn.c, t: paces }];
+      if (beats) mine.push({ c: rn.c, t: "Heart rate " + reps.map(function (l) { return l.hr; }).join(" \u00b7 ") + " bpm", dotless: true });
+      rn.n = mine.concat(notes).slice(0, 3);
+    }
+    rn.l = out;
+    return rn;
   }
   function paceText(s) { return Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0"); }
 
@@ -732,7 +766,11 @@
 
     // The footer and notes come up from the bottom; the laps fill what's between.
     var footY = H - S.bottom - 60;
-    var notesTop = footY - 40 - rn.n.length * 50;
+    var noteLines = rn.n.map(function (n) {
+      font(ctx, 400, 28);
+      return wrap(ctx, n.t, W - 2 * P - 32, 2);
+    });
+    var notesTop = footY - 40 - noteLines.reduce(function (t, ls) { return t + ls.length; }, 0) * 44 - rn.n.length * 6;
     var paced = rn.l.filter(function (l) { return l.p; });
     if (paced.length > 1) {
       var lo = Math.min.apply(null, paced.map(function (l) { return l.p; })), hi = Math.max.apply(null, paced.map(function (l) { return l.p; }));
@@ -751,7 +789,8 @@
           rrect(ctx, x, chartBottom - h, w, h, Math.min(12, w / 3)); ctx.fill();
           if (labelled && l.w) {
             font(ctx, 700, 34); ctx.fillStyle = T.label[rn.c] || c; ctx.textAlign = "center";
-            ctx.fillText(paceText(l.p), x + w / 2, chartBottom - h - 16);
+            // Only where it fits over its own bar: side by side, two paces ran into one (Nov 3).
+            if (l.p && ctx.measureText(paceText(l.p)).width <= w + gap - 6) ctx.fillText(paceText(l.p), x + w / 2, chartBottom - h - 16);
             if (l.km && w > 60) { font(ctx, 600, 24); ctx.fillStyle = T.bg; ctx.fillText(fmtKm(l.km) + " km", x + w / 2, chartBottom - 18); }
             ctx.textAlign = "left";
           }
@@ -779,12 +818,12 @@
     }
 
     // A line or two worth saying, each with a dot in its colour.
+    var ny = notesTop + 30;
     rn.n.forEach(function (n, i) {
-      var ny = notesTop + i * 50 + 30;
-      ctx.fillStyle = T.c[n.c] || T.c.other; ctx.beginPath(); ctx.arc(P + 8, ny - 10, 8, 0, Math.PI * 2); ctx.fill();
-      var room = W - 2 * P - 32, size = 30; font(ctx, 400, size);
-      while (size > 24 && ctx.measureText(n.t).width > room) { size -= 1; font(ctx, 400, size); }
-      ctx.fillStyle = T.soft; ctx.fillText(fit(ctx, n.t, room), P + 32, ny);
+      if (!n.dotless) { ctx.fillStyle = T.c[n.c] || T.c.other; ctx.beginPath(); ctx.arc(P + 8, ny - 10, 8, 0, Math.PI * 2); ctx.fill(); }
+      font(ctx, 400, 28); ctx.fillStyle = T.soft;
+      noteLines[i].forEach(function (line) { ctx.fillText(line, P + 32, ny); ny += 44; });
+      ny += 6;
     });
 
     ctx.fillStyle = T.line; ctx.fillRect(P, footY, W - 2 * P, 2);

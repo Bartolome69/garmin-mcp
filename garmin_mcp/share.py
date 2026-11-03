@@ -5,7 +5,7 @@ The plan card's "Share this run" button builds the same link in the browser
 it here too means a chat that asked "how was my run" can offer the image
 without the plan card. The page reads a run as { v, run, t, s, k, c, f, l, a,
 n }: the title, the day and place, a kicker, the session's colour, up to four
-[figure, words] facts, the laps as [seconds, pace s/km, work, km], the
+[figure, words] facts, the laps as [seconds, pace s/km, work, km, bpm], the
 average pace in s/km, and up to three [colour, line] notes. Everything stays
 in the link's #fragment, which the browser never sends to a server.
 """
@@ -132,7 +132,9 @@ def run_payload(details: dict[str, Any]) -> dict[str, Any] | None:
         for x, s, w in zip(splits, secs, work):
             dist = x.get("distance_km")
             took = _clock_secs(x.get("duration")) or (round(dist * (s or 300)) if dist else 0) or 1
-            laps.append([took, s or 0, 1 if w else 0, round(dist, 2) if dist is not None else None])
+            hr = x.get("avg_hr")
+            laps.append([took, s or 0, 1 if w else 0, round(dist, 2) if dist is not None else None,
+                         int(hr) if hr else None])
         reps = [x for x, w in zip(splits, work) if w]
         if 1 < len(reps) < len(splits) and len(reps) <= 8:
             line = "Reps at " + ", ".join(re.sub(r"\s*/km$", "", x["pace_per_km"]) for x in reps) + " /km"

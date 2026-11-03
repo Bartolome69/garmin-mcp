@@ -1399,6 +1399,20 @@ async def main() -> int:
                   and reps.get("fastest_pace_per_km", "").startswith("4:20") and reps.get("slowest_pace_per_km", "").startswith("4:30")
                   and reps.get("avg_hr") == 158, str(reps))
             check("a run without marked reps has no rep summary", "reps" not in plain_run)
+            _lap = lambda d, t, hr, i=None: {"distance": d, "duration": t, "averageHR": hr, **({"intensityType": i} if i else {})}
+            from garmin_mcp import server as _srv
+            split_reps = _srv._reps([
+                _lap(1000, 326, 128, "WARMUP"), _lap(1000, 259, 152, "ACTIVE"), _lap(850, 221, 149, "ACTIVE"),
+                _lap(300, 120, 140, "RECOVERY"), _lap(1000, 250, 152, "ACTIVE"), _lap(940, 233, 155, "ACTIVE"),
+                _lap(300, 120, 141, "RECOVERY"), _lap(1000, 246, 155, "ACTIVE"), _lap(970, 238, 158, "ACTIVE"),
+                _lap(1000, 330, 140, "COOLDOWN")])
+            check("a watch lapping every km inside a rep doesn't double the reps: 3 x 8 min is 3 reps",
+                  (split_reps or {}).get("count") == 3 and split_reps.get("fastest_pace_per_km", "").startswith("4:06"), str(split_reps))
+            from garmin_mcp import share as _share
+            shared_laps = (_share.run_payload({"summary": {"type": "running", "name": "x", "distance_km": 5},
+                                               "splits": [{"distance_km": 1, "duration": "4m 00s", "pace_per_km": "4:00 /km", "avg_hr": 150},
+                                                          {"distance_km": 1, "duration": "5m 00s", "pace_per_km": "5:00 /km", "avg_hr": 140}]}) or {}).get("l")
+            check("the share link carries each lap's heart rate", shared_laps and shared_laps[0][4] == 150, str(shared_laps))
             shared = (plain_run.get("share_image") or {}).get("url", "")
             check("a run comes with a link to its share image", shared.startswith("https://garmin.daash.run/share/#"), shared[:80])
             check("and a ride doesn't", "share_image" not in plain_ride)

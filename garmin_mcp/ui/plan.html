@@ -1547,7 +1547,7 @@
       var work = workLaps(splits, secs, lo, hi);
       laps = splits.map(function (x, i) {
         return [Math.round(clockSecs(x.duration) || (x.distance_km ? x.distance_km * (secs[i] || 300) : 0) || 1), secs[i] || 0, work[i] ? 1 : 0,
-          x.distance_km != null ? Math.round(x.distance_km * 100) / 100 : null];
+          x.distance_km != null ? Math.round(x.distance_km * 100) / 100 : null, x.avg_hr ? Math.round(x.avg_hr) : null];
       });
       var reps = splits.filter(function (x, i) { return work[i]; });
       if (reps.length > 1 && reps.length < splits.length && reps.length <= 8) {
