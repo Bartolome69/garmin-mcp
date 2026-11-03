@@ -628,7 +628,7 @@ def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
     parts = [r for r in rows if r.get("kind") == "interval" and not r.get("rep")]
     slowest = max((r.get("target") or "" for r in parts), default="")
     for r in rows:
-        if r.get("kind") in ("warmup", "cooldown"):
+        if r.get("kind") in ("warmup", "cooldown", "extra"):
             r["colour"] = "easy"
         elif r.get("rep") or colour != "long":
             r["colour"] = colour
@@ -1353,7 +1353,8 @@ def _safe(handler):
             log.exception("app route %s failed", request.url.path)
             _track("app_failed", {"screen": screen, "layout": _layout(request)})
             return _json({"error": "Daash couldn't load this just now. Try again in a moment."}, 500)
-        if request.method == "GET":
+        # A screen fetched ahead of a tap (the app warms the other tabs) isn't one opened.
+        if request.method == "GET" and request.headers.get("x-daash-ahead") != "1":
             _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
                                              "ok": response.status_code < 400}))
         return response

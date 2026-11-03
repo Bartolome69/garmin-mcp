@@ -127,6 +127,17 @@ def analysis_checks() -> None:
     check("laps that don't line up put nothing against a target",
           not analysis.analyse(DEMO.get_workout_by_id(wid), shifted, "threshold").get("planned_and_run"))
 
+    # Running on after the last step adds a lap; the steps still pair, and the
+    # extra shows as its own row with no target against it.
+    on = DEMO.get_activity_splits(aid)
+    on = {"lapDTOs": on["lapDTOs"] + [{**on["lapDTOs"][-1], "distance": 460.0, "duration": 139.0, "movingDuration": 139.0}]}
+    ran_on = analysis.analyse(DEMO.get_workout_by_id(wid), on, "threshold")
+    rows = ran_on.get("planned_and_run") or []
+    check("a run on past the workout still pairs its steps", len([r for r in rows if r.get("rep")]) == 3, str(rows))
+    check("and the extra is its own row, untargeted",
+          rows and rows[-1]["label"] == "Ran on" and not rows[-1].get("target") and "0.5 km" in rows[-1]["note"], str(rows[-1:]))
+    check("and the splits still add up", sum(s["seconds"] for s in ran_on["splits"]) == ran_on["seconds"])
+
     real_run_checks()
 
 
@@ -155,10 +166,11 @@ def real_run_checks() -> None:
     rest = [(float(d), float(t), float(h), float(h)) for _, d, t, h in laps[1:]]
     result = analysis.analyse(workout, raw, "threshold", _stream(warm + rest, step=1.0))
     rows = result.get("planned_and_run") or []
-    check("a run that went on after the last step is still compared", len(rows) == 6, str([r["label"] for r in rows]))
-    cool = rows[-1] if rows else {}
-    check("the extra lap joins the cool-down, and says so",
-          cool.get("label") == "Cool down" and "then 0.5 km more" in cool.get("note", ""), str(cool))
+    check("a run that went on after the last step is still compared", len(rows) == 7, str([r["label"] for r in rows]))
+    ran_on = rows[-1] if rows else {}
+    check("the run on is its own row after the cool-down",
+          ran_on.get("label") == "Ran on" and rows[-2]["label"] == "Cool down" and "0.5 km" in ran_on.get("note", ""),
+          str(rows[-2:]))
     check("all four reps on target", result["verdict"].startswith("Hit all four reps on target"), result["verdict"])
     km = [s for s in result["splits"] if not s.get("rest") and not s.get("partial")]
     check("the warm-up's kilometres are each their own pace", len({s["pace"] for s in km[:5]}) > 1,
@@ -166,6 +178,7 @@ def real_run_checks() -> None:
     check("the first is the slow one, as recorded", km[0]["pace"] == "5:13", km[0]["pace"])
     check("and the splits still add up to the run", sum(s["seconds"] for s in result["splits"]) == result["seconds"],
           f"{sum(s['seconds'] for s in result['splits'])} vs {result['seconds']}")
+
 
 
 def easier_checks() -> None:
@@ -297,6 +310,9 @@ def api_checks() -> None:
           block.get("verdict"))
     check("the block's phases fill its weeks", sum(p["weeks"] for p in block["phases"]) == len(block["bars"]))
 
+    before = len(posted("app_viewed"))
+    client.get("/app/api/crew", headers={**auth, "X-Daash-Ahead": "1"})
+    check("a screen fetched ahead of a tap isn't counted as opened", len(posted("app_viewed")) == before)
     viewed = posted("app_viewed")
     check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
           str([e["properties"].get("screen") for e in viewed])[:120])

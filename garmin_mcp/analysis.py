@@ -144,10 +144,9 @@ def _paired(steps: list[dict[str, Any]], laps: list[dict[str, Any]]
     """Each step with the lap the watch recorded for it, step by step, or None when they don't line up.
 
     A structured workout laps once per step. What the watch adds is handled
-    as it happens on a real run: running on after the last step makes one
-    more lap (Nov 1, 0.46 km after a 4.5 km cool-down), which joins that step
-    when it's the same kind; stopping early leaves steps with no lap, which
-    say so. A lap whose mark contradicts its step (a lap pressed by hand mid
+    as it happens on a real run: running on after the last step makes more
+    laps (Nov 1, 0.46 km after a 4.5 km cool-down), returned apart as the
+    run on; stopping early leaves steps with no lap, which say so. A lap whose mark contradicts its step (a lap pressed by hand mid
     rep shifts every one after it) means the two don't line up, and guessing
     would put the wrong numbers against a target, so nothing is paired.
     """
@@ -159,13 +158,7 @@ def _paired(steps: list[dict[str, Any]], laps: list[dict[str, Any]]
         if lap is not None and not _fits(step, lap):
             return None
         pairs.append((step, lap))
-    after = laps[len(steps):]
-    if after and pairs[-1][1] is not None and all(_fits(pairs[-1][0], l) and (l.get("mark") or "") not in ("", "active")
-                                                   for l in after):
-        last_step, last_lap = pairs[-1]
-        pairs[-1] = (last_step, {**_joined([last_lap, *after]), "after": sum(l["metres"] for l in after)})
-        after = []
-    return pairs, after
+    return pairs, laps[len(steps):]
 
 
 def _weighted_hr(laps: Sequence[Mapping[str, Any]]) -> float | None:
@@ -223,8 +216,6 @@ def _rows(pairs: list[tuple[dict[str, Any], dict[str, Any] | None]], after: list
             continue
         note, way = _miss(step["target"], lap)
         planned = step["amount"] or f"{lap['metres'] / 1000:.1f} km"
-        if lap.get("after"):
-            planned += f", then {lap['after'] / 1000:.1f} km more"
         rows.append(drop_empty({
             "label": label,
             "kind": step["kind"],
@@ -238,11 +229,13 @@ def _rows(pairs: list[tuple[dict[str, Any], dict[str, Any] | None]], after: list
             "_lap": lap,
             "_target": step["target"],
         }))
-    if after:
-        lap = _joined(after)
+    # Laps after the last step: running on until the watch was saved. Their
+    # own row with no target, since the workout asked for nothing there.
+    lap = _joined(after) if after else None
+    if lap and lap["metres"] >= STUB_METRES:
         rows.append(drop_empty({
-            "label": "After", "kind": "after", "note": f"{lap['metres'] / 1000:.1f} km after the workout",
-            "pace": pace(lap["seconds"] / lap["metres"] * 1000) if lap["metres"] else None,
+            "label": "Ran on", "kind": "extra", "note": f"{lap['metres'] / 1000:.1f} km after the workout",
+            "pace": pace(lap["seconds"] / lap["metres"] * 1000),
             "hr": round(lap["hr"]) if lap.get("hr") else None,
         }))
     return rows

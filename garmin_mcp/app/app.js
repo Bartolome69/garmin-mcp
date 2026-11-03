@@ -15,7 +15,7 @@ const token = {
     memory.access = t.access_token; store.set("daash.access", t.access_token);
     if (t.refresh_token) { memory.refresh = t.refresh_token; store.set("daash.refresh", t.refresh_token); }
   },
-  clear() { delete memory.access; delete memory.refresh; store.drop("daash.access"); store.drop("daash.refresh"); },
+  clear() { delete memory.access; delete memory.refresh; store.drop("daash.access"); store.drop("daash.refresh"); cache.clear(); },
 };
 
 // -- small helpers ------------------------------------------------------------
@@ -136,6 +136,8 @@ async function api(path, options = {}, retry = true) {
   const res = await fetch(API + path, {
     ...options,
     headers: { Authorization: `Bearer ${token.access}`, "X-Daash-Layout": desktop() ? "desktop" : "phone",
+      // Fetched ahead of a tap: not counted as a screen opened.
+      ...(options.ahead ? { "X-Daash-Ahead": "1" } : {}),
       ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
   if (res.status === 401) {
@@ -145,8 +147,106 @@ async function api(path, options = {}, retry = true) {
   }
   const body = await res.json().catch(() => ({ error: "Daash didn't answer. Try again in a moment." }));
   if (!res.ok || body.error) throw new Error(body.error || "Something went wrong.");
+  // A change on Garmin: what the screens showed of the plan is out of date.
+  if (options.method === "POST") { epoch++; inflight.clear(); cache.clear(); }
   return body;
 }
+
+// -- snappy: every screen opens on its last copy, then catches up ---------------
+// Each answer is kept, in memory and on the phone, and a screen draws from it
+// at once while the fresh one is fetched; it redraws only if something
+// changed. Asked twice at once (a prefetch, then a tap), one request serves
+// both. An edit forgets what it could have changed.
+const CACHE_PREFIX = "daash.c.";
+const CACHE_MAX = 40;
+const cache = {
+  mem: new Map(),
+  get(path) {
+    if (this.mem.has(path)) return this.mem.get(path);
+    const raw = store.get(CACHE_PREFIX + path);
+    if (!raw) return null;
+    try { const hit = JSON.parse(raw); this.mem.set(path, hit); return hit; } catch { return null; }
+  },
+  put(path, value) {
+    this.mem.set(path, value);
+    store.set(CACHE_PREFIX + path, JSON.stringify(value));
+    const keys = (store.get(CACHE_PREFIX + "#") || "").split("\n").filter((k) => k && k !== path);
+    keys.push(path);
+    while (keys.length > CACHE_MAX) store.drop(CACHE_PREFIX + keys.shift());
+    store.set(CACHE_PREFIX + "#", keys.join("\n"));
+  },
+  drop(test) {
+    const keys = (store.get(CACHE_PREFIX + "#") || "").split("\n").filter(Boolean);
+    const keep = keys.filter((k) => !test(k));
+    keys.filter((k) => test(k)).forEach((k) => { store.drop(CACHE_PREFIX + k); this.mem.delete(k); });
+    [...this.mem.keys()].filter(test).forEach((k) => this.mem.delete(k));
+    store.set(CACHE_PREFIX + "#", keep.join("\n"));
+  },
+  clear() { this.drop(() => true); },
+};
+const inflight = new Map();
+// Bumped by every edit, so an answer fetched before it isn't kept after it.
+let epoch = 0;
+function fresh(path, ahead = false) {
+  if (inflight.has(path)) return inflight.get(path);
+  const asked = epoch;
+  const p = api(path, { ahead }).then((d) => { if (asked === epoch) cache.put(path, d); return d; })
+    .finally(() => { if (inflight.get(path) === p) inflight.delete(path); });
+  inflight.set(path, p);
+  return p;
+}
+let showing = 0;
+// Set by route(true), after an edit: the screen stays put while it catches up.
+let calm = false;
+// Draw a screen from its last copy, then from Garmin's answer if it differs.
+// quiet: with no copy, keep what's on screen rather than the skeleton (after
+// an edit, whose result is already drawn).
+async function show(path, render, onFail, quiet = false) {
+  const mine = ++showing;
+  const hit = cache.get(path);
+  if (hit) render(hit, true); else if (!quiet && !calm) loading();
+  try {
+    const d = await fresh(path);
+    if (mine !== showing) return;
+    if (hit && JSON.stringify(hit) === JSON.stringify(d)) return;
+    // Not under a finger mid-drag: the redraw waits for the drop.
+    if (dragging) return;
+    const y = window.scrollY;
+    render(d, false);
+    if (hit) window.scrollTo(0, y);
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    if (mine !== showing) return;
+    if (hit) toast("Couldn't reach Garmin just now. This is the last copy.");
+    else onFail(e);
+  }
+}
+// The other tabs, fetched once the first screen is up, so a tap is instant.
+let warmed = false;
+function warm() {
+  if (warmed) return;
+  warmed = true;
+  const go = () => {
+    ["today", "plan", "crew", "you"].forEach((p) => { if (!inflight.has(p) && !cache.get(p)) fresh(p, true).catch(() => {}); });
+    // And the next few sessions on screen, the ones most likely tapped.
+    [...new Set([...document.querySelectorAll('#screen a[href^="#/session/"]')].map((a) => apiPathFor(a.getAttribute("href"))))]
+      .filter((p) => p && !cache.get(p)).slice(0, 3).forEach((p) => fresh(p, true).catch(() => {}));
+  };
+  (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(go);
+}
+// A finger on a session or a run starts its fetch before the tap lands.
+function apiPathFor(href) {
+  const m = (href || "").match(/#\/(session|run)\/([^?]+)(?:\?(.*))?/);
+  if (!m) return null;
+  if (m[1] === "run") return `run/${encodeURIComponent(m[2])}`;
+  const sid = new URLSearchParams(m[3] || "").get("sid");
+  return `session/${m[2]}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}`;
+}
+document.addEventListener("pointerdown", (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="#/session/"], a[href^="#/run/"]');
+  const path = a && apiPathFor(a.getAttribute("href"));
+  if (path && !cache.get(path)) fresh(path, true).catch(() => {});
+}, { passive: true });
 
 // -- shared parts (also what the chat cards draw) -----------------------------
 
@@ -389,11 +489,9 @@ function dragToMove(cal) {
 
 let base = null;  // the desktop screen under the side panel
 
-async function showToday() {
+async function showToday(quiet = false) {
   tabs("today");
-  if (base !== "today") loading();
-  try {
-    const d = await api("today");
+  return show("today", (d) => {
     remember(d);
     if (desktop()) {
       $("screen").innerHTML = todayDesk(d);
@@ -403,10 +501,8 @@ async function showToday() {
     }
     base = "today";
     wire($("screen"));
-  } catch (e) {
-    if (e instanceof SignedOut) return route();
-    failed(e.message, showToday);
-  }
+    warm();
+  }, (e) => failed(e.message, showToday), quiet || base === "today");
 }
 
 // -- the session: preview before the run --------------------------------------
@@ -462,20 +558,15 @@ function restView(d, from) {
 
 async function showSession(day, params) {
   tabs(params.get("from") === "plan" ? "plan" : "today");
-  loading();
-  try {
-    const sid = params.get("sid");
-    const d = await api(`session/${day}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}`);
+  const sid = params.get("sid");
+  return show(`session/${day}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}`, (d) => {
     if (d.done && d.activity_id) {
       location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`);
       return;
     }
     $("screen").innerHTML = d.rest ? restView(d, params.get("from")) : previewView(d, params.get("from"));
     wire($("screen"));
-  } catch (e) {
-    if (e instanceof SignedOut) return route();
-    failed(e.message, () => showSession(day, params));
-  }
+  }, (e) => failed(e.message, () => showSession(day, params)));
 }
 
 // -- the session: analysis after the run --------------------------------------
@@ -543,23 +634,25 @@ async function showPanel(kind, id, params) {
     <div class="panel-body" id="panel-body"><div class="skeleton" style="min-height:300px"></div></div></div>`;
   holder.hidden = false;
   $("panel-close").onclick = closePanel;
-  try {
-    let d;
-    if (kind === "session") {
-      const sid = params.get("sid");
-      d = await api(`session/${id}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}`);
-      if (d.done && d.activity_id) { location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`); return; }
-    } else {
-      d = await api(`run/${encodeURIComponent(id)}`);
-    }
+  const sid = params.get("sid");
+  const path = kind === "session" ? `session/${id}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}` : `run/${encodeURIComponent(id)}`;
+  const draw = (d) => {
+    if (kind === "session" && d.done && d.activity_id) { location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`); return; }
+    if (!$("panel-body")) return;
     $("panel-kicker").textContent = d.kicker || "";
     $("panel-kicker").classList.toggle("red", !!d.today);
     $("panel-body").innerHTML = kind === "run" ? analysisView(d, "today", true) : d.rest ? restView(d, "today").replace(/<a class="back"[^]*?<\/a>/, "") : previewView(d, "today", true);
     wire($("panel-body"));
-    $("panel-close").focus();
+  };
+  const hit = cache.get(path);
+  if (hit) { draw(hit); $("panel-close").focus(); }
+  try {
+    const d = await fresh(path);
+    if (!hit || JSON.stringify(hit) !== JSON.stringify(d)) draw(d);
+    if (!hit) $("panel-close").focus();
   } catch (e) {
     if (e instanceof SignedOut) return route();
-    $("panel-body").innerHTML = `<div class="empty"><span class="strong">${esc(e.message)}</span></div>`;
+    if (!hit && $("panel-body")) $("panel-body").innerHTML = `<div class="empty"><span class="strong">${esc(e.message)}</span></div>`;
   }
 }
 
@@ -580,9 +673,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("pane
 
 async function showRun(id, params) {
   tabs(params.get("from") === "plan" ? "plan" : "today");
-  loading();
-  try {
-    const d = await api(`run/${encodeURIComponent(id)}`);
+  return show(`run/${encodeURIComponent(id)}`, (d) => {
     $("screen").innerHTML = analysisView(d, params.get("from"));
     const t = $("splits-toggle");
     if (t) t.onclick = () => {
@@ -591,10 +682,7 @@ async function showRun(id, params) {
       $("splits").hidden = !open;
       $("splits-word").textContent = open ? "Hide" : "Show";
     };
-  } catch (e) {
-    if (e instanceof SignedOut) return route();
-    failed(e.message, () => showRun(id, params));
-  }
+  }, (e) => failed(e.message, () => showRun(id, params)));
 }
 
 // -- edits: the same writes Claude makes --------------------------------------
@@ -612,7 +700,7 @@ async function act(action, day, sid, button) {
     const r = await api(`session/${day}/${action}`, { method: "POST", body: JSON.stringify({ schedule_id: sid ? Number(sid) : null }) });
     toast(r.message);
     refreshUnderPanel();
-    route();
+    route(true);
   } catch (e) {
     if (e instanceof SignedOut) return route();
     toast(e.message);
@@ -715,12 +803,10 @@ function blockView(d) {
       ${ask.html.replace("pill red tall", "pill")}</div>`;
 }
 
-async function showPlan(view, params) {
+async function showPlan(view, params, quiet = false) {
   tabs("plan");
-  if (base !== "plan") loading();
-  try {
-    const week = params.get("week");
-    const d = await api(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`);
+  const week = params.get("week");
+  return show(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`, (d) => {
     const seg = (id, label) => `<a href="#/plan${id === "block" ? "/block" : ""}" class="${view === id ? "on" : ""}" ${view === id ? 'aria-current="page"' : ""}>${label}</a>`;
     const head = `<header class="stack" style="gap:12px"><h1 class="headline">Plan</h1><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
     if (d.empty) {
@@ -737,10 +823,8 @@ async function showPlan(view, params) {
       $("screen").innerHTML = head + (view === "block" ? blockView(d) : weekView(d));
     }
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
-  } catch (e) {
-    if (e instanceof SignedOut) return route();
-    failed(e.message, () => showPlan(view, params));
-  }
+    warm();
+  }, (e) => failed(e.message, () => showPlan(view, params)), quiet || base === "plan");
 }
 
 // Hold a row, drag it to another day, let go: the same move as the session's
@@ -978,7 +1062,7 @@ function holdToMove(list, today) {
       if (err instanceof SignedOut) return route();
       toast(said.length ? `Moved ${said.join(", and ")}, then: ${err.message}` : err.message);
     }
-    route();
+    route(true);
   };
   list.addEventListener("pointerup", finish);
   list.addEventListener("pointercancel", (e) => {
@@ -1059,10 +1143,8 @@ function crewView(d) {
 
 async function showCrew() {
   tabs("crew");
-  loading();
   base = "crew";
-  try {
-    const d = await api("crew");
+  return show("crew", (d) => {
     remember(d);
     if (d.none) {
       const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
@@ -1077,10 +1159,7 @@ async function showCrew() {
       try { await navigator.clipboard.writeText(copy.dataset.value); toast(copy.textContent.includes("link") ? "Link copied." : "Code copied."); }
       catch { toast("Couldn't copy. Press and hold the link to copy it."); }
     };
-  } catch (e) {
-    if (e instanceof SignedOut) return route();
-    failed(e.message, showCrew);
-  }
+  }, (e) => failed(e.message, showCrew));
 }
 
 // -- You: the watch, the doors, settings and data -------------------------------
@@ -1185,12 +1264,10 @@ async function signOut() {
 
 async function showYou() {
   tabs("you");
-  loading();
   base = "you";
-  try {
-    const d = await api("you");
+  return show("you", (d) => {
     $("screen").innerHTML = youView(d);
-    $("refresh").onclick = () => { toast("Checked Garmin again."); showYou(); };
+    $("refresh").onclick = () => { cache.drop((k) => k === "you"); toast("Checked Garmin again."); showYou(); };
     $("screen").querySelectorAll("[data-you]").forEach((b) => {
       b.onclick = () => {
           if (b.dataset.you === "opens") {
@@ -1201,10 +1278,7 @@ async function showYou() {
           return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut();
         };
     });
-  } catch (e) {
-    if (e instanceof SignedOut) return route();
-    failed(e.message, showYou);
-  }
+  }, (e) => failed(e.message, showYou));
 }
 
 async function signInPost(path, body) {
@@ -1287,7 +1361,8 @@ async function handOff() {
 
 // -- routing ------------------------------------------------------------------
 
-async function route() {
+async function route(stay) {
+  calm = stay === true;
   $("sheet").innerHTML = "";
   // A link from scripts/app_dev.py carries a local token, so the demo opens signed in.
   const dev = location.hash.match(/dev-token=([\w-]+)/);
@@ -1305,7 +1380,7 @@ async function route() {
   document.body.classList.toggle("desk", wide);
   document.body.dataset.screen = screen || "today";
   const panelled = wide && (screen === "session" || screen === "run");
-  if (!panelled) { $("panel").hidden = true; $("panel").innerHTML = ""; window.scrollTo(0, 0); }
+  if (!panelled) { $("panel").hidden = true; $("panel").innerHTML = ""; if (!calm) window.scrollTo(0, 0); }
   if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return wide ? showPanel("session", arg, params) : showSession(arg, params);
   if (screen === "run" && /^\d+$/.test(arg || "")) return wide ? showPanel("run", arg, params) : showRun(arg, params);
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
