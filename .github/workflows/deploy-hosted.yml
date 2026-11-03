@@ -90,6 +90,14 @@ jobs:
       - name: Sign-up
         run: python tests/signup_test.py
 
+      # The companion app's API against the demo account: an edit made in the
+      # app is what Claude reads next. Its clock is set to a Monday with
+      # time-machine, a test-only package, so it holds whatever day it runs.
+      - name: Companion app
+        run: |
+          pip install --only-binary :all: time-machine==2.16.0
+          python tests/app_test.py
+
       # The plan card and the share page drawn in a real browser, the way a
       # chat draws them: a progress answer, an opened run's laps, sharing a run.
       - uses: actions/setup-node@v4

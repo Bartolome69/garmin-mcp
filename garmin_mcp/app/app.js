@@ -727,7 +727,6 @@ function holdToMove(list, today) {
   if (!list) return;
   let timer = null, start = null, justDropped = false, raf = 0, last = null;
   const rows = () => [...list.querySelectorAll(".plan-row")];
-  const others = () => rows().filter((r) => !dragging || r !== dragging.row);
   const scroller = (() => {
     for (let el = list.parentElement; el; el = el.parentElement) {
       const o = getComputedStyle(el).overflowY;
@@ -735,84 +734,104 @@ function holdToMove(list, today) {
     }
     return document.scrollingElement || document.documentElement;
   })();
+  const DAY_NAMES = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
 
-  // Rows slide to their new places: where each was, then a short glide to
-  // where it is now (the dragged one excepted, which stays under the finger).
+  // The week as seven days, each holding its sessions in order. A run moves
+  // into a day of its own: onto an empty day it just goes; onto a day with a
+  // run, that run makes way one day along, towards the day the dragged one
+  // left, into the first free day (Nov 3: people training a few days a week
+  // rarely want two runs on one day). Done sessions and past days don't move.
+  const plan = (target) => {
+    const { from, row, week } = dragging;
+    const fresh = () => week.dates.map((d) => ({ date: d, items: week.items[d].filter((r) => r !== row) }));
+    let days = fresh();
+    const at = (date) => days.findIndex((d) => d.date === date);
+    const t = at(target), f = at(from);
+    if (t === f || !days[t].items.length) { days[t].items.push(row); return days; }
+    // The run there makes way one day at a time, in whichever direction
+    // moves fewest sessions (the gap the dragged one left wins a tie), until
+    // a free day takes it; with no room either way, the day takes both.
+    const push = (step) => {
+      const ds = fresh(), can = (d) => d.date >= today && d.items.every((r) => r.dataset.movable);
+      let i = t, carry = ds[t].items, moved = carry.length;
+      ds[t].items = [row];
+      while (true) {
+        const j = i + step;
+        if (j < 0 || j >= ds.length || !can(ds[j])) return null;
+        const next = ds[j].items;
+        ds[j].items = carry;
+        if (!next.length) return { ds, moved };
+        moved += next.length; carry = next; i = j;
+      }
+    };
+    const back = push(f > t ? 1 : -1), on = push(f > t ? -1 : 1);
+    const best = !back ? on : !on ? back : on.moved < back.moved ? on : back;
+    if (best) return best.ds;
+    days[t].items = [row].concat(days[t].items);
+    return days;
+  };
+  // Draw a plan: each day's rows in order, a rest row on an empty day, and
+  // the day's name on its first row.
+  const draw = (days) => {
+    const { week } = dragging;
+    days.forEach((d) => {
+      const rest = week.rest[d.date];
+      if (d.items.length) { if (rest) rest.classList.add("covered"); }
+      else if (rest) rest.classList.remove("covered");
+      (d.items.length ? d.items : rest ? [rest] : []).forEach((r, k) => {
+        list.appendChild(r);
+        if (r.classList.contains("rest")) return;
+        const day = r.querySelector(".day");
+        if (day) { day.innerHTML = week.label[d.date]; day.classList.toggle("hide", k > 0); }
+        r.classList.toggle("same-day", k > 0);
+        r.dataset.at = d.date;
+      });
+      if (rest) list.appendChild(rest);
+    });
+  };
   const glide = (change) => {
-    const before = new Map(others().map((r) => [r, r.getBoundingClientRect().top]));
+    const all = rows().filter((r) => r !== dragging.row);
+    const before = new Map(all.map((r) => [r, r.getBoundingClientRect().top]));
     change();
-    others().forEach((r) => {
+    all.forEach((r) => {
       const was = before.get(r);
-      if (was == null) return;
+      if (was == null || r.classList.contains("covered")) return;
       const by = was - r.getBoundingClientRect().top;
       if (!by) return;
       r.style.transition = "none";
       r.style.transform = `translateY(${by}px)`;
       r.getBoundingClientRect();
-      r.style.transition = "transform 180ms cubic-bezier(.2,.7,.3,1)";
+      r.style.transition = "transform 200ms cubic-bezier(.2,.7,.3,1)";
       r.style.transform = "";
     });
   };
-  // The dragged row's place in the list: after the target day's sessions,
-  // or in place of its rest row, which is hidden meanwhile.
-  const place = (date) => {
-    const { row, home } = dragging;
-    list.querySelectorAll(".plan-row.rest.covered").forEach((r) => r.classList.remove("covered"));
-    if (date === dragging.from) { home.parent.insertBefore(row, home.next && home.next.parentNode ? home.next : null); return; }
-    const theirs = others().filter((r) => r.dataset.date === date);
-    const rest = theirs.find((r) => r.classList.contains("rest"));
-    if (rest) { rest.classList.add("covered"); rest.after(row); return; }
-    theirs[theirs.length - 1].after(row);
-  };
-  // Each day's first row shows the day, the rest of that day's rows don't,
-  // as rows leave and join days.
-  const tidy = () => {
-    const seen = new Set();
-    others().forEach((r) => {
-      const day = r.querySelector(".day");
-      if (!day) return;
-      day.classList.toggle("hide", seen.has(r.dataset.date));
-      r.classList.toggle("same-day", seen.has(r.dataset.date));
-      seen.add(r.dataset.date);
-    });
-  };
-  // The dragged row says the day it's going to.
-  const label = (date) => {
-    const day = dragging.row.querySelector(".day"), src = rows().find((r) => r !== dragging.row && r.dataset.date === date && !r.querySelector(".day.hide"))
-      || rows().find((r) => r !== dragging.row && r.dataset.date === date);
-    if (!day) return;
-    if (date === dragging.from) { day.innerHTML = dragging.dayHtml; day.className = dragging.dayClass; return; }
-    if (src) { const d = src.querySelector(".day"); if (d) { day.innerHTML = d.innerHTML; day.className = "day"; } }
+  // Which day the finger is over: the day of the row under it, or the
+  // nearest end of the week.
+  // Read against where each day sat when the run was picked up, not where
+  // the rows are now: rows making way would otherwise put the day before
+  // back under the finger, and the target flicked between the two (Nov 3).
+  const dayAt = (x, y) => {
+    const { bands } = dragging, at = y - list.getBoundingClientRect().top;
+    const hit = bands.find((b) => at >= b.top && at < b.bottom);
+    return hit ? hit.date : at < bands[0].top ? bands[0].date : bands[bands.length - 1].date;
   };
   const follow = (x, y) => {
     last = { x, y };
     const { row } = dragging;
-    // Which day the finger is over: the row under it, or the nearest end.
-    const under = document.elementsFromPoint(x, y).map((el) => el.closest && el.closest(".plan-row"))
-      .find((el) => el && el !== row && list.contains(el));
-    let date = under && under.dataset.date;
-    if (!date) {
-      const all = others(), box = list.getBoundingClientRect();
-      if (y < box.top && all.length) date = all[0].dataset.date;
-      else if (y > box.bottom && all.length) date = all[all.length - 1].dataset.date;
-    }
-    const ok = date && (date === dragging.from || date >= today);
+    const date = dayAt(x, y);
+    const ok = date && date >= today;
     row.classList.toggle("no-drop", !!date && !ok);
-    if (ok && date !== dragging.at) {
-      glide(() => { place(date); tidy(); });
-      label(date);
-      dragging.at = date;
+    if (ok && date !== dragging.target) {
+      const days = plan(date);
+      glide(() => draw(days));
+      dragging.target = date; dragging.days = days;
       if (navigator.vibrate) navigator.vibrate(5);
     }
-    dragging.to = dragging.at !== dragging.from ? dragging.at : null;
-    // "Today · on your watch" stops being true once it's over another day.
-    row.classList.toggle("elsewhere", !!dragging.to);
-    // Keep the row under the finger, wherever its place in the list now is.
+    row.classList.toggle("elsewhere", dragging.target !== dragging.from);
     row.style.transform = "none";
     const top = row.getBoundingClientRect().top;
     row.style.transform = `translateY(${y - dragging.grab - top}px) scale(1.02)`;
   };
-  // Near the top or bottom of the screen, the list scrolls on its own.
   const edge = () => {
     raf = 0;
     if (!dragging || !last) return;
@@ -825,9 +844,9 @@ function holdToMove(list, today) {
   };
   const settle = (then) => {
     const { row } = dragging;
-    row.style.transition = "transform 160ms cubic-bezier(.2,.7,.3,1)";
+    row.style.transition = "transform 170ms cubic-bezier(.2,.7,.3,1)";
     row.style.transform = "";
-    setTimeout(() => { row.style.transition = ""; then && then(); }, 170);
+    setTimeout(() => { row.style.transition = ""; then && then(); }, 180);
   };
   const clear = () => {
     clearTimeout(timer); timer = null;
@@ -836,6 +855,26 @@ function holdToMove(list, today) {
     rows().forEach((r) => { r.classList.remove("drop", "no-drop"); r.style.transform = ""; r.style.transition = ""; });
     list.classList.remove("dragging");
     dragging = null; last = null;
+  };
+  // The week as it is, read off the list once a row is lifted.
+  const readWeek = () => {
+    const dates = [], items = {}, rest = {}, label = {};
+    rows().forEach((r) => {
+      const d = r.dataset.date;
+      if (!items[d]) { dates.push(d); items[d] = []; }
+      const day = r.querySelector(".day");
+      if (day && !day.classList.contains("hide") && !label[d]) label[d] = day.innerHTML;
+      if (r.classList.contains("rest")) rest[d] = r; else items[d].push(r);
+    });
+    // An empty day needs a rest row to show while it's empty.
+    dates.forEach((d) => {
+      if (rest[d]) return;
+      const ghost = document.createElement("div");
+      ghost.className = "plan-row rest covered"; ghost.dataset.date = d;
+      ghost.innerHTML = `<span class="day">${label[d] || ""}</span><span class="body"><span class="type c-rec">Rest</span><span class="name dim">Rest day</span></span><span></span>`;
+      rest[d] = ghost;
+    });
+    return { dates, items, rest, label };
   };
   list.addEventListener("contextmenu", (e) => { if (e.target.closest("[data-movable]")) e.preventDefault(); });
   // A held link is something the phone drags itself (Android shows the link
@@ -847,11 +886,15 @@ function holdToMove(list, today) {
     if (!row || e.button > 0) return;
     start = { x: e.clientX, y: e.clientY };
     timer = setTimeout(() => {
-      const day = row.querySelector(".day");
-      dragging = { row, from: row.dataset.date, at: row.dataset.date, to: null, pointer: e.pointerId,
-        grab: start.y - row.getBoundingClientRect().top,
-        home: { parent: row.parentNode, next: row.nextSibling },
-        dayHtml: day ? day.innerHTML : "", dayClass: day ? day.className : "day" };
+      dragging = { row, from: row.dataset.date, target: row.dataset.date, pointer: e.pointerId,
+        grab: start.y - row.getBoundingClientRect().top };
+      dragging.week = readWeek();
+      const top = list.getBoundingClientRect().top;
+      dragging.bands = dragging.week.dates.map((d) => {
+        const own = rows().filter((r) => r.dataset.date === d && !r.classList.contains("covered")).map((r) => r.getBoundingClientRect());
+        return { date: d, top: Math.min(...own.map((b) => b.top)) - top, bottom: Math.max(...own.map((b) => b.bottom)) - top };
+      });
+      dragging.days = null;
       try { row.setPointerCapture(e.pointerId); } catch { /* the move still tracks without it */ }
       row.classList.add("lifted");
       list.classList.add("dragging");
@@ -871,40 +914,50 @@ function holdToMove(list, today) {
   // A phone can still cancel the pointer once a row is lifted (Nov 3: it
   // lifted but never dropped). The touch carries on regardless, so a lifted
   // row follows the finger and drops on the touch's own events too.
+  // A row moved in the page stops getting the pointer's events on some
+  // phones, so the drop never came (Nov 3); the touch's own events carry on.
   list.addEventListener("touchmove", (e) => {
-    if (dragging && dragging.cancelled && e.touches[0]) follow(e.touches[0].clientX, e.touches[0].clientY);
+    if (dragging && e.touches[0]) follow(e.touches[0].clientX, e.touches[0].clientY);
   });
-  list.addEventListener("touchend", () => { if (dragging && dragging.cancelled) finish(); });
+  list.addEventListener("touchend", () => { if (dragging) finish(); });
+  const backHome = () => {
+    const days = dragging.week.dates.map((d) => ({ date: d, items: dragging.week.items[d] }));
+    glide(() => draw(days));
+  };
   const finish = async () => {
     if (!dragging) { clearTimeout(timer); timer = null; return; }
-    const { row, from, to } = dragging;
+    if (dragging.done) return;
+    dragging.done = true;
+    const { row, from, target, days, week } = dragging;
     justDropped = true;
     setTimeout(() => { justDropped = false; }, 400);
     cancelAnimationFrame(raf); raf = 0;
-    if (!to) {
-      // Nowhere new: back to where it was.
-      glide(() => { place(from); tidy(); }); label(from);
-      settle(clear);
-      return;
-    }
-    settle(() => {
-      clear();
-      row.classList.add("moving");
-    });
+    if (!days || target === from) { backHome(); settle(clear); return; }
+    // Every session whose day changed, the dragged one first.
+    const was = new Map(); week.dates.forEach((d) => week.items[d].forEach((r) => was.set(r, d)));
+    const moves = [];
+    days.forEach((d) => d.items.forEach((r) => { if (was.get(r) !== d.date) moves.push({ r, from: was.get(r), to: d.date }); }));
+    moves.sort((a, b) => (b.r === row) - (a.r === row));
+    settle(() => { clear(); moves.forEach((m) => m.r.classList.add("moving")); });
+    const said = [];
     try {
-      const r = await api(`session/${from}/move`, { method: "POST", body: JSON.stringify({ to, schedule_id: Number(row.dataset.sid) || null }) });
-      toast(r.message);
-      route();
+      for (const m of moves) {
+        await api(`session/${m.from}/move`, { method: "POST", body: JSON.stringify({ to: m.to, schedule_id: Number(m.r.dataset.sid) || null }) });
+        const dow = (week.label[m.to] || "").match(/>(\w{3})</);
+        const key = dow ? dow[1].slice(0, 1).toUpperCase() + dow[1].slice(1).toLowerCase() : "";
+        said.push(`${m.r.dataset.name} to ${DAY_NAMES[key] || key || m.to}`);
+      }
+      toast(`Moved ${said.join(", and ")}. The watch follows at its next sync.`);
     } catch (err) {
       if (err instanceof SignedOut) return route();
-      toast(err.message);
-      route();
+      toast(said.length ? `Moved ${said.join(", and ")}, then: ${err.message}` : err.message);
     }
+    route();
   };
   list.addEventListener("pointerup", finish);
   list.addEventListener("pointercancel", (e) => {
     if (dragging && e.pointerType === "touch") { dragging.cancelled = true; return; }
-    if (dragging) { glide(() => { place(dragging.from); tidy(); }); label(dragging.from); }
+    if (dragging) backHome();
     clear();
   });
   list.addEventListener("click", (e) => { if (justDropped) { e.preventDefault(); e.stopPropagation(); } }, true);
