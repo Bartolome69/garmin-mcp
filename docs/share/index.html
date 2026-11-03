@@ -693,35 +693,38 @@
   }
   // A watch that laps every km splits an 8-minute rep in two: Roo's 3 x 8 min
   // drew as six reps with their paces printed over each other (Nov 3). Work
-  // laps with nothing between them are one rep: their time and distance added,
-  // pace and heart rate over the whole. The reps' line is then written from
-  // the joined reps, paces on one line and heart rates on the next.
+  // laps with nothing between them are one rep: they keep their own km bars,
+  // drawn touching, with one pace over the rep, and the reps' line is written
+  // from the reps, paces on one line and heart rates on the next.
   function joinReps(rn) {
-    var laps = rn.l;
-    // Only where there are two reps or more: one long run of work (a
-    // marathon-pace finish) keeps its km as bars.
-    var groups = laps.filter(function (l, i) { return l.w && !(laps[i - 1] || {}).w; }).length;
-    if (groups < 2 || laps.every(function (l) { return l.w; })) return rn;
-    var out = [];
-    laps.forEach(function (l) {
-      var last = out[out.length - 1];
-      if (l.w && last && last.w) {
-        var s = last.s + l.s, km = last.km != null && l.km != null ? last.km + l.km : null;
-        last.hr = last.hr && l.hr ? Math.round((last.hr * last.s + l.hr * l.s) / s) : null;
-        last.p = km ? Math.round(s / km) : last.p && l.p ? Math.round((last.p * last.s + l.p * l.s) / s) : last.p || l.p;
-        last.s = s; last.km = km; last.joined = true;
-      } else out.push({ s: l.s, p: l.p, w: l.w, km: l.km, hr: l.hr });
+    var laps = rn.l, reps = [];
+    laps.forEach(function (l, i) {
+      if (!l.w) return;
+      var last = reps[reps.length - 1];
+      if (last && last.to === i - 1) last.to = i; else reps.push({ from: i, to: i });
     });
-    var reps = out.filter(function (l) { return l.w; });
-    var joined = out.length < laps.length, beats = reps.every(function (l) { return l.hr; });
-    if (reps.length > 1 && reps.length <= 8 && (joined || beats)) {
-      var paces = "Reps at " + reps.map(function (l) { return l.p ? paceText(l.p) : "?"; }).join(" \u00b7 ") + " /km";
+    // Only where there are two reps or more: one long run of work (a
+    // marathon-pace finish) keeps its km as bars of their own.
+    if (reps.length < 2 || laps.every(function (l) { return l.w; })) return rn;
+    reps.forEach(function (r, k) {
+      var part = laps.slice(r.from, r.to + 1), s = 0, km = 0, beats = 0, kmKnown = true, hrKnown = true;
+      part.forEach(function (l) {
+        s += l.s; if (l.km != null) km += l.km; else kmKnown = false;
+        if (l.hr) beats += l.hr * l.s; else hrKnown = false;
+        l.rep = k;
+      });
+      r.s = s; r.km = kmKnown ? km : null; r.hr = hrKnown ? Math.round(beats / s) : null;
+      r.p = r.km ? Math.round(s / r.km) : part.length === 1 ? part[0].p : null;
+    });
+    rn.reps = reps;
+    var split = reps.some(function (r) { return r.to > r.from; }), beatsAll = reps.every(function (r) { return r.hr; });
+    if (reps.length <= 8 && (split || beatsAll)) {
+      var paces = "Reps at " + reps.map(function (r) { return r.p ? paceText(r.p) : "?"; }).join(" \u00b7 ") + " /km";
       var notes = rn.n.filter(function (n) { return !/^Reps at /.test(n.t); });
       var mine = [{ c: rn.c, t: paces }];
-      if (beats) mine.push({ c: rn.c, t: "Heart rate " + reps.map(function (l) { return l.hr; }).join(" \u00b7 ") + " bpm", dotless: true });
+      if (beatsAll) mine.push({ c: rn.c, t: "Heart rate " + reps.map(function (r) { return r.hr; }).join(" \u00b7 ") + " bpm", dotless: true });
       rn.n = mine.concat(notes).slice(0, 3);
     }
-    rn.l = out;
     return rn;
   }
   function paceText(s) { return Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0"); }
@@ -775,19 +778,25 @@
     if (paced.length > 1) {
       var lo = Math.min.apply(null, paced.map(function (l) { return l.p; })), hi = Math.max.apply(null, paced.map(function (l) { return l.p; }));
       var fast = lo - Math.max(8, (hi - lo) * 0.08), slow = hi + Math.max(12, (hi - lo) * 0.15);
-      var reps = rn.l.filter(function (l) { return l.w; }), labelled = reps.length && reps.length < rn.l.length && reps.length <= 8;
+      var reps = rn.reps || rn.l.filter(function (l) { return l.w; }), labelled = reps.length && rn.l.some(function (l) { return !l.w; }) && reps.length <= 8;
       var edge = rn.l.length > 1 && !rn.l[0].w && labelled;
       var chartTop = y + (labelled ? 120 : 70), chartBottom = notesTop - (edge ? 90 : 50), ch = chartBottom - chartTop;
       if (ch > 120) {
         var gap = rn.l.length > 30 ? 3 : 6, total = rn.l.reduce(function (t, l) { return t + l.s; }, 0);
-        var free = W - 2 * P - gap * (rn.l.length - 1), x = P;
+        var joins = rn.l.filter(function (l, i) { return i && l.rep != null && l.rep === rn.l[i - 1].rep; }).length;
+        var tight = 2, free = W - 2 * P - gap * (rn.l.length - 1 - joins) - tight * joins, x = P, spans = {};
         var hOf = function (p) { return ch * (0.08 + 0.92 * (slow - p) / (slow - fast)); };
         var c = T.c[rn.c] || T.c.easy;
-        rn.l.forEach(function (l) {
+        rn.l.forEach(function (l, i) {
+          if (i && l.rep != null && l.rep === rn.l[i - 1].rep) x -= gap - tight;
           var w = Math.max(3, free * l.s / total), h = l.p ? hOf(l.p) : ch * 0.08;
+          if (l.rep != null) {
+            var sp = spans[l.rep] || (spans[l.rep] = { x0: x, top: chartBottom - h, bars: [] });
+            sp.x1 = x + w; sp.top = Math.min(sp.top, chartBottom - h); sp.bars.push({ x: x, w: w, km: l.km });
+          }
           ctx.fillStyle = l.w || !labelled && paced.length === rn.l.length && hi - lo < 40 ? c : T.c.rec;
           rrect(ctx, x, chartBottom - h, w, h, Math.min(12, w / 3)); ctx.fill();
-          if (labelled && l.w) {
+          if (labelled && l.w && l.rep == null) {
             font(ctx, 700, 34); ctx.fillStyle = T.label[rn.c] || c; ctx.textAlign = "center";
             // Only where it fits over its own bar: side by side, two paces ran into one (Nov 3).
             if (l.p && ctx.measureText(paceText(l.p)).width <= w + gap - 6) ctx.fillText(paceText(l.p), x + w / 2, chartBottom - h - 16);
@@ -795,6 +804,20 @@
             ctx.textAlign = "left";
           }
           x += w + gap;
+        });
+        // One pace over each rep, and its distance at its foot.
+        if (labelled && rn.reps) rn.reps.forEach(function (r, k) {
+          var sp = spans[k]; if (!sp || !r.p) return;
+          var mid = (sp.x0 + sp.x1) / 2, w = sp.x1 - sp.x0;
+          font(ctx, 700, 34); ctx.fillStyle = T.label[rn.c] || c; ctx.textAlign = "center";
+          if (ctx.measureText(paceText(r.p)).width <= w + gap - 6) ctx.fillText(paceText(r.p), mid, sp.top - 16);
+          font(ctx, 600, 24); ctx.fillStyle = T.bg;
+          // A rep of one lap says its distance; one the watch lapped by km says each lap's, in its own bar.
+          if (sp.bars.length === 1) { if (r.km && w > 60) ctx.fillText(fmtKm(r.km) + " km", mid, chartBottom - 18); }
+          else sp.bars.forEach(function (b) {
+            if (b.km && ctx.measureText(fmtKm(b.km) + " km").width <= b.w - 8) ctx.fillText(fmtKm(b.km) + " km", b.x + b.w / 2, chartBottom - 18);
+          });
+          ctx.textAlign = "left";
         });
         if (rn.a && rn.a > fast && rn.a < slow) {
           var ay = chartBottom - hOf(rn.a);
