@@ -725,19 +725,118 @@ document.addEventListener("touchmove", (e) => { if (dragging) e.preventDefault()
 
 function holdToMove(list, today) {
   if (!list) return;
-  let timer = null, start = null, justDropped = false;
+  let timer = null, start = null, justDropped = false, raf = 0, last = null;
   const rows = () => [...list.querySelectorAll(".plan-row")];
+  const others = () => rows().filter((r) => !dragging || r !== dragging.row);
+  const scroller = (() => {
+    for (let el = list.parentElement; el; el = el.parentElement) {
+      const o = getComputedStyle(el).overflowY;
+      if ((o === "auto" || o === "scroll") && el.scrollHeight > el.clientHeight) return el;
+    }
+    return document.scrollingElement || document.documentElement;
+  })();
+
+  // Rows slide to their new places: where each was, then a short glide to
+  // where it is now (the dragged one excepted, which stays under the finger).
+  const glide = (change) => {
+    const before = new Map(others().map((r) => [r, r.getBoundingClientRect().top]));
+    change();
+    others().forEach((r) => {
+      const was = before.get(r);
+      if (was == null) return;
+      const by = was - r.getBoundingClientRect().top;
+      if (!by) return;
+      r.style.transition = "none";
+      r.style.transform = `translateY(${by}px)`;
+      r.getBoundingClientRect();
+      r.style.transition = "transform 180ms cubic-bezier(.2,.7,.3,1)";
+      r.style.transform = "";
+    });
+  };
+  // The dragged row's place in the list: after the target day's sessions,
+  // or in place of its rest row, which is hidden meanwhile.
+  const place = (date) => {
+    const { row, home } = dragging;
+    list.querySelectorAll(".plan-row.rest.covered").forEach((r) => r.classList.remove("covered"));
+    if (date === dragging.from) { home.parent.insertBefore(row, home.next && home.next.parentNode ? home.next : null); return; }
+    const theirs = others().filter((r) => r.dataset.date === date);
+    const rest = theirs.find((r) => r.classList.contains("rest"));
+    if (rest) { rest.classList.add("covered"); rest.after(row); return; }
+    theirs[theirs.length - 1].after(row);
+  };
+  // Each day's first row shows the day, the rest of that day's rows don't,
+  // as rows leave and join days.
+  const tidy = () => {
+    const seen = new Set();
+    others().forEach((r) => {
+      const day = r.querySelector(".day");
+      if (!day) return;
+      day.classList.toggle("hide", seen.has(r.dataset.date));
+      r.classList.toggle("same-day", seen.has(r.dataset.date));
+      seen.add(r.dataset.date);
+    });
+  };
+  // The dragged row says the day it's going to.
+  const label = (date) => {
+    const day = dragging.row.querySelector(".day"), src = rows().find((r) => r !== dragging.row && r.dataset.date === date && !r.querySelector(".day.hide"))
+      || rows().find((r) => r !== dragging.row && r.dataset.date === date);
+    if (!day) return;
+    if (date === dragging.from) { day.innerHTML = dragging.dayHtml; day.className = dragging.dayClass; return; }
+    if (src) { const d = src.querySelector(".day"); if (d) { day.innerHTML = d.innerHTML; day.className = "day"; } }
+  };
+  const follow = (x, y) => {
+    last = { x, y };
+    const { row } = dragging;
+    // Which day the finger is over: the row under it, or the nearest end.
+    const under = document.elementsFromPoint(x, y).map((el) => el.closest && el.closest(".plan-row"))
+      .find((el) => el && el !== row && list.contains(el));
+    let date = under && under.dataset.date;
+    if (!date) {
+      const all = others(), box = list.getBoundingClientRect();
+      if (y < box.top && all.length) date = all[0].dataset.date;
+      else if (y > box.bottom && all.length) date = all[all.length - 1].dataset.date;
+    }
+    const ok = date && (date === dragging.from || date >= today);
+    row.classList.toggle("no-drop", !!date && !ok);
+    if (ok && date !== dragging.at) {
+      glide(() => { place(date); tidy(); });
+      label(date);
+      dragging.at = date;
+      if (navigator.vibrate) navigator.vibrate(5);
+    }
+    dragging.to = dragging.at !== dragging.from ? dragging.at : null;
+    // "Today · on your watch" stops being true once it's over another day.
+    row.classList.toggle("elsewhere", !!dragging.to);
+    // Keep the row under the finger, wherever its place in the list now is.
+    row.style.transform = "none";
+    const top = row.getBoundingClientRect().top;
+    row.style.transform = `translateY(${y - dragging.grab - top}px) scale(1.02)`;
+  };
+  // Near the top or bottom of the screen, the list scrolls on its own.
+  const edge = () => {
+    raf = 0;
+    if (!dragging || !last) return;
+    const view = scroller === document.scrollingElement || scroller === document.documentElement
+      ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect();
+    const zone = 70, speed = last.y < view.top + zone ? -(view.top + zone - last.y) / 4
+      : last.y > view.bottom - zone ? (last.y - (view.bottom - zone)) / 4 : 0;
+    if (speed) { scroller.scrollBy(0, Math.max(-18, Math.min(18, speed))); follow(last.x, last.y); }
+    raf = requestAnimationFrame(edge);
+  };
+  const settle = (then) => {
+    const { row } = dragging;
+    row.style.transition = "transform 160ms cubic-bezier(.2,.7,.3,1)";
+    row.style.transform = "";
+    setTimeout(() => { row.style.transition = ""; then && then(); }, 170);
+  };
   const clear = () => {
     clearTimeout(timer); timer = null;
-    if (dragging) {
-      dragging.row.classList.remove("lifted");
-      dragging.row.style.transform = "";
-    }
-    rows().forEach((r) => r.classList.remove("drop", "no-drop"));
+    cancelAnimationFrame(raf); raf = 0;
+    if (dragging) dragging.row.classList.remove("lifted", "no-drop", "elsewhere");
+    rows().forEach((r) => { r.classList.remove("drop", "no-drop"); r.style.transform = ""; r.style.transition = ""; });
     list.classList.remove("dragging");
-    dragging = null;
+    dragging = null; last = null;
   };
-  const dayRows = (date) => rows().filter((r) => r.dataset.date === date);
   list.addEventListener("contextmenu", (e) => { if (e.target.closest("[data-movable]")) e.preventDefault(); });
   // A held link is something the phone drags itself (Android shows the link
   // as a bubble), which cancels this drag, so the row lifted but never
@@ -748,23 +847,19 @@ function holdToMove(list, today) {
     if (!row || e.button > 0) return;
     start = { x: e.clientX, y: e.clientY };
     timer = setTimeout(() => {
-      dragging = { row, from: row.dataset.date, to: null, pointer: e.pointerId };
+      const day = row.querySelector(".day");
+      dragging = { row, from: row.dataset.date, at: row.dataset.date, to: null, pointer: e.pointerId,
+        grab: start.y - row.getBoundingClientRect().top,
+        home: { parent: row.parentNode, next: row.nextSibling },
+        dayHtml: day ? day.innerHTML : "", dayClass: day ? day.className : "day" };
       try { row.setPointerCapture(e.pointerId); } catch { /* the move still tracks without it */ }
       row.classList.add("lifted");
       list.classList.add("dragging");
-      rows().forEach((r) => { if (r.dataset.date < today) r.classList.add("no-drop"); });
       if (navigator.vibrate) navigator.vibrate(10);
+      follow(start.x, start.y);
+      raf = requestAnimationFrame(edge);
     }, HOLD_MS);
   });
-  const follow = (x, y) => {
-    dragging.row.style.transform = `translateY(${y - start.y}px)`;
-    const under = document.elementsFromPoint(x, y).map((el) => el.closest && el.closest(".plan-row"))
-      .find((el) => el && el !== dragging.row && list.contains(el));
-    rows().forEach((r) => r.classList.remove("drop"));
-    const to = under && under.dataset.date;
-    dragging.to = to && to !== dragging.from && to >= today ? to : null;
-    if (dragging.to) dayRows(dragging.to).forEach((r) => r.classList.add("drop"));
-  };
   list.addEventListener("pointermove", (e) => {
     if (!dragging) {
       if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) { clearTimeout(timer); timer = null; }
@@ -785,8 +880,17 @@ function holdToMove(list, today) {
     const { row, from, to } = dragging;
     justDropped = true;
     setTimeout(() => { justDropped = false; }, 400);
-    clear();
-    if (!to) return;
+    cancelAnimationFrame(raf); raf = 0;
+    if (!to) {
+      // Nowhere new: back to where it was.
+      glide(() => { place(from); tidy(); }); label(from);
+      settle(clear);
+      return;
+    }
+    settle(() => {
+      clear();
+      row.classList.add("moving");
+    });
     try {
       const r = await api(`session/${from}/move`, { method: "POST", body: JSON.stringify({ to, schedule_id: Number(row.dataset.sid) || null }) });
       toast(r.message);
@@ -794,11 +898,13 @@ function holdToMove(list, today) {
     } catch (err) {
       if (err instanceof SignedOut) return route();
       toast(err.message);
+      route();
     }
   };
   list.addEventListener("pointerup", finish);
   list.addEventListener("pointercancel", (e) => {
     if (dragging && e.pointerType === "touch") { dragging.cancelled = true; return; }
+    if (dragging) { glide(() => { place(dragging.from); tidy(); }); label(dragging.from); }
     clear();
   });
   list.addEventListener("click", (e) => { if (justDropped) { e.preventDefault(); e.stopPropagation(); } }, true);
