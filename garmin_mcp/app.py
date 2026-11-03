@@ -571,16 +571,18 @@ async def session_payload(day: str, schedule_id: int | None = None) -> dict[str,
 async def run_payload(activity_id: int) -> dict[str, Any]:
     plan = await server_mod.get_plan()
     row = next((s for s in _sessions(plan) if s.get("activity_id") == activity_id), None) if not _error(plan) else None
-    laps, details, workout = await asyncio.gather(
+    laps, details, workout, recording = await asyncio.gather(
         server_mod._call(lambda c: c.get_activity_splits(activity_id)),
         server_mod.get_activity_details(activity_id),
-        _workout((row or {}).get("workout_id")), return_exceptions=True)
+        _workout((row or {}).get("workout_id")),
+        # The watch's recording, for kilometre splits that are each their own pace.
+        server_mod._call(lambda c: c.get_activity_details(activity_id)), return_exceptions=True)
     if isinstance(laps, Exception):
         return {"error": f"The run's laps couldn't be read: {laps}"}
     details = details if isinstance(details, dict) and not details.get("error") else {}
     workout = None if isinstance(workout, Exception) else workout
     kind = (row or {}).get("type") or (details.get("summary") or {}).get("type")
-    result = analysis.analyse(workout, laps, kind)
+    result = analysis.analyse(workout, laps, kind, None if isinstance(recording, Exception) else recording)
     summary = details.get("summary") or {}
     started = None
     activity = await server_mod._call(lambda c: c.get_activity(activity_id))
@@ -1130,6 +1132,7 @@ async def set_usual_times(times: Any) -> dict[str, Any]:
 async def delete_account() -> dict[str, Any]:
     from . import hosted, official
 
+    _track("app_account_deleted")
     await hosted.forget_person(official.current() or "")
     return {"message": "Deleted. Daash no longer has your Garmin session or anything kept for you."}
 
@@ -1309,17 +1312,51 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
           ".woff2": "font/woff2", ".png": "image/png", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8"}
 
 
+# -- analytics: who uses the app, and for what --------------------------------
+# Every event names the same person the connector's events do (their email
+# fingerprint, the masked address, the address where one is kept), so app
+# use sits beside Claude and ChatGPT use in PostHog. What a screen showed is
+# never sent: no paces, no sessions, no plan.
+
+APP_EVENTS = {"ask_clicked", "share_clicked", "signed_in", "installed"}
+
+
+def _track(event: str, properties: Mapping[str, Any] | None = None, user_token: str | None = None) -> None:
+    from . import analytics, official
+
+    token = user_token or official.current()
+    user = store.get_user(token) if token else None
+    if user is None:
+        analytics.capture(event, None, dict(properties or {}))
+        return
+    email = store.email_for(token)
+    analytics.capture(event, user.email_hash or token, {
+        "account": user.email_masked, **({"email": email} if email else {}), **dict(properties or {})})
+
+
+def _layout(request: Request) -> str | None:
+    found = request.headers.get("x-daash-layout", "")
+    return found if found in ("phone", "desktop") else None
+
+
 def _safe(handler):
     """An app route that answers a readable error instead of crashing, and logs why."""
     import functools
 
     @functools.wraps(handler)
     async def answered(request: Request) -> Response:
+        # Each screen opened, by name: today, session, run, plan, crew, you.
+        screen = request.url.path[len(API_PREFIX):].split("/")[0]
         try:
-            return await handler(request)
+            response = await handler(request)
         except Exception:  # noqa: BLE001 - one screen's failure is reported, never a bare 500
             log.exception("app route %s failed", request.url.path)
+            _track("app_failed", {"screen": screen, "layout": _layout(request)})
             return _json({"error": "Daash couldn't load this just now. Try again in a moment."}, 500)
+        if request.method == "GET":
+            _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
+                                             "ok": response.status_code < 400}))
+        return response
 
     return answered
 
@@ -1407,9 +1444,26 @@ async def api_delete(request: Request) -> Response:
         body = await request.json()
     except ValueError:
         body = {}
-    if (body or {}).get("confirm") != "delete":
-        return _json({"error": "Say delete to confirm."}, 400)
+    # The word typed in the app, not a flag a stray request could set by accident.
+    if str((body or {}).get("confirm") or "").strip().lower() != "delete":
+        return _json({"error": "Type delete to confirm."}, 400)
     return _json(await delete_account())
+
+
+@mcp.custom_route(API_PREFIX + "event", methods=["POST"])
+@_safe
+async def api_event(request: Request) -> Response:
+    """The few things only the page sees: Ask Claude pressed, a run shared, signed in with Garmin, installed."""
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    name = str((body or {}).get("name") or "")
+    if name not in APP_EVENTS:
+        return _json({"error": "Unknown event."}, 400)
+    keep = {k: str(v)[:40] for k, v in ((body or {}).get("properties") or {}).items() if k in ("to", "opens", "where", "method")}
+    _track(f"app_{name}", {**keep, "layout": _layout(request)})
+    return _json({"ok": True})
 
 
 _EDITS = {"move": move, "easier": make_easier, "undo": undo_easier, "resend": resend}
@@ -1435,8 +1489,16 @@ async def api_edit(request: Request) -> Response:
         else:
             result = await _EDITS[action](day, _schedule_id(request, body))
     except EditError as exc:
+        _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": False, "layout": _layout(request)}))
         return _json({"error": str(exc)}, 409)
+    _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": True, "layout": _layout(request)}))
     return _json(result)
+
+
+def _via(body: Mapping[str, Any]) -> str:
+    """How an edit was made: a button, a drag on the calendar, or a held row on Plan."""
+    via = str(body.get("via") or "button")
+    return via if via in ("button", "drag", "hold") else "button"
 
 
 # -- signing in without signing in to Garmin again -------------------------------
@@ -1466,7 +1528,9 @@ async def sign_in_handoff(request: Request) -> Response:
         code = ""
     subject = store.take_handoff(code) if code else None
     if not subject or store.get_user(subject) is None:
+        _track("app_sign_in_failed", {"method": "chat link", "reason": "used or expired"})
         return _json({"error": "That link has been used or has expired."}, 401)
+    _track("app_signed_in", {"method": "chat link"}, subject)
     return _json(_tokens(subject))
 
 
@@ -1486,6 +1550,7 @@ async def sign_in_email(request: Request) -> Response:
     said = {"message": "If that email has a Daash account, a 6-digit code is on its way."}
     fingerprint = store.email_fingerprint(email)
     if not store.tokens_for(fingerprint):
+        _track("app_sign_in_failed", {"method": "email", "reason": "no account"})
         return _json(said)
     if not support_mail.can_send():
         return _json({"error": "Daash can't send codes just now. Sign in with Garmin instead."}, 503)
@@ -1499,6 +1564,7 @@ async def sign_in_email(request: Request) -> Response:
     except (OSError, KeyError):
         log.warning("app sign-in code not sent")
         return _json({"error": "Daash couldn't send the code just now. Try again in a minute."}, 502)
+    _track("app_email_code_sent", {}, store.tokens_for(fingerprint)[-1])
     return _json(said)
 
 
@@ -1516,12 +1582,14 @@ async def sign_in_verify(request: Request) -> Response:
     fingerprint = store.email_fingerprint(email) if email else ""
     checked = store.check_email_code(fingerprint, code) if fingerprint and code else "missing"
     if checked == "wrong":
+        _track("app_sign_in_failed", {"method": "email", "reason": "wrong code"})
         return _json({"error": "That code isn't right. Check the latest email."}, 401)
     if checked != "ok":
         return _json({"error": "That code has expired or had too many tries. Send a new one."}, 401)
     accounts = store.tokens_for(fingerprint)
     if not accounts:
         return _json({"error": "That email has no Daash account. Sign in with Garmin instead."}, 401)
+    _track("app_signed_in", {"method": "email"}, accounts[-1])
     return _json(_tokens(accounts[-1]))
 
 
