@@ -425,6 +425,19 @@ def check_workout_steps(check) -> None:
     long_shape = tp.workout_shape(_json.loads(long_w.model_dump_json(by_alias=True)))
     check("a long run's faster stretches read as work between easy parts",
           [g["k"] for g in long_shape] == ["easy", "work", "easy", "work", "easy"], str(long_shape))
+    # The easy part set by heart rate, the fast finish by pace (Bart's 20 km with 3 km at HM effort).
+    finish_w, _, _ = build_workout("Long 20km w 3km HM", "running", [
+        {"type": "interval", "distance_meters": 17000, "hr": [125, 148]},
+        {"type": "interval", "distance_meters": 3000, "pace": ["3:46", "3:56"]}])
+    finish = tp.workout_shape(_json.loads(finish_w.model_dump_json(by_alias=True)))
+    check("a fast finish set by pace after an easy part set by heart rate is work",
+          [(g["k"], g["km"]) for g in finish] == [("easy", 17.0), ("work", 3.0)], str(finish))
+    steady_w, _, _ = build_workout("Long 20km steady finish", "running", [
+        {"type": "interval", "distance_meters": 17000, "hr": [125, 148]},
+        {"type": "interval", "distance_meters": 3000, "pace": ["5:50", "6:10"]}])
+    steady = tp.workout_shape(_json.loads(steady_w.model_dump_json(by_alias=True)))
+    check("but a slow paced finish after a heart-rate part stays easy",
+          [g["k"] for g in steady] == ["easy"], str(steady))
     tempo_w, _, _ = build_workout("Tempo 8k", "running", [
         {"type": "warmup", "duration_seconds": 900},
         {"type": "interval", "distance_meters": 8000, "pace": ["4:40", "4:50"]},

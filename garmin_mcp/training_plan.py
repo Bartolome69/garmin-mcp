@@ -597,7 +597,15 @@ def workout_shape(workout: Mapping[str, Any] | None, easy_mps: float | None = No
         unit, value = level
         ratio = WORK_LEVEL_RATIO[unit]
         if len(body) > 1 or any_repeat:
-            return "work" if value >= lowest[unit] * ratio else "easy"
+            if value >= lowest[unit] * ratio:
+                return "work"
+            # The only step targeted this way, so nothing of its kind to beat:
+            # a long run's easy part set by heart rate and its fast finish by
+            # pace. The finish is measured against an easy pace instead.
+            alone = sum(1 for f in body if f[2] and f[2][0] == unit) == 1
+            if alone and unit == "pace" and not ride and value >= (easy_mps or DEFAULT_MPS) * ratio:
+                return "work"
+            return "easy"
         # One block on its own: work when it's run well above an easy pace, or
         # above its own warm-up, with a warm-up or cool-down around it.
         if not flanked:
