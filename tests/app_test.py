@@ -303,6 +303,9 @@ def api_checks() -> None:
     check("a race is red, as on the chat's plan card", race.get("colour") == "race", str(race)[:120])
     check("and so is its shape", all(g["colour"] in ("race", "easy", "rec") for g in race.get("segments") or [])
           and any(g["colour"] == "race" for g in race.get("segments") or []), str(race.get("segments"))[:120])
+    check("and the raced part stands as tall as a hard rep, above the warm-up",
+          all(g["h"] == 20 for g in race.get("segments") or [] if g["colour"] == "race")
+          and all(g["h"] < 20 for g in race.get("segments") or [] if g["colour"] != "race"), str(race.get("segments"))[:160])
     check("the block chart runs the whole plan to race day, both blocks", len(block.get("bars") or []) == 28,
           str(len(block.get("bars") or [])))
     check("its title counts to race day", block.get("title") == "28 weeks to race day", block.get("title"))

@@ -136,7 +136,8 @@ def _segments(shape: Any, kind: str | None) -> list[dict[str, Any]] | None:
             colour = "race"
         else:
             colour = "rec" if k == "rec" else "hard" if k == "work" else ("long" if kind == "long" else "easy")
-        out.append({"w": round(float(size), 2), "h": 20 if k == "work" else 5 if k == "rec" else 10,
+        # Raced or worked, the step stands tall; easy parts stay low and recoveries lower.
+        out.append({"w": round(float(size), 2), "h": 20 if k == "work" or colour == "race" else 5 if k == "rec" else 10,
                     "colour": colour, "label": "" if k == "rec" else f"{float(seg.get('km') or 0):g} km"
                     if seg.get("km") else ""})
     return out or None
