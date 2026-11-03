@@ -502,10 +502,51 @@ def api_checks() -> None:
     check("and it has left the crew", not crews.in_crew(crews.member_key(user_token, store.email_fingerprint(email))))
 
 
+def assistant_checks() -> None:
+    """Ask ChatGPT for someone on ChatGPT, though the app's own sign-in is newer (Nov 3)."""
+    import json as json_mod
+
+    from garmin_mcp import oauth
+
+    store.save_oauth_client("gpt", json_mod.dumps({"redirect_uris": ["https://chatgpt.com/connector/oauth/abc123"]}))
+    store.save_oauth_client("cld", json_mod.dumps({"redirect_uris": [oauth.CLAUDE_CALLBACK]}))
+    oauth.ensure_app_client()
+
+    def person(*signed_in: tuple[str, int]) -> tuple[str, dict]:
+        email = f"{secrets.token_hex(4)}@example.test"
+        subject = store.save_user(session_mod.mask_email(email), '{"di_token": "x"}',
+                                  email_hash=store.email_fingerprint(email), email=email)
+        token = ""
+        for client_id, ago in signed_in:
+            token = secrets.token_urlsafe(32)
+            store.save_oauth_token(token, kind="access", client_id=client_id, subject=subject, scopes="",
+                                   resource=None, expires_at=int(time.time()) + 3600)
+            with store._connect() as conn:
+                conn.execute("UPDATE oauth_tokens SET created_at = ? WHERE token_hash = ?",
+                             (int(time.time()) - ago, store.token_hash(token)))
+        return subject, {"Authorization": f"Bearer {token}"}
+
+    gpt, gpt_auth = person(("gpt", 7200), (oauth.APP_CLIENT_ID, 0))
+    check("someone on ChatGPT only is sent to ChatGPT, though the app signed in since",
+          oauth.app_for_user(gpt) == "ChatGPT", str(oauth.app_for_user(gpt)))
+    both, _ = person(("cld", 86400), ("gpt", 600), (oauth.APP_CLIENT_ID, 0))
+    check("with both, the one used last", oauth.app_for_user(both) == "ChatGPT")
+    back, _ = person(("gpt", 86400), ("cld", 600), (oauth.APP_CLIENT_ID, 0))
+    check("and Claude when that was", oauth.app_for_user(back) == "Claude")
+    app_only, _ = person((oauth.APP_CLIENT_ID, 0))
+    check("only the app: nobody to say", oauth.app_for_user(app_only) is None)
+
+    client = TestClient(hosted.build_app(), base_url="http://localhost")
+    today = client.get("/app/api/today", headers=gpt_auth).json()
+    check("the app says ChatGPT to them", today.get("assistant") == "ChatGPT", str(today.get("assistant")))
+    check("and its ask opens a new ChatGPT chat", (today.get("ask") or {}).get("chatgpt", "").startswith("https://chatgpt.com/?q="))
+
+
 def main() -> int:
     analysis_checks()
     easier_checks()
     api_checks()
+    assistant_checks()
     print()
     if failures:
         print(f"{len(failures)} failed: {', '.join(failures)}")

@@ -1201,7 +1201,7 @@ function youView(d) {
           : `<span class="meta">Sync time not available</span>`}</span>
       <button class="pill" id="refresh" style="flex-shrink:0;padding:0 14px">Refresh</button></div>
       <span class="meta" style="font-size:13.5px;line-height:1.45;padding-top:10px;border-top:1px solid var(--hairline)">${esc(d.watch.line)}</span></div>
-    ${d.groups.map((g) => g.title === "Assistants" && onComputer() ? { ...g, rows: [...g.rows,
+    ${d.groups.map((g) => g.title === "Assistants" && onComputer() && d.assistant !== "ChatGPT" ? { ...g, rows: [...g.rows,
       { l: "Ask Claude opens in", v: store.get(OPENS) === "web" ? "The browser" : "The Claude app", sub: "Tap to switch", action: "opens" }] } : g)
       .map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
       <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
