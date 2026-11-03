@@ -313,6 +313,13 @@ def api_checks() -> None:
     before = len(posted("app_viewed"))
     client.get("/app/api/crew", headers={**auth, "X-Daash-Ahead": "1"})
     check("a screen fetched ahead of a tap isn't counted as opened", len(posted("app_viewed")) == before)
+    client.post("/app/api/event", headers=auth, json={"name": "viewed", "properties": {"screen": "crew", "ok": True}})
+    late = posted("app_viewed")[before:]
+    check("the tap that lands on it counts it, once, as preloaded",
+          len(late) == 1 and late[0]["properties"].get("screen") == "crew" and late[0]["properties"].get("preloaded") is True,
+          str([e["properties"] for e in late])[:160])
+    check("a view naming no real screen is refused",
+          client.post("/app/api/event", headers=auth, json={"name": "viewed", "properties": {"screen": "anything"}}).status_code == 400)
     viewed = posted("app_viewed")
     check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
           str([e["properties"].get("screen") for e in viewed])[:120])

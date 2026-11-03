@@ -1318,7 +1318,9 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 # use sits beside Claude and ChatGPT use in PostHog. What a screen showed is
 # never sent: no paces, no sessions, no plan.
 
-APP_EVENTS = {"ask_clicked", "share_clicked", "signed_in", "installed"}
+APP_EVENTS = {"ask_clicked", "share_clicked", "signed_in", "installed", "viewed"}
+# The screens a view can name: the app's own GET routes.
+APP_SCREENS = {"today", "session", "run", "plan", "crew", "you"}
 
 
 def _track(event: str, properties: Mapping[str, Any] | None = None, user_token: str | None = None) -> None:
@@ -1462,7 +1464,17 @@ async def api_event(request: Request) -> Response:
     name = str((body or {}).get("name") or "")
     if name not in APP_EVENTS:
         return _json({"error": "Unknown event."}, 400)
-    keep = {k: str(v)[:40] for k, v in ((body or {}).get("properties") or {}).items() if k in ("to", "opens", "where", "method")}
+    said = (body or {}).get("properties") or {}
+    if name == "viewed":
+        # A screen opened on a fetch made ahead of the tap, which the server
+        # left uncounted: counted here, once, the same as any other view.
+        screen = str(said.get("screen") or "")
+        if screen not in APP_SCREENS:
+            return _json({"error": "Unknown screen."}, 400)
+        _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
+                                         "ok": said.get("ok") is not False, "preloaded": True}))
+        return _json({"ok": True})
+    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method")}
     _track(f"app_{name}", {**keep, "layout": _layout(request)})
     return _json({"ok": True})
 

@@ -188,11 +188,22 @@ const inflight = new Map();
 // Bumped by every edit, so an answer fetched before it isn't kept after it.
 let epoch = 0;
 function fresh(path, ahead = false) {
-  if (inflight.has(path)) return inflight.get(path);
+  const going = inflight.get(path);
+  if (going) {
+    // A tap that lands on a fetch started ahead of it (a finger on the row, the
+    // tabs warmed): the server didn't count that fetch as a screen opened, so
+    // the page says it was, once.
+    if (!ahead && going.ahead && !going.seen) {
+      going.seen = true;
+      const screen = path.split(/[/?]/)[0];
+      going.p.then(() => track("viewed", { screen, ok: true }), () => track("viewed", { screen, ok: false }));
+    }
+    return going.p;
+  }
   const asked = epoch;
   const p = api(path, { ahead }).then((d) => { if (asked === epoch) cache.put(path, d); return d; })
-    .finally(() => { if (inflight.get(path) === p) inflight.delete(path); });
-  inflight.set(path, p);
+    .finally(() => { if (inflight.get(path)?.p === p) inflight.delete(path); });
+  inflight.set(path, { p, ahead });
   return p;
 }
 let showing = 0;
