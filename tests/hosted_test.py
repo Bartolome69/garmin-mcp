@@ -353,6 +353,27 @@ async def main() -> int:
             check("get_session answers with a session card, or says nothing is on the calendar",
                   session_answer.get("card") == "session" or "Nothing is scheduled" in str(session_answer.get("error")),
                   str(session_answer)[:300])
+            # "Where's the app?" asked in a chat had no answer (Nov 3).
+            os.environ["GARMIN_MCP_BASE_URL"] = "https://daash.test"
+            try:
+                hosted._PLAN_CALLS.pop(alice, None)
+                hosted._PLAN_CALLS.pop(bob, None)
+                plan_a = await call(alice, "get_plan")
+                plan_b = await call(bob, "get_plan")
+            finally:
+                os.environ.pop("GARMIN_MCP_BASE_URL", None)
+                # Reads after these aren't sent with them, so nothing is held.
+                hosted._PLAN_CALLS.pop(alice, None)
+                hosted._PLAN_CALLS.pop(bob, None)
+            app_a = plan_a.get("app") or {}
+            code = str(app_a.get("url", "")).partition("login=")[2]
+            check("the plan in a chat carries the Daash app's link, for an account trying the app",
+                  str(app_a.get("url", "")).startswith("https://daash.test/app/#/plan?login=")
+                  and "Daash app" in str(app_a.get("note")), str(plan_a)[:300])
+            check("and it signs that person in", bool(code) and store.take_handoff(code) == alice)
+            check("not for anyone else", "app" not in plan_b, str(plan_b.get("app")))
+            check("and get_plan says it has the link", "Daash app" in described[alice]["get_plan"]
+                  and "Daash app" not in described[bob]["get_plan"])
             # Nothing is in preview now, but the list must still be read right
             # for the next thing that is.
             status_a_on = await call(alice, "get_connection_status")
