@@ -1913,14 +1913,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
     summary = summary or {}
     laps = (splits or {}).get("lapDTOs") or []
 
-    # The detail endpoint nests what the list endpoint keeps flat.
-    flat = dict(summary)
-    for key in ("summaryDTO", "activityTypeDTO"):
-        nested = summary.get(key)
-        if isinstance(nested, dict):
-            flat.update(nested)
-    if isinstance(summary.get("activityTypeDTO"), dict):
-        flat["activityType"] = {"typeKey": summary["activityTypeDTO"].get("typeKey")}
+    flat = _flat_activity(summary)
 
     type_key = (flat.get("activityType") or {}).get("typeKey")
     if swimming.is_swim(type_key):
@@ -1985,6 +1978,37 @@ SHARE_IMAGE_NOTE = (
     "end, as a link, the first time a run comes up in a chat, and whenever the user "
     "wants to share or post one. Don't draw an image of the run yourself."
 )
+
+
+def _flat_activity(summary: dict[str, Any]) -> dict[str, Any]:
+    """The detail endpoint nests what the list endpoint keeps flat."""
+    flat = dict(summary)
+    for key in ("summaryDTO", "activityTypeDTO"):
+        nested = summary.get(key)
+        if isinstance(nested, dict):
+            flat.update(nested)
+    if isinstance(summary.get("activityTypeDTO"), dict):
+        flat["activityType"] = {"typeKey": summary["activityTypeDTO"].get("typeKey")}
+    return flat
+
+
+def run_brief(activity: dict[str, Any], splits: Any, recording: Any) -> dict[str, Any]:
+    """A run's summary, laps and share link from the three reads the app already
+    makes, without the zones, shoes, weather and earlier runs get_activity_details
+    adds for a chat (Nov 3: those, one after another, were most of the app's wait)."""
+    flat = _flat_activity(activity or {})
+    laps = (splits.get("lapDTOs") or []) if isinstance(splits, dict) else []
+    ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
+    try:
+        inside = None if ride or not recording else stream.analyse(recording, laps)
+    except Exception:  # noqa: BLE001 - an odd recording must not lose the summary
+        inside = None
+    return _with_share_image(drop_empty({
+        "activity_id": flat.get("activityId"),
+        "summary": _summarise_activity(flat) or None,
+        "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
+        "inside": inside,
+    }))
 
 
 def _with_share_image(result: dict[str, Any]) -> dict[str, Any]:

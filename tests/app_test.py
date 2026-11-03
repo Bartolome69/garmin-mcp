@@ -323,6 +323,9 @@ def api_checks() -> None:
     viewed = posted("app_viewed")
     check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
           str([e["properties"].get("screen") for e in viewed])[:120])
+    check("with how long the screen waited", all(isinstance(e["properties"].get("seconds"), (int, float))
+                                                 for e in viewed if not e["properties"].get("preloaded")),
+          str([e["properties"].get("seconds") for e in viewed])[:120])
     check("against the same person as the connector's events",
           viewed and viewed[0]["properties"].get("account") == session_mod.mask_email(email))
     check("never with what the screen showed", not any(k in e["properties"] for e in viewed
@@ -370,6 +373,29 @@ def api_checks() -> None:
     check("the run screen has a verdict", bool(run.get("verdict")), str(run.get("error")))
     check("it counts as done", (run.get("effect") or {}).get("head") == "Counts as done")
     check("it offers the share image", (run.get("share_url") or "").startswith("http"))
+
+    # Each read asked for once, and none of the chat's extras (Nov 3: the run
+    # screen made about eleven calls, mostly one after another).
+    asked: list[tuple[str, tuple]] = []
+    reads = ("get_activity_splits", "get_activity_details", "get_activity", "get_activity_hr_in_timezones",
+             "get_activity_gear", "get_activity_weather")
+    for name in reads:
+        def counted(*a, _real=getattr(DEMO, name), _name=name, **k):
+            asked.append((_name, a))
+            return _real(*a, **k)
+        setattr(DEMO, name, counted)
+    try:
+        again = client.get(f"/app/api/run/{done['activityId']}", headers=auth).json()
+    finally:
+        for name in reads:
+            delattr(DEMO, name)
+    names = sorted(n for n, _ in asked)
+    check("the run screen asks Garmin for each thing once",
+          names == ["get_activity", "get_activity_details", "get_activity_splits"], str(names))
+    check("and not for the route", any(n == "get_activity_details" and a[-1:] == (0,) for n, a in asked), str(asked)[:160])
+    check("with the same breakdown and share image as before",
+          again.get("verdict") == run.get("verdict") and again.get("share_url") == run.get("share_url")
+          and again.get("planned_and_run") == run.get("planned_and_run") and again.get("splits") == run.get("splits"))
 
     # -- signing in without Garmin again --------------------------------
     from garmin_mcp import support_mail
