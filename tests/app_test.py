@@ -208,6 +208,10 @@ def api_checks() -> None:
     check("no token, no plan", client.get("/app/api/today").status_code == 401)
     check("a wrong token, no plan", client.get("/app/api/today", headers={"Authorization": "Bearer nope"}).status_code == 401)
     check("the app's page is served", client.get("/app").status_code == 200)
+    # Nothing this server answers belongs in search: the app, its API, the sign-in page.
+    check("every page says noindex", all(client.get(path).headers.get("x-robots-tag") == "noindex, nofollow"
+                                         for path in ("/app", "/app/api/today", "/")),
+          str([client.get(path).headers.get("x-robots-tag") for path in ("/app", "/app/api/today", "/")]))
     check("so is its script", "text/javascript" in client.get("/app/app.js").headers.get("content-type", ""))
     check("a path can't climb out", all(Path(app_routes._file(bad).path).name == "index.html"
                                         for bad in ("../store.py", "../../../etc/passwd", "fonts/../../app.py")))

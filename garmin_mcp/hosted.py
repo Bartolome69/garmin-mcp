@@ -3485,6 +3485,31 @@ def _bearer(scope: Any) -> str:
     return ""
 
 
+class NoIndex:
+    """Keeps every page this server answers out of search results.
+
+    The sign-in pages, the connector, the app and its API: none is a page to
+    find in a search. A header rather than robots.txt, so a crawler that
+    follows a link here still reads it and drops the page. Link previews
+    (the app's) don't read it, so shared links keep their image.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def sending(message: Any) -> None:
+            if message.get("type") == "http.response.start":
+                message["headers"] = [*message.get("headers", []), (b"x-robots-tag", b"noindex, nofollow")]
+            await send(message)
+
+        await self.app(scope, receive, sending)
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 
@@ -3641,6 +3666,7 @@ def build_app() -> Any:
             host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
         )
         app.add_middleware(SessionBinding)
+        app.add_middleware(NoIndex)
         return app
 
     from mcp.server.auth.settings import (
@@ -3682,6 +3708,7 @@ def build_app() -> Any:
         host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
     )
     app.add_middleware(SessionBinding)
+    app.add_middleware(NoIndex)
     return app
 
 
