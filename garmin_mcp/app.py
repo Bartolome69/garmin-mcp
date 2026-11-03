@@ -17,6 +17,8 @@ import asyncio
 import json
 import logging
 import re
+import threading
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Mapping
@@ -453,7 +455,7 @@ async def today_payload() -> dict[str, Any]:
     if isinstance(plan, Exception) or _error(plan):
         return {"error": str(plan) if isinstance(plan, Exception) else _error(plan)}
     ready = None if isinstance(readiness, Exception) else _readiness(readiness)
-    _keep_crew_current(plan, today)
+    await asyncio.to_thread(_keep_crew_current, plan, today)
     if plan.get("source") == "log":
         return {"today": today.isoformat(), "kicker": _short_date(today).upper(), "headline": "No plan on the calendar",
                 "empty": True, "readiness": ready,
@@ -461,8 +463,15 @@ async def today_payload() -> dict[str, Any]:
     kicker, headline = _headline(plan, today)
     nxt = _next(plan, today)
     card = None
+    # The next session's workout and the run done today, at the same time.
+    workout, done = await asyncio.gather(
+        _workout((nxt or {}).get("workout_id")), _done_today(plan, today), return_exceptions=True)
+    if isinstance(done, Exception):
+        log.warning("today's run could not be read (%s)", type(done).__name__)
+        done = None
     if nxt:
-        workout = await _workout(nxt.get("workout_id"))
+        if isinstance(workout, Exception):
+            workout = None
         totals = training_plan.session_totals(workout, training_plan.easy_speed(plan)) if workout else None
         d = date.fromisoformat(nxt["date"])
         card = {
@@ -478,7 +487,6 @@ async def today_payload() -> dict[str, Any]:
         log.exception("crew week failed")
         crew_week = None
     crew = _crew_line(crew_week, today)
-    done = await _done_today(plan, today)
     return drop_empty({
         "today": today.isoformat(), "kicker": kicker, "headline": headline, "done_today": done, "next": card,
         "crew": crew, "readiness": ready, "week": _week_strip(plan, today, (nxt or {}).get("date")),
@@ -517,7 +525,14 @@ async def _session_parts(day: str, schedule_id: int | None = None):
 
 async def session_payload(day: str, schedule_id: int | None = None) -> dict[str, Any]:
     today = date.today()
-    plan, chosen, on_day, workout, error = await _session_parts(day, schedule_id)
+    # Today's readiness asked for beside the plan, not after it.
+    parts, readiness = await asyncio.gather(
+        _session_parts(day, schedule_id),
+        server_mod.get_readiness() if day == today.isoformat() else asyncio.sleep(0),
+        return_exceptions=True)
+    if isinstance(parts, BaseException):
+        raise parts
+    plan, chosen, on_day, workout, error = parts
     if error:
         return {"error": error}
     d = date.fromisoformat(day)
@@ -533,9 +548,9 @@ async def session_payload(day: str, schedule_id: int | None = None) -> dict[str,
     card = training_plan.session_card(plan, day, today.isoformat(), workout)
     is_today = d == today
     ready = None
-    if is_today:
+    if is_today and isinstance(readiness, dict):
         try:
-            ready = _readiness(await server_mod.get_readiness())
+            ready = _readiness(readiness)
         except Exception:  # noqa: BLE001
             ready = None
     t = _type(kind)
@@ -569,23 +584,32 @@ async def session_payload(day: str, schedule_id: int | None = None) -> dict[str,
 
 
 async def run_payload(activity_id: int) -> dict[str, Any]:
-    plan = await server_mod.get_plan()
-    row = next((s for s in _sessions(plan) if s.get("activity_id") == activity_id), None) if not _error(plan) else None
-    laps, details, workout, recording = await asyncio.gather(
+    # Four reads at once, each asked for once (Nov 3: the chat's whole
+    # get_activity_details, then the same laps and recording again, then the
+    # activity, took 2-5 seconds). The plan is usually remembered from the
+    # screen before, and its workouts with it.
+    plan, laps, recording, activity = await asyncio.gather(
+        server_mod.get_plan(),
         server_mod._call(lambda c: c.get_activity_splits(activity_id)),
-        server_mod.get_activity_details(activity_id),
-        _workout((row or {}).get("workout_id")),
-        # The watch's recording, for kilometre splits that are each their own pace.
-        server_mod._call(lambda c: c.get_activity_details(activity_id)), return_exceptions=True)
+        # The watch's recording, for kilometre splits that are each their own
+        # pace. No route: thousands of points nothing here draws.
+        server_mod._call(lambda c: c.get_activity_details(activity_id, 2000, 0)),
+        server_mod._call(lambda c: c.get_activity(activity_id)), return_exceptions=True)
     if isinstance(laps, Exception):
         return {"error": f"The run's laps couldn't be read: {laps}"}
-    details = details if isinstance(details, dict) and not details.get("error") else {}
-    workout = None if isinstance(workout, Exception) else workout
+    plan = {} if isinstance(plan, Exception) or _error(plan) else plan
+    recording = None if isinstance(recording, Exception) else recording
+    activity = None if isinstance(activity, Exception) else activity
+    row = next((s for s in _sessions(plan) if s.get("activity_id") == activity_id), None)
+    try:
+        workout = await _workout((row or {}).get("workout_id"))
+    except Exception:  # noqa: BLE001 - the run reads without its plan
+        workout = None
+    details = server_mod.run_brief(activity or {}, laps, recording)
     kind = (row or {}).get("type") or (details.get("summary") or {}).get("type")
-    result = analysis.analyse(workout, laps, kind, None if isinstance(recording, Exception) else recording)
+    result = analysis.analyse(workout, laps, kind, recording)
     summary = details.get("summary") or {}
     started = None
-    activity = await server_mod._call(lambda c: c.get_activity(activity_id))
     start_text = str(((activity or {}).get("summaryDTO") or {}).get("startTimeLocal") or "")
     if start_text:
         started = datetime.fromisoformat(start_text.replace(" ", "T").split(".")[0])
@@ -700,10 +724,10 @@ async def _season_weeks(plan: Mapping[str, Any], season: Mapping[str, Any] | Non
     last_monday = season["last"] - timedelta(days=season["last"].weekday())
     if weeks and max(weeks) >= last_monday.isoformat():
         return weeks
-    for block in season["blocks"]:
-        if not block.get("label"):
-            continue
-        whole = await server_mod.get_plan(block["label"])
+    labels = [b["label"] for b in season["blocks"] if b.get("label")]
+    # Every block at once; one after another, each was a whole plan read's wait.
+    found = await asyncio.gather(*(server_mod.get_plan(label) for label in labels), return_exceptions=True)
+    for whole in found:
         if isinstance(whole, dict) and not _error(whole):
             for w in whole.get("weeks") or []:
                 if w.get("starts"):
@@ -941,7 +965,7 @@ async def crew_payload() -> dict[str, Any]:
     if not crews.available() or not crews.in_crew():
         return {"none": True, "assistant": assistant(), "ask": _ask_links(
             "Use Daash to start a crew for me and the friends I run with, or to join one with the code a friend sent me.")}
-    _keep_crew_current(await server_mod.get_plan(), today)
+    await asyncio.to_thread(_keep_crew_current, await server_mod.get_plan(), today)
     week = crews.week(today=today)
     days = [date.fromisoformat(week["week"]["starts"]) + timedelta(days=i) for i in range(7)]
     members = week.get("members") or []
@@ -1349,6 +1373,7 @@ def _safe(handler):
     async def answered(request: Request) -> Response:
         # Each screen opened, by name: today, session, run, plan, crew, you.
         screen = request.url.path[len(API_PREFIX):].split("/")[0]
+        started = time.monotonic()
         try:
             response = await handler(request)
         except Exception:  # noqa: BLE001 - one screen's failure is reported, never a bare 500
@@ -1357,8 +1382,12 @@ def _safe(handler):
             return _json({"error": "Daash couldn't load this just now. Try again in a moment."}, 500)
         # A screen fetched ahead of a tap (the app warms the other tabs) isn't one opened.
         if request.method == "GET" and request.headers.get("x-daash-ahead") != "1":
-            _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
-                                             "ok": response.status_code < 400}))
+            # How long the screen waited for Daash, and on its own thread: the
+            # account lookups are reads a screen shouldn't wait for.
+            from . import official
+            seen = drop_empty({"screen": screen, "layout": _layout(request), "ok": response.status_code < 400,
+                               "seconds": round(time.monotonic() - started, 2)})
+            threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
         return response
 
     return answered
