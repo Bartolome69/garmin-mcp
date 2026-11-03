@@ -385,7 +385,8 @@ _PREVIEW_NOTES: dict[str, str] = {
     "get_plan": (
         "\n\nA question about one session (\"what's tomorrow\", \"talk me through "
         "Sunday\", today's session in a morning check-in) is get_session's, not this, "
-        "even if this plan is already in the chat: one card per reply."
+        "even if this plan is already in the chat: one card per reply. Its answer has the "
+        "link to the Daash app, for when they ask for the app."
     ),
     "update_workout": (
         "\n\nAfter changing one session, call get_session for its date, on its own, "
@@ -2234,15 +2235,34 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
     card = training_plan.session_card(answer, day, today, detail, change)
     # The same session in the companion app, for the card's Open in Daash.
-    # Preview accounts only, until the app is ready for everyone.
-    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    if base and preview.enabled() and not card.get("rest"):
-        # It carries a single-use code, so it opens the app already signed in
-        # as this person: no second sign-in for someone who uses the connector.
-        who = official.current()
-        login = f"?login={store.new_handoff(who)}" if who else ""
-        card["app_url"] = f"{base}/app/#/session/{day}{login}"
+    link = None if card.get("rest") else app_link(f"session/{day}")
+    if link:
+        card["app_url"] = link
     return card
+
+
+def app_link(route: str) -> str | None:
+    """The companion app at a route ("plan", "session/2026-11-04"), for a card.
+
+    Preview accounts only, until the app is ready for everyone. It carries a
+    single-use code, so it opens the app already signed in as this person: no
+    second sign-in for someone who uses the connector.
+    """
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if not base or not preview.enabled():
+        return None
+    who = official.current()
+    login = f"?login={store.new_handoff(who)}" if who else ""
+    return f"{base}/app/#/{route}{login}"
+
+
+# With the plan in a chat, so "where's the app?" has an answer (Nov 3: asked
+# in ChatGPT, the model knew of no app and offered daash.run).
+APP_NOTE = (
+    "The Daash app: this plan, today's session and their crew, on their phone or computer. "
+    "This link opens it signed in (once, within 30 minutes). Give it when they ask for Daash's app, "
+    "the companion app or a link to their plan, and no other address for it. Don't offer it unasked."
+)
 
 
 async def _ftp_for(*step_lists: Any) -> float | None:

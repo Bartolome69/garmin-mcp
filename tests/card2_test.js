@@ -169,6 +169,32 @@ f.src = "card.html";
       await page.close();
     }
 
+    console.log("the Daash app's link, for an account trying the app");
+    const withApp = { ...plan(), app: { url: "https://daash.test/app/#/plan?login=abc", note: "x" } };
+    for (const width of [320, 390]) {
+      ({ page, card } = await open(withApp, width, 900));
+      got = await card.evaluate(() => {
+        const b = [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash");
+        const title = document.querySelector(".head .title"), kicker = document.querySelector(".head .brand .kicker");
+        const doc = document.documentElement;
+        return { button: !!b, overflow: doc.scrollWidth > doc.clientWidth + 1,
+          oneLine: !!b && b.getBoundingClientRect().height < 50 && kicker.getBoundingClientRect().height < 20,
+          beside: !!b && Math.abs(b.getBoundingClientRect().top - title.getBoundingClientRect().top) < 12,
+          right: b ? b.getBoundingClientRect().right <= doc.clientWidth : false };
+      });
+      check(`at ${width}px: Open in Daash sits beside the title, on one line, without a sideways scroll`,
+        got.button && !got.overflow && got.oneLine && got.beside && got.right, JSON.stringify(got));
+      if (width === 390) {
+        await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash").click());
+        await page.waitForTimeout(200);
+        check("and opens the app's link", (await page.evaluate(() => window.opened)) === withApp.app.url, String(await page.evaluate(() => window.opened)));
+      }
+      await page.close();
+    }
+    ({ page, card } = await open(plan(), 390, 900));
+    check("no link, no button", !(await card.evaluate(() => /Open in Daash/.test(document.body.innerText))));
+    await page.close();
+
     console.log("states");
     ({ page, card } = await open(null, 390, 500));
     got = await card.evaluate(() => document.body.innerText);

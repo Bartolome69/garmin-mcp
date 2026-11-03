@@ -891,6 +891,12 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
         if alone:
             return result
         result = _with_card_check(name, result, user)
+        # The app's link rides on the plan in a chat, not on the app's own
+        # reads of it, which pass no hook: a code made for each screen is waste.
+        if name == "get_plan" and isinstance(result, dict) and "error" not in result:
+            link = server_mod.app_link("plan")
+            if link:
+                result = {**result, "app": {"url": link, "note": server_mod.APP_NOTE}}
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)

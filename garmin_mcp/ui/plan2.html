@@ -943,6 +943,9 @@
       ? "Then " + (raw.upcoming_plan.name || goalTitle(raw.upcoming_plan.goal).replace(/\s*:.*$/, "")) : "";
     var first = m.weeks[0], last = m.weeks[m.weeks.length - 1];
     var span = b === raw ? range(b.starts, b.ends) : range(first.starts, iso(addDays(parse(last.starts), 6)));
+    // The same plan in the Daash app, signed in, for accounts trying it:
+    // beside the title, as the brand line has no room for it at phone width.
+    var appUrl = p && p.app && p.app.url;
     var tools = el("span", { class: "tools" }, [
       canShare() ? el("button", { class: "iconbtn", "aria-label": shareWords(m), title: shareWords(m), onclick: share }, [svg(ICON.share, 16)]) : null,
       el("button", { class: "iconbtn refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 16)]),
@@ -950,9 +953,13 @@
     var kids = [
       el("div", { class: "brand" }, [el("span", { class: "wordmark", text: "Daash" }),
         el("span", { class: "kicker mono", text: m.mode === "log" ? "TRAINING LOG" : "TRAINING PLAN", onclick: debugTap }), tools]),
-      el("div", { style: "display:flex;flex-direction:column;gap:3px" }, [
-        el("h1", { class: "title", text: title }),
-        el("span", { class: "sub", text: [b.method, then, span].filter(Boolean).join(" · ") }),
+      el("div", { style: "display:flex;align-items:flex-start;gap:12px" }, [
+        el("div", { style: "display:flex;flex-direction:column;gap:3px;flex:1;min-width:0" }, [
+          el("h1", { class: "title", text: title }),
+          el("span", { class: "sub", text: [b.method, then, span].filter(Boolean).join(" · ") }),
+        ]),
+        appUrl ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px;font-size:13.5px",
+          onclick: function (e) { openUrl(appUrl, e.currentTarget); } }, ["Open in Daash"]) : null,
       ]),
     ];
     var races = m.races, goal = races.filter(function (r) { return r.tier === "goal"; }).slice(-1)[0];
