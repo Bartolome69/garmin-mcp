@@ -101,6 +101,12 @@ ROUTES = ("official", "password")
 # cookie, to see which more people finish and keep using (from Oct 26).
 SPLIT = SIGNUP_ROUTE == "split"
 SPLIT_NAME = "signup-route-oct26"
+# Nov 4: Garmin capped new connections to Daash's app while it reviews it
+# (Starter Access, at about 100 linked accounts). Until Garmin lifts it, no
+# new sign-up is sent to Garmin's page, where the cap would stop them: they
+# get the password form. Accounts already linked keep working. Reopen with
+# GARMIN_OFFICIAL_SIGNUPS=open (deploy-hosted.yml) once Garmin says so.
+OFFICIAL_SIGNUPS_OPEN = os.environ.get("GARMIN_OFFICIAL_SIGNUPS", "paused").strip().lower() == "open"
 # Set as someone leaves for Garmin's page, and looked for when Garmin sends
 # them back: missing means they came back in a different browser than the one
 # Claude or ChatGPT opened for signing in (a phone handing Garmin's page to
@@ -1588,7 +1594,8 @@ def _try_again(flow: str) -> str:
 
 def _fallback_ok(flow: str) -> bool:
     """Whether a refused password sign-in can be offered Garmin's own page instead."""
-    return bool(flow) and OAUTH_ENABLED and official.configured() and OAUTH_PROVIDER.pending(flow) is not None
+    return (bool(flow) and OAUTH_ENABLED and official.configured() and OFFICIAL_SIGNUPS_OPEN
+            and OAUTH_PROVIDER.pending(flow) is not None)
 
 
 # Why the Garmin button was offered, as garmin_sign_in_started records it.
@@ -1642,7 +1649,15 @@ async def connect_form(request: Request) -> Response:
     route, drawn = _signup_route(request)
     if flow and OAUTH_ENABLED and OAUTH_PROVIDER.password_only(flow):
         route, drawn = "password", False  # the password link: whatever the split or cookie says
-    listed = bool(flow) and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured()
+    from_directory = bool(flow) and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured()
+    if from_directory and not OFFICIAL_SIGNUPS_OPEN:
+        # The directory address is Garmin's own sign-in only, so while Garmin's
+        # cap is on it can't offer a password form: it says when to come back.
+        analytics.capture("sign_in_shown", None, _with_source(request, {"via": "oauth", "route": "paused", "listed": True}))
+        return page("Back in a few days", """<h1>New connections are paused for a few days</h1>
+            <p>Garmin is reviewing Daash, and has paused new connections to it until the review is done.
+            Accounts already connected keep working. Try again in a few days.</p>""")
+    listed = from_directory and OFFICIAL_SIGNUPS_OPEN
     official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
@@ -1671,7 +1686,7 @@ async def connect_form(request: Request) -> Response:
 def _signup_route(request: Request) -> tuple[str, bool]:
     """"official" or "password": which sign-in this browser gets from the connector,
     and whether it was drawn just now for the split (so the cookie keeps it)."""
-    if not official.configured() or request.query_params.get("usual") == "1":
+    if not official.configured() or not OFFICIAL_SIGNUPS_OPEN or request.query_params.get("usual") == "1":
         return "password", False
     asked = request.query_params.get("route", "")
     if asked in ROUTES:
@@ -2998,6 +3013,16 @@ async def official_signup(request: Request) -> Response:
     flow = request.query_params.get("flow", "")
     if not (OAUTH_ENABLED and official.configured()) or OAUTH_PROVIDER.pending(flow) is None:
         return _consent_expired()
+    if not OFFICIAL_SIGNUPS_OPEN and request.query_params.get("again") != "1":
+        # A Continue with Garmin button from before the pause, or a bookmark.
+        analytics.capture("garmin_sign_in_paused", None, _with_source(request, {}))
+        return page("Connect with your password", f"""<h1>Connect with your Garmin password</h1>
+            <p>Connecting on Garmin&rsquo;s own page is paused for new accounts for a few days, while
+            Garmin reviews Daash. Your Garmin email and password work the same way, and Daash never
+            keeps the password.</p>
+            <a class=button href="{_connect_url(flow)}&amp;usual=1">Continue with your password</a>
+            <p class=fine>Connected on Garmin&rsquo;s page before?
+            <a href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin</a></p>""")
     via = request.query_params.get("via", "")
     analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via in GARMIN_INSTEAD_WHY else {}))
     response = RedirectResponse(official.signup_url(flow), status_code=302)

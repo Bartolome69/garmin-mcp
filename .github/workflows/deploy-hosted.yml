@@ -223,7 +223,7 @@ jobs:
         # still get the password (see _signup_route). The listed address is
         # always official.
         # WEEKLY_EMAIL=on sends the Monday email, from 2 Nov 2026.
-        run: flyctl deploy --app "$FLY_APP" --remote-only --env GARMIN_MCP_SIGNUP=official --env WEEKLY_EMAIL=on
+        run: flyctl deploy --app "$FLY_APP" --remote-only --env GARMIN_MCP_SIGNUP=official --env GARMIN_OFFICIAL_SIGNUPS=paused --env WEEKLY_EMAIL=on
 
       # `flyctl deploy` exiting 0 means the machine started, not that it serves
       # what we think it serves. These are the two pages that ask for a Garmin

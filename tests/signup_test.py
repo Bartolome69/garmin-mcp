@@ -43,6 +43,9 @@ os.environ["GARMIN_MCP_BASE_URL"] = f"http://127.0.0.1:{PORT}"
 os.environ["GARMIN_OFFICIAL_CLIENT_ID"] = "client-123"
 os.environ["GARMIN_OFFICIAL_CLIENT_SECRET"] = "shh-secret"
 os.environ.pop("GARMIN_MCP_SIGNUP", None)
+# Garmin's page open, as it is when Garmin isn't capping new connections; the
+# pause (Nov 4) is checked on its own below.
+os.environ["GARMIN_OFFICIAL_SIGNUPS"] = "open"
 os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
 os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
 
@@ -344,6 +347,28 @@ async def main() -> int:
             check("tablets keep their side of the split", "Continue with Garmin" in body)
         finally:
             hosted.SPLIT = False
+
+        print("\nGarmin's cap on new connections (Nov 4)")
+        hosted.OFFICIAL_SIGNUPS_OPEN = False
+        try:
+            f, _v = await start()
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={f}", headers={"Cookie": "daash_route=official"}))
+            check("paused, a browser on Garmin's page gets the password form", "Garmin password" in body
+                  and "Continue with Garmin" not in body)
+            f, _v = await start()
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={f}&route=official"))
+            check("even a link asking for Garmin's page by name", "Garmin password" in body)
+            f, _v = await start()
+            code, body, _ = await run(lambda: http("GET", f"/official/signup?flow={f}"))
+            check("an old Continue with Garmin button says it's paused and leads to the password form",
+                  code == 200 and "paused" in body and "usual=1" in body, body[-400:])
+            check("with a way through for someone already connected that way", "again=1" in body)
+            code, _, headers = await run(lambda: http("GET", f"/official/signup?flow={f}&again=1"))
+            check("which still goes to Garmin", code == 302 and "garmin" in headers.get("location", "").lower(),
+                  str(headers.get("location", ""))[:80])
+            check("a refused password no longer offers Garmin's page", not hosted._fallback_ok(f))
+        finally:
+            hosted.OFFICIAL_SIGNUPS_OPEN = True
 
         print("\na new person")
         code, body = await through_garmin(flow)
@@ -764,6 +789,13 @@ async def main() -> int:
               "Continue with Garmin" in body and "Sign in the usual way" not in body and "Garmin password" not in body)
         _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow_l}&usual=1"))
         check("not even by asking for the usual way", "Garmin password" not in body)
+        hosted.OFFICIAL_SIGNUPS_OPEN = False
+        try:
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow_l}"))
+            check("while Garmin's cap is on, a directory sign-in is told to come back, never offered a password",
+                  "paused" in body and "Garmin password" not in body and "Continue with Garmin" not in body, body[-300:])
+        finally:
+            hosted.OFFICIAL_SIGNUPS_OPEN = True
         _, body, _ = await run(lambda: http("POST", "/connect", {"email": "x@example.com", "password": "pw", "flow": flow_l}))
         check("a password sent anyway goes nowhere", "Continue with Garmin" in body and "Allow" not in body)
         NEXT_GARMIN["id"] = "g-listed"
