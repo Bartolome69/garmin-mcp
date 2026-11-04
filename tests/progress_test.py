@@ -20,6 +20,7 @@ from garmin_mcp.progress import (  # noqa: E402
     Planned,
     by_week,
     from_collected,
+    looks_easy,
     match,
 )
 
@@ -352,6 +353,46 @@ def main() -> int:
           str(weeks[1]))
     check("and the last session's week as before",
           weeks[0]["run_km"] == 10.0 and weeks[0]["sessions"][0]["status"] == "done, moved", str(weeks[0]))
+
+    print("\nan easy run isn't a hard session (Nov 4)")
+    wed, thu = date(2026, 11, 4), date(2026, 11, 5)
+    bench = Planned(day=wed, name="bench", sport="run", seconds=2400, title="Benchmark 5 x 1km", hard=True)
+    easy_thu = Planned(day=thu, name="easy", sport="run", seconds=2700, title="8km easy + strides", hard=False)
+    zone_one = {"trainingEffectLabel": "AEROBIC_BASE", "aerobicTrainingEffect": 2.5, "anaerobicTrainingEffect": 0.0,
+                **{f"hrTimeInZone_{n}": (2337 if n == 1 else 0) for n in range(1, 6)}}
+    check("a zone-1 run with no anaerobic effect looks easy", looks_easy(zone_one) is True)
+    reps = {"trainingEffectLabel": "VO2MAX", "aerobicTrainingEffect": 3.6, "anaerobicTrainingEffect": 2.1,
+            **{f"hrTimeInZone_{n}": s for n, s in zip(range(1, 6), (900, 400, 300, 500, 200))}}
+    check("a session with time in zones 3 to 5 and anaerobic effect doesn't", looks_easy(reps) is False)
+    check("a label that says easy is outvoted by hard-zone time", looks_easy({**reps, "trainingEffectLabel": "AEROBIC_BASE"}) is False)
+    check("and with nothing to go on, it's unknown", looks_easy({}) is None)
+    easy_run = Actual(day=wed, name="Tower Hamlets Running", sport="run", seconds=2342, metres=7750, activity_id=1, easy=True)
+    got = match([bench, easy_thu], [easy_run], wed)
+    check("the easy run doesn't tick the intervals planned that day",
+          not any(r["name"] == "bench" for r in got.done), str(got.done))
+    check("it counts as tomorrow's easy session, done early",
+          [(r["name"], r["done_on"]) for r in got.done] == [("easy", "2026-11-04")], str(got.done))
+    check("and today's intervals are still to do", [r["name"] for r in got.missed] == ["bench"], str(got.missed))
+    named = Actual(day=wed, name="Tower Hamlets - Benchmark 5 x 1km", sport="run", seconds=2342, metres=7750,
+                   activity_id=2, easy=True)
+    got = match([bench, easy_thu], [named], wed)
+    check("a run started from the workout still counts as it, however easy it looked",
+          [r["name"] for r in got.done] == ["bench"], str(got.done))
+    unknown = Actual(day=wed, name="Morning Run", sport="run", seconds=2342, metres=7750, activity_id=3)
+    got = match([bench, easy_thu], [unknown], wed)
+    check("with no effort from Garmin, the day and length decide, as before",
+          [r["name"] for r in got.done] == ["bench"], str(got.done))
+    hard_run = Actual(day=wed, name="Morning Run", sport="run", seconds=2400, metres=8000, activity_id=4, easy=False)
+    got = match([bench, easy_thu], [hard_run], wed)
+    check("a hard run ticks the intervals", [r["name"] for r in got.done] == ["bench"], str(got.done))
+    got = match([easy_thu], [hard_run], wed)
+    check("but a hard run doesn't tick tomorrow's easy session early", got.done == [], str(got.done))
+    got = match([bench, Planned(day=thu, name="easy", sport="run", seconds=2700)], [easy_run], wed)
+    check("a session whose effort isn't known isn't ticked early", got.done == [], str(got.done))
+    got = match([bench, easy_thu], [easy_run], thu)
+    check("tomorrow, the same run still counts as the easy session, a day early",
+          [(r["name"], r["done_on"]) for r in got.done] == [("easy", "2026-11-04")]
+          and [r["name"] for r in got.missed] == ["bench"], f"{got.done} {got.missed}")
 
     print()
     if FAILED:

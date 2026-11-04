@@ -25,7 +25,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from .cycling import is_ride
 from .formatting import DateError, drop_empty, duration, pace_per_km, parse_date
 from .plan import DEFAULT_MPS, category, monday_of, planned_distance_m
-from .progress import Actual, Planned, match
+from .progress import Actual, Planned, looks_easy, match
 from .workouts import WorkoutError, build_strength_workout, build_workout, format_pace
 
 TAG_SEP = " · "
@@ -1457,6 +1457,8 @@ def summarise(
             seconds=float(planned_seconds.get(i.get("workoutId"), 0.0)),
             workout_id=i.get("workoutId"),
             title=strip_tag(i.get("title") or i.get("workoutName") or ""),
+            hard=(efforts.get(i.get("workoutId")) in ("threshold", "intervals")
+                  if i.get("workoutId") in efforts else None),
         )
         for i in sessions
     ]
@@ -1469,6 +1471,7 @@ def summarise(
             seconds=float(a.get("duration") or 0),
             metres=float(a.get("distance") or 0),
             activity_id=a.get("activityId"),
+            easy=looks_easy(a),
         )
         for a in activities
         if _day(a.get("startTimeLocal"))

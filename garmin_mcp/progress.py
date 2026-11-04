@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from .cycling import is_ride
 from .plan import category, monday_of
@@ -52,6 +52,9 @@ class Planned:
     # The workout's name as scheduled, when name differs from it (get_plan
     # keys sessions by schedule id). Used only as a hint for matching.
     title: str = ""
+    # A threshold or interval session, which a plainly easy run isn't; None
+    # when the workout wasn't read, so its effort isn't known.
+    hard: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,9 @@ class Actual:
     ride: bool = False
     # The sport as the plan card's icon shows it: yoga, a hike, a swim.
     kind: str = ""
+    # What the run was, by Garmin's own measures (looks_easy): True easy,
+    # False hard, None when Garmin didn't say.
+    easy: bool | None = None
 
 
 @dataclass
@@ -75,6 +81,33 @@ class Result:
     missed: list[dict[str, Any]] = field(default_factory=list)
     upcoming: list[dict[str, Any]] = field(default_factory=list)
     extra: list[dict[str, Any]] = field(default_factory=list)
+
+
+# Garmin's training-effect labels for a run that trained nothing but the base.
+EASY_LABELS = ("RECOVERY", "AEROBIC_BASE", "BASE")
+# Below this share of the time in heart-rate zones 3 to 5, a run was easy.
+EASY_HARD_ZONE_SHARE = 0.05
+
+
+def looks_easy(activity: Mapping[str, Any]) -> bool | None:
+    """Whether a run was plainly easy, by Garmin's measures of it: its
+    training-effect label, its time in heart-rate zones, its training effect.
+
+    True only when what Garmin gives all says easy, False when any of it says
+    harder, None when it gives nothing. Nov 4: a 7.7 km run, all in zone 1,
+    anaerobic effect 0, was ticked as the 7.8 km of intervals planned that day.
+    """
+    says: list[bool] = []
+    label = str(activity.get("trainingEffectLabel") or "").upper()
+    if label:
+        says.append(label in EASY_LABELS)
+    zones = [activity.get(f"hrTimeInZone_{n}") for n in range(1, 6)]
+    if all(isinstance(z, (int, float)) for z in zones) and sum(zones) > 0:
+        says.append(sum(zones[2:]) / sum(zones) < EASY_HARD_ZONE_SHARE)
+    aerobic, anaerobic = activity.get("aerobicTrainingEffect"), activity.get("anaerobicTrainingEffect")
+    if isinstance(aerobic, (int, float)) and isinstance(anaerobic, (int, float)):
+        says.append(aerobic < 3.0 and anaerobic < 1.0)
+    return all(says) if says else None
 
 
 def _why(planned: Planned, actual: Actual) -> str:
@@ -121,8 +154,12 @@ def match(
     1. An activity named after the workout, any day of the same week: it was
        that session, wherever it landed.
     2. The same sport within a day either side (a strength session only
-       within its own week, so Monday's gym never covers last Sunday's).
-    3. Strength by sport alone, any day of the same week, including a session
+       within its own week, so Monday's gym never covers last Sunday's). A
+       hard session isn't covered by a run Garmin says was plainly easy.
+    3. A run left over counts as this week's session a day ahead, done early,
+       when it plainly matches its kind: an easy run for an easy session, a
+       hard one for a hard session (an easy run brought forward, Nov 4).
+    4. Strength by sport alone, any day of the same week, including a session
        still ahead this week: done early is done.
     """
     result = Result()
@@ -160,7 +197,16 @@ def match(
         def allowed(c: Actual) -> bool:
             if abs((c.day - session.day).days) > shift_days:
                 return False
+            if session.hard and c.easy:
+                return False
             return session.sport != "strength" or monday_of(c.day) == monday_of(session.day)
+        return allowed
+
+    def ahead(session: Planned):
+        def allowed(c: Actual) -> bool:
+            early = (session.day - c.day).days
+            return (0 < early <= shift_days and monday_of(c.day) == monday_of(session.day)
+                    and session.hard is not None and c.easy is (not session.hard))
         return allowed
 
     # Which sessions can still be matched: everything up to today, and anything
@@ -182,6 +228,7 @@ def match(
     run_pass(open_to_early,
              lambda s: (lambda c: same_week(s)(c) and _same_name(s, c)))
     run_pass(lambda s: s.day <= today, near)
+    run_pass(lambda s: s.day > today and s.sport != "strength" and monday_of(s.day) == this_week, ahead)
     run_pass(lambda s: s.sport == "strength" and open_to_early(s), same_week)
 
     for i, session in enumerate(sessions):
@@ -298,6 +345,7 @@ def from_collected(data: dict[str, Any]) -> tuple[list[Planned], list[Actual]]:
                 metres=float(item.get("distance") or 0),
                 activity_id=item.get("activityId"),
                 ride=is_ride((item.get("activityType") or {}).get("typeKey")),
+                easy=looks_easy(item),
             )
         )
     return planned, actual
