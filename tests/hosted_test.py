@@ -1957,8 +1957,12 @@ async def main() -> int:
             _at(90, 4, "VO2 5x1km \u00b7 MAR"), _at(10, 5, "Sub-T 4x2km \u00b7 MAR"), _at(-3, 6, "Recovery \u00b7 MAR")], _today)
         check("a long plan reads the next two weeks first, then the runs whose names can't size them, then the rest",
               order == [1, 6, 5, 3, 4, 2], str(order))
+        # The Saturday and Sunday of one week nine weeks on, whatever today is
+        # (days 60 and 61 straddled two weeks when the suite ran on a Wednesday).
+        _mon = _today - _pt(days=_today.weekday())
+        _sat, _sun = (((_mon + _pt(weeks=9, days=d)) - _today).days for d in (5, 6))
         order = garmin_server._lookup_order([
-            _at(2, 1, "Easy 8km \u00b7 MAR"), _at(60, 7, "Long 20km \u00b7 MAR"), _at(61, 8, "MLR 18km \u00b7 MAR"),
+            _at(2, 1, "Easy 8km \u00b7 MAR"), _at(_sat, 7, "Long 20km \u00b7 MAR"), _at(_sun, 8, "MLR 18km \u00b7 MAR"),
             _at(80, 9, "Threshold 3x3km \u00b7 MAR"), _at(100, 10, "Sharpener \u00b7 MAR"), _at(3, 10, "Sharpener \u00b7 MAR")], _today)
         check("one workout from every week is read early, for its phase, never one reused from another week",
               order == [1, 10, 7, 9, 8], str(order))
