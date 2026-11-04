@@ -793,7 +793,11 @@ async def main() -> int:
         try:
             _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow_l}"))
             check("while Garmin's cap is on, a directory sign-in is told to come back, never offered a password",
-                  "paused" in body and "Garmin password" not in body and "Continue with Garmin" not in body, body[-300:])
+                  "paused" in body and "Garmin password" not in body, body[-300:])
+            check("but a Garmin account already connected can go through, as a reviewer's test account would",
+                  "Already connected to Daash through Garmin" in body and "again=1" in body)
+            code, _, headers = await run(lambda: http("GET", f"/official/signup?flow={flow_l}&again=1"))
+            check("straight to Garmin's page", code == 302 and "garmin" in headers.get("location", "").lower())
         finally:
             hosted.OFFICIAL_SIGNUPS_OPEN = True
         _, body, _ = await run(lambda: http("POST", "/connect", {"email": "x@example.com", "password": "pw", "flow": flow_l}))

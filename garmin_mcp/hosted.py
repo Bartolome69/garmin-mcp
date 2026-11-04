@@ -1654,9 +1654,14 @@ async def connect_form(request: Request) -> Response:
         # The directory address is Garmin's own sign-in only, so while Garmin's
         # cap is on it can't offer a password form: it says when to come back.
         analytics.capture("sign_in_shown", None, _with_source(request, {"via": "oauth", "route": "paused", "listed": True}))
-        return page("Back in a few days", """<h1>New connections are paused for a few days</h1>
+        # Garmin's cap is on new connections: a Garmin account already linked
+        # to Daash still gets through, which is how a directory reviewer with
+        # an already-connected test account signs in.
+        return page("Back in a few days", f"""<h1>New connections are paused for a few days</h1>
             <p>Garmin is reviewing Daash, and has paused new connections to it until the review is done.
-            Accounts already connected keep working. Try again in a few days.</p>""")
+            Accounts already connected keep working. Try again in a few days.</p>
+            <p class=fine>Already connected to Daash through Garmin?</p>
+            <a class=button href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin</a>""")
     listed = from_directory and OFFICIAL_SIGNUPS_OPEN
     official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
