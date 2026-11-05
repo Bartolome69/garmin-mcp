@@ -794,7 +794,9 @@ def _server() -> MCPServer:
         from mcp.types import Icon
 
         return _Server(
-            "garmin",
+            # The name a client is told it's talking to: Daash, not a
+            # trademark (ChatGPT's directory review, Nov 5).
+            "daash",
             title="Daash",
             instructions=_INSTRUCTIONS,
             website_url=WEBSITE,
@@ -804,7 +806,7 @@ def _server() -> MCPServer:
             ],
         )
     except (ImportError, TypeError):
-        return _Server("garmin", instructions=_INSTRUCTIONS)
+        return _Server("daash", instructions=_INSTRUCTIONS)
 
 
 mcp = _server()

@@ -3451,7 +3451,7 @@ async def _directory_answer(message: Any) -> dict[str, Any] | None:
         result: dict[str, Any] = {
             "protocolVersion": asked if isinstance(asked, str) and asked else "2025-06-18",
             "capabilities": {"tools": {"listChanged": False}, "resources": {}, "prompts": {}},
-            "serverInfo": {"name": "garmin", "title": "Daash", "version": __version__,
+            "serverInfo": {"name": "daash", "title": "Daash", "version": __version__,
                            "websiteUrl": server_mod.WEBSITE,
                            "icons": [{"src": f"{server_mod.SITE}/icon-512.png", "mimeType": "image/png",
                                       "sizes": ["512x512"]}]},

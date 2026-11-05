@@ -404,9 +404,9 @@ class GarminSession:
         email, password = credentials()
         info: dict[str, Any] = {
             "authenticated": False,
-            "account": mask_email(email),
             # Only meaningful for a local install: hosted, these are the
             # operator's environment and nothing to do with this person.
+            "account": mask_email(email) if self._tokenstore is None else None,
             "credentials_present": (
                 {"GARMIN_EMAIL": bool(email), "GARMIN_PASSWORD": bool(password)}
                 if self._tokenstore is None
@@ -426,14 +426,13 @@ class GarminSession:
                 client = self.client()
                 # A cheap authenticated round-trip, so this reflects reality
                 # rather than just what we cached in memory.
-                profile = client.get_user_profile() or {}
+                client.get_user_profile()
             info["authenticated"] = True
             info["authenticated_via"] = self._source
-            info["garmin_display_name"] = (
-                getattr(client, "full_name", None)
-                or getattr(client, "display_name", None)
-                or profile.get("displayName")
-            )
+            # No name: the check needs none, and a status call that hands the
+            # chat someone's full name was why ChatGPT's directory review
+            # turned Daash down (Nov 5, "returns personal identifiers that
+            # aren't required for the user's request").
         except GarminError as exc:
             info["error"] = str(exc)
         except Exception as exc:  # noqa: BLE001

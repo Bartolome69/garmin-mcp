@@ -421,14 +421,15 @@ async def main() -> int:
         hosted._SESSIONS.clear()  # force a fresh login so each one is observable
         status_a = await call(alice, "get_connection_status")
         status_b = await call(bob, "get_connection_status")
-        name_a = str(status_a.get("garmin_display_name"))
-        name_b = str(status_b.get("garmin_display_name"))
         check("alice is authenticated", status_a.get("authenticated") is True,
               str(status_a)[:160])
-        check("alice's response came from her token", "alice-token" in name_a, name_a)
-        check("bob's response came from his token", "bob-token" in name_b, name_b)
+        check("alice's request signed in with her token, then bob's with his",
+              len(BUILT) == 2 and "alice-token" in BUILT[0] and "bob-token" in BUILT[1], str(BUILT)[:200])
         check("neither leaks into the other",
-              "bob-token" not in name_a and "alice-token" not in name_b)
+              "bob-token" not in BUILT[0] and "alice-token" not in BUILT[1])
+        check("and the status names nobody: no name, no address",
+              "garmin_display_name" not in status_a and "example.com" not in json.dumps(status_a)
+              and "alice" not in json.dumps(status_a).lower(), str(status_a)[:200])
         check("token blob never appears in a response",
               SECRET not in json.dumps(status_a) and SECRET not in json.dumps(day))
         check("no server filesystem path exposed",
