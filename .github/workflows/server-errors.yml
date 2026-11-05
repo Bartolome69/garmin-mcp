@@ -1,0 +1,29 @@
+name: Server error lines
+
+# Prints the hosted server's recent errors: exception names and the code
+# lines they came from, for when a tool fails for someone. Run by hand.
+# Emails, long tokens and long numbers are blanked, and only lines that look
+# like an error or a traceback frame are shown.
+
+on:
+  workflow_dispatch:
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  lines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Recent errors
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl logs --app "$FLY_APP" --no-tail 2>/dev/null \
+            | grep -E 'Traceback|File "|Error|Exception|error|exception|status_code=5|" 50[0-9] ' \
+            | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' \
+            | sed -E 's/[A-Za-z0-9_=-]{28,}/<blank>/g' \
+            | sed -E 's/[0-9]{7,}/<n>/g' \
+            | tail -80 || true
