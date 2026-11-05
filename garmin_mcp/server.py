@@ -45,7 +45,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import analytics, conditions, crews, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
+from . import analytics, conditions, crews, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
@@ -291,7 +291,8 @@ CREW_WRITES = {"join_crew", "update_crew", "leave_crew"}
 # Tools only preview accounts are offered yet. None at the moment: everything
 # built so far is everyone's. The mechanism stays for the next new thing.
 # update_shoes until its retire is confirmed on real accounts (Nov 1).
-_PREVIEW_ONLY: set[str] = {"garmin_official", "get_session", "update_shoes"}
+# check_plan while the plan checker is tried out (Nov 5).
+_PREVIEW_ONLY: set[str] = {"garmin_official", "get_session", "update_shoes", "check_plan"}
 
 
 # What a tool is for, as the model should read it. The model chooses a tool by
@@ -379,6 +380,16 @@ _NOTES = {
 }
 
 
+# How the plan checker's notes are passed on: the same for every tool that
+# answers with them, and in the answer itself, which an account on Garmin's
+# official API alone reads without these notes.
+CHECKS_NOTE = (
+    " Pass any checks on in your own words, briefly, as worth a look rather than "
+    "as errors (\"a big jump\", never \"injury risk\"), and change the plan only if "
+    "the user wants to."
+)
+
+
 # Added after those, for preview accounts only: where get_session, the
 # workout card, takes over from get_plan.
 _PREVIEW_NOTES: dict[str, str] = {
@@ -386,7 +397,12 @@ _PREVIEW_NOTES: dict[str, str] = {
         "\n\nA question about one session (\"what's tomorrow\", \"talk me through "
         "Sunday\", today's session in a morning check-in) is get_session's, not this, "
         "even if this plan is already in the chat: one card per reply. Its answer has the "
-        "link to the Daash app, for when they ask for the app."
+        "link to the Daash app, for when they ask for the app." + CHECKS_NOTE
+    ),
+    "create_plan": (
+        "\n\nThe answer has checks: plain notes on the plan's shape, such as a big jump "
+        "in a week or two hard days in a row. The plan is written whatever they say. "
+        "check_plan gives the same notes on a draft before anything is written." + CHECKS_NOTE
     ),
     "update_workout": (
         "\n\nAfter changing one session, call get_session for its date, on its own, "
@@ -766,6 +782,7 @@ _ANNOTATION_TITLES = {
     "update_workout": "Update workout",
     "leave_crew": "Leave crew",
     "garmin_official": "Garmin official API (preview)",
+    "check_plan": "Check training plan",
 }
 
 
@@ -2982,6 +2999,9 @@ async def create_plan(
         goal, sessions, label, today, name=name, method=method, milestones=milestones, ftp=ftp,
     )
     first, last = prepared[0]["date"], prepared[-1]["date"]
+    # Notes on the plan's shape, for whoever is trying them; the plan is
+    # written whatever they say.
+    checks = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
 
     existing = training_plan.plans_in(await _plan_calendar(first, last))
     if code in existing:
@@ -3054,6 +3074,7 @@ async def create_plan(
             "Every session is on the Garmin calendar and syncs to the watch. "
             f"Call get_plan with label {code} to show the user the new block as a card."
         ),
+        **_checked(checks),
     }
     # Answer with the block as get_plan draws it, so the card shows the new
     # plan whether or not the model asks for it: told to, it sometimes
@@ -3075,6 +3096,9 @@ async def create_plan(
         log.warning("create_plan: reading the new plan back failed", exc_info=True)
         card = None
     if isinstance(card, dict) and "error" not in card and isinstance(card.get("weeks"), list):
+        # The plan as written, with the history before it, rather than the
+        # calendar read back from today.
+        card = {k: v for k, v in card.items() if k not in ("checks", "about_checks")}
         return {
             **card,
             "created": {
@@ -3086,8 +3110,41 @@ async def create_plan(
                 "Every session is on the Garmin calendar and syncs to the watch. "
                 "The user sees the new block as a card above: sum it up in a sentence or two."
             ),
+            **_checked(checks),
         }
     return summary
+
+
+async def _plan_checks(prepared: list[dict[str, Any]], goal: str, method: str | None,
+                       milestones: Any, today: date_cls) -> list[dict[str, Any]] | None:
+    """The plan checker's notes on a plan about to be written, with the last
+    4 weeks' running to start from. None if they can't be worked out: a
+    plan is never held up by its notes."""
+    try:
+        since = training_plan.monday_of(today) - timedelta(weeks=training_plan.LOG_WEEKS)
+        try:
+            activities = await _call(
+                lambda c: c.get_activities_by_date(since.isoformat(), today.isoformat())
+            ) or []
+        except Exception:  # noqa: BLE001 - the shape can be checked without the history
+            log.debug("plan checks: no running history", exc_info=True)
+            activities = None
+        history = (training_plan.weekly_run_km(activities, training_plan.monday_of(today), training_plan.LOG_WEEKS)
+                   if activities else None)
+        return plan_checks.check_prepared(
+            prepared, goal=goal, method=method, milestones=milestones, history=history,
+            longest_recent_km=plan_checks.longest_run_km(activities or []),
+        )
+    except Exception:  # noqa: BLE001 - notes are a bonus; the plan must still be made
+        log.warning("plan checks failed", exc_info=True)
+        return None
+
+
+def _checked(checks: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """The checks for an answer, with how to pass them on when there are any."""
+    if checks is None:
+        return {}
+    return {"checks": checks, **({"about_checks": CHECKS_NOTE.strip()} if checks else {})}
 
 
 @_app_tool(PLAN_VIEW)
@@ -3109,7 +3166,59 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
             now, or the most recent one.
     """
     result = await _plan_answer(label)
+    if preview.enabled() and isinstance(result, dict) and "error" not in result and result.get("weeks"):
+        try:
+            result = {**result, **_checked(plan_checks.check_answer(result, date_cls.today()))}
+        except Exception:  # noqa: BLE001 - the plan stands without its notes
+            log.warning("plan checks failed", exc_info=True)
     return result if label else await _with_situation(result)
+
+
+@mcp.tool()
+@tool_errors
+async def check_plan(
+    goal: str,
+    sessions: list[dict[str, Any]],
+    label: str | None = None,
+    name: str | None = None,
+    method: str | None = None,
+    milestones: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Check a draft plan before it's created: plain notes on its shape, nothing written.
+
+    Takes exactly create_plan's arguments and answers only with checks, each
+    {"rule", "week", "date", "text"}: the first week well above the last 4
+    weeks' running, a big weekly jump, a long run that grows fast, is most
+    of its week or runs past what the goal needs, more hard sessions or fast
+    running than the plan's style usually holds (Steady, Balanced, or Faster
+    when the method names Norwegian or singles), hard days back to back, no
+    rest day in 7, no lighter week in 5, a heavy race week, and races placed
+    too close to each other or to the goal race. An empty list means nothing
+    stood out. Pass any checks on in your own words, briefly, as worth a
+    look rather than as errors ("a big jump", never "injury risk"), and
+    change the plan only if the user wants to.
+
+    Args:
+        goal: As for create_plan.
+        sessions: As for create_plan.
+        label: As for create_plan.
+        name: As for create_plan.
+        method: As for create_plan; it decides the style the checks use.
+        milestones: As for create_plan; races with their tiers.
+    """
+    today = date_cls.today()
+    sessions = [
+        {**s, "steps": await _in_zones(s.get("steps"), s.get("sport"))} if isinstance(s, dict) and s.get("steps") else s
+        for s in sessions or []
+    ]
+    ftp = await _ftp_for(*[s.get("steps") for s in sessions or [] if isinstance(s, dict)])
+    _, prepared = training_plan.prepare(
+        goal, sessions, label, today, name=name, method=method, milestones=milestones, ftp=ftp,
+    )
+    checks = await _plan_checks(prepared, goal, method, milestones, today)
+    if checks is None:
+        return {"error": "The plan couldn't be checked just now. It can still be created."}
+    return _checked(checks)
 
 
 async def _with_situation(result: Any) -> Any:

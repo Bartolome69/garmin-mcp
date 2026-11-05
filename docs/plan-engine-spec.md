@@ -1,6 +1,6 @@
 # Plan engine: spec
 
-Draft, November 2026. Spec only, nothing built.
+Draft, November 2026. Built so far: the validator (section 8), in `garmin_mcp/plan_checks.py`, for preview accounts; `scripts/check_plan.py` runs it over a saved plan.
 
 ## Summary
 
