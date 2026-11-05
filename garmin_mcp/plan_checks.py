@@ -73,15 +73,17 @@ _BUILT_RE = re.compile(r"^Built:\s*(.+)$", re.MULTILINE)
 # What the rules read
 # --------------------------------------------------------------------------
 
-def style(method: str | None, description: str | None = None) -> str:
+def style(method: str | None, description: str | None = None, goal: str | None = None) -> str:
     """steady, balanced or faster: the "Built:" line's style, else Faster when
-    the method names Norwegian or singles, else Balanced."""
+    the method names Norwegian or singles, else Balanced. get_plan's answer
+    has no method, so a goal naming the style counts too ("Base block
+    (Norwegian singles style)")."""
     built = _BUILT_RE.search(description or "")
     for text in (built.group(1) if built else None, method):
         found = _STYLE_RE.search(text or "")
         if found:
             return found.group(1).lower()
-    return "faster" if _FASTER_RE.search(method or "") else "balanced"
+    return "faster" if _FASTER_RE.search(f"{method or ''} {goal or ''}") else "balanced"
 
 
 def goal_distance(*texts: Any, km: float | None = None) -> str | None:
@@ -311,7 +313,8 @@ def _days(weeks, how, races, out) -> None:
     for s in sessions:
         if s.get("kind", "run") == "run" and _is_hard(s, how):
             hard.setdefault(_day(s["date"]), s)
-    race_days = {_day(r["date"]): r for r in races}
+    # A C race is run as training (spec section 5), so a long run the next day is fine.
+    race_days = {_day(r["date"]): r for r in races if r.get("tier") != "tune"}
     after_race: set[date] = set()
     for day, race in sorted(race_days.items()):
         for gap in range(1, RACE_EASY_DAYS + 1):
@@ -346,19 +349,27 @@ def _days(weeks, how, races, out) -> None:
 
 def _recovery(weeks, kms, out) -> None:
     """A lighter week in every 5: under CUTBACK_SHARE of the week before and
-    of the week after, or a taper's falling weeks and the last week."""
+    of the week after, or a taper's falling weeks and the last week. A dip
+    over two weeks (a race week, then a recovery week) compares with the
+    week before the dip, not with the first lighter week."""
     light = 0
+    before_dip: float | None = None
     for i, week in enumerate(weeks):
         if kms[i] is None or not _full(weeks, i):
             light = 0
+            before_dip = None
             continue
         prev = kms[i - 1] if i and _full(weeks, i - 1) else None
+        if prev is not None and before_dip is not None:
+            prev = max(prev, before_dip)
         nxt = kms[i + 1] if i + 1 < len(kms) else None
         lighter = prev is not None and kms[i] < CUTBACK_SHARE * prev and (
             nxt is None or kms[i] < CUTBACK_SHARE * nxt or nxt <= kms[i])
         if lighter:
             light = 0
+            before_dip = prev
             continue
+        before_dip = None
         light += 1
         if light == RECOVERY_WEEKS:
             first = weeks[i - RECOVERY_WEEKS + 1]["week"]
@@ -474,11 +485,13 @@ def check_weeks(
     weeks = [w for w in weeks if w.get("starts")]
     if not weeks:
         return []
-    how = style(method, description)
+    how = style(method, description, goal)
     found = _goal_races(list(races), weeks, last_race_is_goal)
     goals = [r for r in found if r.get("tier") == "goal"]
-    distance = goal_distance(goal, *(r.get("name") for r in goals),
-                             km=max((float(r.get("distance_km") or 0) for r in goals), default=None))
+    # The A race's own distance first: a goal like "building to the half
+    # check, London sub-2:40" names a B race too.
+    distance = (goal_distance(km=max((float(r.get("distance_km") or 0) for r in goals), default=None))
+                or goal_distance(goal, *(r.get("name") for r in goals)))
     cap_for = (LONG_CAP_KM.get(distance or ""), LONG_CAP_MIN.get(distance or "", LONG_CAP_MIN_DEFAULT),
                {"half": "half marathon", "5k": "5K", "10k": "10K"}.get(distance or "", distance))
     kms = [_week_km(w) for w in weeks]

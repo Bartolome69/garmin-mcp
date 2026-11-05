@@ -98,7 +98,8 @@ def main() -> int:
         if args.json:
             continue
         print(f"{path}: {len(found)} check{'s' if len(found) != 1 else ''}"
-              f" ({plan_checks.style(plan.get('method'))} limits)")
+              f" ({plan_checks.style(plan.get('method'), None, plan.get('goal') or (plan.get('current_plan') or {}).get('goal'))}"
+              " limits)")
         for c in found:
             print(f"  week {c['week']}, {c['date']}  [{c['rule']}]  {c['text']}")
         print()

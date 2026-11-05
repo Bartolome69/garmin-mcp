@@ -281,6 +281,12 @@ def main() -> int:
     check("it covers weeks 1 to 5", found and "Weeks 1 to 5" in found[0]["text"], str(found))
     check("a cutback in week 4: nothing", "no_recovery_week" not in rules(run(weeks(
         easy_week(6, 10), easy_week(7, 11), easy_week(8, 12), easy_week(5, 9), easy_week(8, 13), easy_week(9, 14)))))
+    # Week 3 races and is a little lighter; week 4 is lighter still. Against
+    # week 3 alone week 4 is 90%, but it's well under the week before the dip.
+    dip = weeks(easy_week(10, 16), easy_week(11, 17), easy_week(9, 12), easy_week(8, 12),
+                easy_week(11, 17), easy_week(12, 18), easy_week(12, 19), easy_week(13, 19))
+    check("a dip over two weeks counts as the lighter week", "no_recovery_week" not in rules(run(dip)),
+          str(run(dip)))
 
     print("\ntaper")
     goal = [{"name": "Half marathon", "date": (MONDAY + timedelta(weeks=3, days=6)).isoformat(), "tier": "goal",
@@ -312,6 +318,9 @@ def main() -> int:
     check("a long run the day after a race is that, not hard days in a row", rules(run(
         weeks([("sat", "Race: parkrun", 5.0), ("sun", "Long 11k", 11.0)]),
         races=[b("parkrun", sun1 - timedelta(days=1), 5.0)])) == ["hard_after_race"])
+    check("a parkrun run as training (a C race) is a hard day like a tempo, not a race to recover from", rules(run(
+        weeks([("sat", "Race: parkrun", 5.0), ("sun", "Long 11k", 11.0)], [("wed", "Easy 6k", 6.0)]),
+        races=[{**b("parkrun", sun1 - timedelta(days=1), 5.0), "tier": "tune"}])) == ["hard_days_in_a_row"])
 
     two_b = [b("Town 10K", sun1, 10.0), b("City 10K", sun1 + timedelta(days=7), 10.0)]
     plain = weeks(easy_week(8, 14, tempo=False), easy_week(8, 14, tempo=False), easy_week(8, 14, tempo=False))
@@ -362,6 +371,15 @@ def main() -> int:
           "long_run_cap" not in rules(plan_checks.check_answer({"weeks": calendar, "races": parkrun})))
     check("a plan's own last race is its goal",
           "long_run_cap" in rules(plan_checks.check_answer({"label": "5K", "weeks": calendar, "races": parkrun})))
+    # get_plan's answer has no method or goal of its own: both come from the
+    # plan running now, whose goal can name a B race before the A race.
+    london = [{"name": "London", "date": "2027-04-25", "tier": "goal", "distance_km": 42.2}]
+    block = {"weeks": big, "races": london, "current_plan": {
+        "label": "B1", "goal": "Base block (Norwegian singles style): building to the half check, London sub-2:40"}}
+    check("the A race sets the cap, not a half the goal mentions",
+          "long_run_cap" not in rules(plan_checks.check_answer(block)), str(plan_checks.check_answer(block)))
+    check("a goal naming Norwegian singles gets Faster limits",
+          plan_checks.style(None, None, block["current_plan"]["goal"]) == "faster")
     unread = [{**w, "unread": 1} if w["week"] == 3 else w for w in climbing]
     check("a week with a workout not read yet isn't sized",
           "no_recovery_week" not in rules(plan_checks.check_answer({"weeks": unread})))
