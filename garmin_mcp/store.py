@@ -60,6 +60,8 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN route TEXT",
     # The Monday the weekly email last went to this person, as YYYY-MM-DD.
     "ALTER TABLE users ADD COLUMN weekly_sent TEXT",
+    # When a chat last brought up the Daash app unasked, so it's at most weekly.
+    "ALTER TABLE users ADD COLUMN app_offered_at INTEGER",
 )
 
 # Bart's friends using Daash, named from a chat (garmin_official's friends
@@ -475,6 +477,29 @@ def claim_tip(user_token: str) -> bool:
             "UPDATE users SET tip_seen = 1 WHERE user_token = ? AND COALESCE(tip_seen, 0) = 0",
             (user_token,),
         ).rowcount > 0
+
+
+def claim_app_offer(user_token: str, every: int, now: int | None = None) -> bool:
+    """True when a chat may bring up the Daash app: at most once per ``every`` seconds.
+
+    Claimed like claim_news, in one UPDATE, so two answers at once can't both
+    bring it up.
+    """
+    now = int(time.time()) if now is None else now
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE users SET app_offered_at = ? WHERE user_token = ? AND COALESCE(app_offered_at, 0) <= ?",
+            (now, user_token, now - every),
+        ).rowcount > 0
+
+
+def used_client_since(subject: str, client_id: str, since: int) -> bool:
+    """Whether this person signed in with, or refreshed, this client since then."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT 1 FROM oauth_tokens WHERE subject = ? AND client_id = ? AND created_at >= ? LIMIT 1",
+            (subject, client_id, since),
+        ).fetchone() is not None
 
 
 def unsubscribe_signature(email_hash: str) -> str:

@@ -899,10 +899,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
         result = _with_card_check(name, result, user)
         # The app's link rides on the plan in a chat, not on the app's own
         # reads of it, which pass no hook: a code made for each screen is waste.
-        if name == "get_plan" and isinstance(result, dict) and "error" not in result:
-            link = server_mod.app_link("plan")
-            if link:
-                result = {**result, "app": {"url": link, "note": server_mod.APP_NOTE}}
+        if name in APP_LINK_TOOLS and isinstance(result, dict) and "error" not in result:
+            result = _with_app_link(name, result, user_token, user)
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -928,6 +926,59 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
             return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
         return result
     return after
+
+
+# Where a chat carries the Daash app's link: the plan, read or just made.
+APP_LINK_TOOLS = {"get_plan", "create_plan"}
+# How often a chat may bring the app up unasked, and how recently someone must
+# have used the app for it to stop: they know where it is.
+APP_OFFER_EVERY = 7 * 24 * 3600
+APP_USED_WITHIN = 14 * 24 * 3600
+
+
+def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -> dict:
+    """The plan with the Daash app's link, and when the model should give it.
+
+    Normally only when asked. At most once a week, for someone who hasn't
+    opened the app in two weeks, the note asks for one line about it instead.
+    """
+    if not preview.app_links():
+        return result
+    offer = (
+        not store.used_client_since(user_token, oauth.APP_CLIENT_ID, int(time.time()) - APP_USED_WITHIN)
+        and store.claim_app_offer(user_token, APP_OFFER_EVERY)
+    )
+    link = server_mod.app_link("plan", "chat_offer" if offer else "chat")
+    if not link:
+        return result
+    if offer:
+        email = store.email_for(user_token)
+        analytics.capture(
+            "app_link_offered",
+            user.email_hash or user_token,
+            {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+        )
+    note = server_mod.APP_OFFER_NOTE if offer else server_mod.APP_NOTE
+    return {**result, "app": {"url": link, "note": note}}
+
+
+def _app_links_for(user: store.User) -> bool:
+    """Whether this account's chats carry the Daash app's links.
+
+    Everyone trying previews, and a share of everyone else set by
+    GARMIN_MCP_APP_SHARE (0 to 100, unset is 0), picked by a hash of the
+    account so the same people stay in as the share grows.
+    """
+    if _preview_for(user):
+        return True
+    try:
+        share = float(os.environ.get("GARMIN_MCP_APP_SHARE", "") or 0)
+    except ValueError:
+        return False
+    if share <= 0:
+        return False
+    key = (user.email_hash or user.user_token).encode()
+    return int(hashlib.sha256(b"app-share:" + key).hexdigest()[:8], 16) % 100 < share
 
 
 def session_for(user_token: str) -> GarminSession:
@@ -3661,6 +3712,7 @@ class SessionBinding:
 
         token = use_session(session_for(user_token))
         preview_token = preview.use(_preview_for(user))
+        app_links_token = preview.use_app_links(_app_links_for(user))
         alone = not store.has_connect(user_token)
         # The chat's hooks pace and count answers for a conversation; the
         # app's screens are not one, so they run without them.
@@ -3678,6 +3730,7 @@ class SessionBinding:
             official.reset(official_token)
             crews.reset(crew_token)
             hooks.reset(hook_token)
+            preview.reset_app_links(app_links_token)
             preview.reset(preview_token)
             reset_session(token)
 

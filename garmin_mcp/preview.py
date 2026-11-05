@@ -33,3 +33,23 @@ def use(value: bool):
 
 def reset(token) -> None:
     _enabled.reset(token)
+
+
+# The Daash app's links in chats, on their own switch: everyone in preview has
+# them, and the hosted server can hand them to a share of everyone else as the
+# app rolls out.
+_app_links: ContextVar["bool | None"] = ContextVar("daash_app_links", default=None)
+
+
+def app_links() -> bool:
+    """Whether chats offer the Daash app's links for the current request."""
+    value = _app_links.get()
+    return enabled() if value is None else value
+
+
+def use_app_links(value: bool):
+    return _app_links.set(bool(value))
+
+
+def reset_app_links(token) -> None:
+    _app_links.reset(token)

@@ -358,6 +358,26 @@ f.src = "card.html";</script></body>`);
       /10 mi/.test(text) && /20 mi/.test(text) && /8:03–8:19\/mi/.test(text) && !/\bkm\b/.test(text), text.slice(0, 600));
     await page.close();
 
+    console.log("the Daash app's link");
+    const withApp = { ...PLAN, app: { url: "https://daash.test/app/#/plan?login=abc&from=chat", note: "x" } };
+    ({ page, card } = await open(withApp));
+    const got = await card.evaluate(() => {
+      const b = [...document.querySelectorAll("button")].find((x) => x.textContent === "Open in Daash");
+      const title = document.querySelector(".title"), doc = document.documentElement;
+      return { button: !!b, overflow: doc.scrollWidth > doc.clientWidth + 1,
+        oneLine: !!b && b.getBoundingClientRect().height < 50,
+        beside: !!b && Math.abs(b.getBoundingClientRect().top - title.getBoundingClientRect().top) < 12 };
+    });
+    check("Open in Daash sits beside the plan's title, on one line, without a sideways scroll",
+      got.button && !got.overflow && got.oneLine && got.beside, JSON.stringify(got));
+    await card.evaluate(() => [...document.querySelectorAll("button")].find((x) => x.textContent === "Open in Daash").click());
+    await page.waitForTimeout(200);
+    check("and opens the app's link", (await page.evaluate(() => window.opened)) === withApp.app.url, String(await page.evaluate(() => window.opened)));
+    await page.close();
+    ({ page, card } = await open(PLAN));
+    check("no link, no button", !(await card.evaluate(() => /Open in Daash/.test(document.body.innerText))));
+    await page.close();
+
     check("no page threw an error", errors.length === 0, errors.join(" | "));
   } finally {
     await browser.close();

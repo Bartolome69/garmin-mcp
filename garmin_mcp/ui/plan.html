@@ -881,7 +881,7 @@
   }
 
   function header(m) {
-    var b = m.block, title, sub;
+    var b = m.block, title, sub, appUrl = raw && raw.app && raw.app.url;
     if (m.mode === "block") {
       title = b.name || goalTitle(b.goal) || "Training plan";
       var first = m.weeks[0], last = m.weeks[m.weeks.length - 1];
@@ -903,9 +903,15 @@
           el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
         ]),
       ]),
-      el("div", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" }, [
-        el("h3", { class: "title" + (title.length > 24 ? " long" : ""), text: title }),
-        el("span", { class: "sub", text: sub }),
+      el("div", { style: "display:flex;align-items:flex-start;gap:12px" }, [
+        el("div", { style: "display:flex;flex-direction:column;gap:3px;flex:1;min-width:0" }, [
+          el("h3", { class: "title" + (title.length > 24 ? " long" : ""), text: title }),
+          el("span", { class: "sub", text: sub }),
+        ]),
+        // The same plan in the Daash app, signed in, when the answer has its
+        // link: beside the title, as the brand line has no room at phone width.
+        appUrl ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px;font-size:13.5px",
+          onclick: function (e) { openUrl(appUrl, e.currentTarget); } }, ["Open in Daash"]) : null,
       ]),
     ]);
     var nodes = timeline(m);

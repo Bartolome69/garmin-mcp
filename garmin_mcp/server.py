@@ -196,10 +196,11 @@ class _Server(MCPServer):
     async def list_tools(self):
         tools = await super().list_tools()
         on = preview.enabled()
+        app_on = preview.app_links()
         crew_on = crews.available()
         alone = _ALONE.get()
         return [
-            _with_description(tool, preview_on=on, alone=alone)
+            _with_description(tool, preview_on=on, alone=alone, app_on=app_on)
             for tool in tools
             if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
             and (crew_on or tool.name not in CREW_TOOLS)
@@ -385,8 +386,7 @@ _PREVIEW_NOTES: dict[str, str] = {
     "get_plan": (
         "\n\nA question about one session (\"what's tomorrow\", \"talk me through "
         "Sunday\", today's session in a morning check-in) is get_session's, not this, "
-        "even if this plan is already in the chat: one card per reply. Its answer has the "
-        "link to the Daash app, for when they ask for the app."
+        "even if this plan is already in the chat: one card per reply."
     ),
     "update_workout": (
         "\n\nAfter changing one session, call get_session for its date, on its own, "
@@ -692,7 +692,15 @@ def _compact_doc(text: str) -> str:
     return "\n".join(" " * ((len(line) - len(line.lstrip(" "))) // 2) + line.strip() for line in lines)
 
 
-def _with_description(tool, *, preview_on: bool, alone: bool = False):
+# For whoever has the Daash app's links in chats (preview, then a share of
+# everyone as it rolls out).
+_APP_NOTES: dict[str, str] = {
+    "get_plan": "\n\nIts answer has the link to the Daash app, and a note on when to give it.",
+    "create_plan": "\n\nIts answer can have the link to the Daash app, and a note on when to give it.",
+}
+
+
+def _with_description(tool, *, preview_on: bool, alone: bool = False, app_on: bool = False):
     text = OFFICIAL_DESCRIPTIONS.get(tool.name) if alone else _DESCRIPTIONS.get(tool.name)
     if alone and text is not None:
         preview_on = False
@@ -700,6 +708,8 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False):
         text = (tool.description or "").rstrip() + _NOTES[tool.name]
     if preview_on and tool.name in _PREVIEW_NOTES:
         text = (text or tool.description or "").rstrip() + _PREVIEW_NOTES[tool.name]
+    if app_on and tool.name in _APP_NOTES:
+        text = (text or tool.description or "").rstrip() + _APP_NOTES[tool.name]
     text = _compact_doc(text or tool.description or "")
     update = {"annotations": _annotations(tool.name)}
     for field in ("input_schema", "output_schema", "inputSchema", "outputSchema"):
@@ -2235,25 +2245,29 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
     card = training_plan.session_card(answer, day, today, detail, change)
     # The same session in the companion app, for the card's Open in Daash.
-    link = None if card.get("rest") else app_link(f"session/{day}")
+    link = None if card.get("rest") else app_link(f"session/{day}", "session_card")
     if link:
         card["app_url"] = link
     return card
 
 
-def app_link(route: str) -> str | None:
+def app_link(route: str, source: str | None = None) -> str | None:
     """The companion app at a route ("plan", "session/2026-11-04"), for a card.
 
-    Preview accounts only, until the app is ready for everyone. It carries a
+    For whoever has the app's links (preview.app_links). It carries a
     single-use code, so it opens the app already signed in as this person: no
-    second sign-in for someone who uses the connector.
+    second sign-in for someone who uses the connector. ``source`` says where
+    it was given ("plan_card", "chat"), so the app can count which ones get
+    opened.
     """
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    if not base or not preview.enabled():
+    if not base or not preview.app_links():
         return None
     who = official.current()
-    login = f"?login={store.new_handoff(who)}" if who else ""
-    return f"{base}/app/#/{route}{login}"
+    query = [f"login={store.new_handoff(who)}"] if who else []
+    if source:
+        query.append(f"from={source}")
+    return f"{base}/app/#/{route}" + (f"?{'&'.join(query)}" if query else "")
 
 
 # With the plan in a chat, so "where's the app?" has an answer (Nov 3: asked
@@ -2262,6 +2276,15 @@ APP_NOTE = (
     "The Daash app: this plan, today's session and their crew, on their phone or computer. "
     "This link opens it signed in (once, within 30 minutes). Give it when they ask for Daash's app, "
     "the companion app or a link to their plan, and no other address for it. Don't offer it unasked."
+)
+
+# At most once a week, for someone who hasn't used the app lately: the one
+# time the model brings the app up itself.
+APP_OFFER_NOTE = (
+    "The Daash app: this plan, today's session and their crew, on their phone or computer. "
+    "This link opens it signed in (once, within 30 minutes). After answering, add one short line "
+    "of your own that the plan is also in the Daash app, with this link, as a plain aside: no "
+    "sales talk, and not again in this chat unless they ask. No other address for it."
 )
 
 

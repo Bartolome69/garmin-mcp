@@ -59,7 +59,7 @@ def _raises(fn) -> bool:
         return True
     return False
 analytics._post = SENT.append
-from garmin_mcp import store  # noqa: E402
+from garmin_mcp import oauth, store  # noqa: E402
 from garmin_mcp.session import GarminSession  # noqa: E402
 
 # Each stub reports which account it belongs to, so we can prove one person's
@@ -384,13 +384,47 @@ async def main() -> int:
                 hosted._PLAN_CALLS.pop(bob, None)
                 plan_a = await call(alice, "get_plan")
                 plan_b = await call(bob, "get_plan")
+
+                async def plan_for(user_token: str) -> dict:
+                    hosted._PLAN_CALLS.pop(user_token, None)
+                    return await call(user_token, "get_plan")
+
+                # Brought up unasked at most once a week, and never to someone
+                # already using the app.
+                again_a = await plan_for(alice)
+                with store._connect() as conn:
+                    conn.execute("UPDATE users SET app_offered_at = ? WHERE user_token = ?",
+                                 (int(time.time()) - 8 * 24 * 3600, alice))
+                week_on_a = await plan_for(alice)
+                with store._connect() as conn:
+                    conn.execute("UPDATE users SET app_offered_at = ? WHERE user_token = ?",
+                                 (int(time.time()) - 8 * 24 * 3600, alice))
+                store.save_oauth_token("app-used-test", kind="refresh", client_id=oauth.APP_CLIENT_ID,
+                                       subject=alice, scopes="", resource=None, expires_at=None)
+                using_a = await plan_for(alice)
+                store.delete_oauth_token("app-used-test")
+                # A share of everyone else, as the app rolls out.
+                os.environ["GARMIN_MCP_APP_SHARE"] = "100"
+                try:
+                    shared_b = await plan_for(bob)
+                    before_b = described[bob]
+                    await offered(bob)
+                    shared_described_b = described[bob]["get_plan"]
+                    described[bob] = before_b
+                finally:
+                    os.environ.pop("GARMIN_MCP_APP_SHARE", None)
+                os.environ["GARMIN_MCP_APP_SHARE"] = "not a number"
+                try:
+                    unparsed_b = await plan_for(bob)
+                finally:
+                    os.environ.pop("GARMIN_MCP_APP_SHARE", None)
             finally:
                 os.environ.pop("GARMIN_MCP_BASE_URL", None)
                 # Reads after these aren't sent with them, so nothing is held.
                 hosted._PLAN_CALLS.pop(alice, None)
                 hosted._PLAN_CALLS.pop(bob, None)
             app_a = plan_a.get("app") or {}
-            code = str(app_a.get("url", "")).partition("login=")[2]
+            code = str(app_a.get("url", "")).partition("login=")[2].partition("&")[0]
             check("the plan in a chat carries the Daash app's link, for an account trying the app",
                   str(app_a.get("url", "")).startswith("https://daash.test/app/#/plan?login=")
                   and "Daash app" in str(app_a.get("note")), str(plan_a)[:300])
@@ -398,6 +432,21 @@ async def main() -> int:
             check("not for anyone else", "app" not in plan_b, str(plan_b.get("app")))
             check("and get_plan says it has the link", "Daash app" in described[alice]["get_plan"]
                   and "Daash app" not in described[bob]["get_plan"])
+            offer_note, ask_note = garmin_server.APP_OFFER_NOTE, garmin_server.APP_NOTE
+            check("the first time, the model is asked to mention the app once, and the link says so",
+                  app_a.get("note") == offer_note and "&from=chat_offer" in str(app_a.get("url")), str(app_a))
+            app_again = again_a.get("app") or {}
+            check("not again the same week: the link is only for when they ask",
+                  app_again.get("note") == ask_note and str(app_again.get("url", "")).endswith("&from=chat"), str(app_again))
+            check("a week on, it can be mentioned again", (week_on_a.get("app") or {}).get("note") == offer_note,
+                  str(week_on_a.get("app")))
+            check("never to someone who has used the app in the last two weeks",
+                  (using_a.get("app") or {}).get("note") == ask_note, str(using_a.get("app")))
+            check("with GARMIN_MCP_APP_SHARE at 100, accounts outside preview get the link too",
+                  str((shared_b.get("app") or {}).get("url", "")).startswith("https://daash.test/app/#/plan?login=")
+                  and "Daash app" in shared_described_b, str(shared_b.get("app")))
+            check("and a share that isn't a number gives nobody else the link", "app" not in unparsed_b,
+                  str(unparsed_b.get("app")))
             # Nothing is in preview now, but the list must still be read right
             # for the next thing that is.
             status_a_on = await call(alice, "get_connection_status")
