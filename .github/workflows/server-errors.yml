@@ -22,7 +22,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           flyctl logs --app "$FLY_APP" --no-tail 2>/dev/null \
-            | grep -E 'Traceback|File "|Error|Exception|error|exception|status_code=5|" 50[0-9] ' \
+            | grep -E 'Traceback|File "|Error|Exception|error|exception|status_code=5|" 50[0-9] |[Oo]ut of memory|oom|OOM|[Kk]illed|exited|[Rr]estart|Starting|Uvicorn running|Shutting down' \
             | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/<email>/g' \
             | sed -E 's/[A-Za-z0-9_=-]{28,}/<blank>/g' \
             | sed -E 's/[0-9]{7,}/<n>/g' \
