@@ -4245,7 +4245,8 @@ async def garmin_official(action: str = "status", date: str = "tomorrow", emails
             Garmin has sent so far; "connect" gives a link to approve Daash on
             Garmin's own sign-in page; "test_workout" sends an easy 20-minute
             run through Garmin's Training API, scheduled on `date`;
-            "disconnect" ends the official link and deletes what Garmin sent;
+            "disconnect" says what ending the official link loses, and
+            "disconnect_confirmed" then ends it and deletes what Garmin sent;
             "activities" reads the recent activities Garmin sent, with splits
             and laps; "days" reads each recent day's sleep, HRV, resting heart
             rate, stress, Body Battery, steps and VO2 max; "official_only"
@@ -4300,7 +4301,17 @@ async def garmin_official(action: str = "status", date: str = "tomorrow", emails
         return {action: found, "source": "Garmin's official API: only what Garmin has pushed since connecting.",
                 "note": None if found else "Nothing yet: Garmin sends data when the watch syncs."}
     if action == "disconnect":
+        # Nov 4: one call freed a place under Garmin's connection limit, and
+        # while that limit is full the link can't be made again. So it takes
+        # two: this one only says what would go.
+        return {"confirm_needed": True, "note": (
+            "Ending the official link can't be undone while Garmin's limit on new connections is "
+            "full: this account couldn't link again until Garmin raises it, and what Garmin has sent "
+            "is deleted. Tell the person that and ask. Only if they say yes, call again with action "
+            "'disconnect_confirmed'.")}
+    if action == "disconnect_confirmed":
         gone = await anyio.to_thread.run_sync(official.disconnect, user_token)
+        analytics.capture("official_disconnected", None, {"by": "garmin_official", "gone": gone})
         return {"disconnected": gone}
     if action == "test_workout":
         model, summary, _ = build_workout(

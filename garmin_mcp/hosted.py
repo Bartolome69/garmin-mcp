@@ -3767,12 +3767,30 @@ class RedactUserTokens(logging.Filter):
         return True
 
 
+def refuse_wrong_key() -> None:
+    """Stop before serving anyone when the key can't open the stored sessions.
+
+    Started with the wrong GARMIN_MCP_SECRET, the server would read everyone as
+    signed out and drop their Claude and ChatGPT connections as they came back
+    (_lapsed_in_use). Not starting leaves every stored session as it was, for
+    the right key to open once it's set again (docs/RECOVERY.md).
+    """
+    checked, readable = store.key_check()
+    if checked and not readable:
+        log.critical("GARMIN_MCP_SECRET opens none of the %d newest stored sessions: not starting", checked)
+        raise SystemExit(
+            "GARMIN_MCP_SECRET can't open any stored session. Set the key the database was "
+            "written with (docs/RECOVERY.md) rather than a new one: a new key signs everyone out."
+        )
+
+
 def main() -> None:
     import uvicorn
 
     logging.basicConfig(level=logging.INFO)
     for handler in logging.getLogger().handlers:
         handler.addFilter(RedactUserTokens())
+    refuse_wrong_key()
 
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
     if WEEKLY_EMAIL and support_mail.can_send():

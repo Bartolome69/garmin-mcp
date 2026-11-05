@@ -560,6 +560,14 @@ def main() -> int:
     back = as_user(bart, server.garmin_official, "both")
     check("and 'both' goes back to Garmin Connect",
           back.get("official_only") is False and as_user(bart, lambda: _async(server._official_only)) is None)
+    calls_before = len(CALLED)
+    asked = as_user(bart, server.garmin_official, "disconnect")
+    check("disconnect on its own only asks: the link stays and Garmin isn't told",
+          asked.get("confirm_needed") is True and "disconnect_confirmed" in asked.get("note", "")
+          and store.official_link(bart) is not None and len(CALLED) == calls_before, str(asked))
+    nobody = as_user("someone-else", server.garmin_official, "disconnect_confirmed")
+    check("confirmed, it ends only the asking account's own link", nobody == {"disconnected": False}
+          and store.official_link(bart) is not None, str(nobody))
     official.handle_push(json.dumps({"userPermissionsChange": [
         {"userId": "garmin-user-1", "permissions": ["ACTIVITY_EXPORT"]}]}).encode())
     check("a permission change is recorded", store.official_link(bart).permissions == ["ACTIVITY_EXPORT"])

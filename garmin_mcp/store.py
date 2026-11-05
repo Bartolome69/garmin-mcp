@@ -594,6 +594,30 @@ def get_user(user_token: str) -> User | None:
     return User(*row) if row else None
 
 
+def key_check(sample: int = 20) -> tuple[int, int]:
+    """How many of the newest stored sessions were tried, and how many the key opened.
+
+    A wrong GARMIN_MCP_SECRET fails quietly: every session reads as absent, and
+    each person's connection is then dropped as signed out the next time they
+    use it, one by one, until nobody is connected. The hosted server checks
+    this before it starts. Every row holds a Fernet token, official-only ones
+    an encrypted empty string, so the right key opens all of them.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT token_blob FROM users ORDER BY created_at DESC LIMIT ?", (sample,)
+        ).fetchall()
+    cipher = _cipher()
+    readable = 0
+    for (blob,) in rows:
+        try:
+            cipher.decrypt(blob)
+            readable += 1
+        except (InvalidToken, TypeError):
+            pass
+    return len(rows), readable
+
+
 def count_users() -> int:
     with _connect() as conn:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]

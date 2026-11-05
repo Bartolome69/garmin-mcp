@@ -242,6 +242,30 @@ async def main() -> int:
     bob = store.save_user("b***@example.com", json.dumps({"di_token": "bob-token"}))
     check("two users stored", store.count_users() == 2)
 
+    # Nov 5: a wrong key would read everyone as signed out and drop their
+    # connections one by one, so the server won't start with one.
+    check("the right key opens the stored sessions", store.key_check() == (2, 2))
+    try:
+        hosted.refuse_wrong_key()
+        started_with_right_key = True
+    except SystemExit:
+        started_with_right_key = False
+    check("so the server starts", started_with_right_key)
+    right_key = os.environ["GARMIN_MCP_SECRET"]
+    os.environ["GARMIN_MCP_SECRET"] = Fernet.generate_key().decode()
+    try:
+        check("a different key opens none of them", store.key_check() == (2, 0))
+        try:
+            hosted.refuse_wrong_key()
+            refused = False
+        except SystemExit as exc:
+            refused = "new key signs everyone out" in str(exc)
+        check("and the server refuses to start with it", refused)
+        check("leaving both sessions untouched", store.count_users() == 2)
+    finally:
+        os.environ["GARMIN_MCP_SECRET"] = right_key
+    check("back on the right key, both open again", store.load_blob(alice) is not None and store.key_check() == (2, 2))
+
     app = hosted.build_app()
     config = uvicorn.Config(app, host="127.0.0.1", port=8931, log_level="error")
     server = uvicorn.Server(config)
