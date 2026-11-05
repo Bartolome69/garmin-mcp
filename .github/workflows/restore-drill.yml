@@ -59,6 +59,12 @@ jobs:
               counts = (n("users"), n("official_links"), n("oauth_tokens"))
               rows = db.execute("SELECT token_blob FROM users ORDER BY created_at DESC LIMIT 50").fetchall()
               opened = sum(opens(b) for (b,) in rows)
+              links = db.execute("SELECT tokens_enc FROM official_links").fetchall()
+              links_open = sum(opens(b) for (b,) in links)
+              recent = db.execute("SELECT COUNT(*), SUM(created_at > strftime('%s','now') - 172800) FROM official_links "
+                                  "WHERE updated_at > strftime('%s','now') - 172800").fetchone()
+              print(f"{label}: the key opens {links_open} of {len(links)} Garmin-page links; in the last 48 h "
+                    f"{recent[0]} link(s) changed, {recent[1] or 0} of them new")
               db.close()
               print(f"{label}: integrity {ok}; {counts[0]} accounts, {counts[1]} Garmin-page links, "
                     f"{counts[2]} assistant tokens; the key opens {opened} of the {len(rows)} newest sessions")
