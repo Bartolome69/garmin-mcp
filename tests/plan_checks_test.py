@@ -268,7 +268,10 @@ def main() -> int:
     check("a session every day for a week is worth a look", "no_rest_day" in rules(found), str(rules(found)))
     gym = weeks([(d, "Easy 6k", 6.0) for d in ("mon", "tue", "wed", "thu", "fri", "sat")]
                 + [("sun", "Gym", 0.0, 0.0, "strength")])
-    check("a gym day isn't a rest day either", "no_rest_day" in rules(run(gym)), str(rules(run(gym))))
+    check("a gym day is rest from running", "no_rest_day" not in rules(run(gym)), str(rules(run(gym))))
+    ride = weeks([(d, "Easy 6k", 6.0) for d in ("mon", "tue", "wed", "thu", "fri", "sat")]
+                 + [("sun", "Ride 40k", 0.0, 0.0, "ride")])
+    check("a ride day isn't", "no_rest_day" in rules(run(ride)), str(rules(run(ride))))
     check("six days on, one off: nothing", "no_rest_day" not in rules(run(weeks(
         [(d, "Easy 6k", 6.0) for d in ("mon", "tue", "wed", "thu", "fri", "sat")],
         [(d, "Easy 6k", 6.0) for d in ("tue", "wed")]))))

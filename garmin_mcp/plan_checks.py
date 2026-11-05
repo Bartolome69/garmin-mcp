@@ -334,8 +334,9 @@ def _days(weeks, how, races, out) -> None:
                 f"{s['name']} on {_when(day)} is the day after {before['name']}. Fine once, better with "
                 "an easy day or a rest day between.",
             ))
-    # A rest day in every 7: any session at all counts as not rest.
-    busy = sorted({_day(s["date"]) for s in sessions})
+    # A rest day in every 7: a strength-only day counts as rest from running,
+    # any other session (a ride, a swim) doesn't.
+    busy = sorted({_day(s["date"]) for s in sessions if s.get("kind", "run") != "strength"})
     streak: list[date] = []
     for day in busy:
         streak = streak + [day] if streak and day - streak[-1] == timedelta(days=1) else [day]

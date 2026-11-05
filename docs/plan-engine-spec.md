@@ -89,7 +89,7 @@ Quality by phase: base is strides and short tempo (strides only for new runners)
 | Quality sessions | by style (section 4); a long run with a race-pace section counts | by style |
 | Hard volume | by style | by style |
 | Hard days | an easy or rest day between tempo, intervals, long and race (Faster: an easy long run isn't hard) | two in a row |
-| Rest | at least 1 day a week | none in 7 days |
+| Rest | at least 1 day a week (a strength-only day counts) | none in 7 days |
 | Recovery | as above | no week under `CUTBACK_SHARE` (85%) of both neighbours in 5 weeks |
 | Taper | marathon 75%, 60%, 40% of peak; half 70%, 50%; 5K and 10K 60%. Intensity kept, sessions shorter | race week over 70% of peak |
 
@@ -193,7 +193,7 @@ State comes from `get_plan`: each session's `status` (done, done moved, missed, 
 ## 8. Validator mode
 
 - **Where.** In `create_plan` after `training_plan.prepare`, and in `get_plan` over the weeks it returns; both answers gain a `checks` list. A new read-only `check_plan` tool takes `create_plan`'s arguments and returns only `checks`, so Claude can check a draft before anything is written.
-- **Reads.** Dates, `name` (via `session_type`), `phase`, distance and time (`session_totals`, `planned_distance_m`), work steps, `method` and the "Built:" line for style, races and their tiers (`races`), and `weekly_run_km` for history. Non-running sessions only count as "not rest".
+- **Reads.** Dates, `name` (via `session_type`), `phase`, distance and time (`session_totals`, `planned_distance_m`), work steps, `method` and the "Built:" line for style, races and their tiers (`races`), and `weekly_run_km` for history. Other sports only count as "not rest", and a strength-only day counts as rest.
 - **Race checks:** a hard session within 2 days after a race; B races on back-to-back weekends; a race other than the A race in its last 10 days; a B race longer than that block's long run with no reshaped week; two A races closer than section 5 allows.
 - **Shape.** `{"rule": "long_run_jump", "week": 6, "date": "2026-12-13", "text": "The long run goes from 14 km to 20 km in week 6. Steps of 2 km a week are gentler on the legs."}`
 - **Never blocks.** `create_plan` writes the plan whatever the checks say. Its tool description asks Claude to pass the checks on in its own words and change the plan only if the person wants to. The app shows a quiet line under the week, in the amber `analysis.py` uses for "soft", never red.
