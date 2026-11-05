@@ -26,6 +26,8 @@ on:
       - "tests/**"
       - "docs/share/**"
       - "Dockerfile"
+      - "litestream.yml"
+      - "scripts/start.sh"
       - "fly.toml"
       - "requirements-hosted.txt"
       - ".github/workflows/deploy-hosted.yml"
@@ -89,6 +91,11 @@ jobs:
       # address the directories use.
       - name: Sign-up
         run: python tests/signup_test.py
+
+      # How the server starts: under Litestream only once backup is set up,
+      # and restoring only onto an empty volume (docs/RECOVERY.md).
+      - name: Start-up
+        run: python tests/start_test.py
 
       # The companion app's API against the demo account: an edit made in the
       # app is what Claude reads next. Its clock is set to a Monday with
@@ -213,6 +220,24 @@ jobs:
           else
             echo "No support mail or official API settings yet."
           fi
+
+      # Every account, token and Garmin link is in one database on this one
+      # volume. A snapshot just before each deploy means a bad change can be
+      # rolled back to minutes ago, not to Fly's last daily one; and the daily
+      # ones are kept 30 days, not Fly's default 5 (docs/RECOVERY.md). No
+      # snapshot, no deploy.
+      - name: Snapshot the data volume
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          vol="$(flyctl volumes list --app "$FLY_APP" --json | jq -r '[.[] | select(.name == "garmin_data")][0].id // empty')"
+          if [ -z "$vol" ]; then
+            echo "FAIL: no garmin_data volume found"
+            exit 1
+          fi
+          flyctl volumes update "$vol" --snapshot-retention 30 > /dev/null
+          flyctl volumes snapshots create "$vol"
+          echo "Snapshot of $vol taken; daily snapshots kept 30 days."
 
       - name: Deploy
         env:

@@ -1,0 +1,131 @@
+name: Restore drill
+
+# Proves the backups can be restored, without touching what's live
+# (docs/RECOVERY.md). Run by hand, and after any change to how the server
+# stores or backs up its data.
+#
+# 1. On the server: copies the live database aside, and restores the latest
+#    off-site copy from Litestream when that's set up. Each copy is checked as
+#    a database, counted, and its stored sessions opened with the server's
+#    key, all read-only. Only counts are printed, and the copies are deleted.
+#    Nothing talks to Garmin, so no stored session is used or refreshed.
+# 2. On Fly: makes a new volume from the latest daily snapshot, checks it
+#    comes up, then deletes it. It is never attached to anything.
+
+on:
+  workflow_dispatch:
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Restore copies on the server and check them
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          cat > drill.py <<'PY'
+          import os, pwd, shutil, sqlite3, subprocess
+          from cryptography.fernet import Fernet, InvalidToken
+
+          # As the server's own user: a file SQLite makes beside the live
+          # database (its -wal or -shm) owned by root would stop the server
+          # writing to it.
+          if os.geteuid() == 0:
+              app = pwd.getpwnam("app")
+              os.setgid(app.pw_gid)
+              os.setuid(app.pw_uid)
+
+          live = os.environ.get("GARMIN_MCP_DB", "/data/garmin-mcp.sqlite3")
+          key = Fernet(os.environ["GARMIN_MCP_SECRET"].strip().encode())
+          run = os.environ.get("DRILL_RUN", "x")
+          made = []
+
+          def opens(blob):
+              try:
+                  key.decrypt(blob)
+                  return True
+              except (InvalidToken, TypeError):
+                  return False
+
+          def look(path, label):
+              db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+              ok = db.execute("PRAGMA integrity_check").fetchone()[0]
+              n = lambda table: db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+              counts = (n("users"), n("official_links"), n("oauth_tokens"))
+              rows = db.execute("SELECT token_blob FROM users ORDER BY created_at DESC LIMIT 50").fetchall()
+              opened = sum(opens(b) for (b,) in rows)
+              db.close()
+              print(f"{label}: integrity {ok}; {counts[0]} accounts, {counts[1]} Garmin-page links, "
+                    f"{counts[2]} assistant tokens; the key opens {opened} of the {len(rows)} newest sessions")
+              return ok == "ok" and opened == len(rows), counts
+
+          failed = False
+          try:
+              copy = f"/tmp/drill-copy-{run}.db"
+              made.append(copy)
+              src, dst = sqlite3.connect(live), sqlite3.connect(copy)
+              src.backup(dst)
+              src.close(); dst.close()
+              good, live_counts = look(copy, "Copy of the live database")
+              failed |= not good
+
+              if os.environ.get("LITESTREAM_BUCKET") and shutil.which("litestream"):
+                  restored = f"/tmp/drill-litestream-{run}.db"
+                  made.append(restored)
+                  env = {**os.environ, "LITESTREAM_REGION": os.environ.get("LITESTREAM_REGION") or "auto",
+                         "LITESTREAM_ENDPOINT": os.environ.get("LITESTREAM_ENDPOINT", ""), "GARMIN_MCP_DB": live}
+                  done = subprocess.run(["litestream", "restore", "-config", "/app/litestream.yml", "-o", restored, live],
+                                        env=env, capture_output=True, text=True, timeout=600)
+                  if done.returncode != 0:
+                      print("Off-site restore FAILED:", (done.stderr or done.stdout).strip().splitlines()[-1:])
+                      failed = True
+                  else:
+                      good, ls_counts = look(restored, "Restored from the off-site copy")
+                      behind = live_counts[0] - ls_counts[0]
+                      print(f"The off-site copy is {behind} account(s) behind live")
+                      failed |= not good or behind > 2
+              else:
+                  print("Off-site backup (Litestream) isn't set up yet: skipped")
+          finally:
+              for path in made:
+                  for suffix in ("", "-wal", "-shm"):
+                      try:
+                          os.remove(path + suffix)
+                      except FileNotFoundError:
+                          pass
+          raise SystemExit(1 if failed else 0)
+          PY
+          flyctl ssh sftp shell --app "$FLY_APP" <<< "put drill.py /tmp/drill-$GITHUB_RUN_ID.py" >/dev/null 2>&1
+          flyctl ssh console --app "$FLY_APP" -C "sh -c 'DRILL_RUN=$GITHUB_RUN_ID python3 /tmp/drill-$GITHUB_RUN_ID.py; s=\$?; rm -f /tmp/drill-$GITHUB_RUN_ID.py; exit \$s'"
+
+      - name: Make a volume from the latest snapshot, then delete it
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          live="$(flyctl volumes list --app "$FLY_APP" --json | jq -r '[.[] | select(.name == "garmin_data")][0].id // empty')"
+          [ -n "$live" ] || { echo "FAIL: no garmin_data volume"; exit 1; }
+          snap="$(flyctl volumes snapshots list "$live" --json | jq -r 'sort_by(.created_at) | last | .id // empty')"
+          [ -n "$snap" ] || { echo "FAIL: no snapshots of $live"; exit 1; }
+          echo "Latest snapshot: $snap"
+          made="$(flyctl volumes create drill_restore --app "$FLY_APP" --region lhr --size 1 \
+                    --snapshot-id "$snap" --require-unique-zone=false --yes --json | jq -r '.id // empty')"
+          [ -n "$made" ] || { echo "FAIL: no volume made from $snap"; exit 1; }
+          echo "drill_volume=$made" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            state="$(flyctl volumes show "$made" --app "$FLY_APP" --json | jq -r '.state')"
+            [ "$state" = "created" ] && break
+            sleep 5
+          done
+          echo "Volume $made from $snap: $state"
+          [ "$state" = "created" ]
+
+      - name: Delete the drill volume
+        if: always() && env.drill_volume != ''
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl volumes destroy "$drill_volume" --app "$FLY_APP" --yes

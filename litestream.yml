@@ -1,0 +1,18 @@
+# Litestream: the hosted server's database, copied as it changes to S3-style
+# storage you own (Cloudflare R2, Backblaze B2, AWS S3). Used only when
+# LITESTREAM_BUCKET is set (scripts/start.sh); the values come from Fly
+# secrets, never from this file. See docs/RECOVERY.md.
+dbs:
+  - path: ${GARMIN_MCP_DB}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: garmin-mcp
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        # A full copy each day, and every change in between kept 30 days, so
+        # any moment in the last month can be restored.
+        snapshot-interval: 24h
+        retention: 720h
