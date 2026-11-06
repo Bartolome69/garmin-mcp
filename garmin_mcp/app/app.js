@@ -311,6 +311,93 @@ document.addEventListener("click", (e) => {
   openAssistant(link.dataset.app, link.href);
 });
 
+// Ask Claude or ChatGPT: back to the chat they already have, or a new one.
+// Every Ask used to open a new chat, and people ended up with dozens of
+// threads (Nov 6). Daash can't see anyone's chats, so Back to my chat copies
+// the question and opens either the chat they saved here or their list of
+// chats, to paste it in.
+const ASK_LINK = /^https:\/\/(claude\.ai\/new|chatgpt\.com\/)\?q=/;
+const CHAT_KEY = (to) => `daash.chat.${to}`;
+
+// A chat's own address, not a share link (that opens a public copy).
+function chatAddress(to, text) {
+  let u;
+  try { u = new URL(String(text || "").trim()); } catch { return { error: "That isn't a link. Paste the chat's address." }; }
+  if (/\/share\//.test(u.pathname)) return { error: "That's a share link, which opens a public copy. Paste the chat's own address." };
+  const ok = to === "claude"
+    ? u.hostname === "claude.ai" && /^\/chat\/[\w-]{8,}$/.test(u.pathname)
+    : /^(www\.)?chatgpt\.com$/.test(u.hostname) && /^(\/g\/[\w-]+)?\/c\/[\w-]{8,}$/.test(u.pathname);
+  if (!ok) return { error: to === "claude" ? "That isn't a Claude chat. Its address starts claude.ai/chat/." : "That isn't a ChatGPT chat. Its address starts chatgpt.com/c/." };
+  return { url: `https://${u.hostname}${u.pathname}` };
+}
+
+function copyQuestion(text, then) {
+  const done = (ok) => toast(ok ? then : "Couldn't copy the question. Press and hold it above to copy it.");
+  try { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); } catch { done(false); }
+}
+
+function askSheet(link) {
+  const to = link.href.includes("chatgpt") ? "chatgpt" : "claude";
+  const name = to === "chatgpt" ? "ChatGPT" : "Claude";
+  const question = new URL(link.href).searchParams.get("q") || "";
+  const where = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "today";
+  const saved = store.get(CHAT_KEY(to));
+  const chose = (choice) => track("ask_chosen", { to, where, choice, saved: saved ? "yes" : "no" });
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Ask ${name}</span>
+      <span class="meta" style="line-height:1.5;user-select:text">“${esc(question)}”</span></div>
+    <div class="stack-tight"><button class="pill red tall" id="ask-mine">Back to my chat</button>
+      <span class="small">${saved ? `Opens your Daash chat with the question copied: paste it there.`
+        : `Copies the question and opens your ${name} chats: pick your Daash chat and paste it.`}</span></div>
+    <button class="pill tall" id="ask-new">New chat</button>
+    <div class="stack-tight" id="ask-keep">${saved
+      ? `<span class="small">Back to my chat opens <b>${esc(saved.replace(/^https:\/\//, "").slice(0, 34))}…</b> · <a href="#" id="ask-change">Change</a> · <a href="#" id="ask-forget">Forget</a></span>`
+      : `<a href="#" class="small" id="ask-change">Use one chat every time</a>`}</div>`, (holder, close) => {
+    $("ask-mine").onclick = () => {
+      chose("my_chat");
+      copyQuestion(question, saved ? `Question copied. Paste it into your Daash chat.` : `Question copied. Open your Daash chat and paste it.`);
+      const web = saved || (to === "claude" ? "https://claude.ai/recents" : "https://chatgpt.com/");
+      if (to === "claude") openAssistant(web.replace(/^https:\/\//, "claude://"), web);
+      else window.open(web, "_blank", "noopener");
+      close();
+    };
+    $("ask-new").onclick = () => {
+      chose("new_chat");
+      if (link.dataset.app) openAssistant(link.dataset.app, link.href);
+      else window.open(link.href, "_blank", "noopener");
+      close();
+    };
+    const forget = $("ask-forget");
+    if (forget) forget.onclick = (e) => { e.preventDefault(); store.drop(CHAT_KEY(to)); close(); toast("Forgotten. Back to my chat opens your list of chats."); };
+    $("ask-change").onclick = (e) => {
+      e.preventDefault();
+      $("ask-keep").innerHTML = `<label class="field-label" for="ask-url">Your Daash chat's address</label>
+        <input id="ask-url" class="field" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+          placeholder="${to === "claude" ? "https://claude.ai/chat/…" : "https://chatgpt.com/c/…"}">
+        <span class="small">Open the chat in a browser and copy the address bar.</span>
+        <div class="pills"><button class="pill" id="ask-cancel">Cancel</button><button class="pill light" id="ask-save">Save</button></div>`;
+      const field = $("ask-url");
+      field.focus();
+      $("ask-cancel").onclick = () => { close(); askSheet(link); };
+      $("ask-save").onclick = () => {
+        const got = chatAddress(to, field.value);
+        if (got.error) { toast(got.error); field.focus(); return; }
+        store.set(CHAT_KEY(to), got.url);
+        track("ask_chat_saved", { to, where });
+        close(); toast("Saved. Back to my chat opens it."); askSheet(link);
+      };
+    };
+  });
+}
+
+// Registered after the ask_clicked count above, so that still counts the tap.
+document.addEventListener("click", (e) => {
+  const link = e.target.closest && e.target.closest("a[href]");
+  if (!link || !ASK_LINK.test(link.href) || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  askSheet(link);
+}, true);
+
 // At 1024px and wider the app is laid out for a desktop: a top bar instead
 // of tabs, Today as a calendar, and sessions in a side panel.
 const WIDE = window.matchMedia("(min-width: 1024px)");

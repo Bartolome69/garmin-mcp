@@ -1343,7 +1343,7 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 # use sits beside Claude and ChatGPT use in PostHog. What a screen showed is
 # never sent: no paces, no sessions, no plan.
 
-APP_EVENTS = {"ask_clicked", "share_clicked", "signed_in", "installed", "viewed"}
+APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you"}
 
@@ -1504,7 +1504,8 @@ async def api_event(request: Request) -> Response:
         _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
                                          "ok": said.get("ok") is not False, "preloaded": True}))
         return _json({"ok": True})
-    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method")}
+    # choice: Back to my chat or New chat; saved: whether a chat was remembered.
+    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method", "choice", "saved")}
     _track(f"app_{name}", {**keep, "layout": _layout(request)})
     return _json({"ok": True})
 

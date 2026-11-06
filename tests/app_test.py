@@ -349,6 +349,15 @@ def api_checks() -> None:
     asked = posted("app_ask_clicked")
     check("Ask Claude pressed is recorded", r.status_code == 200 and asked and asked[-1]["properties"].get("to") == "claude")
     check("and only the properties it may carry", asked and "secret" not in asked[-1]["properties"])
+    # Nov 6: Ask asks Back to my chat or New chat, and can remember a chat.
+    client.post("/app/api/event", headers=auth, json={"name": "ask_chosen", "properties":
+                {"to": "claude", "where": "today", "choice": "my_chat", "saved": "yes", "url": "https://claude.ai/chat/x"}})
+    client.post("/app/api/event", headers=auth, json={"name": "ask_chat_saved", "properties": {"to": "chatgpt", "where": "plan"}})
+    chosen, kept = posted("app_ask_chosen"), posted("app_ask_chat_saved")
+    check("which way Ask went is recorded, never the chat's address",
+          chosen and {k: chosen[-1]["properties"].get(k) for k in ("choice", "saved")} == {"choice": "my_chat", "saved": "yes"}
+          and "url" not in chosen[-1]["properties"] and kept and kept[-1]["properties"].get("to") == "chatgpt",
+          str([e["properties"] for e in chosen + kept])[:200])
     check("an unknown event is refused", client.post("/app/api/event", headers=auth, json={"name": "anything"}).status_code == 400)
     check("and nothing is recorded without a token", client.post("/app/api/event", json={"name": "installed"}).status_code == 401)
 
