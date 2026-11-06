@@ -595,8 +595,25 @@ def extra_checks() -> None:
     check("and on no other day", other == [], str(other))
 
 
+def verdict_checks() -> None:
+    """A race is named in the week's line (Nov 6: a threshold session and a parkrun said "One hard day")."""
+    days = [{"date": f"2026-11-0{i + 2}", "state": "session",
+             "colour": c} for i, c in enumerate(["strength", "easy", "easy", "hard", "easy", "race", "easy"])]
+    sessions = [{"date": "2026-11-05", "type": "threshold", "name": "Benchmark 5x1km"},
+                {"date": "2026-11-07", "type": "race", "name": "Parkrun tune-up"},
+                {"date": "2026-11-03", "type": "easy", "name": "10km easy"}]
+    said = app_routes._week_verdict(days, sessions)
+    check("the week's line names the parkrun beside the hard day", said == "No rest day this week. One hard day and a parkrun on Saturday.", said)
+    other = app_routes._week_verdict(days, [{"date": "2026-11-08", "type": "race", "name": "Goal half"}])
+    check("and any other race as a race", other == "No rest day this week. A race on Sunday.", other)
+    rest = [dict(d, state="rest") if d["date"] == "2026-11-02" else d for d in days]
+    heavy = app_routes._week_verdict(rest, sessions + [{"date": "2026-11-04", "type": "intervals", "name": "VO2"}])
+    check("a race counts towards a heavy week", heavy.startswith("A heavy week.") and "a parkrun on Saturday" in heavy, heavy)
+
+
 def main() -> int:
     extra_checks()
+    verdict_checks()
     analysis_checks()
     easier_checks()
     api_checks()

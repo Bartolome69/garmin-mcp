@@ -334,12 +334,21 @@ def _week_verdict(days: list[dict[str, Any]], sessions: list[dict[str, Any]]) ->
     """One line on the shape of the week, by rule: hard days, rest, and where the long run sits."""
     if not sessions:
         return None
-    hard = sorted({s["date"] for s in sessions if s.get("type") in HARD_TYPES and s.get("type") != "race"})
+    # A race is said by name, not folded into the hard days (Nov 6: a week with
+    # a threshold session and a parkrun said "One hard day" and nothing else).
+    races = sorted(((s["date"], str(s.get("name") or "")) for s in sessions if s.get("type") == "race"))
+    race_days = {d for d, _ in races}
+    hard = sorted({s["date"] for s in sessions
+                   if s.get("type") in HARD_TYPES and s.get("type") != "race" and s["date"] not in race_days})
     rest = [DAY_NAMES[i] for i, d in enumerate(days) if d["state"] == "rest"]
     long_day = next((date.fromisoformat(s["date"]) for s in sessions if s.get("type") == "long"), None)
     parts = []
     if hard:
         parts.append(f"{_word(len(hard))} hard day{'s' if len(hard) > 1 else ''}")
+    if races:
+        named = [("a parkrun" if "parkrun" in n.lower() else "a race") + f" on {DAY_NAMES[date.fromisoformat(d).weekday()]}"
+                 for d, n in races]
+        parts.append(_join(named))
     if rest:
         parts.append(f"rest on {_join(rest)}")
     if long_day:
@@ -347,7 +356,7 @@ def _week_verdict(days: list[dict[str, Any]], sessions: list[dict[str, Any]]) ->
         easy_before = all(d["state"] == "rest" or d["colour"] in ("easy", "strength") for d in before)
         parts.append(f"the long run on {DAY_NAMES[long_day.weekday()]}"
                      + (f" with {'two easy days' if len(before) == 2 else 'an easy day'} before it" if easy_before and before else ""))
-    head = "No rest day this week." if not rest else "A heavy week." if len(hard) >= 3 else "Balanced."
+    head = "No rest day this week." if not rest else "A heavy week." if len(hard) + len(races) >= 3 else "Balanced."
     if not parts:
         return head
     line = ", ".join(parts[:-1]) + (", and " if len(parts) > 2 else " and ") + parts[-1] if len(parts) > 1 else parts[0]
