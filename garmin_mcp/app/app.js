@@ -108,7 +108,8 @@ function track(name, properties = {}) {
 // Ask Claude or ChatGPT, and Share this run, wherever they appear.
 document.addEventListener("click", (e) => {
   const link = e.target.closest && e.target.closest("a[href]");
-  if (!link) return;
+  // The Ask sheet's own links are counted as its choice (ask_chosen), not as another Ask.
+  if (!link || link.closest(".sheet")) return;
   const where = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "today";
   if (/^https:\/\/(claude\.ai|chatgpt\.com)\//.test(link.href)) {
     track("ask_clicked", { to: link.href.includes("chatgpt") ? "chatgpt" : "claude", where,
@@ -310,6 +311,113 @@ document.addEventListener("click", (e) => {
   e.preventDefault();
   openAssistant(link.dataset.app, link.href);
 });
+
+// Ask Claude or ChatGPT: back to the chat they already have, or a new one.
+// Every Ask used to open a new chat, and people ended up with dozens of
+// threads (Nov 6). Daash can't see anyone's chats, so Back to my chat copies
+// the question and opens either the chat they saved here or their list of
+// chats, to paste it in.
+const ASK_LINK = /^https:\/\/(claude\.ai\/new|chatgpt\.com\/)\?q=/;
+const CHAT_KEY = (to) => `daash.chat.${to}`;
+
+// A chat's own address, not a share link (that opens a public copy).
+function chatAddress(to, text) {
+  let u;
+  try { u = new URL(String(text || "").trim()); } catch { return { error: "That isn't a link. Paste the chat's address." }; }
+  if (/\/share\//.test(u.pathname)) return { error: "That's a share link, which opens a public copy. Paste the chat's own address." };
+  const ok = to === "claude"
+    ? u.hostname === "claude.ai" && /^\/chat\/[\w-]{8,}$/.test(u.pathname)
+    : /^(www\.)?chatgpt\.com$/.test(u.hostname) && /^(\/g\/[\w-]+)?\/c\/[\w-]{8,}$/.test(u.pathname);
+  if (!ok) return { error: to === "claude" ? "That isn't a Claude chat. Its address starts claude.ai/chat/." : "That isn't a ChatGPT chat. Its address starts chatgpt.com/c/." };
+  return { url: `https://${u.hostname}${u.pathname}` };
+}
+
+function copyQuestion(text, then) {
+  const done = (ok) => toast(ok ? then : "Couldn't copy the question. Press and hold it above to copy it.");
+  try { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); } catch { done(false); }
+}
+
+// Which address opens the assistant's phone app, not the browser. The Claude
+// iPhone app claims only some claude.ai addresses (its
+// apple-app-site-association, Nov 6): /new is one; /recents and /chat/… are
+// not, so those open in Safari. On an iPhone, Back to my chat goes through
+// /new: the app opens, and the person picks their chat from its menu.
+const iPhone = () => /iPhone|iPad|iPod/i.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+function backTo(to, saved) {
+  if (to === "claude" && !onComputer() && iPhone()) return { href: "https://claude.ai/new", inApp: true, saved: false };
+  const href = saved || (to === "claude" ? "https://claude.ai/recents" : "https://chatgpt.com/");
+  return { href, saved: !!saved };
+}
+
+function askSheet(link) {
+  const to = link.href.includes("chatgpt") ? "chatgpt" : "claude";
+  const name = to === "chatgpt" ? "ChatGPT" : "Claude";
+  const question = new URL(link.href).searchParams.get("q") || "";
+  const where = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "today";
+  const saved = store.get(CHAT_KEY(to));
+  const back = backTo(to, saved);
+  // A saved chat can't open in the iPhone app, so it isn't offered there.
+  const canKeep = !(to === "claude" && !onComputer() && iPhone());
+  const chose = (choice) => track("ask_chosen", { to, where, choice, saved: back.saved ? "yes" : "no" });
+  const how = back.inApp ? `Opens the Claude app with the question copied: pick your Daash chat from the menu and paste it.`
+    : back.saved ? `Opens your Daash chat with the question copied: paste it there.`
+    : `Copies the question and opens your ${name} chats: pick your Daash chat and paste it.`;
+  // Real links, tapped: a phone hands a link to an app only on a tap, not
+  // when a page opens a window itself.
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Ask ${name}</span>
+      <span class="meta" style="line-height:1.5;user-select:text">“${esc(question)}”</span></div>
+    <div class="stack-tight"><a class="pill red tall" id="ask-mine" href="${esc(back.href)}" target="_blank" rel="noopener">Back to my chat</a>
+      <span class="small">${how}</span></div>
+    <a class="pill tall" id="ask-new" href="${esc(link.href)}" target="_blank" rel="noopener">New chat</a>
+    ${canKeep ? `<div class="stack-tight" id="ask-keep">${saved
+      ? `<span class="small">Back to my chat opens <b>${esc(saved.replace(/^https:\/\//, "").slice(0, 34))}…</b> · <a href="#" id="ask-change">Change</a> · <a href="#" id="ask-forget">Forget</a></span>`
+      : `<a href="#" class="small" id="ask-change">Use one chat every time</a>`}</div>` : ""}`, (holder, close) => {
+    $("ask-mine").onclick = (e) => {
+      chose("my_chat");
+      copyQuestion(question, back.saved ? `Question copied. Paste it into your Daash chat.` : `Question copied. Open your Daash chat and paste it.`);
+      // Claude's desktop app on a computer, as Ask Claude has always done.
+      if (to === "claude" && onComputer()) { e.preventDefault(); openAssistant(back.href.replace(/^https:\/\//, "claude://"), back.href); }
+      setTimeout(close, 0);
+    };
+    $("ask-new").onclick = (e) => {
+      chose("new_chat");
+      if (link.dataset.app && onComputer()) { e.preventDefault(); openAssistant(link.dataset.app, link.href); }
+      setTimeout(close, 0);
+    };
+    const forget = $("ask-forget");
+    if (forget) forget.onclick = (e) => { e.preventDefault(); store.drop(CHAT_KEY(to)); close(); toast("Forgotten. Back to my chat opens your list of chats."); };
+    const change = $("ask-change");
+    if (change) change.onclick = (e) => {
+      e.preventDefault();
+      $("ask-keep").innerHTML = `<label class="field-label" for="ask-url">Your Daash chat's address</label>
+        <input id="ask-url" class="field" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+          placeholder="${to === "claude" ? "https://claude.ai/chat/…" : "https://chatgpt.com/c/…"}">
+        <span class="small">Open the chat in a browser and copy the address bar.</span>
+        <div class="pills"><button class="pill" id="ask-cancel">Cancel</button><button class="pill light" id="ask-save">Save</button></div>`;
+      const field = $("ask-url");
+      field.focus();
+      $("ask-cancel").onclick = () => { close(); askSheet(link); };
+      $("ask-save").onclick = () => {
+        const got = chatAddress(to, field.value);
+        if (got.error) { toast(got.error); field.focus(); return; }
+        store.set(CHAT_KEY(to), got.url);
+        track("ask_chat_saved", { to, where });
+        close(); toast("Saved. Back to my chat opens it."); askSheet(link);
+      };
+    };
+  });
+}
+
+// Registered after the ask_clicked count above, so that still counts the tap.
+document.addEventListener("click", (e) => {
+  const link = e.target.closest && e.target.closest("a[href]");
+  if (!link || link.closest(".sheet") || !ASK_LINK.test(link.href) || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  askSheet(link);
+}, true);
 
 // At 1024px and wider the app is laid out for a desktop: a top bar instead
 // of tabs, Today as a calendar, and sessions in a side panel.
@@ -757,18 +865,20 @@ function moveSheet(day, sid, name) {
 // -- Plan: the week, with hold to move, and the block ---------------------------
 
 function planRow(r, day, first) {
-  const href = r.state === "done" && r.activity_id ? `#/run/${r.activity_id}?from=plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan`;
-  const mark = r.state === "done" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
+  // A run not on the plan opens as a run; it has no session of its own to open.
+  const href = (r.state === "done" || r.state === "extra") && r.activity_id ? `#/run/${r.activity_id}?from=plan`
+    : r.state === "extra" ? `#/plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan`;
+  const mark = r.state === "done" || r.state === "extra" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
     : r.state === "next" ? `<span class="ring" style="width:14px;height:14px"></span>`
     : r.missed ? `<span class="miss-ring" style="width:12px;height:12px"></span>` : "";
   return `<a class="plan-row ${first ? "" : "same-day"} ${r.state === "next" ? "is-next" : ""}" href="${href}" data-date="${day.date}" draggable="false"
       data-sid="${r.schedule_id || ""}" ${r.movable ? 'data-movable="1"' : ""} data-name="${esc(r.name)}">
     <span class="day ${first ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
     <span class="body"><span class="type c-${esc(r.colour)}">${mark}${esc(r.type_label)}</span>
-      <span class="name ${r.state === "done" ? "dim" : ""}">${esc(r.name)}</span>
+      <span class="name ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.name)}</span>
       ${r.meta ? `<span class="meta ${r.state === "next" ? "red" : r.missed ? "soft" : ""}">${esc(r.meta)}</span>` : ""}
       ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
-    <span class="val ${r.state === "done" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span></a>`;
+    <span class="val ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span></a>`;
 }
 
 function weekView(d) {
@@ -1160,7 +1270,7 @@ async function showCrew() {
     if (d.none) {
       const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends</h1></header>
-        <div class="card pad stack"><span class="strong">You're not in a crew yet.</span>
+        <div class="card pad stack" style="max-width:560px"><span class="strong">You're not in a crew yet.</span>
         <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}</div>`;
       return;
     }
@@ -1299,6 +1409,11 @@ async function signInPost(path, body) {
   return out;
 }
 
+// Opened from the home screen: on iPhone that keeps its own storage, so
+// someone signed in in Safari is asked again (Nov 4: two sign-ins a minute apart).
+const homeScreen = () => window.navigator.standalone === true
+  || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
 function signInView(message, step = "start", email = "") {
   $("tabs").hidden = true;
   $("topbar").hidden = true;
@@ -1333,7 +1448,7 @@ function signInView(message, step = "start", email = "") {
   $("screen").innerHTML = `<div class="signin">${head}
     <h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
     <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>
-    ${note}
+    ${note}${homeScreen() ? `<div class="card pad meta" style="line-height:1.5">On your home screen, Daash keeps its own sign-in, apart from your browser's. Sign in once here and it stays signed in.</div>` : ""}
     <form id="email-form" class="stack"><label class="field-label" for="email">Already use Daash? Your email</label>
       <input id="email" class="field" type="email" autocomplete="email" value="${esc(email)}" required>
       <button class="pill red tall" type="submit">Email me a code</button></form>

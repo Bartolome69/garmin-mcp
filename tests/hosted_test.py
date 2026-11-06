@@ -378,25 +378,41 @@ async def main() -> int:
                   session_answer.get("card") == "session" or "Nothing is scheduled" in str(session_answer.get("error")),
                   str(session_answer)[:300])
             # "Where's the app?" asked in a chat had no answer (Nov 3).
+            # Nov 6: preview accounts alone had it, and nobody else ever
+            # reached the app from a chat. Now everyone, unless switched off.
             os.environ["GARMIN_MCP_BASE_URL"] = "https://daash.test"
             try:
                 hosted._PLAN_CALLS.pop(alice, None)
                 hosted._PLAN_CALLS.pop(bob, None)
                 plan_a = await call(alice, "get_plan")
+                hosted._PLAN_CALLS.pop(bob, None)
                 plan_b = await call(bob, "get_plan")
+                os.environ["GARMIN_MCP_APP_LINK"] = "off"
+                hosted._PLAN_CALLS.pop(alice, None)
+                hosted._PLAN_CALLS.pop(bob, None)
+                plan_a_off = await call(alice, "get_plan")
+                hosted._PLAN_CALLS.pop(bob, None)
+                plan_b_off = await call(bob, "get_plan")
             finally:
                 os.environ.pop("GARMIN_MCP_BASE_URL", None)
+                os.environ.pop("GARMIN_MCP_APP_LINK", None)
                 # Reads after these aren't sent with them, so nothing is held.
                 hosted._PLAN_CALLS.pop(alice, None)
                 hosted._PLAN_CALLS.pop(bob, None)
             app_a = plan_a.get("app") or {}
+            app_b = plan_b.get("app") or {}
             code = str(app_a.get("url", "")).partition("login=")[2]
-            check("the plan in a chat carries the Daash app's link, for an account trying the app",
+            code_b = str(app_b.get("url", "")).partition("login=")[2]
+            check("the plan in a chat carries the Daash app's link",
                   str(app_a.get("url", "")).startswith("https://daash.test/app/#/plan?login=")
                   and "Daash app" in str(app_a.get("note")), str(plan_a)[:300])
             check("and it signs that person in", bool(code) and store.take_handoff(code) == alice)
-            check("not for anyone else", "app" not in plan_b, str(plan_b.get("app")))
-            check("and get_plan says it has the link", "Daash app" in described[alice]["get_plan"]
+            check("for everyone, not only accounts trying previews",
+                  bool(code_b) and store.take_handoff(code_b) == bob, str(plan_b.get("app")))
+            check("switched off, only preview accounts have it",
+                  "app" in plan_a_off and "app" not in plan_b_off, str(plan_b_off.get("app")))
+            check("get_plan's description is unchanged for everyone else: the tool list stays as reviewed",
+                  "Daash app" in described[alice]["get_plan"]
                   and "Daash app" not in described[bob]["get_plan"])
             # Nothing is in preview now, but the list must still be read right
             # for the next thing that is.
@@ -421,14 +437,15 @@ async def main() -> int:
         hosted._SESSIONS.clear()  # force a fresh login so each one is observable
         status_a = await call(alice, "get_connection_status")
         status_b = await call(bob, "get_connection_status")
-        name_a = str(status_a.get("garmin_display_name"))
-        name_b = str(status_b.get("garmin_display_name"))
         check("alice is authenticated", status_a.get("authenticated") is True,
               str(status_a)[:160])
-        check("alice's response came from her token", "alice-token" in name_a, name_a)
-        check("bob's response came from his token", "bob-token" in name_b, name_b)
+        check("alice's request signed in with her token, then bob's with his",
+              len(BUILT) == 2 and "alice-token" in BUILT[0] and "bob-token" in BUILT[1], str(BUILT)[:200])
         check("neither leaks into the other",
-              "bob-token" not in name_a and "alice-token" not in name_b)
+              "bob-token" not in BUILT[0] and "alice-token" not in BUILT[1])
+        check("and the status names nobody: no name, no address",
+              "garmin_display_name" not in status_a and "example.com" not in json.dumps(status_a)
+              and "alice" not in json.dumps(status_a).lower(), str(status_a)[:200])
         check("token blob never appears in a response",
               SECRET not in json.dumps(status_a) and SECRET not in json.dumps(day))
         check("no server filesystem path exposed",
@@ -1976,9 +1993,13 @@ async def main() -> int:
               and _raises(lambda: _tp.check_milestones([{"label": "x", "tier": "huge"}])))
         _today = _pd.today()
         _at = lambda n, wid, name: {"date": (_today + _pt(days=n)).isoformat(), "workoutId": wid, "title": name, "sportTypeKey": "running"}
+        # The long run and the threshold session in one week, whatever today
+        # is (days 30 and 31 straddled two weeks when the suite ran on a Friday).
+        _wk = (_today - _pt(days=_today.weekday()) - _today).days
         order = garmin_server._lookup_order([
-            _at(2, 1, "Easy 8km \u00b7 MAR"), _at(30, 2, "Long 30km \u00b7 MAR"), _at(31, 3, "Threshold 3x3km \u00b7 MAR"),
-            _at(90, 4, "VO2 5x1km \u00b7 MAR"), _at(10, 5, "Sub-T 4x2km \u00b7 MAR"), _at(-3, 6, "Recovery \u00b7 MAR")], _today)
+            _at(2, 1, "Easy 8km \u00b7 MAR"), _at(_wk + 29, 2, "Long 30km \u00b7 MAR"),
+            _at(_wk + 30, 3, "Threshold 3x3km \u00b7 MAR"),
+            _at(_wk + 91, 4, "VO2 5x1km \u00b7 MAR"), _at(10, 5, "Sub-T 4x2km \u00b7 MAR"), _at(-3, 6, "Recovery \u00b7 MAR")], _today)
         check("a long plan reads the next two weeks first, then the runs whose names can't size them, then the rest",
               order == [1, 6, 5, 3, 4, 2], str(order))
         # The Saturday and Sunday of one week nine weeks on, whatever today is

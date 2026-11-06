@@ -463,10 +463,11 @@ async def main() -> int:
             ok = payload.get("authenticated") is True
             check("a bearer token reaches that person's Garmin session", ok,
                   str(payload)[:140])
-            check("it is the right person",
-                  "oauth@example.com-token" in json.dumps(payload)
-                  or payload.get("garmin_display_name", "").endswith("oauth@example.com-token"),
-                  str(payload.get("garmin_display_name"))[:80])
+            subject = (store.load_oauth_token(fresh, "access") or {}).get("subject")
+            used = hosted._SESSIONS.get(subject) if subject else None
+            who = getattr(used.client(), "full_name", "") if used else ""
+            check("it is the right person", who.endswith("oauth@example.com-token"), who[:80])
+            check("and says so without naming them", "oauth@example.com" not in json.dumps(payload), str(payload)[:140])
             # Claude connects this way, so crews must be offered this way too.
             async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {fresh}"}) as http_client:
                 async with streamable_http_client(f"{BASE}/mcp", http_client=http_client) as (r, w):

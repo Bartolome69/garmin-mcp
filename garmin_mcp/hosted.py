@@ -899,7 +899,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
         result = _with_card_check(name, result, user)
         # The app's link rides on the plan in a chat, not on the app's own
         # reads of it, which pass no hook: a code made for each screen is waste.
-        if name == "get_plan" and isinstance(result, dict) and "error" not in result:
+        if name in ("get_plan", "create_plan") and isinstance(result, dict) and "error" not in result:
             link = server_mod.app_link("plan")
             if link:
                 result = {**result, "app": {"url": link, "note": server_mod.APP_NOTE}}
@@ -3451,7 +3451,7 @@ async def _directory_answer(message: Any) -> dict[str, Any] | None:
         result: dict[str, Any] = {
             "protocolVersion": asked if isinstance(asked, str) and asked else "2025-06-18",
             "capabilities": {"tools": {"listChanged": False}, "resources": {}, "prompts": {}},
-            "serverInfo": {"name": "garmin", "title": "Daash", "version": __version__,
+            "serverInfo": {"name": "daash", "title": "Daash", "version": __version__,
                            "websiteUrl": server_mod.WEBSITE,
                            "icons": [{"src": f"{server_mod.SITE}/icon-512.png", "mimeType": "image/png",
                                       "sizes": ["512x512"]}]},

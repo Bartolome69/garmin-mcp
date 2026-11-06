@@ -146,6 +146,25 @@ function decode(url) {
       seen.map((p) => p.url.match(/v=(\w+)/)[1]).join() === "view1,view2" && seen.every((p) => p.body.ok), JSON.stringify(pings));
     pings.length = 0;
 
+    console.log("the Daash app's link");
+    // Nov 6: everyone's plan card, not only the redesign preview accounts see.
+    const APP = "https://daash.test/app/#/plan?login=abc";
+    ({ page, card } = await open({ ...PLAN, app: { url: APP, note: "x" } }));
+    let app = await card.evaluate(() => {
+      const b = [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash");
+      const title = document.querySelector(".head .title"), doc = document.documentElement;
+      return { button: !!b, overflow: doc.scrollWidth > doc.clientWidth + 1,
+        oneLine: !!b && b.getBoundingClientRect().height < 50,
+        beside: !!b && Math.abs(b.getBoundingClientRect().top - title.getBoundingClientRect().top) < 12 };
+    });
+    check("Open in Daash sits beside the title, on one line, without a sideways scroll",
+      app.button && !app.overflow && app.oneLine && app.beside, JSON.stringify(app));
+    await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash").click());
+    await page.waitForTimeout(200);
+    check("and opens the app's link", (await page.evaluate(() => window.opened)) === APP, String(await page.evaluate(() => window.opened)));
+    await page.close();
+    pings.length = 0;
+
     console.log("an opened run");
     ({ page, card } = await open({ ...PLAN, _card: SEEN }));
     await page.waitForTimeout(8000);

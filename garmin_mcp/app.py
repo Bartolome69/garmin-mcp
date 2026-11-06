@@ -778,6 +778,19 @@ def _row(s: Mapping[str, Any], today: date, next_id: Any) -> dict[str, Any]:
     })
 
 
+def _extra_row(x: Mapping[str, Any]) -> dict[str, Any]:
+    """A run or session not on the plan, as the week shows it: it counts in the week's total,
+    so it's in the list too (Nov 6: a 1.2 km top-up was in the total and nowhere else)."""
+    km = x.get("actual_km")
+    return drop_empty({
+        "date": x["date"], "name": _display(x.get("name")), "type": "extra", "type_label": "Extra", "colour": "rec",
+        "state": "extra", "meta": " · ".join(v for v in ("Not on the plan", x.get("actual")) if v),
+        "v": f"{round(float(km), 1):g}" if km else (f"{x['actual_min']}" if x.get("actual_min") else ""),
+        "u": "km" if km else "min" if x.get("actual_min") else "",
+        "activity_id": x.get("activity_id"),
+    })
+
+
 def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], season: Mapping[str, Any] | None,
                monday: date, today: date) -> dict[str, Any]:
     week = weeks.get(monday.isoformat()) or {}
@@ -789,9 +802,11 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
     for i in range(7):
         d = monday + timedelta(days=i)
         here = sorted((s for s in sessions if s.get("date") == d.isoformat()), key=training_plan._rank)
+        extra = [x for x in week.get("extra") or [] if x.get("date") == d.isoformat()]
         days.append({
             "date": d.isoformat(), "dow": DAY_NAMES[i][:3].upper(), "n": d.day, "today": d == today,
-            "past": d < today, "sessions": [_row(s, today, (nxt or {}).get("schedule_id")) for s in here],
+            "past": d < today, "sessions": [_row(s, today, (nxt or {}).get("schedule_id")) for s in here]
+            + [_extra_row(x) for x in extra],
         })
     run, planned = week.get("run_km"), week.get("planned_km")
     earlier, later = monday - timedelta(weeks=1), monday + timedelta(weeks=1)
@@ -1343,7 +1358,7 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 # use sits beside Claude and ChatGPT use in PostHog. What a screen showed is
 # never sent: no paces, no sessions, no plan.
 
-APP_EVENTS = {"ask_clicked", "share_clicked", "signed_in", "installed", "viewed"}
+APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you"}
 
@@ -1504,7 +1519,8 @@ async def api_event(request: Request) -> Response:
         _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
                                          "ok": said.get("ok") is not False, "preloaded": True}))
         return _json({"ok": True})
-    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method")}
+    # choice: Back to my chat or New chat; saved: whether a chat was remembered.
+    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method", "choice", "saved")}
     _track(f"app_{name}", {**keep, "layout": _layout(request)})
     return _json({"ok": True})
 

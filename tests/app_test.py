@@ -349,6 +349,15 @@ def api_checks() -> None:
     asked = posted("app_ask_clicked")
     check("Ask Claude pressed is recorded", r.status_code == 200 and asked and asked[-1]["properties"].get("to") == "claude")
     check("and only the properties it may carry", asked and "secret" not in asked[-1]["properties"])
+    # Nov 6: Ask asks Back to my chat or New chat, and can remember a chat.
+    client.post("/app/api/event", headers=auth, json={"name": "ask_chosen", "properties":
+                {"to": "claude", "where": "today", "choice": "my_chat", "saved": "yes", "url": "https://claude.ai/chat/x"}})
+    client.post("/app/api/event", headers=auth, json={"name": "ask_chat_saved", "properties": {"to": "chatgpt", "where": "plan"}})
+    chosen, kept = posted("app_ask_chosen"), posted("app_ask_chat_saved")
+    check("which way Ask went is recorded, never the chat's address",
+          chosen and {k: chosen[-1]["properties"].get(k) for k in ("choice", "saved")} == {"choice": "my_chat", "saved": "yes"}
+          and "url" not in chosen[-1]["properties"] and kept and kept[-1]["properties"].get("to") == "chatgpt",
+          str([e["properties"] for e in chosen + kept])[:200])
     check("an unknown event is refused", client.post("/app/api/event", headers=auth, json={"name": "anything"}).status_code == 400)
     check("and nothing is recorded without a token", client.post("/app/api/event", json={"name": "installed"}).status_code == 401)
 
@@ -545,7 +554,33 @@ def assistant_checks() -> None:
     check("and its ask opens a new ChatGPT chat", (today.get("ask") or {}).get("chatgpt", "").startswith("https://chatgpt.com/?q="))
 
 
+def extra_checks() -> None:
+    """A run not on the plan is in the week's list, not only its total (Nov 6: a top-up run)."""
+    from datetime import date as _d, timedelta as _td
+    from garmin_mcp import training_plan as tp
+    from garmin_mcp.progress import Actual
+
+    monday = _d.today() - _td(days=_d.today().weekday())
+    day = monday.isoformat()
+    week = {"starts": day, "sessions": [{"date": day, "name": "6km easy + strides · B1", "type": "easy", "sport": "run",
+                                         "status": "done", "planned_km": 7.5, "actual_km": 7.45, "activity_id": 1}]}
+    tp._add_distance(week, [Actual(monday, "a", "run", 2292, 7450, 1), Actual(monday, "b", "run", 377, 1190, 2)],
+                     [{"date": day, "name": "Tower Hamlets Running", "sport": "run", "kind": "run",
+                       "actual_seconds": 377, "actual_km": 1.19, "activity_id": 2}], "run")
+    check("the week's total counts the extra run", week.get("run_km") == 8.6, str(week.get("run_km")))
+    check("and the extra run keeps its Garmin id", (week.get("extra") or [{}])[0].get("activity_id") == 2, str(week.get("extra")))
+    view = app_routes._week_view({"weeks": [week]}, {day: week}, None, monday, _d.today())
+    rows = view["days"][0]["sessions"]
+    check("it's listed on its day after the planned run, as extra, not on the plan, opening the run",
+          [r.get("state") for r in rows] == ["done", "extra"] and rows[1].get("v") == "1.2" and rows[1].get("u") == "km"
+          and rows[1].get("type_label") == "Extra" and rows[1].get("meta", "").startswith("Not on the plan")
+          and rows[1].get("activity_id") == 2, str(rows))
+    other = app_routes._week_view({"weeks": [week]}, {day: week}, None, monday, _d.today())["days"][1]["sessions"]
+    check("and on no other day", other == [], str(other))
+
+
 def main() -> int:
+    extra_checks()
     analysis_checks()
     easier_checks()
     api_checks()

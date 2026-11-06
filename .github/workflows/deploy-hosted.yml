@@ -120,6 +120,7 @@ jobs:
           npx playwright install --only-shell chromium
           node tests/card_test.js
           node tests/card2_test.js
+          node tests/app_ask_test.js
 
   # The real Garmin checks on the new code, run while the tests run: neither
   # needs the other, and together they were half of every deploy's wait.

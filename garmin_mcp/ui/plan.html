@@ -532,6 +532,9 @@
     // Everything after this reads raw, the week buttons and the share link
     // included, so a progress answer is converted once, here.
     raw = isProgress(plan) ? fromProgress(plan) : plan;
+    // The same plan in the Daash app, signed in. Kept across a refresh whose
+    // answer came without one.
+    appLink = (plan.app && plan.app.url) || appLink;
     state.sel = null;
     render(raw);
     D.done();
@@ -842,7 +845,7 @@
   }
 
   // ---------------------------------------------------------------- render
-  var state = { sel: null }, raw = null, model = null;
+  var state = { sel: null }, raw = null, model = null, appLink = null;
 
   function fail(message) {
     var app = document.getElementById("app");
@@ -903,9 +906,13 @@
           el("button", { class: "refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 14)]),
         ]),
       ]),
-      el("div", { style: "display:flex;flex-direction:column;gap:3px;min-width:0" }, [
-        el("h3", { class: "title" + (title.length > 24 ? " long" : ""), text: title }),
-        el("span", { class: "sub", text: sub }),
+      el("div", { style: "display:flex;align-items:flex-start;gap:12px" }, [
+        el("div", { style: "display:flex;flex-direction:column;gap:3px;flex:1;min-width:0" }, [
+          el("h3", { class: "title" + (title.length > 24 ? " long" : ""), text: title }),
+          el("span", { class: "sub", text: sub }),
+        ]),
+        appLink ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px",
+          onclick: function (e) { openUrl(appLink, e.currentTarget); } }, ["Open in Daash"]) : null,
       ]),
     ]);
     var nodes = timeline(m);
