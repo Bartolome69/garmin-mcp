@@ -900,9 +900,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
         # The app's link rides on the plan in a chat, not on the app's own
         # reads of it, which pass no hook: a code made for each screen is waste.
         if name in ("get_plan", "create_plan") and isinstance(result, dict) and "error" not in result:
-            link = server_mod.app_link("plan")
-            if link:
-                result = {**result, "app": {"url": link, "note": server_mod.APP_NOTE}}
+            result = _with_app_link(name, result, user_token, user)
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -928,6 +926,45 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
             return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
         return result
     return after
+
+
+# How often a chat may bring the app up unasked, and how recently someone must
+# have used the app for it to stop: they know where it is.
+APP_OFFER_EVERY = 7 * 24 * 3600
+APP_USED_WITHIN = 14 * 24 * 3600
+
+
+def _app_offer_on() -> bool:
+    """Whether a chat may bring the app up unasked for accounts outside preview.
+
+    Off unless GARMIN_MCP_APP_OFFER is on: everyone has the link for when they
+    ask, but an unasked line in their chat is tried on preview accounts first.
+    """
+    return os.environ.get("GARMIN_MCP_APP_OFFER", "").strip().lower() in preview.ON
+
+
+def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -> dict:
+    """The plan with the Daash app's link, and when the model should give it.
+
+    Normally only when asked. At most once a week, for someone who hasn't
+    opened the app in two weeks, the note asks for one line about it instead.
+    """
+    offer = (
+        (preview.enabled() or _app_offer_on())
+        and not store.used_client_since(user_token, oauth.APP_CLIENT_ID, int(time.time()) - APP_USED_WITHIN)
+        and store.claim_app_offer(user_token, APP_OFFER_EVERY)
+    )
+    link = server_mod.app_link("plan", "chat_offer" if offer else "chat")
+    if not link:
+        return result
+    if offer:
+        email = store.email_for(user_token)
+        analytics.capture(
+            "app_link_offered",
+            user.email_hash or user_token,
+            {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+        )
+    return {**result, "app": {"url": link, "note": server_mod.APP_OFFER_NOTE if offer else server_mod.APP_NOTE}}
 
 
 def session_for(user_token: str) -> GarminSession:

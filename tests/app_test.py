@@ -328,7 +328,14 @@ def api_checks() -> None:
           str([e["properties"] for e in late])[:160])
     check("a view naming no real screen is refused",
           client.post("/app/api/event", headers=auth, json={"name": "viewed", "properties": {"screen": "anything"}}).status_code == 400)
+    # Opened from a link in a chat: where it was given, on the first screen.
+    client.get("/app/api/plan", headers={**auth, "X-Daash-From": "chat_offer"})
+    client.get("/app/api/plan", headers={**auth, "X-Daash-From": "<b>Not a source</b>"})
+    time.sleep(0.5)
     viewed = posted("app_viewed")
+    froms = [e["properties"].get("from") for e in viewed if e["properties"].get("from")]
+    check("a screen opened from a chat's link says where the link was given", "chat_offer" in froms, str(froms))
+    check("and nothing else passes for a source", froms == ["chat_offer"], str(froms))
     check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
           str([e["properties"].get("screen") for e in viewed])[:120])
     check("with how long the screen waited", all(isinstance(e["properties"].get("seconds"), (int, float))

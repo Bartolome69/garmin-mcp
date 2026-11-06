@@ -2254,7 +2254,7 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
     card = training_plan.session_card(answer, day, today, detail, change)
     # The same session in the companion app, for the card's Open in Daash.
-    link = None if card.get("rest") else app_link(f"session/{day}")
+    link = None if card.get("rest") else app_link(f"session/{day}", "session_card")
     if link:
         card["app_url"] = link
     return card
@@ -2265,21 +2265,24 @@ def app_link_on() -> bool:
     return os.environ.get("GARMIN_MCP_APP_LINK", "").strip().lower() not in {"0", "off", "false", "no"}
 
 
-def app_link(route: str) -> str | None:
+def app_link(route: str, source: str | None = None) -> str | None:
     """The companion app at a route ("plan", "session/2026-11-04"), for a card.
 
     For everyone (Nov 6: only preview accounts had it, and nobody else ever
     reached the app from a chat); GARMIN_MCP_APP_LINK=off takes it back to
     preview accounts alone. It carries a single-use code, so it opens the app
     already signed in as this person: no second sign-in for someone who uses
-    the connector.
+    the connector. ``source`` says where it was given ("chat", "chat_offer",
+    "session_card"), so the app can count which ones get opened.
     """
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     if not base or not (preview.enabled() or app_link_on()):
         return None
     who = official.current()
-    login = f"?login={store.new_handoff(who)}" if who else ""
-    return f"{base}/app/#/{route}{login}"
+    query = [f"login={store.new_handoff(who)}"] if who else []
+    if source:
+        query.append(f"from={source}")
+    return f"{base}/app/#/{route}" + (f"?{'&'.join(query)}" if query else "")
 
 
 # With the plan in a chat, so "where's the app?" has an answer (Nov 3: asked
@@ -2288,6 +2291,15 @@ APP_NOTE = (
     "The Daash app: this plan, today's session and their crew, on their phone or computer. "
     "This link opens it signed in (once, within 30 minutes). Give it when they ask for Daash's app, "
     "the companion app or a link to their plan, and no other address for it. Don't offer it unasked."
+)
+
+# At most once a week, for someone who hasn't used the app lately: the one
+# time the model brings the app up itself.
+APP_OFFER_NOTE = (
+    "The Daash app: this plan, today's session and their crew, on their phone or computer. "
+    "This link opens it signed in (once, within 30 minutes). After answering, add one short line "
+    "of your own that the plan is also in the Daash app, with this link, as a plain aside: no "
+    "sales talk, and not again in this chat unless they ask. No other address for it."
 )
 
 
