@@ -953,6 +953,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
             return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
         if (
             name == "get_plan" and isinstance(result, dict) and "error" not in result
+            # One ask per answer: not on the answer that brings up the app.
+            and (result.get("app") or {}).get("note") != server_mod.APP_OFFER_NOTE
             and _crew_offer_due(user, crew_key) and store.claim_crew_offer(user_token)
         ):
             email = store.email_for(user_token)
