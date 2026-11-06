@@ -311,6 +311,9 @@ def api_checks() -> None:
           str(len(block.get("bars") or [])))
     check("its title counts to race day", block.get("title") == "28 weeks to race day", block.get("title"))
     check("both blocks are named under it", len(block.get("blocks") or []) == 2)
+    # Nov 6: Edit the plan took you to Today: its ask is the block's own.
+    check("the block carries its own ask for Edit the plan", "claude.ai/new?q=" in (block.get("ask") or {}).get("claude", ""),
+          str(block.get("ask"))[:120])
     far = client.get(f"/app/api/plan?week={block['bars'][24]['starts']}", headers=auth).json()["week"]
     check("a week past the calendar's horizon has its sessions", any(d["sessions"] for d in far["days"]), far.get("title"))
     check("and its number in the whole plan", far.get("title", "").startswith("Week 25"), far.get("title"))

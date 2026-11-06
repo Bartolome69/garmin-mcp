@@ -276,6 +276,8 @@ function shapeBar(segments, height = 22, labels = true) {
 function askLink(data, label) {
   const app = data.assistant === "ChatGPT" ? "chatgpt" : "claude";
   const name = data.assistant === "ChatGPT" ? "ChatGPT" : "Claude";
+  // No question to ask, no button: an empty link reopens the app on Today.
+  if (!data.ask?.[app]) return { href: null, name, html: "" };
   const inApp = app === "claude" && data.ask?.claude_app ? ` data-app="${esc(data.ask.claude_app)}"` : "";
   return { href: data.ask?.[app], name, html: `<a class="pill red tall" href="${esc(data.ask?.[app])}" target="_blank" rel="noopener"${inApp}>${esc(label || `Ask ${name}`)}${ICON.out()}</a>` };
 }
@@ -915,7 +917,9 @@ function blockView(d) {
       ${b.phases.map((p) => p.label
         ? `<span class="${p.current ? "now" : ""}" title="${esc(p.label)}">${esc((p.weeks * 3 < b.bars.length / 4 ? p.label.slice(0, 2) : p.label).toUpperCase())}</span>`
         : `<span class="gap"></span>`).join("")}</div>` : "";
-  const ask = askLink(d, "Edit the plan");
+  // The block's own ask: the screen has none at its top (Nov 6: with none,
+  // the link was empty and opened the app again, on Today).
+  const ask = askLink({ ...d, ask: b.ask }, "Edit the plan");
   return `<div class="card block-card"><div class="section-head"><span class="section-title">${esc(b.title)}</span><span class="meta">km per week</span></div>
       <div class="bars" style="grid-template-columns:${cols}" role="img" aria-label="Planned and run distance for each week of the block">${bars}</div>
       <div class="bar-nums" style="grid-template-columns:${cols}">${b.bars.map((x) => `<span class="${x.current ? "red" : ""}">${x.show_n ? x.n : ""}</span>`).join("")}</div>

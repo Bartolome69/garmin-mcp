@@ -2275,6 +2275,11 @@ def app_link_on() -> bool:
     return os.environ.get("GARMIN_MCP_APP_LINK", "").strip().lower() not in {"0", "off", "false", "no"}
 
 
+def app_link_available() -> bool:
+    """Whether app_link would give a link for this request."""
+    return bool(os.environ.get("GARMIN_MCP_BASE_URL", "").strip()) and (preview.enabled() or app_link_on())
+
+
 def app_link(route: str, source: str | None = None) -> str | None:
     """The companion app at a route ("plan", "session/2026-11-04"), for a card.
 

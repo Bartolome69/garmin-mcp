@@ -934,8 +934,12 @@ async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
     monday = anchor - timedelta(days=anchor.weekday())
     season = _season(plan)
     weeks = await _season_weeks(plan, season)
+    block = _block_view(plan, weeks, season, today)
     return drop_empty({"today": today.isoformat(), "week": _week_view(plan, weeks, season, monday, today),
-                       "block": _block_view(plan, weeks, season, today), "assistant": assistant()})
+                       "block": block, "assistant": assistant(),
+                       # With no block to race day: what Build a block asks.
+                       "ask": None if block else _ask_links(
+                           "Use Daash to build me a training block. Ask me my goal and race date first.")})
 
 
 # -- the crew: who runs when, and the runs that line up -------------------------

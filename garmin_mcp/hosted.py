@@ -977,10 +977,10 @@ APP_USED_WITHIN = 14 * 24 * 3600
 def _app_offer_on() -> bool:
     """Whether a chat may bring the app up unasked for accounts outside preview.
 
-    Off unless GARMIN_MCP_APP_OFFER is on: everyone has the link for when they
-    ask, but an unasked line in their chat is tried on preview accounts first.
+    On for everyone (Nov 6: the app is to reach every account, not preview
+    ones alone); GARMIN_MCP_APP_OFFER=off takes it back to preview accounts.
     """
-    return os.environ.get("GARMIN_MCP_APP_OFFER", "").strip().lower() in preview.ON
+    return os.environ.get("GARMIN_MCP_APP_OFFER", "").strip().lower() not in {"0", "off", "false", "no"}
 
 
 def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -> dict:
@@ -989,6 +989,9 @@ def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -
     Normally only when asked. At most once a week, for someone who hasn't
     opened the app in two weeks, the note asks for one line about it instead.
     """
+    # No link to give, no mention used up: the week's one is kept for when there is.
+    if not server_mod.app_link_available():
+        return result
     offer = (
         (preview.enabled() or _app_offer_on())
         and not store.used_client_since(user_token, oauth.APP_CLIENT_ID, int(time.time()) - APP_USED_WITHIN)

@@ -386,7 +386,10 @@ async def main() -> int:
                 hosted._PLAN_CALLS.pop(bob, None)
                 plan_a = await call(alice, "get_plan")
                 hosted._PLAN_CALLS.pop(bob, None)
+                # The unasked mention switched off: Bob's link is for when he asks.
+                os.environ["GARMIN_MCP_APP_OFFER"] = "off"
                 plan_b = await call(bob, "get_plan")
+                os.environ.pop("GARMIN_MCP_APP_OFFER", None)
                 os.environ["GARMIN_MCP_APP_LINK"] = "off"
                 hosted._PLAN_CALLS.pop(alice, None)
                 hosted._PLAN_CALLS.pop(bob, None)
@@ -414,8 +417,7 @@ async def main() -> int:
                                        subject=alice, scopes="", resource=None, expires_at=None)
                 using_a = await plan_for(alice)
                 store.delete_oauth_token("app-used-test")
-                # Outside preview, only once it's switched on for everyone.
-                os.environ["GARMIN_MCP_APP_OFFER"] = "on"
+                # Nov 6: on for everyone unless switched off.
                 offer_b = await plan_for(bob)
             finally:
                 os.environ.pop("GARMIN_MCP_BASE_URL", None)
@@ -439,7 +441,7 @@ async def main() -> int:
             offer_note, ask_note = garmin_server.APP_OFFER_NOTE, garmin_server.APP_NOTE
             check("the first time, a preview account's model is asked to mention the app once, and the link says so",
                   app_a.get("note") == offer_note and str(app_a.get("url", "")).endswith("&from=chat_offer"), str(app_a))
-            check("not for anyone else unless switched on: their link is for when they ask",
+            check("switched off, it isn't brought up outside preview: their link is for when they ask",
                   app_b.get("note") == ask_note and str(app_b.get("url", "")).endswith("&from=chat"), str(app_b))
             app_again = again_a.get("app") or {}
             check("not again the same week", app_again.get("note") == ask_note
@@ -448,7 +450,7 @@ async def main() -> int:
                   str(week_on_a.get("app")))
             check("never to someone who has used the app in the last two weeks",
                   (using_a.get("app") or {}).get("note") == ask_note, str(using_a.get("app")))
-            check("GARMIN_MCP_APP_OFFER=on brings it to everyone",
+            check("and by default it's brought up for everyone, not only preview accounts",
                   (offer_b.get("app") or {}).get("note") == offer_note, str(offer_b.get("app")))
             check("each mention is counted", any(e.get("event") == "app_link_offered" for e in SENT),
                   str([e.get("event") for e in SENT][-10:]))
