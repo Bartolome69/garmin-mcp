@@ -1289,6 +1289,7 @@ ANNOTATED_TITLES = {
     "unschedule_workout": "Unschedule workout",
     "update_workout": "Update workout",
     "leave_crew": "Leave crew",
+    "check_plan": "Check training plan",
 }
 ANNOTATED_DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew",
                          "update_crew"}
@@ -1657,6 +1658,7 @@ async def main() -> int:
                 "goal": "Half marathon, 1:40, mid November", "sessions": block}))
             print("   ", json.dumps(made, indent=2)[:500])
             made_info = made.get("created") or {}
+            check("without preview, a new plan comes with no checks", "checks" not in made, str(list(made)))
             check("plan created with a code from the goal, answered as its card",
                   made.get("label") == "HM" and made_info.get("sessions_created") == 4
                   and isinstance(made.get("weeks"), list), str(made)[:200])
@@ -2273,6 +2275,57 @@ async def main() -> int:
             details_tool = next(t for t in tools.tools if t.name == "get_activity_details")
             check("a preview account is told what run details now include",
                   "weather" in details_tool.description and "same route" in details_tool.description)
+
+            print("\npreview account, plan checks")
+            from datetime import date as _d, timedelta as _td
+            ahead = lambda n: (_d.today() + _td(days=n)).isoformat()  # noqa: E731
+            run = lambda km: [{"type": "interval", "distance_meters": km * 1000}]  # noqa: E731
+            # A tempo the day before the long run: two hard days in a row.
+            draft = [{"date": ahead(2), "name": "Easy 8k", "steps": run(8)},
+                     {"date": ahead(5), "name": "Tempo 3x8min", "steps": [
+                         {"type": "warmup", "duration_seconds": 900},
+                         {"type": "repeat", "times": 3, "steps": [
+                             {"type": "interval", "duration_seconds": 480, "pace": ["4:50", "5:10"]},
+                             {"type": "recovery", "duration_seconds": 120}]},
+                         {"type": "cooldown", "duration_seconds": 600}]},
+                     {"date": ahead(6), "name": "Long 14k", "steps": run(14)}]
+            check("a preview account is offered check_plan, as a read",
+                  "check_plan" in preview_names
+                  and field(next(t for t in tools.tools if t.name == "check_plan").annotations, "read_only_hint", "readOnlyHint") is True)
+            create_text = next(t for t in tools.tools if t.name == "create_plan").description
+            check("create_plan says to pass checks on gently and still writes the plan",
+                  "checks" in create_text and "worth a look" in create_text and "injury risk" in create_text
+                  and "written whatever" in create_text, create_text[-300:])
+            checked = payload(await sess.call_tool("check_plan", {"goal": "Half marathon", "sessions": draft}))
+            print("   ", json.dumps(checked, indent=2)[:500])
+            check("check_plan answers with checks only",
+                  set(checked) <= {"checks", "about_checks", "not_checked"} and isinstance(checked.get("checks"), list),
+                  str(checked)[:200])
+            check("and finds the hard days in a row",
+                  "hard_days_in_a_row" in [c["rule"] for c in checked["checks"]], str(checked)[:300])
+            check("with how to pass them on", "worth a look" in str(checked.get("about_checks")))
+            check("with too little running on Garmin, it says what wasn't checked and to ask",
+                  "ask" in str(checked.get("not_checked")), str(checked.get("not_checked")))
+            told = payload(await sess.call_tool("check_plan", {"goal": "Half marathon", "sessions": draft,
+                                                               "recent_weekly_km": 5, "longest_recent_run_km": 6}))
+            check("check_plan takes the user's own recent running when Garmin's is thin",
+                  "start_volume" in [c["rule"] for c in told.get("checks") or []] and "not_checked" not in told,
+                  str(told)[:300])
+            bad = payload(await sess.call_tool("check_plan", {"goal": "Half", "sessions": [
+                {"date": ahead(2), "name": "Broken", "steps": [{"type": "interval"}]}]}))
+            check("a draft create_plan would refuse is refused the same way", "Session 1" in str(bad.get("error")),
+                  str(bad)[:160])
+            written = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon", "label": "CK", "sessions": draft}))
+            check("create_plan writes the plan and answers with the same checks",
+                  (written.get("created") or {}).get("sessions_created") == 3
+                  and [c["rule"] for c in written.get("checks") or []] == [c["rule"] for c in checked["checks"]],
+                  str(written.get("checks"))[:300])
+            read_back = payload(await sess.call_tool("get_plan", {"label": "CK"}))
+            check("get_plan carries checks over the plan's weeks",
+                  "hard_days_in_a_row" in [c["rule"] for c in read_back.get("checks") or []],
+                  str(read_back.get("checks"))[:300])
+            await sess.call_tool("remove_plan", {"label": "CK", "confirm": "CK"})
 
             print("\npreview account, around a run")
             hilly = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))
