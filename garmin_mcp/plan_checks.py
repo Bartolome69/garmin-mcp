@@ -35,6 +35,19 @@ LONG_CAP_MIN_DEFAULT = 150
 REST_RUN_DAYS = 7                  # a session every day for 7 days
 RECOVERY_WEEKS = 5                 # no lighter week in 5
 TAPER_SHARE = 0.7                  # race week over 70% of the biggest week
+HISTORY_MIN_WEEKS = 2              # weeks with a run, of the last 4, to start from
+
+# When the starting checks can't run: what to tell Claude, so it can ask.
+NOT_READ = (
+    "The first week and first long run weren't checked: Garmin's recent running couldn't be read. "
+    "If it matters, ask roughly how much they've run a week lately and their longest recent run, "
+    "and pass them to check_plan."
+)
+TOO_LITTLE = (
+    "The first week and first long run weren't checked: Garmin has running in fewer than 2 of the "
+    "last 4 weeks, which is usually a new watch or runs recorded somewhere else. If it matters, ask "
+    "roughly how much they've run a week lately and their longest recent run, and pass them to check_plan."
+)
 
 # Section 4: quality sessions a week, and the work reps' share of the week's
 # distance, at which each style warns.
@@ -542,6 +555,37 @@ def check_answer(answer: Mapping[str, Any], today: date | None = None) -> list[d
         # Only a plan's own last week holds its goal race, not the calendar's.
         last_race_is_goal=bool(answer.get("label")),
     )
+
+
+def starting_point(
+    activities: Sequence[Mapping[str, Any]] | None,
+    monday: date,
+    *,
+    weekly_km: float | None = None,
+    longest_km: float | None = None,
+) -> tuple[list[dict[str, Any]] | None, float | None, str | None]:
+    """What the starting checks compare with: the last 4 weeks' running, the
+    longest recent run, and a note for Claude when there's nothing to go on.
+
+    activities is None when Garmin couldn't be read. Running in fewer than
+    HISTORY_MIN_WEEKS of the 4 weeks isn't a starting point: more often a
+    new watch than a runner starting from nothing, and judging a plan against
+    it would flag every plan. What the user says (weekly_km, longest_km)
+    beats Garmin's numbers.
+    """
+    history: list[dict[str, Any]] | None = None
+    longest: float | None = None
+    if activities:
+        weeks = training_plan.weekly_run_km(activities, monday, training_plan.LOG_WEEKS)
+        if sum(1 for w in weeks if w["runs"]) >= HISTORY_MIN_WEEKS:
+            history, longest = weeks, longest_run_km(activities)
+    if weekly_km:
+        history = [{"starts": (monday - timedelta(weeks=1)).isoformat(), "run_km": float(weekly_km), "runs": 0}]
+    if longest_km:
+        longest = float(longest_km)
+    if history is not None:
+        return history, longest, None
+    return None, longest, NOT_READ if activities is None else TOO_LITTLE
 
 
 def longest_run_km(activities: Iterable[Mapping[str, Any]]) -> float | None:

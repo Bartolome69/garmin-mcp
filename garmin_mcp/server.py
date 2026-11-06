@@ -3001,7 +3001,7 @@ async def create_plan(
     first, last = prepared[0]["date"], prepared[-1]["date"]
     # Notes on the plan's shape, for whoever is trying them; the plan is
     # written whatever they say.
-    checks = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
+    checked = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
 
     existing = training_plan.plans_in(await _plan_calendar(first, last))
     if code in existing:
@@ -3074,7 +3074,7 @@ async def create_plan(
             "Every session is on the Garmin calendar and syncs to the watch. "
             f"Call get_plan with label {code} to show the user the new block as a card."
         ),
-        **_checked(checks),
+        **(checked or {}),
     }
     # Answer with the block as get_plan draws it, so the card shows the new
     # plan whether or not the model asks for it: told to, it sometimes
@@ -3110,31 +3110,34 @@ async def create_plan(
                 "Every session is on the Garmin calendar and syncs to the watch. "
                 "The user sees the new block as a card above: sum it up in a sentence or two."
             ),
-            **_checked(checks),
+            **(checked or {}),
         }
     return summary
 
 
 async def _plan_checks(prepared: list[dict[str, Any]], goal: str, method: str | None,
-                       milestones: Any, today: date_cls) -> list[dict[str, Any]] | None:
-    """The plan checker's notes on a plan about to be written, with the last
-    4 weeks' running to start from. None if they can't be worked out: a
-    plan is never held up by its notes."""
+                       milestones: Any, today: date_cls, *, weekly_km: float | None = None,
+                       longest_km: float | None = None) -> dict[str, Any] | None:
+    """The plan checker's notes on a plan about to be written, as answer
+    fields, with the last 4 weeks' running to start from. When Garmin hasn't
+    enough of it, the shape is still checked and not_checked says what wasn't.
+    None if the notes can't be worked out: a plan is never held up by them."""
     try:
-        since = training_plan.monday_of(today) - timedelta(weeks=training_plan.LOG_WEEKS)
-        try:
-            activities = await _call(
-                lambda c: c.get_activities_by_date(since.isoformat(), today.isoformat())
-            ) or []
-        except Exception:  # noqa: BLE001 - the shape can be checked without the history
-            log.debug("plan checks: no running history", exc_info=True)
-            activities = None
-        history = (training_plan.weekly_run_km(activities, training_plan.monday_of(today), training_plan.LOG_WEEKS)
-                   if activities else None)
-        return plan_checks.check_prepared(
+        monday = training_plan.monday_of(today)
+        activities: list[dict[str, Any]] | None = None
+        if not weekly_km:
+            try:
+                activities = await _call(lambda c: c.get_activities_by_date(
+                    (monday - timedelta(weeks=training_plan.LOG_WEEKS)).isoformat(), today.isoformat())) or []
+            except Exception:  # noqa: BLE001 - the shape can be checked without the history
+                log.debug("plan checks: no running history", exc_info=True)
+        history, longest, missing = plan_checks.starting_point(
+            activities, monday, weekly_km=weekly_km, longest_km=longest_km)
+        checks = plan_checks.check_prepared(
             prepared, goal=goal, method=method, milestones=milestones, history=history,
-            longest_recent_km=plan_checks.longest_run_km(activities or []),
+            longest_recent_km=longest,
         )
+        return {**_checked(checks), **({"not_checked": missing} if missing else {})}
     except Exception:  # noqa: BLE001 - notes are a bonus; the plan must still be made
         log.warning("plan checks failed", exc_info=True)
         return None
@@ -3183,10 +3186,12 @@ async def check_plan(
     name: str | None = None,
     method: str | None = None,
     milestones: list[dict[str, Any]] | None = None,
+    recent_weekly_km: float | None = None,
+    longest_recent_run_km: float | None = None,
 ) -> dict[str, Any]:
     """Check a draft plan before it's created: plain notes on its shape, nothing written.
 
-    Takes exactly create_plan's arguments and answers only with checks, each
+    Takes create_plan's arguments and answers only with checks, each
     {"rule", "week", "date", "text"}: the first week well above the last 4
     weeks' running, a big weekly jump, a long run that grows fast, is most
     of its week or runs past what the goal needs, more hard sessions or fast
@@ -3198,6 +3203,12 @@ async def check_plan(
     look rather than as errors ("a big jump", never "injury risk"), and
     change the plan only if the user wants to.
 
+    The first week and first long run are checked against Garmin's last 4
+    weeks of running. When Garmin has too little of it (a new watch, runs
+    recorded elsewhere), not_checked says so: ask the user and pass their
+    answer as recent_weekly_km and longest_recent_run_km, which are used
+    instead of Garmin's numbers.
+
     Args:
         goal: As for create_plan.
         sessions: As for create_plan.
@@ -3205,6 +3216,8 @@ async def check_plan(
         name: As for create_plan.
         method: As for create_plan; it decides the style the checks use.
         milestones: As for create_plan; races with their tiers.
+        recent_weekly_km: What the user says they've run a week lately, in km.
+        longest_recent_run_km: Their longest run in the last month or so, in km.
     """
     today = date_cls.today()
     sessions = [
@@ -3215,10 +3228,11 @@ async def check_plan(
     _, prepared = training_plan.prepare(
         goal, sessions, label, today, name=name, method=method, milestones=milestones, ftp=ftp,
     )
-    checks = await _plan_checks(prepared, goal, method, milestones, today)
-    if checks is None:
+    checked = await _plan_checks(prepared, goal, method, milestones, today,
+                                 weekly_km=recent_weekly_km, longest_km=longest_recent_run_km)
+    if checked is None:
         return {"error": "The plan couldn't be checked just now. It can still be created."}
-    return _checked(checks)
+    return checked
 
 
 async def _with_situation(result: Any) -> Any:

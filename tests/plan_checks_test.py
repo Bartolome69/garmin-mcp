@@ -166,6 +166,29 @@ def main() -> int:
           "start_volume" not in rules(plan_checks.check_prepared(
               half, history=[{"starts": h["starts"], "run_km": 0.0, "runs": 0} for h in HISTORY])))
 
+    print("\nwhen Garmin has too little history")
+    run_on = lambda d, km: {"startTimeLocal": f"{d} 07:00:00", "activityType": {"typeKey": "running"},  # noqa: E731
+                            "distance": km * 1000}
+    steady = [run_on(MONDAY - timedelta(days=n), 8.0) for n in (2, 9, 16, 23)] + [run_on(MONDAY - timedelta(days=5), 14.0)]
+    history, longest, missing = plan_checks.starting_point(steady, MONDAY)
+    check("4 weeks of running is a starting point", history is not None and longest == 14.0 and missing is None,
+          str((history, longest, missing)))
+    new_watch = [run_on(MONDAY - timedelta(days=2), 6.0)]
+    history, longest, missing = plan_checks.starting_point(new_watch, MONDAY)
+    check("one week of it isn't: more often a new watch than a runner starting from nothing",
+          history is None and longest is None and missing == plan_checks.TOO_LITTLE, str((history, missing)))
+    check("which says what wasn't checked and to ask", "ask" in missing and "check_plan" in missing)
+    check("and the rest of the plan is still checked",
+          plan_checks.check_prepared(half, history=history, longest_recent_km=longest, method="Daniels") == [])
+    history, longest, missing = plan_checks.starting_point(None, MONDAY)
+    check("Garmin not read at all says so", history is None and missing == plan_checks.NOT_READ, str(missing))
+    history, longest, missing = plan_checks.starting_point(new_watch, MONDAY, weekly_km=20, longest_km=9)
+    check("what the user says stands in for Garmin", missing is None and longest == 9.0
+          and "start_volume" in rules(plan_checks.check_prepared(half, history=history, longest_recent_km=longest,
+                                                                 method="Daniels")), str(history))
+    history, _, _ = plan_checks.starting_point(steady, MONDAY, weekly_km=40)
+    check("and beats Garmin's numbers", [h["run_km"] for h in history] == [40.0], str(history))
+
     print("\nweekly increase")
     jump = weeks(easy_week(7, 12), easy_week(7, 12), easy_week(12, 14))
     found = run(jump)

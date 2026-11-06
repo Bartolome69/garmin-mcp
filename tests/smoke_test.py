@@ -2299,10 +2299,18 @@ async def main() -> int:
             checked = payload(await sess.call_tool("check_plan", {"goal": "Half marathon", "sessions": draft}))
             print("   ", json.dumps(checked, indent=2)[:500])
             check("check_plan answers with checks only",
-                  set(checked) <= {"checks", "about_checks"} and isinstance(checked.get("checks"), list), str(checked)[:200])
+                  set(checked) <= {"checks", "about_checks", "not_checked"} and isinstance(checked.get("checks"), list),
+                  str(checked)[:200])
             check("and finds the hard days in a row",
                   "hard_days_in_a_row" in [c["rule"] for c in checked["checks"]], str(checked)[:300])
             check("with how to pass them on", "worth a look" in str(checked.get("about_checks")))
+            check("with too little running on Garmin, it says what wasn't checked and to ask",
+                  "ask" in str(checked.get("not_checked")), str(checked.get("not_checked")))
+            told = payload(await sess.call_tool("check_plan", {"goal": "Half marathon", "sessions": draft,
+                                                               "recent_weekly_km": 5, "longest_recent_run_km": 6}))
+            check("check_plan takes the user's own recent running when Garmin's is thin",
+                  "start_volume" in [c["rule"] for c in told.get("checks") or []] and "not_checked" not in told,
+                  str(told)[:300])
             bad = payload(await sess.call_tool("check_plan", {"goal": "Half", "sessions": [
                 {"date": ahead(2), "name": "Broken", "steps": [{"type": "interval"}]}]}))
             check("a draft create_plan would refuse is refused the same way", "Session 1" in str(bad.get("error")),

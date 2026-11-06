@@ -47,6 +47,20 @@ Then a preview: weekly distance as bars with the phases and races marked, each w
 
 Plan length runs from this week's Monday (`plan.monday_of`) to the A race. Under 6 weeks: no plan, and a suggestion to run easy and enjoy the race. Over 20: the plan starts 20 weeks out, with a general fitness block offered before it.
 
+**When Garmin knows too little.** A new watch, runs recorded in another app, an account on the official API before its first sync, or Garmin not answering: the engine never needs Garmin to build a plan, only to pre-fill it. Running in fewer than 2 of the last 4 weeks counts as too little (`plan_checks.HISTORY_MIN_WEEKS`), since it's more often a new watch than someone starting from nothing.
+
+| Missing | Fallback |
+| --- | --- |
+| Weekly volume | step 1 asks "About how much have you run a week lately?" with ranges: none, under 10 km, 10 to 20, 20 to 35, 35 to 50, 50+. The plan starts from the low end of the range. |
+| Longest recent run | asked the same way: none, under 5 km, 5 to 10, 10 to 15, 15 to 20, 20+. Long-run growth starts from the low end. |
+| Experience | asked: "How long have you been running regularly?" Under 6 months, or no answer, is new. |
+| Both skipped | a new runner's start: 3 runs of 20 to 30 minutes, set by time, Steady style. |
+| Paces | section 6's "no data": time and effort, with Garmin's heart-rate zones where there are any, else effort words alone. |
+| Threshold heart rate | Faster isn't offered (section 4). |
+| Birth date | asked (above). |
+
+The validator does the same: without enough history it still checks the plan's shape, says in `not_checked` that the first week and first long run weren't checked, and `check_plan` takes the user's own numbers (`recent_weekly_km`, `longest_recent_run_km`) in place of Garmin's.
+
 If someone is a long way from what the goal usually needs (say a marathon from under 20 km a week), the engine still builds the safest plan the rules allow and says plainly that the long run will top out short of the usual distance.
 
 ## 3. Structure and progression
