@@ -134,11 +134,14 @@ async function refreshed() {
 class SignedOut extends Error {}
 
 async function api(path, options = {}, retry = true) {
+  const from = options.ahead ? null : cameFrom;
+  if (from) cameFrom = null;
   const res = await fetch(API + path, {
     ...options,
     headers: { Authorization: `Bearer ${token.access}`, "X-Daash-Layout": desktop() ? "desktop" : "phone",
       // Fetched ahead of a tap: not counted as a screen opened.
       ...(options.ahead ? { "X-Daash-Ahead": "1" } : {}),
+      ...(from ? { "X-Daash-From": from } : {}),
       ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
   if (res.status === 401) {
@@ -1440,7 +1443,8 @@ function signInView(message, step = "start", email = "") {
       const button = e.target.querySelector("button"); button.disabled = true;
       try {
         token.save(await signInPost("verify", { email, code: $("code").value }));
-        history.replaceState(null, "", "/app/#/today");
+        // Back to the screen a chat's link was opening, if it was opening one.
+        if (!/^#\/\w/.test(location.hash)) history.replaceState(null, "", "/app/#/today");
         route();
       } catch (err) { signInView(err.message, "code", email); }
     };
@@ -1476,13 +1480,17 @@ function signInView(message, step = "start", email = "") {
 }
 
 // Open in Daash from a chat card carries a single-use code (login=…): it
-// signs the app in as the person who tapped it, with nothing to type.
+// signs the app in as the person who tapped it, with nothing to type. It also
+// says where it was given (from=…), sent once with the first screen it opens.
+let cameFrom = null;
 async function handOff() {
+  const from = location.hash.match(/[?&]from=([a-z_]{1,24})/);
   const m = location.hash.match(/[?&]login=([\w-]+)/);
-  if (!m) return null;
-  const clean = location.hash.replace(/[?&]login=[\w-]+/, "").replace(/\?$/, "");
+  if (!m && !from) return null;
+  if (from) cameFrom = from[1];
+  const clean = location.hash.replace(/[?&](login|from)=[\w-]+/g, "").replace(/\?$/, "");
   history.replaceState(null, "", `/app/${clean || "#/today"}`);
-  if (token.access) return null;
+  if (!m || token.access) return null;
   try {
     token.save(await signInPost("handoff", { code: m[1] }));
     return null;

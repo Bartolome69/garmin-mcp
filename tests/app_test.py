@@ -26,8 +26,9 @@ SCRATCH.mkdir(parents=True, exist_ok=True)
 # The demo's week falls on fixed weekdays around today, and these checks
 # follow its Monday interval session, so the clock is set to this week's
 # Monday morning before anything reads it (Nov 3: run on a Tuesday, seven
-# checks failed). time-machine is a test-only package:
-#     .venv/bin/pip install time-machine
+# checks failed). time-machine is a test-only package, in the "test" extra:
+#     uv pip install --python .venv/bin/python time-machine
+# Without it, a run late in the week failed six checks (Nov 6).
 try:
     import time_machine
     from datetime import date as _date, datetime as _datetime, timedelta as _td, timezone as _tz
@@ -36,7 +37,7 @@ try:
     time_machine.travel(_datetime(_monday.year, _monday.month, _monday.day, 9, 0, tzinfo=_tz.utc), tick=True).start()
 except ImportError:
     print("time-machine isn't installed, so this runs on today's date, and some checks only hold on a Monday:\n"
-          "    .venv/bin/pip install time-machine")
+          "    uv pip install --python .venv/bin/python time-machine")
 
 from cryptography.fernet import Fernet  # noqa: E402
 
@@ -327,7 +328,14 @@ def api_checks() -> None:
           str([e["properties"] for e in late])[:160])
     check("a view naming no real screen is refused",
           client.post("/app/api/event", headers=auth, json={"name": "viewed", "properties": {"screen": "anything"}}).status_code == 400)
+    # Opened from a link in a chat: where it was given, on the first screen.
+    client.get("/app/api/plan", headers={**auth, "X-Daash-From": "chat_offer"})
+    client.get("/app/api/plan", headers={**auth, "X-Daash-From": "<b>Not a source</b>"})
+    time.sleep(0.5)
     viewed = posted("app_viewed")
+    froms = [e["properties"].get("from") for e in viewed if e["properties"].get("from")]
+    check("a screen opened from a chat's link says where the link was given", "chat_offer" in froms, str(froms))
+    check("and nothing else passes for a source", froms == ["chat_offer"], str(froms))
     check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
           str([e["properties"].get("screen") for e in viewed])[:120])
     check("with how long the screen waited", all(isinstance(e["properties"].get("seconds"), (int, float))

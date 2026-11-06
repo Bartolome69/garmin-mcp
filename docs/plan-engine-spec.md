@@ -1,6 +1,6 @@
 # Plan engine: spec
 
-Draft, November 2026. Spec only, nothing built.
+Draft, November 2026. Built so far: the validator (section 8), in `garmin_mcp/plan_checks.py`, for preview accounts; `scripts/check_plan.py` runs it over a saved plan.
 
 ## Summary
 
@@ -47,6 +47,20 @@ Then a preview: weekly distance as bars with the phases and races marked, each w
 
 Plan length runs from this week's Monday (`plan.monday_of`) to the A race. Under 6 weeks: no plan, and a suggestion to run easy and enjoy the race. Over 20: the plan starts 20 weeks out, with a general fitness block offered before it.
 
+**When Garmin knows too little.** A new watch, runs recorded in another app, an account on the official API before its first sync, or Garmin not answering: the engine never needs Garmin to build a plan, only to pre-fill it. Running in fewer than 2 of the last 4 weeks counts as too little (`plan_checks.HISTORY_MIN_WEEKS`), since it's more often a new watch than someone starting from nothing.
+
+| Missing | Fallback |
+| --- | --- |
+| Weekly volume | step 1 asks "About how much have you run a week lately?" with ranges: none, under 10 km, 10 to 20, 20 to 35, 35 to 50, 50+. The plan starts from the low end of the range. |
+| Longest recent run | asked the same way: none, under 5 km, 5 to 10, 10 to 15, 15 to 20, 20+. Long-run growth starts from the low end. |
+| Experience | asked: "How long have you been running regularly?" Under 6 months, or no answer, is new. |
+| Both skipped | a new runner's start: 3 runs of 20 to 30 minutes, set by time, Steady style. |
+| Paces | section 6's "no data": time and effort, with Garmin's heart-rate zones where there are any, else effort words alone. |
+| Threshold heart rate | Faster isn't offered (section 4). |
+| Birth date | asked (above). |
+
+The validator does the same: without enough history it still checks the plan's shape, says in `not_checked` that the first week and first long run weren't checked, and `check_plan` takes the user's own numbers (`recent_weekly_km`, `longest_recent_run_km`) in place of Garmin's.
+
 If someone is a long way from what the goal usually needs (say a marathon from under 20 km a week), the engine still builds the safest plan the rules allow and says plainly that the long run will top out short of the usual distance.
 
 ## 3. Structure and progression
@@ -89,7 +103,7 @@ Quality by phase: base is strides and short tempo (strides only for new runners)
 | Quality sessions | by style (section 4); a long run with a race-pace section counts | by style |
 | Hard volume | by style | by style |
 | Hard days | an easy or rest day between tempo, intervals, long and race (Faster: an easy long run isn't hard) | two in a row |
-| Rest | at least 1 day a week | none in 7 days |
+| Rest | at least 1 day a week (a strength-only day counts) | none in 7 days |
 | Recovery | as above | no week under `CUTBACK_SHARE` (85%) of both neighbours in 5 weeks |
 | Taper | marathon 75%, 60%, 40% of peak; half 70%, 50%; 5K and 10K 60%. Intensity kept, sessions shorter | race week over 70% of peak |
 
@@ -193,7 +207,7 @@ State comes from `get_plan`: each session's `status` (done, done moved, missed, 
 ## 8. Validator mode
 
 - **Where.** In `create_plan` after `training_plan.prepare`, and in `get_plan` over the weeks it returns; both answers gain a `checks` list. A new read-only `check_plan` tool takes `create_plan`'s arguments and returns only `checks`, so Claude can check a draft before anything is written.
-- **Reads.** Dates, `name` (via `session_type`), `phase`, distance and time (`session_totals`, `planned_distance_m`), work steps, `method` and the "Built:" line for style, races and their tiers (`races`), and `weekly_run_km` for history. Non-running sessions only count as "not rest".
+- **Reads.** Dates, `name` (via `session_type`), `phase`, distance and time (`session_totals`, `planned_distance_m`), work steps, `method` and the "Built:" line for style, races and their tiers (`races`), and `weekly_run_km` for history. Other sports only count as "not rest", and a strength-only day counts as rest.
 - **Race checks:** a hard session within 2 days after a race; B races on back-to-back weekends; a race other than the A race in its last 10 days; a B race longer than that block's long run with no reshaped week; two A races closer than section 5 allows.
 - **Shape.** `{"rule": "long_run_jump", "week": 6, "date": "2026-12-13", "text": "The long run goes from 14 km to 20 km in week 6. Steps of 2 km a week are gentler on the legs."}`
 - **Never blocks.** `create_plan` writes the plan whatever the checks say. Its tool description asks Claude to pass the checks on in its own words and change the plan only if the person wants to. The app shows a quiet line under the week, in the amber `analysis.py` uses for "soft", never red.

@@ -1390,6 +1390,15 @@ def _layout(request: Request) -> str | None:
     return found if found in ("phone", "desktop") else None
 
 
+_FROM = re.compile(r"[a-z_]{1,24}")
+
+
+def _came_from(request: Request) -> str | None:
+    """Where the link that opened the app was given ("chat", "session_card"), on its first screen."""
+    found = request.headers.get("x-daash-from", "")
+    return found if _FROM.fullmatch(found) else None
+
+
 def _safe(handler):
     """An app route that answers a readable error instead of crashing, and logs why."""
     import functools
@@ -1411,7 +1420,7 @@ def _safe(handler):
             # account lookups are reads a screen shouldn't wait for.
             from . import official
             seen = drop_empty({"screen": screen, "layout": _layout(request), "ok": response.status_code < 400,
-                               "seconds": round(time.monotonic() - started, 2)})
+                               "seconds": round(time.monotonic() - started, 2), "from": _came_from(request)})
             threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
         return response
 
