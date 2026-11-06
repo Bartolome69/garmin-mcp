@@ -62,6 +62,7 @@
   .friend h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
   .friend p { margin: 0; color: var(--body); font-size: 15px; }
   .status { min-height: 1.6em; font-size: 14px; color: var(--muted); }
+  .cap { margin: 0; padding: 12px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; font: 14px/1.5 inherit; font-family: inherit; white-space: pre-wrap; word-break: break-word; user-select: all; -webkit-user-select: all; }
   .small { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.55; }
   .empty { grid-column: 1 / -1; max-width: 560px; }
   [hidden] { display: none !important; }
@@ -136,6 +137,12 @@
       </div>
       <p class="hint" id="hold">On a phone you can also press and hold the image to save it.</p>
       <div class="status" id="status" role="status"></div>
+    </div>
+    <div class="group" id="cap-g" hidden>
+      <span class="label">Caption for Strava</span>
+      <pre class="cap" id="cap"></pre>
+      <div class="row"><button type="button" class="btn" id="cap-copy">Copy caption</button></div>
+      <div class="status" id="cap-status" role="status"></div>
     </div>
     <div class="friend">
       <h2>Know someone who runs with a Garmin?</h2>
@@ -985,6 +992,30 @@
       .then(function () { status.textContent = ""; })
       .catch(function (e) { if (!e || e.name !== "AbortError") status.textContent = "Sharing didn’t work here. Save the image instead."; });
   });
+
+  // A run's caption to paste into its description on Strava, which Strava's
+  // API can't carry (its 2026 policy bars Strava data in AI apps): the name,
+  // the figures, the reps, and a line back to Daash. garmin_mcp/share.py
+  // builds the same text for a chat; keep the two in step.
+  function caption(d, facts) {
+    var lines = [str(d.t, 80).replace(/\u00a0/g, " ")];
+    var figs = facts.map(function (f) { var unit = f[1].split(" ")[0]; return unit === "time" ? f[0] : f[0] + " " + unit; });
+    if (figs.length) lines.push(figs.join(" \u00b7 "));
+    var note = (Array.isArray(d.n) ? d.n : []).filter(function (n) { return Array.isArray(n) && n.length > 1; })[0];
+    if (note && str(note[1], 90)) lines.push(str(note[1], 90));
+    return lines.join("\n") + "\n\nAnalysed with Daash \u00b7 daash.run/strava";
+  }
+  if (wk.run) {
+    var capText = caption(raw, wk.f), capStatus = document.getElementById("cap-status");
+    document.getElementById("cap").textContent = capText;
+    document.getElementById("cap-g").hidden = false;
+    document.getElementById("cap-copy").addEventListener("click", function () {
+      var done = function () { capStatus.textContent = "Copied. Paste it into the run's description on Strava."; };
+      var fail = function () { capStatus.textContent = "Press and hold the caption to copy it."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(capText).then(done, fail);
+      else fail();
+    });
+  }
 
   // The friend link: the front page, marked as having come from a share so
   // the site can tell these visits apart. Nothing about this week is in it.

@@ -99,6 +99,11 @@ def run_payload(details: dict[str, Any]) -> dict[str, Any] | None:
     if "running" not in str(summary.get("type") or "") or not summary.get("distance_km"):
         return None
     name = str(summary.get("name") or "Run")
+    # A run started from a workout on the watch is named "<place> - <workout>";
+    # the place is said under the title already.
+    place = str(summary.get("location") or "").strip()
+    if place and name.lower().startswith(place.lower() + " - ") and len(name) > len(place) + 3:
+        name = name[len(place) + 3:]
 
     sub = ""
     start = str(summary.get("start_local") or "")[:10]
@@ -148,6 +153,32 @@ def run_payload(details: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+# Where a caption sends people: the short link marks the visit as from Strava.
+CAPTION_LINK = "daash.run/strava"
+
+
+def caption(payload: dict[str, Any]) -> str | None:
+    """A run's caption to paste into Strava: its name, its figures, the reps
+    when there were reps, and a line saying Daash made it.
+
+    Strava's API can't be used for this (its 2026 policy bars Strava data in
+    any AI application), so the person pastes it. The share page builds the
+    same text in the browser (caption() in docs/share/index.html), for a run
+    shared from the plan card; keep the two in step.
+    """
+    if not payload or not payload.get("run"):
+        return None
+    figures = []
+    for value, words in payload.get("f") or []:
+        unit = str(words).split(" ")[0]
+        figures.append(str(value) if unit == "time" else f"{value} {unit}")
+    lines = [str(payload.get("t") or "Run").replace("\u00a0", " ")]
+    if figures:
+        lines.append(" · ".join(figures))
+    lines += [str(n[1])[:90] for n in payload.get("n") or [] if len(n) > 1 and n[1]][:1]
+    return "\n".join(lines) + f"\n\nAnalysed with Daash · {CAPTION_LINK}"
+
+
 def link(payload: dict[str, Any]) -> str:
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return SHARE_PAGE + "#" + base64.urlsafe_b64encode(text).decode("ascii").rstrip("=")
@@ -156,3 +187,7 @@ def link(payload: dict[str, Any]) -> str:
 def run_link(details: dict[str, Any]) -> str | None:
     payload = run_payload(details)
     return link(payload) if payload else None
+
+
+def run_caption(details: dict[str, Any]) -> str | None:
+    return caption(run_payload(details) or {})

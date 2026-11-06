@@ -215,6 +215,21 @@ f.src = "card.html";</script></body>`);
     check("with the reps' paces and heart rates, and no route ranking",
       run.n.length === 1 && /4:01, 4:00, 4:00/.test(run.n[0][1]) && !JSON.stringify(run).includes("Fastest"), JSON.stringify(run.n));
 
+    console.log("the run's caption for Strava");
+    // The same payload hosted_test.py captions in Python: the two must say the same.
+    const sameRun = { v: 1, run: 1, t: "Sub-T 3\u00a0×\u00a03\u00a0km", s: "Wednesday 28 Oct · Tower Hamlets", k: "Run recap", c: "threshold",
+      f: [["14.1", "km"], ["1:03:17", "time"], ["4:29", "/km average"], ["148", "bpm average"]], l: [], a: 269,
+      n: [["c", "Reps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163"]] };
+    const capPage = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    capPage.on("pageerror", (e) => errors.push(e.message));
+    await capPage.goto(SHARE + "#" + Buffer.from(JSON.stringify(sameRun)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
+    await capPage.waitForTimeout(500);
+    const cap = await capPage.evaluate(() => ({ shown: !document.getElementById("cap-g").hidden, text: document.getElementById("cap").textContent }));
+    check("the share page shows the same caption the chat gives",
+      cap.shown && cap.text === "Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\nReps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\nAnalysed with Daash · daash.run/strava",
+      JSON.stringify(cap));
+    await capPage.close();
+
     console.log("a gym session");
     await card.getByText("Full body (runner) v2").first().click();
     await page.waitForTimeout(800);

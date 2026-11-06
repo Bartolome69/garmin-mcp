@@ -1460,6 +1460,17 @@ async def main() -> int:
         check("a ride or a swim isn't",
               share.run_payload({"summary": {"type": "road_biking", "distance_km": 40}}) is None
               and share.run_payload({"summary": {"type": "lap_swimming", "distance_km": 2}}) is None)
+        # Nov 6: a caption to paste into Strava, as Strava's API can't be used.
+        # tests/card_test.js checks the share page builds this same text.
+        check("a run's Strava caption: its name, figures, reps and a line back to Daash",
+              share.run_caption(threshold_run) == ("Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\n"
+                                                    "Reps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\n"
+                                                    "Analysed with Daash · daash.run/strava"), repr(share.run_caption(threshold_run)))
+        check("a run started from a watch workout loses the place Garmin puts before its name",
+              share.run_payload({"summary": {"name": "Tower Hamlets - Benchmark 5x1km · B1", "type": "running",
+                                             "location": "Tower Hamlets", "distance_km": 10.75,
+                                             "duration_seconds": 3036}})["t"] == "Benchmark 5\u00a0×\u00a01\u00a0km")
+        check("no caption for a ride", share.run_caption({"summary": {"type": "road_biking", "distance_km": 40}}) is None)
 
         # The Monday email: what it says, from the plan card's own answer.
         from datetime import date as _day

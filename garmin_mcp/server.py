@@ -1981,6 +1981,13 @@ SHARE_IMAGE_NOTE = (
     "end, as a link, the first time a run comes up in a chat, and whenever the user "
     "wants to share or post one. Don't draw an image of the run yourself."
 )
+# The caption beside it: Strava's API can't carry it (no Strava data in AI
+# apps), so the person pastes it, and it brings Daash into their followers' feeds.
+SHARE_CAPTION_NOTE = (
+    "Text to paste into the run's description on Strava. When they want to post or "
+    "share the run, or ask for a caption, give it exactly as it is, in a code block so it "
+    "copies cleanly, beside the image link. Don't offer it otherwise."
+)
 
 
 def _flat_activity(summary: dict[str, Any]) -> dict[str, Any]:
@@ -2020,6 +2027,9 @@ def _with_share_image(result: dict[str, Any]) -> dict[str, Any]:
     url = share.run_link(result) if isinstance(result, dict) and "error" not in result else None
     if url:
         result["share_image"] = {"url": url, "note": SHARE_IMAGE_NOTE}
+        text = share.run_caption(result)
+        if text:
+            result["strava_caption"] = {"text": text, "note": SHARE_CAPTION_NOTE}
     return result
 
 
