@@ -2670,6 +2670,7 @@ async def forget_person(token: str) -> bool:
     if removed and gone is not None:
         # Disconnect deletes everything, crews included.
         crews.forget(crews.member_key(token, gone.email_hash))
+        store.forget_race_prompts(crews.member_key(token, gone.email_hash))
         # And every sign-in to it: Claude, ChatGPT and the app alike.
         store.delete_tokens_for_subject(token)
     return removed

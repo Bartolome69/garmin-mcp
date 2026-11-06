@@ -1405,7 +1405,7 @@ def _safe(handler):
             _track("app_failed", {"screen": screen, "layout": _layout(request)})
             return _json({"error": "Daash couldn't load this just now. Try again in a moment."}, 500)
         # A screen fetched ahead of a tap (the app warms the other tabs) isn't one opened.
-        polled = request.url.path.endswith("/build/send")
+        polled = request.url.path.endswith(("/build/send", "/race-prompt"))
         if request.method == "GET" and request.headers.get("x-daash-ahead") != "1" and not polled:
             # How long the screen waited for Daash, and on its own thread: the
             # account lookups are reads a screen shouldn't wait for.
@@ -1788,7 +1788,7 @@ async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitne
     for i, e in enumerate(events):
         km = e.get("distance_km") or 0
         tier = "A" if e is primary else "B" if km >= 10 else "C"
-        races.append({"id": f"g{i}", "name": e["name"], "date": e["date"], "km": km or 5,
+        races.append({"id": f"g{i}", "key": _race_key(e["name"], e["date"]), "name": e["name"], "date": e["date"], "km": km or 5,
                       "meta": _race_meta(e, bool(e.get("primary"))), "tier": tier})
 
     # A plan running now: the next block starts the Monday after it ends.
@@ -1816,6 +1816,9 @@ async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitne
         "thin": not runs or runs[-1]["day"] > today - timedelta(weeks=4) or None,
     })
     inputs["level_line"] = LEVEL_LINES[inputs["level"]]
+    goal = _goal_race(plan) if season else None
+    if goal and goal.get("date"):
+        inputs["plan_goal"] = _race_key(goal.get("name"), str(goal["date"])[:10])
     _BUILD_INPUTS[who] = (time.time(), inputs, fit)
     return inputs, fit
 
@@ -1832,7 +1835,9 @@ async def build_payload() -> dict[str, Any]:
         raise BuildUnavailable()
     today = date.today()
     inputs, _ = await _build_inputs(today)
-    return {**inputs, "today": today.isoformat(), "assistant": assistant(),
+    fun = _not_goal(inputs.get("races") or [])
+    races = [{**r, "tier": "C"} if r.get("key") in fun else r for r in inputs.get("races") or []]
+    return {**inputs, "races": races, "today": today.isoformat(), "assistant": assistant(),
             "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
 
 
@@ -2005,6 +2010,150 @@ async def api_build_send(request: Request) -> Response:
         return _json(await build_send(body))
     except BuildUnavailable:
         return _json({"error": "Building a plan here isn't open yet."}, 404)
+    except plan_builder.BuildError as exc:
+        return _json({"error": str(exc)}, 400)
+
+
+# -- a race on the Garmin calendar: the card on Today that offers a plan for it ----------
+# A preview feature, with the builder. A race of 10K or more that no plan is
+# building to gets one card; "Not now" folds it to a row for a week (twice,
+# then it stays a row), and "It's not a goal race" ends it and makes the race
+# a fun run in any plan built here.
+
+RACE_PROMPT_MIN_KM = 9.5
+RACE_PROMPT_FULL_WEEKS = 6
+RACE_PROMPT_SNOOZE = 7 * 86400
+RACE_PROMPT_REOPENS = 2
+RACE_PROMPT_ACTIONS = {"cta", "snooze", "not_goal"}
+
+
+def _race_key(name: Any, day: Any) -> str:
+    """A race by its date and name, hashed: what the store keeps instead of either."""
+    import hashlib
+
+    return hashlib.sha256(f"{day}|{str(name or '').strip().lower()}".encode()).hexdigest()[:16]
+
+
+def _not_goal(races: list[dict[str, Any]]) -> set[str]:
+    me = crews.current()
+    if not me or not races:
+        return set()
+    states = store.race_prompts(me.key, [r["key"] for r in races])
+    return {k for k, v in states.items() if v["not_goal"]}
+
+
+async def race_prompt_payload() -> dict[str, Any]:
+    """The one race worth a card on Today, or nothing."""
+    me = crews.current()
+    if not preview.enabled() or me is None:
+        return {}
+    today = date.today()
+    inputs, fit = await _build_inputs(today)
+    starts = date.fromisoformat(inputs["starts"])
+    horizon = today + timedelta(weeks=training_plan.MAX_WEEKS_AHEAD)
+    after = date.fromisoformat(inputs["after"]) if inputs.get("after") else None
+    found = []
+    for r in inputs.get("races") or []:
+        day = date.fromisoformat(r["date"])
+        # 10K and up, inside what Garmin's calendar takes, not what the plan is for,
+        # and with a plan running, only races after it ends.
+        if (r.get("km") or 0) < RACE_PROMPT_MIN_KM or not today < day <= horizon or r["key"] == inputs.get("plan_goal"):
+            continue
+        if after and day <= after:
+            continue
+        found.append(r)
+    if not found:
+        return {}
+    now = int(time.time())
+    states = store.race_prompts(me.key, [r["key"] for r in found], now)
+    for r in sorted(found, key=lambda x: x["date"]):
+        state = states.get(r["key"]) or {}
+        if state.get("not_goal"):
+            continue
+        made = _race_prompt(r, inputs, fit, today, starts, after)
+        if not made:
+            continue
+        snoozes, snoozed_at = state.get("snoozes") or 0, state.get("snoozed_at") or 0
+        card = snoozes == 0 or (snoozes <= RACE_PROMPT_REOPENS and now - snoozed_at >= RACE_PROMPT_SNOOZE)
+        made["mode"] = "card" if card else "row"
+        if card and store.race_prompt_shown(me.key, r["key"], now):
+            _track("race_prompt_shown", {"case": made["case"], "weeks_out": made["weeks_out"]})
+        return made
+    return {}
+
+
+def _race_prompt(r: Mapping[str, Any], inputs: Mapping[str, Any], fit: plan_builder.Fitness, today: date,
+                 starts: date, after: date | None) -> dict[str, Any] | None:
+    day = date.fromisoformat(r["date"])
+    weeks_out = (day - today).days // 7
+    answers = plan_builder.Answers.from_json({
+        "avg_km": inputs.get("avg_km") or 0, "longest_km": inputs.get("longest_km") or 0, "level": inputs.get("level"),
+        "races": [{"name": r["name"], "date": r["date"], "km": r["km"], "tier": "A"}],
+        "days": inputs.get("days") or 4, "long_day": inputs.get("long_day", 6), "after_plan": bool(after)})
+    try:
+        s = plan_builder.shape(answers, today, starts)
+        peak = plan_builder.peak_for(answers, s)
+    except plan_builder.BuildError:
+        return None
+    when = _short_date(day)
+    name = r["name"]
+    short = lambda d: f"{d.day} {MONTHS[d.month - 1]}"  # noqa: E731
+    if after:
+        case, title = "after", f"{name} is after your plan ends"
+        sub = (f"Your plan finishes {_short_date(after)}. Plan the next block now and it starts the Monday after, "
+               "with an easy week first.")
+        facts = [(short(after), "plan ends"), (f"{s.weeks} weeks", "next block"), (short(day), "race day")]
+        cta, row = "Plan the next block", "After your current plan"
+    elif weeks_out >= RACE_PROMPT_FULL_WEEKS:
+        case, title = "no_plan", f"{name} is in {weeks_out} weeks"
+        sub = "Enough time for a full plan, built from what you're running now."
+        facts = [(f"{weeks_out} weeks", "to race day"), (f"{answers.days} days", "a week, like now"), (f"~{round(peak)} km", "peak week")]
+        cta, row = "Build a plan", f"{weeks_out} weeks away"
+    else:
+        taper = s.phases.count("Taper")
+        case, title = "close", f"{name} is in {weeks_out} weeks"
+        sub = "Too close for a full plan. A short block keeps what you have and arrives fresh."
+        facts = [(f"{weeks_out} weeks", "to race day"), (f"{s.weeks - taper} + {taper}", "sharpen, then taper"),
+                 (f"~{round(peak)} km", "peak week")]
+        cta, row = f"Build a {s.weeks}-week block", f"{weeks_out} weeks away"
+    return {"key": r["key"], "case": case, "weeks_out": weeks_out, "name": name, "when": when, "title": title,
+            "sub": sub, "facts": [{"v": v, "l": label} for v, label in facts], "cta": cta, "row_sub": row}
+
+
+def race_prompt_action(body: Any) -> dict[str, Any]:
+    me = crews.current()
+    if not preview.enabled() or me is None:
+        raise BuildUnavailable()
+    key = str((body or {}).get("key") or "") if isinstance(body, dict) else ""
+    action = str((body or {}).get("action") or "") if isinstance(body, dict) else ""
+    if not re.fullmatch(r"[0-9a-f]{16}", key) or action not in RACE_PROMPT_ACTIONS:
+        raise plan_builder.BuildError("Unknown race or action.")
+    case = str(body.get("case") or "")[:10] or None
+    if action == "snooze":
+        store.race_prompt_snooze(me.key, key)
+        _track("race_prompt_snoozed", drop_empty({"case": case}))
+        return {"message": "Moved out of the way. We'll ask again in a week."}
+    if action == "not_goal":
+        store.race_prompt_not_goal(me.key, key)
+        _track("race_prompt_not_goal", drop_empty({"case": case}))
+        return {"message": "Got it. It's a fun run in any plan, and we won't ask again."}
+    _track("race_prompt_cta", drop_empty({"case": case}))
+    return {"ok": True}
+
+
+@mcp.custom_route(API_PREFIX + "race-prompt", methods=["GET", "POST"])
+@_safe
+async def api_race_prompt(request: Request) -> Response:
+    try:
+        if request.method == "GET":
+            return _json(await race_prompt_payload())
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        return _json(race_prompt_action(body))
+    except BuildUnavailable:
+        return _json({"error": "Not open yet."}, 404)
     except plan_builder.BuildError as exc:
         return _json({"error": str(exc)}, 400)
 

@@ -581,3 +581,23 @@ body.desk .b-foot { padding: 14px 28px 22px; }
 body.desk .b-foot-in { max-width: 1028px; }
 body.desk .b-wrap.with-side ~ .b-foot .b-foot-in { padding-right: 388px; }
 @media (max-width: 1279px) { body.desk .b-wrap.with-side ~ .b-foot .b-foot-in { padding-right: 0; } .b-side { width: 300px; } }
+
+/* a new race on the Garmin calendar, on Today (preview) */
+.race-card { border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.race-kick { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; color: var(--muted); }
+.race-kick i, .race-row i { width: 8px; height: 8px; border-radius: 999px; background: var(--red); flex-shrink: 0; }
+.race-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; text-wrap: balance; }
+.race-sub { font-size: 14.5px; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
+.race-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--hairline); border-radius: 10px; }
+.race-facts div { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; border-left: 1px solid var(--hairline); min-width: 0; }
+.race-facts div:first-child { border-left: 0; }
+.race-fact-v { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.race-card .pills > * { flex: 1; }
+.race-not { align-self: flex-start; height: 36px; margin: -6px 0 -4px; padding: 0; border: 0; background: transparent; color: var(--muted);
+  font-size: 13.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.race-row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--hairline);
+  background: #1C1C1A; color: var(--ink); text-decoration: none; }
+.race-row:hover { color: var(--ink); }
+.race-row-t { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.race-row-cta { font-size: 14px; font-weight: 500; color: var(--red-text); white-space: nowrap; margin-left: auto; }
+.race-row > .stack-tight { flex: 1; }

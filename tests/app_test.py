@@ -57,7 +57,7 @@ DEMO = DemoGarmin()
 session_mod.build_client = lambda **_: DEMO
 
 import garmin_mcp.hosted as hosted  # noqa: E402
-from garmin_mcp import analysis, analytics, oauth, store  # noqa: E402
+from garmin_mcp import analysis, analytics, crews, oauth, store  # noqa: E402
 
 SENT: list[dict] = []
 analytics._post = SENT.append
@@ -633,6 +633,98 @@ def build_checks() -> None:
             os.environ.pop("GARMIN_MCP_PREVIEW", None)
 
 
+def race_prompt_checks() -> None:
+    """A race on the Garmin calendar: one card on Today, Not now, not a goal race, and the builder's A race."""
+    import json as _json
+    from datetime import date as _d, timedelta as _td
+    from garmin_mcp import plan_builder
+
+    email = "racer@example.test"
+    user_token = store.save_user(session_mod.mask_email(email), '{"di_token": "x"}',
+                                 email_hash=store.email_fingerprint(email), email=email)
+    token = secrets.token_urlsafe(32)
+    store.save_oauth_token(token, kind="access", client_id="test", subject=user_token, scopes="",
+                           resource=None, expires_at=int(time.time()) + 3600)
+    auth = {"Authorization": f"Bearer {token}"}
+    today = _d.today()
+    fit = plan_builder.Fitness(predictions={"10k": 3020, "half": 6720})
+    inputs = {"avg_km": 26, "longest_km": 12, "level": "regular", "days": 4, "long_day": 6}
+    starts = plan_builder.first_monday(today)
+    far = {"key": "a" * 16, "name": "Cambridge Half", "date": (starts + _td(weeks=18, days=6)).isoformat(), "km": 21.1}
+    made = app_routes._race_prompt(far, inputs, fit, today, starts, None)
+    check("a race 6 weeks or more off, with no plan, offers a plan",
+          made["case"] == "no_plan" and made["title"].startswith("Cambridge Half is in ") and made["cta"] == "Build a plan", str(made))
+    check("its facts are weeks, days and the peak",
+          [f["l"] for f in made["facts"]] == ["to race day", "a week, like now", "peak week"] and made["facts"][2]["v"].startswith("~"),
+          str(made["facts"]))
+    near = {**far, "key": "b" * 16, "name": "Bedford 10K", "km": 10, "date": (starts + _td(weeks=3, days=6)).isoformat()}
+    made = app_routes._race_prompt(near, inputs, fit, today, starts, None)
+    check("a closer race offers a short block, sharpen then taper",
+          made["case"] == "close" and made["cta"] == "Build a 4-week block" and made["facts"][1]["v"] == "3 + 1", str(made))
+    ends = starts + _td(weeks=2, days=6)
+    made = app_routes._race_prompt(far, inputs, fit, today, ends + _td(days=1), ends)
+    check("with a plan running, a race after it offers the next block",
+          made["case"] == "after" and made["cta"] == "Plan the next block" and made["facts"][0]["l"] == "plan ends", str(made))
+    soon = {**near, "date": (today + _td(days=9)).isoformat()}
+    check("a race too close for any block offers nothing", app_routes._race_prompt(soon, inputs, fit, today, starts, None) is None)
+
+    # The demo's plan runs most of the way to Garmin's horizon, so here the
+    # runner has none: the card is the no-plan one.
+    from garmin_mcp import server as server_mod
+    real_get_plan = server_mod.get_plan
+
+    async def no_plan(label=None):
+        return {"source": "log"}
+
+    os.environ["GARMIN_MCP_PREVIEW"] = "on"
+    server_mod.get_plan = no_plan
+    app_routes._BUILD_INPUTS.clear()
+    try:
+        with TestClient(hosted.build_app(), base_url="http://localhost") as client:
+            race_day = starts + _td(weeks=9, days=6)
+            DEMO.scheduled.append({"itemType": "event", "date": race_day.isoformat(), "title": "Riverside Half",
+                                   "distance": 21097.5, "primaryEvent": True})
+            DEMO.scheduled.append({"itemType": "event", "date": (race_day - _td(days=7)).isoformat(), "title": "Park 5K",
+                                   "distance": 5000})
+            prompt = client.get("/app/api/race-prompt", headers=auth).json()
+            check("Today offers a plan for it", prompt.get("case") == "no_plan" and prompt.get("mode") == "card"
+                  and prompt.get("cta") == "Build a plan" and prompt.get("name") == "Riverside Half", str(prompt))
+            check("a 5K never asks", "Park 5K" not in str(prompt))
+            check("showing it is counted once", len([e for e in posted("race_prompt_shown")]) == 1)
+            client.get("/app/api/race-prompt", headers=auth)
+            check("and not again on the next visit", len([e for e in posted("race_prompt_shown")]) == 1)
+            key = prompt["key"]
+            said = client.post("/app/api/race-prompt", headers=auth,
+                               content=_json.dumps({"key": key, "action": "snooze", "case": "no_plan"})).json()
+            check("Not now says when it'll ask again", "in a week" in said.get("message", ""), str(said))
+            check("and folds it to a row", client.get("/app/api/race-prompt", headers=auth).json().get("mode") == "row")
+            me = crews.member_key(user_token, store.email_fingerprint(email))
+            with store._connect() as conn:
+                conn.execute("UPDATE race_prompts SET snoozed_at = snoozed_at - ? WHERE member = ?", (8 * 86400, me))
+            check("a week on, it's a card again", client.get("/app/api/race-prompt", headers=auth).json().get("mode") == "card")
+            for _ in range(2):
+                client.post("/app/api/race-prompt", headers=auth, content=_json.dumps({"key": key, "action": "snooze"}))
+                with store._connect() as conn:
+                    conn.execute("UPDATE race_prompts SET snoozed_at = snoozed_at - ? WHERE member = ?", (8 * 86400, me))
+            check("after the third Not now it stays a row", client.get("/app/api/race-prompt", headers=auth).json().get("mode") == "row")
+            built = client.get("/app/api/build", headers=auth).json()
+            check("the builder knows the race by the same key", any(r.get("key") == key for r in built.get("races") or []))
+            client.post("/app/api/race-prompt", headers=auth, content=_json.dumps({"key": key, "action": "not_goal"}))
+            check("not a goal race: no card or row", client.get("/app/api/race-prompt", headers=auth).json() == {})
+            built = client.get("/app/api/build", headers=auth).json()
+            check("and it's a fun run in the builder", next(r for r in built["races"] if r["key"] == key)["tier"] == "C")
+            check("a made-up action is refused", client.post("/app/api/race-prompt", headers=auth,
+                  content=_json.dumps({"key": key, "action": "delete"})).status_code == 400)
+        os.environ.pop("GARMIN_MCP_PREVIEW", None)
+        with TestClient(hosted.build_app(), base_url="http://localhost") as client:
+            check("outside preview there's no card", client.get("/app/api/race-prompt", headers=auth).json() == {})
+    finally:
+        server_mod.get_plan = real_get_plan
+        os.environ.pop("GARMIN_MCP_PREVIEW", None)
+        DEMO.scheduled[:] = [x for x in DEMO.scheduled if x.get("itemType") != "event"]
+        app_routes._BUILD_INPUTS.clear()
+
+
 def main() -> int:
     extra_checks()
     analysis_checks()
@@ -640,6 +732,7 @@ def main() -> int:
     api_checks()
     assistant_checks()
     build_checks()
+    race_prompt_checks()
     print()
     if failures:
         print(f"{len(failures)} failed: {', '.join(failures)}")
