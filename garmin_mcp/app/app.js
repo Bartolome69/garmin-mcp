@@ -149,7 +149,8 @@ async function api(path, options = {}, retry = true) {
   const body = await res.json().catch(() => ({ error: "Daash didn't answer. Try again in a moment." }));
   if (!res.ok || body.error) throw new Error(body.error || "Something went wrong.");
   // A change on Garmin: what the screens showed of the plan is out of date.
-  if (options.method === "POST") { epoch++; inflight.clear(); cache.clear(); }
+  // (A read sent as a POST, like the plan builder's answers, changes nothing.)
+  if (options.method === "POST" && !options.read) { epoch++; inflight.clear(); cache.clear(); }
   return body;
 }
 
@@ -932,16 +933,30 @@ async function showPlan(view, params, quiet = false) {
     const head = `<header class="stack" style="gap:12px"><h1 class="headline">Plan</h1><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
     if (d.empty) {
       const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
+      if (d.build) {
+        $("screen").innerHTML = `<header class="stack-tight" style="padding-top:4px"><span class="kicker">Plan</span><h1 class="headline">No plan yet</h1></header>
+          <div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Build one here</span>
+            <span class="b-entry-d">About two minutes. Most answers come from Garmin, so most steps are one tap.</span></div>
+            <a class="pill tall light" href="#/build">Build one here</a></div>
+          <div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Or talk it through</span>
+            <span class="b-entry-d">${esc(d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")} asks the same questions and can handle anything unusual.</span></div>
+            ${ask.html.replace("pill red tall", "pill tall")}</div>`;
+        return;
+      }
       $("screen").innerHTML = head + `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>${ask.html}</div>`;
       return;
     }
+    // The plan ends within three weeks: the next block can be planned now.
+    const nb = d.next_block ? `<div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">This plan ends ${esc(d.next_block.ends)}</span>
+        <span class="b-entry-d">Plan the next block now and it starts the Monday after, with an easy week first.</span></div>
+        <div class="pills"><a class="pill tall light" href="#/build" style="flex:1.2">Plan the next block</a>${askLink({ ...d, ask: d.next_block.ask }, "With " + (d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")).html.replace("pill red tall", "pill tall")}</div></div>` : "";
     remember(d);
     base = "plan";
     if (desktop()) {
-      $("screen").innerHTML = `<header><h1 class="headline" style="font-size:28px">Plan</h1></header>
+      $("screen").innerHTML = `<header><h1 class="headline" style="font-size:28px">Plan</h1></header>${nb}
         <div class="desk-plan"><div class="stack">${weekView(d)}</div><div class="stack">${blockView(d)}</div></div>`;
     } else {
-      $("screen").innerHTML = head + (view === "block" ? blockView(d) : weekView(d));
+      $("screen").innerHTML = head + nb + (view === "block" ? blockView(d) : weekView(d));
     }
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
     warm();
@@ -1485,6 +1500,522 @@ async function handOff() {
   }
 }
 
+// -- Build a plan: six steps, a preview, then onto the watch (preview accounts) ---
+// The answers live here and in this tab's storage; every plan the preview shows
+// is made on the server from them, by rule, the same way each time.
+
+const BUILD_KEY = "daash.build";
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const STEP_OF = { 1: 1, 2: 2, "2c": 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7 };
+const PREV_OF = { 1: null, 2: "1", "2c": "2", 3: null, 4: "3", 5: "4", 6: "5", 7: "6", hurt: "5", error: "7" };
+const LEVELS = [["new", "Under 6 months"], ["regular", "Up to 2 years"], ["exp", "2 years +"]];
+const INJURIES = [["none", "None", "Running feels fine."], ["niggle", "A niggle now", "Something's a bit sore but you can run easy."],
+  ["back", "Coming back from injury", "You've had time off and are running again."], ["hurts", "Something hurts now", "It hurts to run, or it gets worse as you go."]];
+const GOALS = [["faster", "Get faster at a distance", "Sharper sessions aimed at one distance."],
+  ["base", "Build a base", "More easy running, ready for a race plan later."], ["fit", "General fitness", "A steady mix, about the same each week."]];
+const DISTS = [["5k", "5K", 5], ["10k", "10K", 10], ["half", "Half", 21.1], ["marathon", "Marathon", 42.2]];
+const STYLE_OPTS = [
+  { id: "steady", t: "Steady", d: "Mostly easy, with one harder day a week.", based: "BASED ON 80/20 TRAINING" },
+  { id: "balanced", t: "Balanced", d: "Two harder days a week, paced from your race times.", based: "BASED ON JACK DANIELS STYLE PACES" },
+  { id: "faster", t: "Faster", d: "Several controlled threshold sessions, kept in check by heart rate.", based: "BASED ON NORWEGIAN SINGLES STYLE" },
+  { id: "pick", t: "Pick for me", d: "Chosen from your days, races and history.", based: "" },
+];
+const VERDICT = { realistic: ["#22352A", "#8CC08F"], stretch: ["#3A2A1A", "#E8A15F"], ambitious: ["#2A2520", "#E8A15F"] };
+const WARN = svg('<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>', 18, 'style="color:var(--hard);flex-shrink:0;margin-top:1px"');
+
+const B = { inputs: null, answers: null, plan: null, sel: null, job: null, poll: null, asked: 0 };
+
+function day(iso) { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); }
+function saveAnswers() { try { sessionStorage.setItem(BUILD_KEY, JSON.stringify({ starts: B.inputs.starts, answers: B.answers })); } catch { /* this tab only */ } }
+function freshAnswers(i) {
+  return {
+    avg_km: i.avg_km || 0, longest_km: i.longest_km || 0, level: i.level || "regular",
+    races: (i.races || []).map((r) => ({ ...r })), goal_time: null, open: !(i.races || []).some((r) => r.tier === "A"),
+    open_goal: "faster", open_distance: "half", days: i.days || 4, out: [], long_day: i.long_day ?? 6,
+    amount: "build", injury: "none", style: i.level === "new" ? "steady" : "balanced", note: "",
+  };
+}
+// What the server is sent: with no race in mind, every A race is raced as a B.
+function sendable() {
+  const a = B.answers;
+  return { ...a, races: a.races.map((r) => ({ ...r, tier: a.open && r.tier === "A" ? "B" : r.tier })) };
+}
+function goalRace() { return B.answers.open ? null : [...B.answers.races].filter((r) => r.tier === "A").sort((x, y) => x.date.localeCompare(y.date)).pop() || null; }
+
+// One B race every 3 weeks, and none in the 10 days before the A race: the others run for fun.
+function settle(changed) {
+  const a = B.answers;
+  const goal = goalRace();
+  let note = "";
+  const sorted = [...a.races].sort((x, y) => x.date.localeCompare(y.date));
+  let last = null;
+  for (const r of sorted) {
+    if (r.tier !== "B") continue;
+    const tooNearA = goal && r !== goal && (day(goal.date) - day(r.date)) / 864e5 <= 10 && day(r.date) <= day(goal.date);
+    const tooNearB = last && (day(r.date) - day(last.date)) / 864e5 < 21;
+    if (tooNearA || tooNearB) {
+      const demote = tooNearB && r.id === changed ? last : r;
+      demote.tier = "C"; demote.demoted = true;
+      note = tooNearA ? `${demote.name} is too close to ${goal.name}, so it's now a fun run.`
+        : `Racing more often than every 3 weeks leaves little room for training. ${demote.name} is now a fun run.`;
+      if (demote === last) last = r;
+    } else last = r;
+  }
+  a.note = note;
+}
+
+async function buildAsk(preview = false) {
+  const mine = ++B.asked;
+  const body = JSON.stringify({ answers: sendable(), preview });
+  const d = await api("build/plan", { method: "POST", body, read: true });
+  if (mine !== B.asked) throw new Error("stale");
+  return d;
+}
+
+function go(step) { location.hash = `#/build${step && step !== "1" ? `/${step}` : ""}`; }
+
+async function showBuild(step) {
+  step = step || "1";
+  const wide = desktop();
+  if (wide) { $("tabs").hidden = true; topbar("plan"); } else { $("topbar").hidden = true; $("tabs").hidden = true; }
+  if (step === "sending" || step === "done" || step === "error") return buildSendView(step);
+  if (!B.inputs) {
+    loading();
+    try {
+      B.inputs = await api("build");
+    } catch (e) {
+      if (e instanceof SignedOut) return route();
+      return failed(e.message, () => showBuild(step));
+    }
+    remember(B.inputs);
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(BUILD_KEY) || "null"); } catch { saved = null; }
+    B.answers = saved && saved.starts === B.inputs.starts ? saved.answers : freshAnswers(B.inputs);
+  }
+  if (!(step in STEP_OF) && step !== "hurt") step = "1";
+  B.step = step;
+  drawBuild();
+  if (["2", "4", "6", "7"].includes(step)) refreshBuild();
+}
+
+async function refreshBuild() {
+  const step = B.step;
+  try {
+    const d = await buildAsk(step === "7");
+    if (B.step !== step) return;
+    // Each answer replaces what the last one said about the race and the goal.
+    B.plan = { ...B.plan, chips: null, verdict: null, too_close: null, race_note: null, picked: null, problem: null, failure: null, ...d };
+    if (step === "4" && d.amounts && !d.amounts.some((o) => o.id === B.answers.amount)) B.answers.amount = d.amounts.length > 1 ? "build" : "keep";
+    if (step === "6" && !d.faster_ok && B.answers.style === "faster") B.answers.style = "balanced";
+    if (step === "7" && d.preview) B.sel = d.preview.peak_week - 1;
+    if (step === "7" && !d.preview) { B.plan.preview = null; B.plan.failure = d.problem || "This plan can't be built from these answers."; }
+    drawBuild();
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    if (e.message === "stale") return;
+    if (B.step === step) { B.plan = { ...B.plan, failure: e.message }; drawBuild(); }
+  }
+}
+
+const radio = (on) => `role="radio" aria-checked="${on}"`;
+const ring = (on, dis) => `<span class="b-ring ${on ? "on" : ""} ${dis ? "dis" : ""}"><span></span></span>`;
+const seg = (items, on, act, cls = "") => `<div class="b-seg ${cls}" role="radiogroup" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">${items.map(([v, l]) =>
+  `<button type="button" ${radio(String(v) === String(on))} data-b="${act}" data-v="${esc(v)}">${esc(l)}</button>`).join("")}</div>`;
+const amber = (body) => `<div class="card amber b-amber">${WARN}<span>${body}</span></div>`;
+const heading = (t, sub) => `<header class="b-head"><h1>${esc(t)}</h1>${sub ? `<span>${esc(sub)}</span>` : ""}</header>`;
+
+function step1() {
+  const i = B.inputs, a = B.answers;
+  const max = Math.max(1, ...i.bars.map((b) => b.v));
+  const rows = [
+    ["Longest recent run", i.longest_on || "Last 6 weeks", `${a.longest_km} km`],
+    ["Recent races", i.recent ? `${i.recent.name} · ${i.recent.on}` : "None in the last 12 weeks", i.recent ? i.recent.time : "–"],
+    ["How often you run", i.level === a.level ? i.level_line : { new: "Most weeks, for a few months", regular: "Most weeks, for over a year", exp: "Most weeks, for years" }[a.level], `${i.days} days`],
+  ];
+  return heading("Your running lately", "From Garmin, last 4 weeks. Change anything that looks off.")
+    + (i.thin ? amber("Garmin has only a few weeks of your running so far. Check these numbers before you go on.") : "")
+    + `<div class="card b-card"><div class="b-split"><span class="stack-tight" style="gap:2px"><span class="meta">Weekly distance</span>
+        <span class="b-big">${a.avg_km} km<span class="b-unit"> a week</span></span></span><span class="mono-label" style="font-size:11.5px">LAST 4 WEEKS</span></div>
+      <div class="b-weeks4">${i.bars.map((b) => `<div><span>${b.v}</span><i style="height:${Math.round(b.v / max * 56)}px"></i></div>`).join("")}</div>
+      <div class="b-weeks4-l">${i.bars.map((b) => `<span>${esc(b.l)}</span>`).join("")}</div></div>
+    <div class="card b-list">${rows.map(([l, sub, v]) => `<div class="b-row"><span class="stack-tight" style="gap:2px;min-width:0"><span class="strong">${esc(l)}</span><span class="meta">${esc(sub)}</span></span><span class="b-val">${esc(v)}</span></div>`).join("")}</div>
+    ${i.predictions ? `<div class="stack-8"><span class="strong">Garmin's race predictions</span><div class="card b-pred">${i.predictions.map((p) => `<div><span class="meta" style="font-size:12px">${esc(p.l)}</span><span>${esc(p.v)}</span></div>`).join("")}</div></div>` : ""}`;
+}
+
+function raceRow(r, n) {
+  const d = day(r.date);
+  return `<div class="b-race ${n ? "" : "first"}"><span class="b-date"><span>${MON[d.getMonth()].toUpperCase()}</span><b>${d.getDate()}</b></span>
+    <span class="stack-tight" style="gap:2px;min-width:0"><span class="b-race-name">${esc(r.name)}</span><span class="meta" style="font-size:12.5px;${r.demoted ? "color:var(--hard)" : ""}">${esc(r.demoted ? "Now a fun run" : r.meta)}</span></span>
+    <div class="b-tiers" role="radiogroup" aria-label="Priority for ${esc(r.name)}">${["A", "B", "C"].map((t) =>
+      `<button type="button" ${radio(r.tier === t && !(B.answers.open && t === "A"))} class="t-${t}" data-b="tier" data-id="${esc(r.id)}" data-v="${t}">${t}</button>`).join("")}</div></div>`;
+}
+
+function step2() {
+  const a = B.answers;
+  const races = [...a.races].sort((x, y) => x.date.localeCompare(y.date));
+  const as = races.filter((r) => r.tier === "A");
+  const goal = goalRace();
+  let warn = "";
+  if (!a.open && as.length > 1) {
+    const [early, late] = [as[0], as[as.length - 1]];
+    const weeks = Math.round((day(late.date) - day(early.date)) / 6048e5);
+    warn = `<div class="card amber b-amber-col"><span class="b-amber">${WARN}<span>Two A races ${weeks} weeks apart is too close to peak for both. Make the ${esc(early.name)} a B race: it still gets a short taper.</span></span>
+      <button type="button" class="pill amber-line" data-b="fixA" data-id="${esc(early.id)}">Make the ${esc(early.name)} a B race</button></div>`;
+  }
+  const p = B.plan || {};
+  const verdict = p.verdict && a.goal_time ? p.verdict : null;
+  const chips = [...(p.chips || []), "No time"];
+  const goalCard = goal ? `<div class="card b-card"><div class="b-split"><span class="strong">Goal time for ${esc(goal.name)}</span><span class="meta" style="font-size:12.5px">Optional</span></div>
+      <div class="b-chips">${chips.map((c) => { const on = c === "No time" ? !a.goal_time : a.goal_time === c;
+        return `<button type="button" class="b-chip ${on ? "on" : ""}" aria-pressed="${on}" data-b="goal" data-v="${esc(c)}">${esc(c)}</button>`; }).join("")}</div>
+      ${verdict ? `<div class="stack-8" style="gap:6px"><span class="b-verdict" style="background:${VERDICT[verdict.kind][0]};color:${VERDICT[verdict.kind][1]}">${esc(verdict.chip)}</span><span class="b-why">${esc(verdict.why)}</span></div>` : ""}
+      ${p.race_note ? amber(esc(p.race_note)) : p.too_close ? amber(`${esc(goal.name)} is too close for a plan. Run easy and enjoy it, or pick a later race.`) : ""}</div>` : "";
+  return heading("Your races", races.length ? "From your Garmin calendar. Mark one A: that's the goal." : "Nothing on your Garmin calendar in the next 6 months. Add one, or pick a goal.")
+    + `<div class="stack-8">${races.length ? `<div class="card b-list">${races.map(raceRow).join("")}</div>
+      <span class="meta" style="line-height:1.45">A: the goal. B: matters, gets a short taper. C: for fun, run through it.</span>` : ""}</div>`
+    + warn + (a.note ? amber(esc(a.note)) : "")
+    + `<button type="button" class="pill tall b-dashed" data-b="addRace">${svg('<path d="M5 12h14"/><path d="M12 5v14"/>', 16)}Add a race</button>`
+    + goalCard
+    + `<button type="button" class="b-link" data-b="noRace">No race in mind</button>`;
+}
+
+function step2c() {
+  const a = B.answers;
+  return heading("No race? Pick a goal", "The plan runs 12 weeks, then you can plan the next.")
+    + `<div class="stack-8" role="radiogroup">${GOALS.map(([id, t, d]) => `<button type="button" class="b-opt" ${radio(a.open_goal === id)} data-b="openGoal" data-v="${id}">${ring(a.open_goal === id)}<span class="stack-tight" style="gap:3px;min-width:0"><span class="b-opt-t">${t}</span><span class="b-opt-d">${d}</span></span></button>`).join("")}</div>`
+    + (a.open_goal === "faster" ? `<div class="stack-8"><span class="strong">Which distance</span>${seg(DISTS.map(([id, l]) => [id, l]), a.open_distance, "openDist")}</div>` : "");
+}
+
+function step3() {
+  const a = B.answers, i = B.inputs;
+  return heading("Which days work", "Filled in from the days you've run lately.")
+    + `<div class="stack-8"><div class="b-split"><span class="strong">Days a week</span><span class="meta">You ran ${i.days} most weeks</span></div>${seg([[3, "3"], [4, "4"], [5, "5"], [6, "6"]], a.days, "days", "big")}</div>
+    <div class="stack-8"><div class="b-split"><span class="strong">Days you can't run</span><span class="meta">Tap to mark</span></div>
+      <div class="b-week">${DOW.map((l, d) => `<button type="button" class="b-day out ${a.out.includes(d) ? "on" : ""}" aria-pressed="${a.out.includes(d)}" data-b="out" data-v="${d}">${l}</button>`).join("")}</div></div>
+    <div class="stack-8"><div class="b-split"><span class="strong">Long run day</span><span class="meta">Your long runs were on ${DAY_LONG[i.long_day ?? 6]}s</span></div>
+      <div class="b-week">${DOW.map((l, d) => `<button type="button" class="b-day long ${a.long_day === d ? "on" : ""}" aria-pressed="${a.long_day === d}" ${a.out.includes(d) ? "disabled" : ""} data-b="long" data-v="${d}">${l}</button>`).join("")}</div></div>
+    ${i.parkrun_day != null ? `<span class="meta" style="font-size:14px;line-height:1.5">${DAY_LONG[i.parkrun_day]} parkrun counts as one of your days. It stays easy in the weeks before a race.</span>` : ""}`;
+}
+
+function spark(from, to, flat, lo, hi) {
+  const y = (v) => 36 - (v - lo) / Math.max(1, hi - lo) * 32;
+  const pts = [...Array(8)].map((_, k) => `${k * 13},${y(flat ? from + (k % 2) : from + (to - from) * k / 7).toFixed(1)}`);
+  return { pts: pts.join(" "), ey: y(flat ? from + 1 : to).toFixed(1) };
+}
+
+function step4() {
+  const a = B.answers, p = B.plan || {};
+  const opts = p.amounts || [];
+  const lo = Math.min(a.avg_km, ...opts.map((o) => o.peak)) - 4, hi = Math.max(a.avg_km, ...opts.map((o) => o.peak));
+  const hidden = a.level === "new" ? "Build more isn't offered on a first plan. It opens up once you've finished one."
+    : a.injury === "niggle" || a.injury === "back" ? "Build more isn't offered while you're carrying a niggle." : "";
+  return heading("How much to build", `You're running ${a.avg_km} km a week. The line shows each option from now to its peak.`)
+    + (opts.length ? `<div class="stack-8" role="radiogroup">${opts.map((o) => { const on = a.amount === o.id; const s = spark(a.avg_km, o.peak, o.id === "keep", lo, hi);
+      return `<button type="button" class="b-opt b-amount" ${radio(on)} data-b="amount" data-v="${o.id}">${ring(on)}
+        <span class="stack-tight" style="gap:3px;min-width:0"><span class="b-opt-top"><span class="b-opt-t">${esc(o.t)}</span>${o.rec ? `<span class="b-tag">SUGGESTED</span>` : ""}</span><span class="b-opt-d">${esc(o.d)}</span></span>
+        <svg width="92" height="40" viewBox="0 0 92 40" aria-hidden="true" style="overflow:visible"><polyline points="${s.pts}" fill="none" stroke="${on ? "var(--ink)" : "var(--muted)"}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="91" cy="${s.ey}" r="3" fill="${on ? "var(--ink)" : "var(--muted)"}"/></svg></button>`; }).join("")}</div>`
+      : p.failure ? amber(esc(p.failure)) : `<div class="skeleton" style="min-height:220px"></div>`)
+    + (hidden && opts.length ? `<span class="meta" style="font-size:14px;line-height:1.5">${hidden}</span>` : "");
+}
+
+function step5() {
+  const a = B.answers;
+  const back = Math.round(Math.max(6, a.avg_km) * 0.7);
+  const lines = a.injury === "niggle" ? ["A gentler build: about 5% a week, not 10%.", "Easy running only for the first 3 weeks.", "Build more is off. You can change this later."]
+    : a.injury === "back" ? [`Starts at ${back} km a week, below your recent average.`, "Easy running only for the first 3 weeks.", "An easier week every third week."] : [];
+  return heading("Anything hurting?", "The plan builds more gently if something's not right.")
+    + `<div class="stack-8" role="radiogroup">${INJURIES.map(([id, t, d]) => `<button type="button" class="b-opt" ${radio(a.injury === id)} data-b="injury" data-v="${id}">${ring(a.injury === id)}<span class="stack-tight" style="gap:3px;min-width:0"><span class="b-opt-t">${t}</span><span class="b-opt-d">${d}</span></span></button>`).join("")}</div>`
+    + (lines.length ? `<div class="card b-card" style="gap:8px"><span class="strong">What changes</span>${lines.map((l) => `<span class="b-change">${esc(l)}</span>`).join("")}</div>` : "");
+}
+
+function fasterNote() {
+  const a = B.answers, i = B.inputs;
+  if (a.days < 4) return `Needs 4 or more days a week and heart-rate data. You picked ${a.days} days.`;
+  if (!i.faster_ok) return "Needs heart-rate data from your Garmin, which it doesn't have yet.";
+  if (a.level === "new") return "Opens up once you've finished a plan.";
+  if (a.injury === "niggle" || a.injury === "back") return "Not while you're easing back.";
+  return "";
+}
+
+function step6() {
+  const a = B.answers, p = B.plan || {};
+  const off = fasterNote() !== "" || p.faster_ok === false;
+  return heading("How you like to train", "All three get you to the start line. They differ in how hard the hard days are.")
+    + `<div class="stack-8" role="radiogroup">${STYLE_OPTS.map((o) => { const dis = o.id === "faster" && off; const on = a.style === o.id && !dis;
+      const note = dis ? fasterNote() || "Not offered for this plan." : o.id === "pick" && on ? p.picked || "" : "";
+      return `<button type="button" class="b-opt ${dis ? "dis" : ""}" ${radio(on)} ${dis ? 'aria-disabled="true"' : ""} data-b="style" data-v="${o.id}">${ring(on, dis)}
+        <span class="stack-tight" style="gap:4px;min-width:0"><span class="b-opt-t">${o.t}</span><span class="b-opt-d">${o.d}</span>
+        ${o.based ? `<span class="b-based">${o.based}</span>` : ""}${note ? `<span class="b-note ${dis ? "dim" : ""}">${esc(note)}</span>` : ""}</span></button>`; }).join("")}</div>`;
+}
+
+function chart(pv) {
+  const weeks = pv.weeks, n = weeks.length, sel = B.sel ?? pv.peak_week - 1;
+  const top = Math.max(...weeks.map((w) => w.km));
+  const ymax = Math.ceil((top + 4) / 10) * 10, H = 136;
+  const y = (v) => Math.round(v / ymax * H);
+  const grid = [20, 40, 60].filter((g) => g < ymax);
+  const cols = `repeat(${n},minmax(0,1fr))`;
+  // Each month named under its first week, unless the last name is too close to fit beside it.
+  let month = null, lastAt = -9;
+  const months = weeks.map((w, k) => { const m = w.month; const fresh = m !== month; month = m;
+    if (!fresh) return "";
+    const nextAt = weeks.findIndex((x, j) => j > k && x.month !== m);
+    if (k === 0 && nextAt !== -1 && nextAt < 3) return "";
+    if (k - lastAt < 3) return "";
+    lastAt = k; return m; });
+  return `<div class="card b-chart"><div class="b-split" style="align-items:flex-end"><span class="stack-tight" style="gap:2px"><span class="meta">Weekly distance</span>
+      <span class="b-big" style="font-size:22px">${pv.start_km} to ${pv.peak_km} km</span></span><span class="meta" style="font-size:12.5px;text-align:right">Peaks in week ${pv.peak_week}</span></div>
+    <div class="b-plot"><div class="b-area">${grid.map((g) => `<span class="b-grid" style="bottom:${y(g)}px"></span>`).join("")}
+        <span class="b-now" style="bottom:${y(pv.now_km)}px"></span>
+        <div class="b-bars" id="b-bars" style="grid-template-columns:${cols}">${weeks.map((w, k) => `<button type="button" class="b-bar ${k === sel ? "on" : ""} ${w.race ? "race" : ""}" aria-label="Week ${w.n}, ${w.km} km" aria-pressed="${k === sel}" data-b="week" data-v="${k}">
+          ${w.race ? `<i class="b-dot ${w.race === "A" ? "a" : "b"}"></i>` : ""}<span style="height:${Math.max(4, y(w.km))}px"></span></button>`).join("")}</div></div>
+      <div class="b-axis">${grid.map((g) => `<span style="bottom:${y(g) - 6}px">${g}</span>`).join("")}</div>
+      <div class="b-months" style="grid-template-columns:${cols}">${months.map((m) => `<span>${m}</span>`).join("")}</div><span></span>
+      <div class="b-phases" style="grid-template-columns:${pv.phases.map((p) => `${p.weeks}fr`).join(" ")}">${pv.phases.map((p) => `<span class="${p.weeks <= 2 ? "tight" : ""}" title="${esc(p.label)}">${esc(p.weeks < 2 ? p.label.slice(0, 2) : p.label)}</span>`).join("")}</div><span></span></div>
+    <div class="legend"><span><i class="b-dash"></i>You now, ${pv.now_km} km</span><span><i class="b-dot a" style="width:7px;height:7px;border-radius:999px"></i>Race week</span><span>Tap a week</span></div></div>`;
+}
+
+function weekCard(pv) {
+  const weeks = pv.weeks, k = B.sel ?? pv.peak_week - 1, w = weeks[k], n = weeks.length;
+  const dlt = k ? w.km - weeks[k - 1].km : w.km - pv.now_km;
+  const delta = k === 0 ? (dlt === 0 ? "Same as you run now" : `${dlt > 0 ? "+" : "−"}${Math.abs(dlt)} km on now`)
+    : dlt > 0 ? `+${dlt} km on last week` : dlt < 0 ? `${w.phase === "Taper" ? "Tapering" : "Easier week"}: −${Math.abs(dlt)} km` : "Same as last week";
+  const colour = k && dlt > 4 ? "var(--hard)" : k && dlt < 0 ? "var(--easy)" : "var(--muted)";
+  const C = { race: "var(--race)", hard: "var(--hard)", long: "var(--long)", easy: "var(--easy)" };
+  return `<div class="card b-wk"><div class="b-wk-nav"><button type="button" class="b-arrow" aria-label="Previous week" data-b="prev" ${k === 0 ? 'aria-disabled="true" style="opacity:.35"' : ""}>${ICON.left()}</button>
+      <span class="b-wk-mid"><span class="mono-label" style="font-size:11px;letter-spacing:0.06em">WEEK ${w.n} OF ${n} · ${esc(w.phase.toUpperCase())}</span><span class="b-wk-dates">${esc(w.dates)}</span></span>
+      <button type="button" class="b-arrow" aria-label="Next week" data-b="next" ${k === n - 1 ? 'aria-disabled="true" style="opacity:.35"' : ""}>${ICON.right(16)}</button></div>
+    <div class="b-split"><span class="b-big" style="font-size:26px">${w.km} km</span><span class="meta" style="color:${colour};text-align:right">${esc(delta)}</span></div>
+    <div>${w.sessions.map((r) => `<div class="b-sess"><i style="background:${C[r.kind]}"></i><span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:12px;font-weight:600;color:${C[r.kind]}">${esc(r.type)}</span><span class="b-sess-name">${esc(r.name)}</span></span><span class="b-sess-v">${r.km} km</span></div>`).join("")}</div></div>`;
+}
+
+function whyList(pv) {
+  return `<div class="stack-8"><span class="strong">Why it looks like this</span><div class="card b-list">${pv.whys.map((y, n) =>
+    `<button type="button" class="b-whyrow ${n ? "" : "first"}" data-b="jump" data-v="${y.step}"><span class="stack-tight" style="gap:2px;min-width:0"><span class="mono-label" style="font-size:11px;letter-spacing:0.06em">${esc(y.k)}</span><span class="b-why-t">${esc(y.t)}</span></span>${ICON.right(16, "var(--muted)")}</button>`).join("")}</div></div>`
+    + (pv.checks.length ? `<div class="card amber b-checks"><span class="strong">Worth a look</span>${pv.checks.map((c) => `<span class="b-check">${WARN.replace('width="18" height="18"', 'width="16" height="16"')}${esc(c)}</span>`).join("")}</div>` : "");
+}
+
+function step7() {
+  const p = B.plan || {}, pv = p.preview;
+  if (!pv) return p.failure ? heading("Your plan", "") + amber(esc(p.failure)) : `<div class="skeleton" style="min-height:60px;max-width:70%"></div><div class="skeleton" style="min-height:260px"></div><div class="skeleton"></div>`;
+  return heading(pv.title, pv.sub) + chart(pv) + weekCard(pv)
+    + (desktop() ? "" : whyList(pv))
+    + `<span class="b-disclaim">General guidance for healthy adults, not medical advice. If you're unwell or pregnant, check with a doctor first.</span>`;
+}
+
+function hurtView() {
+  return `<div class="b-centre"><div class="stack" style="gap:10px"><h1 class="b-h1">Get it looked at first</h1>
+    <span class="b-lead">A plan won't help while something hurts. See a physio or your GP, and come back when you can run easy without pain. Your answers are saved.</span></div>
+    <div class="stack-8"><a class="pill tall" href="https://www.csp.org.uk/public-patient/find-physio" target="_blank" rel="noopener">Find a physio near you</a>
+    <a class="pill tall light" href="#/plan">Back to Plan</a></div></div>`;
+}
+
+function summary() {
+  const a = B.answers, now = STEP_OF[B.step] || 0;
+  const races = a.open ? `No race · ${GOALS.find((g) => g[0] === a.open_goal)[1]}`
+    : a.races.filter((r) => r.tier !== "C").sort((x, y) => x.date.localeCompare(y.date)).map((r) => `${r.name} (${r.tier})`).join(" · ") + (a.goal_time ? ` · goal ${a.goal_time}` : "");
+  const amount = (B.plan?.amounts || []).find((o) => o.id === a.amount);
+  const rows = [["1", "Your running", `${a.avg_km} km a week · longest ${a.longest_km} km`], ["2", "Races", races || "None marked"],
+    ["3", "Days", `${a.days} a week · long run ${DOW[a.long_day]}`], ["4", "How much", amount ? amount.t : a.amount === "keep" ? `Around ${a.avg_km} km` : "Build steadily"],
+    ["5", "Injuries", INJURIES.find((x) => x[0] === a.injury)[1]], ["6", "Style", STYLE_OPTS.find((x) => x.id === a.style).t]];
+  return `<span class="strong">Your plan so far</span><div class="card b-list">${rows.map(([s, l, v], k) => { const n = k + 1, done = n < now, cur = n === now;
+    return `<button type="button" class="b-sum ${cur ? "cur" : ""} ${k ? "" : "first"}" data-b="${n <= now ? "jump" : ""}" data-v="${s}" ${n > now ? "disabled" : ""}>
+      <span class="b-sum-dot ${done ? "done" : cur ? "cur" : ""}">${done ? ICON.check(10) : ""}</span><span class="stack-tight" style="gap:2px;min-width:0"><span class="b-sum-l">${esc(l)}</span><span class="meta" style="line-height:1.4">${esc(done || cur ? v : "Not yet")}</span></span></button>`; }).join("")}</div>
+    <span class="meta" style="line-height:1.5">Nothing goes to your watch until the last step.</span>`;
+}
+
+function footer() {
+  const a = B.answers, s = B.step;
+  const light = (l, act, flex = 1) => `<button type="button" class="pill tall light" style="flex:${flex}" data-b="${act}">${esc(l)}</button>`;
+  const out = (l, act, flex = 1) => `<button type="button" class="pill tall" style="flex:${flex}" data-b="${act}">${esc(l)}</button>`;
+  const as = a.races.filter((r) => r.tier === "A").length;
+  const blocked = !a.open && goalRace() && (B.plan?.race_note || B.plan?.too_close);
+  const buttons = { 1: out("That's not right", "edit") + light("Looks right", "next1", 1.2),
+    2: light(as > 1 && !a.open ? "Continue anyway" : "Looks right", "next2").replace("<button", blocked ? "<button disabled" : "<button"),
+    "2c": light("Continue", "next2c"), 3: light("Looks right", "next3"), 4: light("Continue", "next4"), 5: light("Continue", "next5"),
+    6: light("Continue", "next6"), 7: `<button type="button" class="pill tall red" style="flex:1" data-b="send" ${B.plan?.preview ? "" : "disabled"}>Put it on my Garmin</button>` }[s];
+  if (!buttons) return "";
+  return `<div class="b-foot"><div class="b-foot-in"><div class="pills">${buttons}</div>${s === "7" ? `<span class="meta" style="font-size:12.5px;text-align:center">Nothing goes to your watch until you tap this.</span>` : ""}</div></div>`;
+}
+
+function drawBuild() {
+  const s = B.step, n = STEP_OF[s];
+  const body = { 1: step1, 2: step2, "2c": step2c, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, hurt: hurtView }[s]();
+  const head = n ? `<div class="b-progress"><button type="button" class="b-back" aria-label="Back" data-b="back">${ICON.left()}</button>
+      <div class="b-steps" role="progressbar" aria-valuemin="1" aria-valuemax="7" aria-valuenow="${n}" aria-label="Step ${n} of 7">${[1, 2, 3, 4, 5, 6, 7].map((k) => `<span class="${k <= n ? "on" : ""}"></span>`).join("")}</div>
+      <span class="mono-label">${n} of 7</span></div>` : "";
+  const side = desktop() && n ? `<aside class="b-side">${s === "7" && B.plan?.preview ? whyList(B.plan.preview) : s !== "7" ? summary() : ""}</aside>` : "";
+  const y = window.scrollY;
+  $("screen").innerHTML = `<div class="b-wrap ${side ? "with-side" : ""}"><div class="b-main">${head}<div class="b-body">${body}</div></div>${side}</div>${footer()}`;
+  document.body.dataset.screen = "build";
+  if (B.keepScroll) window.scrollTo(0, y);
+  B.keepScroll = false;
+  wireBuild();
+}
+
+function editSheet() {
+  const a = B.answers;
+  const draft = { avg_km: a.avg_km, longest_km: a.longest_km, level: a.level };
+  const body = () => `<span class="b-grip"></span><div class="b-split" style="align-items:center"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Adjust your numbers</span>
+      <button type="button" class="b-close" aria-label="Close" data-close>${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button></div>
+    ${[["avg_km", "Weekly average", "Last 4 weeks"], ["longest_km", "Longest recent run", "Last 6 weeks"]].map(([k, l, sub]) => `<div class="b-split" style="align-items:center">
+      <span class="stack-tight" style="gap:2px"><span class="strong">${l}</span><span class="meta">${sub}</span></span>
+      <div class="b-stepper"><button type="button" aria-label="Less" data-s="${k}" data-d="-1">−</button><span aria-live="polite">${draft[k]} km</span><button type="button" aria-label="More" data-s="${k}" data-d="1">+</button></div></div>`).join("")}
+    <div class="stack-8"><span class="strong">Running regularly for</span>${seg(LEVELS, draft.level, "level", "small")}</div>
+    <span class="meta" style="line-height:1.45">Only changes this plan. Garmin keeps its own numbers.</span>
+    <button type="button" class="pill tall light" data-save>Save</button>`;
+  sheet(body(), (holder, close) => {
+    const dialog = holder.querySelector(".sheet");
+    dialog.setAttribute("aria-label", "Adjust your numbers");
+    const wire = () => {
+      dialog.querySelectorAll("[data-s]").forEach((b) => { b.onclick = () => { const k = b.dataset.s;
+        draft[k] = Math.max(0, Math.min(k === "avg_km" ? 250 : 60, draft[k] + Number(b.dataset.d))); dialog.innerHTML = body(); wire(); dialog.querySelector(`[data-s="${k}"][data-d="${b.dataset.d}"]`).focus(); }; });
+      dialog.querySelectorAll('[data-b="level"]').forEach((b) => { b.onclick = () => { draft.level = b.dataset.v; dialog.innerHTML = body(); wire(); }; });
+      dialog.querySelector("[data-close]").onclick = close;
+      dialog.querySelector("[data-save]").onclick = () => { Object.assign(a, draft); saveAnswers(); close(); drawBuild(); };
+    };
+    wire();
+  });
+}
+
+function addRaceSheet() {
+  let dist = "10k";
+  const min = B.inputs.today;
+  const body = () => `<span class="b-grip"></span><div class="b-split" style="align-items:center"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Add a race</span>
+      <button type="button" class="b-close" aria-label="Close" data-close>${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button></div>
+    <label class="stack-8"><span class="field-label">Name</span><input class="field" id="race-name" maxlength="60" placeholder="Riverside 10K"></label>
+    <label class="stack-8"><span class="field-label">Date</span><input class="field" id="race-date" type="date" min="${min}"></label>
+    <div class="stack-8"><span class="field-label">Distance</span>${seg(DISTS.map(([id, l]) => [id, l]), dist, "dist")}</div>
+    <button type="button" class="pill tall light" data-save>Add it</button>`;
+  sheet(body(), (holder, close) => {
+    const dialog = holder.querySelector(".sheet");
+    dialog.setAttribute("aria-label", "Add a race");
+    dialog.querySelector("#race-name").focus();
+    const wire = () => {
+      dialog.querySelectorAll('[data-b="dist"]').forEach((b) => { b.onclick = () => { dist = b.dataset.v;
+        dialog.querySelectorAll('[data-b="dist"]').forEach((x) => x.setAttribute("aria-checked", String(x.dataset.v === dist))); }; });
+      dialog.querySelector("[data-close]").onclick = close;
+      dialog.querySelector("[data-save]").onclick = () => {
+        const name = dialog.querySelector("#race-name").value.trim(), when = dialog.querySelector("#race-date").value;
+        if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(when) || when < min) { toast("Give the race a name and a date ahead."); return; }
+        const km = DISTS.find((x) => x[0] === dist)[2];
+        const a = B.answers;
+        const id = `u${Date.now()}`;
+        a.races.push({ id, name, date: when, km, meta: `${DISTS.find((x) => x[0] === dist)[1]} · added`, tier: km >= 10 ? "B" : "C" });
+        if (!a.races.some((r) => r.tier === "A") && km >= 10) { a.races.find((r) => r.id === id).tier = "A"; a.open = false; }
+        settle(id); saveAnswers(); close(); drawBuild(); refreshBuild();
+      };
+    };
+    wire();
+  });
+}
+
+function wireBuild() {
+  const bars = $("b-bars");
+  if (bars) bars.onkeydown = (e) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const n = B.plan.preview.weeks.length, k = B.sel ?? 0;
+    B.sel = e.key === "Home" ? 0 : e.key === "End" ? n - 1 : Math.max(0, Math.min(n - 1, k + (e.key === "ArrowLeft" ? -1 : 1)));
+    B.keepScroll = true; drawBuild(); $("b-bars").querySelectorAll("button")[B.sel].focus();
+  };
+}
+
+function buildAction(act, el) {
+  const a = B.answers, v = el.dataset.v;
+  const redraw = (ask) => { saveAnswers(); B.keepScroll = true; drawBuild(); if (ask) refreshBuild(); };
+  switch (act) {
+    case "back": { const prev = PREV_OF[B.step]; if (B.step === "1") location.hash = "#/plan"; else if (B.step === "3") go(a.open ? "2c" : "2"); else go(prev); return; }
+    case "edit": return editSheet();
+    case "next1": return go("2");
+    case "next2": if (!goalRace()) { a.open = true; saveAnswers(); return go("2c"); } a.open = false; saveAnswers(); return go("3");
+    case "next2c": return go("3");
+    case "next3": return go("4");
+    case "next4": return go("5");
+    case "next5": return go(a.injury === "hurts" ? "hurt" : "6");
+    case "next6": return go("7");
+    case "tier": { const r = a.races.find((x) => x.id === el.dataset.id); if (!r) return; r.tier = v; r.demoted = false; if (v === "A") a.open = false; settle(r.id); return redraw(true); }
+    case "fixA": { const r = a.races.find((x) => x.id === el.dataset.id); if (r) { r.tier = "B"; settle(r.id); } return redraw(true); }
+    case "goal": a.goal_time = v === "No time" ? null : v; return redraw(true);
+    case "noRace": a.open = true; saveAnswers(); return go("2c");
+    case "addRace": return addRaceSheet();
+    case "openGoal": a.open_goal = v; return redraw();
+    case "openDist": a.open_distance = v; return redraw();
+    case "days": a.days = Number(v); if (7 - a.out.length < a.days) a.out = a.out.slice(0, 7 - a.days); return redraw();
+    case "out": { const d = Number(v); if (a.out.includes(d)) a.out = a.out.filter((x) => x !== d);
+      else { if (6 - a.out.length < a.days) { toast("That leaves fewer days than you want to run. Pick fewer days first."); return; }
+        a.out = [...a.out, d].sort(); if (a.long_day === d) a.long_day = [6, 5, 0, 1, 2, 3, 4].find((x) => !a.out.includes(x)); }
+      return redraw(); }
+    case "long": a.long_day = Number(v); return redraw();
+    case "amount": a.amount = v; return redraw();
+    case "injury": a.injury = v; if (v !== "none" && a.amount === "more") a.amount = "build"; return redraw();
+    case "style": if (el.getAttribute("aria-disabled") === "true") return; a.style = v; return redraw(v === "pick");
+    case "week": B.sel = Number(v); B.keepScroll = true; drawBuild(); $("b-bars").querySelectorAll("button")[B.sel].focus(); return;
+    case "prev": case "next": { const n = B.plan.preview.weeks.length; B.sel = Math.max(0, Math.min(n - 1, (B.sel ?? 0) + (act === "prev" ? -1 : 1)));
+      B.keepScroll = true; drawBuild(); document.querySelector(`[data-b="${act}"]`).focus(); return; }
+    case "jump": return go(v);
+    case "send": return sendPlan(false);
+    case "retry": return sendPlan(true);
+    case "toPreview": return go("7");
+    case "seePlan": B.inputs = null; B.plan = null; B.job = null; location.hash = "#/plan"; return;
+    default:
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (document.body.dataset.screen !== "build") return;
+  const el = e.target.closest && e.target.closest("#screen [data-b]");
+  if (el && el.dataset.b) buildAction(el.dataset.b, el);
+});
+
+async function sendPlan(retry) {
+  try {
+    B.job = await api("build/send", { method: "POST", body: JSON.stringify({ answers: sendable(), retry }) });
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    return toast(e.message);
+  }
+  go("sending");
+}
+
+function buildSendView(step) {
+  clearTimeout(B.poll);
+  const j = B.job;
+  if (!j) {
+    // Opened fresh on this screen: what the server has of the send, if anything.
+    return api("build/send").then((d) => { if (d.state === "none") location.hash = "#/plan"; else { B.job = d; buildSendView(step); } },
+      (e) => (e instanceof SignedOut ? route() : failed(e.message, () => buildSendView(step))));
+  }
+  const pct = Math.round((j.sent || 0) / Math.max(1, j.total) * 100);
+  let body, foot = "";
+  if (step === "sending") {
+    body = `<div class="b-centre"><div class="stack-8"><span class="kicker">Sending to Garmin</span><h1 class="b-h1">Putting it on your Garmin</h1></div>
+      <div class="stack-8"><div class="b-track" role="progressbar" aria-valuemin="0" aria-valuemax="${j.total}" aria-valuenow="${j.sent || 0}"><span style="width:${pct}%"></span></div>
+      <div class="b-split meta" style="font-size:14px"><span>${j.sent || 0} of ${j.total} sessions</span><span>About a minute</span></div></div>
+      <span class="meta" style="font-size:14px;line-height:1.5">You can leave this screen. It carries on, and Plan shows it when it's done.</span></div>`;
+    B.poll = setTimeout(async () => {
+      try { B.job = await api("build/send"); } catch (e) { if (e instanceof SignedOut) return route(); }
+      if (!location.hash.startsWith("#/build/sending")) return;
+      if (B.job.state === "done") { cache.clear(); try { sessionStorage.removeItem(BUILD_KEY); } catch { /* fine */ } go("done"); }
+      else if (B.job.state === "error") go("error");
+      else buildSendView("sending");
+    }, 900);
+  } else if (step === "done") {
+    body = `<div class="b-centre"><span class="b-done">${ICON.check(26).replace('stroke-width="3.4"', 'stroke-width="3"')}</span><div class="stack-8"><h1 class="b-h1">On your watch at its next sync</h1>
+      <span class="b-lead">${j.total} sessions over ${j.weeks} weeks. ${esc(j.first || "")}</span></div></div>`;
+    foot = `<div class="b-foot"><div class="b-foot-in"><div class="pills"><button type="button" class="pill tall light" data-b="seePlan">See your plan</button></div></div></div>`;
+  } else {
+    body = `<div class="b-centre"><div class="stack-8"><h1 class="b-h1">Garmin didn't take the plan</h1><span class="b-lead">Nothing changed on your watch, and your answers are saved.</span></div>
+      <div class="card amber b-amber">${WARN}<span class="stack-tight" style="gap:4px"><span style="font-size:14.5px;line-height:1.45">${j.sent ? `Garmin was busy and turned it away after ${j.sent} of ${j.total} sessions. Trying again sends the rest.` : "Garmin turned it away before any sessions went on. Try again in a moment."}</span>
+      <span class="mono-label" style="font-size:11.5px">${esc(j.said || "GARMIN DIDN'T ANSWER")}</span></span></div></div>`;
+    foot = `<div class="b-foot"><div class="b-foot-in"><div class="pills"><button type="button" class="pill tall" data-b="toPreview">Back to preview</button><button type="button" class="pill tall light" style="flex:1.2" data-b="retry">Try again</button></div></div></div>`;
+  }
+  $("screen").innerHTML = `<div class="b-wrap"><div class="b-main"><div class="b-body">${body}</div></div></div>${foot}`;
+  document.body.dataset.screen = "build";
+}
+
 // -- routing ------------------------------------------------------------------
 
 async function route(stay) {
@@ -1510,6 +2041,7 @@ async function route(stay) {
   if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return wide ? showPanel("session", arg, params) : showSession(arg, params);
   if (screen === "run" && /^\d+$/.test(arg || "")) return wide ? showPanel("run", arg, params) : showRun(arg, params);
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
+  if (screen === "build") return showBuild(arg);
   if (screen === "crew") return showCrew();
   if (screen === "you") return showYou();
   return showToday();

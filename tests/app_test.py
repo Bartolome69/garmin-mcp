@@ -579,12 +579,67 @@ def extra_checks() -> None:
     check("and on no other day", other == [], str(other))
 
 
+def build_checks() -> None:
+    """Building a plan in the app: hidden outside preview, then the steps, the preview and the send."""
+    import json as _json
+    from datetime import date as _d, timedelta as _td
+
+    email = "builder@example.test"
+    user_token = store.save_user(session_mod.mask_email(email), '{"di_token": "x"}',
+                                 email_hash=store.email_fingerprint(email), email=email)
+    token = secrets.token_urlsafe(32)
+    store.save_oauth_token(token, kind="access", client_id="test", subject=user_token, scopes="",
+                           resource=None, expires_at=int(time.time()) + 3600)
+    auth = {"Authorization": f"Bearer {token}"}
+    os.environ.pop("GARMIN_MCP_PREVIEW", None)
+    with TestClient(hosted.build_app(), base_url="http://localhost") as client:
+        check("building a plan is hidden outside preview", client.get("/app/api/build", headers=auth).status_code == 404)
+        check("and Plan doesn't offer it", "next_block" not in client.get("/app/api/plan", headers=auth).json())
+        os.environ["GARMIN_MCP_PREVIEW"] = "on"
+        try:
+            got = client.get("/app/api/build", headers=auth).json()
+            check("step 1 has four weeks of running and an average", len(got.get("bars") or []) == 4 and "avg_km" in got, str(got)[:200])
+            check("and how often, never a level label", got.get("level_line", "").startswith("Most weeks"), got.get("level_line"))
+            check("Garmin's predictions read as race times", all(":" in p["v"] for p in got.get("predictions") or [{"v": "x"}]),
+                  str(got.get("predictions")))
+            starts = _d.fromisoformat(got["starts"])
+            check("the plan starts on a Monday", starts.weekday() == 0, got["starts"])
+            race_day = starts + _td(weeks=4, days=6)
+            answers = {"avg_km": got["avg_km"], "longest_km": got.get("longest_km") or 10, "level": "regular",
+                       "races": [{"id": "x", "name": "Test 10K", "date": race_day.isoformat(), "km": 10, "tier": "A"}],
+                       "days": 4, "out": [], "long_day": 6, "amount": "build", "injury": "none", "style": "balanced"}
+            plan = client.post("/app/api/build/plan", headers=auth, content=_json.dumps({"answers": answers, "preview": True})).json()
+            pv = plan.get("preview") or {}
+            check("the preview has a week a bar to race day", len(pv.get("weeks") or []) == 5, str(plan)[:300])
+            check("with the race in its last week", (pv.get("weeks") or [{}])[-1].get("race") == "A")
+            check("and goal times to pick from", len(plan.get("chips") or []) == 3, str(plan.get("chips")))
+            hurt = client.post("/app/api/build/plan", headers=auth,
+                               content=_json.dumps({"answers": {**answers, "injury": "hurts"}, "preview": True})).json()
+            check("something that hurts gets no plan", "preview" not in hurt, str(hurt)[:200])
+            before = len(DEMO.scheduled)
+            sent = client.post("/app/api/build/send", headers=auth, content=_json.dumps({"answers": answers})).json()
+            check("sending starts at once", sent.get("state") in ("sending", "done") and sent.get("total") == pv.get("count"), str(sent))
+            for _ in range(100):
+                status = client.get("/app/api/build/send", headers=auth).json()
+                if status.get("state") != "sending":
+                    break
+                time.sleep(0.1)
+            check("and puts every session on the calendar", status.get("state") == "done"
+                  and len(DEMO.scheduled) - before == pv.get("count"), f"{status} {len(DEMO.scheduled) - before}")
+            on_race = [s for s in DEMO.scheduled if s["date"] == race_day.isoformat()]
+            check("with the race on race day", any("Test 10K" in str(s.get("title")) for s in on_race), str(on_race)[:200])
+            check("a send is counted", any(e["properties"].get("ok") for e in posted("app_plan_built")))
+        finally:
+            os.environ.pop("GARMIN_MCP_PREVIEW", None)
+
+
 def main() -> int:
     extra_checks()
     analysis_checks()
     easier_checks()
     api_checks()
     assistant_checks()
+    build_checks()
     print()
     if failures:
         print(f"{len(failures)} failed: {', '.join(failures)}")

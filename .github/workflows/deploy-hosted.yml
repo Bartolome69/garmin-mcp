@@ -82,6 +82,11 @@ jobs:
       - name: Progress matching
         run: python tests/progress_test.py
 
+      # The plan builder's rules: weeks Monday to Sunday ending on race day,
+      # small steps, hard days apart, and every plan one create_plan takes.
+      - name: Plan builder
+        run: python tests/plan_builder_test.py
+
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts
       # in the Training API's shape, against a stubbed Garmin.
       - name: Official API
