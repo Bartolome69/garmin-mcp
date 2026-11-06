@@ -59,7 +59,7 @@ def _raises(fn) -> bool:
         return True
     return False
 analytics._post = SENT.append
-from garmin_mcp import store  # noqa: E402
+from garmin_mcp import oauth, store  # noqa: E402
 from garmin_mcp.session import GarminSession  # noqa: E402
 
 # Each stub reports which account it belongs to, so we can prove one person's
@@ -393,16 +393,41 @@ async def main() -> int:
                 plan_a_off = await call(alice, "get_plan")
                 hosted._PLAN_CALLS.pop(bob, None)
                 plan_b_off = await call(bob, "get_plan")
+                os.environ.pop("GARMIN_MCP_APP_LINK", None)
+
+                async def plan_for(user_token: str) -> dict:
+                    hosted._PLAN_CALLS.pop(user_token, None)
+                    return await call(user_token, "get_plan")
+
+                def offered_days_ago(user_token: str, days: int) -> None:
+                    with store._connect() as conn:
+                        conn.execute("UPDATE users SET app_offered_at = ? WHERE user_token = ?",
+                                     (int(time.time()) - days * 24 * 3600, user_token))
+
+                # Brought up unasked at most once a week, and never to someone
+                # already using the app.
+                again_a = await plan_for(alice)
+                offered_days_ago(alice, 8)
+                week_on_a = await plan_for(alice)
+                offered_days_ago(alice, 8)
+                store.save_oauth_token("app-used-test", kind="refresh", client_id=oauth.APP_CLIENT_ID,
+                                       subject=alice, scopes="", resource=None, expires_at=None)
+                using_a = await plan_for(alice)
+                store.delete_oauth_token("app-used-test")
+                # Outside preview, only once it's switched on for everyone.
+                os.environ["GARMIN_MCP_APP_OFFER"] = "on"
+                offer_b = await plan_for(bob)
             finally:
                 os.environ.pop("GARMIN_MCP_BASE_URL", None)
                 os.environ.pop("GARMIN_MCP_APP_LINK", None)
+                os.environ.pop("GARMIN_MCP_APP_OFFER", None)
                 # Reads after these aren't sent with them, so nothing is held.
                 hosted._PLAN_CALLS.pop(alice, None)
                 hosted._PLAN_CALLS.pop(bob, None)
             app_a = plan_a.get("app") or {}
             app_b = plan_b.get("app") or {}
-            code = str(app_a.get("url", "")).partition("login=")[2]
-            code_b = str(app_b.get("url", "")).partition("login=")[2]
+            code = str(app_a.get("url", "")).partition("login=")[2].partition("&")[0]
+            code_b = str(app_b.get("url", "")).partition("login=")[2].partition("&")[0]
             check("the plan in a chat carries the Daash app's link",
                   str(app_a.get("url", "")).startswith("https://daash.test/app/#/plan?login=")
                   and "Daash app" in str(app_a.get("note")), str(plan_a)[:300])
@@ -411,6 +436,22 @@ async def main() -> int:
                   bool(code_b) and store.take_handoff(code_b) == bob, str(plan_b.get("app")))
             check("switched off, only preview accounts have it",
                   "app" in plan_a_off and "app" not in plan_b_off, str(plan_b_off.get("app")))
+            offer_note, ask_note = garmin_server.APP_OFFER_NOTE, garmin_server.APP_NOTE
+            check("the first time, a preview account's model is asked to mention the app once, and the link says so",
+                  app_a.get("note") == offer_note and str(app_a.get("url", "")).endswith("&from=chat_offer"), str(app_a))
+            check("not for anyone else unless switched on: their link is for when they ask",
+                  app_b.get("note") == ask_note and str(app_b.get("url", "")).endswith("&from=chat"), str(app_b))
+            app_again = again_a.get("app") or {}
+            check("not again the same week", app_again.get("note") == ask_note
+                  and str(app_again.get("url", "")).endswith("&from=chat"), str(app_again))
+            check("a week on, it can be mentioned again", (week_on_a.get("app") or {}).get("note") == offer_note,
+                  str(week_on_a.get("app")))
+            check("never to someone who has used the app in the last two weeks",
+                  (using_a.get("app") or {}).get("note") == ask_note, str(using_a.get("app")))
+            check("GARMIN_MCP_APP_OFFER=on brings it to everyone",
+                  (offer_b.get("app") or {}).get("note") == offer_note, str(offer_b.get("app")))
+            check("each mention is counted", any(e.get("event") == "app_link_offered" for e in SENT),
+                  str([e.get("event") for e in SENT][-10:]))
             check("get_plan's description is unchanged for everyone else: the tool list stays as reviewed",
                   "Daash app" in described[alice]["get_plan"]
                   and "Daash app" not in described[bob]["get_plan"])
