@@ -244,6 +244,8 @@ QUESTIONS = {
 # For someone in no crew yet: crews are how Daash spreads between friends, and
 # two weeks after they launched 3 people had opened one (Nov 2).
 CREW_LINE = "Run with friends? Start a Daash crew and see who's running when, and which runs you could do together."
+# The page that explains crews, for anyone wondering before they start one.
+CREW_PAGE = "https://daash.run/crews?utm_source=weekly-email&utm_medium=email&utm_campaign=crews"
 
 
 def ask_link(app: str, kind: str) -> str:
@@ -298,7 +300,8 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
     parts.append(f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items()))
     crew_links = {} if in_crew else {a: ask(a, "crew") for a in chosen}
     if crew_links:
-        parts.append(CREW_LINE + "\n" + "\n".join(f"{a}: {u}" for a, u in crew_links.items()))
+        parts.append(CREW_LINE + "\n" + "\n".join(f"{a}: {u}" for a, u in crew_links.items())
+                     + f"\nHow crews work: {CREW_PAGE}")
     parts.append(FEEDBACK)
     foot = ("You get this because you connected Daash to your Garmin. "
             f"Stop these emails: {unsubscribe}")
@@ -349,7 +352,7 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
         body += (f"<p style=\"margin:22px 0 0\">{e(CREW_LINE)} "
                  + " · ".join(f"<a href=\"{e(u)}\" style=\"color:#E0312A;font-weight:600\">"
                               f"Start a crew{'' if len(crew_links) == 1 else ' in ' + e(a)}</a>" for a, u in crew_links.items())
-                 + "</p>")
+                 + f" · <a href=\"{e(CREW_PAGE)}\" style=\"color:#5B6270\">How crews work</a></p>")
     page = (
         "<!doctype html><html><body style=\"margin:0;background:#F7F8FA\">"
         "<div style=\"max-width:520px;margin:0 auto;padding:28px 20px;font:16px/1.55 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#161B26\">"

@@ -1276,7 +1276,8 @@ async function showCrew(params = new URLSearchParams()) {
       const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends</h1></header>
         <div class="card pad stack" style="max-width:560px"><span class="strong">You're not in a crew yet.</span>
-        <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}</div>`;
+        <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}
+        <a class="meta" href="https://daash.run/crews?utm_source=app&utm_medium=link&utm_campaign=crews" target="_blank" rel="noopener" style="font-weight:600;color:var(--red-text);text-decoration:none">How crews work</a></div>`;
       return;
     }
     $("screen").innerHTML = crewView(d);
