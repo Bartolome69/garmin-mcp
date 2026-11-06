@@ -1160,7 +1160,7 @@ async function showCrew() {
     if (d.none) {
       const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends</h1></header>
-        <div class="card pad stack"><span class="strong">You're not in a crew yet.</span>
+        <div class="card pad stack" style="max-width:560px"><span class="strong">You're not in a crew yet.</span>
         <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}</div>`;
       return;
     }
@@ -1299,6 +1299,11 @@ async function signInPost(path, body) {
   return out;
 }
 
+// Opened from the home screen: on iPhone that keeps its own storage, so
+// someone signed in in Safari is asked again (Nov 4: two sign-ins a minute apart).
+const homeScreen = () => window.navigator.standalone === true
+  || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+
 function signInView(message, step = "start", email = "") {
   $("tabs").hidden = true;
   $("topbar").hidden = true;
@@ -1333,7 +1338,7 @@ function signInView(message, step = "start", email = "") {
   $("screen").innerHTML = `<div class="signin">${head}
     <h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
     <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>
-    ${note}
+    ${note}${homeScreen() ? `<div class="card pad meta" style="line-height:1.5">On your home screen, Daash keeps its own sign-in, apart from your browser's. Sign in once here and it stays signed in.</div>` : ""}
     <form id="email-form" class="stack"><label class="field-label" for="email">Already use Daash? Your email</label>
       <input id="email" class="field" type="email" autocomplete="email" value="${esc(email)}" required>
       <button class="pill red tall" type="submit">Email me a code</button></form>

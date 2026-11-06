@@ -2243,15 +2243,22 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     return card
 
 
+def app_link_on() -> bool:
+    """Whether the app's link goes to everyone, not only preview accounts."""
+    return os.environ.get("GARMIN_MCP_APP_LINK", "").strip().lower() not in {"0", "off", "false", "no"}
+
+
 def app_link(route: str) -> str | None:
     """The companion app at a route ("plan", "session/2026-11-04"), for a card.
 
-    Preview accounts only, until the app is ready for everyone. It carries a
-    single-use code, so it opens the app already signed in as this person: no
-    second sign-in for someone who uses the connector.
+    For everyone (Nov 6: only preview accounts had it, and nobody else ever
+    reached the app from a chat); GARMIN_MCP_APP_LINK=off takes it back to
+    preview accounts alone. It carries a single-use code, so it opens the app
+    already signed in as this person: no second sign-in for someone who uses
+    the connector.
     """
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    if not base or not preview.enabled():
+    if not base or not (preview.enabled() or app_link_on()):
         return None
     who = official.current()
     login = f"?login={store.new_handoff(who)}" if who else ""
