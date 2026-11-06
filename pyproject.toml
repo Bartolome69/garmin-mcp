@@ -32,6 +32,10 @@ hosted = [
     "uvicorn>=0.30",
     "fitdecode>=0.11",
 ]
+# Only the tests need these: app_test sets the clock to this week's Monday.
+test = [
+    "time-machine>=2.10",
+]
 
 [project.urls]
 Homepage = "https://garmin.daash.run"
