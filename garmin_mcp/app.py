@@ -27,7 +27,8 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, store, training_plan
+from . import analysis, crews, plan_builder, preview, store, training_plan
+from . import plan as plan_mod
 from . import server as server_mod
 from .formatting import drop_empty
 from .server import mcp
@@ -920,13 +921,20 @@ async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
     if _error(plan):
         return {"error": _error(plan)}
     if plan.get("source") == "log":
-        return {"empty": True, "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
+        return drop_empty({"empty": True, "build": preview.enabled() or None, "assistant": assistant(),
+                           "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")})
     anchor = _day_of(week_of) or today
     monday = anchor - timedelta(days=anchor.weekday())
     season = _season(plan)
     weeks = await _season_weeks(plan, season)
+    # Three weeks or less to go: the next block can be planned now (preview).
+    next_block = None
+    if preview.enabled() and season and today <= season["last"] <= today + timedelta(weeks=3):
+        next_block = {"ends": _short_date(season["last"]),
+                      "ask": _ask_links("Use Daash to plan my next training block, starting the Monday after this one ends.")}
     return drop_empty({"today": today.isoformat(), "week": _week_view(plan, weeks, season, monday, today),
-                       "block": _block_view(plan, weeks, season, today), "assistant": assistant()})
+                       "block": _block_view(plan, weeks, season, today), "assistant": assistant(),
+                       "next_block": next_block})
 
 
 # -- the crew: who runs when, and the runs that line up -------------------------
@@ -1360,7 +1368,7 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 
 APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed"}
 # The screens a view can name: the app's own GET routes.
-APP_SCREENS = {"today", "session", "run", "plan", "crew", "you"}
+APP_SCREENS = {"today", "session", "run", "plan", "crew", "you", "build"}
 
 
 def _track(event: str, properties: Mapping[str, Any] | None = None, user_token: str | None = None) -> None:
@@ -1397,7 +1405,8 @@ def _safe(handler):
             _track("app_failed", {"screen": screen, "layout": _layout(request)})
             return _json({"error": "Daash couldn't load this just now. Try again in a moment."}, 500)
         # A screen fetched ahead of a tap (the app warms the other tabs) isn't one opened.
-        if request.method == "GET" and request.headers.get("x-daash-ahead") != "1":
+        polled = request.url.path.endswith("/build/send")
+        if request.method == "GET" and request.headers.get("x-daash-ahead") != "1" and not polled:
             # How long the screen waited for Daash, and on its own thread: the
             # account lookups are reads a screen shouldn't wait for.
             from . import official
@@ -1650,6 +1659,354 @@ async def sign_in_verify(request: Request) -> Response:
         return _json({"error": "That email has no Daash account. Sign in with Garmin instead."}, 401)
     _track("app_signed_in", {"method": "email"}, accounts[-1])
     return _json(_tokens(accounts[-1]))
+
+
+# -- building a plan: the six steps, the preview, and sending it to Garmin ------------------
+# A preview feature. What Garmin knows fills each step in; the plan itself is
+# made by plan_builder from the answers, the same way every time, and nothing
+# is written until "Put it on my Garmin". See docs/plan-engine-spec.md.
+
+# What Garmin knows is read once and kept a few minutes, so each step's answer
+# doesn't wait on Garmin again. Sends are kept while they run, by person.
+_BUILD_KEPT_SECONDS = 15 * 60
+_BUILD_INPUTS: dict[str, tuple[float, dict[str, Any], plan_builder.Fitness]] = {}
+_SENDS: dict[str, dict[str, Any]] = {}
+LEVEL_LINES = {"new": "Most weeks, for a few months", "regular": "Most weeks, for over a year",
+               "exp": "Most weeks, for years"}
+RACE_NAME_RE = re.compile(r"\brace\b|parkrun|\b5k\b|\b10k\b|half|marathon", re.IGNORECASE)
+PREDICTION_LABELS = (("5k", "5K"), ("10k", "10K"), ("half_marathon", "Half"), ("marathon", "Marathon"))
+
+
+class BuildUnavailable(Exception):
+    pass
+
+
+def _runs(activities: Any) -> list[dict[str, Any]]:
+    """Runs, newest first, each with its day, km and seconds."""
+    found = []
+    for a in activities or []:
+        day = training_plan._day(a.get("startTimeLocal"))
+        key = (a.get("activityType") or {}).get("typeKey")
+        if not day or plan_mod.category(key or "") != "run":
+            continue
+        found.append({"day": day, "km": float(a.get("distance") or 0) / 1000,
+                      "secs": float(a.get("movingDuration") or a.get("duration") or 0),
+                      "name": str(a.get("activityName") or ""),
+                      "race": ((a.get("eventType") or {}).get("typeKey") == "race")
+                      or bool(RACE_NAME_RE.search(str(a.get("activityName") or "")))})
+    return sorted(found, key=lambda r: r["day"], reverse=True)
+
+
+def _level(runs: list[dict[str, Any]], today: date) -> str:
+    """New, regular or experienced, from how many weeks had a run, and how big the biggest month was."""
+    monday = today - timedelta(days=today.weekday())
+    weeks = {(monday - (r["day"] - timedelta(days=r["day"].weekday()))).days // 7 for r in runs}
+    last_year = sum(1 for w in weeks if 1 <= w <= 52)
+    two_years = sum(1 for w in weeks if 1 <= w <= 104)
+    by_week: dict[int, float] = {}
+    for r in runs:
+        w = (monday - (r["day"] - timedelta(days=r["day"].weekday()))).days // 7
+        by_week[w] = by_week.get(w, 0) + r["km"]
+    best_month = max((sum(by_week.get(w + k, 0) for k in range(4)) / 4 for w in range(1, 101)), default=0)
+    if two_years >= 75 and best_month >= 40:
+        return "exp"
+    if last_year >= 30:
+        return "regular"
+    return "new"
+
+
+def _mode(values: list[int]) -> int | None:
+    return max(set(values), key=lambda v: (values.count(v), -v)) if values else None
+
+
+def _race_meta(e: Mapping[str, Any], primary: bool) -> str:
+    km = e.get("distance_km")
+    words = {5.0: "5 km", 10.0: "10 km", 21.1: "Half marathon", 42.2: "Marathon"}.get(
+        round(km, 1) if km else None, f"{km:g} km" if km else "Distance not set")
+    return f"{words} · Garmin's main race" if primary else words
+
+
+async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitness]:
+    """Step 1's numbers and step 2's races, from Garmin, kept for a few minutes."""
+    from . import official
+
+    who = official.current() or "local"
+    kept = _BUILD_INPUTS.get(who)
+    if kept and time.time() - kept[0] < _BUILD_KEPT_SECONDS:
+        return kept[1], kept[2]
+    this_monday = today - timedelta(days=today.weekday())
+    first = this_monday - timedelta(weeks=104)
+    activities, fitness, months, plan = await asyncio.gather(
+        server_mod._call(lambda c: c.get_activities_by_date(first.isoformat(), today.isoformat())),
+        server_mod.get_fitness(),
+        server_mod._calendar_months(today, today + timedelta(weeks=training_plan.RACE_WEEKS_AHEAD)),
+        server_mod.get_plan(),
+        return_exceptions=True)
+    activities = activities if isinstance(activities, list) else []
+    fitness = fitness if isinstance(fitness, dict) and not _error(fitness) else {}
+    months = months if isinstance(months, list) else []
+    plan = plan if isinstance(plan, dict) and not _error(plan) else {}
+    runs = _runs(activities)
+
+    weeks = training_plan.weekly_run_km(activities, this_monday, 4)
+    avg = round(sum(w["run_km"] for w in weeks) / 4)
+    recent = [r for r in runs if r["day"] >= this_monday - timedelta(weeks=6)]
+    longest = max(recent, key=lambda r: r["km"], default=None)
+    raced = next((r for r in runs if r["race"] and r["km"] >= 3 and r["secs"]
+                  and r["day"] >= today - timedelta(weeks=12)), None)
+    per_week = sorted(w["runs"] for w in weeks)
+    days = min(6, max(3, per_week[len(per_week) // 2] if per_week else 3))
+    eight = [r for r in runs if r["day"] >= this_monday - timedelta(weeks=8)]
+    usual = [d for d, _ in sorted(((d, sum(1 for r in eight if r["day"].weekday() == d)) for d in range(7)),
+                                  key=lambda x: -x[1]) if _ > 0]
+    longs = []
+    for w in range(6):
+        start = this_monday - timedelta(weeks=w + 1)
+        inside = [r for r in runs if start <= r["day"] < start + timedelta(days=7)]
+        if inside:
+            longs.append(max(inside, key=lambda r: r["km"])["day"].weekday())
+    parkruns = [r["day"].weekday() for r in eight if "parkrun" in r["name"].lower()]
+
+    predictions = {}
+    for key, _ in PREDICTION_LABELS:
+        found = ((fitness.get("race_predictions") or {}).get(key) or {}).get("time")
+        if plan_builder.parse_time(found):
+            predictions[{"half_marathon": "half"}.get(key, key)] = plan_builder.parse_time(found)
+    lt = fitness.get("lactate_threshold") or {}
+    fit = plan_builder.Fitness(
+        predictions=predictions, threshold_pace=plan_builder.parse_time(lt.get("pace_per_km")),
+        threshold_hr=int(lt["heart_rate_bpm"]) if lt.get("heart_rate_bpm") else None,
+        recent_race={"name": "parkrun" if "parkrun" in raced["name"].lower() else raced["name"][:40] or "Race",
+                     "date": raced["day"].isoformat(), "km": round(raced["km"], 2), "secs": raced["secs"]} if raced else None)
+
+    events = training_plan.calendar_events(months, today, today + timedelta(weeks=training_plan.RACE_WEEKS_AHEAD))
+    primary = next((e for e in events if e.get("primary")), None)
+    if primary is None:
+        big = [e for e in events if (e.get("distance_km") or 0) >= 10]
+        primary = big[-1] if big else None
+    races = []
+    for i, e in enumerate(events):
+        km = e.get("distance_km") or 0
+        tier = "A" if e is primary else "B" if km >= 10 else "C"
+        races.append({"id": f"g{i}", "name": e["name"], "date": e["date"], "km": km or 5,
+                      "meta": _race_meta(e, bool(e.get("primary"))), "tier": tier})
+
+    # A plan running now: the next block starts the Monday after it ends.
+    season = _season(plan) if plan.get("current_plan") or plan.get("upcoming_plan") else None
+    starts = plan_builder.first_monday(today)
+    after = None
+    if season and season["last"] >= today:
+        starts = season["last"] + timedelta(days=7 - season["last"].weekday())
+        after = season["last"]
+    inputs = drop_empty({
+        "avg_km": avg, "longest_km": round(longest["km"]) if longest else 0,
+        "longest_on": _short_date(longest["day"]) if longest else None,
+        "bars": [{"l": f"{date.fromisoformat(w['starts']).day} {MONTHS[date.fromisoformat(w['starts']).month - 1].upper()}",
+                  "v": round(w["run_km"])} for w in weeks],
+        "recent": {"name": fit.recent_race["name"], "on": _short_date(raced["day"]),
+                   "time": plan_builder.clock(raced["secs"])} if raced else None,
+        "days": days, "level": _level(runs, today),
+        "predictions": [{"l": label, "v": plan_builder.clock(predictions[{"half_marathon": "half"}.get(key, key)])}
+                        for key, label in PREDICTION_LABELS if {"half_marathon": "half"}.get(key, key) in predictions] or None,
+        "races": races, "usual_days": usual[:6],
+        "long_day": _mode(longs) if longs else 6, "parkrun_day": _mode(parkruns) if len(parkruns) >= 3 else None,
+        "faster_ok": bool(fit.threshold_hr), "starts": starts.isoformat(),
+        "after": after.isoformat() if after else None,
+        "after_said": _short_date(after) if after else None,
+        "thin": not runs or runs[-1]["day"] > today - timedelta(weeks=4) or None,
+    })
+    inputs["level_line"] = LEVEL_LINES[inputs["level"]]
+    _BUILD_INPUTS[who] = (time.time(), inputs, fit)
+    return inputs, fit
+
+
+def _answers(body: Any, inputs: Mapping[str, Any]) -> plan_builder.Answers:
+    raw = (body or {}).get("answers") if isinstance(body, dict) else None
+    if not isinstance(raw, dict):
+        raise plan_builder.BuildError("Send the answers.")
+    return plan_builder.Answers.from_json({**raw, "after_plan": bool(inputs.get("after"))})
+
+
+async def build_payload() -> dict[str, Any]:
+    if not preview.enabled():
+        raise BuildUnavailable()
+    today = date.today()
+    inputs, _ = await _build_inputs(today)
+    return {**inputs, "today": today.isoformat(), "assistant": assistant(),
+            "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
+
+
+async def build_plan_payload(body: Any) -> dict[str, Any]:
+    """What a step needs from the answers so far: goal times, the amounts, and the whole preview."""
+    if not preview.enabled():
+        raise BuildUnavailable()
+    today = date.today()
+    inputs, fit = await _build_inputs(today)
+    a = _answers(body, inputs)
+    starts = date.fromisoformat(inputs["starts"])
+    out: dict[str, Any] = {"faster_ok": plan_builder.faster_allowed(a, fit)}
+    goal = plan_builder.goal_race(a)
+    if goal:
+        out["chips"] = [c["time"] for c in plan_builder.goal_chips(goal.dist, goal.km, fit)]
+        out["verdict"] = plan_builder.goal_verdict(plan_builder.goal_secs(a.goal_time, goal.dist), goal.dist, goal.km, fit)
+        weeks_to = (goal.day - starts).days // 7 + 1
+        out["too_close"] = weeks_to < plan_builder.MIN_WEEKS or None
+        # After a plan running now, the next block can't reach a race before it starts;
+        # and Garmin's calendar takes sessions up to 30 weeks ahead.
+        horizon = today + timedelta(weeks=training_plan.MAX_WEEKS_AHEAD)
+        if goal.day < starts and inputs.get("after"):
+            out["race_note"] = f"The next block starts {_short_date(starts)}, after the plan you're on. Pick a race after that."
+        elif goal.day > horizon:
+            out["race_note"] = (f"Garmin takes sessions up to 30 weeks ahead, so a plan can reach races until "
+                                f"{_short_date(horizon)}. Come back nearer the time for this one.")
+    if a.style == "pick":
+        out["picked"] = plan_builder.pick_style(a, fit)[1]
+    if a.injury == "hurts" or (goal and (out.get("too_close") or out.get("race_note"))):
+        return out
+    try:
+        s = plan_builder.shape(a, today, starts)
+    except plan_builder.BuildError as exc:
+        return {**out, "problem": str(exc)}
+    out["amounts"] = plan_builder.amounts(a, s)
+    if (body or {}).get("preview"):
+        out["preview"] = plan_builder.preview(a, fit, today, starts, inputs.get("usual_days") or (),
+                                              inputs.get("parkrun_day"))
+    return out
+
+
+def _free_label(goal: str, taken: set[str]) -> str:
+    base = training_plan.normalise_label(None, goal)
+    for label in [base, *(base[:2] + str(n) for n in range(2, 10)), *(f"B{n}" for n in range(1, 10))]:
+        if label not in taken:
+            return label
+    return base
+
+
+async def _send(who: str, args: dict[str, Any], resume: bool) -> None:
+    job = _SENDS[who]
+    done_before = job.get("created") or []
+
+    def progress(created: list[dict[str, Any]], total: int) -> None:
+        job["sent"] = len(done_before) + len(created)
+        job["created"] = done_before + list(created)
+
+    progress_token = server_mod.plan_progress.set(progress)
+    resume_token = server_mod.plan_resume.set(resume)
+    try:
+        result = await server_mod.create_plan(**args)
+    except Exception as exc:  # noqa: BLE001 - shown as Garmin's answer, never a crash
+        log.warning("plan builder send failed", exc_info=True)
+        result = {"error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        server_mod.plan_resume.reset(resume_token)
+        server_mod.plan_progress.reset(progress_token)
+    if isinstance(result, dict) and result.get("error"):
+        log.warning("plan builder: the plan wasn't taken: %s", result["error"])
+        job.update(state="error", said=_garmin_said(str(result["error"])))
+    else:
+        job.update(state="done", sent=job["total"])
+    _track("app_plan_built", drop_empty({"ok": job["state"] == "done", "weeks": job.get("weeks"),
+                                         "sessions": job["total"], "resumed": resume or None}), who)
+
+
+def _garmin_said(error: str) -> str:
+    if "429" in error or "Too Many" in error:
+        return "GARMIN · 429 TOO MANY REQUESTS"
+    found = re.search(r"\b([45]\d\d)\b", error)
+    return f"GARMIN · {found.group(1)}" if found else "GARMIN DIDN'T ANSWER"
+
+
+async def build_send(body: Any) -> dict[str, Any]:
+    """Put the plan on the calendar, in the background: the app asks how it's going."""
+    from . import official
+
+    if not preview.enabled():
+        raise BuildUnavailable()
+    who = official.current() or "local"
+    job = _SENDS.get(who)
+    if job and job.get("state") == "sending":
+        return _send_status(job)
+    today = date.today()
+    inputs, fit = await _build_inputs(today)
+    a = _answers(body, inputs)
+    starts = date.fromisoformat(inputs["starts"])
+    args = plan_builder.create_args(a, fit, today, starts, inputs.get("usual_days") or ())
+    sessions = args["sessions"]
+    if not sessions:
+        raise plan_builder.BuildError("This plan has no sessions to send.")
+    resume = bool((body or {}).get("retry")) and job is not None and job.get("state") == "error" and job.get("label")
+    if resume:
+        sent = {(c.get("date"), c.get("name")) for c in job.get("created") or []}
+        args["sessions"] = [x for x in sessions if (x["date"], training_plan.tagged(x["name"], job["label"])) not in sent
+                            and (x["date"], x["name"]) not in sent]
+        args["label"] = job["label"]
+        job.update(state="sending", said=None)
+    else:
+        first, last = date.fromisoformat(sessions[0]["date"]), date.fromisoformat(sessions[-1]["date"])
+        taken = set(training_plan.plans_in(await server_mod._plan_calendar(first, last)))
+        args["label"] = _free_label(args["goal"], taken)
+        weeks = (date.fromisoformat(sessions[-1]["date"]) - starts).days // 7 + 1
+        first_row = plan_builder.preview(a, fit, today, starts, inputs.get("usual_days") or ())["first"]
+        job = _SENDS[who] = {"state": "sending", "sent": 0, "total": len(sessions), "label": args["label"],
+                             "weeks": weeks, "first": first_row, "created": []}
+    asyncio.create_task(_send(who, args, bool(resume)))
+    _BUILD_INPUTS.pop(who, None)
+    return _send_status(job)
+
+
+def _send_status(job: Mapping[str, Any]) -> dict[str, Any]:
+    return drop_empty({"state": job["state"], "sent": job.get("sent", 0), "total": job["total"],
+                       "weeks": job.get("weeks"), "first": job.get("first"), "said": job.get("said")})
+
+
+async def build_send_status() -> dict[str, Any]:
+    from . import official
+
+    if not preview.enabled():
+        raise BuildUnavailable()
+    job = _SENDS.get(official.current() or "local")
+    return _send_status(job) if job else {"state": "none"}
+
+
+@mcp.custom_route(API_PREFIX + "build", methods=["GET"])
+@_safe
+async def api_build(request: Request) -> Response:
+    try:
+        return _json(await build_payload())
+    except BuildUnavailable:
+        return _json({"error": "Building a plan here isn't open yet."}, 404)
+
+
+@mcp.custom_route(API_PREFIX + "build/plan", methods=["POST"])
+@_safe
+async def api_build_plan(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    try:
+        return _json(await build_plan_payload(body))
+    except BuildUnavailable:
+        return _json({"error": "Building a plan here isn't open yet."}, 404)
+    except plan_builder.BuildError as exc:
+        return _json({"error": str(exc)}, 400)
+
+
+@mcp.custom_route(API_PREFIX + "build/send", methods=["GET", "POST"])
+@_safe
+async def api_build_send(request: Request) -> Response:
+    try:
+        if request.method == "GET":
+            return _json(await build_send_status())
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        return _json(await build_send(body))
+    except BuildUnavailable:
+        return _json({"error": "Building a plan here isn't open yet."}, 404)
+    except plan_builder.BuildError as exc:
+        return _json({"error": str(exc)}, 400)
 
 
 # The web app's own files, registered last so the API's routes match first.

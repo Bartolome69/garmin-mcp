@@ -2949,6 +2949,13 @@ async def _calendar_months(start: date_cls, end: date_cls) -> list[Any]:
     return payloads
 
 
+# The app's plan builder watches a plan go onto the calendar session by session,
+# and after Garmin turns one away part way, sends the rest under the same code.
+plan_progress: ContextVar["Callable[[list[dict[str, Any]], int], None] | None"] = ContextVar(
+    "daash_plan_progress", default=None)
+plan_resume: ContextVar[bool] = ContextVar("daash_plan_resume", default=False)
+
+
 @_app_tool(PLAN_VIEW)
 @tool_errors
 async def create_plan(
@@ -3013,7 +3020,7 @@ async def create_plan(
     checked = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
 
     existing = training_plan.plans_in(await _plan_calendar(first, last))
-    if code in existing:
+    if code in existing and not plan_resume.get():
         return {
             "error": (
                 f"Plan code {code} is already on the calendar between "
@@ -3068,6 +3075,9 @@ async def create_plan(
                 }
             )
         )
+        report = plan_progress.get()
+        if report:
+            report(created, len(prepared))
 
     weeks = (plan.monday_of(last) - plan.monday_of(first)).days // 7 + 1
     summary = {

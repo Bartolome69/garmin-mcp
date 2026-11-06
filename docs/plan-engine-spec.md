@@ -28,7 +28,7 @@ Each step is pre-filled where Garmin knows the answer, so most are one tap. Clau
    - The plan records "gentle start", never the injury.
 6. **Style.** Steady, Balanced, Faster or Pick for me (section 4).
 
-Then a preview: weekly distance as bars with the phases and races marked, each week's key session, and one line of reasoning per choice ("Long run tops out at 20 km: enough for a half, in 2 km steps from your 12 km"). "Put it on my Garmin" calls `create_plan`. Nothing is written before that tap. The safety copy (section 10) shows before step 1.
+Then a preview: weekly distance as bars with the phases and races marked, each week's key session, and one line of reasoning per choice ("Long run tops out at 20 km: enough for a half, in 2 km steps from your 12 km"). "Put it on my Garmin" calls `create_plan`. Nothing is written before that tap. The safety copy (section 10) is a line under the preview, not a screen of its own before step 1: a screen whose only action is "I understand" teaches people to tap past warnings, and step 5 already stops anyone who is hurt.
 
 ## 2. Inputs
 
