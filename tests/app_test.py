@@ -26,8 +26,9 @@ SCRATCH.mkdir(parents=True, exist_ok=True)
 # The demo's week falls on fixed weekdays around today, and these checks
 # follow its Monday interval session, so the clock is set to this week's
 # Monday morning before anything reads it (Nov 3: run on a Tuesday, seven
-# checks failed). time-machine is a test-only package:
-#     .venv/bin/pip install time-machine
+# checks failed). time-machine is a test-only package, in the "test" extra:
+#     uv pip install --python .venv/bin/python time-machine
+# Without it, a run late in the week failed six checks (Nov 6).
 try:
     import time_machine
     from datetime import date as _date, datetime as _datetime, timedelta as _td, timezone as _tz
@@ -36,7 +37,7 @@ try:
     time_machine.travel(_datetime(_monday.year, _monday.month, _monday.day, 9, 0, tzinfo=_tz.utc), tick=True).start()
 except ImportError:
     print("time-machine isn't installed, so this runs on today's date, and some checks only hold on a Monday:\n"
-          "    .venv/bin/pip install time-machine")
+          "    uv pip install --python .venv/bin/python time-machine")
 
 from cryptography.fernet import Fernet  # noqa: E402
 
