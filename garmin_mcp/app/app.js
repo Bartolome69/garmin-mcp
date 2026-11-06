@@ -865,18 +865,20 @@ function moveSheet(day, sid, name) {
 // -- Plan: the week, with hold to move, and the block ---------------------------
 
 function planRow(r, day, first) {
-  const href = r.state === "done" && r.activity_id ? `#/run/${r.activity_id}?from=plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan`;
-  const mark = r.state === "done" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
+  // A run not on the plan opens as a run; it has no session of its own to open.
+  const href = (r.state === "done" || r.state === "extra") && r.activity_id ? `#/run/${r.activity_id}?from=plan`
+    : r.state === "extra" ? `#/plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan`;
+  const mark = r.state === "done" || r.state === "extra" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
     : r.state === "next" ? `<span class="ring" style="width:14px;height:14px"></span>`
     : r.missed ? `<span class="miss-ring" style="width:12px;height:12px"></span>` : "";
   return `<a class="plan-row ${first ? "" : "same-day"} ${r.state === "next" ? "is-next" : ""}" href="${href}" data-date="${day.date}" draggable="false"
       data-sid="${r.schedule_id || ""}" ${r.movable ? 'data-movable="1"' : ""} data-name="${esc(r.name)}">
     <span class="day ${first ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
     <span class="body"><span class="type c-${esc(r.colour)}">${mark}${esc(r.type_label)}</span>
-      <span class="name ${r.state === "done" ? "dim" : ""}">${esc(r.name)}</span>
+      <span class="name ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.name)}</span>
       ${r.meta ? `<span class="meta ${r.state === "next" ? "red" : r.missed ? "soft" : ""}">${esc(r.meta)}</span>` : ""}
       ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
-    <span class="val ${r.state === "done" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span></a>`;
+    <span class="val ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span></a>`;
 }
 
 function weekView(d) {

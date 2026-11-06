@@ -1404,6 +1404,7 @@ def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequenc
             "actual_km": row.get("actual_km"),
             "actual": duration(row.get("actual_seconds")),
             "actual_min": round(row["actual_seconds"] / 60) if row.get("actual_seconds") else None,
+            "activity_id": row.get("activity_id"),
         })
         for row in extra
         if start <= date.fromisoformat(row["date"]) < end

@@ -263,6 +263,7 @@ def match(
             "sport": leftover.sport,
             "actual_seconds": leftover.seconds or None,
             "actual_km": round(leftover.metres / 1000, 2) if leftover.metres else None,
+            **({"activity_id": leftover.activity_id} if leftover.activity_id else {}),
             **({"ride": True} if leftover.ride else {}),
             **({"kind": leftover.kind} if leftover.kind else {}),
         })
