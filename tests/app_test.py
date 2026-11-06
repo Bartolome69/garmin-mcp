@@ -381,6 +381,14 @@ def api_checks() -> None:
           not re.search(r"/km|bpm|\"km\"|pace|heart", text.replace("never pace, heart rate", "")), text[:80])
     check("a hard run is never a match", not any(s.get("match") and s.get("kind") == "hard"
                                               for p in crew["people"] for c in p["cells"] for s in c["segs"]))
+    # Nov 6: next week too, the other week a crew keeps.
+    nxt = client.get("/app/api/crew?week=next", headers=auth).json()
+    from datetime import date as _d, timedelta as _t
+    next_monday = _d.today() - _t(days=_d.today().weekday()) + _t(weeks=1)
+    check("the crew's next week, on asking", not nxt.get("error") and nxt.get("showing") == "next"
+          and crew.get("showing") == "this" and len(nxt.get("people") or []) == 6
+          and f"{next_monday.day} {app_routes.MONTHS[next_monday.month - 1]}".upper() in nxt.get("kicker", ""),
+          str({k: nxt.get(k) for k in ("error", "showing", "kicker", "headline")}))
     check("Today's crew line agrees", client.get("/app/api/today", headers=auth).json().get("crew", {}).get("date")
           == crew["hero"]["date"])
 

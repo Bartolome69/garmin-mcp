@@ -149,7 +149,7 @@ function decode(url) {
     console.log("the Daash app's link");
     // Nov 6: everyone's plan card, not only the redesign preview accounts see.
     const APP = "https://daash.test/app/#/plan?login=abc";
-    ({ page, card } = await open({ ...PLAN, app: { url: APP, note: "x" } }));
+    ({ page, card } = await open({ ...PLAN, app: { url: APP, note: "x" }, _card: SEEN }));
     let app = await card.evaluate(() => {
       const b = [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash");
       const title = document.querySelector(".head .title"), doc = document.documentElement;
@@ -162,6 +162,9 @@ function decode(url) {
     await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash").click());
     await page.waitForTimeout(200);
     check("and opens the app's link", (await page.evaluate(() => window.opened)) === APP, String(await page.evaluate(() => window.opened)));
+    const taps = pings.filter((p) => p.body.tap);
+    check("and says it was tapped, and that the link opened, on the card's own link",
+      taps.length === 1 && taps[0].url === SEEN && taps[0].body.tap === "open_in_daash" && taps[0].body.opened === true, JSON.stringify(taps));
     await page.close();
     pings.length = 0;
 

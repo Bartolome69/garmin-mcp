@@ -1202,7 +1202,11 @@ function face(f, size = 30, ring = "var(--surface)") {
 }
 
 function crewParts(d, desk = false) {
-  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" ${desk ? 'style="font-size:28px"' : ""}>${esc(d.headline)}</h1></header>` };
+  // This week or next: the two weeks a crew keeps.
+  const next = d.showing === "next";
+  const weeks = `<nav class="segmented" aria-label="Crew week"><a href="#/crew" class="${next ? "" : "on"}" ${next ? "" : 'aria-current="page"'}>This week</a>
+    <a href="#/crew?week=next" class="${next ? "on" : ""}" ${next ? 'aria-current="page"' : ""}>Next week</a></nav>`;
+  const p = { head: `<header class="stack" style="gap:12px"><span class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" ${desk ? 'style="font-size:28px"' : ""}>${esc(d.headline)}</h1></span>${weeks}</header>` };
   if (d.hero) {
     const h = d.hero;
     p.hero = `<section class="card red" style="gap:12px" aria-label="Your best match this week">
@@ -1262,10 +1266,11 @@ function crewView(d) {
   return [p.head, p.hero, p.also, p.grid, p.invite].filter(Boolean).join("");
 }
 
-async function showCrew() {
+async function showCrew(params = new URLSearchParams()) {
   tabs("crew");
   base = "crew";
-  return show("crew", (d) => {
+  const next = params.get("week") === "next";
+  return show(next ? "crew?week=next" : "crew", (d) => {
     remember(d);
     if (d.none) {
       const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
@@ -1280,7 +1285,7 @@ async function showCrew() {
       try { await navigator.clipboard.writeText(copy.dataset.value); toast(copy.textContent.includes("link") ? "Link copied." : "Code copied."); }
       catch { toast("Couldn't copy. Press and hold the link to copy it."); }
     };
-  }, (e) => failed(e.message, showCrew));
+  }, (e) => failed(e.message, () => showCrew(params)));
 }
 
 // -- You: the watch, the doors, settings and data -------------------------------
@@ -1510,7 +1515,7 @@ async function route(stay) {
   if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return wide ? showPanel("session", arg, params) : showSession(arg, params);
   if (screen === "run" && /^\d+$/.test(arg || "")) return wide ? showPanel("run", arg, params) : showRun(arg, params);
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
-  if (screen === "crew") return showCrew();
+  if (screen === "crew") return showCrew(params);
   if (screen === "you") return showYou();
   return showToday();
 }

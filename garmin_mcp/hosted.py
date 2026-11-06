@@ -686,6 +686,33 @@ PERMISSION_TIP = (
 )
 # For the model, with the tip, on someone's first answer: their first chat is
 # where gathering everything at once is most tempting, and slowest.
+# A crew is how Daash spreads between friends, and in its first three weeks
+# five people joined one (Nov 6): nothing in a chat ever mentioned it. So
+# once, to someone settled in (connected three days or more) and in no crew,
+# on a plan answer late in the week, when weekend runs are coming up.
+CREW_OFFER = (
+    "Once, as one short line at the end of your reply, ask whether they'd like to start a "
+    "Daash crew: the friends they run with see who's running when and which easy and long "
+    "runs they could do together (days and times only, never pace, heart rate or routes). "
+    "If they say yes, start it with join_crew (start_new_crew) and give them the invite to "
+    "send. If not, leave it: don't bring it up again."
+)
+CREW_OFFER_AFTER_DAYS = 3
+CREW_OFFER_WEEKDAYS = {3, 4, 5, 6}  # Thursday to Sunday
+
+
+def _crew_offer_due(user: store.User, crew_key: str, today: date | None = None) -> bool:
+    today = today or date.today()
+    if today.weekday() not in CREW_OFFER_WEEKDAYS:
+        return False
+    if time.time() - (user.created_at or 0) < CREW_OFFER_AFTER_DAYS * 86400:
+        return False
+    try:
+        return not crews.in_crew(crew_key)
+    except Exception:  # noqa: BLE001 - an offer is never a reason to fail an answer
+        return False
+
+
 WELCOME = (
     "For you, not to repeat: this person has only just connected Daash. Get to "
     "know where they are before anything else. For a question about their "
@@ -926,6 +953,17 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
                 {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
             )
             return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
+        if (
+            name == "get_plan" and isinstance(result, dict) and "error" not in result
+            and _crew_offer_due(user, crew_key) and store.claim_crew_offer(user_token)
+        ):
+            email = store.email_for(user_token)
+            analytics.capture(
+                "crew_offer_shown",
+                user.email_hash or user_token,
+                {"account": user.email_masked, **({"email": email} if email else {})},
+            )
+            return {**result, "crew_offer": CREW_OFFER}
         return result
     return after
 
@@ -2577,6 +2615,8 @@ async def unsubscribe(request: Request) -> Response:
 # reported is one that didn't appear.
 CARD_TOOLS = {"get_plan", "get_progress", "create_plan", "get_session"}
 _CARD_SEEN_LONGEST = 4000
+# The card buttons whose taps are counted.
+CARD_TAPS = {"open_in_daash"}
 
 
 def card_signature(email_hash: str, view: str) -> str:
@@ -2608,6 +2648,17 @@ async def card_seen(request: Request) -> Response:
     except ValueError:
         said = {}
     said = said if isinstance(said, dict) else {}
+    # A button tapped on the card (Open in Daash), on the same link: counted
+    # apart from the card being drawn, and as often as it's tapped.
+    if said.get("tap") in CARD_TAPS:
+        analytics.capture("card_tapped", fingerprint, drop_empty({
+            "view": view,
+            "card": _clip(said.get("card"), 20),
+            "tap": said["tap"],
+            "opened": said.get("opened") is True,
+            "app": _clip(said.get("host"), 120),
+        }))
+        return Response(status_code=204)
     ms = said.get("ms")
     analytics.capture("card_shown", fingerprint, drop_empty({
         "view": view,
@@ -3129,9 +3180,14 @@ _CREW_PAGE_HEADERS = {
     ),
 }
 CREW_PAGE_PROMO = {
-    "text": "Got a Garmin? Daash fills in your runs for you.",
-    "link": "Try Daash",
+    "kicker": "Daash",
+    "heading": "Got a Garmin? Let Daash fill in your runs.",
+    "text": ("Daash is a free running coach in Claude or ChatGPT. It plans your training, puts every "
+             "session on your watch, and adds your easy and long runs to the crew for you."),
+    "link": "Get Daash, free",
     "url": "https://daash.run/?utm_source=crew-page&utm_medium=link&utm_campaign=crews",
+    "more": "How crews work",
+    "more_url": "https://daash.run/crews?utm_source=crew-page&utm_medium=link&utm_campaign=crews",
 }
 
 

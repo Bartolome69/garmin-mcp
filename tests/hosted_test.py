@@ -1296,6 +1296,32 @@ async def main() -> int:
               list(hosted._TIMINGS) == ["get_readiness"], str(hosted._TIMINGS))
         tips = [e for e in events if e["event"] == "permission_tip_shown"]
         check("showing the tip is counted once", len(tips) == 1, str(len(tips)))
+        # Nov 6: a crew, offered once in a chat, to someone settled in and in no crew,
+        # late in the week; after the tip and the news, never with them.
+        import dataclasses as _dc
+        from datetime import date as _cd
+        settled = _dc.replace(store.get_user(news_user), created_at=int(time.time()) - 5 * 86400)
+        fresh = _dc.replace(settled, created_at=int(time.time()) - 3600)
+        from garmin_mcp import crews as _crews
+        key = _crews.member_key(news_user, settled.email_hash)
+        thursday, tuesday = _cd(2026, 11, 5), _cd(2026, 11, 3)
+        check("a crew is offered late in the week to someone settled in and in no crew, not early in the week or to someone new",
+              hosted._crew_offer_due(settled, key, thursday) and not hosted._crew_offer_due(settled, key, tuesday)
+              and not hosted._crew_offer_due(fresh, key, thursday))
+        weekdays, hosted.CREW_OFFER_WEEKDAYS = hosted.CREW_OFFER_WEEKDAYS, set(range(7))
+        offer_hook = hooks.use(hosted._after_tool_for(news_user, settled))
+        try:
+            before = len(SENT)
+            first = hooks.after_tool("get_plan", {"weeks": []}, 0.1)
+            second = hooks.after_tool("get_plan", {"weeks": []}, 0.1)
+            other = hooks.after_tool("get_readiness", {"ok": 1}, 0.1)
+        finally:
+            hooks.reset(offer_hook)
+            hosted.CREW_OFFER_WEEKDAYS = weekdays
+        time.sleep(0.3)
+        check("the offer rides on a plan answer once, and is counted",
+              first.get("crew_offer") == hosted.CREW_OFFER and "crew_offer" not in second and "crew_offer" not in other
+              and [e["event"] for e in SENT[before:]].count("crew_offer_shown") == 1, str(first)[:200])
         # A general question gets the plan card alone: reads sent at the same
         # time as get_plan answer with a note, and the same read asked again
         # answers in full.
@@ -1784,6 +1810,17 @@ async def main() -> int:
         shown = [e for e in SENT[before:] if e["event"] == "card_shown"]
         check("a forged link records nothing, and a garbled report still counts as not drawn",
               code == 204 and code_junk == 204 and len(shown) == 1 and shown[0]["properties"]["ok"] is False, str(shown)[:300])
+        # Nov 6: Open in Daash on a card, counted when tapped, apart from the card drawing.
+        before = len(SENT)
+        code = await anyio_run(post_text, link, json.dumps({"card": "plan", "tap": "open_in_daash", "opened": True, "host": "ChatGPT"}))
+        code_other = await anyio_run(post_text, link, json.dumps({"card": "plan", "tap": "anything_else", "ok": True}))
+        await asyncio.sleep(0.3)
+        tapped = [e for e in SENT[before:] if e["event"] == "card_tapped"]
+        check("a tap on Open in Daash is counted against the person, with whether the link opened, and isn't a card drawn",
+              code == 204 and len(tapped) == 1 and tapped[0]["distinct_id"] == analytics.distinct_id(erin_hash)
+              and {k: tapped[0]["properties"].get(k) for k in ("card", "tap", "opened", "app")}
+              == {"card": "plan", "tap": "open_in_daash", "opened": True, "app": "ChatGPT"}
+              and [e["event"] for e in SENT[before:]].count("card_shown") == 1, str(SENT[before:])[:400])
         # Someone on Garmin's official API alone is told how to get their full
         # history, by way of a link that counts the click.
         os.environ["GARMIN_MCP_BASE_URL"] = base
@@ -2277,6 +2314,11 @@ async def main() -> int:
               and re.fullmatch(r"/crew/[A-Za-z0-9_-]{24}", path) is not None, str(on))
         status, headers, body = await anyio_run(fetch, path)
         check("the page shows the crew's week", status == 200 and "__CREW_PAGE__" in body and "Carol" in body and "Friday Run Club" in body, str(status))
+        # Nov 6: the friend who opened the invite is told what Daash is, with a way in.
+        check("and, for a friend opening it, what Daash is and a way to get it",
+              "Get Daash, free" in body and "utm_source=crew-page" in body and "daash.run/crews" in body)
+        if os.environ.get("CREW_PAGE_DUMP"):
+            Path(os.environ["CREW_PAGE_DUMP"]).write_text(body)
         headers = {k.lower(): v for k, v in headers.items()}
         check("kept out of search engines, caches and referrers",
               "noindex" in headers.get("x-robots-tag", "") and headers.get("cache-control") == "no-store"

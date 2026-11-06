@@ -976,13 +976,20 @@ def _keep_crew_current(plan: Any, today: date) -> None:
         log.exception("crew capture failed")
 
 
-async def crew_payload() -> dict[str, Any]:
+async def crew_payload(week: str | None = None) -> dict[str, Any]:
+    """The crew's week in the app: this week, or next with week="next".
+
+    A crew keeps the two (Nov 6: the app showed only this week, where the chat's
+    card and the crew's page show either).
+    """
     today = date.today()
+    ahead = week == "next"
     if not crews.available() or not crews.in_crew():
         return {"none": True, "assistant": assistant(), "ask": _ask_links(
             "Use Daash to start a crew for me and the friends I run with, or to join one with the code a friend sent me.")}
     await asyncio.to_thread(_keep_crew_current, await server_mod.get_plan(), today)
-    week = crews.week(today=today)
+    this_monday = today - timedelta(days=today.weekday())
+    week = crews.week(this_monday + timedelta(weeks=1) if ahead else this_monday, today=today)
     days = [date.fromisoformat(week["week"]["starts"]) + timedelta(days=i) for i in range(7)]
     members = week.get("members") or []
     me = next((m["name"] for m in members if m.get("you")), None)
@@ -1033,13 +1040,15 @@ async def crew_payload() -> dict[str, Any]:
     first, last = days[0], days[-1]
     return drop_empty({
         "kicker": f"{crew.get('name', 'Crew').upper()} \u00b7 {crew.get('members', len(members))} PEOPLE \u00b7 {_range(first).upper()}",
-        "headline": "Run together this week" if together else "No runs line up yet",
+        "headline": (f"Run together {'next' if ahead else 'this'} week" if together
+                     else "Nothing lines up next week yet" if ahead else "No runs line up yet"),
+        "showing": "next" if ahead else "this",
         "hero": hero, "also": also or None,
         "days": [{"letter": "MTWTFSS"[i], "n": d.day, "today": d == today, "past": d < today} for i, d in enumerate(days)],
         "people": people,
         "invite": {"url": link, "shown": link.split("://", 1)[-1] if link else None, "code": crew.get("code")},
         "assistant": assistant(),
-        "ask": _ask_links("Use Daash to show my crew this week."),
+        "ask": _ask_links(f"Use Daash to show my crew {'next' if ahead else 'this'} week."),
     })
 
 
@@ -1464,7 +1473,7 @@ async def api_plan(request: Request) -> Response:
 @_safe
 async def api_crew(request: Request) -> Response:
     try:
-        return _json(await crew_payload())
+        return _json(await crew_payload("next" if request.query_params.get("week") == "next" else None))
     except crews.CrewError as exc:
         return _json({"error": str(exc)}, 409)
 

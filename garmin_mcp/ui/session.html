@@ -378,7 +378,7 @@
     app.appendChild(watchLine(c));
     app.appendChild(actions(c, name, whenText));
     if (c.app_url) {
-      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget); } }, ["Open in Daash"]));
+      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]));
     }
     var f = foot(c); if (f) app.appendChild(f);
     reportSize();
@@ -386,7 +386,7 @@
 
   // ---------------------------------------------------------------- actions
   // Open in Daash: the same session in the companion app, in the browser.
-  function openUrl(url, button) {
+  function openUrl(url, button, what) {
     var opened;
     if (window.openai && typeof window.openai.openExternal === "function") {
       opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
@@ -395,7 +395,8 @@
     } else {
       opened = request("ui/open-link", { url: url });
     }
-    opened.then(function () { note(button, "Opens in the browser"); }).catch(function () { note(button, "This chat app didn\u2019t open the link"); });
+    opened.then(function () { note(button, "Opens in the browser"); if (what) tapped(what, true); })
+      .catch(function () { note(button, "This chat app didn\u2019t open the link"); if (what) tapped(what, false); });
   }
   function ask(text, button) {
     if (!host) { note(button, "Would ask: “" + text + "”"); return; }
@@ -426,7 +427,15 @@
   }
   // Once, when the card has drawn or has failed to: tells Daash which, on the
   // link the answer carried. Nothing else leaves the frame.
-  var started = Date.now(), told = false, hostName = "";
+  var started = Date.now(), told = false, hostName = "", seenLink = null;
+  // A tap on Open in Daash, and whether the chat app opened the link.
+  function tapped(what, opened) {
+    if (typeof seenLink !== "string" || !window.fetch) return;
+    try {
+      fetch(seenLink, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "session", tap: what, opened: opened, host: hostName }) }).catch(function () {});
+    } catch (e) {}
+  }
   function tell(link, error) {
     if (told || typeof link !== "string" || !window.fetch) return;
     told = true;
@@ -451,6 +460,7 @@
   function onResult(result) {
     gotResult = true;
     var data = dataOf(result);
+    if (data && typeof data._card === "string") seenLink = data._card;
     try { render(data); } catch (e) { fail("drawing: " + (e && e.message)); tell(data && data._card, "drawing: " + (e && e.message)); return; }
     tell(data && data._card, "");
   }

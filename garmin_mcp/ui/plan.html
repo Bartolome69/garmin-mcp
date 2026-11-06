@@ -290,6 +290,16 @@
         error: d.errors.join("; "), steps: d.steps.join(" > ") }) }).catch(function () {});
     } catch (e) {}
   }
+  // A tap on Open in Daash, and whether the chat app opened the link: on
+  // the same link, as many times as it's tapped (Nov 6: 71 cards carried it
+  // and not one sign-in came of it, with nothing to say whether anyone tried).
+  d.tapped = function (what, opened) {
+    if (!d.seen || !window.fetch) return;
+    try {
+      fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "plan", tap: what, opened: opened, host: d.host }) }).catch(function () {});
+    } catch (e) {}
+  };
   function show() {
     tell();
     var box = document.getElementById("diag");
@@ -912,7 +922,7 @@
           el("span", { class: "sub", text: sub }),
         ]),
         appLink ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px",
-          onclick: function (e) { openUrl(appLink, e.currentTarget); } }, ["Open in Daash"]) : null,
+          onclick: function (e) { openUrl(appLink, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]) : null,
       ]),
     ]);
     var nodes = timeline(m);
@@ -1410,7 +1420,7 @@
     ])]));
     reportSize();
   }
-  function openUrl(url, btn) {
+  function openUrl(url, btn, what) {
     var opened;
     if (window.openai && typeof window.openai.openExternal === "function") {
       opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
@@ -1419,7 +1429,8 @@
     } else {
       opened = request("ui/open-link", { url: url });
     }
-    opened.then(function () { flash(btn, "Opens in the browser"); }).catch(function () { flash(btn, "This chat app didn\u2019t open the link"); });
+    opened.then(function () { flash(btn, "Opens in the browser"); if (what && D.tapped) D.tapped(what, true); })
+      .catch(function () { flash(btn, "This chat app didn\u2019t open the link"); if (what && D.tapped) D.tapped(what, false); });
   }
 
   // ---------------------------------------------------------------- actions
