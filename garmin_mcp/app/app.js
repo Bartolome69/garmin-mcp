@@ -108,7 +108,8 @@ function track(name, properties = {}) {
 // Ask Claude or ChatGPT, and Share this run, wherever they appear.
 document.addEventListener("click", (e) => {
   const link = e.target.closest && e.target.closest("a[href]");
-  if (!link) return;
+  // The Ask sheet's own links are counted as its choice (ask_chosen), not as another Ask.
+  if (!link || link.closest(".sheet")) return;
   const where = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "today";
   if (/^https:\/\/(claude\.ai|chatgpt\.com)\//.test(link.href)) {
     track("ask_clicked", { to: link.href.includes("chatgpt") ? "chatgpt" : "claude", where,
@@ -336,39 +337,59 @@ function copyQuestion(text, then) {
   try { navigator.clipboard.writeText(text).then(() => done(true), () => done(false)); } catch { done(false); }
 }
 
+// Which address opens the assistant's phone app, not the browser. The Claude
+// iPhone app claims only some claude.ai addresses (its
+// apple-app-site-association, Nov 6): /new is one; /recents and /chat/… are
+// not, so those open in Safari. On an iPhone, Back to my chat goes through
+// /new: the app opens, and the person picks their chat from its menu.
+const iPhone = () => /iPhone|iPad|iPod/i.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+function backTo(to, saved) {
+  if (to === "claude" && !onComputer() && iPhone()) return { href: "https://claude.ai/new", inApp: true, saved: false };
+  const href = saved || (to === "claude" ? "https://claude.ai/recents" : "https://chatgpt.com/");
+  return { href, saved: !!saved };
+}
+
 function askSheet(link) {
   const to = link.href.includes("chatgpt") ? "chatgpt" : "claude";
   const name = to === "chatgpt" ? "ChatGPT" : "Claude";
   const question = new URL(link.href).searchParams.get("q") || "";
   const where = (location.hash.replace(/^#\/?/, "").split(/[/?]/)[0]) || "today";
   const saved = store.get(CHAT_KEY(to));
-  const chose = (choice) => track("ask_chosen", { to, where, choice, saved: saved ? "yes" : "no" });
+  const back = backTo(to, saved);
+  // A saved chat can't open in the iPhone app, so it isn't offered there.
+  const canKeep = !(to === "claude" && !onComputer() && iPhone());
+  const chose = (choice) => track("ask_chosen", { to, where, choice, saved: back.saved ? "yes" : "no" });
+  const how = back.inApp ? `Opens the Claude app with the question copied: pick your Daash chat from the menu and paste it.`
+    : back.saved ? `Opens your Daash chat with the question copied: paste it there.`
+    : `Copies the question and opens your ${name} chats: pick your Daash chat and paste it.`;
+  // Real links, tapped: a phone hands a link to an app only on a tap, not
+  // when a page opens a window itself.
   sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Ask ${name}</span>
       <span class="meta" style="line-height:1.5;user-select:text">“${esc(question)}”</span></div>
-    <div class="stack-tight"><button class="pill red tall" id="ask-mine">Back to my chat</button>
-      <span class="small">${saved ? `Opens your Daash chat with the question copied: paste it there.`
-        : `Copies the question and opens your ${name} chats: pick your Daash chat and paste it.`}</span></div>
-    <button class="pill tall" id="ask-new">New chat</button>
-    <div class="stack-tight" id="ask-keep">${saved
+    <div class="stack-tight"><a class="pill red tall" id="ask-mine" href="${esc(back.href)}" target="_blank" rel="noopener">Back to my chat</a>
+      <span class="small">${how}</span></div>
+    <a class="pill tall" id="ask-new" href="${esc(link.href)}" target="_blank" rel="noopener">New chat</a>
+    ${canKeep ? `<div class="stack-tight" id="ask-keep">${saved
       ? `<span class="small">Back to my chat opens <b>${esc(saved.replace(/^https:\/\//, "").slice(0, 34))}…</b> · <a href="#" id="ask-change">Change</a> · <a href="#" id="ask-forget">Forget</a></span>`
-      : `<a href="#" class="small" id="ask-change">Use one chat every time</a>`}</div>`, (holder, close) => {
-    $("ask-mine").onclick = () => {
+      : `<a href="#" class="small" id="ask-change">Use one chat every time</a>`}</div>` : ""}`, (holder, close) => {
+    $("ask-mine").onclick = (e) => {
       chose("my_chat");
-      copyQuestion(question, saved ? `Question copied. Paste it into your Daash chat.` : `Question copied. Open your Daash chat and paste it.`);
-      const web = saved || (to === "claude" ? "https://claude.ai/recents" : "https://chatgpt.com/");
-      if (to === "claude") openAssistant(web.replace(/^https:\/\//, "claude://"), web);
-      else window.open(web, "_blank", "noopener");
-      close();
+      copyQuestion(question, back.saved ? `Question copied. Paste it into your Daash chat.` : `Question copied. Open your Daash chat and paste it.`);
+      // Claude's desktop app on a computer, as Ask Claude has always done.
+      if (to === "claude" && onComputer()) { e.preventDefault(); openAssistant(back.href.replace(/^https:\/\//, "claude://"), back.href); }
+      setTimeout(close, 0);
     };
-    $("ask-new").onclick = () => {
+    $("ask-new").onclick = (e) => {
       chose("new_chat");
-      if (link.dataset.app) openAssistant(link.dataset.app, link.href);
-      else window.open(link.href, "_blank", "noopener");
-      close();
+      if (link.dataset.app && onComputer()) { e.preventDefault(); openAssistant(link.dataset.app, link.href); }
+      setTimeout(close, 0);
     };
     const forget = $("ask-forget");
     if (forget) forget.onclick = (e) => { e.preventDefault(); store.drop(CHAT_KEY(to)); close(); toast("Forgotten. Back to my chat opens your list of chats."); };
-    $("ask-change").onclick = (e) => {
+    const change = $("ask-change");
+    if (change) change.onclick = (e) => {
       e.preventDefault();
       $("ask-keep").innerHTML = `<label class="field-label" for="ask-url">Your Daash chat's address</label>
         <input id="ask-url" class="field" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
@@ -392,7 +413,7 @@ function askSheet(link) {
 // Registered after the ask_clicked count above, so that still counts the tap.
 document.addEventListener("click", (e) => {
   const link = e.target.closest && e.target.closest("a[href]");
-  if (!link || !ASK_LINK.test(link.href) || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
+  if (!link || link.closest(".sheet") || !ASK_LINK.test(link.href) || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
   e.preventDefault();
   e.stopPropagation();
   askSheet(link);
