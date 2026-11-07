@@ -924,7 +924,7 @@ async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
     if _error(plan) and not starting:
         return {"error": _error(plan)}
     if plan.get("source") == "log" or starting:
-        return drop_empty({"empty": True, "build": preview.enabled() or None, "assistant": assistant(),
+        return drop_empty({"empty": True, "build": preview.enabled() or None, "fresh": starting or None, "assistant": assistant(),
                            "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")})
     anchor = _day_of(week_of) or today
     monday = anchor - timedelta(days=anchor.weekday())
@@ -1378,7 +1378,7 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 # use sits beside Claude and ChatGPT use in PostHog. What a screen showed is
 # never sent: no paces, no sessions, no plan.
 
-APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed"}
+APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed", "build_step"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you", "build"}
 
@@ -1541,7 +1541,8 @@ async def api_event(request: Request) -> Response:
                                          "ok": said.get("ok") is not False, "preloaded": True}))
         return _json({"ok": True})
     # choice: Back to my chat or New chat; saved: whether a chat was remembered.
-    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method", "choice", "saved")}
+    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method", "choice", "saved",
+                                                           "step", "days", "style", "amount", "gentle", "races", "dist", "replace", "open")}
     _track(f"app_{name}", {**keep, "layout": _layout(request)})
     return _json({"ok": True})
 
@@ -1825,7 +1826,7 @@ async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitne
         "predictions": [{"l": label, "v": plan_builder.clock(predictions[{"half_marathon": "half"}.get(key, key)])}
                         for key, label in PREDICTION_LABELS if {"half_marathon": "half"}.get(key, key) in predictions] or None,
         "races": races, "usual_days": usual[:6],
-        "long_day": _mode(longs) if longs else 6, "parkrun_day": _mode(parkruns) if len(parkruns) >= 3 else None,
+        "long_day": _mode(longs) if longs and longs.count(_mode(longs)) >= 4 else 6, "parkrun_day": _mode(parkruns) if len(parkruns) >= 3 else None,
         "faster_ok": bool(fit.threshold_hr), "starts": starts.isoformat(),
         "after": after.isoformat() if after else None,
         "after_said": _short_date(after) if after else None,
@@ -1885,7 +1886,11 @@ async def build_payload(replace: bool = False) -> dict[str, Any]:
     today = date.today()
     inputs, _ = await _build_inputs(today)
     starts, after = _starts(inputs, replace, today)
-    return {**{k: v for k, v in inputs.items() if k != "plan"}, "starts": starts.isoformat(),
+    # The dates a race can be planned for: from the plan's start to Garmin's 30 weeks.
+    horizon = today + timedelta(weeks=training_plan.MAX_WEEKS_AHEAD)
+    window = {"from": starts.isoformat(), "to": horizon.isoformat(),
+              "said": f"Races from {_short_date(starts)} to {_short_date(horizon)} can be planned." if after else None}
+    return {**{k: v for k, v in inputs.items() if k != "plan"}, "starts": starts.isoformat(), "window": window,
             "after": after.isoformat() if after else None, "replacing": _replacing(inputs, starts) if replace else None,
             "today": today.isoformat(), "assistant": assistant(),
             "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
@@ -1922,7 +1927,7 @@ async def build_plan_payload(body: Any) -> dict[str, Any]:
         s = plan_builder.shape(a, today, starts)
     except plan_builder.BuildError as exc:
         return {**out, "problem": str(exc)}
-    out["amounts"] = plan_builder.amounts(a, s)
+    out["amounts"] = plan_builder.amounts(a, s, fit)
     if (body or {}).get("preview"):
         out["preview"] = plan_builder.preview(a, fit, today, starts, inputs.get("usual_days") or (),
                                               inputs.get("parkrun_day"))

@@ -629,6 +629,10 @@ def build_checks() -> None:
             on_race = [s for s in DEMO.scheduled if s["date"] == race_day.isoformat()]
             check("with the race on race day", any("Test 10K" in str(s.get("title")) for s in on_race), str(on_race)[:200])
             check("a send is counted", any(e["properties"].get("ok") for e in posted("app_plan_built")))
+            client.post("/app/api/event", headers=auth, content=_json.dumps({"name": "build_step", "properties": {"step": "4", "secret": "x"}}))
+            steps = posted("app_build_step")
+            check("each step reached is counted, with only the fields it may carry",
+                  steps and steps[-1]["properties"].get("step") == "4" and "secret" not in steps[-1]["properties"], str(steps[-1:]))
 
             # Changing the plan: the new one goes in from next Monday, the rest of this week stays.
             plan = client.get("/app/api/plan", headers=auth).json()

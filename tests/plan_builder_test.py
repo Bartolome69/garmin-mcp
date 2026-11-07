@@ -121,6 +121,12 @@ def style_checks() -> None:
         check("something that hurts now has no plan", False)
     except pb.BuildError:
         check("something that hurts now has no plan", True)
+    new = answers(level="new")
+    build = next(o for o in pb.amounts(new, pb.shape(new, TODAY)) if o["id"] == "build")
+    check("a first plan suggests a gentler build", build["peak"] <= round(26 * 1.3) + 1, str(build))
+    ambitious = answers(goal_time="1:40")
+    words = next(o for o in pb.amounts(ambitious, pb.shape(ambitious, TODAY), FIT) if o["id"] == "build")["d"]
+    check("a very ambitious goal isn't called the best fit", "Best fit" not in words, words)
     picked, why = pb.pick_style(answers(level="new"), FIT)
     check("pick for me gives a new runner steady, and says why", picked == "steady" and why, f"{picked} {why}")
 

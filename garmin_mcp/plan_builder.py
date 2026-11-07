@@ -441,15 +441,25 @@ def reach(start_km: float, weeks: int, cycle: int, gentle: bool) -> float:
     return round(full)
 
 
-def amounts(a: Answers, s: Shape) -> list[dict[str, Any]]:
-    """Step 4's three options, each a peak the rules reach from here."""
+def amounts(a: Answers, s: Shape, fitness: Fitness | None = None) -> list[dict[str, Any]]:
+    """Step 4's three options, each a peak the rules reach from here.
+
+    The suggested build is gentler for a first plan or after a niggle: about
+    a third more than now, not three fifths.
+    """
     start = start_km(a)
     building = sum(1 for p in s.phases if p != "Taper")
     most = reach(start, building, cycle(a), a.gentle)
     keep = max(start, round(a.avg_km))
-    build = max(keep, min(most, max(keep + 4, round(a.avg_km * 1.6))))
+    grow = 1.3 if a.level == "new" or a.gentle else 1.6
+    build = max(keep, min(most, max(keep + 4, round(a.avg_km * grow))))
     more = max(build, min(most, round(a.avg_km * 1.9)))
     goal = goal_words(a, s)
+    # "Best fit for 1:22" only for a goal the plan can honestly aim at.
+    if goal and a.goal_time and fitness is not None and s.race:
+        verdict = goal_verdict(goal_secs(a.goal_time, s.dist), s.dist, s.km, fitness)
+        if verdict and verdict["kind"] == "ambitious":
+            goal = None
     found = [
         {"id": "keep", "peak": keep, "t": f"Keep around {keep} km",
          "d": f"Same as now. Enough to finish the {DISTANCE_NAMES[s.dist]} comfortably." if s.kind in ("race", "faster")
