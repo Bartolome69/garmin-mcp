@@ -2937,6 +2937,8 @@ async def _calendar_months(start: date_cls, end: date_cls) -> list[Any]:
 plan_progress: ContextVar["Callable[[list[dict[str, Any]], int], None] | None"] = ContextVar(
     "daash_plan_progress", default=None)
 plan_resume: ContextVar[bool] = ContextVar("daash_plan_resume", default=False)
+# Replacing a plan from next Monday: remove_plan keeps the rest of this week.
+plan_remove_from: ContextVar["date_cls | None"] = ContextVar("daash_plan_remove_from", default=None)
 
 
 @_app_tool(PLAN_VIEW)
@@ -3587,7 +3589,8 @@ async def remove_plan(label: str, confirm: str = "") -> dict[str, Any]:
     sessions = training_plan.plans_in(items).get(code) or [
         i for i in items if training_plan.label_of(i.get("title")) == code
     ]
-    ahead = [i for i in sessions if i["date"][:10] >= today.isoformat()]
+    since = max(today, plan_remove_from.get() or today)
+    ahead = [i for i in sessions if i["date"][:10] >= since.isoformat()]
     if not ahead:
         return {"label": code, "removed": 0, "note": "Nothing from today onward carries that plan code."}
 

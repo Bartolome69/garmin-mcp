@@ -630,6 +630,40 @@ def build_checks() -> None:
             check("with the race on race day", any("Test 10K" in str(s.get("title")) for s in on_race), str(on_race)[:200])
             check("a send is counted", any(e["properties"].get("ok") for e in posted("app_plan_built")))
 
+            # Changing the plan: the new one goes in from next Monday, the rest of this week stays.
+            plan = client.get("/app/api/plan", headers=auth).json()
+            check("Plan offers to change or remove the plan running now", (plan.get("manage") or {}).get("count", 0) > 0, str(plan.get("manage")))
+            swap = client.get("/app/api/build?replace=1", headers=auth).json()
+            monday = plan_builder_first_monday = _d.today() + _td(days=(7 - _d.today().weekday()) % 7)
+            check("changing it starts next Monday", swap.get("starts") == monday.isoformat() and not swap.get("after"), str(swap.get("starts")))
+            check("and says how many sessions it replaces", (swap.get("replacing") or {}).get("count", 0) > 0, str(swap.get("replacing")))
+            this_week = sorted(x["date"] for x in DEMO.scheduled if _d.today().isoformat() <= x["date"] < monday.isoformat())
+            new_race = monday + _td(weeks=7, days=6)
+            changed = {**answers, "races": [{"id": "y", "name": "Swap Half", "date": new_race.isoformat(), "km": 21.1, "tier": "A"}]}
+            pv2 = client.post("/app/api/build/plan", headers=auth,
+                              content=_json.dumps({"answers": changed, "preview": True, "replace": True})).json().get("preview") or {}
+            client.post("/app/api/build/send", headers=auth, content=_json.dumps({"answers": changed, "replace": True}))
+            for _ in range(200):
+                status = client.get("/app/api/build/send", headers=auth).json()
+                if status.get("state") != "sending":
+                    break
+                time.sleep(0.1)
+            after_monday = [x for x in DEMO.scheduled if x["date"] >= monday.isoformat() and x.get("itemType") != "event"]
+            check("the old plan's sessions from Monday are gone, the new one's are there",
+                  status.get("state") == "done" and len(after_monday) == pv2.get("count"), f"{status} {len(after_monday)} {pv2.get('count')}")
+            check("and this week's are untouched",
+                  sorted(x["date"] for x in DEMO.scheduled if _d.today().isoformat() <= x["date"] < monday.isoformat()) == this_week)
+            # Removing it.
+            check("removing needs a confirmation", client.post("/app/api/plan/remove", headers=auth, content="{}").status_code == 400)
+            gone = client.post("/app/api/plan/remove", headers=auth, content=_json.dumps({"confirm": "remove"})).json()
+            ahead = [x for x in DEMO.scheduled if x["date"] >= _d.today().isoformat() and x.get("itemType") != "event"]
+            check("Remove this plan takes every session from today off", gone.get("removed", 0) > 0 and not ahead, f"{gone} {len(ahead)}")
+            check("and the runs already done stay", any(x["date"] < _d.today().isoformat() for x in DEMO.scheduled))
+            plan = client.get("/app/api/plan", headers=auth).json()
+            check("then Plan offers a new plan instead", (plan.get("next_block") or {}).get("none") is True and not plan.get("manage"), str(plan.get("next_block")))
+            fresh_start = client.get("/app/api/build", headers=auth).json()
+            check("which starts next Monday, not after the old race", fresh_start.get("starts") == monday.isoformat(), str(fresh_start.get("starts")))
+
             # New accounts: nothing on the calendar and nothing run, or connected
             # through the official API and waiting on Garmin's first runs.
             from garmin_mcp import server as server_mod

@@ -601,3 +601,12 @@ body.desk .b-wrap.with-side ~ .b-foot .b-foot-in { padding-right: 388px; }
 .race-row-t { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .race-row-cta { font-size: 14px; font-weight: 500; color: var(--red-text); white-space: nowrap; margin-left: auto; }
 .race-row > .stack-tight { flex: 1; }
+
+/* the plan running now: change it in the builder, or take it off (preview) */
+.plan-manage { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.plan-manage-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.link-plain { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 3px; display: inline-flex; align-items: center; }
+.link-plain:hover { color: var(--ink); }
+.link-plain.red { color: var(--red-text); }
+.b-replace { font-size: 14px; line-height: 1.5; color: var(--hard); margin-top: -10px; }
