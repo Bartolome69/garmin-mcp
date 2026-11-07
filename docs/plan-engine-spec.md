@@ -1,6 +1,6 @@
 # Plan engine: spec
 
-Draft, November 2026. Built so far: the validator (section 8), in `garmin_mcp/plan_checks.py`, for preview accounts; `scripts/check_plan.py` runs it over a saved plan.
+Draft, November 2026. Built so far: the validator (section 8), in `garmin_mcp/plan_checks.py`, for preview accounts; `scripts/check_plan.py` runs it over a saved plan. And the builder's first slice (7 Nov), `garmin_mcp/plan_engine.py` and the app's Build a plan (`#/build`, APP.md): running, one goal race or general fitness, Steady and Balanced, 6 to 20 weeks, 3 to 6 days. Not yet: Faster, B and C races (section 5), adaptation (section 7) and recalculating, miles. Preview accounts first; `GARMIN_MCP_BUILDER=1` opens it to everyone.
 
 ## Summary
 

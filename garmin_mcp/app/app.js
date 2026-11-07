@@ -502,7 +502,13 @@ function todayParts(d) {
   } else if (!d.empty) {
     p.next = `<div class="card pad stack-tight"><span class="strong">Nothing else planned</span><span class="meta">The plan on your Garmin calendar has no more sessions.</span></div>`;
   }
-  if (d.empty) {
+  if (d.empty && d.build) {
+    // The builder makes a plan here, with no chat; the assistant stays a way to do it too.
+    const ask = askLink(d, `Or ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
+    p.next = `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>
+      <span class="meta">Build a running plan here in a couple of minutes. It goes on your Garmin calendar and your watch.</span>
+      <a class="pill light tall" href="#/build">Build a plan</a>${ask.html}</div>`;
+  } else if (d.empty) {
     const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
     p.next = `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>
       <span class="meta">Ask ${esc(ask.name)} to build a plan with Daash. It lands here and on your watch.</span>${ask.html}</div>`;
@@ -1415,6 +1421,219 @@ async function showYou() {
   }, (e) => failed(e.message, showYou));
 }
 
+// -- Build a plan: six answers, no chat (docs/plan-engine-spec.md) ------------------
+// Nothing is written until "Put it on my Garmin". The answers live in this
+// tab only, so a reload or a trip through sign-in picks up where it was.
+
+const BUILD_KEY = "daash.build";
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const GOAL_WORDS = { "5k": "5K", "10k": "10K", half: "Half marathon", marathon: "Marathon", fitness: "General fitness" };
+const PHASE_COLOUR = { Base: "var(--easy)", Build: "var(--long)", Peak: "var(--hard)", Taper: "var(--muted)" };
+const RANGES = { weekly_km: [[0, "None"], [5, "Under 10 km"], [10, "10 to 20"], [20, "20 to 35"], [35, "35 to 50"], [50, "50+"]],
+  longest_km: [[0, "None"], [3, "Under 5 km"], [5, "5 to 10"], [10, "10 to 15"], [15, "15 to 20"], [20, "20+"]] };
+let build = null;
+
+function buildState() {
+  if (build) return build;
+  try { build = JSON.parse(sessionStorage.getItem(BUILD_KEY) || "null"); } catch { build = null; }
+  build = build || { step: 0, a: { days: 4, long_day: 6, days_out: [], volume: "build", injury: "none", style: "pick" } };
+  return build;
+}
+function saveBuild() { try { sessionStorage.setItem(BUILD_KEY, JSON.stringify(build)); } catch { /* this tab only */ } }
+
+function chips(name, options, chosen, multi = false) {
+  return `<div class="chips">${options.map(([v, label, sub]) => {
+    const on = multi ? (chosen || []).includes(v) : String(chosen) === String(v);
+    return `<button class="chip" data-chip="${esc(name)}" data-v="${esc(v)}" aria-pressed="${on}">${esc(label)}${sub ? `<span class="chip-sub">${esc(sub)}</span>` : ""}</button>`;
+  }).join("")}</div>`;
+}
+
+function buildFrame(title, body, { next = "Next", ok = true, back = true } = {}) {
+  const b = buildState();
+  const n = Math.min(b.step, 6);
+  return `<header class="stack-tight"><span class="kicker">BUILD A PLAN${b.step >= 1 && b.step <= 6 ? ` · STEP ${n} OF 6` : ""}</span>
+      <h1 class="headline">${esc(title)}</h1></header>${body}
+    <div class="pills build-nav">${back ? `<button class="pill" id="b-back">Back</button>` : `<a class="pill" href="#/today">Not now</a>`}
+      ${next ? `<button class="pill light" id="b-next" ${ok ? "" : "disabled"}>${esc(next)}</button>` : ""}</div>`;
+}
+
+function buildStep(start) {
+  const b = buildState(), a = b.a;
+  if (b.step === 0) {
+    return buildFrame("A running plan, on your watch", `<p class="meta" style="font-size:15px;line-height:1.5">Six quick answers, most filled in from Garmin. Daash builds the plan by rules, not AI, shows it to you, and puts it on your Garmin calendar only when you say so.</p>
+      <div class="card pad stack-8 small" style="font-size:13px">
+        <span>This is general guidance for healthy adults, not medical advice.</span>
+        <span>If you're injured, pregnant, or have a heart or other health condition, check with a doctor or physio before starting. Daash can't take those into account.</span>
+        <span>If something hurts in a way that changes how you run, stop and rest.</span>
+        <span>Daash is independent and not made or endorsed by Garmin.</span></div>
+      ${start.existing ? `<div class="card amber pad meta" style="line-height:1.45">Your Garmin calendar already has a plan (${esc(start.existing.join(", "))}) in the weeks ahead. A new plan can't share its weeks: remove it first, or build one that starts after it.</div>` : ""}
+      <label class="check"><input type="checkbox" id="adult" ${a.adult ? "checked" : ""}> I'm 18 or over</label>`,
+      { next: "Start", ok: !!a.adult, back: false });
+  }
+  if (b.step === 1) {
+    const known = start.enough_history && !a.edit_history;
+    const level = a.level || start.level || "regular";
+    const body = known
+      ? `<div class="card" style="overflow:hidden">
+          <div class="you-row first"><span class="grow"><span class="strong">${esc(start.weekly_km)} km a week</span><span class="meta">The last 4 weeks, on average</span></span></div>
+          <div class="you-row"><span class="grow"><span class="strong">${esc(start.longest_km)} km</span><span class="meta">Your longest recent run</span></span></div>
+          ${start.predictions ? `<div class="you-row"><span class="grow"><span class="strong">${Object.entries(start.predictions).map(([k, v]) => `${GOAL_WORDS[k] || k} ${v}`).join(" · ")}</span><span class="meta">Garmin's race predictions</span></span></div>` : ""}
+        </div><button class="link-button meta" id="b-edit" style="text-decoration:underline">That's not right</button>`
+      : `<p class="meta">${start.enough_history ? "Change what's wrong." : "Garmin hasn't seen enough running yet, so tell Daash."}</p>
+        <span class="field-label">About how much have you run a week lately?</span>${chips("weekly_km", RANGES.weekly_km, a.weekly_km)}
+        <span class="field-label">Your longest run lately?</span>${chips("longest_km", RANGES.longest_km, a.longest_km)}`;
+    return buildFrame("What Garmin knows", `${body}<span class="field-label">How long have you been running regularly?</span>
+      ${chips("level", [["new", "Under 6 months"], ["regular", "A while"], ["experienced", "2+ years, 40+ km weeks"]], level)}`,
+      { ok: known || (a.weekly_km !== undefined && a.longest_km !== undefined) });
+  }
+  if (b.step === 2) {
+    const races = (start.races || []).filter((r) => r.goal);
+    const picked = racePick(start);
+    const custom = picked === "other";
+    const body = `${races.length ? `<span class="field-label">On your Garmin calendar</span>${chips("race_pick", races.map((r, i) => [i, r.name, `${GOAL_WORDS[r.goal]} · ${r.date}`]), picked)}` : ""}
+      ${chips("race_pick", [["other", races.length ? "Another race" : "A race"], ["fitness", "No race: general fitness"]], picked)}
+      ${custom ? `<span class="field-label">Distance</span>${chips("goal", [["5k", "5K"], ["10k", "10K"], ["half", "Half"], ["marathon", "Marathon"]], a.goal)}
+        <label class="field-label" for="b-date">Race day</label><input class="field" type="date" id="b-date" value="${esc(a.race_date || "")}" min="${esc(start.today)}">
+        <label class="field-label" for="b-name">Its name <span class="meta">(optional)</span></label><input class="field" id="b-name" maxlength="40" value="${esc(a.race_name || "")}">` : ""}
+      ${picked !== "fitness" ? `<label class="field-label" for="b-target">A goal time <span class="meta">(optional, e.g. 1:45:00)</span></label><input class="field" id="b-target" inputmode="numeric" value="${esc(a.target || "")}">` : ""}
+      ${picked === "fitness" ? `<span class="field-label">How long?</span>${chips("weeks", [[8, "8 weeks"], [12, "12 weeks"]], a.weeks || 8)}` : ""}`;
+    return buildFrame("Your race", body, { ok: picked === "fitness" || (!custom && races.length) || (custom && a.goal && a.race_date) });
+  }
+  if (b.step === 3) {
+    return buildFrame("Your days", `<span class="field-label">Days a week to run</span>${chips("days", [[3, "3"], [4, "4"], [5, "5"], [6, "6"]], a.days)}
+      <span class="field-label">Days you can't run <span class="meta">(optional)</span></span>${chips("days_out", DAYS.map((d, i) => [i, d]), a.days_out, true)}
+      <span class="field-label">Long run day</span>${chips("long_day", DAYS.map((d, i) => [i, d]).filter(([i]) => !a.days_out.includes(i)), a.long_day)}`,
+      { ok: 7 - a.days_out.length >= 3 && !a.days_out.includes(a.long_day) });
+  }
+  if (b.step === 4) {
+    const o = b.options;
+    if (!o) return buildFrame("How much", `<div class="skeleton" style="min-height:160px"></div>`, { ok: false });
+    if (o.error) return buildFrame("How much", `<div class="card amber pad">${esc(o.error)}</div>`, { ok: false });
+    return buildFrame("How much", `<p class="meta">${esc(o.weeks)} weeks, from ${esc(o.starts_words || o.starts)}. The most in a week, worked out from what you run now:</p>
+      ${chips("volume", [["keep", `Keep around ${o.options.keep} km`], ["build", `Build steadily to about ${o.options.build} km`, "Recommended"],
+        ["more", `Build more, to about ${o.options.more} km`]].filter(([v]) => v !== "more" || (a.level !== "new" && a.injury === "none")), a.volume)}
+      ${(o.notes || []).map((n) => `<p class="small">${esc(n)}</p>`).join("")}`);
+  }
+  if (b.step === 5) {
+    const hurts = a.injury === "hurts";
+    return buildFrame("Any injuries?", `${chips("injury", [["none", "None"], ["niggle", "A niggle now"], ["comeback", "Coming back from injury"], ["hurts", "Something hurts now"]], a.injury)}
+      ${a.injury === "niggle" || a.injury === "comeback" ? `<p class="small">The plan starts gently: smaller steps up, a lighter week every third, strides only for the first 3 weeks. Any easy run can be swapped for the same time cross-training.</p>` : ""}
+      ${hurts ? `<div class="card amber pad stack-8"><span class="strong">See a physio first</span><span class="meta" style="line-height:1.5">Something that hurts now needs looking at before a plan. Daash can't take it into account. Come back when it's settled.</span></div>` : ""}`,
+      { ok: !hurts });
+  }
+  if (b.step === 6) {
+    const gentle = a.level === "new" || a.injury !== "none";
+    return buildFrame("How you like to train", `${chips("style", [["steady", "Steady", "Mostly easy running; one harder session a week from the build"],
+        ["balanced", "Balanced", "Threshold, intervals and race pace, changing as the block goes on"], ["pick", "Pick for me"]], a.style)}
+      ${gentle ? `<p class="small">While you're new or coming back, the plan stays Steady.</p>` : ""}`, { next: "See the plan" });
+  }
+  if (b.step === 7) {
+    const p = b.preview;
+    if (!p) return buildFrame("Your plan", `<div class="skeleton" style="min-height:220px"></div>`, { next: null });
+    if (p.error) return buildFrame("Your plan", `<div class="card amber pad">${esc(p.error)}</div>`, { next: null });
+    const top = Math.max(...p.weeks.map((w) => w.km), 1);
+    const bars = p.weeks.map((w) => `<span class="bbar${w.race ? " race" : ""}" title="Week ${w.week}: ${w.km} km" style="height:${Math.max(6, Math.round(w.km / top * 96))}px;background:${PHASE_COLOUR[w.phase] || "var(--muted)"};${w.recovery ? "opacity:0.55" : ""}"></span>`).join("");
+    const phases = [...new Set(p.weeks.map((w) => w.phase))];
+    return buildFrame(p.name, `<p class="meta">${esc(p.goal)} · ${esc(p.method)} · ${esc(p.sessions)} sessions, ${esc(p.weeks.length)} weeks</p>
+      <div class="card pad stack-8"><div class="bbars">${bars}</div>
+        <div class="legend">${phases.map((ph) => `<span><i style="background:${PHASE_COLOUR[ph] || "var(--muted)"}"></i>${esc(ph)}</span>`).join("")}<span class="meta">Each bar is a week's km</span></div></div>
+      <section class="stack-8">${p.reasons.map((r) => `<p class="meta" style="font-size:14px;line-height:1.45">${esc(r)}</p>`).join("")}</section>
+      ${(p.notes || []).concat(p.checks || []).map((n) => `<div class="card amber pad meta" style="line-height:1.45">${esc(n)}</div>`).join("")}
+      <div class="card" style="overflow:hidden">${p.weeks.slice(0, 3).map((w, i) => `<div class="you-row ${i ? "" : "first"}"><span class="grow"><span class="strong">Week ${w.week} · ${esc(w.phase)}${w.recovery ? " · lighter" : ""}</span>
+        <span class="meta">${esc(w.km)} km${w.key ? ` · ${esc(w.key)}` : ""}</span></span></div>`).join("")}</div>`,
+      { next: "Put it on my Garmin" });
+  }
+  return `<header class="stack-tight"><span class="kicker">BUILD A PLAN</span><h1 class="headline">It's on your Garmin</h1></header>
+    <div class="card pad stack"><span class="strong">${esc(b.done?.message || "Your plan is on your Garmin calendar.")}</span></div>
+    <div class="pills"><a class="pill" href="#/today">Today</a><a class="pill light" href="#/plan">See the plan</a></div>`;
+}
+
+// The race chosen in step 2: the one tapped, else Garmin's primary event, else the first race.
+function racePick(start) {
+  const races = (start.races || []).filter((r) => r.goal);
+  return buildState().a.race_pick ?? (races.length ? Math.max(0, races.findIndex((r) => r.primary)) : "other");
+}
+
+function buildAnswers(start) {
+  const a = { ...buildState().a };
+  const races = (start.races || []).filter((r) => r.goal);
+  const pick = racePick(start);
+  if (pick === "fitness") { a.goal = "fitness"; a.weeks = a.weeks || 8; }
+  else if (pick !== "other" && races[pick]) { const r = races[pick]; Object.assign(a, { goal: r.goal, race_date: r.date, race_name: r.name }); }
+  if (start.enough_history && !a.edit_history) { a.weekly_km = start.weekly_km; a.longest_km = start.longest_km; }
+  a.level = a.level || start.level || "regular";
+  return { ...a, predictions: start.predictions || {}, threshold_pace: start.threshold_pace };
+}
+
+async function showBuild() {
+  $("tabs").hidden = true; $("topbar").hidden = true;
+  base = null;
+  const b = buildState();
+  let start = b.start;
+  if (!start) {
+    loading();
+    try { start = b.start = await api("build"); saveBuild(); }
+    catch (e) { if (e instanceof SignedOut) return route(); return failed(e.message, showBuild); }
+    if (start.level && !b.a.level) b.a.level = start.level;
+    track("build_started", { history: !!start.enough_history, races: (start.races || []).length });
+  }
+  const draw = () => {
+    $("screen").innerHTML = buildStep(start);
+    const root = $("screen");
+    root.querySelectorAll("[data-chip]").forEach((c) => {
+      c.onclick = () => {
+        const name = c.dataset.chip, raw = c.dataset.v, v = /^\d+$/.test(raw) ? Number(raw) : raw;
+        if (name === "days_out") {
+          const set = new Set(b.a.days_out);
+          set.has(v) ? set.delete(v) : set.add(v);
+          b.a.days_out = [...set].sort();
+        } else b.a[name] = v;
+        if (name === "weekly_km" || name === "longest_km") b.a.edit_history = true;
+        saveBuild(); draw();
+      };
+    });
+    const bind = (id, key) => { const el = $(id); if (el) el.oninput = () => { b.a[key] = el.value.trim(); saveBuild(); const n = $("b-next"); if (n && b.step === 2 && racePick(start) === "other") n.disabled = !(b.a.goal && b.a.race_date); }; };
+    bind("b-date", "race_date"); bind("b-name", "race_name"); bind("b-target", "target");
+    const adult = $("adult");
+    if (adult) adult.onchange = () => { b.a.adult = adult.checked; saveBuild(); $("b-next").disabled = !adult.checked; };
+    const edit = $("b-edit");
+    if (edit) edit.onclick = () => { b.a.edit_history = true; saveBuild(); draw(); };
+    const back = $("b-back");
+    if (back) back.onclick = () => { b.step = Math.max(0, b.step - 1); saveBuild(); draw(); window.scrollTo(0, 0); };
+    const next = $("b-next");
+    if (next) next.onclick = async () => {
+      if (b.step === 7) {
+        next.disabled = true; next.textContent = "Putting it on Garmin…";
+        try {
+          b.done = await api("build", { method: "POST", body: JSON.stringify(buildAnswers(start)) });
+          b.step = 8; saveBuild(); draw();
+          try { sessionStorage.removeItem(BUILD_KEY); } catch { /* nothing kept */ }
+          build = null;
+        } catch (e) {
+          if (e instanceof SignedOut) return route();
+          next.disabled = false; next.textContent = "Put it on my Garmin"; toast(e.message);
+        }
+        return;
+      }
+      b.step += 1;
+      if (b.step === 4) b.options = null;
+      if (b.step === 7) b.preview = null;
+      saveBuild(); draw(); window.scrollTo(0, 0);
+      if (b.step === 4) {
+        try { b.options = await api("build/options", { method: "POST", body: JSON.stringify(buildAnswers(start)) }); }
+        catch (e) { if (e instanceof SignedOut) return route(); b.options = { error: e.message }; }
+        saveBuild(); if (b.step === 4) draw();
+      }
+      if (b.step === 7) {
+        try { b.preview = await api("build/preview", { method: "POST", body: JSON.stringify(buildAnswers(start)) }); }
+        catch (e) { if (e instanceof SignedOut) return route(); b.preview = { error: e.message }; }
+        saveBuild(); if (b.step === 7) draw();
+      }
+    };
+  };
+  draw();
+}
+
 async function signInPost(path, body) {
   const res = await fetch(API + "sign-in/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const out = await res.json().catch(() => ({ error: "Daash didn't answer. Try again in a moment." }));
@@ -1434,6 +1653,8 @@ function signInView(message, step = "start", email = "") {
   const head = `<div class="wordmark"><img src="/app/icons/favicon.svg" width="32" height="32" alt="">Daash</div>`;
   const note = message ? `<div class="card pad meta" role="status">${esc(message)}</div>` : "";
   const foot = `<p class="small">Daash is independent and not made or endorsed by Garmin.</p>`;
+  // Sent here to build a plan (daash.run's "Just the app"): say that, not the chat.
+  const building = location.hash.startsWith("#/build");
   if (step === "code") {
     $("screen").innerHTML = `<div class="signin">${head}<h1 class="headline">Check your email</h1>
       <p class="why">If ${esc(email)} has a Daash account, a 6-digit code is on its way to it. It works for 10 minutes.</p>${note}
@@ -1460,16 +1681,21 @@ function signInView(message, step = "start", email = "") {
     return;
   }
   $("screen").innerHTML = `<div class="signin">${head}
-    <h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
-    <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>
+    ${building ? `<h1 class="headline">A running plan for your watch, built in two minutes.</h1>
+    <p class="why">Sign in with Garmin, answer six questions, and Daash puts the plan on your Garmin calendar. No chat needed.</p>`
+    : `<h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
+    <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>`}
     ${note}${homeScreen() ? `<div class="card pad meta" style="line-height:1.5">On your home screen, Daash keeps its own sign-in, apart from your browser's. Sign in once here and it stays signed in.</div>` : ""}
-    <form id="email-form" class="stack"><label class="field-label" for="email">Already use Daash? Your email</label>
+    ${building ? `<button class="pill red tall" id="garmin">Sign in with Garmin</button>
+    <p class="small">Connects your Garmin account, so the plan can go on your calendar. You can add Claude or ChatGPT later.</p>
+    <div class="or"><span>Already use Daash?</span></div>` : ""}
+    <form id="email-form" class="stack"><label class="field-label" for="email">${building ? "Your email" : "Already use Daash? Your email"}</label>
       <input id="email" class="field" type="email" autocomplete="email" value="${esc(email)}" required>
-      <button class="pill red tall" type="submit">Email me a code</button></form>
+      <button class="pill ${building ? "" : "red "}tall" type="submit">Email me a code</button></form>
     <p class="small">The email your Daash account is under, usually your Garmin one. Your plan, crew and settings are waiting.</p>
-    <div class="or"><span>New to Daash?</span></div>
+    ${building ? "" : `<div class="or"><span>New to Daash?</span></div>
     <button class="pill tall" id="garmin">Sign in with Garmin</button>
-    <p class="small">Connects your Garmin account. You can add Claude or ChatGPT later.</p>${foot}</div>`;
+    <p class="small">Connects your Garmin account. You can add Claude or ChatGPT later.</p>`}${foot}</div>`;
   $("email-form").onsubmit = async (e) => {
     e.preventDefault();
     const address = $("email").value.trim();
@@ -1530,6 +1756,7 @@ async function route(stay) {
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
   if (screen === "crew") return showCrew(params);
   if (screen === "you") return showYou();
+  if (screen === "build") return showBuild();
   return showToday();
 }
 

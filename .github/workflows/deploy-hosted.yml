@@ -82,6 +82,14 @@ jobs:
       - name: Progress matching
         run: python tests/progress_test.py
 
+      # Plans built by rules in the app, and the checker that reads every plan:
+      # a plan Daash builds must go through create_plan untouched and give the
+      # checker nothing to say.
+      - name: Plan engine and checks
+        run: |
+          python tests/plan_engine_test.py
+          python tests/plan_checks_test.py
+
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts
       # in the Training API's shape, against a stubbed Garmin.
       - name: Official API

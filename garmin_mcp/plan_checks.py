@@ -238,7 +238,11 @@ def _volume(weeks, kms, history, out) -> None:
         if kms[i] is None or not before:
             continue
         base = max(before)
-        if kms[i] - base > max(WEEK_JUMP_SHARE * base, WEEK_JUMP_KM):
+        # A week is measured without its races: a marathon in a taper week
+        # isn't a jump in training (Nov 7: a 20 km-a-week marathon plan
+        # flagged its race week).
+        raced_km = sum(float(s.get("planned_km") or 0) for s in _runs(weeks[i]) if s.get("type") == "race")
+        if kms[i] - raced_km - base > max(WEEK_JUMP_SHARE * base, WEEK_JUMP_KM):
             out.append(_note(
                 "weekly_jump", weeks[i]["week"], weeks[i]["starts"],
                 f"Week {weeks[i]['week']} goes up to {_km(kms[i])} from {_km(base)}. That's a big jump; "

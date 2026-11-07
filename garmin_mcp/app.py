@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+import os
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -27,7 +28,7 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, store, training_plan
+from . import analysis, crews, plan_checks, plan_engine, preview, store, training_plan
 from . import server as server_mod
 from .formatting import drop_empty
 from .server import mcp
@@ -468,7 +469,7 @@ async def today_payload() -> dict[str, Any]:
     await asyncio.to_thread(_keep_crew_current, plan, today)
     if plan.get("source") == "log":
         return {"today": today.isoformat(), "kicker": _short_date(today).upper(), "headline": "No plan on the calendar",
-                "empty": True, "readiness": ready,
+                "empty": True, "readiness": ready, "build": builder_on() or None,
                 "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
     kicker, headline = _headline(plan, today)
     nxt = _next(plan, today)
@@ -1681,6 +1682,182 @@ async def sign_in_verify(request: Request) -> Response:
         return _json({"error": "That email has no Daash account. Sign in with Garmin instead."}, 401)
     _track("app_signed_in", {"method": "email"}, accounts[-1])
     return _json(_tokens(accounts[-1]))
+
+
+# --------------------------------------------------------------------------
+# The plan builder (docs/plan-engine-spec.md): a running plan from six
+# answers, with no chat and no model calls, written by create_plan like any
+# other. Preview accounts first; GARMIN_MCP_BUILDER=1 opens it to everyone.
+# --------------------------------------------------------------------------
+
+BUILDER_ENV = "GARMIN_MCP_BUILDER"
+# Garmin's race predictions by the builder's distance names.
+_PREDICTED = {"5k": "5k", "10k": "10k", "half_marathon": "half", "marathon": "marathon"}
+
+
+def builder_on() -> bool:
+    return preview.enabled() or os.environ.get(BUILDER_ENV, "").strip().lower() in ("1", "on", "true", "yes")
+
+
+def _goal_for_km(km: Any) -> str | None:
+    try:
+        km = float(km)
+    except (TypeError, ValueError):
+        return None
+    for goal, (dist, lo, hi) in {"5k": (5, 4.5, 5.6), "10k": (10, 9, 11), "half": (21.1, 20, 22.5),
+                                 "marathon": (42.2, 40, 44)}.items():
+        if lo <= km <= hi:
+            return goal
+    return None
+
+
+async def build_start_payload() -> dict[str, Any]:
+    """What step 1 and step 2 start from: what Garmin knows, and the races on the calendar."""
+    today = date.today()
+    monday = training_plan.monday_of(today)
+
+    async def history():
+        return await server_mod._call(lambda c: c.get_activities_by_date(
+            (monday - timedelta(weeks=training_plan.LOG_WEEKS)).isoformat(), today.isoformat())) or []
+
+    activities, fitness, months = await asyncio.gather(
+        history(), server_mod.get_fitness(),
+        server_mod._calendar_months(today, today + timedelta(weeks=training_plan.RACE_WEEKS_AHEAD)),
+        return_exceptions=True)
+    weeks = training_plan.weekly_run_km(activities if isinstance(activities, list) else [], monday,
+                                        training_plan.LOG_WEEKS)
+    running = sum(1 for w in weeks if w["runs"])
+    enough = running >= plan_checks.HISTORY_MIN_WEEKS
+    weekly = round(sum(w["run_km"] for w in weeks) / max(1, len(weeks)), 1) if enough else None
+    longest = plan_checks.longest_run_km(activities) if enough and isinstance(activities, list) else None
+    predictions, threshold, threshold_hr = {}, None, None
+    if isinstance(fitness, dict) and "error" not in fitness:
+        for key, name in _PREDICTED.items():
+            got = (fitness.get("race_predictions") or {}).get(key) or {}
+            if got.get("time"):
+                predictions[name] = got["time"]
+        lt = fitness.get("lactate_threshold") or {}
+        threshold, threshold_hr = lt.get("pace_per_km"), lt.get("heart_rate_bpm")
+    races = []
+    if isinstance(months, list):
+        for e in training_plan.calendar_events(months, today + timedelta(days=1),
+                                               today + timedelta(weeks=training_plan.RACE_WEEKS_AHEAD)):
+            races.append(drop_empty({"name": e["name"], "date": e["date"], "goal": _goal_for_km(e.get("distance_km")),
+                                     "primary": e.get("primary")}))
+    return drop_empty({
+        "today": today.isoformat(),
+        "weekly_km": weekly, "longest_km": longest, "enough_history": enough,
+        "level": plan_engine.level_guess(weekly or 0, running, longest or 0) if enough else None,
+        "predictions": predictions or None, "threshold_pace": threshold,
+        "threshold_hr": threshold_hr, "races": races,
+        "existing": await _plans_between(today, today + timedelta(weeks=plan_engine.MAX_WEEKS)) or None,
+    })
+
+
+async def _plans_between(first: date, last: date) -> list[str]:
+    """The plan codes with sessions on the calendar between two days."""
+    items = await server_mod._plan_calendar(first, last)
+    inside = [i for i in items if first.isoformat() <= str(i.get("date") or "")[:10] <= last.isoformat()]
+    return sorted(training_plan.plans_in(inside))
+
+
+def _answers(body: Any) -> plan_engine.Answers:
+    if not isinstance(body, dict):
+        raise plan_engine.BuildError("Those answers didn't come through. Try again.")
+    return plan_engine.Answers.from_json(body, date.today())
+
+
+def build_options(body: Any) -> dict[str, Any]:
+    """Step 4's three volumes, and how long the plan will be."""
+    a = _answers(body)
+    start, weeks, notes = plan_engine._weeks(a)
+    opts = plan_engine.peak_options(a, weeks)
+    return drop_empty({"weeks": weeks, "starts": start.isoformat(),
+                       "starts_words": f"{DAY_NAMES[start.weekday()]} {start.day} {plan_engine.MONTHS[start.month - 1]}",
+                       "options": opts, "notes": notes or None})
+
+
+def build_preview(body: Any) -> dict[str, Any]:
+    """The plan as it would be written, with the checker's notes. Nothing is written."""
+    a = _answers(body)
+    built = plan_engine.build(a)
+    plan = built["plan"]
+    notes: list[dict[str, Any]] = []
+    try:
+        _, prep = training_plan.prepare(plan["goal"], plan["sessions"], plan["label"], date.today(),
+                                        name=plan["name"], method=plan["method"], milestones=plan["milestones"])
+        history = ([{"starts": (training_plan.monday_of(date.today()) - timedelta(weeks=1)).isoformat(),
+                     "run_km": a.weekly_km, "runs": 0}] if a.weekly_km else None)
+        notes = plan_checks.check_prepared(prep, goal=plan["goal"], method=plan["method"], milestones=plan["milestones"],
+                                           history=history, longest_recent_km=a.longest_km or None)
+    except Exception:  # noqa: BLE001 - the preview stands without its notes
+        log.warning("builder preview checks failed", exc_info=True)
+    return {**built["preview"], "goal": plan["goal"], "name": plan["name"], "method": plan["method"],
+            "label": plan["label"], "checks": [n["text"] for n in notes]}
+
+
+async def build_plan(body: Any) -> dict[str, Any]:
+    """Put the built plan on the Garmin calendar, through create_plan."""
+    a = _answers(body)
+    plan = plan_engine.build(a)["plan"]
+    first = date.fromisoformat(plan["sessions"][0]["date"])
+    last = date.fromisoformat(plan["sessions"][-1]["date"])
+    # Never a second plan over the same weeks: a double tap, or a plan already
+    # running, would leave two sessions on a day and the cards reading both.
+    there = await _plans_between(first, last)
+    if there:
+        raise EditError(f"Your Garmin calendar already has a plan ({', '.join(there)}) in those weeks. "
+                        "Remove it first, then build this one.")
+    result = await server_mod.create_plan(**plan)
+    if _error(result):
+        raise EditError(_error(result))
+    first = plan["sessions"][0]["date"]
+    return {"label": plan["label"], "first": first, "sessions": len(plan["sessions"]),
+            "message": f"Your plan is on your Garmin calendar: {len(plan['sessions'])} sessions, "
+                       f"starting {_when(date.fromisoformat(first), date.today())}. It reaches your watch at its next sync."}
+
+
+@mcp.custom_route(API_PREFIX + "build", methods=["GET", "POST"])
+@_safe
+async def api_build(request: Request) -> Response:
+    if not builder_on():
+        return _json({"error": "The plan builder isn't open yet."}, 404)
+    if request.method == "GET":
+        return _json(await build_start_payload())
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = None
+    try:
+        result = await build_plan(body)
+    except (plan_engine.BuildError, EditError) as exc:
+        _track("plan_built", drop_empty({"ok": False, "why": str(exc)[:120], "layout": _layout(request)}))
+        return _json({"error": str(exc)}, 400)
+    a = _answers(body)
+    _track("plan_built", drop_empty({"ok": True, "goal": a.goal, "days": a.days, "level": a.level,
+                                     "volume": a.volume, "style": a.style, "injury": a.injury,
+                                     "sessions": result["sessions"], "layout": _layout(request)}))
+    return _json(result)
+
+
+@mcp.custom_route(API_PREFIX + "build/{step}", methods=["POST"])
+@_safe
+async def api_build_step(request: Request) -> Response:
+    if not builder_on():
+        return _json({"error": "The plan builder isn't open yet."}, 404)
+    step = request.path_params.get("step")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = None
+    try:
+        if step == "options":
+            return _json(build_options(body))
+        if step == "preview":
+            return _json(build_preview(body))
+    except plan_engine.BuildError as exc:
+        return _json({"error": str(exc)}, 400)
+    return _json({"error": "Not found"}, 404)
 
 
 # The web app's own files, registered last so the API's routes match first.

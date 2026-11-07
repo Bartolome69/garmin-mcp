@@ -614,6 +614,77 @@ def verdict_checks() -> None:
     check("a race counts towards a heavy week", heavy.startswith("A heavy week.") and "a parkrun on Saturday" in heavy, heavy)
 
 
+def builder_checks() -> None:
+    """The plan builder: closed unless switched on, its prefill from Garmin, a preview that
+    writes nothing, and a plan put on the calendar that get_plan then reads."""
+    email = "builder@example.test"
+    user_token = store.save_user(session_mod.mask_email(email), '{"di_token": "x"}',
+                                 email_hash=store.email_fingerprint(email), email=email)
+    token = secrets.token_urlsafe(32)
+    store.save_oauth_token(token, kind="access", client_id="test", subject=user_token, scopes="",
+                           resource=None, expires_at=int(time.time()) + 3600)
+    client = TestClient(hosted.build_app(), base_url="http://localhost")
+    auth = {"Authorization": f"Bearer {token}"}
+    os.environ.pop(app_routes.BUILDER_ENV, None)
+    check("the builder is closed unless switched on", client.get("/app/api/build", headers=auth).status_code == 404)
+    os.environ[app_routes.BUILDER_ENV] = "1"
+    try:
+        check("and still needs a token", client.get("/app/api/build").status_code == 401)
+        start = client.get("/app/api/build", headers=auth).json()
+        check("it says which plans are already in the weeks ahead", "HM" in (start.get("existing") or []), str(start.get("existing")))
+        check("it starts from what Garmin knows: weekly km and the longest run",
+              start.get("enough_history") and start.get("weekly_km") and start.get("longest_km"), str(start)[:300])
+        check("and a level to correct", start.get("level") in ("new", "regular", "experienced"), str(start.get("level")))
+        from datetime import date as d_, timedelta as td_
+        race = (d_.today() + td_(weeks=10)).isoformat()
+        answers = {"goal": "10k", "race_date": race, "race_name": "Riverside 10K", "days": 4, "long_day": 6,
+                   "weekly_km": start.get("weekly_km") or 30, "longest_km": start.get("longest_km") or 10,
+                   "level": "regular", "volume": "build", "injury": "none", "style": "pick"}
+        opts = client.post("/app/api/build/options", headers=auth, json=answers).json()
+        check("step 4 offers keep, build and more", set((opts.get("options") or {})) == {"keep", "build", "more"}, str(opts))
+        before = len(DEMO.scheduled)
+        seen = client.post("/app/api/build/preview", headers=auth, json=answers).json()
+        check("the preview has every week, with reasons", seen.get("weeks") and len(seen.get("reasons") or []) >= 2,
+              str(seen)[:300])
+        check("and writes nothing", len(DEMO.scheduled) == before)
+        too_close = client.post("/app/api/build/preview", headers=auth,
+                                json={**answers, "race_date": (d_.today() + td_(weeks=3)).isoformat()})
+        check("a race too close is refused, saying why", too_close.status_code == 400
+              and "too close" in too_close.json().get("error", ""), too_close.text[:200])
+        clash = client.post("/app/api/build", headers=auth, json=answers)
+        check("a plan over the weeks of one already there is refused, naming it",
+              clash.status_code == 400 and "HM" in clash.json().get("error", ""), clash.text[:200])
+        # The demo's own plans out of the way, as for someone with an empty calendar.
+        DEMO.scheduled = []
+        hosted.session_for(user_token).forget()
+        made = client.post("/app/api/build", headers=auth, json=answers)
+        body = made.json()
+        check("Put it on my Garmin writes the plan", made.status_code == 200 and body.get("label") == "10K", made.text[:300])
+        check("every session scheduled", len(DEMO.scheduled) == body.get("sessions"),
+              f"{len(DEMO.scheduled)} of {body.get('sessions')}")
+        import anyio
+        from garmin_mcp import server
+
+        async def read():
+            with_session = session_mod.use_session(hosted.session_for(user_token))
+            try:
+                return await server.get_plan(label="10K")
+            finally:
+                session_mod.reset_session(with_session)
+
+        plan = anyio.run(read)
+        check("get_plan, what Claude reads, has the new plan with its race",
+              plan.get("label") == "10K" and any(r.get("name") == "Riverside 10K" for r in plan.get("races") or []),
+              str({k: plan.get(k) for k in ("label", "races", "error")})[:300])
+        check("it was counted", any(e["properties"].get("ok") for e in posted("plan_built")))
+        again = client.post("/app/api/build", headers=auth, json=answers)
+        check("building the same plan twice is refused, not doubled",
+              again.status_code == 400 and "10K" in again.json().get("error", "")
+              and len(DEMO.scheduled) == body.get("sessions"), again.text[:200])
+    finally:
+        os.environ.pop(app_routes.BUILDER_ENV, None)
+
+
 def main() -> int:
     extra_checks()
     verdict_checks()
@@ -621,6 +692,7 @@ def main() -> int:
     easier_checks()
     api_checks()
     assistant_checks()
+    builder_checks()
     print()
     if failures:
         print(f"{len(failures)} failed: {', '.join(failures)}")
