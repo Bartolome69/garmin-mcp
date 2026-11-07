@@ -531,7 +531,7 @@ function todayParts(d) {
 
 function todayView(d) {
   const p = todayParts(d);
-  return [p.head, p.done, p.next, p.crew, p.ready, p.week].filter(Boolean).join("");
+  return [p.head, `<div id="race-slot" hidden></div>`, p.done, p.next, p.crew, p.ready, p.week].filter(Boolean).join("");
 }
 
 // Desktop: three weeks as a calendar, the phone's cards on the right.
@@ -559,7 +559,7 @@ function calendarView(d) {
 function todayDesk(d) {
   const p = todayParts(d);
   return `<div class="desk-today"><div class="desk-main">${d.empty ? p.head + p.next : calendarView(d)}</div>
-    <aside class="desk-side">${[p.done, d.empty ? "" : p.next, p.ready, p.crew, p.verdict].filter(Boolean).join("")}</aside></div>`;
+    <aside class="desk-side">${[`<div id="race-slot" hidden></div>`, p.done, d.empty ? "" : p.next, p.ready, p.crew, p.verdict].filter(Boolean).join("")}</aside></div>`;
 }
 
 // Drag a session's chip to another day: the same move as the Move button.
@@ -621,8 +621,54 @@ async function showToday(quiet = false) {
     }
     base = "today";
     wire($("screen"));
+    racePrompt();
     warm();
   }, (e) => failed(e.message, showToday), quiet || base === "today");
+}
+
+// -- a new race on the Garmin calendar: a card offering a plan for it (preview) --
+
+async function racePrompt() {
+  const slot = $("race-slot");
+  if (!slot) return;
+  // The last answer at once, then the fresh one: no flash of nothing on every visit.
+  const draw = (r) => {
+    const here = $("race-slot");
+    if (!here) return;
+    if (!r || !r.key) { here.hidden = true; here.innerHTML = ""; return; }
+    here.hidden = false;
+    here.innerHTML = r.mode === "row"
+      ? `<a class="race-row" href="#/build?race=${esc(r.key)}" data-race="cta"><i></i><span class="stack-tight" style="gap:1px;min-width:0"><span class="race-row-t">${esc(r.name)} · ${esc(r.when)}</span><span class="meta" style="font-size:12.5px">${esc(r.row_sub)}</span></span><span class="race-row-cta">${esc(r.cta)}</span></a>`
+      : `<div class="card race-card"><div class="race-kick"><i></i><span>NEW ON YOUR GARMIN CALENDAR</span></div>
+          <div class="stack-tight" style="gap:6px"><span class="race-title">${esc(r.title)}</span><span class="race-sub">${esc(r.sub)}</span></div>
+          <div class="race-facts">${r.facts.map((f) => `<div><span class="race-fact-v">${esc(f.v)}</span><span class="meta" style="font-size:12px">${esc(f.l)}</span></div>`).join("")}</div>
+          <div class="pills"><a class="pill tall light" style="flex:1.4" href="#/build?race=${esc(r.key)}" data-race="cta">${esc(r.cta)}</a><button type="button" class="pill tall" data-race="snooze">Not now</button></div>
+          <button type="button" class="race-not" data-race="not_goal">It's not a goal race</button></div>`;
+    here.querySelectorAll("[data-race]").forEach((el) => { el.onclick = (e) => raceAction(r, el.dataset.race, e); });
+  };
+  const hit = cache.get("race-prompt");
+  if (hit) draw(hit);
+  try {
+    const r = await fresh("race-prompt");
+    if (!hit || JSON.stringify(hit) !== JSON.stringify(r)) draw(r);
+  } catch (e) {
+    if (!(e instanceof SignedOut) && !hit) draw(null);
+  }
+}
+
+async function raceAction(r, action, e) {
+  if (action !== "cta") e.preventDefault();
+  const said = api("race-prompt", { method: "POST", body: JSON.stringify({ key: r.key, action, case: r.case }), read: true });
+  if (action === "cta") { said.catch(() => {}); return; }
+  try {
+    const d = await said;
+    cache.drop((k) => k === "race-prompt");
+    toast(d.message);
+    racePrompt();
+  } catch (err) {
+    if (err instanceof SignedOut) return route();
+    toast(err.message);
+  }
 }
 
 // -- the session: preview before the run --------------------------------------
@@ -1672,9 +1718,14 @@ function go(step) { location.hash = `#/build${step && step !== "1" ? `/${step}` 
 
 async function showBuild(step, params = new URLSearchParams()) {
   step = step || "1";
+  const chosen = params.get("race");
+  // A race added since Garmin was last read here: read it again.
+  if (chosen && B.inputs && !(B.inputs.races || []).some((r) => r.key === chosen)) B.inputs = null;
   // From Plan's Change this plan: the new plan goes in place of the one running now.
   if (params.get("replace") === "1" && !B.replace) { B.replace = true; B.inputs = null; }
   else if (params.get("replace") === "0" && B.replace) { B.replace = false; B.inputs = null; }
+  // A race from Today's card is a plan of its own, not one in place of the plan running now.
+  if (chosen && B.replace) { B.replace = false; B.inputs = null; }
   const wide = desktop();
   if (wide) { $("tabs").hidden = true; topbar("plan"); } else { $("topbar").hidden = true; $("tabs").hidden = true; }
   if (step === "sending" || step === "done" || step === "error") return buildSendView(step);
@@ -1688,7 +1739,15 @@ async function showBuild(step, params = new URLSearchParams()) {
     }
     remember(B.inputs);
     const saved = buildDraft();
-    B.answers = saved && saved.starts === B.inputs.starts && !!saved.replace === !!B.replace ? saved.answers : freshAnswers(B.inputs);
+    B.answers = saved && saved.starts === B.inputs.starts && !!saved.replace === !!B.replace && !chosen ? saved.answers : freshAnswers(B.inputs);
+  }
+  // From the card on Today: that race is the goal, and any other A becomes a B.
+  if (chosen && B.answers.races.some((r) => r.key === chosen)) {
+    B.answers.races.forEach((r) => { if (r.key === chosen) r.tier = "A"; else if (r.tier === "A") r.tier = "B"; });
+    B.answers.open = false;
+    settle(B.answers.races.find((r) => r.key === chosen).id);
+    saveAnswers();
+    history.replaceState(null, "", "#/build");
   }
   if (!(step in STEP_OF) && step !== "hurt") step = "1";
   B.step = step;
