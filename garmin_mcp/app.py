@@ -2030,7 +2030,7 @@ async def build_send(body: Any) -> dict[str, Any]:
         weeks = (date.fromisoformat(sessions[-1]["date"]) - starts).days // 7 + 1
         first_row = plan_builder.preview(a, fit, today, starts, inputs.get("usual_days") or ())["first"]
         job = _SENDS[who] = {"state": "sending", "sent": 0, "total": len(sessions), "label": args["label"],
-                             "weeks": weeks, "first": first_row, "created": [],
+                             "weeks": weeks, "first": first_row, "created": [], "first_date": sessions[0]["date"],
                              "replace": {"labels": inputs["plan"]["labels"], "from": starts.isoformat()} if replace else None}
     asyncio.create_task(_send(who, args, bool(resume)))
     _BUILD_INPUTS.pop(who, None)
@@ -2066,7 +2066,8 @@ async def remove_running_plan(body: Any) -> dict[str, Any]:
 
 def _send_status(job: Mapping[str, Any]) -> dict[str, Any]:
     return drop_empty({"state": job["state"], "sent": job.get("sent", 0), "total": job["total"],
-                       "weeks": job.get("weeks"), "first": job.get("first"), "said": job.get("said")})
+                       "weeks": job.get("weeks"), "first": job.get("first"), "said": job.get("said"),
+                       "first_date": job.get("first_date"), "replaced": bool(job.get("replace")) or None})
 
 
 async def build_send_status() -> dict[str, Any]:

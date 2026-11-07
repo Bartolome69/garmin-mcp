@@ -180,6 +180,8 @@ def output_checks() -> None:
     check("it has a week a bar", len(pv["weeks"]) == 19)
     check("race weeks are marked A and B", [w["race"] for w in pv["weeks"] if w["race"]] == ["B", "A"])
     check("the peak week is the biggest", pv["weeks"][pv["peak_week"] - 1]["km"] == max(w["km"] for w in pv["weeks"]))
+    days = [c.get("day") for c in pv["weeks"][0]["sessions"]]
+    check("each session in the week card says its day", all(days) and all(d[:3] in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun") for d in days), str(days))
     a_week = pv["weeks"][-1]["sessions"]
     check("the A race week shows the race, then short easy runs",
           a_week[0]["type"] == "Race · A" and a_week[-1]["name"] == "Short easy runs, legs fresh", str(a_week))
