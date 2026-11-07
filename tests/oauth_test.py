@@ -141,9 +141,11 @@ async def main() -> int:
         "http://localhost:9999/callback",
         "https://claude.ai.evil.example/cb",
         "https://example.com/cb",
+        "https://grok.com/connectors/oauth/callback",
+        "https://grok.com.evil.example/cb",
     )}
-    check("sign-ins are told apart by the app they go back to",
-          list(apps.values()) == ["Claude", "ChatGPT", "Desktop or command line", "Other", "Other"],
+    check("sign-ins are told apart by the app they go back to, Grok included",
+          list(apps.values()) == ["Claude", "ChatGPT", "Desktop or command line", "Other", "Other", "Grok", "Other"],
           str(apps))
 
     # ChatGPT's return address carries an ID per connection; only that exact
