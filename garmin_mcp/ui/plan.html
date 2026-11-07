@@ -1352,7 +1352,8 @@
       var body = segs.some(function (g) { return g.k === "easy" && !g.part; });
       segs = segs.map(function (g) { return g.k === "easy" && !(body && g.part) ? { k: "work", km: g.km } : g; });
     }
-    var easy = s.type === "long" ? "long" : s.type === "easy" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
+    // A race's warm-up and cool-down are easy running, green like any other.
+    var easy = s.type === "long" ? "long" : s.type === "easy" || s.type === "race" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
     // Work in a hard session takes its colour; faster stretches of a long
     // or easy run are threshold work.
     var work = s.type === "race" ? "race" : hard ? colourOf(s) : "threshold";

@@ -156,6 +156,18 @@ f.src = "card.html";
     check("it reports once that it drew, as the new card", seen.length === 1 && seen[0].body.card === "plan2" && seen[0].body.ok === true, JSON.stringify(seen));
     await page.close();
 
+    console.log("a race's warm-up and cool-down");
+    const raced = plan();
+    raced.weeks[2].sessions.push({ date: md(5), day: "Sat", name: "Parkrun tune-up", type: "race", sport: "run", kind: "run", status: "ahead", state: "ahead",
+      planned_km: 8.5, workout_id: 6, schedule_id: 66, shape: [{ k: "easy", km: 3, part: "wu" }, { k: "easy", km: 4 }, { k: "easy", km: 1.5, part: "cd" }] });
+    ({ page, card } = await open(raced));
+    got = await card.evaluate(() => {
+      const row = [...document.querySelectorAll(".shape")].find((x) => x.parentElement && /Parkrun tune-up/.test(x.parentElement.innerText));
+      return row ? [...row.children].map((b) => b.style.background) : null;
+    });
+    check("are green, the race between them red", JSON.stringify(got) === JSON.stringify(["var(--easy)", "var(--race)", "var(--easy)"]), JSON.stringify(got));
+    await page.close();
+
     console.log("widths and a long plan");
     for (const width of [320, 390, 560, 800]) {
       ({ page, card } = await open(plan(30, 5), width, 900));
