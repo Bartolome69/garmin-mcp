@@ -156,6 +156,19 @@ def output_checks() -> None:
                 check(f"create_plan takes the {style} {dist[0]} plan", len(prepared) == len(made["sessions"]))
             except Exception as exc:  # noqa: BLE001
                 check(f"create_plan takes the {style} {dist[0]} plan", False, f"{type(exc).__name__}: {exc}")
+    ultra = answers(races=[{"name": "Lakes 50", "date": "2027-03-21", "km": 50, "tier": "A"}], goal_time=None)
+    up = pb.preview(ultra, FIT, TODAY)
+    check("an ultra is planned, and says how", up["title"] == "Your ultra plan"
+          and any(c.startswith("Ultras are planned as a marathon build") for c in up["checks"]), str(up["checks"]))
+    ua = pb.create_args(ultra, FIT, TODAY)
+    check("its race is the whole distance", any(x["name"] == "Race: Lakes 50" and x["steps"][0]["distance_meters"] == 50000
+                                               for x in ua["sessions"]))
+    check("an ultra offers no goal times from a road prediction", pb.goal_chips("marathon", 50, FIT) == [])
+    try:
+        training_plan.prepare(ua["goal"], ua["sessions"], None, TODAY, name=ua["name"], method=ua["method"], milestones=ua["milestones"])
+        check("create_plan takes the ultra plan", ua["name"] == "Ultra build", ua["name"])
+    except Exception as exc:  # noqa: BLE001
+        check("create_plan takes the ultra plan", False, f"{type(exc).__name__}: {exc}")
     pv = pb.preview(a, FIT, TODAY)
     check("the preview's sub line runs Monday to race Sunday", pv["sub"] == "19 weeks · 9 Nov to 21 Mar · 4 days a week", pv["sub"])
     check("it has a week a bar", len(pv["weeks"]) == 19)
