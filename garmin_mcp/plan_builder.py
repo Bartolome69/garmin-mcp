@@ -875,12 +875,13 @@ def preview(a: Answers, fitness: Fitness, today: date, starts: date | None = Non
         long = next((r for r in rows if r["kind"] == "long"), None)
         easy = [r for r in rows if r["kind"] == "easy"]
         cards = []
+        dow = lambda r: DAY_NAMES[r["date"].weekday()][:3]  # noqa: E731
         if race:
-            cards.append({"kind": "race", "type": f"Race · {race['race'].tier}", "name": race["race"].name, "km": round(race["km"])})
+            cards.append({"kind": "race", "type": f"Race · {race['race'].tier}", "name": race["race"].name, "km": round(race["km"]), "day": dow(race)})
         for h in [r for r in rows if r["kind"] == "hard"] if not race else []:
-            cards.append({"kind": "hard", "type": "Harder", "name": _plain(h["name"]), "km": round(h["km"])})
+            cards.append({"kind": "hard", "type": "Harder", "name": _plain(h["name"]), "km": round(h["km"]), "day": dow(h)})
         if long:
-            cards.append({"kind": "long", "type": "Long", "name": _plain(long["name"]), "km": round(long["km"])})
+            cards.append({"kind": "long", "type": "Long", "name": _plain(long["name"]), "km": round(long["km"]), "day": dow(long)})
         others = [r for r in rows if r is not race and r is not long and (race or r["kind"] != "hard")]
         if others:
             km = round(sum(r["km"] for r in others))
@@ -891,7 +892,7 @@ def preview(a: Answers, fitness: Fitness, today: date, starts: date | None = Non
                 name = f"{n} easy run{'s' if n != 1 else ''}" + (" and more" if len(others) > n else "")
                 if n == 0:
                     name = "Other sessions"
-            cards.append({"kind": "easy", "type": "Easy", "name": name, "km": km})
+            cards.append({"kind": "easy", "type": "Easy", "name": name, "km": km, "day": ", ".join(dow(r) for r in others)})
         sunday = w["starts"] + timedelta(days=6)
         weeks.append({
             "n": w["n"], "starts": w["starts"].isoformat(), "phase": w["phase"], "km": w["km"],

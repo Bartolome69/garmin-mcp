@@ -615,3 +615,5 @@ body.desk .b-grip { display: none; }
 .b-resume-cta { font-size: 14px; font-weight: 500; color: var(--red-text); white-space: nowrap; }
 .b-resume .link-plain { align-self: flex-end; font-size: 13px; }
 .b-head h1:focus { outline: none; }
+.b-sess-type { display: flex; gap: 6px; align-items: baseline; font-size: 12px; font-weight: 600; min-width: 0; }
+.b-sess-day { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

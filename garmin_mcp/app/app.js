@@ -1896,7 +1896,7 @@ function weekCard(pv) {
       <span class="b-wk-mid"><span class="mono-label" style="font-size:11px;letter-spacing:0.06em">WEEK ${w.n} OF ${n} · ${esc(w.phase.toUpperCase())}</span><span class="b-wk-dates">${esc(w.dates)}</span></span>
       <button type="button" class="b-arrow" aria-label="Next week" data-b="next" ${k === n - 1 ? 'aria-disabled="true" style="opacity:.35"' : ""}>${ICON.right(16)}</button></div>
     <div class="b-split"><span class="b-big" style="font-size:26px">${w.km} km</span><span class="meta" style="color:${colour};text-align:right">${esc(delta)}</span></div>
-    <div>${w.sessions.map((r) => `<div class="b-sess"><i style="background:${C[r.kind]}"></i><span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:12px;font-weight:600;color:${C[r.kind]}">${esc(r.type)}</span><span class="b-sess-name">${esc(r.name)}</span></span><span class="b-sess-v">${r.km} km</span></div>`).join("")}</div></div>`;
+    <div>${w.sessions.map((r) => `<div class="b-sess"><i style="background:${C[r.kind]}"></i><span class="stack-tight" style="gap:1px;min-width:0"><span class="b-sess-type"><span style="color:${C[r.kind]}">${esc(r.type)}</span>${r.day ? `<span class="b-sess-day">${esc(r.day)}</span>` : ""}</span><span class="b-sess-name">${esc(r.name)}</span></span><span class="b-sess-v">${r.km} km</span></div>`).join("")}</div></div>`;
 }
 
 function whyList(pv) {
@@ -2098,7 +2098,7 @@ function buildAction(act, el) {
     case "send": return sendPlan(false);
     case "retry": return sendPlan(true);
     case "toPreview": return go("7");
-    case "seePlan": B.inputs = null; B.plan = null; B.job = null; B.replace = false; location.hash = "#/plan"; return;
+    case "seePlan": { const to = B.landing || "#/plan"; B.inputs = null; B.plan = null; B.job = null; B.replace = false; B.landing = null; B.clock = null; location.hash = to; return; }
     default:
   }
 }
@@ -2112,11 +2112,27 @@ document.addEventListener("click", (e) => {
 async function sendPlan(retry) {
   try {
     B.job = await api("build/send", { method: "POST", body: JSON.stringify({ answers: sendable(), retry, replace: !!B.replace }) });
+    B.clock = { at: Date.now(), sent: B.job.sent || 0, moved: Date.now() };
   } catch (e) {
     if (e instanceof SignedOut) return route();
     return toast(e.message);
   }
   go("sending");
+}
+
+// How long is left, from how fast the sessions have gone on so far.
+function timeLeft(j) {
+  const c = B.clock || (B.clock = { at: Date.now(), sent: j.sent || 0, moved: Date.now() });
+  const now = Date.now(), sent = j.sent || 0;
+  if (sent > c.lastSent || c.lastSent === undefined) { c.lastSent = sent; c.moved = now; }
+  if (now - c.moved > 20000) return "Taking longer than usual";
+  const done = sent - c.sent;
+  if (done < 3) return j.total > 60 ? "About a minute or two" : "About a minute";
+  const secs = (now - c.at) / done * (j.total - sent) / 1000;
+  if (secs < 10) return "Nearly there";
+  if (secs < 50) return `About ${Math.ceil(secs / 10) * 10} seconds left`;
+  const mins = Math.round(secs / 60);
+  return mins <= 1 ? "About a minute left" : `About ${mins} minutes left`;
 }
 
 function buildSendView(step) {
@@ -2132,7 +2148,7 @@ function buildSendView(step) {
   if (step === "sending") {
     body = `<div class="b-centre"><div class="stack-8"><span class="kicker">Sending to Garmin</span><h1 class="b-h1">Putting it on your Garmin</h1></div>
       <div class="stack-8"><div class="b-track" role="progressbar" aria-valuemin="0" aria-valuemax="${j.total}" aria-valuenow="${j.sent || 0}"><span style="width:${pct}%"></span></div>
-      <div class="b-split meta" style="font-size:14px"><span>${j.sent || 0} of ${j.total} sessions</span><span>About a minute</span></div></div>
+      <div class="b-split meta" style="font-size:14px"><span>${j.sent || 0} of ${j.total} sessions</span><span aria-live="polite">${esc(timeLeft(j))}</span></div></div>
       <span class="meta" style="font-size:14px;line-height:1.5">You can leave this screen. It carries on, and Plan shows it when it's done.</span></div>`;
     B.poll = setTimeout(async () => {
       try { B.job = await api("build/send"); } catch (e) { if (e instanceof SignedOut) return route(); }
@@ -2144,7 +2160,12 @@ function buildSendView(step) {
   } else if (step === "done") {
     body = `<div class="b-centre"><span class="b-done">${ICON.check(26).replace('stroke-width="3.4"', 'stroke-width="3"')}</span><div class="stack-8"><h1 class="b-h1">On your watch at its next sync</h1>
       <span class="b-lead">${j.total} sessions over ${j.weeks} weeks. ${esc(j.first || "")}</span></div></div>`;
-    foot = `<div class="b-foot"><div class="b-foot-in"><div class="pills"><button type="button" class="pill tall light" data-b="seePlan">See your plan</button></div></div></div>`;
+    // The first run within the week is what Today shows next; a plan starting later opens on its first week.
+    const first = j.first_date ? day(j.first_date) : null;
+    const soon = first && !j.replaced && (first - day(isoToday())) / 864e5 <= 7;
+    const monday = first ? new Date(first.getFullYear(), first.getMonth(), first.getDate() - ((first.getDay() + 6) % 7)) : null;
+    B.landing = soon ? "#/today" : monday ? `#/plan?week=${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}` : "#/plan";
+    foot = `<div class="b-foot"><div class="b-foot-in"><div class="pills"><button type="button" class="pill tall light" data-b="seePlan">${soon ? "See your first run" : "See the first week"}</button></div></div></div>`;
   } else {
     body = `<div class="b-centre"><div class="stack-8"><h1 class="b-h1">Garmin didn't take the plan</h1><span class="b-lead">Nothing changed on your watch, and your answers are saved.</span></div>
       <div class="card amber b-amber">${WARN}<span class="stack-tight" style="gap:4px"><span style="font-size:14.5px;line-height:1.45">${j.sent ? `Garmin was busy and turned it away after ${j.sent} of ${j.total} sessions. Trying again sends the rest.` : "Garmin turned it away before any sessions went on. Try again in a moment."}</span>
