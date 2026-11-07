@@ -896,7 +896,8 @@ function weekView(d) {
       <div class="pills" style="flex:0 0 auto">${nav(w.previous, "Week before", ICON.left())}${nav(w.next, "Week after", ICON.right())}</div></div>
     <div class="card plan-list" id="plan-list">${rows}</div>
     <div class="week-foot"><span class="meta" style="flex:1;font-size:13.5px;line-height:1.4">Change anything here and the watch follows. Hold a row to move it.</span>${ask.html.replace("pill red tall", "pill red")}</div>
-    ${w.current ? `<div style="display:flex">${askNext.html.replace("pill red tall", "pill")}</div>` : ""}`;
+    ${w.current ? `<div style="display:flex">${askNext.html.replace("pill red tall", "pill")}</div>` : ""}
+    ${d.manage && !desktop() ? `<a class="link-plain" href="#/plan/block" style="align-self:flex-start">Change or remove this plan</a>` : ""}`;
 }
 
 function blockView(d) {
@@ -914,6 +915,9 @@ function blockView(d) {
         ? `<span class="${p.current ? "now" : ""}" title="${esc(p.label)}">${esc((p.weeks * 3 < b.bars.length / 4 ? p.label.slice(0, 2) : p.label).toUpperCase())}</span>`
         : `<span class="gap"></span>`).join("")}</div>` : "";
   const ask = askLink(d, "Edit the plan");
+  const manage = d.manage ? `<div class="card plan-manage"><a class="pill tall light" href="#/build?replace=1">Change this plan</a>
+      <div class="plan-manage-row"><a class="link-plain" href="${esc(ask.href)}" target="_blank" rel="noopener">Ask ${esc(ask.name)} to change it</a>
+      <button type="button" class="link-plain red" data-remove-plan>Remove this plan</button></div></div>` : "";
   return `<div class="card block-card"><div class="section-head"><span class="section-title">${esc(b.title)}</span><span class="meta">km per week</span></div>
       <div class="bars" style="grid-template-columns:${cols}" role="img" aria-label="Planned and run distance for each week of the block">${bars}</div>
       <div class="bar-nums" style="grid-template-columns:${cols}">${b.bars.map((x) => `<span class="${x.current ? "red" : ""}">${x.show_n ? x.n : ""}</span>`).join("")}</div>
@@ -922,7 +926,26 @@ function blockView(d) {
       <span class="block-verdict">${esc(b.verdict)}</span></div>
     <div class="week-foot"><div class="stack-tight" style="gap:2px;flex:1;min-width:0"><span class="strong">${esc(b.name)}</span><span class="meta">${esc(b.dates)}</span>
       ${(b.blocks || []).map((x) => `<span class="meta" style="font-size:12.5px">${esc(x.name)}${x.dates ? ` · ${esc(x.dates)}` : ""}</span>`).join("")}</div>
-      ${ask.html.replace("pill red tall", "pill")}</div>`;
+      ${d.manage ? "" : ask.html.replace("pill red tall", "pill")}</div>${manage}`;
+}
+
+function removePlanSheet(m) {
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Remove this plan?</span>
+      <span class="meta" style="font-size:14px;line-height:1.5">Takes ${m.count} session${m.count === 1 ? "" : "s"}, ${esc(m.from)} to ${esc(m.to)}, off your Garmin calendar and watch. Runs you've already done stay.</span></div>
+    <div class="pills"><button type="button" class="pill tall" data-close>Keep it</button><button type="button" class="pill tall red" data-go>Remove ${m.count} session${m.count === 1 ? "" : "s"}</button></div>`,
+  (holder, close) => {
+    const go = holder.querySelector("[data-go]");
+    go.onclick = async () => {
+      go.disabled = true; go.textContent = "Removing…";
+      try {
+        const r = await api("plan/remove", { method: "POST", body: JSON.stringify({ confirm: "remove" }) });
+        close(); toast(r.message); B.inputs = null; route(true);
+      } catch (e) {
+        if (e instanceof SignedOut) return route();
+        close(); toast(e.message);
+      }
+    };
+  });
 }
 
 async function showPlan(view, params, quiet = false) {
@@ -947,7 +970,10 @@ async function showPlan(view, params, quiet = false) {
       return;
     }
     // The plan ends within three weeks: the next block can be planned now.
-    const nb = d.next_block ? `<div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">This plan ends ${esc(d.next_block.ends)}</span>
+    const nb = d.next_block?.none ? `<div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Nothing planned from here</span>
+        <span class="b-entry-d">Build the next plan here, or talk it through with ${esc(d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")}.</span></div>
+        <a class="pill tall light" href="#/build">Build a plan</a></div>`
+      : d.next_block ? `<div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">This plan ends ${esc(d.next_block.ends)}</span>
         <span class="b-entry-d">Plan the next block now and it starts the Monday after, with an easy week first.</span></div>
         <div class="pills"><a class="pill tall light" href="#/build" style="flex:1.2">Plan the next block</a>${askLink({ ...d, ask: d.next_block.ask }, "With " + (d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")).html.replace("pill red tall", "pill tall")}</div></div>` : "";
     remember(d);
@@ -959,6 +985,8 @@ async function showPlan(view, params, quiet = false) {
       $("screen").innerHTML = head + nb + (view === "block" ? blockView(d) : weekView(d));
     }
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
+    const rm = document.querySelector("[data-remove-plan]");
+    if (rm) rm.onclick = () => removePlanSheet(d.manage);
     warm();
   }, (e) => failed(e.message, () => showPlan(view, params)), quiet || base === "plan");
 }
@@ -1568,7 +1596,7 @@ function settle(changed) {
 
 async function buildAsk(preview = false) {
   const mine = ++B.asked;
-  const body = JSON.stringify({ answers: sendable(), preview });
+  const body = JSON.stringify({ answers: sendable(), preview, replace: !!B.replace });
   const d = await api("build/plan", { method: "POST", body, read: true });
   if (mine !== B.asked) throw new Error("stale");
   return d;
@@ -1576,15 +1604,18 @@ async function buildAsk(preview = false) {
 
 function go(step) { location.hash = `#/build${step && step !== "1" ? `/${step}` : ""}`; }
 
-async function showBuild(step) {
+async function showBuild(step, params = new URLSearchParams()) {
   step = step || "1";
+  // From Plan's Change this plan: the new plan goes in place of the one running now.
+  if (params.get("replace") === "1" && !B.replace) { B.replace = true; B.inputs = null; }
+  else if (params.get("replace") === "0" && B.replace) { B.replace = false; B.inputs = null; }
   const wide = desktop();
   if (wide) { $("tabs").hidden = true; topbar("plan"); } else { $("topbar").hidden = true; $("tabs").hidden = true; }
   if (step === "sending" || step === "done" || step === "error") return buildSendView(step);
   if (!B.inputs) {
     loading();
     try {
-      B.inputs = await api("build");
+      B.inputs = await api(B.replace ? "build?replace=1" : "build");
     } catch (e) {
       if (e instanceof SignedOut) return route();
       return failed(e.message, () => showBuild(step));
@@ -1809,7 +1840,10 @@ function whyList(pv) {
 function step7() {
   const p = B.plan || {}, pv = p.preview;
   if (!pv) return p.failure ? heading("Your plan", "") + amber(esc(p.failure)) : `<div class="skeleton" style="min-height:60px;max-width:70%"></div><div class="skeleton" style="min-height:260px"></div><div class="skeleton"></div>`;
-  return heading(pv.title, pv.sub) + chart(pv) + weekCard(pv)
+  const rp = B.replace && B.inputs.replacing;
+  return heading(pv.title, pv.sub)
+    + (rp ? `<span class="b-replace">Replaces the ${rp.count} sessions of your current plan from ${esc(rp.from)}. Weeks you've already run stay.</span>` : "")
+    + chart(pv) + weekCard(pv)
     + (desktop() ? "" : whyList(pv))
     + `<span class="b-disclaim">General guidance for healthy adults, not medical advice. If you're unwell or pregnant, check with a doctor first.</span>`;
 }
@@ -1971,7 +2005,7 @@ function buildAction(act, el) {
     case "send": return sendPlan(false);
     case "retry": return sendPlan(true);
     case "toPreview": return go("7");
-    case "seePlan": B.inputs = null; B.plan = null; B.job = null; location.hash = "#/plan"; return;
+    case "seePlan": B.inputs = null; B.plan = null; B.job = null; B.replace = false; location.hash = "#/plan"; return;
     default:
   }
 }
@@ -1984,7 +2018,7 @@ document.addEventListener("click", (e) => {
 
 async function sendPlan(retry) {
   try {
-    B.job = await api("build/send", { method: "POST", body: JSON.stringify({ answers: sendable(), retry }) });
+    B.job = await api("build/send", { method: "POST", body: JSON.stringify({ answers: sendable(), retry, replace: !!B.replace }) });
   } catch (e) {
     if (e instanceof SignedOut) return route();
     return toast(e.message);
@@ -2053,7 +2087,7 @@ async function route(stay) {
   if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return wide ? showPanel("session", arg, params) : showSession(arg, params);
   if (screen === "run" && /^\d+$/.test(arg || "")) return wide ? showPanel("run", arg, params) : showRun(arg, params);
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
-  if (screen === "build") return showBuild(arg);
+  if (screen === "build") return showBuild(arg, params);
   if (screen === "crew") return showCrew();
   if (screen === "you") return showYou();
   return showToday();

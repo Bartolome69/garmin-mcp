@@ -930,14 +930,23 @@ async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
     monday = anchor - timedelta(days=anchor.weekday())
     season = _season(plan)
     weeks = await _season_weeks(plan, season)
+    # The plan running now, changed in the builder or taken off (preview).
+    manage = None
+    running = await _running_plan(plan, season, today) if preview.enabled() else None
+    if running and running["labels"]:
+        manage = {"count": len(running["dates"]), "from": _short_date(date.fromisoformat(running["dates"][0])),
+                  "to": _short_date(date.fromisoformat(running["dates"][-1]))}
     # Three weeks or less to go: the next block can be planned now (preview).
+    # Nothing on the calendar from today (a plan finished or removed): a new one.
     next_block = None
-    if preview.enabled() and season and today <= season["last"] <= today + timedelta(weeks=3):
+    if preview.enabled() and not running:
+        next_block = {"none": True}
+    elif preview.enabled() and season and today <= season["last"] <= today + timedelta(weeks=3):
         next_block = {"ends": _short_date(season["last"]),
                       "ask": _ask_links("Use Daash to plan my next training block, starting the Monday after this one ends.")}
     return drop_empty({"today": today.isoformat(), "week": _week_view(plan, weeks, season, monday, today),
                        "block": _block_view(plan, weeks, season, today), "assistant": assistant(),
-                       "next_block": next_block})
+                       "next_block": next_block, "manage": manage})
 
 
 # -- the crew: who runs when, and the runs that line up -------------------------
@@ -1794,13 +1803,17 @@ async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitne
         races.append({"id": f"g{i}", "name": e["name"], "date": e["date"], "km": km or 5,
                       "meta": _race_meta(e, bool(e.get("primary"))), "tier": tier})
 
-    # A plan running now: the next block starts the Monday after it ends.
+    # A plan running now: the next block starts the Monday after it ends. A plan
+    # with nothing left on the calendar (finished, or removed) isn't running.
     season = _season(plan) if plan.get("current_plan") or plan.get("upcoming_plan") else None
+    running = await _running_plan(plan, season, today)
     starts = plan_builder.first_monday(today)
     after = None
-    if season and season["last"] >= today:
-        starts = season["last"] + timedelta(days=7 - season["last"].weekday())
-        after = season["last"]
+    if running:
+        after = date.fromisoformat(running["ends"])
+        if season and season["last"] > after:
+            after = season["last"]
+        starts = after + timedelta(days=7 - after.weekday())
     inputs = drop_empty({
         "avg_km": avg, "longest_km": round(longest["km"]) if longest else 0,
         "longest_on": _short_date(longest["day"]) if longest else None,
@@ -1821,23 +1834,60 @@ async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitne
         "none": not [r for r in runs if r["day"] >= this_monday - timedelta(weeks=8)] or None,
     })
     inputs["level_line"] = LEVEL_LINES[inputs["level"]]
+    if running and running["labels"]:
+        inputs["plan"] = running
     _BUILD_INPUTS[who] = (time.time(), inputs, fit)
     return inputs, fit
 
 
-def _answers(body: Any, inputs: Mapping[str, Any]) -> plan_builder.Answers:
+async def _running_plan(plan: Mapping[str, Any], season: Mapping[str, Any] | None, today: date) -> dict[str, Any] | None:
+    """What's on the calendar from today: its session dates, and the codes of the plans Daash can take off again.
+
+    Read from the calendar (remembered from the plan's own read), not the plan
+    answer: a block planned after the next one is a third plan, still on the watch.
+    """
+    items = await server_mod._plan_calendar(today, today + server_mod.PLAN_SCAN_AHEAD)
+    ahead = [i for i in items if str(i.get("date") or "")[:10] >= today.isoformat()]
+    if not ahead:
+        return None
+    coded = training_plan.plans_in(items)
+    labels = sorted(code for code, sessions in coded.items()
+                    if any(str(x.get("date") or "")[:10] >= today.isoformat() for x in sessions))
+    return {"labels": labels, "dates": sorted(str(i["date"])[:10] for i in ahead),
+            "ends": max(str(i["date"])[:10] for i in ahead)}
+
+
+def _starts(inputs: Mapping[str, Any], replace: bool, today: date) -> tuple[date, date | None]:
+    """Where a new plan starts: after the one running now, or next Monday in place of it."""
+    if replace and inputs.get("plan"):
+        return plan_builder.first_monday(today), None
+    return date.fromisoformat(inputs["starts"]), date.fromisoformat(inputs["after"]) if inputs.get("after") else None
+
+
+def _replacing(inputs: Mapping[str, Any], starts: date) -> dict[str, Any] | None:
+    running = inputs.get("plan")
+    if not running:
+        return None
+    count = sum(1 for d in running["dates"] if d >= starts.isoformat())
+    return {"count": count, "from": _short_date(starts)} if count else None
+
+
+def _answers(body: Any, inputs: Mapping[str, Any], after: date | None = None) -> plan_builder.Answers:
     raw = (body or {}).get("answers") if isinstance(body, dict) else None
     if not isinstance(raw, dict):
         raise plan_builder.BuildError("Send the answers.")
-    return plan_builder.Answers.from_json({**raw, "after_plan": bool(inputs.get("after"))})
+    return plan_builder.Answers.from_json({**raw, "after_plan": bool(after)})
 
 
-async def build_payload() -> dict[str, Any]:
+async def build_payload(replace: bool = False) -> dict[str, Any]:
     if not preview.enabled():
         raise BuildUnavailable()
     today = date.today()
     inputs, _ = await _build_inputs(today)
-    return {**inputs, "today": today.isoformat(), "assistant": assistant(),
+    starts, after = _starts(inputs, replace, today)
+    return {**{k: v for k, v in inputs.items() if k != "plan"}, "starts": starts.isoformat(),
+            "after": after.isoformat() if after else None, "replacing": _replacing(inputs, starts) if replace else None,
+            "today": today.isoformat(), "assistant": assistant(),
             "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
 
 
@@ -1847,8 +1897,8 @@ async def build_plan_payload(body: Any) -> dict[str, Any]:
         raise BuildUnavailable()
     today = date.today()
     inputs, fit = await _build_inputs(today)
-    a = _answers(body, inputs)
-    starts = date.fromisoformat(inputs["starts"])
+    starts, after = _starts(inputs, bool((body or {}).get("replace")), today)
+    a = _answers(body, inputs, after)
     out: dict[str, Any] = {"faster_ok": plan_builder.faster_allowed(a, fit)}
     goal = plan_builder.goal_race(a)
     if goal:
@@ -1859,7 +1909,7 @@ async def build_plan_payload(body: Any) -> dict[str, Any]:
         # After a plan running now, the next block can't reach a race before it starts;
         # and Garmin's calendar takes sessions up to 30 weeks ahead.
         horizon = today + timedelta(weeks=training_plan.MAX_WEEKS_AHEAD)
-        if goal.day < starts and inputs.get("after"):
+        if goal.day < starts and after:
             out["race_note"] = f"The next block starts {_short_date(starts)}, after the plan you're on. Pick a race after that."
         elif goal.day > horizon:
             out["race_note"] = (f"Garmin takes sessions up to 30 weeks ahead, so a plan can reach races until "
@@ -1890,6 +1940,22 @@ def _free_label(goal: str, taken: set[str]) -> str:
 async def _send(who: str, args: dict[str, Any], resume: bool) -> None:
     job = _SENDS[who]
     done_before = job.get("created") or []
+    # In place of the plan running now: its sessions from the new plan's start
+    # come off first, the weeks already run stay. Asked again on a retry, it
+    # only finds what's left.
+    if job.get("replace"):
+        from_token = server_mod.plan_remove_from.set(date.fromisoformat(job["replace"]["from"]))
+        try:
+            for label in job["replace"]["labels"]:
+                gone = await server_mod.remove_plan(label, confirm=label)
+                if isinstance(gone, dict) and (gone.get("error") or gone.get("failed")):
+                    raise RuntimeError(str(gone.get("error") or gone.get("failed")))
+        except Exception as exc:  # noqa: BLE001 - shown as Garmin's answer
+            log.warning("plan builder: the old plan didn't come off: %s", exc)
+            job.update(state="error", said=_garmin_said(str(exc)))
+            return
+        finally:
+            server_mod.plan_remove_from.reset(from_token)
 
     def progress(created: list[dict[str, Any]], total: int) -> None:
         job["sent"] = len(done_before) + len(created)
@@ -1933,8 +1999,9 @@ async def build_send(body: Any) -> dict[str, Any]:
         return _send_status(job)
     today = date.today()
     inputs, fit = await _build_inputs(today)
-    a = _answers(body, inputs)
-    starts = date.fromisoformat(inputs["starts"])
+    replace = bool((body or {}).get("replace")) and bool(inputs.get("plan"))
+    starts, after = _starts(inputs, replace, today)
+    a = _answers(body, inputs, after)
     args = plan_builder.create_args(a, fit, today, starts, inputs.get("usual_days") or ())
     sessions = args["sessions"]
     if not sessions:
@@ -1953,10 +2020,38 @@ async def build_send(body: Any) -> dict[str, Any]:
         weeks = (date.fromisoformat(sessions[-1]["date"]) - starts).days // 7 + 1
         first_row = plan_builder.preview(a, fit, today, starts, inputs.get("usual_days") or ())["first"]
         job = _SENDS[who] = {"state": "sending", "sent": 0, "total": len(sessions), "label": args["label"],
-                             "weeks": weeks, "first": first_row, "created": []}
+                             "weeks": weeks, "first": first_row, "created": [],
+                             "replace": {"labels": inputs["plan"]["labels"], "from": starts.isoformat()} if replace else None}
     asyncio.create_task(_send(who, args, bool(resume)))
     _BUILD_INPUTS.pop(who, None)
     return _send_status(job)
+
+
+async def remove_running_plan(body: Any) -> dict[str, Any]:
+    """Take the plan running now off the calendar from today, every block of it. Past runs stay."""
+    from . import official
+
+    if not preview.enabled():
+        raise BuildUnavailable()
+    if str((body or {}).get("confirm") or "") != "remove":
+        raise plan_builder.BuildError("Confirm to remove the plan.")
+    today = date.today()
+    plan = await server_mod.get_plan()
+    if _error(plan):
+        return {"error": _error(plan)}
+    running = await _running_plan(plan, _season(plan), today)
+    if not running or not running["labels"]:
+        raise plan_builder.BuildError("There's no plan from Daash on your calendar to remove.")
+    removed = 0
+    for label in running["labels"]:
+        gone = await server_mod.remove_plan(label, confirm=label)
+        if isinstance(gone, dict) and gone.get("error"):
+            return {"error": str(gone["error"])}
+        removed += (gone or {}).get("removed") or 0
+    _BUILD_INPUTS.pop(official.current() or "local", None)
+    _track("app_plan_removed", {"sessions": removed})
+    return {"removed": removed, "message": f"Removed {removed} session{'s' if removed != 1 else ''}. "
+            "Your runs so far stay in Garmin."}
 
 
 def _send_status(job: Mapping[str, Any]) -> dict[str, Any]:
@@ -1977,9 +2072,24 @@ async def build_send_status() -> dict[str, Any]:
 @_safe
 async def api_build(request: Request) -> Response:
     try:
-        return _json(await build_payload())
+        return _json(await build_payload(request.query_params.get("replace") == "1"))
     except BuildUnavailable:
         return _json({"error": "Building a plan here isn't open yet."}, 404)
+
+
+@mcp.custom_route(API_PREFIX + "plan/remove", methods=["POST"])
+@_safe
+async def api_plan_remove(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    try:
+        return _json(await remove_running_plan(body))
+    except BuildUnavailable:
+        return _json({"error": "Not open yet."}, 404)
+    except plan_builder.BuildError as exc:
+        return _json({"error": str(exc)}, 400)
 
 
 @mcp.custom_route(API_PREFIX + "build/plan", methods=["POST"])
