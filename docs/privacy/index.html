@@ -303,11 +303,11 @@
       deserves a straight answer rather than four pages of legal throat-clearing,
       so here is the whole of it.
     </p>
-    <p class="stamp">Last updated 22 October 2026</p>
+    <p class="stamp">Last updated 7 November 2026</p>
 
     <dl class="facts">
       <div><dt>Password</dt><dd>Never stored, anywhere</dd></div>
-      <div><dt>Kept</dt><dd>One encrypted Garmin token</dd></div>
+      <div><dt>Kept</dt><dd>Encrypted, and deleted when you leave</dd></div>
       <div><dt>Sold or shared</dt><dd>Never, to anyone</dd></div>
     </dl>
   </header>
@@ -357,8 +357,9 @@
       </li>
       <li>
         <span><strong>Your email address</strong>, so we can get in touch if
-        something goes wrong with your connection, and now and then about
-        Daash, such as new features or plans. The sign-in page says so under
+        something goes wrong with your connection, for a short email on
+        Mondays about your training week, and now and then about Daash, such
+        as new features or plans. The sign-in page says so under
         the Connect button. Every one of those emails has a link that
         stops them in one click, and your connection carries on as before.
         Your address is never shared or used for anything else.</span>
@@ -374,9 +375,11 @@
         last used, and last renewed by the server.</span>
       </li>
       <li>
-        <span><strong>Two small markers</strong>: which &ldquo;what&rsquo;s
-        new&rdquo; note you have already been shown in a chat, so it is said only
-        once, and whether you have asked for no more update emails.</span>
+        <span><strong>A few small markers</strong>: which notes you have
+        already been shown in a chat (what&rsquo;s new, a tip, a suggestion to
+        start a crew, said once each, and a mention of the Daash app, at most
+        once a week), the Monday the weekly email last went to you, and whether
+        you have asked for no more update emails.</span>
       </li>
     </ul>
     <div class="stack">
@@ -472,6 +475,27 @@
   </section>
 
   <section>
+    <h2>The Daash app</h2>
+    <div class="stack">
+      <p class="small">
+        The Daash app, on the web at mcp.garmin.daash.run/app, shows your plan,
+        today&rsquo;s session and your crew. You sign in with a 6-digit code
+        emailed to you, kept only as a scrambled check for ten minutes, or with
+        the link from a plan in your chat, which signs you in once, within 30
+        minutes. Your browser then keeps that sign-in until you sign out. What
+        the app shows comes from Garmin the same way as your chat, and the app
+        keeps nothing more on the server.
+      </p>
+      <p class="small">
+        If you tell the app which chat to go back to, that chat&rsquo;s address
+        stays in your browser and is never sent to Daash. The app records which
+        screens you open and which buttons you press, with your email address,
+        the same way as below: never what a screen showed.
+      </p>
+    </div>
+  </section>
+
+  <section>
     <h2>AI Transparency Statement</h2>
     <div class="stack">
       <p class="small">
@@ -517,7 +541,8 @@
     </div>
     <ul class="plain" style="margin-top:16px">
       <li><span><strong>Garmin</strong>, where your data comes from and where
-        workouts go.</span></li>
+        workouts go. The workouts and plans Daash puts on your Garmin calendar
+        are held by Garmin under its own terms.</span></li>
       <li><span><strong>Fly.io</strong>, which hosts the server in London that
         keeps your encrypted row.</span></li>
       <li><span><strong>IPRoyal</strong>, the UK relay the sign-in step passes
@@ -529,19 +554,23 @@
         never your Garmin data.</span></li>
       <li><span><strong>Resend and Google (Gmail)</strong>, which carry and
         hold email you send to support@daash.run, and the replies to it.</span></li>
+      <li><span><strong>Stripe</strong>, only if you choose to tip (&ldquo;Buy
+        me a beer&rdquo;): it takes the payment and the details you give it,
+        and Daash sees the payment, the email it was made with and the random
+        ID described below, never your card.</span></li>
     </ul>
   </section>
 
   <section>
-    <h2>Garmin&rsquo;s official connection, being tested</h2>
+    <h2>Connecting on Garmin&rsquo;s own page</h2>
     <div class="stack">
       <p class="small">
-        Daash is moving onto Garmin&rsquo;s official developer programme. For
-        now only a test account connects that way; everyone else carries on
-        exactly as this page describes above. If you connect that way once it
-        opens, you approve Daash on Garmin&rsquo;s own sign-in page instead of
-        typing your password here, and you are asked first whether Daash may
-        use your data with your assistant.
+        Daash can also connect through Garmin&rsquo;s official developer
+        programme. That way, you approve Daash on Garmin&rsquo;s own sign-in
+        page instead of typing your password here, and you are asked first
+        whether Daash may use your data with your assistant. Garmin currently
+        limits how many accounts can connect its official way, so for now most
+        new accounts connect as this page describes above.
       </p>
       <p class="small">
         Garmin doesn&rsquo;t share your email address that way, so Daash asks
@@ -588,9 +617,12 @@
       <p class="small">
         These pages count views using
         <a href="https://posthog.com" target="_blank" rel="noopener">PostHog</a>
-        on its European servers, configured to leave nothing behind: no cookies
-        of its own, no advertising identifiers, no session recording, and no
-        profile built about you. The site itself sets one small cookie,
+        on its European servers. PostHog gives your browser a random ID, kept in
+        a cookie of daash.run&rsquo;s own and in your browser&rsquo;s storage,
+        so a return visit can be told from a new one. It also records how some
+        visits use the pages, where people tap and scroll, with anything typed
+        hidden, so I can see where the instructions lose people. Nothing goes to
+        advertisers and no advertising profile is built. The site itself sets one small cookie,
         <code>daash_src</code>, which remembers for 30 days where you arrived
         from (a site name such as chatgpt.com, or &ldquo;search&rdquo;), so
         that if you go on to connect, Daash knows what brought you. It holds
@@ -598,7 +630,10 @@
         pressed, which is how I know whether the instructions actually work.
         If you use the box on the front page that asks which connector should
         be next, the name you tapped or typed is recorded the same way, and
-        that is all it carries.
+        that is all it carries. The &ldquo;Buy me a beer&rdquo; link passes
+        that random ID to Stripe, so a tip can be matched to the visit it came
+        from. To stop your browser being counted at all, open any page of daash.run
+        with <code>?me=1</code> on the end of its address; <code>?me=0</code> undoes it.
       </p>
       <p class="small">
         The server reports a few moments the same way: a sign-in that worked,
@@ -644,8 +679,7 @@
       </p>
       <p class="small">
         Neither receives your Garmin data or your
-        connector address. That is also why this site has no cookie banner:
-        there is nothing to ask you to consent to.
+        connector address.
       </p>
     </div>
   </section>
@@ -729,9 +763,13 @@
       <p class="small">
         Open the sign-in page and choose <strong>Disconnect</strong>. That deletes
         your row outright (token, email, fingerprint, timestamps, markers),
-        and your place in any crew with everything it kept, and the connection stops working immediately. Nothing is retained
-        afterwards, so there is no backlog to request a copy of or ask to be
-        forgotten from.
+        and your place in any crew with everything it kept, and the connection stops working immediately.
+        Two things outlast it for a while: copies of the server&rsquo;s disk,
+        kept for 30 days in case the server has to be restored, so what you
+        deleted is gone from them within 30 days; and the usage moments
+        already recorded in PostHog, described above, which carry your email
+        address. Email <a href="mailto:support@daash.run">support@daash.run</a>
+        and those are deleted too.
       </p>
       <p class="small">
         Signing in again has the same effect on whatever came before it: the old
@@ -760,10 +798,10 @@
       <p class="small">
         This is a personal project run by Bart Etcheverry, in the UK. It is not
         affiliated with, endorsed by, or connected to Garmin, Anthropic or
-        OpenAI. It reaches Garmin through the same private interface the Garmin
-        Connect website uses, which is why it can break when Garmin changes
-        something, and is moving onto Garmin&rsquo;s official developer
-        programme (above).
+        OpenAI. Signed in with your password, it reaches Garmin through the
+        same private interface the Garmin Connect website uses, which is why it
+        can break when Garmin changes something; connected on Garmin&rsquo;s
+        own page, it uses Garmin&rsquo;s official developer programme (above).
       </p>
       <p class="small">
         It is not intended for children under 13, and it is not a medical device.
