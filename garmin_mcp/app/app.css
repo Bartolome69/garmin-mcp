@@ -610,3 +610,11 @@ body.desk .b-wrap.with-side ~ .b-foot .b-foot-in { padding-right: 388px; }
 .link-plain:hover { color: var(--ink); }
 .link-plain.red { color: var(--red-text); }
 .b-replace { font-size: 14px; line-height: 1.5; color: var(--hard); margin-top: -10px; }
+
+/* On a computer a sheet is a dialog in the middle of the screen, above the footer, not a drawer at the bottom. */
+body.desk .scrim { align-items: center; padding: 24px; }
+body.desk .sheet { max-width: 480px; max-height: calc(100vh - 48px); overflow-y: auto; border: 1px solid var(--hairline);
+  border-radius: 16px; padding: 20px 22px 22px; }
+body.desk .b-grip { display: none; }
+.b-km { display: flex; align-items: center; gap: 10px; }
+.b-km .field { width: 120px; }

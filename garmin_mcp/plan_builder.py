@@ -31,6 +31,9 @@ DISTANCE_NAMES = {"5k": "5K", "10k": "10K", "half": "half", "marathon": "maratho
 PREDICTION_KEYS = {"5k": "5k", "10k": "10k", "half": "half_marathon", "marathon": "marathon"}
 
 MIN_WEEKS, MAX_WEEKS, OPEN_WEEKS = 3, 20, 12
+# Past a marathon is an ultra. For now it's planned as a marathon build, and the
+# preview says so: back-to-back long runs and time on feet aren't in v1.
+ULTRA_KM = 43
 # The longest the long run gets, by distance, and in time (3 h for a marathon).
 LONG_CAP_KM = {"5k": 12, "10k": 16, "half": 20, "marathon": 32}
 LONG_CAP_MIN = {"5k": 150, "10k": 150, "half": 150, "marathon": 180}
@@ -174,6 +177,9 @@ class Paces:
         threshold = fitness.threshold_pace or (ten / 10 + half / DISTANCES["half"]) / 2
         predicted = fitness.predicted(dist, km)
         race = predicted / km if predicted else None
+        # Riegel flatters an ultra; its race-pace work is at marathon pace.
+        if km > ULTRA_KM:
+            return cls(mp + 60, mp, threshold, five / 5, mp, True)
         # The goal's pace only when it's within 3% of what fitness says.
         if goal_secs and predicted and goal_secs >= predicted * 0.97:
             race = goal_secs / km
@@ -292,7 +298,7 @@ def goal_race(a: Answers) -> Race | None:
 def goal_chips(dist: str, km: float, fitness: Fitness) -> list[dict[str, Any]]:
     """The goal times offered for the A race: what fitness says, a stretch, very ambitious."""
     predicted = fitness.predicted(dist, km)
-    if not predicted:
+    if not predicted or km > ULTRA_KM:
         return []
     step = 60 if predicted >= 3600 else 30 if predicted >= 1500 else 10
     rounded = lambda s: int(round(s / step) * step)  # noqa: E731
@@ -302,7 +308,7 @@ def goal_chips(dist: str, km: float, fitness: Fitness) -> list[dict[str, Any]]:
 def goal_verdict(goal_secs: int | None, dist: str, km: float, fitness: Fitness) -> dict[str, str] | None:
     """Realistic, a stretch, or very ambitious, and the sentence that says why."""
     predicted = fitness.predicted(dist, km)
-    if not goal_secs or not predicted:
+    if not goal_secs or not predicted or km > ULTRA_KM:
         return None
     under = (predicted - goal_secs) / predicted
     gap = abs(predicted - goal_secs)
@@ -885,7 +891,8 @@ def preview(a: Answers, fitness: Fitness, today: date, starts: date | None = Non
         })
     peak_i = max(range(len(weeks)), key=lambda i: (weeks[i]["km"], -i))
     end = s.race.day if s.race else s.start + timedelta(weeks=s.weeks) - timedelta(days=1)
-    title = ({"5k": "Your 5K plan", "10k": "Your 10K plan", "half": "Your half plan", "marathon": "Your marathon plan"}[s.dist]
+    title = ("Your ultra plan" if s.km > ULTRA_KM else
+             {"5k": "Your 5K plan", "10k": "Your 10K plan", "half": "Your half plan", "marathon": "Your marathon plan"}[s.dist]
              if s.kind in ("race", "faster") else "Your base plan" if s.kind == "base" else "Your fitness plan")
     return {
         "title": title,
@@ -998,7 +1005,10 @@ def checks(a: Answers, b: Built, fitness: Fitness, parkrun_day: int | None = Non
                          "Steps of 2 km a week are gentler on the legs.")
             break
     s = b.shape
-    if s.dist == "marathon" and b.long_top < 28:
+    if s.km > ULTRA_KM:
+        found.append("Ultras are planned as a marathon build for now, so the long run stops at 32 km or 3 hours. "
+                     "Back-to-back long runs and time on your feet aren't in it yet.")
+    elif s.dist == "marathon" and b.long_top < 28:
         found.append(f"The long run tops out at {round(b.long_top)} km, short of the 28 to 32 km a marathon usually needs. "
                      "More weeks or more running would let it go further.")
     if s.race and s.weeks < 6:
@@ -1022,10 +1032,10 @@ def create_args(a: Answers, fitness: Fitness, today: date, starts: date | None =
     s = b.shape
     style, based = STYLES[b.style]
     if s.race:
-        dist_word = {"5k": "5K", "10k": "10K", "half": "Half marathon", "marathon": "Marathon"}[s.dist]
+        dist_word = "Ultra" if s.km > ULTRA_KM else {"5k": "5K", "10k": "10K", "half": "Half marathon", "marathon": "Marathon"}[s.dist]
         goal = ", ".join(x for x in (s.race.name if s.race.name.lower() != dist_word.lower() else dist_word,
                                      a.goal_time, f"{s.race.day.day} {MONTHS_LONG[s.race.day.month - 1]}") if x)
-        name = {"5k": "5K build", "10k": "10K build", "half": "Half build", "marathon": "Marathon build"}[s.dist]
+        name = "Ultra build" if s.km > ULTRA_KM else {"5k": "5K build", "10k": "10K build", "half": "Half build", "marathon": "Marathon build"}[s.dist]
     else:
         goal = {"faster": f"Faster {DISTANCE_NAMES[s.dist]}", "base": "Base building", "fit": "General fitness"}[s.kind]
         name = {"faster": f"{DISTANCE_NAMES[s.dist].capitalize() if s.dist in ('half', 'marathon') else DISTANCE_NAMES[s.dist]} block",

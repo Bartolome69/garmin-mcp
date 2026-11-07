@@ -1413,9 +1413,11 @@ function sheet(html, wire) {
   const close = () => { holder.innerHTML = ""; };
   $("scrim").onclick = (e) => { if (e.target.id === "scrim") close(); };
   holder.querySelectorAll("[data-close]").forEach((b) => { b.onclick = close; });
+  holder.querySelector(".scrim").onkeydown = (e) => { if (e.key === "Escape") close(); };
   wire(holder, close);
+  // The sheet's own choice of where to start (a name to type) wins over its first button.
   const first = holder.querySelector("button");
-  if (first) first.focus();
+  if (first && !holder.contains(document.activeElement)) first.focus();
 }
 
 function timesSheet(d) {
@@ -1915,16 +1917,18 @@ function hurtView() {
 }
 
 function summary() {
-  const a = B.answers, now = STEP_OF[B.step] || 0;
+  // Every step reached so far opens from here, back and forward: their answers are already drafted.
+  const a = B.answers, now = STEP_OF[B.step] || 0, reached = Math.max(now, a.reached || 1);
   const races = a.open ? `No race · ${GOALS.find((g) => g[0] === a.open_goal)[1]}`
     : a.races.filter((r) => r.tier !== "C").sort((x, y) => x.date.localeCompare(y.date)).map((r) => `${r.name} (${r.tier})`).join(" · ") + (a.goal_time ? ` · goal ${a.goal_time}` : "");
   const amount = (B.plan?.amounts || []).find((o) => o.id === a.amount);
   const rows = [["1", "Your running", `${a.avg_km} km a week · longest ${a.longest_km} km`], ["2", "Races", races || "None marked"],
     ["3", "Days", `${a.days} a week · long run ${DOW[a.long_day]}`], ["4", "How much", amount ? amount.t : a.amount === "keep" ? `Around ${a.avg_km} km` : "Build steadily"],
     ["5", "Injuries", INJURIES.find((x) => x[0] === a.injury)[1]], ["6", "Style", STYLE_OPTS.find((x) => x.id === a.style).t]];
-  return `<span class="strong">Your plan so far</span><div class="card b-list">${rows.map(([s, l, v], k) => { const n = k + 1, done = n < now, cur = n === now;
-    return `<button type="button" class="b-sum ${cur ? "cur" : ""} ${k ? "" : "first"}" data-b="${n <= now ? "jump" : ""}" data-v="${s}" ${n > now ? "disabled" : ""}>
+  return `<span class="strong">Your plan so far</span><div class="card b-list">${rows.map(([s, l, v], k) => { const n = k + 1, cur = n === now, done = n <= reached && !cur;
+    return `<button type="button" class="b-sum ${cur ? "cur" : ""} ${k ? "" : "first"}" data-b="${n <= reached && !cur ? "jump" : ""}" data-v="${s}" ${n > reached ? "disabled" : ""} ${cur ? 'aria-current="step"' : ""}>
       <span class="b-sum-dot ${done ? "done" : cur ? "cur" : ""}">${done ? ICON.check(10) : ""}</span><span class="stack-tight" style="gap:2px;min-width:0"><span class="b-sum-l">${esc(l)}</span><span class="meta" style="line-height:1.4">${esc(done || cur ? v : "Not yet")}</span></span></button>`; }).join("")}</div>
+    ${reached >= 7 && now < 7 ? `<button type="button" class="pill tall" data-b="jump" data-v="7">Back to your plan</button>` : ""}
     <span class="meta" style="line-height:1.5">Nothing goes to your watch until the last step.</span>`;
 }
 
@@ -1946,6 +1950,7 @@ function footer() {
 
 function drawBuild() {
   const s = B.step, n = STEP_OF[s];
+  if (n && n > (B.answers.reached || 1)) { B.answers.reached = n; saveAnswers(); }
   const body = { 1: step1, 2: step2, "2c": step2c, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, hurt: hurtView }[s]();
   const head = n ? `<div class="b-progress"><button type="button" class="b-back" aria-label="Back" data-b="back">${ICON.left()}</button>
       <div class="b-steps" role="progressbar" aria-valuemin="1" aria-valuemax="7" aria-valuenow="${n}" aria-label="Step ${n} of 7">${[1, 2, 3, 4, 5, 6, 7].map((k) => `<span class="${k <= n ? "on" : ""}"></span>`).join("")}</div>
@@ -1992,7 +1997,9 @@ function addRaceSheet() {
       <button type="button" class="b-close" aria-label="Close" data-close>${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button></div>
     <label class="stack-8"><span class="field-label">Name</span><input class="field" id="race-name" maxlength="60" placeholder="Riverside 10K"></label>
     <label class="stack-8"><span class="field-label">Date</span><input class="field" id="race-date" type="date" min="${min}"></label>
-    <div class="stack-8"><span class="field-label">Distance</span>${seg(DISTS.map(([id, l]) => [id, l]), dist, "dist")}</div>
+    <div class="stack-8"><span class="field-label">Distance</span>${seg([...DISTS.map(([id, l]) => [id, l]), ["ultra", "Ultra"]], dist, "dist", "small")}</div>
+    <label class="stack-8" id="ultra-km" hidden><span class="field-label">How far</span>
+      <span class="b-km"><input class="field" id="race-km" type="number" inputmode="numeric" min="43" max="250" step="1" value="50"><span class="meta">km</span></span></label>
     <button type="button" class="pill tall light" data-save>Add it</button>`;
   sheet(body(), (holder, close) => {
     const dialog = holder.querySelector(".sheet");
@@ -2000,15 +2007,19 @@ function addRaceSheet() {
     dialog.querySelector("#race-name").focus();
     const wire = () => {
       dialog.querySelectorAll('[data-b="dist"]').forEach((b) => { b.onclick = () => { dist = b.dataset.v;
-        dialog.querySelectorAll('[data-b="dist"]').forEach((x) => x.setAttribute("aria-checked", String(x.dataset.v === dist))); }; });
+        dialog.querySelectorAll('[data-b="dist"]').forEach((x) => x.setAttribute("aria-checked", String(x.dataset.v === dist)));
+        dialog.querySelector("#ultra-km").hidden = dist !== "ultra";
+        if (dist === "ultra") dialog.querySelector("#race-km").focus(); }; });
       dialog.querySelector("[data-close]").onclick = close;
       dialog.querySelector("[data-save]").onclick = () => {
         const name = dialog.querySelector("#race-name").value.trim(), when = dialog.querySelector("#race-date").value;
         if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(when) || when < min) { toast("Give the race a name and a date ahead."); return; }
-        const km = DISTS.find((x) => x[0] === dist)[2];
+        const ultra = dist === "ultra";
+        const km = ultra ? Math.round(Number(dialog.querySelector("#race-km").value)) : DISTS.find((x) => x[0] === dist)[2];
+        if (ultra && !(km >= 43 && km <= 250)) { toast("An ultra is 43 to 250 km."); return; }
         const a = B.answers;
         const id = `u${Date.now()}`;
-        a.races.push({ id, name, date: when, km, meta: `${DISTS.find((x) => x[0] === dist)[1]} · added`, tier: km >= 10 ? "B" : "C" });
+        a.races.push({ id, name, date: when, km, meta: `${ultra ? `Ultra · ${km} km` : DISTS.find((x) => x[0] === dist)[1]} · added`, tier: km >= 10 ? "B" : "C" });
         if (!a.races.some((r) => r.tier === "A") && km >= 10) { a.races.find((r) => r.id === id).tier = "A"; a.open = false; }
         settle(id); saveAnswers(); close(); drawBuild(); refreshBuild();
       };
