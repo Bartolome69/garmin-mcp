@@ -918,9 +918,12 @@ def _block_verdict(bars: list[dict[str, Any]]) -> str:
 async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
     today = date.today()
     plan = await server_mod.get_plan()
-    if _error(plan):
+    # Nothing scheduled and nothing run lately, or just connected through the
+    # official API and waiting for Garmin's first runs: no plan yet, not a failure.
+    starting = plan.get("source") in ("none", "waiting") if isinstance(plan, dict) else False
+    if _error(plan) and not starting:
         return {"error": _error(plan)}
-    if plan.get("source") == "log":
+    if plan.get("source") == "log" or starting:
         return drop_empty({"empty": True, "build": preview.enabled() or None, "assistant": assistant(),
                            "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")})
     anchor = _day_of(week_of) or today
@@ -1814,6 +1817,8 @@ async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitne
         "after": after.isoformat() if after else None,
         "after_said": _short_date(after) if after else None,
         "thin": not runs or runs[-1]["day"] > today - timedelta(weeks=4) or None,
+        # No running from Garmin at all: step 1 starts from numbers typed in.
+        "none": not [r for r in runs if r["day"] >= this_monday - timedelta(weeks=8)] or None,
     })
     inputs["level_line"] = LEVEL_LINES[inputs["level"]]
     goal = _goal_race(plan) if season else None

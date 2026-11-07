@@ -1691,6 +1691,15 @@ function step1() {
     ["Recent races", i.recent ? `${i.recent.name} · ${i.recent.on}` : "None in the last 12 weeks", i.recent ? i.recent.time : "–"],
     ["How often you run", i.level === a.level ? i.level_line : { new: "Most weeks, for a few months", regular: "Most weeks, for over a year", exp: "Most weeks, for years" }[a.level], `${i.days} days`],
   ];
+  // Nothing from Garmin yet (a new account, or one waiting on Garmin's first runs): the numbers are typed in.
+  if (i.none) {
+    const set = a.avg_km > 0;
+    const typed = [["Weekly distance", "Your usual week", set ? `${a.avg_km} km` : "Not set"], ["Longest recent run", "Last 6 weeks", set ? `${a.longest_km} km` : "Not set"],
+      ["Running regularly for", "Sets how gently it builds", set ? LEVELS.find((l) => l[0] === a.level)[1] : "Not set"]];
+    return heading("Your running lately", "Garmin hasn't sent any running from you yet. Tell us your usual week and the plan starts from there.")
+      + `<div class="card b-list">${typed.map(([l, sub, v]) => `<div class="b-row"><span class="stack-tight" style="gap:2px;min-width:0"><span class="strong">${esc(l)}</span><span class="meta">${esc(sub)}</span></span><span class="b-val" style="${set ? "" : "color:var(--muted)"}">${esc(v)}</span></div>`).join("")}</div>`
+      + (i.predictions ? `<div class="stack-8"><span class="strong">Garmin's race predictions</span><div class="card b-pred">${i.predictions.map((p) => `<div><span class="meta" style="font-size:12px">${esc(p.l)}</span><span>${esc(p.v)}</span></div>`).join("")}</div></div>` : "");
+  }
   return heading("Your running lately", "From Garmin, last 4 weeks. Change anything that looks off.")
     + (i.thin ? amber("Garmin has only a few weeks of your running so far. Check these numbers before you go on.") : "")
     + `<div class="card b-card"><div class="b-split"><span class="stack-tight" style="gap:2px"><span class="meta">Weekly distance</span>
@@ -1747,11 +1756,11 @@ function step2c() {
 
 function step3() {
   const a = B.answers, i = B.inputs;
-  return heading("Which days work", "Filled in from the days you've run lately.")
-    + `<div class="stack-8"><div class="b-split"><span class="strong">Days a week</span><span class="meta">You ran ${i.days} most weeks</span></div>${seg([[3, "3"], [4, "4"], [5, "5"], [6, "6"]], a.days, "days", "big")}</div>
+  return heading("Which days work", i.none ? "Pick what fits your week." : "Filled in from the days you've run lately.")
+    + `<div class="stack-8"><div class="b-split"><span class="strong">Days a week</span><span class="meta">${i.none ? "Three is a good start" : `You ran ${i.days} most weeks`}</span></div>${seg([[3, "3"], [4, "4"], [5, "5"], [6, "6"]], a.days, "days", "big")}</div>
     <div class="stack-8"><div class="b-split"><span class="strong">Days you can't run</span><span class="meta">Tap to mark</span></div>
       <div class="b-week">${DOW.map((l, d) => `<button type="button" class="b-day out ${a.out.includes(d) ? "on" : ""}" aria-pressed="${a.out.includes(d)}" data-b="out" data-v="${d}">${l}</button>`).join("")}</div></div>
-    <div class="stack-8"><div class="b-split"><span class="strong">Long run day</span><span class="meta">Your long runs were on ${DAY_LONG[i.long_day ?? 6]}s</span></div>
+    <div class="stack-8"><div class="b-split"><span class="strong">Long run day</span><span class="meta">${i.none ? "Most people pick a weekend day" : `Your long runs were on ${DAY_LONG[i.long_day ?? 6]}s`}</span></div>
       <div class="b-week">${DOW.map((l, d) => `<button type="button" class="b-day long ${a.long_day === d ? "on" : ""}" aria-pressed="${a.long_day === d}" ${a.out.includes(d) ? "disabled" : ""} data-b="long" data-v="${d}">${l}</button>`).join("")}</div></div>
     ${i.parkrun_day != null ? `<span class="meta" style="font-size:14px;line-height:1.5">${DAY_LONG[i.parkrun_day]} parkrun counts as one of your days. It stays easy in the weeks before a race.</span>` : ""}`;
 }
@@ -1889,7 +1898,9 @@ function footer() {
   const out = (l, act, flex = 1) => `<button type="button" class="pill tall" style="flex:${flex}" data-b="${act}">${esc(l)}</button>`;
   const as = a.races.filter((r) => r.tier === "A").length;
   const blocked = !a.open && goalRace() && (B.plan?.race_note || B.plan?.too_close);
-  const buttons = { 1: out("That's not right", "edit") + light("Looks right", "next1", 1.2),
+  const typing = B.inputs.none && !(a.avg_km > 0);
+  const buttons = { 1: typing ? light("Set my numbers", "edit") : B.inputs.none ? out("Change them", "edit") + light("Looks right", "next1", 1.2)
+    : out("That's not right", "edit") + light("Looks right", "next1", 1.2),
     2: light(as > 1 && !a.open ? "Continue anyway" : "Looks right", "next2").replace("<button", blocked ? "<button disabled" : "<button"),
     "2c": light("Continue", "next2c"), 3: light("Looks right", "next3"), 4: light("Continue", "next4"), 5: light("Continue", "next5"),
     6: light("Continue", "next6"), 7: `<button type="button" class="pill tall red" style="flex:1" data-b="send" ${B.plan?.preview ? "" : "disabled"}>Put it on my Garmin</button>` }[s];
@@ -1914,14 +1925,15 @@ function drawBuild() {
 
 function editSheet() {
   const a = B.answers;
-  const draft = { avg_km: a.avg_km, longest_km: a.longest_km, level: a.level };
+  const fresh = B.inputs.none && !(a.avg_km > 0);
+  const draft = fresh ? { avg_km: 20, longest_km: 8, level: a.level } : { avg_km: a.avg_km, longest_km: a.longest_km, level: a.level };
   const body = () => `<span class="b-grip"></span><div class="b-split" style="align-items:center"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Adjust your numbers</span>
       <button type="button" class="b-close" aria-label="Close" data-close>${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button></div>
-    ${[["avg_km", "Weekly average", "Last 4 weeks"], ["longest_km", "Longest recent run", "Last 6 weeks"]].map(([k, l, sub]) => `<div class="b-split" style="align-items:center">
+    ${[["avg_km", "Weekly average", B.inputs.none ? "A usual week lately" : "Last 4 weeks"], ["longest_km", "Longest recent run", "Last 6 weeks"]].map(([k, l, sub]) => `<div class="b-split" style="align-items:center">
       <span class="stack-tight" style="gap:2px"><span class="strong">${l}</span><span class="meta">${sub}</span></span>
       <div class="b-stepper"><button type="button" aria-label="Less" data-s="${k}" data-d="-1">−</button><span aria-live="polite">${draft[k]} km</span><button type="button" aria-label="More" data-s="${k}" data-d="1">+</button></div></div>`).join("")}
     <div class="stack-8"><span class="strong">Running regularly for</span>${seg(LEVELS, draft.level, "level", "small")}</div>
-    <span class="meta" style="line-height:1.45">Only changes this plan. Garmin keeps its own numbers.</span>
+    <span class="meta" style="line-height:1.45">${B.inputs.none ? "Only for this plan. Once Garmin has your runs, the next plan starts from those." : "Only changes this plan. Garmin keeps its own numbers."}</span>
     <button type="button" class="pill tall light" data-save>Save</button>`;
   sheet(body(), (holder, close) => {
     const dialog = holder.querySelector(".sheet");

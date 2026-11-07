@@ -3546,7 +3546,9 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
             "error": (
                 "Nothing is scheduled on the Garmin calendar, and nothing was recorded "
                 f"in the last {training_plan.LOG_WEEKS} weeks."
-            )
+            ),
+            # The app's Plan tells this apart from Garmin not answering.
+            "source": "none",
         }
     summary = training_plan.summarise_log(activities, today)
     imported = any(int(a.get("activityId") or 0) >= official_data.IMPORTED_IDS for a in activities

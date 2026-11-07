@@ -629,6 +629,39 @@ def build_checks() -> None:
             on_race = [s for s in DEMO.scheduled if s["date"] == race_day.isoformat()]
             check("with the race on race day", any("Test 10K" in str(s.get("title")) for s in on_race), str(on_race)[:200])
             check("a send is counted", any(e["properties"].get("ok") for e in posted("app_plan_built")))
+
+            # New accounts: nothing on the calendar and nothing run, or connected
+            # through the official API and waiting on Garmin's first runs.
+            from garmin_mcp import server as server_mod
+            real_get_plan, real_activities = server_mod.get_plan, DEMO.get_activities_by_date
+            answers_for = {
+                "nothing recorded": {"error": "Nothing is scheduled on the Garmin calendar, and nothing was recorded "
+                                              "in the last 4 weeks.", "source": "none"},
+                "waiting on Garmin": {"source": "waiting", "since": _d.today().isoformat()},
+            }
+            try:
+                for case, answer in answers_for.items():
+                    async def given(label=None, answer=answer):
+                        return answer
+                    server_mod.get_plan = given
+                    plan = client.get("/app/api/plan", headers=auth).json()
+                    check(f"{case}: Plan offers to build one", plan.get("empty") is True and plan.get("build") is True, str(plan)[:200])
+
+                async def down(label=None):
+                    return {"error": "Garmin didn't answer."}
+                server_mod.get_plan = down
+                check("Garmin not answering is still an error", client.get("/app/api/plan", headers=auth).status_code >= 400)
+                server_mod.get_plan = given
+                DEMO.get_activities_by_date = lambda start, end: []
+                app_routes._BUILD_INPUTS.clear()
+                fresh = client.get("/app/api/build", headers=auth).json()
+                check("with no runs from Garmin, step 1 asks for the numbers", fresh.get("none") is True and not fresh.get("avg_km"), str(fresh)[:200])
+                typed = {**answers, "avg_km": 20, "longest_km": 8, "level": "new"}
+                plan = client.post("/app/api/build/plan", headers=auth, content=_json.dumps({"answers": typed, "preview": True})).json()
+                check("and the plan starts from what was typed", (plan.get("preview") or {}).get("start_km", 99) <= 20, str(plan)[:200])
+            finally:
+                server_mod.get_plan, DEMO.get_activities_by_date = real_get_plan, real_activities
+                app_routes._BUILD_INPUTS.clear()
         finally:
             os.environ.pop("GARMIN_MCP_PREVIEW", None)
 
