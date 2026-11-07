@@ -972,7 +972,23 @@ function blockView(d) {
       <span class="block-verdict">${esc(b.verdict)}</span></div>
     <div class="week-foot"><div class="stack-tight" style="gap:2px;flex:1;min-width:0"><span class="strong">${esc(b.name)}</span><span class="meta">${esc(b.dates)}</span>
       ${(b.blocks || []).map((x) => `<span class="meta" style="font-size:12.5px">${esc(x.name)}${x.dates ? ` · ${esc(x.dates)}` : ""}</span>`).join("")}</div>
-      ${d.manage ? "" : ask.html.replace("pill red tall", "pill")}</div>${manage}`;
+      ${d.manage || d.next_block?.none ? "" : ask.html.replace("pill red tall", "pill")}</div>${manage}`;
+}
+
+// A plan left part way, kept on the phone: one row on Plan to carry on, or to start again.
+function resumeRow() {
+  const d = buildDraft();
+  if (!d) return "";
+  const n = STEP_OF[d.step] || d.answers.reached || 1;
+  const days = Math.floor((Date.now() - d.at) / 864e5);
+  const when = days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+  return `<div class="b-resume"><a class="b-resume-go" href="#/build${n > 1 ? `/${d.step}` : ""}${d.replace ? "?replace=1" : "?replace=0"}">
+      <span class="stack-tight" style="gap:1px;min-width:0"><span class="strong">Pick up your plan</span><span class="meta" style="font-size:12.5px">Step ${n} of 7 · last changed ${when}</span></span>
+      <span class="b-resume-cta">Carry on</span></a><button type="button" class="link-plain" data-drop-draft>Start again</button></div>`;
+}
+function wireResume() {
+  const b = document.querySelector("[data-drop-draft]");
+  if (b) b.onclick = () => { store.drop(BUILD_KEY); B.inputs = null; B.answers = null; b.closest(".b-resume").remove(); toast("Cleared. Build one fresh whenever you like."); };
 }
 
 function removePlanSheet(m) {
@@ -1004,12 +1020,14 @@ async function showPlan(view, params, quiet = false) {
       const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       if (d.build) {
         $("screen").innerHTML = `<header class="stack-tight" style="padding-top:4px"><span class="kicker">Plan</span><h1 class="headline">No plan yet</h1></header>
+          ${resumeRow()}
           <div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Build one here</span>
-            <span class="b-entry-d">About two minutes. Most answers come from Garmin, so most steps are one tap.</span></div>
+            <span class="b-entry-d">${d.fresh ? "About two minutes. Tell it your usual week and it does the rest." : "About two minutes. Most answers come from Garmin, so most steps are one tap."}</span></div>
             <a class="pill tall light" href="#/build">Build one here</a></div>
           <div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Or talk it through</span>
             <span class="b-entry-d">${esc(d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")} asks the same questions and can handle anything unusual.</span></div>
             ${ask.html.replace("pill red tall", "pill tall")}</div>`;
+        wireResume();
         return;
       }
       $("screen").innerHTML = head + `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>${ask.html}</div>`;
@@ -1025,14 +1043,15 @@ async function showPlan(view, params, quiet = false) {
     remember(d);
     base = "plan";
     if (desktop()) {
-      $("screen").innerHTML = `<header><h1 class="headline" style="font-size:28px">Plan</h1></header>${nb}
+      $("screen").innerHTML = `<header><h1 class="headline" style="font-size:28px">Plan</h1></header>${resumeRow()}${nb}
         <div class="desk-plan"><div class="stack">${weekView(d)}</div><div class="stack">${blockView(d)}</div></div>`;
     } else {
-      $("screen").innerHTML = head + nb + (view === "block" ? blockView(d) : weekView(d));
+      $("screen").innerHTML = head + resumeRow() + nb + (view === "block" ? blockView(d) : weekView(d));
     }
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
     const rm = document.querySelector("[data-remove-plan]");
     if (rm) rm.onclick = () => removePlanSheet(d.manage);
+    wireResume();
     warm();
   }, (e) => failed(e.message, () => showPlan(view, params)), quiet || base === "plan");
 }
@@ -1413,7 +1432,16 @@ function sheet(html, wire) {
   const close = () => { holder.innerHTML = ""; };
   $("scrim").onclick = (e) => { if (e.target.id === "scrim") close(); };
   holder.querySelectorAll("[data-close]").forEach((b) => { b.onclick = close; });
-  holder.querySelector(".scrim").onkeydown = (e) => { if (e.key === "Escape") close(); };
+  holder.querySelector(".scrim").onkeydown = (e) => {
+    if (e.key === "Escape") return close();
+    if (e.key !== "Tab") return;
+    // Tab goes round the dialog, not to the page behind it.
+    const items = [...holder.querySelectorAll('button:not([disabled]), a[href], input, select, textarea')].filter((x) => !x.closest("[hidden]"));
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
   wire(holder, close);
   // The sheet's own choice of where to start (a name to type) wins over its first button.
   const first = holder.querySelector("button");
@@ -1466,6 +1494,7 @@ function deleteSheet() {
 async function signOut() {
   const access = token.access, client = CLIENT_ID;
   token.clear();
+  store.drop(BUILD_KEY);
   if (access) {
     // Revoked as well as forgotten, so the token can't be used again from anywhere.
     fetch("/revoke", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -1604,21 +1633,40 @@ const WARN = svg('<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M1
 const B = { inputs: null, answers: null, plan: null, sel: null, job: null, poll: null, asked: 0 };
 
 function day(iso) { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); }
-function saveAnswers() { try { sessionStorage.setItem(BUILD_KEY, JSON.stringify({ starts: B.inputs.starts, answers: B.answers })); } catch { /* this tab only */ } }
+// The answers so far are kept on the phone, so leaving part way loses nothing: Plan offers to pick them up.
+const DRAFT_DAYS = 14;
+function saveAnswers() {
+  store.set(BUILD_KEY, JSON.stringify({ starts: B.inputs.starts, replace: !!B.replace, answers: B.answers, step: B.step, at: Date.now() }));
+}
+function buildDraft() {
+  try {
+    const d = JSON.parse(store.get(BUILD_KEY) || "null");
+    return d && d.answers && (d.answers.reached || 1) >= 2 && Date.now() - (d.at || 0) < DRAFT_DAYS * 864e5 ? d : null;
+  } catch { return null; }
+}
+// A race outside the dates a plan can reach: before this block starts, or past Garmin's 30 weeks.
+function outside(r) {
+  const w = B.inputs && B.inputs.window;
+  return w ? (r.date < w.from ? "before" : r.date > w.to ? "after" : null) : null;
+}
 function freshAnswers(i) {
+  const inside = (i.races || []).filter((r) => !(i.window && (r.date < i.window.from || r.date > i.window.to)));
   return {
     avg_km: i.avg_km || 0, longest_km: i.longest_km || 0, level: i.level || "regular",
-    races: (i.races || []).map((r) => ({ ...r })), goal_time: null, open: !(i.races || []).some((r) => r.tier === "A"),
+    races: (i.races || []).map((r) => ({ ...r, tier: inside.includes(r) ? r.tier : "C" })), goal_time: null, open: !inside.some((r) => r.tier === "A"),
     open_goal: "faster", open_distance: "half", days: i.days || 4, out: [], long_day: i.long_day ?? 6,
     amount: "build", injury: "none", style: i.level === "new" ? "steady" : "balanced", note: "",
   };
 }
-// What the server is sent: with no race in mind, every A race is raced as a B.
+// What the server is sent: the answers alone, without the screen's own notes. With no race
+// in mind every A race is raced as a B, and races the plan can't reach are left out.
 function sendable() {
   const a = B.answers;
-  return { ...a, races: a.races.map((r) => ({ ...r, tier: a.open && r.tier === "A" ? "B" : r.tier })) };
+  const keep = ["avg_km", "longest_km", "level", "goal_time", "open_goal", "open_distance", "days", "out", "long_day", "amount", "injury", "style"];
+  return { ...Object.fromEntries(keep.map((k) => [k, a[k]])),
+    races: a.races.filter((r) => !outside(r)).map((r) => ({ name: r.name, date: r.date, km: r.km, tier: a.open && r.tier === "A" ? "B" : r.tier })) };
 }
-function goalRace() { return B.answers.open ? null : [...B.answers.races].filter((r) => r.tier === "A").sort((x, y) => x.date.localeCompare(y.date)).pop() || null; }
+function goalRace() { return B.answers.open ? null : [...B.answers.races].filter((r) => r.tier === "A" && !outside(r)).sort((x, y) => x.date.localeCompare(y.date)).pop() || null; }
 
 // One B race every 3 weeks, and none in the 10 days before the A race: the others run for fun.
 function settle(changed) {
@@ -1628,7 +1676,7 @@ function settle(changed) {
   const sorted = [...a.races].sort((x, y) => x.date.localeCompare(y.date));
   let last = null;
   for (const r of sorted) {
-    if (r.tier !== "B") continue;
+    if (r.tier !== "B" || outside(r)) continue;
     const tooNearA = goal && r !== goal && (day(goal.date) - day(r.date)) / 864e5 <= 10 && day(r.date) <= day(goal.date);
     const tooNearB = last && (day(r.date) - day(last.date)) / 864e5 < 21;
     if (tooNearA || tooNearB) {
@@ -1642,12 +1690,28 @@ function settle(changed) {
   a.note = note;
 }
 
-async function buildAsk(preview = false) {
-  const mine = ++B.asked;
+// Every answer is asked once and remembered, and the step after this one is asked ahead,
+// so moving on draws at once instead of waiting on the server.
+const ASKED = new Map();
+function buildAsk(preview = false) {
   const body = JSON.stringify({ answers: sendable(), preview, replace: !!B.replace });
-  const d = await api("build/plan", { method: "POST", body, read: true });
-  if (mine !== B.asked) throw new Error("stale");
-  return d;
+  let p = ASKED.get(body);
+  if (!p) {
+    p = api("build/plan", { method: "POST", body, read: true });
+    p.catch(() => ASKED.delete(body));
+    ASKED.set(body, p);
+    if (ASKED.size > 40) ASKED.delete(ASKED.keys().next().value);
+  }
+  return p;
+}
+let aheadTimer;
+function askAhead() {
+  clearTimeout(aheadTimer);
+  aheadTimer = setTimeout(() => {
+    const s = B.step;
+    if (s === "1" || s === "2" || s === "2c" || s === "3") buildAsk(false).catch(() => {});
+    if (s === "4" || s === "5" || s === "6") buildAsk(true).catch(() => {});
+  }, 250);
 }
 
 function go(step) { location.hash = `#/build${step && step !== "1" ? `/${step}` : ""}`; }
@@ -1674,9 +1738,8 @@ async function showBuild(step, params = new URLSearchParams()) {
       return failed(e.message, () => showBuild(step));
     }
     remember(B.inputs);
-    let saved = null;
-    try { saved = JSON.parse(sessionStorage.getItem(BUILD_KEY) || "null"); } catch { saved = null; }
-    B.answers = saved && saved.starts === B.inputs.starts && !chosen ? saved.answers : freshAnswers(B.inputs);
+    const saved = buildDraft();
+    B.answers = saved && saved.starts === B.inputs.starts && !!saved.replace === !!B.replace && !chosen ? saved.answers : freshAnswers(B.inputs);
   }
   // From the card on Today: that race is the goal, and any other A becomes a B.
   if (chosen && B.answers.races.some((r) => r.key === chosen)) {
@@ -1693,10 +1756,10 @@ async function showBuild(step, params = new URLSearchParams()) {
 }
 
 async function refreshBuild() {
-  const step = B.step;
+  const step = B.step, mine = ++B.asked;
   try {
     const d = await buildAsk(step === "7");
-    if (B.step !== step) return;
+    if (B.step !== step || mine !== B.asked) return;
     // Each answer replaces what the last one said about the race and the goal.
     B.plan = { ...B.plan, chips: null, verdict: null, too_close: null, race_note: null, picked: null, problem: null, failure: null, ...d };
     if (step === "4" && d.amounts && !d.amounts.some((o) => o.id === B.answers.amount)) B.answers.amount = d.amounts.length > 1 ? "build" : "keep";
@@ -1706,8 +1769,7 @@ async function refreshBuild() {
     drawBuild();
   } catch (e) {
     if (e instanceof SignedOut) return route();
-    if (e.message === "stale") return;
-    if (B.step === step) { B.plan = { ...B.plan, failure: e.message }; drawBuild(); }
+    if (B.step === step && mine === B.asked) { B.plan = { ...B.plan, failure: e.message }; drawBuild(); }
   }
 }
 
@@ -1732,25 +1794,28 @@ function step1() {
     const typed = [["Weekly distance", "Your usual week", set ? `${a.avg_km} km` : "Not set"], ["Longest recent run", "Last 6 weeks", set ? `${a.longest_km} km` : "Not set"],
       ["Running regularly for", "Sets how gently it builds", set ? LEVELS.find((l) => l[0] === a.level)[1] : "Not set"]];
     return heading("Your running lately", "Garmin hasn't sent any running from you yet. Tell us your usual week and the plan starts from there.")
-      + `<div class="card b-list">${typed.map(([l, sub, v]) => `<div class="b-row"><span class="stack-tight" style="gap:2px;min-width:0"><span class="strong">${esc(l)}</span><span class="meta">${esc(sub)}</span></span><span class="b-val" style="${set ? "" : "color:var(--muted)"}">${esc(v)}</span></div>`).join("")}</div>`
+      + `<div class="card b-list">${typed.map(([l, sub, v]) => `<button type="button" class="b-row b-rowbtn" data-b="edit"><span class="stack-tight" style="gap:2px;min-width:0"><span class="strong">${esc(l)}</span><span class="meta">${esc(sub)}</span></span><span class="b-val" style="${set ? "" : "color:var(--muted)"}">${esc(v)}</span></button>`).join("")}</div>`
       + (i.predictions ? `<div class="stack-8"><span class="strong">Garmin's race predictions</span><div class="card b-pred">${i.predictions.map((p) => `<div><span class="meta" style="font-size:12px">${esc(p.l)}</span><span>${esc(p.v)}</span></div>`).join("")}</div></div>` : "");
   }
   return heading("Your running lately", "From Garmin, last 4 weeks. Change anything that looks off.")
     + (i.thin ? amber("Garmin has only a few weeks of your running so far. Check these numbers before you go on.") : "")
-    + `<div class="card b-card"><div class="b-split"><span class="stack-tight" style="gap:2px"><span class="meta">Weekly distance</span>
+    + `<div class="card b-card b-tap" data-b="edit"><div class="b-split"><span class="stack-tight" style="gap:2px"><span class="meta">Weekly distance</span>
         <span class="b-big">${a.avg_km} km<span class="b-unit"> a week</span></span></span><span class="mono-label" style="font-size:11.5px">LAST 4 WEEKS</span></div>
       <div class="b-weeks4">${i.bars.map((b) => `<div><span>${b.v}</span><i style="height:${Math.round(b.v / max * 56)}px"></i></div>`).join("")}</div>
       <div class="b-weeks4-l">${i.bars.map((b) => `<span>${esc(b.l)}</span>`).join("")}</div></div>
-    <div class="card b-list">${rows.map(([l, sub, v]) => `<div class="b-row"><span class="stack-tight" style="gap:2px;min-width:0"><span class="strong">${esc(l)}</span><span class="meta">${esc(sub)}</span></span><span class="b-val">${esc(v)}</span></div>`).join("")}</div>
+    <div class="card b-list">${rows.map(([l, sub, v], k) => k === 1
+      ? `<div class="b-row"><span class="stack-tight" style="gap:2px;min-width:0"><span class="strong">${esc(l)}</span><span class="meta">${esc(sub)}</span></span><span class="b-val">${esc(v)}</span></div>`
+      : `<button type="button" class="b-row b-rowbtn" data-b="edit"><span class="stack-tight" style="gap:2px;min-width:0"><span class="strong">${esc(l)}</span><span class="meta">${esc(sub)}</span></span><span class="b-val">${esc(v)}</span></button>`).join("")}</div>
     ${i.predictions ? `<div class="stack-8"><span class="strong">Garmin's race predictions</span><div class="card b-pred">${i.predictions.map((p) => `<div><span class="meta" style="font-size:12px">${esc(p.l)}</span><span>${esc(p.v)}</span></div>`).join("")}</div></div>` : ""}`;
 }
 
 function raceRow(r, n) {
-  const d = day(r.date);
-  return `<div class="b-race ${n ? "" : "first"}"><span class="b-date"><span>${MON[d.getMonth()].toUpperCase()}</span><b>${d.getDate()}</b></span>
-    <span class="stack-tight" style="gap:2px;min-width:0"><span class="b-race-name">${esc(r.name)}</span><span class="meta" style="font-size:12.5px;${r.demoted ? "color:var(--hard)" : ""}">${esc(r.demoted ? "Now a fun run" : r.meta)}</span></span>
-    <div class="b-tiers" role="radiogroup" aria-label="Priority for ${esc(r.name)}">${["A", "B", "C"].map((t) =>
-      `<button type="button" ${radio(r.tier === t && !(B.answers.open && t === "A"))} class="t-${t}" data-b="tier" data-id="${esc(r.id)}" data-v="${t}">${t}</button>`).join("")}</div></div>`;
+  const d = day(r.date), out = outside(r);
+  const meta = out === "before" ? "Before this block starts" : out === "after" ? "Past Garmin's 30-week calendar" : r.demoted ? "Now a fun run" : r.meta;
+  return `<div class="b-race ${n ? "" : "first"} ${out ? "out" : ""}"><span class="b-date"><span>${MON[d.getMonth()].toUpperCase()}</span><b>${d.getDate()}</b></span>
+    <span class="stack-tight" style="gap:2px;min-width:0"><span class="b-race-name">${esc(r.name)}</span><span class="meta" style="font-size:12.5px;${r.demoted && !out ? "color:var(--hard)" : ""}">${esc(meta)}</span></span>
+    ${out ? "" : `<div class="b-tiers" role="radiogroup" aria-label="Priority for ${esc(r.name)}">${["A", "B", "C"].map((t) =>
+      `<button type="button" ${radio(r.tier === t && !(B.answers.open && t === "A"))} class="t-${t}" data-b="tier" data-id="${esc(r.id)}" data-v="${t}">${t}</button>`).join("")}</div>`}</div>`;
 }
 
 function step2() {
@@ -1775,7 +1840,8 @@ function step2() {
       ${p.race_note ? amber(esc(p.race_note)) : p.too_close ? amber(`${esc(goal.name)} is too close for a plan. Run easy and enjoy it, or pick a later race.`) : ""}</div>` : "";
   return heading("Your races", races.length ? "From your Garmin calendar. Mark one A: that's the goal." : "Nothing on your Garmin calendar in the next 6 months. Add one, or pick a goal.")
     + `<div class="stack-8">${races.length ? `<div class="card b-list">${races.map(raceRow).join("")}</div>
-      <span class="meta" style="line-height:1.45">A: the goal. B: matters, gets a short taper. C: for fun, run through it.</span>` : ""}</div>`
+      <span class="meta" style="line-height:1.45">A: the goal. B: matters, gets a short taper. C: for fun, run through it.</span>` : ""}
+      ${B.inputs.window?.said ? `<span class="meta" style="line-height:1.45">${esc(B.inputs.window.said)}</span>` : ""}</div>`
     + warn + (a.note ? amber(esc(a.note)) : "")
     + `<button type="button" class="pill tall b-dashed" data-b="addRace">${svg('<path d="M5 12h14"/><path d="M12 5v14"/>', 16)}Add a race</button>`
     + goalCard
@@ -1943,14 +2009,22 @@ function footer() {
     : out("That's not right", "edit") + light("Looks right", "next1", 1.2),
     2: light(as > 1 && !a.open ? "Continue anyway" : "Looks right", "next2").replace("<button", blocked ? "<button disabled" : "<button"),
     "2c": light("Continue", "next2c"), 3: light("Looks right", "next3"), 4: light("Continue", "next4"), 5: light("Continue", "next5"),
-    6: light("Continue", "next6"), 7: `<button type="button" class="pill tall red" style="flex:1" data-b="send" ${B.plan?.preview ? "" : "disabled"}>Put it on my Garmin</button>` }[s];
+    6: light("Continue", "next6"), 7: `<button type="button" class="pill tall red" style="flex:1" data-b="send" ${B.plan?.preview ? "" : "disabled"}>${B.replace && B.inputs.replacing ? "Replace my plan" : "Put it on my Garmin"}</button>` }[s];
   if (!buttons) return "";
   return `<div class="b-foot"><div class="b-foot-in"><div class="pills">${buttons}</div>${s === "7" ? `<span class="meta" style="font-size:12.5px;text-align:center">Nothing goes to your watch until you tap this.</span>` : ""}</div></div>`;
 }
 
 function drawBuild() {
   const s = B.step, n = STEP_OF[s];
-  if (n && n > (B.answers.reached || 1)) { B.answers.reached = n; saveAnswers(); }
+  const a = B.answers;
+  // Each step counted the first time it's reached, so the funnel shows where people stop.
+  if ((n && n > (a.reached || 0)) || (s === "hurt" && !a.hurtSeen)) {
+    if (s === "hurt") a.hurtSeen = true; else a.reached = n;
+    track("build_step", { step: s, replace: B.replace ? "yes" : "no",
+      ...(n === 7 ? { days: a.days, style: a.style, amount: a.amount, gentle: a.injury === "none" ? "no" : "yes", open: a.open ? "yes" : "no",
+        races: a.races.filter((r) => !outside(r) && r.tier !== "C").length } : {}) });
+  }
+  saveAnswers();
   const body = { 1: step1, 2: step2, "2c": step2c, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, hurt: hurtView }[s]();
   const head = n ? `<div class="b-progress"><button type="button" class="b-back" aria-label="Back" data-b="back">${ICON.left()}</button>
       <div class="b-steps" role="progressbar" aria-valuemin="1" aria-valuemax="7" aria-valuenow="${n}" aria-label="Step ${n} of 7">${[1, 2, 3, 4, 5, 6, 7].map((k) => `<span class="${k <= n ? "on" : ""}"></span>`).join("")}</div>
@@ -1961,7 +2035,14 @@ function drawBuild() {
   document.body.dataset.screen = "build";
   if (B.keepScroll) window.scrollTo(0, y);
   B.keepScroll = false;
+  // A new step: its heading takes the focus, so a screen reader says where you are.
+  if (B.drawn !== s) {
+    B.drawn = s;
+    const h = document.querySelector(".b-head h1, .b-centre h1");
+    if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  }
   wireBuild();
+  askAhead();
 }
 
 function editSheet() {
@@ -1992,11 +2073,11 @@ function editSheet() {
 
 function addRaceSheet() {
   let dist = "10k";
-  const min = B.inputs.today;
+  const min = B.inputs.window?.from || B.inputs.today, max = B.inputs.window?.to || "";
   const body = () => `<span class="b-grip"></span><div class="b-split" style="align-items:center"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Add a race</span>
       <button type="button" class="b-close" aria-label="Close" data-close>${svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>')}</button></div>
     <label class="stack-8"><span class="field-label">Name</span><input class="field" id="race-name" maxlength="60" placeholder="Riverside 10K"></label>
-    <label class="stack-8"><span class="field-label">Date</span><input class="field" id="race-date" type="date" min="${min}"></label>
+    <label class="stack-8"><span class="field-label">Date</span><input class="field" id="race-date" type="date" min="${min}" ${max ? `max="${max}"` : ""}></label>
     <div class="stack-8"><span class="field-label">Distance</span>${seg([...DISTS.map(([id, l]) => [id, l]), ["ultra", "Ultra"]], dist, "dist", "small")}</div>
     <label class="stack-8" id="ultra-km" hidden><span class="field-label">How far</span>
       <span class="b-km"><input class="field" id="race-km" type="number" inputmode="numeric" min="43" max="250" step="1" value="50"><span class="meta">km</span></span></label>
@@ -2013,7 +2094,8 @@ function addRaceSheet() {
       dialog.querySelector("[data-close]").onclick = close;
       dialog.querySelector("[data-save]").onclick = () => {
         const name = dialog.querySelector("#race-name").value.trim(), when = dialog.querySelector("#race-date").value;
-        if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(when) || when < min) { toast("Give the race a name and a date ahead."); return; }
+        if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(when)) { toast("Give the race a name and a date."); return; }
+        if (when < min || (max && when > max)) { toast(B.inputs.window?.said || "Pick a date from this plan's start to 30 weeks ahead."); return; }
         const ultra = dist === "ultra";
         const km = ultra ? Math.round(Number(dialog.querySelector("#race-km").value)) : DISTS.find((x) => x[0] === dist)[2];
         if (ultra && !(km >= 43 && km <= 250)) { toast("An ultra is 43 to 250 km."); return; }
@@ -2114,7 +2196,7 @@ function buildSendView(step) {
     B.poll = setTimeout(async () => {
       try { B.job = await api("build/send"); } catch (e) { if (e instanceof SignedOut) return route(); }
       if (!location.hash.startsWith("#/build/sending")) return;
-      if (B.job.state === "done") { cache.clear(); try { sessionStorage.removeItem(BUILD_KEY); } catch { /* fine */ } go("done"); }
+      if (B.job.state === "done") { cache.clear(); store.drop(BUILD_KEY); go("done"); }
       else if (B.job.state === "error") go("error");
       else buildSendView("sending");
     }, 900);

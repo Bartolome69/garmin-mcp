@@ -618,3 +618,20 @@ body.desk .sheet { max-width: 480px; max-height: calc(100vh - 48px); overflow-y:
 body.desk .b-grip { display: none; }
 .b-km { display: flex; align-items: center; gap: 10px; }
 .b-km .field { width: 120px; }
+
+/* tap a number in step 1 to change it; races the plan can't reach; a plan left part way */
+.b-rowbtn { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 12px 16px; min-height: 56px; border-top: 1px solid var(--hairline); }
+.b-rowbtn:first-child { border-top: 0; }
+.b-rowbtn:hover, .b-tap:hover { background: rgba(244, 243, 238, 0.03); }
+.b-rowbtn:focus-visible { outline: 2px solid var(--red-text); outline-offset: -2px; }
+.b-tap { cursor: pointer; }
+.b-race.out { opacity: 0.55; grid-template-columns: 44px minmax(0, 1fr); }
+.b-resume { display: flex; flex-direction: column; gap: 2px; }
+.b-resume-go { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; border-radius: var(--radius);
+  border: 1px solid var(--hairline); background: #1C1C1A; color: var(--ink); text-decoration: none; }
+.b-resume-go:hover { color: var(--ink); background: var(--surface); }
+.b-resume-go .stack-tight { flex: 1; }
+.b-resume-cta { font-size: 14px; font-weight: 500; color: var(--red-text); white-space: nowrap; }
+.b-resume .link-plain { align-self: flex-end; font-size: 13px; }
+.b-head h1:focus { outline: none; }
