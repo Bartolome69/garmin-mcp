@@ -1584,7 +1584,35 @@
       }
     }
     title = title.replace(/(\d) (km|mi|min)\b/g, "$1\u00a0$2");
-    return { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3) };
+    var out = { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3) };
+    var planned = plannedFor(s);
+    if (planned) out.pl = planned;
+    return out;
+  }
+  // The planned session a run was, for its Strava caption, as share.py's
+  // plan_context says it: { n, ty, k, w, b }. None for a run off the plan.
+  function plannedFor(s) {
+    if (!s || s.extra || !/^done/.test(String(s.status || ""))) return null;
+    var name = String(s.name || "Run").replace(/\s*\u00b7\s*[A-Z0-9]{1,6}$/, "").trim()
+      .replace(/(\d+(?:[.,]\d+)?)\s*k(?:m)?\b/gi, "$1 km").replace(/(\d)\s*[x\u00d7]\s*(\d)/gi, "$1 \u00d7 $2");
+    var pl = { n: (name.charAt(0).toUpperCase() + name.slice(1)).slice(0, 60), ty: s.type, k: s.planned_km };
+    var r = raw || {}, day = String(s.date || "").slice(0, 10), weeks = r.weeks || [];
+    var monday = function (iso) { var d = parse(iso); return d.getTime() - dow(iso) * 864e5; };
+    if (r.label) {
+      var wi = weeks.findIndex(function (w) { return (w.sessions || []).indexOf(s) >= 0; });
+      if (wi >= 0) pl.w = [wi + 1, r.weeks_total || weeks.length];
+      if (r.name || r.goal) pl.b = String(r.name || String(r.goal).replace(/\s*[(:,].*$/, "")).slice(0, 40);
+    } else {
+      ["current_plan", "upcoming_plan"].some(function (key) {
+        var p = r[key];
+        if (!p || !p.starts || !p.ends || day < p.starts || day > p.ends) return false;
+        if (p.weeks_total) pl.w = [Math.round((monday(day) - monday(p.starts)) / (7 * 864e5)) + 1, p.weeks_total];
+        if (p.name || p.goal) pl.b = String(p.name || String(p.goal).replace(/\s*[(:,].*$/, "")).slice(0, 40);
+        return true;
+      });
+    }
+    Object.keys(pl).forEach(function (k) { if (pl[k] == null) delete pl[k]; });
+    return pl;
   }
   function shareRun(p, s, btn) {
     var url = shareLink(runPayload(p, s)), opened;

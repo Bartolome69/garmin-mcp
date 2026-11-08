@@ -30,6 +30,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 
 from . import analysis, crews, plan_checks, plan_engine, preview, store, training_plan
 from . import server as server_mod
+from . import share as share_mod
 from .formatting import drop_empty
 from .server import mcp
 
@@ -616,7 +617,8 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         workout = await _workout((row or {}).get("workout_id"))
     except Exception:  # noqa: BLE001 - the run reads without its plan
         workout = None
-    details = server_mod.run_brief(activity or {}, laps, recording)
+    details = server_mod.run_brief(activity or {}, laps, recording,
+                                   share_mod.plan_context(plan, activity_id, workout))
     kind = (row or {}).get("type") or (details.get("summary") or {}).get("type")
     result = analysis.analyse(workout, laps, kind, recording)
     summary = details.get("summary") or {}

@@ -1531,10 +1531,45 @@ async def main() -> int:
               and share.run_payload({"summary": {"type": "lap_swimming", "distance_km": 2}}) is None)
         # Nov 6: a caption to paste into Strava, as Strava's API can't be used.
         # tests/card_test.js checks the share page builds this same text.
-        check("a run's Strava caption: its name, figures, reps and a line back to Daash",
+        check("a run off the plan: its name, figures, reps and via daash.run",
               share.run_caption(threshold_run) == ("Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\n"
                                                     "Reps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\n"
-                                                    "Analysed with Daash · daash.run/strava"), repr(share.run_caption(threshold_run)))
+                                                    "via daash.run"), repr(share.run_caption(threshold_run)))
+        # Nov 8: a run that was a session on the plan says what was planned.
+        week_plan = {"current_plan": {"name": "London build", "starts": "2026-10-12", "ends": "2027-02-28", "weeks_total": 20},
+                     "weeks": [{"sessions": [{"date": "2026-10-28", "name": "Sub-T 3x3km", "type": "threshold", "kind": "run",
+                                              "planned_km": 15.4, "activity_id": 77, "workout_id": 5}]},
+                               {"sessions": [{"date": "2026-11-08", "name": "16km easy", "type": "long", "kind": "run",
+                                              "planned_km": 16, "activity_id": 78}]}]}
+        workout = {"workoutSegments": [{"workoutSteps": [
+            {"type": "ExecutableStepDTO", "stepType": {"stepTypeKey": "warmup"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 900},
+            {"type": "RepeatGroupDTO", "numberOfIterations": 3, "workoutSteps": [
+                {"type": "ExecutableStepDTO", "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "distance"},
+                 "endConditionValue": 3000, "targetType": {"workoutTargetTypeKey": "pace.zone"},
+                 "targetValueOne": 1000 / 240, "targetValueTwo": 1000 / 250},
+                {"type": "ExecutableStepDTO", "stepType": {"stepTypeKey": "recovery"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 90}]}]}]}
+        planned = share.plan_context(week_plan, 77, workout)
+        check("the planned session behind a run: its name, type, km, week and block, and the reps' target",
+              planned and planned["n"] == "Sub-T 3 × 3 km" and planned["ty"] == "threshold" and planned["k"] == 15.4
+              and planned["w"] == [3, 20] and planned["b"] == "London build" and "4:00" in planned.get("tg", ""), str(planned))
+        reps_caption = share.run_caption(threshold_run, planned)
+        check("an interval session's caption goes rep by rep, against the target, planned by daash.run",
+              reps_caption == ("Sub-T 3 × 3 km · week 3 of 20\nReps: 4:03 · 4:03 · 4:04 /km (target 4:00–4:10)"
+                               "\n14.1 km total · 161 bpm on the reps\nEvery rep on target ✓\n\nPlanned by daash.run"), repr(reps_caption))
+        long_run = {"summary": {"name": "Afternoon Run", "type": "running", "start_local": "2026-11-08 13:31:00",
+                                "distance_km": 16.27, "duration_seconds": 4920, "pace_per_km": "5:02 /km",
+                                "heart_rate": {"average_bpm": 139}}}
+        long_caption = share.run_caption(long_run, share.plan_context(week_plan, 78))
+        check("any other session: the type, week and block, planned against ran, and On plan",
+              long_caption == ("Long run · week 4 of 20 · London build\nPlanned: 16 km easy\n"
+                               "Ran: 16.3 km · 1:22:00 · 5:02 /km · 139 bpm\nOn plan ✓\n\nPlanned by daash.run"), repr(long_caption))
+        short = share.run_caption({"summary": {**long_run["summary"], "distance_km": 11.2}}, share.plan_context(week_plan, 78))
+        check("cut short, it doesn't claim to be on plan", "On plan" not in short and short.endswith("Planned by daash.run"), repr(short))
+        check("a run that wasn't on the plan has no planned session", share.plan_context(week_plan, 99) is None)
+        off_reps = {**threshold_run, "splits": [dict(x, pace_per_km="4:20 /km") if x["intensity"] == "interval" else x
+                                                for x in threshold_run["splits"]]}
+        check("reps well off the target are counted, not ticked",
+              "0 of 3 reps on target" in share.run_caption(off_reps, planned), share.run_caption(off_reps, planned))
         check("a run started from a watch workout loses the place Garmin puts before its name",
               share.run_payload({"summary": {"name": "Tower Hamlets - Benchmark 5x1km · B1", "type": "running",
                                              "location": "Tower Hamlets", "distance_km": 10.75,

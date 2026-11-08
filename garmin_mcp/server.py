@@ -1976,6 +1976,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 
     lap_rows = [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)]
+    planned = None if ride else await _planned_for(activity_id)
     return _with_share_image(drop_empty(
         {
             "activity_id": activity_id,
@@ -1989,7 +1990,31 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             **around.get("last", {}),
             "warnings": warnings or None,
         }
-    ))
+    ), planned)
+
+
+# How long a run's answer waits to learn which planned session it was, for
+# its Strava caption; without it the caption is the run alone.
+PLANNED_WAIT_SECONDS = 6
+
+
+async def _planned_for(activity_id: Any) -> dict[str, Any] | None:
+    """The planned session a run was (share.plan_context), from the plan the
+    chat usually read just before, or None: the run reads without it."""
+    try:
+        with anyio.fail_after(PLANNED_WAIT_SECONDS):
+            plan = await get_plan()
+            if not isinstance(plan, dict) or "error" in plan:
+                return None
+            row = next((x for w in plan.get("weeks") or [] for x in w.get("sessions") or []
+                        if x.get("activity_id") == activity_id), None)
+            wid = (row or {}).get("workout_id")
+            workout = await _read(("workout", wid), PLAN_WORKOUT_MEMORY,
+                                  lambda c, w=wid: c.get_workout_by_id(w)) if wid else None
+            return share.plan_context(plan, activity_id, workout if isinstance(workout, dict) else None)
+    except Exception:  # noqa: BLE001 - a caption without its plan is still a caption
+        log.debug("no planned session for the caption", exc_info=True)
+        return None
 
 
 SHARE_IMAGE_NOTE = (
@@ -2019,7 +2044,8 @@ def _flat_activity(summary: dict[str, Any]) -> dict[str, Any]:
     return flat
 
 
-def run_brief(activity: dict[str, Any], splits: Any, recording: Any) -> dict[str, Any]:
+def run_brief(activity: dict[str, Any], splits: Any, recording: Any,
+              planned: dict[str, Any] | None = None) -> dict[str, Any]:
     """A run's summary, laps and share link from the three reads the app already
     makes, without the zones, shoes, weather and earlier runs get_activity_details
     adds for a chat (Nov 3: those, one after another, were most of the app's wait)."""
@@ -2035,16 +2061,17 @@ def run_brief(activity: dict[str, Any], splits: Any, recording: Any) -> dict[str
         "summary": _summarise_activity(flat) or None,
         "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
         "inside": inside,
-    }))
+    }), planned)
 
 
-def _with_share_image(result: dict[str, Any]) -> dict[str, Any]:
+def _with_share_image(result: dict[str, Any], planned: dict[str, Any] | None = None) -> dict[str, Any]:
     """A run's answer with the link to its share image, as the plan card's
-    Share this run makes it."""
-    url = share.run_link(result) if isinstance(result, dict) and "error" not in result else None
+    Share this run makes it, and its caption, which says what was planned
+    when the run was a session on the plan."""
+    url = share.run_link(result, planned) if isinstance(result, dict) and "error" not in result else None
     if url:
         result["share_image"] = {"url": url, "note": SHARE_IMAGE_NOTE}
-        text = share.run_caption(result)
+        text = share.run_caption(result, planned)
         if text:
             result["strava_caption"] = {"text": text, "note": SHARE_CAPTION_NOTE}
     return result

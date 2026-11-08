@@ -994,16 +994,52 @@
   });
 
   // A run's caption to paste into its description on Strava, which Strava's
-  // API can't carry (its 2026 policy bars Strava data in AI apps): the name,
-  // the figures, the reps, and a line back to Daash. garmin_mcp/share.py
-  // builds the same text for a chat; keep the two in step.
+  // API can't carry (its 2026 policy bars Strava data in AI apps).
+  // garmin_mcp/share.py builds the same text for a chat; keep the two in step.
+  // A run that was a session on the plan (d.pl) says what was planned against
+  // what was run, an interval session rep by rep; any other run is its name,
+  // figures and reps. Each ends with a line back to Daash.
+  var KIND_WORDS = { easy: "Easy run", recovery: "Recovery run", long: "Long run", race: "Race", threshold: "Threshold", sub: "Threshold", intervals: "Intervals" };
+  var REP_SLACK = 3;
+  function capPace(secs) { secs = Math.round(secs); return Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0"); }
   function caption(d, facts) {
-    var lines = [str(d.t, 80).replace(/\u00a0/g, " ")];
     var figs = facts.map(function (f) { var unit = f[1].split(" ")[0]; return unit === "time" ? f[0] : f[0] + " " + unit; });
-    if (figs.length) lines.push(figs.join(" \u00b7 "));
-    var note = (Array.isArray(d.n) ? d.n : []).filter(function (n) { return Array.isArray(n) && n.length > 1; })[0];
-    if (note && str(note[1], 90)) lines.push(str(note[1], 90));
-    return lines.join("\n") + "\n\nAnalysed with Daash \u00b7 daash.run/strava";
+    var plan = d.pl && typeof d.pl === "object" ? d.pl : null;
+    if (!plan) {
+      var lines = [str(d.t, 80).replace(/\u00a0/g, " ")];
+      if (figs.length) lines.push(figs.join(" \u00b7 "));
+      var note = (Array.isArray(d.n) ? d.n : []).filter(function (n) { return Array.isArray(n) && n.length > 1; })[0];
+      if (note && str(note[1], 90)) lines.push(str(note[1], 90));
+      return lines.join("\n") + "\n\nvia daash.run";
+    }
+    var w = Array.isArray(plan.w) ? plan.w : [], weekWords = w.length === 2 ? "week " + w[0] + " of " + w[1] : null;
+    var laps = Array.isArray(d.l) ? d.l : [];
+    var work = laps.filter(function (l) { return Array.isArray(l) && l[2]; });
+    var reps = work.length > 1 && work.length < laps.length && work.length <= 8 ? work : [];
+    var dist = facts.filter(function (f) { var u = f[1].split(" ")[0]; return u === "km" || u === "mi"; })[0];
+    var out;
+    if (["threshold", "sub", "intervals"].indexOf(plan.ty) >= 0 && reps.length) {
+      var unit = dist ? dist[1].split(" ")[0] : "km";
+      var shown = plan.tg ? String(plan.tg).replace(/\s*\/(km|mi)$/, "") : null;
+      out = [[plan.n, weekWords].filter(Boolean).join(" \u00b7 "),
+        "Reps: " + reps.map(function (r) { return capPace(r[1]); }).join(" \u00b7 ") + " /" + unit + (shown ? " (target " + shown + ")" : "")];
+      var bpm = reps.map(function (r) { return r[4]; }).filter(Boolean);
+      var avg = facts.filter(function (f) { return /^bpm/.test(f[1]); })[0];
+      out.push([dist ? dist[0] + " " + unit + " total" : null,
+        bpm.length === reps.length ? Math.round(bpm.reduce(function (a, b) { return a + b; }, 0) / bpm.length) + " bpm on the reps"
+          : (avg ? avg[0] + " bpm average" : null)].filter(Boolean).join(" \u00b7 "));
+      var m = String(plan.tg || "").match(/(\d+):(\d{2})\D+(\d+):(\d{2})/);
+      if (m && /km/.test(plan.tg)) {
+        var a = +m[1] * 60 + +m[2], b = +m[3] * 60 + +m[4], lo = Math.min(a, b), hi = Math.max(a, b);
+        var hit = reps.filter(function (r) { return r[1] >= lo - REP_SLACK && r[1] <= hi + REP_SLACK; }).length;
+        out.push(hit === reps.length ? "Every rep on target \u2713" : hit + " of " + reps.length + " reps on target");
+      }
+    } else {
+      out = [[KIND_WORDS[plan.ty] || "Run", weekWords, plan.b].filter(Boolean).join(" \u00b7 "), "Planned: " + plan.n, "Ran: " + figs.join(" \u00b7 ")];
+      var ran = dist ? parseFloat(dist[0]) * (/^mi/.test(dist[1]) ? 1.609344 : 1) : NaN, meant = parseFloat(plan.k);
+      if (meant && ran / meant >= 0.9 && ran / meant <= 1.15) out.push("On plan \u2713");
+    }
+    return out.filter(Boolean).join("\n") + "\n\nPlanned by daash.run";
   }
   if (wk.run) {
     var capText = caption(raw, wk.f), capStatus = document.getElementById("cap-status");

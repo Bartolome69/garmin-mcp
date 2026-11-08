@@ -215,6 +215,8 @@ f.src = "card.html";</script></body>`);
     const run = url ? decode(url) : {};
     check("carrying the run's name, numbers and laps",
       run.run === 1 && /3 × 2 km/.test(run.t) && run.f.length === 4 && run.l.length === 8 && run.k === "Base block", JSON.stringify(run).slice(0, 300));
+    check("and the planned session it was, for the caption", run.pl && run.pl.ty === "long" && /^Long 18 km/.test(run.pl.n) && run.pl.k === 18.1,
+      JSON.stringify(run.pl));
     check("with the reps' paces and heart rates, and no route ranking",
       run.n.length === 1 && /4:01, 4:00, 4:00/.test(run.n[0][1]) && !JSON.stringify(run).includes("Fastest"), JSON.stringify(run.n));
 
@@ -229,9 +231,32 @@ f.src = "card.html";</script></body>`);
     await capPage.waitForTimeout(500);
     const cap = await capPage.evaluate(() => ({ shown: !document.getElementById("cap-g").hidden, text: document.getElementById("cap").textContent }));
     check("the share page shows the same caption the chat gives",
-      cap.shown && cap.text === "Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\nReps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\nAnalysed with Daash · daash.run/strava",
+      cap.shown && cap.text === "Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\nReps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\nvia daash.run",
       JSON.stringify(cap));
     await capPage.close();
+    // With the planned session, as hosted_test.py captions the same runs.
+    const capOf = async (payload) => {
+      const pg = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+      pg.on("pageerror", (e) => errors.push(e.message));
+      await pg.goto(SHARE + "#" + Buffer.from(JSON.stringify(payload)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
+      await pg.waitForTimeout(400);
+      const text = await pg.evaluate(() => document.getElementById("cap").textContent);
+      await pg.close();
+      return text;
+    };
+    const repsRun = { ...sameRun, l: [[927, 309, 0, 3, 131], [729, 243, 1, 3, 157], [90, 310, 0, 0.29, 150], [729, 243, 1, 3, 163],
+      [90, 333, 0, 0.27, 155], [732, 244, 1, 3, 163], [427, 305, 0, 1.4, 140]],
+      pl: { n: "Sub-T 3 × 3 km", ty: "threshold", k: 15.4, w: [3, 20], b: "London build", tg: "4:00–4:10/km" } };
+    const repsText = await capOf(repsRun);
+    check("an interval session's caption on the share page goes rep by rep, planned by daash.run",
+      repsText === "Sub-T 3 × 3 km · week 3 of 20\nReps: 4:03 · 4:03 · 4:04 /km (target 4:00–4:10)\n14.1 km total · 161 bpm on the reps\nEvery rep on target ✓\n\nPlanned by daash.run",
+      JSON.stringify(repsText));
+    const longText = await capOf({ v: 1, run: 1, t: "Afternoon Run", s: "Sunday 8 Nov", k: "Run recap", c: "easy",
+      f: [["16.3", "km"], ["1:22:00", "time"], ["5:02", "/km average"], ["139", "bpm average"]], l: [], a: 302, n: [],
+      pl: { n: "16 km easy", ty: "long", k: 16, w: [4, 20], b: "London build" } });
+    check("and any other session says planned against ran, the same as the chat",
+      longText === "Long run · week 4 of 20 · London build\nPlanned: 16 km easy\nRan: 16.3 km · 1:22:00 · 5:02 /km · 139 bpm\nOn plan ✓\n\nPlanned by daash.run",
+      JSON.stringify(longText));
 
     console.log("a gym session");
     await card.getByText("Full body (runner) v2").first().click();
