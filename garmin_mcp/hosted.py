@@ -1096,15 +1096,25 @@ def _plan_answer(user_token: str) -> Any:
         reset_session(token)
 
 
+# How long someone has had Daash before the weekly email starts.
+WEEKLY_FIRST_WEEK_SECONDS = 7 * 86400
+
+
 def weekly_email_once(today: date | None = None, send: Callable[..., None] | None = None,
-                      spacing: float = WEEKLY_SPACING) -> dict[str, int]:
-    """Send this week's email to everyone it hasn't gone to. Returns counts."""
+                      spacing: float = WEEKLY_SPACING, now: float | None = None) -> dict[str, int]:
+    """Send this week's email to everyone it hasn't gone to. Returns counts.
+
+    Only to people whose first week with Daash is done: someone who connected
+    on Sunday night got "your week" the next morning (Nov 9), with no week
+    behind it. They get it the Monday after their first seven days.
+    """
     today = today or datetime.now(ZoneInfo("Europe/London")).date()
     monday = (today - timedelta(days=today.weekday())).isoformat()
     send = send or support_mail.send_weekly
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     counts = {"sent": 0, "nothing_to_say": 0, "failed": 0}
-    for user_token, email, fingerprint in store.weekly_recipients():
+    joined_before = (now if now is not None else time.time()) - WEEKLY_FIRST_WEEK_SECONDS
+    for user_token, email, fingerprint in store.weekly_recipients(joined_before):
         if not store.claim_weekly(fingerprint, monday):
             continue
         try:

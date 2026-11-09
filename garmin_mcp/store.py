@@ -278,11 +278,14 @@ def save_user(
         if email_hash:
             # The person is the same, so what they have been told and what they
             # asked for outlives the row being replaced.
-            news_seen, opted_out, tip_seen, crew_offer_seen = conn.execute(
-                "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen), MAX(crew_offer_seen) "
+            news_seen, opted_out, tip_seen, crew_offer_seen, first_at = conn.execute(
+                "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen), MAX(crew_offer_seen), MIN(created_at) "
                 "FROM users WHERE email_hash = ?",
                 (email_hash,),
             ).fetchone()
+            # When they first connected, too: a new sign-in isn't a new person
+            # (the weekly email waits for someone's first week, Nov 9).
+            now = min(now, first_at) if first_at else now
             # A link to Garmin's official API belongs to the person, not the
             # row, so it moves to the new one rather than going with the old.
             conn.execute(
@@ -580,11 +583,13 @@ def emailable() -> list[tuple[str, str]]:
     return out
 
 
-def weekly_recipients() -> list[tuple[str, str, str]]:
+def weekly_recipients(joined_before: float | None = None) -> list[tuple[str, str, str]]:
     """(user_token, email, email_hash) for each person who can be emailed, once each.
 
     One person can have several connections (Claude, ChatGPT); the email comes
-    from the one they used last, and goes once.
+    from the one they used last, and goes once. With joined_before, only people
+    who first connected before then: someone who joined last night has no week
+    to sum up yet (Nov 9).
     """
     with _connect() as conn:
         rows = conn.execute(
@@ -592,9 +597,15 @@ def weekly_recipients() -> list[tuple[str, str, str]]:
             "WHERE email_enc IS NOT NULL AND email_hash IS NOT NULL AND COALESCE(email_opt_out, 0) = 0 "
             "ORDER BY COALESCE(last_seen_at, created_at) DESC"
         ).fetchall()
+        joined = dict(conn.execute(
+            "SELECT email_hash, MIN(created_at) FROM users WHERE email_hash IS NOT NULL GROUP BY email_hash"
+        ).fetchall())
     out, seen = [], set()
     for user_token, enc, fingerprint in rows:
         if fingerprint in seen:
+            continue
+        if joined_before is not None and (joined.get(fingerprint) or 0) > joined_before:
+            seen.add(fingerprint)
             continue
         try:
             email = _cipher().decrypt(enc).decode()

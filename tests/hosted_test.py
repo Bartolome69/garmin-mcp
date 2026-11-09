@@ -1723,11 +1723,34 @@ async def main() -> int:
         mailed: list[tuple] = []
         real_answer = hosted._plan_answer
         hosted._plan_answer = lambda token: plan_answer
+        # Nov 9: the weekly email waits for someone's first week. Everyone here
+        # connected minutes ago, so they're dated eight days back, except one
+        # person who joined yesterday.
+        fresh_email = "fresh@example.com"
+        store.save_user(session_mod.mask_email(fresh_email), '{"di_token": "x"}',
+                        email_hash=store.email_fingerprint(fresh_email), email=fresh_email)
+        yesterday = int(time.time() - 86400)
+        with store._connect() as _conn:
+            _conn.execute("UPDATE users SET created_at = ? WHERE email_hash != ?",
+                          (int(time.time() - 8 * 86400), store.email_fingerprint(fresh_email)))
+            _conn.execute("UPDATE users SET created_at = ? WHERE email_hash = ?",
+                          (yesterday, store.email_fingerprint(fresh_email)))
         try:
             first = hosted.weekly_email_once(monday, send=lambda *a: mailed.append(a), spacing=0)
             again = hosted.weekly_email_once(monday, send=lambda *a: mailed.append(a), spacing=0)
         finally:
             hosted._plan_answer = real_answer
+        check("not in someone's first week: who joined yesterday gets nothing yet",
+              not any(m[0] == fresh_email for m in mailed), str([m[0] for m in mailed]))
+        fresh_token = store.save_user(session_mod.mask_email(fresh_email), '{"di_token": "y"}',
+                                      email_hash=store.email_fingerprint(fresh_email), email=fresh_email)
+        with store._connect() as _conn:
+            kept = _conn.execute("SELECT created_at FROM users WHERE user_token = ?", (fresh_token,)).fetchone()[0]
+        check("signing in again keeps when they first joined", kept == yesterday, f"{kept} {yesterday}")
+        check("and once their week is done, they're on the list",
+              any(r[2] == store.email_fingerprint(fresh_email) for r in store.weekly_recipients(time.time() + 7 * 86400))
+              and not any(r[2] == store.email_fingerprint(fresh_email)
+                          for r in store.weekly_recipients(time.time() - 7 * 86400)))
         to_news = [m for m in mailed if m[0] == "news@example.com"]
         check("each person with an address gets it once a week, however often it runs",
               first["sent"] >= 1 and again == {"sent": 0, "nothing_to_say": 0, "failed": 0} and len(to_news) == 1
