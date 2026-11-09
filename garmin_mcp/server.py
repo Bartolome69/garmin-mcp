@@ -45,7 +45,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import analytics, conditions, crews, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
+from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
@@ -1983,6 +1983,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             "summary": _with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)) or None,
             **around.get("first", {}),
             "hr_zones": hr_zones(zones),
+            "easy_check": easy_check.check(planned, laps, flat),
             "reps": _reps(laps, ride),
             "splits_count": len(laps) or None,
             "splits": lap_rows or None,
@@ -2061,6 +2062,7 @@ def run_brief(activity: dict[str, Any], splits: Any, recording: Any,
         "summary": _summarise_activity(flat) or None,
         "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
         "inside": inside,
+        "easy_check": None if ride else easy_check.check(planned, laps, flat),
     }), planned)
 
 

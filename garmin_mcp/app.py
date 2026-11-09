@@ -28,7 +28,7 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, plan_checks, plan_engine, preview, store, training_plan
+from . import analysis, crews, easy_check, plan_checks, plan_engine, preview, store, training_plan
 from . import server as server_mod
 from . import share as share_mod
 from .formatting import drop_empty
@@ -654,6 +654,8 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         "activity_id": activity_id, "date": (row or {}).get("date"), "kicker": kicker.strip(" ·"),
         "name": name, **t, **{k: v for k, v in result.items() if k != "short"},
         "effect": effect, "share_url": share,
+        # Nov 9: an easy session run harder than its target says so here.
+        "easy_check": easy_check.card(details.get("easy_check")),
         "assistant": assistant(),
         "ask": _ask_links(f"Use Daash to look at my run {activity_id} ({name}). How did it go against the plan?"),
     })
