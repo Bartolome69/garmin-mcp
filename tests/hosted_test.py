@@ -1753,10 +1753,80 @@ async def main() -> int:
                           for r in store.weekly_recipients(time.time() - 7 * 86400)))
         to_news = [m for m in mailed if m[0] == "news@example.com"]
         check("each person with an address gets it once a week, however often it runs",
-              first["sent"] >= 1 and again == {"sent": 0, "nothing_to_say": 0, "failed": 0} and len(to_news) == 1
+              first["sent"] >= 1 and again == {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0}
+              and len(to_news) == 1
               and len({m[0] for m in mailed}) == len(mailed), f"{first} {again}")
         check("with its own unsubscribe link, also in the header mail apps use",
               to_news and "/email/unsubscribe?u=" in to_news[0][4] and to_news[0][4] in to_news[0][2], str(to_news[:1])[:200])
+
+        # Nov 9: Resend allows 100 a day, sign-in codes included, so the email
+        # is capped and goes first to whoever is likeliest to open it.
+        people = store.weekly_recipients(time.time() - 7 * 86400)
+        check("enough people to test the cap with", len(people) >= 3, str(len(people)))
+        clicker, idle = people[-1], people[0]
+
+        def weekly_again(cap: int, answers=None):
+            with store._connect() as _conn:
+                _conn.execute("UPDATE users SET weekly_sent = NULL")
+            hosted._WEEKLY_NOTHING.clear()
+            out: list[tuple] = []
+            hosted._plan_answer = answers or (lambda token: plan_answer)
+            try:
+                return hosted.weekly_email_once(monday, send=lambda *a: out.append(a), spacing=0, cap=cap), out
+            finally:
+                hosted._plan_answer = real_answer
+
+        def click(path: str) -> int:
+            import http.client
+            from urllib.parse import urlsplit
+            where = urlsplit(base)
+            conn = http.client.HTTPConnection(where.hostname, where.port, timeout=15)
+            conn.request("GET", path)
+            return conn.getresponse().status
+
+        click_code = await anyio_run(click, hosted.weekly_ask_url(base, clicker[2], "ChatGPT", "week", "2026-10-19")[len(base):])
+        check("a click through from the email is remembered", click_code == 302
+              and store.weekly_standing()[clicker[2]][2] == "2026-10-19", str(click_code))
+        before = len(SENT)
+        capped, capped_mail = weekly_again(1)
+        held = [e for e in SENT[before:] if e["event"] == "weekly_email_held"]
+        check("capped: one email, to the person who clicked last week's, everyone else held",
+              capped == {"sent": 1, "nothing_to_say": 0, "failed": 0, "held": len(people) - 1}
+              and [m[0] for m in capped_mail] == [clicker[1]]
+              and held and held[0]["properties"]["held"] == len(people) - 1
+              and held[0]["properties"]["by_tier"]["clicked"] == 0,
+              f"{capped} {[m[0] for m in capped_mail]} {held[:1]}")
+        sent_events = [e for e in SENT[before:] if e["event"] == "weekly_email_sent"]
+        check("and the email says which tier it went to", sent_events and sent_events[0]["properties"]["tier"] == "clicked",
+              str(sent_events[:1]))
+        hosted._plan_answer = lambda token: plan_answer
+        try:
+            spent = hosted.weekly_email_once(monday, send=lambda *a: capped_mail.append(a), spacing=0, cap=1)
+        finally:
+            hosted._plan_answer = real_answer
+        check("once the cap is reached, later passes that Monday send nothing and read nobody",
+              spent == {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0} and len(capped_mail) == 1, str(spent))
+        no_plan = (lambda token: log_answer if token == idle[0] else plan_answer)
+        tiered, tiered_mail = weekly_again(len(people) - 1, no_plan)
+        check("someone with nothing planned waits behind everyone with a plan",
+              tiered["held"] == 1 and idle[1] not in [m[0] for m in tiered_mail] and len(tiered_mail) == len(people) - 1,
+              f"{tiered} {[m[0] for m in tiered_mail]}")
+        everyone, everyone_mail = weekly_again(len(people), no_plan)
+        check("and with room for all, everyone gets theirs, the plan nudge included",
+              everyone["held"] == 0 and len(everyone_mail) == len(people)
+              and any(m[0] == idle[1] and "build you a plan" in m[2] for m in everyone_mail), str(everyone))
+        check("tiers: a click first, then a plan and used Daash this week, a plan, nothing planned",
+              hosted.weekly_tier(True, 0, "2026-11-02", time.time()) == "clicked"
+              and hosted.weekly_tier(False, int(time.time() - 3600), "", time.time()) == "plan_active"
+              and hosted.weekly_tier(False, int(time.time() - 9 * 86400), "", time.time()) == "plan"
+              and hosted.weekly_tier(True, int(time.time()), "", time.time()) == "no_plan")
+        re_token = store.save_user(session_mod.mask_email(clicker[1]), '{"di_token": "z"}',
+                                   email_hash=clicker[2], email=clicker[1])
+        with store._connect() as _conn:
+            kept_sent, kept_click = _conn.execute(
+                "SELECT weekly_sent, weekly_clicked FROM users WHERE user_token = ?", (re_token,)).fetchone()
+        check("signing in again keeps the week's email sent and the click",
+              kept_sent == monday.isoformat() and kept_click == "2026-10-19", f"{kept_sent} {kept_click}")
 
         from garmin_mcp import support_mail as _mail
         tried: list[tuple] = []

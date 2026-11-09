@@ -64,6 +64,8 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN weekly_sent TEXT",
     # When a chat last brought up the Daash app unasked, so it's at most weekly.
     "ALTER TABLE users ADD COLUMN app_offered_at INTEGER",
+    # The Monday of the last weekly email this person clicked through from.
+    "ALTER TABLE users ADD COLUMN weekly_clicked TEXT",
 )
 
 # Bart's friends using Daash, named from a chat (garmin_official's friends
@@ -274,13 +276,13 @@ def save_user(
     email_enc = _cipher().encrypt(email.strip().encode()) if email and email.strip() else None
     now = int(time.time())
     with _connect() as conn:
-        news_seen = opted_out = tip_seen = crew_offer_seen = None
+        news_seen = opted_out = tip_seen = crew_offer_seen = weekly_sent = weekly_clicked = None
         if email_hash:
             # The person is the same, so what they have been told and what they
             # asked for outlives the row being replaced.
-            news_seen, opted_out, tip_seen, crew_offer_seen, first_at = conn.execute(
-                "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen), MAX(crew_offer_seen), MIN(created_at) "
-                "FROM users WHERE email_hash = ?",
+            news_seen, opted_out, tip_seen, crew_offer_seen, first_at, weekly_sent, weekly_clicked = conn.execute(
+                "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen), MAX(crew_offer_seen), MIN(created_at), "
+                "MAX(weekly_sent), MAX(weekly_clicked) FROM users WHERE email_hash = ?",
                 (email_hash,),
             ).fetchone()
             # When they first connected, too: a new sign-in isn't a new person
@@ -299,15 +301,15 @@ def save_user(
             )
         conn.execute(
             "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash, email_enc, "
-            "news_seen, email_opt_out, tip_seen, crew_offer_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "news_seen, email_opt_out, tip_seen, crew_offer_seen, weekly_sent, weekly_clicked) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
             "  email_hash = excluded.email_hash, "
             "  email_enc = COALESCE(excluded.email_enc, users.email_enc), "
             "  route = NULL",
             (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out, tip_seen,
-             crew_offer_seen),
+             crew_offer_seen, weekly_sent, weekly_clicked),
         )
         # A Garmin Connect session stands behind the row now, so it reads from
         # Connect: full history, readiness, gear. Oct 30: someone who approved
@@ -614,6 +616,36 @@ def weekly_recipients(joined_before: float | None = None) -> list[tuple[str, str
         seen.add(fingerprint)
         out.append((user_token, email, fingerprint))
     return out
+
+
+def weekly_standing() -> dict[str, tuple[int, str, str]]:
+    """Per person (email_hash): (last used Daash, Monday of their last weekly email, of their last click).
+
+    What orders the weekly email when it can't go to everyone (Nov 9).
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT email_hash, MAX(COALESCE(last_seen_at, 0)), MAX(COALESCE(weekly_sent, '')), "
+            "MAX(COALESCE(weekly_clicked, '')) FROM users WHERE email_hash IS NOT NULL GROUP BY email_hash"
+        ).fetchall()
+    return {fp: (seen, sent, clicked) for fp, seen, sent, clicked in rows}
+
+
+def weekly_sent_count(monday: str) -> int:
+    """How many people this Monday's email has gone to (or been tried for) so far."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(DISTINCT email_hash) FROM users WHERE weekly_sent = ?", (monday,)
+        ).fetchone()[0]
+
+
+def mark_weekly_clicked(email_hash: str, monday: str) -> None:
+    """Someone clicked through from a weekly email: they go first next time it's capped."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET weekly_clicked = ? WHERE email_hash = ? AND COALESCE(weekly_clicked, '') < ?",
+            (monday, email_hash, monday),
+        )
 
 
 def claim_weekly(email_hash: str, monday: str) -> bool:

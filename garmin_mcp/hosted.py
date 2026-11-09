@@ -1098,32 +1098,76 @@ def _plan_answer(user_token: str) -> Any:
 
 # How long someone has had Daash before the weekly email starts.
 WEEKLY_FIRST_WEEK_SECONDS = 7 * 86400
+# At most this many weekly emails a Monday. Resend allows 100 emails a day on
+# the current plan and sign-in codes and first-run emails come out of the same
+# allowance: on Nov 2 and 9 the weekly email alone was 175 and 202, so a code
+# asked for that day could go unsent. Set WEEKLY_EMAIL_CAP to change it.
+WEEKLY_CAP = int(os.environ.get("WEEKLY_EMAIL_CAP") or 80)
+# Who the capped email goes to first, by tier (Nov 9): people who clicked one
+# before, then people with a plan who used Daash last week, people with a plan,
+# and last people with nothing planned. Plan holders clicked 12% on Nov 2,
+# those without 7%.
+WEEKLY_TIERS = ("clicked", "plan_active", "plan", "no_plan")
+WEEKLY_ACTIVE_SECONDS = 7 * 86400
+# People with nothing to say this week, read once per process, not every pass.
+_WEEKLY_NOTHING: dict[str, set[str]] = {}
+
+
+def weekly_tier(no_plan: bool, last_seen: int, clicked: str, now: float) -> str:
+    """Which of WEEKLY_TIERS someone is in this Monday."""
+    if clicked:
+        return "clicked"
+    if no_plan:
+        return "no_plan"
+    return "plan_active" if last_seen and now - last_seen < WEEKLY_ACTIVE_SECONDS else "plan"
 
 
 def weekly_email_once(today: date | None = None, send: Callable[..., None] | None = None,
-                      spacing: float = WEEKLY_SPACING, now: float | None = None) -> dict[str, int]:
-    """Send this week's email to everyone it hasn't gone to. Returns counts.
+                      spacing: float = WEEKLY_SPACING, now: float | None = None,
+                      cap: int | None = None) -> dict[str, int]:
+    """Send this week's email, up to the cap, to whoever it hasn't gone to. Returns counts.
 
     Only to people whose first week with Daash is done: someone who connected
     on Sunday night got "your week" the next morning (Nov 9), with no week
     behind it. They get it the Monday after their first seven days.
+
+    Everyone's week is read first, then the email goes by tier (WEEKLY_TIERS),
+    and within a tier to whoever has gone longest without one, until the cap.
+    The rest are held: no email this week, and first in their tier next week.
     """
     today = today or datetime.now(ZoneInfo("Europe/London")).date()
+    now = now if now is not None else time.time()
+    cap = WEEKLY_CAP if cap is None else cap
     monday = (today - timedelta(days=today.weekday())).isoformat()
     send = send or support_mail.send_weekly
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    counts = {"sent": 0, "nothing_to_say": 0, "failed": 0}
-    joined_before = (now if now is not None else time.time()) - WEEKLY_FIRST_WEEK_SECONDS
-    for user_token, email, fingerprint in store.weekly_recipients(joined_before):
-        if not store.claim_weekly(fingerprint, monday):
+    counts = {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0}
+    room = cap - store.weekly_sent_count(monday)
+    if room <= 0:
+        return counts
+    standing = store.weekly_standing()
+    nothing = _WEEKLY_NOTHING.setdefault(monday, set())
+    ready = []
+    for user_token, email, fingerprint in store.weekly_recipients(now - WEEKLY_FIRST_WEEK_SECONDS):
+        last_seen, last_sent, clicked = standing.get(fingerprint, (0, "", ""))
+        if last_sent >= monday or fingerprint in nothing:
             continue
         try:
             said = weekly.summary(_plan_answer(user_token), today)
         except Exception as exc:  # noqa: BLE001 - one person's Garmin never stops the rest
             log.info("weekly email: no plan for one person (%s)", type(exc).__name__)
             said = None
+        time.sleep(spacing)
         if not said:
+            nothing.add(fingerprint)
             counts["nothing_to_say"] += 1
+            continue
+        tier = weekly_tier(bool(said.get("no_plan")), last_seen, clicked, now)
+        ready.append((WEEKLY_TIERS.index(tier), last_sent, -last_seen, tier, user_token, email, fingerprint, said))
+    ready.sort(key=lambda r: r[:3])
+    counts["held"] = max(0, len(ready) - room)
+    for _rank, _sent, _seen, tier, user_token, email, fingerprint, said in ready[:room]:
+        if not store.claim_weekly(fingerprint, monday):
             continue
         link = unsubscribe_url(base, fingerprint)
         ask = ((lambda app, kind, f=fingerprint: weekly_ask_url(base, f, app, kind, monday))
@@ -1138,11 +1182,17 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
             counts["sent"] += 1
             analytics.capture("weekly_email_sent", fingerprint, {
                 "key_sessions": len(said.get("key_sessions") or []), "no_plan": bool(said.get("no_plan")),
-                "crew_line": not crewed,
+                "crew_line": not crewed, "tier": tier,
                 "$process_person_profile": False})
         except OSError:
             counts["failed"] += 1
-        time.sleep(spacing)
+        # Resend takes two requests a second.
+        time.sleep(min(spacing, 1.0))
+    if counts["held"]:
+        analytics.capture("weekly_email_held", "daash-server", {
+            "week": monday, "held": counts["held"], "sent": counts["sent"], "cap": cap,
+            "by_tier": {t: sum(1 for r in ready[room:] if r[3] == t) for t in WEEKLY_TIERS},
+            "$process_person_profile": False})
     return counts
 
 
@@ -1153,7 +1203,8 @@ def _weekly_email_forever() -> None:
             try:
                 counts = weekly_email_once(now.date())
                 if any(counts.values()):
-                    log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, %(failed)d failed", counts)
+                    log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, "
+                             "%(failed)d failed, %(held)d held for the cap", counts)
             except Exception:  # noqa: BLE001
                 log.exception("Weekly email pass failed")
         time.sleep(WEEKLY_EVERY)
@@ -2483,6 +2534,8 @@ async def email_ask(request: Request) -> Response:
     week = query.get("w", "")
     device = _device(request).get("device")
     if fingerprint and hmac.compare_digest(signature, store.unsubscribe_signature(fingerprint)):
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week):
+            store.mark_weekly_clicked(fingerprint, week)
         analytics.capture("weekly_email_clicked", fingerprint, {
             "app": app, "question": kind, "week": week if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week) else None,
             "device": device, "$process_person_profile": False})
