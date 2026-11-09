@@ -637,6 +637,14 @@ async function showToday(quiet = false) {
 
 // -- the session: preview before the run --------------------------------------
 
+// Back from a session or run: the tab it was opened from, and in Plan the
+// week that was showing.
+function backHref(from) {
+  if (from !== "plan") return "#/today";
+  const week = new URLSearchParams(location.hash.split("?")[1] || "").get("week");
+  return week ? `#/plan?week=${encodeURIComponent(week)}` : "#/plan";
+}
+
 function stepRow(s) {
   const right = s.right || "";
   const line = s.target ? `<span class="target">${esc(s.target)}</span>` : s.sub ? `<span class="sub">${esc(s.sub)}</span>` : "";
@@ -650,7 +658,7 @@ function previewView(d, from, panel = false) {
   const back = from === "plan" ? "Plan" : "Today";
   const ask = askLink(d);
   const r = d.readiness;
-  const parts = [panel ? "" : `<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${back}</a>`,
+  const parts = [panel ? "" : `<a class="back" href="${backHref(from)}">${ICON.left()}${back}</a>`,
     `<header class="stack-8">${panel ? "" : `<span class="kicker ${d.today ? "red" : ""}">${esc(d.kicker)}</span>`}<h1 class="title-xl">${esc(d.name)}</h1>
       ${d.km ? `<span class="size">${esc(d.km)} km<span style="color:var(--muted);font-weight:500"> · ~${esc(d.minutes)} min</span></span>`
         : d.minutes ? `<span class="size">~${esc(d.minutes)} min</span>` : ""}
@@ -681,7 +689,7 @@ function previewView(d, from, panel = false) {
 }
 
 function restView(d, from) {
-  return `<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${from === "plan" ? "Plan" : "Today"}</a>
+  return `<a class="back" href="${backHref(from)}">${ICON.left()}${from === "plan" ? "Plan" : "Today"}</a>
     <header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">Rest day</h1></header>
     ${d.next ? `<a class="row-button" href="#/session/${d.next.date}?from=${from || "today"}"><span class="grow"><span class="meta">Next</span><span class="strong">${esc(d.next.name)}</span></span>${ICON.right(18, "var(--muted)")}</a>` : ""}`;
 }
@@ -691,7 +699,7 @@ async function showSession(day, params) {
   const sid = params.get("sid");
   return show(`session/${day}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}`, (d) => {
     if (d.done && d.activity_id) {
-      location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`);
+      location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}${params.get("week") ? `&week=${encodeURIComponent(params.get("week"))}` : ""}`);
       return;
     }
     $("screen").innerHTML = d.rest ? restView(d, params.get("from")) : previewView(d, params.get("from"));
@@ -705,7 +713,7 @@ function analysisView(d, from, panel = false) {
   const back = from === "plan" ? "Plan" : "Today";
   const ask = askLink(d, `Ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"} about it`);
   if (panel) return analysisPanel(d, ask);
-  const parts = [`<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${back}</a>`,
+  const parts = [`<a class="back" href="${backHref(from)}">${ICON.left()}${back}</a>`,
     `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1></header>`,
     `<p class="verdict">${esc(d.verdict)}</p>`,
     `<div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>`];
@@ -775,7 +783,7 @@ async function showPanel(kind, id, params) {
   const sid = params.get("sid");
   const path = kind === "session" ? `session/${id}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}` : `run/${encodeURIComponent(id)}`;
   const draw = (d) => {
-    if (kind === "session" && d.done && d.activity_id) { location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`); return; }
+    if (kind === "session" && d.done && d.activity_id) { location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}${params.get("week") ? `&week=${encodeURIComponent(params.get("week"))}` : ""}`); return; }
     if (!$("panel-body")) return;
     $("panel-kicker").textContent = d.kicker || "";
     $("panel-kicker").classList.toggle("red", !!d.today);
@@ -804,7 +812,7 @@ function refreshUnderPanel() {
 function closePanel() {
   $("panel").hidden = true;
   $("panel").innerHTML = "";
-  location.hash = base === "plan" ? "#/plan" : "#/today";
+  location.hash = base === "plan" ? backHref("plan") : "#/today";
 }
 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("panel").hidden) closePanel(); });
@@ -883,10 +891,11 @@ function moveSheet(day, sid, name) {
 
 // -- Plan: the week, with hold to move, and the block ---------------------------
 
-function planRow(r, day, first) {
+function planRow(r, day, first, week) {
   // A run not on the plan opens as a run; it has no session of its own to open.
-  const href = (r.state === "done" || r.state === "extra") && r.activity_id ? `#/run/${r.activity_id}?from=plan`
-    : r.state === "extra" ? `#/plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan`;
+  const wk = week ? `&week=${encodeURIComponent(week)}` : "";
+  const href = (r.state === "done" || r.state === "extra") && r.activity_id ? `#/run/${r.activity_id}?from=plan${wk}`
+    : r.state === "extra" ? `#/plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan${wk}`;
   const mark = r.state === "done" || r.state === "extra" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
     : r.state === "next" ? `<span class="ring" style="width:14px;height:14px"></span>`
     : r.missed ? `<span class="miss-ring" style="width:12px;height:12px"></span>` : "";
@@ -905,7 +914,7 @@ function weekView(d) {
   const ask = askLink({ ...d, ask: w.ask });
   const askNext = askLink({ ...d, ask: w.ask_next }, "Plan next week");
   const rows = w.days.map((day) => day.sessions.length
-    ? day.sessions.map((r, i) => planRow(r, day, i === 0)).join("")
+    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date)).join("")
     : `<div class="plan-row rest" data-date="${day.date}"><span class="day"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
         <span class="body"><span class="type c-rec">Rest</span><span class="name dim">Rest day</span></span><span></span></div>`).join("");
   const nav = (to, label, icon) => to ? `<a class="pill icon" href="#/plan?week=${to}" aria-label="${label}">${icon}</a>` : `<span class="pill icon" aria-hidden="true" style="visibility:hidden">${icon}</span>`;
@@ -1722,11 +1731,15 @@ function signInView(message, step = "start", email = "") {
 // says where it was given (from=…), sent once with the first screen it opens.
 let cameFrom = null;
 async function handOff() {
-  const from = location.hash.match(/[?&]from=([a-z_]{1,24})/);
+  // The app's own links say which tab Back returns to with from=today or
+  // from=plan: those stay. Nov 9: stripping them too sent Back from a session
+  // opened in Plan to Today.
+  const from = location.hash.match(/[?&]from=(?!(?:today|plan)(?:&|$))([a-z_]{1,24})/);
   const m = location.hash.match(/[?&]login=([\w-]+)/);
   if (!m && !from) return null;
   if (from) cameFrom = from[1];
-  const clean = location.hash.replace(/[?&](login|from)=[\w-]+/g, "").replace(/\?$/, "");
+  const clean = location.hash.replace(/[?&]login=[\w-]+/g, "")
+    .replace(/[?&]from=(?!(?:today|plan)(?:&|$))[\w-]+/g, "").replace(/^([^?]*)&/, "$1?").replace(/\?$/, "");
   history.replaceState(null, "", `/app/${clean || "#/today"}`);
   if (!m || token.access) return null;
   try {
