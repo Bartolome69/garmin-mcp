@@ -1436,6 +1436,9 @@ async def main() -> int:
                 drawn = json.loads(_b64.urlsafe_b64decode(fragment + "=" * (-len(fragment) % 4)).decode("utf-8"))
                 check("the link carries the run as the share page reads it",
                       drawn.get("run") == 1 and drawn.get("v") == 1 and drawn["f"][0][1] == "km" and drawn.get("l"), str(drawn)[:200])
+                check("and Garmin's credit with the watch it was recorded on, looked up from the run",
+                      drawn.get("g") == "Garmin Forerunner 265"
+                      and (plain_run.get("summary") or {}).get("device") == "Forerunner 265", str(drawn.get("g")))
             plain_fit = payload(await sess.call_tool("get_fitness", {}))
             check("an ordinary account's fitness has the cycling FTP",
                   (plain_fit.get("cycling_ftp") or {}).get("watts") == 250, str(plain_fit.get("cycling_ftp")))

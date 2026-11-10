@@ -1886,7 +1886,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
         return _with_share_image(drop_empty({
             "activity_id": activity_id,
-            "summary": _summarise_activity(flat) or None,
+            "summary": _with_device(_summarise_activity(flat), flat.get("deviceName")) or None,
             "hr_zones": hr_zones(found["zones"]),
             "splits_count": len(laps) or None,
             "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
@@ -1977,10 +1977,11 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
 
     lap_rows = [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)]
     planned = None if ride else await _planned_for(activity_id)
+    device = await _device_name(flat)
     return _with_share_image(drop_empty(
         {
             "activity_id": activity_id,
-            "summary": _with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)) or None,
+            "summary": _with_device(_with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)), device) or None,
             **around.get("first", {}),
             "hr_zones": hr_zones(zones),
             "easy_check": easy_check.check(planned, laps, flat),
@@ -2046,7 +2047,7 @@ def _flat_activity(summary: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_brief(activity: dict[str, Any], splits: Any, recording: Any,
-              planned: dict[str, Any] | None = None) -> dict[str, Any]:
+              planned: dict[str, Any] | None = None, device: str | None = None) -> dict[str, Any]:
     """A run's summary, laps and share link from the three reads the app already
     makes, without the zones, shoes, weather and earlier runs get_activity_details
     adds for a chat (Nov 3: those, one after another, were most of the app's wait)."""
@@ -2059,7 +2060,7 @@ def run_brief(activity: dict[str, Any], splits: Any, recording: Any,
         inside = None
     return _with_share_image(drop_empty({
         "activity_id": flat.get("activityId"),
-        "summary": _summarise_activity(flat) or None,
+        "summary": _with_device(_summarise_activity(flat), device) or None,
         "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
         "inside": inside,
         "easy_check": None if ride else easy_check.check(planned, laps, flat),
@@ -2080,6 +2081,38 @@ def _with_share_image(result: dict[str, Any], planned: dict[str, Any] | None = N
 
 
 SAME_ROUTE_LOOKBACK = timedelta(weeks=26)
+
+
+# How long the account's list of devices is remembered: it changes when a
+# watch is bought, not between runs.
+DEVICES_MEMORY = 6 * 3600
+
+
+async def _device_name(flat: dict[str, Any]) -> str | None:
+    """The watch a run was recorded on, by its product name ("Forerunner 265"),
+    for Garmin's credit where the run is shown to others (Nov 10). None when
+    unknown, or when the activity didn't come from a Garmin device."""
+    if flat.get("deviceName"):
+        return str(flat["deviceName"])
+    meta = flat.get("metadataDTO") if isinstance(flat.get("metadataDTO"), dict) else {}
+    maker = str(meta.get("manufacturer") or "GARMIN").upper()
+    did = (meta.get("deviceMetaDataDTO") or {}).get("deviceId") if isinstance(meta.get("deviceMetaDataDTO"), dict) else None
+    if maker != "GARMIN" or not did:
+        return None
+    try:
+        devices = await _read(("devices",), DEVICES_MEMORY, lambda c: c.get_devices())
+    except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
+        return None
+    for d in devices if isinstance(devices, list) else []:
+        if isinstance(d, dict) and str(d.get("deviceId")) == str(did):
+            return d.get("productDisplayName") or d.get("displayName")
+    return None
+
+
+def _with_device(summary: dict[str, Any], device: str | None) -> dict[str, Any]:
+    if summary and device:
+        summary["device"] = device
+    return summary
 
 
 def _with_power(summary: dict[str, Any], richer: dict[str, Any] | None) -> dict[str, Any]:

@@ -333,7 +333,7 @@
     var title = wrap(ctx, wk.t, W - 2 * P, 2);
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 80); });
     y += (title.length - 1) * 80;
-    if (wk.s) { y += 54; font(ctx, 400, 34); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, wk.s, W - 2 * P), P, y); }
+    y += 54; font(ctx, 400, 34); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, ["Garmin", wk.s].filter(Boolean).join(" \u00b7 "), W - 2 * P), P, y);
 
     // The headline figure, and without a plan the weeks before it as bars.
     y += story ? 140 : 124;
@@ -387,7 +387,7 @@
     // Footer: where it came from, for anyone who wants their own.
     font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
     font(ctx, 400, 28); ctx.fillStyle = T.muted; ctx.textAlign = "right";
-    ctx.fillText("Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.fillText("Coaching in ChatGPT and Claude", W - P, footY + 50);
     ctx.textAlign = "left";
   }
 
@@ -460,7 +460,7 @@
     var title = wrap(ctx, cw.c, W - 2 * P, 2);
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 72); });
     y += (title.length - 1) * 72 + 50;
-    font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(span, P, y);
+    font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, "Garmin \u00b7 " + span, W - 2 * P), P, y);
 
     // The grid: a name column, then the seven days.
     y += story ? 70 : 56;
@@ -554,7 +554,7 @@
     ctx.textAlign = "left";
     font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
     font(ctx, 400, 26); ctx.fillStyle = T.muted; ctx.textAlign = "right";
-    ctx.fillText(cw.code ? "Join: tell your Daash the code " + cw.code : "Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.fillText(cw.code ? "Join: tell your Daash the code " + cw.code : "Coaching in ChatGPT and Claude", W - P, footY + 50);
     ctx.textAlign = "left";
   }
 
@@ -608,7 +608,7 @@
     font(ctx, 700, 66); ctx.fillStyle = T.text;
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 72); });
     y += (title.length - 1) * 72 + 52;
-    font(ctx, 400, 30); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, pl.s, W - 2 * P), P, y);
+    font(ctx, 400, 30); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, ["Garmin", pl.s].filter(Boolean).join(" \u00b7 "), W - 2 * P), P, y);
     y += 64;
     font(ctx, 600, 30); ctx.fillStyle = T.text; ctx.fillText(fit(ctx, planSummary(pl, true), W - 2 * P), P, y);
 
@@ -671,7 +671,7 @@
     var footY = H - 150;
     font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
     font(ctx, 400, 28); ctx.fillStyle = T.muted; ctx.textAlign = "right";
-    ctx.fillText("Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.fillText("Coaching in ChatGPT and Claude", W - P, footY + 50);
     ctx.textAlign = "left";
   }
 
@@ -701,7 +701,7 @@
     var notes = Array.isArray(d.n) ? d.n.slice(0, 3).map(function (n) {
       return Array.isArray(n) ? { c: n[0] === "c" ? c : COLOURS.indexOf(n[0]) >= 0 ? n[0] : "other", t: str(n[1], 90) } : null;
     }).filter(function (n) { return n && n.t; }) : [];
-    return joinReps({ run: true, t: t, s: str(d.s, 60), k: str(d.k, 40) || "Run recap", c: c, f: facts, l: laps, a: num(d.a, 60, 1800), n: notes });
+    return joinReps({ run: true, t: t, s: str(d.s, 60), g: str(d.g, 40), k: str(d.k, 40) || "Run recap", c: c, f: facts, l: laps, a: num(d.a, 60, 1800), n: notes });
   }
   // A watch that laps every km splits an 8-minute rep in two: Roo's 3 x 8 min
   // drew as six reps with their paces printed over each other (Nov 3). Work
@@ -764,7 +764,10 @@
     var title = wrap(ctx, rn.t, W - 2 * P, 2);
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 78); });
     y += (title.length - 1) * 78;
-    if (rn.s) { y += 52; font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, rn.s, W - 2 * P), P, y); }
+    // Garmin's credit, "Garmin [device model]", first on the line under the
+    // title (Garmin's API brand guidelines, Nov 10).
+    var under = [rn.g, rn.s].filter(Boolean).join(" \u00b7 ");
+    if (under) { y += 52; font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, under, W - 2 * P), P, y); }
 
     // The headline numbers, between two rules.
     if (rn.f.length) {
@@ -913,7 +916,7 @@
         });
       }
     });
-    add(doc, "p", "foot", "Made with Daash: Garmin coaching in ChatGPT and Claude. daash.run");
+    add(doc, "p", "foot", "Made with Daash: coaching in ChatGPT and Claude. daash.run");
   }
 
   // ---------------------------------------------------------------- page
@@ -1006,11 +1009,11 @@
     var figs = facts.map(function (f) { var unit = f[1].split(" ")[0]; return unit === "time" ? f[0] : f[0] + " " + unit; });
     var plan = d.pl && typeof d.pl === "object" ? d.pl : null;
     if (!plan) {
-      var lines = [str(d.t, 80).replace(/\u00a0/g, " ")];
+      var lines = [str(d.t, 80).replace(/\u00a0/g, " "), str(d.g, 40)];
       if (figs.length) lines.push(figs.join(" \u00b7 "));
       var note = (Array.isArray(d.n) ? d.n : []).filter(function (n) { return Array.isArray(n) && n.length > 1; })[0];
       if (note && str(note[1], 90)) lines.push(str(note[1], 90));
-      return lines.join("\n") + "\n\nvia daash.run";
+      return lines.filter(Boolean).join("\n") + "\n\nvia daash.run";
     }
     var w = Array.isArray(plan.w) ? plan.w : [], weekWords = w.length === 2 ? "week " + w[0] + " of " + w[1] : null;
     var laps = Array.isArray(d.l) ? d.l : [];
@@ -1021,7 +1024,7 @@
     if (["threshold", "sub", "intervals"].indexOf(plan.ty) >= 0 && reps.length) {
       var unit = dist ? dist[1].split(" ")[0] : "km";
       var shown = plan.tg ? String(plan.tg).replace(/\s*\/(km|mi)$/, "") : null;
-      out = [[plan.n, weekWords].filter(Boolean).join(" \u00b7 "),
+      out = [[plan.n, weekWords].filter(Boolean).join(" \u00b7 "), str(d.g, 40),
         "Reps: " + reps.map(function (r) { return capPace(r[1]); }).join(" \u00b7 ") + " /" + unit + (shown ? " (target " + shown + ")" : "")];
       var bpm = reps.map(function (r) { return r[4]; }).filter(Boolean);
       var avg = facts.filter(function (f) { return /^bpm/.test(f[1]); })[0];
@@ -1035,7 +1038,7 @@
         out.push(hit === reps.length ? "Every rep on target \u2713" : hit + " of " + reps.length + " reps on target");
       }
     } else {
-      out = [[KIND_WORDS[plan.ty] || "Run", weekWords, plan.b].filter(Boolean).join(" \u00b7 "), "Planned: " + plan.n, "Ran: " + figs.join(" \u00b7 ")];
+      out = [[KIND_WORDS[plan.ty] || "Run", weekWords, plan.b].filter(Boolean).join(" \u00b7 "), str(d.g, 40), "Planned: " + plan.n, "Ran: " + figs.join(" \u00b7 ")];
       var ran = dist ? parseFloat(dist[0]) * (/^mi/.test(dist[1]) ? 1.609344 : 1) : NaN, meant = parseFloat(plan.k);
       if (meant && ran / meant >= 0.9 && ran / meant <= 1.15) out.push("On plan \u2713");
     }

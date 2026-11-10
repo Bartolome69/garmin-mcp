@@ -496,6 +496,8 @@ class FakeGarmin:
                 "summaryDTO": {"startTimeLocal": "2026-09-29T07:00:00.0", "distance": 10000.0,
                                "duration": 3000.0, "movingDuration": 3000.0, "averageHR": 148,
                                "elevationGain": 40.0},
+                # The watch it was recorded on, named in get_devices (Nov 10).
+                "metadataDTO": {"manufacturer": "GARMIN", "deviceMetaDataDTO": {"deviceId": 3456789}},
             }
         return {
             "activityId": activity_id,
@@ -511,6 +513,10 @@ class FakeGarmin:
                 "elevationGain": 45.2,
             },
         }
+
+    def get_devices(self) -> list[dict[str, Any]]:
+        return [{"deviceId": 1111111, "productDisplayName": "Edge 840"},
+                {"deviceId": 3456789, "productDisplayName": "Forerunner 265", "displayName": "My watch"}]
 
     def get_activity_splits(self, activity_id: int) -> dict[str, Any]:
         return INTERVAL_SPLITS if int(activity_id) == INTERVALS_ID else SPLITS

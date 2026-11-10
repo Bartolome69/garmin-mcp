@@ -200,11 +200,22 @@ def run_payload(details: dict[str, Any], planned: dict[str, Any] | None = None) 
 
     out = {
         "v": 1, "run": 1, "t": _title(name)[:80], "s": sub[:60], "k": "Run recap", "c": _colour(name),
-        "f": facts, "l": laps, "a": _secs(pace), "n": notes,
+        "f": facts, "l": laps, "a": _secs(pace), "n": notes, "g": attribution(summary.get("device")),
     }
     if planned:
         out["pl"] = planned
     return out
+
+
+def attribution(device: Any = None) -> str:
+    """Garmin's credit for data from a Garmin device, "Garmin [device model]",
+    by the title of anything shown to other people (Garmin Connect Developer
+    Program Agreement 6.4 and Garmin's API brand guidelines, Nov 10). Just
+    "Garmin" when the model isn't known."""
+    name = re.sub(r"\s+", " ", str(device or "")).strip()[:32]
+    if not name:
+        return "Garmin"
+    return name if name.lower().startswith("garmin") else f"Garmin {name}"
 
 
 # The caption's last line, back to Daash: "Planned by" when the run was a
@@ -261,19 +272,20 @@ def caption(payload: dict[str, Any]) -> str | None:
         unit = str(words).split(" ")[0]
         figures.append(str(value) if unit == "time" else f"{value} {unit}")
     plan = payload.get("pl") if isinstance(payload.get("pl"), dict) else None
+    credit = str(payload.get("g") or "")[:40]
     if not plan:
-        lines = [str(payload.get("t") or "Run").replace("\u00a0", " ")]
+        lines = [str(payload.get("t") or "Run").replace("\u00a0", " "), credit]
         if figures:
             lines.append(" · ".join(figures))
         lines += [str(n[1])[:90] for n in payload.get("n") or [] if len(n) > 1 and n[1]][:1]
-        return "\n".join(lines) + f"\n\nvia {CAPTION_SITE}"
+        return "\n".join(l for l in lines if l) + f"\n\nvia {CAPTION_SITE}"
 
     week = plan.get("w") or []
     week_words = f"week {week[0]} of {week[1]}" if len(week) == 2 else None
     reps = _reps(payload.get("l") or [])
     distance = next((f for f in facts if str(f[1]).split(" ")[0] in ("km", "mi")), None)
     if plan.get("ty") in _HARD and reps:
-        lines = [" · ".join(x for x in (plan.get("n"), week_words) if x)]
+        lines = [" · ".join(x for x in (plan.get("n"), week_words) if x), credit]
         target = plan.get("tg")
         unit = distance[1].split(" ")[0] if distance else "km"
         shown = re.sub(r"\s*/(km|mi)$", "", target) if target else None
@@ -291,7 +303,7 @@ def caption(payload: dict[str, Any]) -> str | None:
             lines.append("Every rep on target ✓" if hit == len(reps) else f"{hit} of {len(reps)} reps on target")
     else:
         kind = _KIND_WORDS.get(str(plan.get("ty")), "Run")
-        lines = [" · ".join(x for x in (kind, week_words, plan.get("b")) if x)]
+        lines = [" · ".join(x for x in (kind, week_words, plan.get("b")) if x), credit]
         lines.append(f"Planned: {plan.get('n')}")
         lines.append("Ran: " + " · ".join(figures))
         try:

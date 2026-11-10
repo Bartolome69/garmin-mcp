@@ -617,8 +617,12 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         workout = await _workout((row or {}).get("workout_id"))
     except Exception:  # noqa: BLE001 - the run reads without its plan
         workout = None
+    try:
+        device = await server_mod._device_name(server_mod._flat_activity(activity or {}))
+    except Exception:  # noqa: BLE001 - the run shares with "Garmin" alone
+        device = None
     details = server_mod.run_brief(activity or {}, laps, recording,
-                                   share_mod.plan_context(plan, activity_id, workout))
+                                   share_mod.plan_context(plan, activity_id, workout), device)
     kind = (row or {}).get("type") or (details.get("summary") or {}).get("type")
     result = analysis.analyse(workout, laps, kind, recording)
     summary = details.get("summary") or {}
