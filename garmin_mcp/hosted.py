@@ -2077,6 +2077,11 @@ def _signin_error(
     )
 
 
+# Garmin's developer agreement (15.10) asks for an AI transparency statement;
+# the consent page links to it before anything is shared (Nov 10).
+AI_STATEMENT_URL = "https://garmin.daash.run/privacy/#ai"
+
+
 def _consent_page(
     consent_token: str, parked: dict[str, Any], *, ask_email: bool = False, garmin: bool = False,
     email: str = "", email_error: str = "", phone: bool = False,
@@ -2153,6 +2158,9 @@ def _consent_page(
         <h1>Connect Daash to {app}?</h1>
         <p class=secure>{_TICK if garmin else _LOCK}<span>{opening} {app} will be able
         to read your Garmin data and add or change workouts on your watch.</span></p>
+        <p class=note>{app} is an AI assistant, made by {"Anthropic" if app == "Claude" else "OpenAI"}. It reads
+        your Garmin data only to answer what you ask it, and Daash never uses your data to train AI.
+        <a href="{AI_STATEMENT_URL}" target=_blank rel=noopener>AI Transparency Statement</a></p>
         <p class=note>Access goes back to {html.escape(host)} only.</p>
         {phone_note}
         {form}
@@ -2175,6 +2183,8 @@ def _consent_page(
         <p><strong>{html.escape(str(name))}</strong> is asking to read your Garmin
         data and write workouts to your watch.</p>
         {warning}
+        <p class=note>If it is an AI assistant, it will read your Garmin data to answer you. Daash never
+        uses your data to train AI. <a href="{AI_STATEMENT_URL}" target=_blank rel=noopener>AI Transparency Statement</a></p>
         <p class=note>It will be sent to:</p>
         <div class=url>{html.escape(destination)}</div>
         {form}
