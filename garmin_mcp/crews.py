@@ -730,7 +730,12 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
             person["club"] = False
 
     def social(person: dict[str, Any], day: date) -> list[dict[str, Any]]:
-        return [r for r in person["runs"].get(day.isoformat(), []) if r["kind"] in ("easy", "long") and not r.get("done")]
+        day_runs = person["runs"].get(day.isoformat(), [])
+        # A day with a hard session is run alone, whatever else is on it: an
+        # easy workout beside it is no reason to line them up (Nov 10).
+        if any(r["kind"] == "hard" for r in day_runs):
+            return []
+        return [r for r in day_runs if r["kind"] in ("easy", "long") and not r.get("done")]
 
     together: list[dict[str, Any]] = []
     # The club's standing run is already fixed in everyone's week: it shows on

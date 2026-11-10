@@ -2420,6 +2420,21 @@ async def main() -> int:
               and not [t for t in together if t["date"] == (monday + _td(days=1)).isoformat()], str(together))
         check("Bob, who only runs weekend mornings, isn't put on a weekday evening",
               all("Bob" not in t["who"] for t in together if t["kind"] == "easy"), str(together))
+        # A day with a hard session is run alone, whatever else is on it: a test
+        # workout beside a planned hard run matched Bart with a crewmate (Nov 10).
+        wed = (monday + _td(days=2)).isoformat()
+        carol_week = [(1, "easy", 8.0), (3, "threshold", 11.0), (6, "long", 18.0)]
+        hosted._after_tool_for(carol, store.get_user(carol))("get_plan", plan_for(carol_week + [(2, "easy", 6.0)], "45m 20s"))
+        easy_wed = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        hosted._after_tool_for(carol, store.get_user(carol))(
+            "get_plan", plan_for(carol_week + [(2, "intervals", 9.0), (2, "easy", 6.0)], "45m 20s"))
+        hard_wed = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        hosted._after_tool_for(carol, store.get_user(carol))("get_plan", plan_for(carol_week, "45m 20s"))
+        def carol_on_wed(c):
+            return [t for t in c.get("together", []) if t["date"] == wed and "Carol" in t["who"]]
+        check("an easy run beside a hard one doesn't make the day a match: that day is run alone",
+              carol_on_wed(easy_wed) and not carol_on_wed(hard_wed),
+              f"{carol_on_wed(easy_wed)} | {carol_on_wed(hard_wed)}")
         msg = card.get("group_message", "")
         check("the week comes as a calendar for the group chat",
               msg.startswith("Friday Run Club · ") and "Tue: Carol easy 8k" in msg and "Thu: Carol hard" in msg
