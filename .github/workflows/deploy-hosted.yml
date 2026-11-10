@@ -48,7 +48,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Nov 10: ubuntu-latest became 26.04, where Playwright has no Chromium yet
     steps:
       - uses: actions/checkout@v4
 
