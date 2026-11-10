@@ -1408,6 +1408,11 @@ def _layout(request: Request) -> str | None:
     return found if found in ("phone", "desktop") else None
 
 
+def _home(request: Request) -> bool | None:
+    """True when the app was opened from the home screen, not a browser tab (Nov 10)."""
+    return True if request.headers.get("x-daash-home") == "1" else None
+
+
 _FROM = re.compile(r"[a-z_]{1,24}")
 
 
@@ -1437,7 +1442,8 @@ def _safe(handler):
             # How long the screen waited for Daash, and on its own thread: the
             # account lookups are reads a screen shouldn't wait for.
             from . import official
-            seen = drop_empty({"screen": screen, "layout": _layout(request), "ok": response.status_code < 400,
+            seen = drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
+                               "ok": response.status_code < 400,
                                "seconds": round(time.monotonic() - started, 2), "from": _came_from(request)})
             threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
         return response
@@ -1552,12 +1558,12 @@ async def api_event(request: Request) -> Response:
         screen = str(said.get("screen") or "")
         if screen not in APP_SCREENS:
             return _json({"error": "Unknown screen."}, 400)
-        _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
+        _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
                                          "ok": said.get("ok") is not False, "preloaded": True}))
         return _json({"ok": True})
     # choice: Back to my chat or New chat; saved: whether a chat was remembered.
     keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method", "choice", "saved")}
-    _track(f"app_{name}", {**keep, "layout": _layout(request)})
+    _track(f"app_{name}", drop_empty({**keep, "layout": _layout(request), "home_screen": _home(request)}))
     return _json({"ok": True})
 
 
@@ -1584,9 +1590,11 @@ async def api_edit(request: Request) -> Response:
         else:
             result = await _EDITS[action](day, _schedule_id(request, body))
     except EditError as exc:
-        _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": False, "layout": _layout(request)}))
+        _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": False, "layout": _layout(request),
+                                       "home_screen": _home(request)}))
         return _json({"error": str(exc)}, 409)
-    _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": True, "layout": _layout(request)}))
+    _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": True, "layout": _layout(request),
+                                   "home_screen": _home(request)}))
     return _json(result)
 
 

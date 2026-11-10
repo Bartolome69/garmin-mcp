@@ -100,7 +100,8 @@ function track(name, properties = {}) {
   if (!token.access) return;
   fetch(API + "event", {
     method: "POST", keepalive: true,
-    headers: { Authorization: `Bearer ${token.access}`, "Content-Type": "application/json", "X-Daash-Layout": desktop() ? "desktop" : "phone" },
+    headers: { Authorization: `Bearer ${token.access}`, "Content-Type": "application/json", "X-Daash-Layout": desktop() ? "desktop" : "phone",
+      ...(homeScreen() ? { "X-Daash-Home": "1" } : {}) },
     body: JSON.stringify({ name, properties }),
   }).catch(() => {});
 }
@@ -139,6 +140,8 @@ async function api(path, options = {}, retry = true) {
   const res = await fetch(API + path, {
     ...options,
     headers: { Authorization: `Bearer ${token.access}`, "X-Daash-Layout": desktop() ? "desktop" : "phone",
+      // Opened from the home screen rather than a browser tab (Nov 10: who keeps it).
+      ...(homeScreen() ? { "X-Daash-Home": "1" } : {}),
       // Fetched ahead of a tap: not counted as a screen opened.
       ...(options.ahead ? { "X-Daash-Ahead": "1" } : {}),
       ...(from ? { "X-Daash-From": from } : {}),
@@ -1660,8 +1663,10 @@ async function signInPost(path, body) {
 
 // Opened from the home screen: on iPhone that keeps its own storage, so
 // someone signed in in Safari is asked again (Nov 4: two sign-ins a minute apart).
-const homeScreen = () => window.navigator.standalone === true
-  || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+function homeScreen() {
+  return window.navigator.standalone === true
+    || !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
 
 function signInView(message, step = "start", email = "") {
   $("tabs").hidden = true;

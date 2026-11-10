@@ -356,6 +356,21 @@ def api_checks() -> None:
                 json={"to": later, "via": "drag"})
     check("a drag on the calendar says so, and the layout",
           any(e["properties"].get("via") == "drag" and e["properties"].get("layout") == "desktop" for e in posted("app_edit")))
+    # Nov 10: opened from the home screen or a browser tab, on views, edits and page events.
+    before_home = len(posted("app_viewed"))
+    client.get("/app/api/today", headers={**auth, "X-Daash-Home": "1"})
+    client.get("/app/api/today", headers={**auth, "X-Daash-Home": "yes"})
+    client.post(f"/app/api/session/{later}/move", headers={**auth, "X-Daash-Home": "1"}, json={"to": later, "via": "hold"})
+    client.post("/app/api/event", headers={**auth, "X-Daash-Home": "1"}, json={"name": "share_clicked", "properties": {"where": "run"}})
+    time.sleep(0.5)
+    homes = [e["properties"].get("home_screen") for e in posted("app_viewed")[before_home:]]
+    check("a screen opened from the home screen says so, and only on the app's own header",
+          homes == [True, None], str(homes))
+    check("so does an edit made there, and a page event",
+          posted("app_edit")[-1]["properties"].get("home_screen") is True
+          and posted("app_share_clicked")[-1]["properties"].get("home_screen") is True)
+    check("and a screen opened in a browser tab carries nothing for it",
+          all("home_screen" not in e["properties"] for e in viewed), str([e["properties"] for e in viewed])[:120])
     r = client.post("/app/api/event", headers=auth, json={"name": "ask_clicked", "properties": {"to": "claude", "where": "today", "secret": "x"}})
     asked = posted("app_ask_clicked")
     check("Ask Claude pressed is recorded", r.status_code == 200 and asked and asked[-1]["properties"].get("to") == "claude")
