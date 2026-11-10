@@ -19,6 +19,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -90,6 +91,28 @@ CREATE TABLE IF NOT EXISTS app_handoffs (
     code_hash   TEXT PRIMARY KEY,
     subject     TEXT NOT NULL,
     expires_at  INTEGER NOT NULL
+);
+"""
+
+# Phones that asked for the app's notifications (Nov 10): where to send them,
+# and what has gone already. `owner` is the person's email fingerprint, which
+# outlives a sign-in, or their token when there is none. The endpoint is the
+# address the phone's own push service gave; p256dh and auth are the keys that
+# make what Daash sends readable on that phone alone.
+PUSH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS push_subs (
+    endpoint      TEXT PRIMARY KEY,
+    owner         TEXT NOT NULL,
+    p256dh        TEXT NOT NULL,
+    auth          TEXT NOT NULL,
+    tz            TEXT,
+    created_at    INTEGER NOT NULL,
+    last_morning  TEXT,
+    last_run      TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (
+    name   TEXT PRIMARY KEY,
+    value  BLOB NOT NULL
 );
 """
 
@@ -232,6 +255,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(FRIENDS_SCHEMA)
     conn.executescript(NOTICES_SCHEMA)
     conn.executescript(APP_SCHEMA)
+    conn.executescript(PUSH_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -1431,3 +1455,81 @@ def check_email_code(email_hash: str, code: str) -> str:
             return "ok"
         conn.execute("UPDATE email_codes SET attempts = attempts + 1 WHERE email_hash = ?", (email_hash,))
         return "locked" if row[2] + 1 >= CODE_TRIES else "wrong"
+
+
+# --------------------------------------------------------------------------
+# App notifications (Nov 10)
+# --------------------------------------------------------------------------
+
+def secret_setting(name: str, make: Callable[[], bytes]) -> bytes:
+    """A server secret kept in the database, encrypted, made once on first need."""
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
+        if row:
+            return _cipher().decrypt(row[0])
+        value = make()
+        conn.execute("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)", (name, _cipher().encrypt(value)))
+        row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
+    return _cipher().decrypt(row[0])
+
+
+def push_owner(user_token: str) -> str:
+    """Who a phone's notifications belong to: the email fingerprint, else the token."""
+    return email_hash_for(user_token) or user_token
+
+
+def save_push(user_token: str, endpoint: str, p256dh: str, auth: str, tz: str | None) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO push_subs (endpoint, owner, p256dh, auth, tz, created_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(endpoint) DO UPDATE SET owner = excluded.owner, p256dh = excluded.p256dh, "
+            "auth = excluded.auth, tz = excluded.tz",
+            (endpoint, push_owner(user_token), p256dh, auth, tz, int(time.time())),
+        )
+
+
+def drop_push(endpoint: str, user_token: str | None = None) -> bool:
+    """Forget one phone. With a token, only if it's that person's."""
+    with _connect() as conn:
+        if user_token is None:
+            return conn.execute("DELETE FROM push_subs WHERE endpoint = ?", (endpoint,)).rowcount > 0
+        return conn.execute("DELETE FROM push_subs WHERE endpoint = ? AND owner IN (?, ?)",
+                            (endpoint, push_owner(user_token), user_token)).rowcount > 0
+
+
+def forget_push(user_token: str, email_hash: str | None) -> None:
+    """Disconnect deletes every phone of theirs."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM push_subs WHERE owner IN (?, ?)", (user_token, email_hash or user_token))
+
+
+def push_subs() -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT endpoint, owner, p256dh, auth, tz, last_morning, last_run FROM push_subs ORDER BY created_at"
+        ).fetchall()
+    keys = ("endpoint", "owner", "p256dh", "auth", "tz", "last_morning", "last_run")
+    return [dict(zip(keys, r)) for r in rows]
+
+
+def has_push(user_token: str) -> bool:
+    with _connect() as conn:
+        return conn.execute("SELECT 1 FROM push_subs WHERE owner IN (?, ?) LIMIT 1",
+                            (push_owner(user_token), user_token)).fetchone() is not None
+
+
+def mark_push(owner: str, *, morning: str | None = None, run: str | None = None) -> None:
+    """Record, for all of someone's phones, the morning or run already sent."""
+    with _connect() as conn:
+        if morning is not None:
+            conn.execute("UPDATE push_subs SET last_morning = ? WHERE owner = ?", (morning, owner))
+        if run is not None:
+            conn.execute("UPDATE push_subs SET last_run = ? WHERE owner = ?", (run, owner))
+
+
+def token_for_owner(owner: str) -> str | None:
+    """The person's current token: their newest sign-in, or the token itself."""
+    found = tokens_for(owner)
+    if found:
+        return found[-1]
+    return owner if get_user(owner) is not None else None

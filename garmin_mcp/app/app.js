@@ -544,7 +544,7 @@ function todayParts(d) {
 
 function todayView(d) {
   const p = todayParts(d);
-  return [p.head, p.done, p.next, p.crew, p.ready, p.week].filter(Boolean).join("");
+  return [p.head, p.done, p.next, nudge(), p.crew, p.ready, p.week].filter(Boolean).join("");
 }
 
 // Desktop: three weeks as a calendar, the phone's cards on the right.
@@ -631,6 +631,7 @@ async function showToday(quiet = false) {
       dragToMove($("cal"));
     } else {
       $("screen").innerHTML = todayView(d);
+      wireNudge($("screen"));
     }
     base = "today";
     wire($("screen"));
@@ -1360,6 +1361,7 @@ function youView(d) {
       { l: "Ask Claude opens in", v: store.get(OPENS) === "web" ? "The browser" : "The Claude app", sub: "Tap to switch", action: "opens" }] } : g)
       .map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
       <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
+    ${pushRow()}
     <p class="small" style="text-align:center">Daash 0.1 · <a href="${esc(d.privacy)}" target="_blank" rel="noopener">Privacy</a><br>Daash is independent and not made or endorsed by Garmin.</p>`;
 }
 
@@ -1441,6 +1443,7 @@ async function showYou() {
             toast(store.get(OPENS) === "web" ? "Ask Claude opens in the browser." : "Ask Claude opens the Claude app, or the browser without it.");
             return showYou();
           }
+          if (b.dataset.you === "push") return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => showYou());
           return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut();
         };
     });
@@ -1665,6 +1668,139 @@ async function signInPost(path, body) {
   const out = await res.json().catch(() => ({ error: "Daash didn't answer. Try again in a moment." }));
   if (!res.ok || out.error) throw new Error(out.error || "Something went wrong.");
   return out;
+}
+
+// -- Home screen and notifications (Nov 10) -----------------------------------
+// The step 2 test: after a second day with the app, a card asks to put it on
+// the home screen; opened from there, a card offers a morning heads-up and a
+// run's verdict once it syncs. "Not now" quiets either for two weeks.
+const DAYS_SEEN = "daash.days";
+const HOME_LATER = "daash.home.later";
+const PUSH_LATER = "daash.push.later";
+const PUSH_ON = "daash.push.on";
+const QUIET_DAYS = 14;
+let installEvent = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; });
+
+function daysSeen() {
+  let days = [];
+  try { days = JSON.parse(store.get(DAYS_SEEN) || "[]"); } catch { days = []; }
+  const today = isoToday();
+  if (!days.includes(today)) { days = [...days, today].slice(-30); store.set(DAYS_SEEN, JSON.stringify(days)); }
+  return days.length;
+}
+const quiet = (key) => { const t = Number(store.get(key) || 0); return t && Date.now() - t < QUIET_DAYS * 86400000; };
+const iphone = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushIsOn = () => store.get(PUSH_ON) === "1" && canPush() && Notification.permission === "granted";
+
+// Counted once a day per card, not every time Today redraws.
+function shownOnce(name) {
+  const key = `daash.${name}.shown`;
+  if (store.get(key) === isoToday()) return;
+  store.set(key, isoToday());
+  track(name);
+}
+
+function nudge() {
+  const days = daysSeen();
+  if (desktop()) return "";
+  if (!homeScreen()) {
+    if (days < 2 || quiet(HOME_LATER) || !(installEvent || iphone())) return "";
+    shownOnce("home_prompt_shown");
+    const how = installEvent ? "" : `<span class="meta" style="font-size:13.5px;line-height:1.45">Tap ${ICON.share()} Share, then <b>Add to Home Screen</b>.</span>`;
+    return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
+        <span class="strong">Put Daash on your home screen</span>
+        <span class="meta" style="font-size:13.5px;line-height:1.45">Today's session in one tap. From there, Daash can tell you each morning what's on, and how your run went once your watch syncs.</span>${how}</span>
+      <div class="pills"><button class="pill" data-nudge="home-later">Not now</button>
+        ${installEvent ? `<button class="pill light" data-nudge="install">Add to home screen</button>` : ""}</div></div>`;
+  }
+  if (!canPush() || Notification.permission === "denied" || pushIsOn() || quiet(PUSH_LATER)) return "";
+  shownOnce("push_prompt_shown");
+  return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
+      <span class="strong">A heads-up each morning</span>
+      <span class="meta" style="font-size:13.5px;line-height:1.45">Today's session at 7am on days you have one, and how your run went once your watch syncs. Turn them off any time in You.</span></span>
+    <div class="pills"><button class="pill" data-nudge="push-later">Not now</button><button class="pill light" data-nudge="push">Turn on</button></div></div>`;
+}
+
+function wireNudge(root) {
+  root.querySelectorAll("[data-nudge]").forEach((b) => {
+    b.onclick = async () => {
+      const what = b.dataset.nudge;
+      if (what === "home-later" || what === "push-later") {
+        store.set(what === "home-later" ? HOME_LATER : PUSH_LATER, String(Date.now()));
+        track(what === "home-later" ? "home_prompt_dismissed" : "push_prompt_dismissed");
+      } else if (what === "install" && installEvent) {
+        track("home_prompt_tapped");
+        installEvent.prompt();
+        const choice = await installEvent.userChoice.catch(() => null);
+        installEvent = null;
+        if (!choice || choice.outcome !== "accepted") store.set(HOME_LATER, String(Date.now()));
+      } else if (what === "push") {
+        b.disabled = true;
+        await turnOnPush("today");
+      }
+      const card = $("nudge");
+      if (card) card.outerHTML = nudge();
+      wireNudge(root);
+    };
+  });
+}
+
+function keyBytes(key) {
+  const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - key.length % 4) % 4));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+async function turnOnPush(where) {
+  try {
+    const answer = await Notification.requestPermission();
+    if (answer !== "granted") {
+      track("push_denied", { where });
+      if (answer === "denied") toast("Notifications are blocked for Daash. Allow them in your phone's settings.");
+      else store.set(PUSH_LATER, String(Date.now()));
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const { key } = await api("push");
+    const sub = (await reg.pushManager.getSubscription())
+      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+    let tz = null;
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { tz = null; }
+    await api("push", { method: "POST", body: JSON.stringify({ subscription: sub.toJSON(), tz }) });
+    store.set(PUSH_ON, "1");
+    toast("Notifications on. The first comes on your next session morning.");
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    toast(e.message || "Notifications couldn't be turned on.");
+  }
+}
+
+async function turnOffPush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api("push", { method: "POST", body: JSON.stringify({ off: true, endpoint: sub.endpoint }) });
+      await sub.unsubscribe();
+    }
+    store.drop(PUSH_ON);
+    toast("Notifications off.");
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    toast(e.message || "Notifications couldn't be turned off.");
+  }
+}
+
+// In You: the switch, on a phone that can have notifications at all.
+function pushRow() {
+  if (!homeScreen() || !canPush()) return "";
+  const blocked = Notification.permission === "denied";
+  const on = pushIsOn();
+  const r = blocked ? { l: "Notifications", v: "Blocked", sub: "Allow them for Daash in your phone's settings." }
+    : { l: "Notifications", v: on ? "On" : "Off", sub: "Morning heads-up and run verdicts. Tap to switch", action: "push" };
+  return `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">NOTIFICATIONS</span>
+    <div class="card" style="overflow:hidden">${youRow({ ...r, tone: on ? "ok" : undefined }, {}, 0)}</div></section>`;
 }
 
 // Opened from the home screen: on iPhone that keeps its own storage, so

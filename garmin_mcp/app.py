@@ -14,6 +14,7 @@ medical advice.
 from __future__ import annotations
 
 import asyncio
+from zoneinfo import ZoneInfo
 import json
 import logging
 import re
@@ -1391,7 +1392,10 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 # use sits beside Claude and ChatGPT use in PostHog. What a screen showed is
 # never sent: no paces, no sessions, no plan.
 
-APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed"}
+APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed",
+              # The home-screen and notifications test (Nov 10).
+              "home_prompt_shown", "home_prompt_tapped", "home_prompt_dismissed",
+              "push_prompt_shown", "push_prompt_dismissed", "push_denied"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you"}
 
@@ -1583,6 +1587,51 @@ async def api_event(request: Request) -> Response:
     # choice: Back to my chat or New chat; saved: whether a chat was remembered.
     keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method", "choice", "saved")}
     _track(f"app_{name}", drop_empty({**keep, "layout": _layout(request), "home_screen": _home(request)}))
+    return _json({"ok": True})
+
+
+@mcp.custom_route(API_PREFIX + "push", methods=["GET", "POST"])
+async def api_push(request: Request) -> Response:
+    """Notifications for this phone: GET the key to ask with, POST to turn them on or off (Nov 10).
+
+    Not wrapped in _safe: asking for the key isn't a screen opened.
+    """
+    try:
+        return await _push(request)
+    except Exception:  # noqa: BLE001 - reported, never a bare 500
+        log.exception("app push route failed")
+        return _json({"error": "Daash couldn't set up notifications just now. Try again in a moment."}, 500)
+
+
+async def _push(request: Request) -> Response:
+    from . import official, push
+
+    user_token = official.current()
+    if request.method == "GET":
+        on = await asyncio.to_thread(store.has_push, user_token) if user_token else False
+        return _json({"key": await asyncio.to_thread(push.public_key), "on_somewhere": on})
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    if body.get("off"):
+        endpoint = str(body.get("endpoint") or "")
+        gone = await asyncio.to_thread(store.drop_push, endpoint, user_token) if endpoint and user_token else False
+        if gone:
+            _track("app_push_off", drop_empty({"layout": _layout(request), "home_screen": _home(request)}))
+        return _json({"ok": True})
+    found = push.valid_subscription(body.get("subscription"))
+    if not found or not user_token:
+        return _json({"error": "This phone's notification address didn't come through. Try again."}, 400)
+    tz = str(body.get("tz") or "")[:64] or None
+    if tz:
+        try:
+            ZoneInfo(tz)
+        except Exception:  # noqa: BLE001 - an unknown zone is left out, London is assumed
+            tz = None
+    await asyncio.to_thread(store.save_push, user_token, *found, tz)
+    _track("app_push_on", drop_empty({"layout": _layout(request), "home_screen": _home(request), "tz": tz}))
     return _json({"ok": True})
 
 

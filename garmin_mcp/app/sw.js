@@ -1,7 +1,7 @@
 // Daash app service worker: the shell opens from the phone at once, and
 // updates itself in the background, so a deploy shows from the next launch.
 // The plan itself is never cached here (the app keeps its own last copy).
-const SHELL = "daash-shell-v2";
+const SHELL = "daash-shell-v3";
 const FILES = ["/app/", "/app/app.css", "/app/app.js", "/app/manifest.webmanifest",
   "/app/fonts/Geist.woff2", "/app/fonts/GeistMono.woff2", "/app/icons/favicon.svg", "/app/icons/icon-512.png"];
 
@@ -32,4 +32,27 @@ self.addEventListener("fetch", (event) => {
       if (hit) { event.waitUntil(update.catch(() => {})); return hit; }
       return update.catch(() => caches.match("/app/"));
     }));
+});
+
+// Notifications (Nov 10): Daash's morning heads-up and a run's verdict. What
+// arrives is already worded; this only shows it, and a tap opens the screen it
+// names, in the app if it's open, else a fresh window.
+self.addEventListener("push", (event) => {
+  let said = {};
+  try { said = event.data ? event.data.json() : {}; } catch { said = { body: event.data ? event.data.text() : "" }; }
+  const url = typeof said.url === "string" && said.url.startsWith("/app/") ? said.url : "/app/#/today";
+  event.waitUntil(self.registration.showNotification(said.title || "Daash", {
+    body: said.body || "", tag: said.tag || undefined, data: { url },
+    icon: "/app/icons/icon-512.png", badge: "/app/icons/icon-512.png",
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/app/#/today";
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((open) => {
+    const app = open.find((c) => new URL(c.url).pathname.startsWith("/app"));
+    if (app) return app.navigate(url).then((c) => (c || app).focus()).catch(() => app.focus());
+    return self.clients.openWindow(url);
+  }));
 });

@@ -29,7 +29,7 @@ import secrets
 import threading
 import time
 from contextvars import ContextVar
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -40,7 +40,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
+from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, store, support_mail, weekly
 from . import app as app_routes
 from . import server as server_mod
 from .formatting import drop_empty
@@ -1303,6 +1303,145 @@ def _keep_alive_forever() -> None:
         except Exception:  # noqa: BLE001
             log.exception("Keep-alive pass failed")
         time.sleep(KEEP_ALIVE_EVERY)
+
+
+# ---------------------------------------------------------- app notifications
+# For phones that turned them on in the app (Nov 10): a morning heads-up on a
+# day with a session, and a run's verdict once it syncs. A morning with
+# nothing planned sends nothing: a nudge is only worth it with something in it.
+NOTIFY_EVERY = 10 * 60
+NOTIFY_SPACING = 2.0
+MORNING_HOURS = (7, 10)
+# New runs are looked for in waking hours only: no reads on Garmin through the night.
+RUN_HOURS = (5, 23)
+# A run older than this when Daash first sees it is old news, not a notification.
+RUN_FRESH_SECONDS = 12 * 3600
+# Garmin's agreement asks for 30 days' notice of a new way of showing its API's
+# data (6.6). Until then a run read from the official API gets no notification;
+# runs read through Garmin Connect, and the plan's morning heads-up, go now.
+OFFICIAL_RUN_PUSH_FROM = os.environ.get("OFFICIAL_RUN_PUSH_FROM", "2026-12-11")
+
+
+def _as_person(user_token: str, fn: Callable[..., Any], *args: Any) -> Any:
+    """Run one of the app's reads as this person, without counting them active."""
+    session = GarminSession(
+        tokenstore=lambda t=user_token: store.load_blob(t),
+        on_refresh=lambda blob, t=user_token: store.update_blob(t, blob, in_use=False),
+    )
+    token = use_session(session)
+    official_token = official.use(user_token)
+    alone_token = server_mod.use_alone(not store.has_connect(user_token))
+    try:
+        return anyio.run(fn, *args)
+    finally:
+        server_mod.reset_alone(alone_token)
+        official.reset(official_token)
+        reset_session(token)
+
+
+def _local_now(tz: str | None, now: float) -> datetime:
+    try:
+        zone = ZoneInfo(tz) if tz else ZoneInfo("Europe/London")
+    except Exception:  # noqa: BLE001 - an unknown zone falls back to London
+        zone = ZoneInfo("Europe/London")
+    return datetime.fromtimestamp(now, zone)
+
+
+def morning_message(today_payload: dict[str, Any], day: str) -> dict[str, Any] | None:
+    """Today's session as a notification, or None when nothing is planned today."""
+    card = today_payload.get("next") if isinstance(today_payload, dict) else None
+    if not isinstance(card, dict) or card.get("date") != day:
+        return None
+    stats = " · ".join(f"{s.get('v', '')} {s.get('u', '')}".strip() for s in card.get("stats") or [] if s.get("v"))
+    return {"title": f"Today: {card.get('name') or 'your session'}",
+            "body": stats or "On your watch and ready to go.",
+            "url": "/app/#/today?from=push_morning", "tag": f"morning-{day}"}
+
+
+def run_message(run: dict[str, Any]) -> dict[str, Any] | None:
+    """A synced run's verdict as a notification, with Garmin's credit."""
+    if not isinstance(run, dict) or run.get("error"):
+        return None
+    name = run.get("name") or "Your run"
+    hard = run.get("easy_check")
+    on_plan = (run.get("effect") or {}).get("head") == "Counts as done"
+    title = f"{name}: harder than planned" if hard else (f"{name}: on plan \u2713" if on_plan else name)
+    line = (hard or {}).get("sub") or run.get("verdict") or ""
+    credit = run.get("credit") or "Garmin"
+    return {"title": title, "body": f"{line}\nFrom your {credit}" if line else f"From your {credit}",
+            "url": f"/app/#/run/{run.get('activity_id')}?from=push_run", "tag": f"run-{run.get('activity_id')}"}
+
+
+def _send_all(owner: str, subs: list[dict[str, Any]], message: dict[str, Any], kind: str) -> int:
+    sent = 0
+    for sub in subs:
+        result = push.send(sub, message)
+        sent += result == "sent"
+        analytics.capture("push_sent", owner, {"kind": kind, "result": result})
+    return sent
+
+
+def _latest_run(user_token: str) -> dict[str, Any] | None:
+    found = _as_person(user_token, server_mod._call, lambda c: c.get_activities(0, 3))
+    for activity in found or []:
+        key = str(((activity.get("activityType") or {}).get("typeKey")) or "")
+        if "running" in key:
+            return activity
+    return None
+
+
+def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> dict[str, int]:
+    """One pass over the phones with notifications on. Returns counts."""
+    now = now or time.time()
+    counts = {"morning": 0, "run": 0}
+    by_owner: dict[str, list[dict[str, Any]]] = {}
+    for sub in store.push_subs():
+        by_owner.setdefault(sub["owner"], []).append(sub)
+    for owner, subs in by_owner.items():
+        user_token = store.token_for_owner(owner)
+        if user_token is None:
+            continue
+        local = _local_now(subs[0].get("tz"), now)
+        day = local.date().isoformat()
+        try:
+            if MORNING_HOURS[0] <= local.hour < MORNING_HOURS[1] and subs[0].get("last_morning") != day:
+                message = morning_message(_as_person(user_token, app_routes.today_payload), day)
+                # Marked once read: a read that fails is tried again next pass.
+                store.mark_push(owner, morning=day)
+                if message:
+                    counts["morning"] += _send_all(owner, subs, message, "morning")
+            latest = _latest_run(user_token) if RUN_HOURS[0] <= local.hour < RUN_HOURS[1] else None
+            if latest and str(latest.get("activityId")) != (subs[0].get("last_run") or ""):
+                first_look = subs[0].get("last_run") is None
+                store.mark_push(owner, run=str(latest.get("activityId")))
+                started = str(latest.get("startTimeGMT") or latest.get("startTimeLocal") or "")
+                try:
+                    age = now - datetime.fromisoformat(started.replace(" ", "T")).replace(tzinfo=timezone.utc).timestamp()
+                except ValueError:
+                    age = RUN_FRESH_SECONDS + 1
+                official_read = store.official_only(user_token) or not store.has_connect(user_token)
+                held = official_read and local.date().isoformat() < OFFICIAL_RUN_PUSH_FROM
+                if not first_look and age <= RUN_FRESH_SECONDS and not held:
+                    run = _as_person(user_token, app_routes.run_payload, int(latest["activityId"]))
+                    message = run_message(run)
+                    if message:
+                        counts["run"] += _send_all(owner, subs, message, "run")
+        except Exception as exc:  # noqa: BLE001 - one person's reads never stop the others
+            log.info("Notification pass skipped someone (%s)", type(exc).__name__)
+        if spacing:
+            time.sleep(spacing)
+    return counts
+
+
+def _notify_forever() -> None:
+    while True:
+        try:
+            counts = notify_once()
+            if counts["morning"] or counts["run"]:
+                log.info("Notifications: %(morning)d morning, %(run)d after a run", counts)
+        except Exception:  # noqa: BLE001
+            log.exception("Notification pass failed")
+        time.sleep(NOTIFY_EVERY)
 
 
 # The hourly test sign-in, run by the server on its own clock. It ran from
@@ -2836,6 +2975,8 @@ async def forget_person(token: str) -> bool:
     if removed and gone is not None:
         # Disconnect deletes everything, crews included.
         crews.forget(crews.member_key(token, gone.email_hash))
+        # And the phones it sent notifications to.
+        store.forget_push(token, gone.email_hash)
         # And every sign-in to it: Claude, ChatGPT and the app alike.
         store.delete_tokens_for_subject(token)
     return removed
@@ -3964,6 +4105,7 @@ def main() -> None:
     refuse_wrong_key()
 
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
+    threading.Thread(target=_notify_forever, name="notifications", daemon=True).start()
     if WEEKLY_EMAIL and support_mail.can_send():
         threading.Thread(target=_weekly_email_forever, name="weekly-email", daemon=True).start()
         official.on_activities = _activities_arrived
