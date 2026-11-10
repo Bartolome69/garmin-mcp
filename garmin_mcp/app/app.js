@@ -479,7 +479,7 @@ function failed(message, retry) {
 // -- Today --------------------------------------------------------------------
 
 function todayParts(d) {
-  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1></header>` };
+  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1>${credit(d)}</header>` };
   if (d.done_today) {
     const r = d.done_today;
     p.done = `<a class="row-button" href="#/run/${r.activity_id}?from=today">
@@ -558,7 +558,7 @@ function calendarView(d) {
         ${c.missed ? `<span class="miss-ring" style="width:10px;height:10px;margin-top:3px" title="Not recorded"></span>` : ""}<span>${esc(c.name)}</span></span>
       ${c.v ? `<span class="cal-v">${esc(c.v)}</span>` : ""}</a>`;
   };
-  return `<div class="cal-top"><div class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" style="font-size:28px">${esc(d.headline)}</h1></div>
+  return `<div class="cal-top"><div class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" style="font-size:28px">${esc(d.headline)}</h1>${credit(d)}</div>
       <span class="meta">Drag a session to move it. The watch follows.</span></div>
     <div class="cal" id="cal"><div class="cal-row cal-head"><span></span>${dows.map((x) => `<span class="mono-label" style="font-size:11.5px;letter-spacing:0.06em;padding-left:4px">${x}</span>`).join("")}</div>
     ${(d.calendar || []).map((w) => `<div class="cal-row"><div class="cal-week"><span class="strong" style="font-size:13px;${w.current ? "color:var(--red-text)" : ""}">${esc(w.label)}</span>
@@ -648,6 +648,12 @@ function backHref(from) {
   return week ? `#/plan?week=${encodeURIComponent(week)}` : "#/plan";
 }
 
+// Garmin's credit, "Garmin [device model]", under each screen's title: Garmin's
+// API brand guidelines ask for it by the title of every view of its data (Nov 10).
+function credit(d) {
+  return `<span class="credit">${esc((d && d.credit) || "Garmin")}</span>`;
+}
+
 function stepRow(s) {
   const right = s.right || "";
   const line = s.target ? `<span class="target">${esc(s.target)}</span>` : s.sub ? `<span class="sub">${esc(s.sub)}</span>` : "";
@@ -662,7 +668,7 @@ function previewView(d, from, panel = false) {
   const ask = askLink(d);
   const r = d.readiness;
   const parts = [panel ? "" : `<a class="back" href="${backHref(from)}">${ICON.left()}${back}</a>`,
-    `<header class="stack-8">${panel ? "" : `<span class="kicker ${d.today ? "red" : ""}">${esc(d.kicker)}</span>`}<h1 class="title-xl">${esc(d.name)}</h1>
+    `<header class="stack-8">${panel ? "" : `<span class="kicker ${d.today ? "red" : ""}">${esc(d.kicker)}</span>`}<h1 class="title-xl">${esc(d.name)}</h1>${credit(d)}
       ${d.km ? `<span class="size">${esc(d.km)} km<span style="color:var(--muted);font-weight:500"> · ~${esc(d.minutes)} min</span></span>`
         : d.minutes ? `<span class="size">~${esc(d.minutes)} min</span>` : ""}
       ${d.why ? `<p class="why">${esc(d.why)}</p>` : ""}</header>`];
@@ -717,7 +723,7 @@ function analysisView(d, from, panel = false) {
   const ask = askLink(d, `Ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"} about it`);
   if (panel) return analysisPanel(d, ask);
   const parts = [`<a class="back" href="${backHref(from)}">${ICON.left()}${back}</a>`,
-    `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1></header>`,
+    `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1>${credit(d)}</header>`,
     `<p class="verdict">${esc(d.verdict)}</p>`,
     `<div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>`];
   if (d.planned_and_run) {
@@ -760,7 +766,7 @@ function analysisPanel(d, ask) {
         <span class="meta ${c.miss === "high" ? "soft" : ""}" style="font-size:12px">${c.hr ? `${esc(c.hr)} bpm` : ""}</span></span></div>`).join("");
   const splits = (d.splits || []).map((s) => `<div class="psplit"><span class="meta">${esc(s.rest ? "Jogs" : s.km)}</span>
       <span style="font-weight:600;white-space:nowrap">${esc(s.rest ? s.pace.replace(" for ", " · ") : s.partial ? `${s.time} (${s.pace})` : s.pace)}</span><span class="meta" style="text-align:right">${esc(s.hr || "–")}</span></div>`).join("");
-  return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>
+  return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>${credit(d)}
     <p class="verdict" style="font-size:19px">${esc(d.verdict)}</p>
     <div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>
     <div class="panel-two">${rows ? `<section class="stack-8"><span class="strong">Planned and run</span><div class="card table">${rows}</div></section>` : ""}
@@ -962,7 +968,7 @@ async function showPlan(view, params, quiet = false) {
   const week = params.get("week");
   return show(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`, (d) => {
     const seg = (id, label) => `<a href="#/plan${id === "block" ? "/block" : ""}" class="${view === id ? "on" : ""}" ${view === id ? 'aria-current="page"' : ""}>${label}</a>`;
-    const head = `<header class="stack" style="gap:12px"><h1 class="headline">Plan</h1><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
+    const head = `<header class="stack" style="gap:12px"><span class="stack-tight"><h1 class="headline">Plan</h1>${credit(d)}</span><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
     if (d.empty) {
       const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       $("screen").innerHTML = head + `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>${ask.html}</div>`;
@@ -1239,7 +1245,7 @@ function crewParts(d, desk = false) {
   const next = d.showing === "next";
   const weeks = `<nav class="segmented" aria-label="Crew week"><a href="#/crew" class="${next ? "" : "on"}" ${next ? "" : 'aria-current="page"'}>This week</a>
     <a href="#/crew?week=next" class="${next ? "on" : ""}" ${next ? 'aria-current="page"' : ""}>Next week</a></nav>`;
-  const p = { head: `<header class="stack" style="gap:12px"><span class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" ${desk ? 'style="font-size:28px"' : ""}>${esc(d.headline)}</h1></span>${weeks}</header>` };
+  const p = { head: `<header class="stack" style="gap:12px"><span class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" ${desk ? 'style="font-size:28px"' : ""}>${esc(d.headline)}</h1>${credit(d)}</span>${weeks}</header>` };
   if (d.hero) {
     const h = d.hero;
     p.hero = `<section class="card red" style="gap:12px" aria-label="Your best match this week">
@@ -1704,11 +1710,11 @@ function signInView(message, step = "start", email = "") {
   }
   $("screen").innerHTML = `<div class="signin">${head}
     ${building ? `<h1 class="headline">A running plan for your watch, built in two minutes.</h1>
-    <p class="why">Sign in with Garmin, answer six questions, and Daash puts the plan on your Garmin calendar. No chat needed.</p>`
+    <p class="why">Sign in with Garmin Connect™, answer six questions, and Daash puts the plan on your Garmin calendar. No chat needed.</p>`
     : `<h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
     <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>`}
     ${note}${homeScreen() ? `<div class="card pad meta" style="line-height:1.5">On your home screen, Daash keeps its own sign-in, apart from your browser's. Sign in once here and it stays signed in.</div>` : ""}
-    ${building ? `<button class="pill red tall" id="garmin">Sign in with Garmin</button>
+    ${building ? `<button class="pill red tall" id="garmin">Sign in with Garmin Connect™</button>
     <p class="small">Connects your Garmin account, so the plan can go on your calendar. You can add Claude or ChatGPT later.</p>
     <div class="or"><span>Already use Daash?</span></div>` : ""}
     <form id="email-form" class="stack"><label class="field-label" for="email">${building ? "Your email" : "Already use Daash? Your email"}</label>
@@ -1716,7 +1722,7 @@ function signInView(message, step = "start", email = "") {
       <button class="pill ${building ? "" : "red "}tall" type="submit">Email me a code</button></form>
     <p class="small">The email your Daash account is under, usually your Garmin one. Your plan, crew and settings are waiting.</p>
     ${building ? "" : `<div class="or"><span>New to Daash?</span></div>
-    <button class="pill tall" id="garmin">Sign in with Garmin</button>
+    <button class="pill tall" id="garmin">Sign in with Garmin Connect™</button>
     <p class="small">Connects your Garmin account. You can add Claude or ChatGPT later.</p>`}${foot}</div>`;
   $("email-form").onsubmit = async (e) => {
     e.preventDefault();

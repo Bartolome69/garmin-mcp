@@ -103,7 +103,9 @@ _INSTRUCTIONS = (
     "day has passed. One card per answer, at most. Dates are YYYY-MM-DD and "
     "also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
-    "'error' key, show it to the user rather than retrying blindly."
+    "'error' key, show it to the user rather than retrying blindly. Answers "
+    "carry credit, Garmin's required attribution: name it once when you show their "
+    "figures or advice drawn from them (\"from your Garmin Forerunner 265\")."
 )
 
 
@@ -144,7 +146,9 @@ _OFFICIAL_INSTRUCTIONS = (
     "get_crew: call it only when the user asks about the crew as a whole. One "
     "card per answer, at most. Dates are YYYY-MM-DD and also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
-    "'error' key, show it to the user rather than retrying blindly."
+    "'error' key, show it to the user rather than retrying blindly. Answers "
+    "carry credit, Garmin's required attribution: name it once when you show their "
+    "figures or advice drawn from them (\"from your Garmin Forerunner 265\")."
 )
 # Set per request by the hosted server: whether the person asking has only
 # Garmin's official API behind them.
@@ -1254,6 +1258,38 @@ WRITES = {
 }
 
 
+# Tools whose answers carry data from the user's Garmin devices. Each answer's
+# credit says where it came from, "Garmin [device model]", for the assistant to credit
+# when it shows the figures, and for the cards to show by their title (Garmin's
+# API brand guidelines: downstream, derived and AI uses keep the credit; Nov 10).
+CREDITED = {
+    "get_daily_summary", "get_heart_rate", "get_sleep_data", "get_activities", "get_activity_details",
+    "get_session", "get_progress", "get_plan", "get_readiness", "get_fitness", "get_fitness_trends",
+    "get_recovery_trends", "get_plan_chart", "get_crew",
+}
+
+
+async def _credit(name: str, result: dict[str, Any]) -> str:
+    """"Garmin [device model]" for an answer: the run's own watch when it is one
+    run, else the watch last used; "Garmin" alone for a crew's runs, which come
+    from several people's devices, and whenever the model isn't known."""
+    if name == "get_crew":
+        return share.attribution(None)
+    device = (result.get("summary") or {}).get("device") if name == "get_activity_details" else None
+    return share.attribution(device or await _last_device())
+
+
+async def _last_device() -> str | None:
+    """The watch the user last synced, by its product name, remembered with the device list."""
+    if _official_only():
+        return None
+    try:
+        last = await _read(("device_last_used",), DEVICES_MEMORY, lambda c: c.get_device_last_used())
+    except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
+        return None
+    return (last or {}).get("lastUsedDeviceName") if isinstance(last, dict) else None
+
+
 def tool_errors(fn):
     """Return a clear error payload instead of letting an exception escape.
 
@@ -1266,6 +1302,11 @@ def tool_errors(fn):
         started = time.monotonic()
         settle = hooks.before_tool(fn.__name__)
         result = await answer(*args, **kwargs)
+        if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
+            try:
+                result["credit"] = await _credit(fn.__name__, result)
+            except Exception:  # noqa: BLE001 - the answer goes out with "Garmin" alone
+                result["credit"] = share.attribution(None)
         took = time.monotonic() - started
         if took < settle:
             await anyio.sleep(settle - took)

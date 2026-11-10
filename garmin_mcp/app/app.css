@@ -36,6 +36,7 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .section-title { font-size: 16px; font-weight: 600; }
 .meta { font-size: 13px; color: var(--muted); }
+.credit { font-size: 13px; color: var(--muted); }
 .mono-label { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .stack-tight { display: flex; flex-direction: column; gap: 4px; }

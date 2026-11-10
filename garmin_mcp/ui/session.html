@@ -54,6 +54,7 @@
   .pill { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
     background: var(--key-bg); color: var(--key-text); white-space: nowrap; }
   .type { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .credit { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 0; overflow-wrap: anywhere; }
 
   .change { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center;
@@ -361,6 +362,8 @@
     app.appendChild(el("div", {}, [
       el("div", { class: "type", style: "color:" + colourOf(s.type), text: TYPES[s.type] || TYPES[s.kind] || "Session" }),
       el("h1", { class: "title", text: name }),
+      // "Garmin [device model]" under the title: Garmin's API brand guidelines (Nov 10).
+      el("div", { class: "credit", text: c.credit || "Garmin" }),
     ]));
     if (c.change) {
       var said = el("span", {}, c.change.was ? ["Was ", el("s", { text: c.change.was }), "." + (c.change.same_ends ? " Same warm-up and cool-down." : "")] : ["Changed just now."]);

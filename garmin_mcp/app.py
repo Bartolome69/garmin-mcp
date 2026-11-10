@@ -658,6 +658,8 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         "activity_id": activity_id, "date": (row or {}).get("date"), "kicker": kicker.strip(" ·"),
         "name": name, **t, **{k: v for k, v in result.items() if k != "short"},
         "effect": effect, "share_url": share,
+        # The run's own watch, for Garmin's credit by its title (Nov 10).
+        "credit": share_mod.attribution(device),
         # Nov 9: an easy session run harder than its target says so here.
         "easy_check": easy_check.card(details.get("easy_check")),
         "assistant": assistant(),
@@ -1477,7 +1479,20 @@ def _schedule_id(request: Request, body: Mapping[str, Any] | None = None) -> int
 @mcp.custom_route(API_PREFIX + "today", methods=["GET"])
 @_safe
 async def api_today(request: Request) -> Response:
-    return _json(await today_payload())
+    return _json(await _credited(await today_payload()))
+
+
+async def _credited(body: Any, crew: bool = False) -> Any:
+    """A screen's answer with Garmin's credit, "Garmin [device model]", for its
+    title: the watch last used, or "Garmin" alone for a crew's runs, which come
+    from several people's watches (Garmin's API brand guidelines, Nov 10)."""
+    if isinstance(body, dict) and "error" not in body and "credit" not in body:
+        try:
+            device = None if crew else await server_mod._last_device()
+        except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
+            device = None
+        body["credit"] = share_mod.attribution(device)
+    return body
 
 
 @mcp.custom_route(API_PREFIX + "session/{day}", methods=["GET"])
@@ -1486,7 +1501,7 @@ async def api_session(request: Request) -> Response:
     day = _day(request)
     if not day:
         return _json({"error": "A date like 2026-11-03."}, 400)
-    return _json(await session_payload(day, _schedule_id(request)))
+    return _json(await _credited(await session_payload(day, _schedule_id(request))))
 
 
 @mcp.custom_route(API_PREFIX + "run/{activity_id}", methods=["GET"])
@@ -1503,14 +1518,14 @@ async def api_run(request: Request) -> Response:
 @_safe
 async def api_plan(request: Request) -> Response:
     week = request.query_params.get("week")
-    return _json(await plan_payload(week if week and _DAY_RE.match(week) else None))
+    return _json(await _credited(await plan_payload(week if week and _DAY_RE.match(week) else None)))
 
 
 @mcp.custom_route(API_PREFIX + "crew", methods=["GET"])
 @_safe
 async def api_crew(request: Request) -> Response:
     try:
-        return _json(await crew_payload("next" if request.query_params.get("week") == "next" else None))
+        return _json(await _credited(await crew_payload("next" if request.query_params.get("week") == "next" else None), crew=True))
     except crews.CrewError as exc:
         return _json({"error": str(exc)}, 409)
 

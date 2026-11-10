@@ -1436,6 +1436,10 @@ async def main() -> int:
                 drawn = json.loads(_b64.urlsafe_b64decode(fragment + "=" * (-len(fragment) % 4)).decode("utf-8"))
                 check("the link carries the run as the share page reads it",
                       drawn.get("run") == 1 and drawn.get("v") == 1 and drawn["f"][0][1] == "km" and drawn.get("l"), str(drawn)[:200])
+                check("the answer itself credits the watch, for the assistant to name (Garmin's brand guidelines)",
+                      plain_run.get("credit") == "Garmin Forerunner 265", str(plain_run.get("credit")))
+                from garmin_mcp import server as _srv
+                check("and the assistant is told to name it", "credit, Garmin's required attribution" in _srv._INSTRUCTIONS and "credit, Garmin's required attribution" in _srv._OFFICIAL_INSTRUCTIONS)
                 check("and Garmin's credit with the watch it was recorded on, looked up from the run",
                       drawn.get("g") == "Garmin Forerunner 265"
                       and (plain_run.get("summary") or {}).get("device") == "Forerunner 265", str(drawn.get("g")))

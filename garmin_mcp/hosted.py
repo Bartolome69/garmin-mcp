@@ -1772,7 +1772,7 @@ def _garmin_instead(flow: str, why: str = "blocked") -> str:
     return (
         f"<div class=instead>{lead}"
         "If you already use Daash, enter the same email afterwards and you keep everything."
-        f'<a class=button href="/official/signup?flow={quote(flow, safe="")}&amp;via={why}">Continue with Garmin</a></div>'
+        f'<a class=button href="/official/signup?flow={quote(flow, safe="")}&amp;via={why}">Continue with Garmin Connect™</a></div>'
     )
 
 
@@ -1802,7 +1802,7 @@ async def connect_form(request: Request) -> Response:
             <p>Garmin is reviewing Daash, and has paused new connections to it until the review is done.
             Accounts already connected keep working. Try again in a few days.</p>
             <p class=fine>Already connected to Daash through Garmin?</p>
-            <a class=button href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin</a>""")
+            <a class=button href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin Connect™</a>""")
     listed = from_directory and OFFICIAL_SIGNUPS_OPEN
     official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
@@ -1866,10 +1866,10 @@ def _garmin_intro(flow: str, usual: bool = True) -> Response:
         Garmin asks you to approve that on its own page.</p>
         <p class=note>Garmin shares what your watch syncs from now on, so last night&rsquo;s
         sleep and earlier runs won&rsquo;t show. Each sync after this adds to it.</p>
-        <p class=secure>{_LOCK}<span>You sign in on Garmin&rsquo;s site. Daash never sees your password.</span></p>
+        <p class=secure>{_LOCK}<span>You sign in on Garmin Connect™. Daash never sees your password.</span></p>
         <p class=note>Garmin&rsquo;s page shows a grey note saying it hasn&rsquo;t reviewed
         Daash yet. That&rsquo;s normal for new apps.</p>
-        <a class=button href="/official/signup?flow={quote(flow, safe='')}">Continue with Garmin</a>
+        <a class=button href="/official/signup?flow={quote(flow, safe='')}">Continue with Garmin Connect™</a>
         {_usual_way(flow) if usual else ""}
         <p class=note style="margin-top:20px;text-align:center"><a href="{PRIVACY_URL}"
         target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
@@ -1881,7 +1881,7 @@ def _password_form(flow: str) -> Response:
     return page(
         "Sign in to Garmin",
         f"""
-        <h1>Sign in to Garmin</h1>
+        <h1>Sign in to Garmin Connect™</h1>
         <p class=secure>{_LOCK}<span>These go straight to Garmin. Your password is never stored.</span></p>
         <form method=post action=/connect data-wait="Connecting to Garmin&hellip;">
           <input type=hidden name=flow value="{flow}">
@@ -3193,7 +3193,7 @@ async def official_signup(request: Request) -> Response:
             keeps the password.</p>
             <a class=button href="{_connect_url(flow)}&amp;usual=1">Continue with your password</a>
             <p class=fine>Connected on Garmin&rsquo;s page before?
-            <a href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin</a></p>""")
+            <a href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin Connect™</a></p>""")
     via = request.query_params.get("via", "")
     analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via in GARMIN_INSTEAD_WHY else {}))
     response = RedirectResponse(official.signup_url(flow), status_code=302)
@@ -3204,7 +3204,7 @@ async def official_signup(request: Request) -> Response:
 
 async def _signup_callback(request: Request, code: str, state: str, flow: str) -> Response:
     """Back from Garmin's page during a sign-up: make or find the account, then the Allow page."""
-    retry = f'<a class=button href="/official/signup?flow={quote(flow, safe="")}">Try again with Garmin</a>'
+    retry = f'<a class=button href="/official/signup?flow={quote(flow, safe="")}">Try again with Garmin Connect™</a>'
     if not code:
         analytics.capture("garmin_declined", None, _with_source(request, {}))
         usual = "" if OAUTH_PROVIDER.listed(flow) else _usual_way(flow)

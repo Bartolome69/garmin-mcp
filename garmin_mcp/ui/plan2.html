@@ -531,6 +531,7 @@
   // speed shown in miles, from the km the answers carry. KM() is the unit
   // after a distance; units() turns a pace, speed or distance in text.
   var MI = false, KM_PER_MI = 1.609344;
+  var CREDIT = "Garmin";
   function fmtKm(n) { return n == null ? "" : num(MI ? n / KM_PER_MI : n); }
   function KM() { return MI ? " mi" : " km"; }
   function units(t) {
@@ -887,6 +888,8 @@
 
   function render(plan) {
     MI = !!(plan && plan.units === "mi");
+    // "Garmin [device model]" by the title: Garmin's API brand guidelines (Nov 10).
+    CREDIT = (plan && plan.credit) || "Garmin";
     if (plan && plan.source === "waiting") { waiting(plan); return; }
     if (plan && plan.error) { fail(plan.error, true); return; }
     model = normalise(plan);
@@ -967,7 +970,7 @@
       el("div", { style: "display:flex;align-items:flex-start;gap:12px" }, [
         el("div", { style: "display:flex;flex-direction:column;gap:3px;flex:1;min-width:0" }, [
           el("h1", { class: "title", text: title }),
-          el("span", { class: "sub", text: [b.method, then, span].filter(Boolean).join(" · ") }),
+          el("span", { class: "sub", text: [CREDIT, b.method, then, span].filter(Boolean).join(" · ") }),
         ]),
         appUrl ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px;font-size:13.5px",
           onclick: function (e) { openUrl(appUrl, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]) : null,
@@ -1681,7 +1684,9 @@
       }
     }
     title = title.replace(/(\d) (km|mi|min)\b/g, "$1\u00a0$2");
-    var out = { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3) };
+    var out = { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3),
+      // Garmin's credit for the run's own watch, from its details (Nov 10).
+      g: (p && p.credit) || "Garmin" };
     var planned = plannedFor(s);
     if (planned) out.pl = planned;
     return out;

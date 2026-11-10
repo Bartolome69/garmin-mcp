@@ -453,7 +453,8 @@ async def main() -> int:
 
         # Its first run from Garmin, emailed once, with what to ask and where to add past runs.
         sent_mail = []
-        first = {"activityType": "RUNNING", "distanceInMeters": 8000, "durationInSeconds": 2400, "startTimeInSeconds": 1}
+        first = {"activityType": "RUNNING", "distanceInMeters": 8000, "durationInSeconds": 2400, "startTimeInSeconds": 1,
+                 "deviceName": "Forerunner 965"}
         went = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
         again = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
         late = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a), now=time.time() + 30 * 86400)
@@ -473,6 +474,9 @@ async def main() -> int:
               and sent_mail[0][1] == "Your first run is in Daash" and "8.0 km" in sent_mail[0][2]
               and "/history?u=g-new-1" in sent_mail[0][2] and "How did my last run go" in sent_mail[0][2],
               str(sent_mail)[:400])
+        check("opening with Garmin's credit for the watch it came from, in text and html",
+              sent_mail and sent_mail[0][2].startswith("Based in part on data from your Garmin Forerunner 965.")
+              and "Based in part on data from your Garmin Forerunner 965." in sent_mail[0][3], str(sent_mail)[:300])
         import calendar as _cal
         pushed_at = _cal.timegm(time.strptime("2026-09-20 06:10:30", "%Y-%m-%d %H:%M:%S"))
         store.save_official_summaries("g-new-1", "activities", [("p-1", pushed_at, {

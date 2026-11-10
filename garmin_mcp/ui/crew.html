@@ -262,7 +262,9 @@
           [svg('<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>')]),
       ]),
       el("h3", { class: "title", text: d.crew.name }),
-      el("span", { class: "sub", text: sub }),
+      // Garmin's credit by the title (API brand guidelines, Nov 10): the crew's
+      // runs come from several people's watches, so "Garmin" alone.
+      el("span", { class: "sub", text: [d.credit || "Garmin", sub].filter(Boolean).join(" \u00b7 ") }),
       weekPicker(d),
     ]);
     app.appendChild(head);

@@ -514,6 +514,9 @@ class FakeGarmin:
             },
         }
 
+    def get_device_last_used(self) -> dict[str, Any]:
+        return {"lastUsedDeviceName": "Forerunner 265", "userProfileNumber": 42}
+
     def get_devices(self) -> list[dict[str, Any]]:
         return [{"deviceId": 1111111, "productDisplayName": "Edge 840"},
                 {"deviceId": 3456789, "productDisplayName": "Forerunner 265", "displayName": "My watch"}]

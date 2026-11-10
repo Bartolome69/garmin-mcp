@@ -1625,8 +1625,17 @@ async def main() -> int:
         block_subject, block_text, _p = weekly.compose(block_said, "x")
         check("with a block running it says where in the block, in the subject and at the top",
               block_subject.startswith("Week 3 of 4: ")
-              and block_text.startswith("Base block (Norwegian singles style) · week 3 of 4 · 90% of sessions done so far"),
+              and block_text.startswith("Based in part on data from your Garmin.\n\n"
+                                        "Base block (Norwegian singles style) · week 3 of 4 · 90% of sessions done so far"),
               block_subject)
+        # Nov 10: Garmin's API brand guidelines ask for its credit on insights
+        # drawn from its data; the plan's answer carries the watch.
+        credited = weekly.summary({**plan_answer, "credit": "Garmin Forerunner 265"}, monday)
+        _cs, credited_text, credited_page = weekly.compose(credited, "x")
+        check("the Monday email opens with Garmin's credit, naming the watch, in text and html",
+              credited_text.startswith("Based in part on data from your Garmin Forerunner 265.")
+              and "Based in part on data from your Garmin Forerunner 265." in credited_page
+              and credited_page.index("Garmin Forerunner 265") < credited_page.index("Ask Daash"))
         # One thing last week showed, from the card's own numbers.
         def _run(day, name, kind, pace, bpm, km, reps=0):
             return {"date": day, "name": name, "type": kind, "kind": "run", "status": "done", "actual_pace": pace,

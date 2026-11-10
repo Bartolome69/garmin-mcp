@@ -222,6 +222,8 @@ def summary(answer: Any, today: date) -> dict[str, Any] | None:
         "next_week": _keys(following, monday + timedelta(days=7)) if following and not logged else [],
         "no_plan": logged,
         "sport": "riding" if ride else "running",
+        # Garmin's credit, "Garmin [device model]", as the plan's answer carries it (Nov 10).
+        "credit": str(answer.get("credit") or "Garmin"),
     }
 
 
@@ -253,6 +255,13 @@ def ask_link(app: str, kind: str) -> str:
     return ASK_LINKS[app] + quote(f"Ask Daash: {QUESTIONS[kind]}")
 
 
+def credit_line(device: Any = None) -> str:
+    """Garmin's credit for what an email says from someone's Garmin data:
+    "Based in part on data from your Garmin Forerunner 265"."""
+    from .share import attribution
+    return f"Based in part on data from your {attribution(device)}."
+
+
 def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
             ask: Callable[[str, str], str] = ask_link, in_crew: bool = True) -> tuple[str, str, str]:
     """(subject, plain text, html) for one person's Monday email.
@@ -279,8 +288,9 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
     question = QUESTIONS[kind]
     chosen = {a: ask(a, kind) for a in ([app] if app in ASK_LINKS else ASK_LINKS)}
 
-    # Plain text, line by line.
-    parts: list[str] = []
+    # Plain text, line by line. First, where it comes from: Garmin's API brand
+    # guidelines ask for Garmin's credit on insights drawn from its data (Nov 10).
+    parts: list[str] = [credit_line(s.get("credit"))]
     if context:
         parts.append(context)
     if s.get("last_week"):
@@ -309,7 +319,7 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
 
     # HTML, styled inline for email.
     e = html.escape
-    body = ""
+    body = f"<p style=\"margin:0 0 12px;font-size:13px;color:#5B6270\">{e(credit_line(s.get('credit')))}</p>"
     if context:
         body += f"<p style=\"margin:0 0 16px;font-size:13px;color:#5B6270\">{e(context)}</p>"
     if s.get("last_week"):
@@ -404,7 +414,8 @@ def compose_first_run(activity: dict[str, Any], unsubscribe: str, app: str | Non
     past = ("Want Daash to know your training from before you connected? On a computer, open Garmin "
             "Connect's activities list, press Export CSV at the top right, and add the file here: "
             f"{history}") if history else None
-    parts = [lead, f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items())]
+    parts = [credit_line(activity.get("deviceName")), lead,
+             f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items())]
     if past:
         parts.append(past)
     parts.append(FEEDBACK)
@@ -421,7 +432,8 @@ def compose_first_run(activity: dict[str, Any], unsubscribe: str, app: str | Non
         button = (f"<p style=\"margin:8px 0 0\">{e(label)}: "
                   + " · ".join(f"<a href=\"{e(u)}\" style=\"color:#E0312A;font-weight:600\">in {e(a)}</a>" for a, u in chosen.items())
                   + "</p>")
-    body = f"<p style=\"margin:0 0 16px\">{e(lead)}</p>" + button
+    body = (f"<p style=\"margin:0 0 12px;font-size:13px;color:#5B6270\">{e(credit_line(activity.get('deviceName')))}</p>"
+            f"<p style=\"margin:0 0 16px\">{e(lead)}</p>" + button)
     if history:
         body += ("<p style=\"margin:22px 0 0\">Want Daash to know your training from before you connected? On a "
                  "computer, open Garmin Connect's activities list, press <strong>Export CSV</strong> at the top right, "
