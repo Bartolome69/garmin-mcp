@@ -101,12 +101,16 @@ ROUTES = ("official", "password")
 # cookie, to see which more people finish and keep using (from Oct 26).
 SPLIT = SIGNUP_ROUTE == "split"
 SPLIT_NAME = "signup-route-oct26"
-# Nov 4: Garmin capped new connections to Daash's app while it reviews it
-# (Starter Access, at about 100 linked accounts). Until Garmin lifts it, no
-# new sign-up is sent to Garmin's page, where the cap would stop them: they
-# get the password form. Accounts already linked keep working. Reopen with
-# GARMIN_OFFICIAL_SIGNUPS=open (deploy-hosted.yml) once Garmin says so.
+# Nov 4: Garmin capped new connections to Daash's app while it reviewed it
+# (Starter Access, at about 100 linked accounts); reopened on Nov 11 when
+# Garmin approved the app again. "paused" sends new sign-ups to the password
+# form and keeps Garmin's page for accounts already linked; set it in
+# deploy-hosted.yml, which every deploy applies.
 OFFICIAL_SIGNUPS_OPEN = os.environ.get("GARMIN_OFFICIAL_SIGNUPS", "paused").strip().lower() == "open"
+# Nov 11: phones go to Garmin's page too, as computers do, since the sign-in
+# now carries its own mark back from Garmin (FLOW_COOKIE). Phones were on the
+# password from Oct 26 (see _signup_route); GARMIN_PHONES_OFFICIAL=0 puts them back.
+PHONES_ON_GARMIN_PAGE = os.environ.get("GARMIN_PHONES_OFFICIAL", "1").strip() != "0"
 # Set as someone leaves for Garmin's page, and looked for when Garmin sends
 # them back: missing means they came back in a different browser than the one
 # Claude or ChatGPT opened for signing in (a phone handing Garmin's page to
@@ -2038,12 +2042,11 @@ def _signup_route(request: Request) -> tuple[str, bool]:
     asked = request.query_params.get("route", "")
     if asked in ROUTES:
         return asked, False
-    if _device(request).get("device") == "phone":
+    if not PHONES_ON_GARMIN_PAGE and _device(request).get("device") == "phone":
         # Oct 26: on phones, Garmin's page approved Daash but Claude never
         # collected the sign-in (0 of 5 tries, while computers and tablets
         # went through first time), and the same people got in at once with
-        # a password. Phones get the password until that's fixed, whatever
-        # the split drew for them before.
+        # a password. GARMIN_PHONES_OFFICIAL=0 puts phones back on the password.
         return "password", False
     chosen = request.cookies.get(ROUTE_COOKIE, "")
     if chosen in ROUTES:

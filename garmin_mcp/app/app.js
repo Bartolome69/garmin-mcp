@@ -1533,9 +1533,10 @@ function youView(d) {
       <span class="meta" style="font-size:13.5px;line-height:1.45;padding-top:10px;border-top:1px solid var(--hairline)">${esc(d.watch.line)}</span></div>
     ${d.groups.map((g) => g.title === "Assistants" && onComputer() && d.assistant !== "ChatGPT" ? { ...g, rows: [...g.rows,
       { l: "Ask Claude opens in", v: store.get(OPENS) === "web" ? "The browser" : "The Claude app", sub: "Tap to switch", action: "opens" }] } : g)
-      .map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
+      // Notifications sit just above Account (Nov 11), for everyone.
+      .map((g) => `${g.title === "Account" ? pushRow(d) : ""}<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
       <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
-    ${pushRow(d)}
+    ${d.groups.some((g) => g.title === "Account") ? "" : pushRow(d)}
     <p class="small" style="text-align:center">Daash 0.1 · <a href="${esc(d.privacy)}" target="_blank" rel="noopener">Privacy</a><br>Daash is independent and not made or endorsed by Garmin.</p>`;
 }
 
@@ -2017,13 +2018,18 @@ const HEADS_UP = [["evening", "Evening before", "8pm the night before"], ["6", "
 
 // In You: the switch, on a phone that can have notifications at all, and when they go.
 function pushRow(d = {}) {
-  if (!homeScreen() || !canPush()) return "";
-  const blocked = Notification.permission === "denied";
-  const on = pushIsOn();
-  const r = blocked ? { l: "Notifications", v: "Blocked", sub: "Allow them for Daash in your phone's settings." }
+  // Shown to everyone (Nov 11). iPhone only allows notifications from the
+  // home-screen app, so in Safari the row says how to get there.
+  const iosBrowser = phoneKind() === "ios" && !homeScreen();
+  const blocked = canPush() && Notification.permission === "denied";
+  const on = !iosBrowser && pushIsOn();
+  const r = iosBrowser ? { l: "Notifications", v: "Home screen first",
+      sub: "On iPhone they work once Daash is on your home screen: in Safari, tap Share, then Add to Home Screen." }
+    : !canPush() ? { l: "Notifications", v: "Not here", sub: "This browser can't show notifications. Try Chrome, Safari or the home-screen app." }
+    : blocked ? { l: "Notifications", v: "Blocked", sub: "Allow them for Daash in your browser or phone settings." }
     : { l: "Notifications", v: on ? "On" : "Off", sub: "Session heads-up and run verdicts. Tap to switch", action: "push" };
   const when = HEADS_UP.find(([code]) => code === (d.heads_up || "evening"));
-  const time = on && !blocked ? youRow({ l: "Session heads-up", v: when[1], sub: "When you hear about a planned session", action: "headsup" }, {}, 1) : "";
+  const time = on && !blocked && !iosBrowser ? youRow({ l: "Session heads-up", v: when[1], sub: "When you hear about a planned session", action: "headsup" }, {}, 1) : "";
   return `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">NOTIFICATIONS</span>
     <div class="card" style="overflow:hidden">${youRow({ ...r, tone: on ? "ok" : undefined }, {}, 0)}${time}</div></section>`;
 }
