@@ -3079,6 +3079,36 @@ async def _calendar_months(start: date_cls, end: date_cls) -> list[Any]:
     return payloads
 
 
+def _is_run_sport(sport: Any) -> bool:
+    return str(sport or "running").lower().replace("_", " ").split(" ")[0] in ("running", "run", "trail", "track", "treadmill")
+
+
+def _running_clash(existing: dict[str, list[dict[str, Any]]], sessions: Any,
+                   first: Any = None, last: Any = None) -> str | None:
+    """Why a new plan with runs can't go on days another running plan already has, or None.
+
+    The calendar comes by whole months, so only the other plan's runs between
+    the new plan's first and last day count.
+    """
+    new_runs = any(isinstance(s, dict) and not s.get("exercises") and _is_run_sport(s.get("sport"))
+                   for s in sessions or [])
+    if not new_runs:
+        return None
+    lo, hi = (str(first)[:10] if first else ""), (str(last)[:10] if last else "9999")
+    for other, items in sorted(existing.items()):
+        runs = [i for i in items if _is_run_sport(i.get("sportTypeKey"))
+                and lo <= str(i.get("date") or "")[:10] <= hi]
+        if runs:
+            days = sorted(str(i.get("date") or "")[:10] for i in runs if i.get("date"))
+            span = f" (its runs from {days[0]} to {days[-1]})" if days else ""
+            return (f"The calendar already has running plan {other} in these weeks{span}. Two running "
+                    "plans on the same weeks put two runs on a day. Ask the user whether to replace it "
+                    f"(remove_plan {other}, then this), start this plan after it ends, or change "
+                    "sessions in it instead (update_workout, schedule_workout). Never put both on "
+                    "the calendar under another label.")
+    return None
+
+
 @_app_tool(PLAN_VIEW)
 @tool_errors
 async def create_plan(
@@ -3147,10 +3177,17 @@ async def create_plan(
         return {
             "error": (
                 f"Plan code {code} is already on the calendar between "
-                f"{first.isoformat()} and {last.isoformat()}. Pass a different "
-                "label, or remove the old plan first with remove_plan."
+                f"{first.isoformat()} and {last.isoformat()}. Ask the user whether to replace it "
+                "(remove_plan, then this) or start this plan after it ends."
             )
         }
+    # Two running plans over the same weeks put two runs on a day, both on the
+    # watch, and the cards add them together (Nov 11: with the app's plan
+    # builder open to everyone, a plan built there and then another asked for
+    # in a chat). A strength or cycling plan alongside a running one is fine.
+    clash = _running_clash(existing, sessions, first, last) if existing else None
+    if clash:
+        return {"error": clash}
 
     created: list[dict[str, Any]] = []
     written: dict[Any, dict[str, Any]] = {}

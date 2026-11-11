@@ -1676,6 +1676,28 @@ async def main() -> int:
                 "goal": "Half marathon", "sessions": block}))
             check("the same code in the same window is refused",
                   "error" in again and "already" in again["error"], str(again)[:160])
+            # Nov 11: the app's plan builder opens to everyone, so a plan built
+            # there can meet one asked for in a chat. Another running plan on
+            # the same weeks, under any label, is refused; the model is told
+            # to ask the user, not to slip it in under a new code.
+            other = payload(await sess.call_tool("create_plan", {
+                "goal": "Base block", "label": "B2", "sessions": block}))
+            check("another running plan over the same weeks is refused, whatever its label",
+                  "error" in other and "running plan HM" in other["error"]
+                  and "remove_plan HM" in other["error"] and "another label" in other["error"], str(other)[:240])
+            from garmin_mcp import server as _srv_plans
+            gym = [{"date": day(3), "name": "Gym", "sport": "strength", "exercises": [{"name": "Squat"}]}]
+            ride = [{"date": day(3), "name": "Ride", "sport": "cycling", "steps": easy}]
+            held = {"HM": [{"date": day(2), "sportTypeKey": "running"}]}
+            check("a gym or bike plan alongside a running plan is fine, and two gym plans are too",
+                  _srv_plans._running_clash(held, gym) is None and _srv_plans._running_clash(held, ride) is None
+                  and _srv_plans._running_clash({"GYM": [{"date": day(2), "sportTypeKey": "strength_training"}]},
+                                                block) is None
+                  and _srv_plans._running_clash({"TR": [{"date": day(2), "sportTypeKey": "trail_running"}]},
+                                                block) is not None
+                  # The calendar comes by the month: a plan earlier that month isn't in the way.
+                  and _srv_plans._running_clash({"OLD": [{"date": day(-20), "sportTypeKey": "running"}]},
+                                                block, day(2), day(9)) is None)
 
             got = payload(await sess.call_tool("get_plan", {"label": "HM"}))
             print("   ", json.dumps(got, indent=2)[:700])
