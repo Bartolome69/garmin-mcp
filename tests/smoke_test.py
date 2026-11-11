@@ -647,6 +647,11 @@ async def check_preview_gate(check) -> None:
               "shoes worn" in plain_details)
         check("without preview, get_fitness mentions FTP",
               "FTP" in next(t for t in tools if t.name == "get_fitness").description)
+        # Nov 11: the run card is tried by preview accounts first.
+        details_meta = getattr(next(t for t in tools if t.name == "get_activity_details"), "meta", None) or {}
+        check("without preview, a run answers in writing: no run card", "ui" not in details_meta, str(details_meta))
+        check("without preview, a run's answer carries nothing for the card",
+              server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) is None)
     finally:
         preview.reset(token)
     token = preview.use(True)
@@ -682,6 +687,15 @@ async def check_preview_gate(check) -> None:
         progress_tool = next(t for t in listed if t.name == "get_progress")
         check("with preview, get_progress draws the same view",
               ((getattr(progress_tool, "meta", None) or {}).get("ui") or {}) == view_of(listed))
+        run_uri = ((getattr(next(t for t in listed if t.name == "get_activity_details"), "meta", None) or {}).get("ui") or {}).get("resourceUri")
+        check("with preview, a run draws the run card", re.fullmatch(r"ui://garmin/run/[0-9a-f]{10}", run_uri or "") is not None, str(run_uri))
+        run_view = list(await server.mcp.read_resource(server.RUN_VIEW))
+        check("the run card is served", run_view and "get_activity_details" in run_view[0].content and "Run" in run_view[0].content,
+              str(run_view)[:80])
+        card = server._run_card(1, {"ty": "threshold", "n": "3 × 3 km", "w": [4, 12], "b": "Half build"}, None, [], None)
+        check("with preview, the card gets the planned session's type, name and week",
+              card and card.get("type") == "threshold" and card.get("planned") == "3 × 3 km"
+              and card.get("week") == 4 and card.get("weeks") == 12, str(card))
     finally:
         preview.reset(token)
 

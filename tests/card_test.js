@@ -18,6 +18,7 @@ const ROOT = path.join(__dirname, "..");
 const CARD = fs.readFileSync(process.env.CARD_FILE || path.join(ROOT, "garmin_mcp", "ui", "plan.html"), "utf8");
 const SHARE = "file://" + path.join(ROOT, "docs", "share", "index.html");
 const SESSION_CARD = fs.readFileSync(path.join(ROOT, "garmin_mcp", "ui", "session.html"), "utf8");
+const RUN_CARD = fs.readFileSync(path.join(ROOT, "garmin_mcp", "ui", "run.html"), "utf8");
 
 let failed = 0;
 function check(name, ok, detail) {
@@ -418,6 +419,57 @@ f.src = "card.html";</script></body>`);
     text = await card.evaluate(() => document.body.innerText);
     check("a Garmin set to miles sees miles and paces per mile, not km",
       /10 mi/.test(text) && /20 mi/.test(text) && /8:03–8:19\/mi/.test(text) && !/\bkm\b/.test(text), text.slice(0, 600));
+    await page.close();
+
+    // Nov 11: one run as its own card, the handoff's Run Card, for preview accounts first.
+    console.log("the run card");
+    const RUN = { ...DETAILS, activity_id: 7, credit: "Garmin Forerunner 265", _card: SEEN,
+      summary: { ...DETAILS.summary, name: "Long 18km w 3x2km", type: "running", start_local: "2026-10-25T08:05:00.0" },
+      share_image: { url: "https://garmin.daash.test/share/#run" },
+      card: { type: "long", planned: "Long 18km w 3x2km", week: 3, weeks: 12, verdict: "All three reps on target.",
+        app_url: "https://daash.test/app/#/run/7?login=abc&from=run_card" } };
+    fs.writeFileSync(path.join(dir, "rc.html"), RUN_CARD);
+    fs.writeFileSync(path.join(dir, "host.html"), host(RUN, "rc.html"));
+    page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await listen(page);
+    await page.goto("file://" + path.join(dir, "host.html"));
+    await page.waitForTimeout(800);
+    let rc = await page.frames()[1].evaluate(() => ({
+      text: document.body.innerText, reps: document.querySelectorAll(".rep").length, bars: document.querySelectorAll(".chart .bar").length,
+      credit: (document.querySelector(".credit") || {}).textContent, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1 }));
+    check("a run as a card: its plan week, Garmin's credit, the reps as rows, the verdict",
+      /Long · Week 3 of 12/.test(rc.text) && rc.credit === "Garmin Forerunner 265" && rc.reps === 3
+      && /Rep 1/.test(rc.text) && /4:01/.test(rc.text) && /All three reps on target/.test(rc.text) && !rc.overflow, JSON.stringify(rc).slice(0, 400));
+    check("the steady stretches and recoveries are grey bars between the reps",
+      rc.bars === 7 && /Warm up 6 km/.test(rc.text) && /Cool down 5 km/.test(rc.text), JSON.stringify(rc).slice(0, 300));
+    await page.frames()[1].evaluate(() => [...document.querySelectorAll("button")].find((b) => /Share/.test(b.textContent)).click());
+    await page.waitForTimeout(200);
+    check("Share opens the run's share image", (await page.evaluate(() => window.opened)) === RUN.share_image.url,
+      String(await page.evaluate(() => window.opened)));
+    await page.frames()[1].evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent === "Open in Daash").click());
+    await page.waitForTimeout(200);
+    check("Open in Daash opens the run in the app", (await page.evaluate(() => window.opened)) === RUN.card.app_url);
+    const runTaps = pings.filter((p) => p.body.card === "run" && p.body.tap);
+    check("and both taps are counted on the card's link",
+      runTaps.map((p) => p.body.tap).join() === "share_run,open_in_daash" && runTaps.every((p) => p.url === SEEN), JSON.stringify(runTaps));
+    await page.close();
+    pings.length = 0;
+
+    // An easy run: every km in colour with its pace, and the splits in a line, no reps.
+    const EASY = { ...RUN, card: { type: "easy", planned: "Easy 8k", verdict: "Easy and even." },
+      splits: [5.20, 5.16, 5.14, 5.12].map((m, i) => ({ split: i + 1, distance_km: 1, duration: "5m " + Math.round((m % 1) * 100) + "s",
+        pace_per_km: "5:" + String(Math.round((m % 1) * 100)).padStart(2, "0") + " /km", avg_hr: 126 + i * 3 })) };
+    fs.writeFileSync(path.join(dir, "host.html"), host(EASY, "rc.html"));
+    page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("file://" + path.join(dir, "host.html"));
+    await page.waitForTimeout(800);
+    rc = await page.frames()[1].evaluate(() => ({ text: document.body.innerText, reps: document.querySelectorAll(".rep").length,
+      labels: [...document.querySelectorAll(".chart .bar em")].map((e) => e.textContent) }));
+    check("an easy run: each km's pace on its bar, the splits in a line, no rep rows",
+      rc.reps === 0 && rc.labels.join() === "5:20,5:16,5:14,5:12" && /Km splits 5:20 to 5:12 · heart rate 126 to 135/.test(rc.text)
+      && /Easy · /.test(rc.text) === false && /^Easy/m.test(rc.text), JSON.stringify(rc).slice(0, 400));
     await page.close();
 
     check("no page threw an error", errors.length === 0, errors.join(" | "));

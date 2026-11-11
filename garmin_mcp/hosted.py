@@ -850,6 +850,9 @@ def _with_card_check(name: str, result: Any, user: store.User) -> Any:
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     if name not in CARD_TOOLS or not base or not user.email_hash:
         return result
+    # The run card is drawn for preview accounts only, so far (Nov 11).
+    if name == "get_activity_details" and not preview.enabled():
+        return result
     if not isinstance(result, dict) or "error" in result:
         return result
     view = secrets.token_urlsafe(6)
@@ -2867,10 +2870,10 @@ async def unsubscribe(request: Request) -> Response:
 # while the server had long since answered). So each card answer carries a
 # link the card calls once it has drawn, or failed to: a card sent and never
 # reported is one that didn't appear.
-CARD_TOOLS = {"get_plan", "get_progress", "create_plan", "get_session"}
+CARD_TOOLS = {"get_plan", "get_progress", "create_plan", "get_session", "get_activity_details"}
 _CARD_SEEN_LONGEST = 4000
 # The card buttons whose taps are counted.
-CARD_TAPS = {"open_in_daash"}
+CARD_TAPS = {"open_in_daash", "share_run"}
 
 
 def card_signature(email_hash: str, view: str) -> str:

@@ -731,6 +731,9 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False):
     view = ((getattr(tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
     if preview_on and not alone and view == PLAN_VIEW:
         update["meta"] = {**tool.meta, "ui": {**tool.meta["ui"], "resourceUri": PLAN2_VIEW}, "ui/resourceUri": PLAN2_VIEW}
+    # The run card is tried by preview accounts first; everyone else's runs answer in writing.
+    if view == RUN_VIEW and (alone or not preview_on):
+        update["meta"] = {k: v for k, v in (tool.meta or {}).items() if k not in ("ui", "ui/resourceUri")} or None
     if text:
         update["description"] = text
     return tool.model_copy(update=update)
@@ -889,6 +892,8 @@ PLAN_VIEW = _versioned("plan", "plan.html")
 PLAN2_VIEW = _versioned("plan2", "plan2.html")
 SESSION_VIEW = _versioned("session", "session.html")
 CREW_VIEW = _versioned("crew", "crew.html")
+# One run, as a card (Nov 11): the handoff's Run Card, for preview accounts first.
+RUN_VIEW = _versioned("run", "run.html")
 
 
 # Said to the model ahead of the data whenever a view is drawing it. Read at
@@ -919,6 +924,16 @@ SESSION_NOTE = (
     "in a line. Use the ids below for any change. The card's See the week button "
     "asks to see the week: answer it with get_plan, which draws the week as the "
     "plan card, even though this card already read the plan."
+)
+
+
+RUN_NOTE = (
+    "The user is looking at this run as a card, drawn from the data below: its numbers, "
+    "the laps as a chart (reps in colour, easy and recovery laps in grey), each rep's pace "
+    "and heart rate, and a one-line verdict. Don't list the laps or reps again: say in a few "
+    "sentences what matters about the run and what it means for the plan. The card's Share "
+    "button makes the image to post, so point there rather than pasting the share link, "
+    "unless they ask for the link or the caption."
 )
 
 
@@ -982,6 +997,9 @@ def _app_tool(view: str, note: str = VIEW_NOTE):
         @functools.wraps(fn)
         async def answered(*args, **kwargs):
             result = await fn(*args, **kwargs)
+            # The run card's note only where the card is drawn (preview accounts).
+            if view == RUN_VIEW and not preview.enabled():
+                return result
             if isinstance(result, dict) and "error" not in result and await _in_miles():
                 result = {**result, "units": "mi", "units_note": MILES_NOTE}
             return _for_view(result, note)
@@ -1103,6 +1121,15 @@ try:
     )
 except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
     log.debug("crew view not registered", exc_info=True)
+
+try:
+    _app_view(
+        RUN_VIEW,
+        "run.html",
+        "One run as an interactive view: its numbers, laps and reps, and a verdict against the plan.",
+    )
+except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
+    log.debug("run view not registered", exc_info=True)
 
 MAX_ACTIVITIES = 50
 
@@ -1905,7 +1932,7 @@ def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[
     )
 
 
-@mcp.tool()
+@_app_tool(RUN_VIEW, RUN_NOTE)
 @tool_errors
 async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
     """Splits, reps and heart rate for one activity; for a gym session, its sets and weights.
@@ -2017,11 +2044,12 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 
     lap_rows = [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)]
-    planned = None if ride else await _planned_for(activity_id)
+    planned, workout = (None, None) if ride else await _planned_and_workout(activity_id)
     device = await _device_name(flat)
     return _with_share_image(drop_empty(
         {
             "activity_id": activity_id,
+            "card": None if ride else _run_card(activity_id, planned, workout, laps, recording),
             "summary": _with_device(_with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)), device) or None,
             **around.get("first", {}),
             "hr_zones": hr_zones(zones),
@@ -2042,22 +2070,50 @@ PLANNED_WAIT_SECONDS = 6
 
 
 async def _planned_for(activity_id: Any) -> dict[str, Any] | None:
-    """The planned session a run was (share.plan_context), from the plan the
-    chat usually read just before, or None: the run reads without it."""
+    """The planned session a run was (share.plan_context), or None."""
+    return (await _planned_and_workout(activity_id))[0]
+
+
+async def _planned_and_workout(activity_id: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """The planned session a run was (share.plan_context) and its workout, from
+    the plan the chat usually read just before; (None, None) when it wasn't on
+    the plan or the plan can't be read in time: the run reads without it."""
     try:
         with anyio.fail_after(PLANNED_WAIT_SECONDS):
             plan = await get_plan()
             if not isinstance(plan, dict) or "error" in plan:
-                return None
+                return None, None
             row = next((x for w in plan.get("weeks") or [] for x in w.get("sessions") or []
                         if x.get("activity_id") == activity_id), None)
             wid = (row or {}).get("workout_id")
             workout = await _read(("workout", wid), PLAN_WORKOUT_MEMORY,
                                   lambda c, w=wid: c.get_workout_by_id(w)) if wid else None
-            return share.plan_context(plan, activity_id, workout if isinstance(workout, dict) else None)
+            workout = workout if isinstance(workout, dict) else None
+            return share.plan_context(plan, activity_id, workout), workout
     except Exception:  # noqa: BLE001 - a caption without its plan is still a caption
         log.debug("no planned session for the caption", exc_info=True)
+        return None, None
+
+
+def _run_card(activity_id: Any, planned: dict[str, Any] | None, workout: dict[str, Any] | None,
+              laps: Any, recording: Any) -> dict[str, Any] | None:
+    """What the run card adds to a run's answer: the planned session's type,
+    name and week, the verdict the app's run screen gives, and the app's link.
+    Only where the card is drawn (preview accounts); nothing more is read."""
+    if not preview.enabled():
         return None
+    verdict = None
+    try:
+        from . import analysis
+        verdict = analysis.analyse(workout, laps, (planned or {}).get("ty"), recording).get("verdict")
+    except Exception:  # noqa: BLE001 - the card draws without its verdict
+        log.debug("run verdict failed", exc_info=True)
+    week = (planned or {}).get("w") or [None, None]
+    return drop_empty({
+        "type": (planned or {}).get("ty"), "planned": (planned or {}).get("n"),
+        "week": week[0], "weeks": week[1], "block": (planned or {}).get("b"),
+        "verdict": verdict, "app_url": app_link(f"run/{activity_id}", "run_card"),
+    }) or None
 
 
 SHARE_IMAGE_NOTE = (
