@@ -30,6 +30,7 @@ const ICON = {
   out: () => svg('<path d="M7 17 17 7"/><path d="M7 7h10v10"/>', 14, 'stroke-width="2.2"'),
   check: (s = 12) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="#161614" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
   watch: (s = 18) => svg('<circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/>', s),
+  grip: () => svg('<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>', 14),
   share: () => svg('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>', 16),
   today: () => svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', 20),
   plan: () => svg('<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>', 20),
@@ -119,7 +120,12 @@ document.addEventListener("click", (e) => {
     track("share_clicked", { where });
   }
 }, true);
-window.addEventListener("appinstalled", () => track("installed"));
+window.addEventListener("appinstalled", () => {
+  track("installed");
+  store.set(INSTALLED, "1");
+  const card = document.getElementById("nudge");
+  if (card) card.remove();
+});
 
 async function refreshed() {
   if (!token.refresh) return false;
@@ -611,6 +617,7 @@ function dragToMove(cal) {
     const moving = from;
     try {
       const r = await api(`session/${moving.date}/move`, { method: "POST", body: JSON.stringify({ to: day.dataset.date, schedule_id: Number(moving.sid) || null, via: "drag" }) });
+      store.set(DRAGGED, "1");
       toast(r.message);
       showToday();
     } catch (err) {
@@ -980,7 +987,7 @@ function editHint() {
   if (desktop() || store.get(EDIT_HINT)) return "";
   shownOnce("edit_hint_shown");
   return `<div class="card pad stack-tight" id="edit-hint" style="gap:8px"><span class="strong">Plans change. Yours can too.</span>
-    <span class="meta" style="font-size:13.5px;line-height:1.45"><b>Move</b> puts this session on another day, and <b>Easier</b> shortens it at the same pace. Your watch updates either way. On Plan, you can also hold a session and drag it to another day.</span>
+    <span class="meta" style="font-size:13.5px;line-height:1.45"><b>Move</b> it to another day or make it <b>Easier</b>. Your watch updates.</span>
     <div class="pills"><button class="pill" data-hint="done">Got it</button></div></div>`;
 }
 
@@ -1057,7 +1064,14 @@ function planRow(r, day, first, week) {
       <span class="name ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.name)}</span>
       ${r.meta ? `<span class="meta ${r.state === "next" ? "red" : r.missed ? "soft" : ""}">${esc(r.meta)}</span>` : ""}
       ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
-    <span class="val ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span></a>`;
+    <span class="val ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span>
+    <span class="grip" aria-hidden="true">${r.movable ? ICON.grip() : ""}</span></a>`;
+}
+
+// Until someone has dragged a session once, the week says it can be done (Nov 11).
+const DRAGGED = "daash.dragged";
+function dragHint(w) {
+  return !store.get(DRAGGED) && w.days.some((day) => day.sessions.some((r) => r.movable));
 }
 
 function weekView(d) {
@@ -1072,8 +1086,9 @@ function weekView(d) {
   return `<div class="week-head"><div class="stack-tight" style="gap:2px;min-width:0"><span class="section-title">${esc(w.title)}</span>
       <span class="meta">${w.planned ? `<strong style="color:var(--ink);font-weight:600">${esc(w.done ?? 0)}</strong> of ${esc(w.planned)} km · ` : ""}${esc(w.range)}</span></div>
       <div class="pills" style="flex:0 0 auto">${nav(w.previous, "Week before", ICON.left())}${nav(w.next, "Week after", ICON.right())}</div></div>
+    ${dragHint(w) ? `<div class="drag-hint">${ICON.grip()}<span>Hold a session, then drag it to another day.</span></div>` : ""}
     <div class="card plan-list" id="plan-list">${rows}</div>
-    <div class="week-foot"><span class="meta" style="flex:1;font-size:13.5px;line-height:1.4">Change anything here and the watch follows. Hold a row to move it.</span>${ask.html.replace("pill red tall", "pill red")}</div>
+    <div class="week-foot"><span class="meta" style="flex:1;font-size:13.5px;line-height:1.4">Change anything here and the watch follows.${dragHint(w) ? "" : " Hold a row to move it."}</span>${ask.html.replace("pill red tall", "pill red")}</div>
     ${w.current ? `<div style="display:flex">${askNext.html.replace("pill red tall", "pill")}</div>` : ""}`;
 }
 
@@ -1372,6 +1387,7 @@ function holdToMove(list, today) {
     try {
       for (const m of moves) {
         await api(`session/${m.from}/move`, { method: "POST", body: JSON.stringify({ to: m.to, schedule_id: Number(m.r.dataset.sid) || null, via: "hold" }) });
+        store.set(DRAGGED, "1");
         const dow = (week.label[m.to] || "").match(/>(\w{3})</);
         const key = dow ? dow[1].slice(0, 1).toUpperCase() + dow[1].slice(1).toLowerCase() : "";
         said.push(`${m.r.dataset.name} to ${DAY_NAMES[key] || key || m.to}`);
@@ -1838,12 +1854,21 @@ const HOME_LATER = "daash.home.later";
 const PUSH_LATER = "daash.push.later";
 // Set once a session or run has been opened: the home-screen prompt waits for it.
 const LOOKED = "daash.looked";
+// Added to the home screen from this browser: it isn't asked again here.
+const INSTALLED = "daash.installed";
 // The hint that a session can be moved or made easier, until it's used or dismissed (Nov 11).
 const EDIT_HINT = "daash.edit.hint";
 const PUSH_ON = "daash.push.on";
 const QUIET_DAYS = 14;
 let installEvent = null;
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; });
+// Chrome on Android says it can install the app some time after the page has
+// drawn: the prompt card, already showing the menu steps, swaps to the button.
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installEvent = e;
+  const card = document.getElementById("nudge");
+  if (card) { card.outerHTML = nudge(); wireNudge(document); }
+});
 
 function daysSeen() {
   let days = [];
@@ -1853,7 +1878,34 @@ function daysSeen() {
   return days.length;
 }
 const quiet = (key) => { const t = Number(store.get(key) || 0); return t && Date.now() - t < QUIET_DAYS * 86400000; };
-const iphone = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const iphone = () => phoneKind() === "ios";
+// Which phone, by its own words: iPadOS says it's a Mac, but with touch.
+// Anything else (a computer, a narrow window on one) gets no home-screen prompt.
+function phoneKind() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  return null;
+}
+
+// How to add the app on this phone and browser (Nov 11). Apps that open links
+// inside themselves (Instagram, Facebook, Google) can't add to the home screen.
+function homeSteps() {
+  const ua = navigator.userAgent, kind = phoneKind();
+  const share = `${ICON.share()} Share`;
+  if (/FBAN|FBAV|Instagram|Line\/|GSA\/|; wv\)/.test(ua)) {
+    return kind === "ios" ? "Open this page in Safari first, then tap Share and <b>Add to Home Screen</b>."
+      : "Open this page in Chrome first, then tap <b>⋮</b> and <b>Add to home screen</b>.";
+  }
+  if (kind === "ios") {
+    if (/CriOS/.test(ua)) return `Tap ${share} in the address bar, then <b>Add to Home Screen</b>.`;
+    if (/FxiOS|EdgiOS|OPiOS/.test(ua)) return `Open this page in Safari, tap ${share}, then <b>Add to Home Screen</b>.`;
+    return `Tap ${share} at the bottom of Safari, then <b>Add to Home Screen</b>. Don't see it? Open this page in Safari first.`;
+  }
+  if (/SamsungBrowser/.test(ua)) return "Tap <b>☰</b> at the bottom, then <b>Add page to</b> and <b>Home screen</b>.";
+  if (/Firefox/.test(ua)) return "Tap <b>⋮</b>, then <b>Install</b>.";
+  return "Tap <b>⋮</b> at the top right, then <b>Add to home screen</b>.";
+}
 const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const pushIsOn = () => store.get(PUSH_ON) === "1" && canPush() && Notification.permission === "granted";
 
@@ -1867,13 +1919,14 @@ function shownOnce(name) {
 
 function nudge() {
   const days = daysSeen();
-  if (desktop()) return "";
+  // Phones only: never on a computer, however narrow its window.
+  if (desktop() || !phoneKind()) return "";
   if (!homeScreen()) {
     // From the first day once they've opened a session or a run (Nov 11: on
     // day 2 only, and on Today only, it reached nobody in its first day).
-    if ((days < 2 && !store.get(LOOKED)) || quiet(HOME_LATER) || !(installEvent || iphone())) return "";
+    if ((days < 2 && !store.get(LOOKED)) || quiet(HOME_LATER) || store.get(INSTALLED)) return "";
     shownOnce("home_prompt_shown");
-    const how = installEvent ? "" : `<span class="meta" style="font-size:13.5px;line-height:1.45">Tap ${ICON.share()} Share, then <b>Add to Home Screen</b>.</span>`;
+    const how = installEvent ? "" : `<span class="meta" style="font-size:13.5px;line-height:1.45">${homeSteps()}</span>`;
     return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
         <span class="strong">Put Daash on your home screen</span>
         <span class="meta" style="font-size:13.5px;line-height:1.45">Your plan in one tap. From there, Daash can tell you the evening before what's on, and how your run went once your watch syncs.</span>${how}</span>
@@ -1900,7 +1953,8 @@ function wireNudge(root) {
         installEvent.prompt();
         const choice = await installEvent.userChoice.catch(() => null);
         installEvent = null;
-        if (!choice || choice.outcome !== "accepted") store.set(HOME_LATER, String(Date.now()));
+        if (choice && choice.outcome === "accepted") store.set(INSTALLED, "1");
+        else store.set(HOME_LATER, String(Date.now()));
       } else if (what === "push") {
         b.disabled = true;
         await turnOnPush("today");

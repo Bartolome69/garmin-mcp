@@ -184,7 +184,7 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .pill.icon { width: 44px; padding: 0; }
 .plan-list { overflow: hidden; }
 .plan-list.dragging { overflow: visible; }
-.plan-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; min-height: 60px;
+.plan-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 14px; gap: 12px; align-items: center; padding: 12px 14px; min-height: 60px;
   color: var(--ink); text-decoration: none; border-top: 1px solid var(--hairline); background: var(--surface); position: relative;
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
 .plan-row:first-child, .plan-row.same-day { border-top-color: transparent; }
@@ -455,3 +455,8 @@ body.desk .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 
 .insight:first-child { border-top: 0; }
 .insight b { font-weight: 600; }
 .insight .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--ground); }
+
+/* sessions can be held and dragged to another day (Nov 11) */
+.plan-row .grip { display: flex; align-items: center; justify-content: center; color: var(--muted); opacity: 0.55; margin-left: -4px; }
+.drag-hint { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); padding: 0 2px; margin-bottom: -6px; }
+.drag-hint svg { flex-shrink: 0; }
