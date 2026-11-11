@@ -320,7 +320,12 @@ nav.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
 
 /* ---- desktop, 1024px and wider ------------------------------------------- */
-.topbar { position: sticky; top: 0; z-index: 10; height: 60px; display: flex; align-items: center; gap: 28px; padding: 0 28px;
+/* One width for every desktop screen and the bar above it, so a wide window
+   doesn't stretch Today and Crew edge to edge or leave the bar's ends far from
+   the page (Nov 11). The bar's line still runs the full width. */
+:root { --desk-max: 1280px; }
+.topbar { position: sticky; top: 0; z-index: 10; height: 60px; display: flex; align-items: center; gap: 28px;
+  padding: 0 max(28px, calc((100% - var(--desk-max)) / 2 + 28px));
   border-bottom: 1px solid var(--hairline); background: var(--ground); }
 .topbar-mark { font-size: 20px; font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); }
 .topbar-tabs { display: flex; gap: 4px; }
@@ -332,9 +337,8 @@ nav.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; }
 .avatar.small:hover { color: #FFFFFF; }
 
 body.desk .shell { max-width: none; }
-body.desk main { padding: 24px 28px 40px; }
-body.desk[data-screen="you"] main { max-width: 720px; margin: 0 auto; width: 100%; }
-body.desk[data-screen="plan"] main { max-width: 1180px; margin: 0 auto; width: 100%; }
+body.desk main { padding: 24px 28px 40px; max-width: var(--desk-max); margin: 0 auto; width: 100%; }
+body.desk[data-screen="you"] main { max-width: 720px; }
 body.desk .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 28px; max-width: 480px; }
 
 .desk-today { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
