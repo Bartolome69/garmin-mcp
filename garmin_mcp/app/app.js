@@ -953,10 +953,12 @@ function blockView(d) {
   const bars = b.bars.map((x) => `<div class="bar-col"><span class="bar-label ${x.current ? "red" : ""}">${esc(x.label)}</span>
       <div class="bar ${x.current ? "now" : x.past ? "past" : ""}" style="height:${Math.max(4, Math.round(x.h * 120))}px">
         <span style="height:${Math.round(x.fill * 100)}%"></span></div></div>`).join("");
-  const phases = b.phases ? `<div class="phases" style="grid-template-columns:${b.phases.map((p) => `${p.weeks}fr`).join(" ")}">
+  // The phases sit on the bars' own columns, each spanning its weeks, so a
+  // phase lines up with its bars (Nov 11: Base ran a bar past its last week).
+  const phases = b.phases ? `<div class="phases" style="grid-template-columns:${cols}">
       ${b.phases.map((p) => p.label
-        ? `<span class="${p.current ? "now" : ""}" title="${esc(p.label)}">${esc((p.weeks * 3 < b.bars.length / 4 ? p.label.slice(0, 2) : p.label).toUpperCase())}</span>`
-        : `<span class="gap"></span>`).join("")}</div>` : "";
+        ? `<span class="${p.current ? "now" : ""}" style="grid-column:span ${p.weeks}" title="${esc(p.label)}" data-label="${esc(p.label.toUpperCase())}">${esc(p.label.toUpperCase())}</span>`
+        : `<span class="gap" style="grid-column:span ${p.weeks}"></span>`).join("")}</div>` : "";
   // The block's own ask: the screen has none at its top (Nov 6: with none,
   // the link was empty and opened the app again, on Today).
   const ask = askLink({ ...d, ask: b.ask }, "Edit the plan");
@@ -970,6 +972,19 @@ function blockView(d) {
       ${(b.blocks || []).map((x) => `<span class="meta" style="font-size:12.5px">${esc(x.name)}${x.dates ? ` · ${esc(x.dates)}` : ""}</span>`).join("")}</div>
       ${ask.html.replace("pill red tall", "pill")}</div>`;
 }
+
+// A phase name too long for its weeks is shortened until it fits: ENDURANCE,
+// then ENDUR, then EN, then E (Nov 11: on a phone, Endurance was cut at both ends).
+function fitPhases(root) {
+  (root || document).querySelectorAll(".phases span[data-label]").forEach((el) => {
+    const full = el.dataset.label;
+    for (const text of [full, full.slice(0, 5), full.slice(0, 2), full.slice(0, 1)]) {
+      el.textContent = text;
+      if (el.scrollWidth <= el.clientWidth) break;
+    }
+  });
+}
+window.addEventListener("resize", () => fitPhases());
 
 async function showPlan(view, params, quiet = false) {
   tabs("plan");
@@ -990,6 +1005,7 @@ async function showPlan(view, params, quiet = false) {
     } else {
       $("screen").innerHTML = head + (view === "block" ? blockView(d) : weekView(d));
     }
+    fitPhases($("screen"));
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
     warm();
   }, (e) => failed(e.message, () => showPlan(view, params)), quiet || base === "plan");

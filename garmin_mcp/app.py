@@ -892,6 +892,17 @@ def _block_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]],
         b["label"] = str(round(b["planned"])) if b["current"] or b is peak else ""
         # On a long plan every fourth week is numbered, with the first, this week and the last.
         b["show_n"] = (not many or b["n"] == 1 or b["n"] % 4 == 0 or b["current"] or b["n"] == len(bars)) or None
+    if many:
+        # Two-figure numbers on neighbouring weeks run together on a phone ("2425",
+        # Nov 11): this week, the last and the first keep theirs, the other gives way.
+        shown: set[int] = set()
+        for b in sorted(bars, key=lambda b: (not b["current"], b["n"] != len(bars), b["n"] != 1, b["n"])):
+            if not b["show_n"]:
+                continue
+            if any(abs(b["n"] - m) == 1 and max(b["n"], m) >= 10 for m in shown):
+                b["show_n"] = None
+            else:
+                shown.add(b["n"])
     phases: list[dict[str, Any]] = []
     for b in bars:
         if not b["phase"]:

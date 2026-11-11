@@ -321,6 +321,9 @@ def api_checks() -> None:
     check("the block's verdict is plain", plain(block.get("verdict", "")) and block["verdict"].startswith("On track."),
           block.get("verdict"))
     check("the block's phases fill its weeks", sum(p["weeks"] for p in block["phases"]) == len(block["bars"]))
+    shown = [b["n"] for b in block["bars"] if b.get("show_n")]
+    check("no two-figure week numbers side by side", not any(b - a == 1 and b >= 10 for a, b in zip(shown, shown[1:]))
+          and len(block["bars"]) in shown, str(shown))
 
     before = len(posted("app_viewed"))
     client.get("/app/api/crew", headers={**auth, "X-Daash-Ahead": "1"})
