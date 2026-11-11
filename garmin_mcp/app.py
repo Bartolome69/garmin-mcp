@@ -29,7 +29,7 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, easy_check, plan_checks, plan_engine, preview, store, training_plan
+from . import analysis, crews, easy_check, plan_checks, plan_engine, preview, run_view, store, training_plan
 from . import server as server_mod
 from . import share as share_mod
 from .formatting import drop_empty
@@ -632,6 +632,9 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     recording = None if isinstance(recording, Exception) else recording
     activity = None if isinstance(activity, Exception) else activity
     row = next((s for s in _sessions(plan) if s.get("activity_id") == activity_id), None)
+    # The last session like this one, read while this one's workout is: its
+    # line is left out rather than keep the screen waiting.
+    like = asyncio.create_task(_last_like(plan, row, activity_id))
     try:
         workout = await _workout((row or {}).get("workout_id"))
     except Exception:  # noqa: BLE001 - the run reads without its plan
@@ -643,7 +646,19 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     details = server_mod.run_brief(activity or {}, laps, recording,
                                    share_mod.plan_context(plan, activity_id, workout), device)
     kind = (row or {}).get("type") or (details.get("summary") or {}).get("type")
-    result = analysis.analyse(workout, laps, kind, recording)
+    result = analysis.analyse(workout, laps, kind, recording, story=True)
+    figures = result.pop("figures", None)
+    try:
+        before = await asyncio.wait_for(like, 3)
+    except Exception:  # noqa: BLE001 - the line is left out, the run still reads
+        before = None
+    # A hard session is compared on its reps alone: whole runs of reps and jogs say little.
+    if figures and (kind in HARD_TYPES) and not figures.get("reps"):
+        figures = None
+    if before and figures:
+        line = run_view.last_time(figures, before["figures"], before["what"], before["name"], before["day"])
+        if line:
+            result["insights"] = [*(result.get("insights") or []), line]
     summary = details.get("summary") or {}
     started = None
     start_text = str(((activity or {}).get("summaryDTO") or {}).get("startTimeLocal") or "")
@@ -684,6 +699,36 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         "assistant": assistant(),
         "ask": _ask_links(f"Use Daash to look at my run {activity_id} ({name}). How did it go against the plan?"),
     })
+
+
+# What "the last one like it" is called, by the session's type.
+LIKE_NAMES = {"easy": "easy run", "recovery": "recovery run", "long": "long run", "threshold": "threshold session",
+              "sub": "threshold session", "intervals": "interval session"}
+
+
+async def _last_like(plan: Mapping[str, Any], row: Mapping[str, Any] | None, activity_id: int) -> dict[str, Any] | None:
+    """The last session of the same type done before this one, on the plan, with
+    the figures it's compared on: its reps, or its pace and heart rate."""
+    if not row or row.get("type") not in LIKE_NAMES:
+        return None
+    day = str(row.get("done_on") or row.get("date") or "")
+    earlier = [s for s in _sessions(plan) if s.get("type") == row["type"] and s.get("activity_id")
+               and s.get("activity_id") != activity_id and str(s.get("done_on") or s.get("date") or "") < day]
+    if not earlier:
+        return None
+    last = max(earlier, key=lambda s: str(s.get("done_on") or s.get("date")))
+    aid = int(last["activity_id"])
+    laps, workout = await asyncio.gather(server_mod._call(lambda c: c.get_activity_splits(aid)),
+                                         _workout(last.get("workout_id")), return_exceptions=True)
+    if isinstance(laps, Exception):
+        return None
+    workout = None if isinstance(workout, Exception) else workout
+    figures = analysis.analyse(workout, laps, last.get("type"), story=True).get("figures")
+    if not figures:
+        return None
+    when = date.fromisoformat(str(last.get("done_on") or last["date"])[:10])
+    return {"figures": figures, "what": LIKE_NAMES[row["type"]], "name": _display(last.get("name")),
+            "day": f"{when.day} {MONTHS[when.month - 1]}"}
 
 
 def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:

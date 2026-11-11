@@ -577,8 +577,12 @@ def _short(rows: list[dict[str, Any]], total_m: float, total_s: float) -> str | 
 
 
 def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None = None,
-            recording: Any = None) -> dict[str, Any]:
-    """The analysis screen's numbers for one run, against its workout when it has one."""
+            recording: Any = None, story: bool = False) -> dict[str, Any]:
+    """The analysis screen's numbers for one run, against its workout when it has one.
+
+    With story, also the run screen's chart and its lines on what the run shows
+    (run_view), and the figures it's compared on with the last one like it.
+    """
     laps = _laps(raw_laps)
     total_m = sum(l["metres"] for l in laps)
     total_s = sum(l["seconds"] for l in laps)
@@ -604,6 +608,14 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
                  {"v": str(round(hr)) if hr else "–", "l": "bpm avg"}]
     verdict = _verdict(rows, laps, kind, split_rows)
     short = _short(rows, total_m, total_s)
+    told: dict[str, Any] = {}
+    if story:
+        from . import run_view
+
+        pairs, after = paired if paired else ([], [])
+        told = {"chart": run_view.chart(pairs, after, laps, split_rows),
+                "insights": run_view.insights(pairs, laps, split_rows, kind) or None,
+                "figures": run_view.figures(pairs, laps)}
     for r in rows:
         r.pop("_lap", None)
         r.pop("_target", None)
@@ -617,4 +629,5 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
         "splits": split_rows or None,
         "km": round(total_m / 1000, 1),
         "seconds": int(round(total_s)),
+        **told,
     })

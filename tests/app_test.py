@@ -427,6 +427,11 @@ def api_checks() -> None:
     check("the run screen has a verdict", bool(run.get("verdict")), str(run.get("error")))
     check("it counts as done", (run.get("effect") or {}).get("head") == "Counts as done")
     check("it offers the share image", (run.get("share_url") or "").startswith("http"))
+    # Nov 11: the session as planned with the run inside it, and what it shows.
+    check("it draws the reps against their plan", (run.get("chart") or {}).get("mode") == "steps"
+          and sum(1 for p in run["chart"]["parts"] if p["k"] == "work") == 3, str(run.get("chart"))[:160])
+    check("and says what the run shows", any(x.get("head") for x in run.get("insights") or [])
+          and "figures" not in run, str(run.get("insights"))[:160])
 
     # Each read asked for once, and none of the chat's extras (Nov 3: the run
     # screen made about eleven calls, mostly one after another).

@@ -727,14 +727,18 @@ function analysisView(d, from, panel = false) {
     `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1>${credit(d)}</header>`,
     `<p class="verdict">${esc(d.verdict)}</p>`,
     `<div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>`];
+  const chart = runChart(d.chart, d.colour);
+  if (chart && !d.planned_and_run) parts.push(`<section class="stack"><span class="section-title">Km by km</span>${chart}</section>`);
   if (d.planned_and_run) {
-    parts.push(`<section class="stack"><span class="section-title">Planned and run</span><div class="card table">
+    parts.push(`<section class="stack"><span class="section-title">Planned and run</span>${chart}<div class="card table">
       <div class="cmp head"><span>STEP</span><span>TARGET</span><span style="text-align:right">PACE</span><span style="text-align:right">HR</span></div>
       ${d.planned_and_run.map((c) => `<div class="cmp"><span class="lab"><span class="bar bg-${esc(c.colour)}"></span>
         <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14.5px;font-weight:600">${esc(c.label)}</span><span class="meta ${c.soft ? "soft" : ""}" style="font-size:12.5px">${esc(c.note)}${spark(c)}</span></span></span>
         <span class="tgt">${esc(c.target || "–")}</span><span class="num ${c.soft && c.miss !== "high" ? "soft" : ""}">${esc(c.pace || "–")}</span><span class="num ${c.miss === "high" ? "soft" : ""}">${esc(c.hr || "–")}</span></div>`).join("")}
     </div></section>`);
   }
+  const told = insightsView(d.insights);
+  if (told) parts.push(told);
   if (d.splits) {
     parts.push(`<div class="card table"><button class="splits-toggle" aria-expanded="false" aria-controls="splits" id="splits-toggle">
       <span class="strong">Splits<span style="font-weight:500;color:var(--muted)"> · ${esc(d.km)} km</span></span>
@@ -750,6 +754,114 @@ function analysisView(d, from, panel = false) {
   }
   parts.push(`<div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this run</a>` : `<span></span>`}${ask.html}</div>`);
   return parts.join("");
+}
+
+// After a run (Nov 11): the session as planned with what was run inside it,
+// and a few lines on what it shows. Worked out on the server (run_view.py);
+// this only draws them.
+const clockOf = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+function runChart(c, colour) {
+  if (!c || !c.parts || c.parts.length < 2) return "";
+  const W = 340;
+  const tone = (k) => k === "work" || k === "km" ? `var(--${colour || "easy"})` : k === "stride" ? "var(--hard)" : "var(--rec)";
+  const parts = c.parts;
+  let body = "";
+  let key = "";
+  if (c.mode === "steps") {
+    const gap = 2, total = parts.reduce((a, p) => a + p.s, 0);
+    const room = W - gap * (parts.length - 1);
+    const band = c.band && c.band.kind === "pace" ? c.band : null;
+    // The target band is drawn tall enough to see where each rep landed in it;
+    // the rest of the session sits below it, quicker taller.
+    const bandTop = 34, bandBot = 78, floor = 150;
+    const others = parts.filter((p) => p.k !== "work" && p.k !== "stride" && p.p);
+    const slowest = Math.max(...others.map((p) => p.p), (band ? band.hi : 0) + 60);
+    const work = parts.filter((p) => p.k === "work" && p.p);
+    const quickest = Math.min(...work.map((p) => p.p), band ? band.lo : 9999);
+    const yWork = (p) => band ? Math.max(14, Math.min(floor - 12, bandTop + (p - band.lo) / Math.max(band.hi - band.lo, 1) * (bandBot - bandTop)))
+      : 24 + (p - quickest) / Math.max(slowest - quickest, 1) * (floor - 40);
+    const yOther = (p) => {
+      const top = band ? bandBot + 8 : 40;
+      const lo = band ? band.hi : quickest;
+      return Math.min(floor - 8, top + Math.max(0, p - lo) / Math.max(slowest - lo, 1) * (floor - 8 - top));
+    };
+    let x = 0;
+    parts.forEach((p) => {
+      const w = Math.max(3, p.s / total * room);
+      const mid = x + w / 2;
+      if (p.k === "work") {
+        const y = p.p ? yWork(p.p) : floor - 10;
+        if (band) {
+          body += `<rect x="${x.toFixed(1)}" y="${bandTop}" width="${w.toFixed(1)}" height="${floor - bandTop}" rx="3" fill="none" stroke="var(--button)" stroke-dasharray="3 3"/>`;
+          body += `<rect x="${x.toFixed(1)}" y="${bandTop}" width="${w.toFixed(1)}" height="${bandBot - bandTop}" fill="var(--band-${colour === "hard" ? "hard" : "easy"})"/>`;
+        }
+        body += `<rect x="${(x + Math.min(5, w / 6)).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, w - 2 * Math.min(5, w / 6)).toFixed(1)}" height="${(floor - y).toFixed(1)}" rx="3" fill="${tone("work")}" ${p.on === false ? 'opacity="0.55"' : ""}/>`;
+        if (w >= 26 && p.p) body += `<text class="v" x="${mid.toFixed(1)}" y="${((band ? bandTop : y) - 6).toFixed(1)}" text-anchor="middle">${clockOf(p.p)}</text>`;
+        if (w >= 40 && p.hr) body += `<text x="${mid.toFixed(1)}" y="${floor + 16}" text-anchor="middle">${p.hr} bpm</text>`;
+      } else if (p.k === "stride") {
+        const y = 20 + Math.max(0, (p.p - 170)) / 120 * 80;
+        body += `<rect x="${(x + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, w - 1).toFixed(1)}" height="${(floor - y).toFixed(1)}" rx="1.5" fill="${tone("stride")}"/>`;
+      } else {
+        const y = p.p ? yOther(p.p) : floor - 8;
+        body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${(floor - y).toFixed(1)}" rx="2" fill="${tone("rec")}"/>`;
+        if (p.label && w >= 56) body += `<text x="${(x + 2).toFixed(1)}" y="${floor + 16}">${esc(p.label)}</text>`;
+      }
+      x += w + gap;
+    });
+    body = `<svg viewBox="0 -4 ${W} ${floor + 26}" role="img" aria-label="${esc(c.caption || "The session as planned and as run")}">${body}</svg>`;
+    key = band ? `<span><i style="border:1px dashed var(--button)"></i>Planned</span><span><i style="background:var(--band-${colour === "hard" ? "hard" : "easy"})"></i>Target ${esc(band.text)}</span><span><i style="background:${tone("work")}"></i>Your rep</span>`
+      : `<span><i style="background:${tone("work")}"></i>Reps</span><span><i style="background:var(--rec)"></i>Easy and recoveries</span>`;
+  } else {
+    const kms = parts.filter((p) => p.k === "km"), strides = parts.filter((p) => p.k === "stride");
+    const strideW = strides.length ? Math.min(72, strides.length * 12) : 0;
+    const roomKm = W - (strideW ? strideW + 10 : 0);
+    const kmW = (roomKm - 3 * (kms.length - 1)) / kms.length;
+    const quick = Math.min(...kms.map((k) => k.p)), slow = Math.max(...kms.map((k) => k.p));
+    const lo = quick - 20, hi = slow + 30;
+    const top = 26, bot = 110;
+    const yKm = (p) => bot - (hi - p) / (hi - lo) * (bot - top);
+    kms.forEach((k, i) => {
+      const x = i * (kmW + 3), y = yKm(k.p);
+      body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${kmW.toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="3" fill="${tone("km")}"/>`;
+      if (kmW >= 24) body += `<text class="v" x="${(x + kmW / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" style="font-size:9.5px">${clockOf(k.p)}</text>`;
+    });
+    const sx = roomKm + 10;
+    strides.forEach((p, j) => {
+      const sw = strideW / strides.length, x = sx + j * sw;
+      const y = 18 + Math.max(0, p.p - 170) / 150 * 80;
+      body += `<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, sw - 4).toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="1.5" fill="${tone("stride")}"/>`;
+    });
+    body += `<text x="0" y="124">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="124" text-anchor="end">Km ${esc(kms[kms.length - 1].label)}</text>`;
+    if (strides.length) body += `<text x="${(sx + strideW / 2).toFixed(1)}" y="124" text-anchor="middle">${strides.length} strides</text>`;
+    const hrs = kms.filter((k) => k.hr);
+    let height = 130;
+    if (hrs.length >= 2) {
+      const band = c.band && c.band.kind === "hr" ? c.band : null;
+      const vals = hrs.map((k) => k.hr).concat(band ? [band.lo, band.hi] : []);
+      const hLo = Math.min(...vals) - 6, hHi = Math.max(...vals) + 4, hTop = 142, hBot = 192;
+      const yHr = (h) => hBot - (h - hLo) / (hHi - hLo) * (hBot - hTop);
+      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${roomKm.toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
+      const pts = kms.map((k, i) => k.hr ? `${(i * (kmW + 3) + kmW / 2).toFixed(1)},${yHr(k.hr).toFixed(1)}` : "").filter(Boolean).join(" ");
+      body += `<polyline points="${pts}" fill="none" stroke="var(--red-text)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+      const peak = Math.max(...hrs.map((k) => k.hr));
+      kms.forEach((k, i) => {
+        if (!k.hr) return;
+        const first = i === 0, last = i === kms.length - 1, top = k.hr === peak && hrs.findIndex((h) => h.hr === peak) === hrs.indexOf(k);
+        if (first || last || top) body += `<text x="${(i * (kmW + 3) + kmW / 2).toFixed(1)}" y="${(yHr(k.hr) - 5).toFixed(1)}" text-anchor="middle" style="fill:var(--red-text)">${k.hr}</text>`;
+      });
+      height = hBot + 6;
+      key = `<span><i style="background:${tone("km")}"></i>Km pace</span>${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--red-text);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
+    }
+    body = `<svg viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(c.caption || "Each km's pace and heart rate")}">${body}</svg>`;
+  }
+  return `<div class="card run-chart">${body}${key ? `<div class="chart-key">${key}</div>` : ""}${c.caption ? `<span class="chart-caption">${esc(c.caption)}</span>` : ""}</div>`;
+}
+
+function insightsView(list) {
+  if (!list || !list.length) return "";
+  return `<section class="stack"><span class="section-title">What it shows</span><div class="card insights">${list.map((x) =>
+    `<div class="insight"><span class="ic" style="background:var(--${esc(x.tone)})" aria-hidden="true">${esc(x.icon)}</span><span><b>${esc(x.head)}</b> ${esc(x.text)}</span></div>`).join("")}</div></section>`;
 }
 
 // Strides as one row (Nov 11): each one's pace as a little bar, quicker taller.
@@ -777,6 +889,8 @@ function analysisPanel(d, ask) {
   return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>${credit(d)}
     <p class="verdict" style="font-size:19px">${esc(d.verdict)}</p>
     <div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>
+    ${runChart(d.chart, d.colour)}
+    ${insightsView(d.insights)}
     <div class="panel-two">${rows ? `<section class="stack-8"><span class="strong">Planned and run</span><div class="card table">${rows}</div></section>` : ""}
       ${splits ? `<section class="stack-8"><span class="strong">Splits<span style="font-weight:500;color:var(--muted)"> · ${esc(d.km)} km</span></span>
         <div class="card table"><div class="psplit head"><span>KM</span><span>PACE</span><span style="text-align:right">HR</span></div>${splits}</div></section>` : ""}</div>

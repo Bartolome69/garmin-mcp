@@ -9,6 +9,7 @@
   --red: #E8322B; --red-text: #FF6A61; --red-soft: #2E2422; --red-soft-line: #6B3530;
   --easy: #8CC08F; --hard: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --rec: #4A4844; --race: #E8322B;
   --amber-soft: #2A2520; --amber-soft-line: #5C4A33;
+  --band-hard: rgba(232, 161, 95, 0.18); --band-easy: rgba(140, 192, 143, 0.16); --band-easy-line: rgba(140, 192, 143, 0.45);
   --radius: 12px;
   --sans: "Geist", -apple-system, system-ui, sans-serif;
   --mono: "Geist Mono", ui-monospace, Menlo, monospace;
@@ -439,3 +440,18 @@ body.desk .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 
 /* Strides as one row: each one's pace as a little bar (Nov 11). */
 .spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; margin-left: 8px; vertical-align: -1px; }
 .spark i { display: block; width: 4px; border-radius: 1px; }
+
+/* after a run: the session as planned and as run, and what it shows (Nov 11) */
+.run-chart { padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.run-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.run-chart text { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+.run-chart text.v { fill: var(--ink); font-weight: 600; }
+.chart-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
+.chart-key span { display: flex; align-items: center; gap: 6px; }
+.chart-key i { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart-caption { font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+.insights { display: flex; flex-direction: column; }
+.insight { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--hairline); font-size: 14px; line-height: 1.45; }
+.insight:first-child { border-top: 0; }
+.insight b { font-weight: 600; }
+.insight .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--ground); }
