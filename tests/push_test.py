@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -224,6 +225,22 @@ hosted.OFFICIAL_RUN_PUSH_FROM = "2026-11-01"
 runs["latest"] = {"activityId": 5, "activityType": {"typeKey": "running"}, "startTimeGMT": fresh_start}
 hosted.notify_once(at(13, 10), spacing=0)
 check("and goes once it's over", len(sent) == 1, str(sent))
+
+# Garmin's push (Nov 11): the run's verdict the moment Garmin sends it, from 11 Dec.
+sent.clear()
+hosted.store.official_link_for_garmin_user = lambda gid: SimpleNamespace(user_token=user) if gid == "g-1" else None
+hosted.OFFICIAL_RUN_PUSH_FROM = "2026-12-11"
+runs["latest"] = {"activityId": 6, "activityType": {"typeKey": "running"}, "startTimeGMT": fresh_start}
+check("Garmin's push does nothing before the notice period is up", hosted.run_arrived("g-1", at(13, 20)) == 0 and not sent,
+      str(sent))
+hosted.OFFICIAL_RUN_PUSH_FROM = "2026-11-01"
+runs["latest"] = {"activityId": 7, "activityType": {"typeKey": "running"}, "startTimeGMT": fresh_start}
+check("after it, Garmin's push sends the verdict straight away", hosted.run_arrived("g-1", at(13, 21)) == 1
+      and len(sent) == 1, str(sent))
+hosted.notify_once(at(13, 23), spacing=0)
+check("and the next pass doesn't send it again", len(sent) == 1, str(sent))
+check("a push for someone Daash doesn't know sends nothing", hosted.run_arrived("g-unknown", at(13, 24)) == 0)
+check("the pass looks every 3 minutes", hosted.NOTIFY_EVERY == 180)
 
 print()
 if FAILED:

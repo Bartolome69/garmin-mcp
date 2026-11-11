@@ -1269,9 +1269,10 @@ def first_run_email(garmin_user_id: str, activities: list[dict], send: Callable[
 
 
 def _activities_arrived(garmin_user_id: str, activities: list[dict]) -> None:
-    """Garmin waits on its push: the email goes from its own thread."""
+    """Garmin waits on its push: the email and the phone notification go from their own threads."""
     threading.Thread(target=first_run_email, args=(garmin_user_id, activities),
                      name="first-run-email", daemon=True).start()
+    threading.Thread(target=run_arrived, args=(garmin_user_id,), name="run-notification", daemon=True).start()
 
 
 # Garmin's starter access to its official API allows this many users. Past it
@@ -1312,7 +1313,10 @@ def _keep_alive_forever() -> None:
 # For phones that turned them on in the app (Nov 10): a heads-up about a
 # planned session, and a run's verdict once it syncs. A day with nothing
 # planned sends nothing: a nudge is only worth it with something in it.
-NOTIFY_EVERY = 10 * 60
+# Every 3 minutes, so a run's verdict follows the watch's sync closely (Nov 11).
+# Only people with notifications on are read, and runs read from Garmin's
+# official API go the moment Garmin pushes them (run_arrived).
+NOTIFY_EVERY = 3 * 60
 NOTIFY_SPACING = 2.0
 # The heads-up goes at the hour each person chose in You (Nov 11): the evening
 # before, or that morning. A pass that misses the hour still sends within the window.
@@ -1408,6 +1412,57 @@ def _latest_run(user_token: str) -> dict[str, Any] | None:
     return None
 
 
+# The polling pass and Garmin's push can look for the same run at once: one at a time.
+_RUN_LOCK = threading.Lock()
+
+
+def _check_run(owner: str, user_token: str, local: datetime, now: float) -> int:
+    """Tell someone's phones about their newest run, once. Returns the phones it reached."""
+    with _RUN_LOCK:
+        subs = [s for s in store.push_subs() if s["owner"] == owner]
+        latest = _latest_run(user_token) if subs else None
+        if not latest or str(latest.get("activityId")) == (subs[0].get("last_run") or ""):
+            return 0
+        first_look = subs[0].get("last_run") is None
+        store.mark_push(owner, run=str(latest.get("activityId")))
+    started = str(latest.get("startTimeGMT") or latest.get("startTimeLocal") or "")
+    try:
+        age = now - datetime.fromisoformat(started.replace(" ", "T")).replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        age = RUN_FRESH_SECONDS + 1
+    official_read = store.official_only(user_token) or not store.has_connect(user_token)
+    held = official_read and local.date().isoformat() < OFFICIAL_RUN_PUSH_FROM
+    if first_look or age > RUN_FRESH_SECONDS or held:
+        return 0
+    message = run_message(_as_person(user_token, app_routes.run_payload, int(latest["activityId"])))
+    return _send_all(owner, subs, message, "run") if message else 0
+
+
+def run_arrived(garmin_user_id: str, now: float | None = None) -> int:
+    """Garmin's official API pushed a new activity: tell their phones now, not at the next pass.
+
+    Only once Garmin's notice period is over (OFFICIAL_RUN_PUSH_FROM): the push
+    itself is Garmin's API data, so nothing acts on it before then.
+    """
+    now = now or time.time()
+    link = store.official_link_for_garmin_user(garmin_user_id)
+    if link is None:
+        return 0
+    owner = store.push_owner(link.user_token)
+    subs = [s for s in store.push_subs() if s["owner"] == owner]
+    if not subs:
+        return 0
+    local = _local_now(subs[0].get("tz"), now)
+    if local.date().isoformat() < OFFICIAL_RUN_PUSH_FROM:
+        return 0
+    user_token = store.token_for_owner(owner) or link.user_token
+    try:
+        return _check_run(owner, user_token, local, now)
+    except Exception as exc:  # noqa: BLE001 - the next pass tries again
+        log.info("Run notification on Garmin's push skipped (%s)", type(exc).__name__)
+        return 0
+
+
 def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> dict[str, int]:
     """One pass over the phones with notifications on. Returns counts."""
     now = now or time.time()
@@ -1431,22 +1486,8 @@ def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> di
                 store.mark_push(owner, morning=day)
                 if message:
                     counts["morning"] += _send_all(owner, subs, message, "evening" if evening else "morning")
-            latest = _latest_run(user_token) if RUN_HOURS[0] <= local.hour < RUN_HOURS[1] else None
-            if latest and str(latest.get("activityId")) != (subs[0].get("last_run") or ""):
-                first_look = subs[0].get("last_run") is None
-                store.mark_push(owner, run=str(latest.get("activityId")))
-                started = str(latest.get("startTimeGMT") or latest.get("startTimeLocal") or "")
-                try:
-                    age = now - datetime.fromisoformat(started.replace(" ", "T")).replace(tzinfo=timezone.utc).timestamp()
-                except ValueError:
-                    age = RUN_FRESH_SECONDS + 1
-                official_read = store.official_only(user_token) or not store.has_connect(user_token)
-                held = official_read and local.date().isoformat() < OFFICIAL_RUN_PUSH_FROM
-                if not first_look and age <= RUN_FRESH_SECONDS and not held:
-                    run = _as_person(user_token, app_routes.run_payload, int(latest["activityId"]))
-                    message = run_message(run)
-                    if message:
-                        counts["run"] += _send_all(owner, subs, message, "run")
+            if RUN_HOURS[0] <= local.hour < RUN_HOURS[1]:
+                counts["run"] += _check_run(owner, user_token, local, now)
         except Exception as exc:  # noqa: BLE001 - one person's reads never stop the others
             log.info("Notification pass skipped someone (%s)", type(exc).__name__)
         if spacing:
