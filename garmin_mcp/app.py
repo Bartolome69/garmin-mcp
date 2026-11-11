@@ -1473,7 +1473,9 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed",
               # The home-screen and notifications test (Nov 10).
               "home_prompt_shown", "home_prompt_tapped", "home_prompt_dismissed",
-              "push_prompt_shown", "push_prompt_dismissed", "push_denied"}
+              "push_prompt_shown", "push_prompt_dismissed", "push_denied",
+              # Nov 11: the hint that a session can be moved or made easier.
+              "edit_hint_shown", "edit_hint_dismissed"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you"}
 

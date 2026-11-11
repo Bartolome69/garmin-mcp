@@ -360,19 +360,19 @@ _NOTES = {
         "call; this adds how recovery is keeping up with it."
     ),
     "get_activity_details": (
-        "\n\nFor a run, also returns share_image, a link to an image of it to post, the weather during it (temperature, dew "
-        "point, wind, and what that does to pace), the shoes worn, the terrain "
-        "(climbs, pace on uphill, flat and downhill, the pace the effort was "
-        "worth on the flat, heart-rate decoupling and where it faded) and "
-        "earlier runs of the same route with their pace and heart rate. Use "
+        "\n\nFor a run, also returns share_image (an image to post), the weather (temperature, dew "
+        "point, wind, effect on pace), the shoes worn, the terrain "
+        "(climbs, pace uphill, flat and downhill, flat-equivalent pace, "
+        "heart-rate decoupling and where it faded) and "
+        "earlier runs of the same route. Use "
         "these to explain a run rather than guessing why it was slow or hard. "
         "For a ride: normalised, average and max power, intensity factor and "
         "training stress against FTP, best efforts from 5 seconds to an hour, "
         "variability, time in power zones, climbs with speed, VAM and power, "
         "the weather during it, and earlier rides of the same route. For a "
         "swim: pace per 100 m, pool length, SWOLF, stroke rate and strokes, and "
-        "the set as swum, each interval with its pace, stroke and the rest after "
-        "it. Talk about a swim in those terms, never pace per km."
+        "each interval as swum with its pace, stroke and rest. "
+        "Talk about a swim in those terms, never pace per km."
     ),
     "get_progress": (
         "\n\nIts result is drawn for the user as an interactive plan card, so "
@@ -712,6 +712,15 @@ def _compact_doc(text: str) -> str:
     return "\n".join(" " * ((len(line) - len(line.lstrip(" "))) // 2) + line.strip() for line in lines)
 
 
+# The run card in chat (Nov 11): for everyone since the evening of 11 Nov, after
+# preview accounts tried it that morning. GARMIN_MCP_RUN_CARD=0 takes it back
+# to preview accounts alone. Never on Garmin's official API alone: a new way of
+# showing its data waits for the 30 days' notice Garmin asks for (6.6).
+def run_card_on(alone: bool | None = None) -> bool:
+    alone = _ALONE.get() if alone is None else alone
+    return not alone and (os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0" or preview.enabled())
+
+
 def _with_description(tool, *, preview_on: bool, alone: bool = False):
     text = OFFICIAL_DESCRIPTIONS.get(tool.name) if alone else _DESCRIPTIONS.get(tool.name)
     if alone and text is not None:
@@ -731,8 +740,8 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False):
     view = ((getattr(tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
     if preview_on and not alone and view == PLAN_VIEW:
         update["meta"] = {**tool.meta, "ui": {**tool.meta["ui"], "resourceUri": PLAN2_VIEW}, "ui/resourceUri": PLAN2_VIEW}
-    # The run card is tried by preview accounts first; everyone else's runs answer in writing.
-    if view == RUN_VIEW and (alone or not preview_on):
+    # The run card, where it's on; elsewhere runs answer in writing.
+    if view == RUN_VIEW and (alone or not (preview_on or os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0")):
         update["meta"] = {k: v for k, v in (tool.meta or {}).items() if k not in ("ui", "ui/resourceUri")} or None
     if text:
         update["description"] = text
@@ -997,8 +1006,8 @@ def _app_tool(view: str, note: str = VIEW_NOTE):
         @functools.wraps(fn)
         async def answered(*args, **kwargs):
             result = await fn(*args, **kwargs)
-            # The run card's note only where the card is drawn (preview accounts).
-            if view == RUN_VIEW and not preview.enabled():
+            # The run card's note only where the card is drawn.
+            if view == RUN_VIEW and not run_card_on():
                 return result
             if isinstance(result, dict) and "error" not in result and await _in_miles():
                 result = {**result, "units": "mi", "units_note": MILES_NOTE}
@@ -2150,8 +2159,8 @@ def _run_card(activity_id: Any, planned: dict[str, Any] | None, workout: dict[st
               laps: Any, recording: Any) -> dict[str, Any] | None:
     """What the run card adds to a run's answer: the planned session's type,
     name and week, the verdict the app's run screen gives, and the app's link.
-    Only where the card is drawn (preview accounts); nothing more is read."""
-    if not preview.enabled():
+    Only where the card is drawn (run_card_on); nothing more is read."""
+    if not run_card_on():
         return None
     verdict = None
     try:

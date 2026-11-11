@@ -647,11 +647,28 @@ async def check_preview_gate(check) -> None:
               "shoes worn" in plain_details)
         check("without preview, get_fitness mentions FTP",
               "FTP" in next(t for t in tools if t.name == "get_fitness").description)
-        # Nov 11: the run card is tried by preview accounts first.
+        # Nov 11: the run card, tried by preview accounts that morning, is on for everyone,
+        # except on Garmin's official API alone; GARMIN_MCP_RUN_CARD=0 takes it back to preview.
         details_meta = getattr(next(t for t in tools if t.name == "get_activity_details"), "meta", None) or {}
-        check("without preview, a run answers in writing: no run card", "ui" not in details_meta, str(details_meta))
-        check("without preview, a run's answer carries nothing for the card",
-              server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) is None)
+        check("without preview, a run comes with its card", (details_meta.get("ui") or {}).get("resourceUri") == server.RUN_VIEW,
+              str(details_meta))
+        check("and its answer carries what the card draws",
+              (server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) or {}).get("planned") == "Easy 8k")
+        alone = server.use_alone(True)
+        try:
+            check("on Garmin's official API alone, a run answers in writing", not server.run_card_on()
+                  and server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) is None)
+        finally:
+            server.reset_alone(alone)
+        os.environ["GARMIN_MCP_RUN_CARD"] = "0"
+        try:
+            off = await server.mcp.list_tools()
+            off_meta = getattr(next(t for t in off if t.name == "get_activity_details"), "meta", None) or {}
+            check("with the card switched off, a run answers in writing: no run card", "ui" not in off_meta, str(off_meta))
+            check("and its answer carries nothing for the card",
+                  server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) is None)
+        finally:
+            os.environ.pop("GARMIN_MCP_RUN_CARD", None)
     finally:
         preview.reset(token)
     token = preview.use(True)

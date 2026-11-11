@@ -688,6 +688,7 @@ function previewView(d, from, panel = false) {
   parts.push(`<div class="card watch-row"><span class="watch-icon">${ICON.watch()}</span>
     <div class="grow" style="gap:1px"><span class="strong">${esc(d.watch.head)}</span><span class="meta" style="${d.watch.changed ? "color:var(--red-text)" : ""}">${esc(d.watch.sub)}</span></div>
     <button class="pill" data-act="resend" data-day="${d.date}" data-sid="${d.schedule_id || ""}" style="flex-shrink:0;padding:0 14px">Send again</button></div>`);
+  parts.push(editHint());
   parts.push(`<div class="actions3"><button class="pill tall" data-act="move" data-day="${d.date}" data-sid="${d.schedule_id || ""}" data-name="${esc(d.name)}">Move</button>
     ${d.easier ? `<button class="pill tall" data-act="${d.easier.applied ? "undo" : "easier"}" data-day="${d.date}" data-sid="${d.schedule_id || ""}">${esc(d.easier.label)}</button>` : `<button class="pill tall" disabled title="Nothing to shorten">Easier</button>`}
     ${ask.html}</div>
@@ -713,6 +714,8 @@ async function showSession(day, params) {
       return;
     }
     $("screen").innerHTML = d.rest ? restView(d, params.get("from")) : previewView(d, params.get("from"));
+    if (!d.rest) store.set(LOOKED, "1");
+    wireHint($("screen"));
     wire($("screen"));
   }, (e) => failed(e.message, () => showSession(day, params)));
 }
@@ -952,6 +955,7 @@ async function showRun(id, params) {
   tabs(params.get("from") === "plan" ? "plan" : "today");
   return show(`run/${encodeURIComponent(id)}`, (d) => {
     $("screen").innerHTML = analysisView(d, params.get("from"));
+    store.set(LOOKED, "1");
     const t = $("splits-toggle");
     if (t) t.onclick = () => {
       const open = t.getAttribute("aria-expanded") !== "true";
@@ -970,7 +974,23 @@ function wire(root) {
   });
 }
 
+// Plans change: once, above Move and Easier, say what they do. Gone once
+// either is used or it's dismissed (Nov 11: 4 of 25 app users had changed a session).
+function editHint() {
+  if (desktop() || store.get(EDIT_HINT)) return "";
+  shownOnce("edit_hint_shown");
+  return `<div class="card pad stack-tight" id="edit-hint" style="gap:8px"><span class="strong">Plans change. Yours can too.</span>
+    <span class="meta" style="font-size:13.5px;line-height:1.45"><b>Move</b> puts this session on another day, and <b>Easier</b> shortens it at the same pace. Your watch updates either way. On Plan, you can also hold a session and drag it to another day.</span>
+    <div class="pills"><button class="pill" data-hint="done">Got it</button></div></div>`;
+}
+
+function wireHint(root) {
+  const b = root.querySelector('[data-hint="done"]');
+  if (b) b.onclick = () => { store.set(EDIT_HINT, "dismissed"); track("edit_hint_dismissed"); const h = $("edit-hint"); if (h) h.remove(); };
+}
+
 async function act(action, day, sid, button) {
+  if (action === "move" || action === "easier") store.set(EDIT_HINT, "used");
   if (action === "move") return moveSheet(day, sid, button.dataset.name);
   button.disabled = true;
   try {
@@ -1117,7 +1137,8 @@ async function showPlan(view, params, quiet = false) {
       $("screen").innerHTML = `<header><h1 class="headline" style="font-size:28px">Plan</h1></header>
         <div class="desk-plan"><div class="stack">${weekView(d)}</div><div class="stack">${blockView(d)}</div></div>`;
     } else {
-      $("screen").innerHTML = head + (view === "block" ? blockView(d) : weekView(d));
+      $("screen").innerHTML = head + (view === "block" ? blockView(d) : nudge() + weekView(d));
+      wireNudge($("screen"));
     }
     fitPhases($("screen"));
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
@@ -1815,6 +1836,10 @@ async function signInPost(path, body) {
 const DAYS_SEEN = "daash.days";
 const HOME_LATER = "daash.home.later";
 const PUSH_LATER = "daash.push.later";
+// Set once a session or run has been opened: the home-screen prompt waits for it.
+const LOOKED = "daash.looked";
+// The hint that a session can be moved or made easier, until it's used or dismissed (Nov 11).
+const EDIT_HINT = "daash.edit.hint";
 const PUSH_ON = "daash.push.on";
 const QUIET_DAYS = 14;
 let installEvent = null;
@@ -1844,12 +1869,14 @@ function nudge() {
   const days = daysSeen();
   if (desktop()) return "";
   if (!homeScreen()) {
-    if (days < 2 || quiet(HOME_LATER) || !(installEvent || iphone())) return "";
+    // From the first day once they've opened a session or a run (Nov 11: on
+    // day 2 only, and on Today only, it reached nobody in its first day).
+    if ((days < 2 && !store.get(LOOKED)) || quiet(HOME_LATER) || !(installEvent || iphone())) return "";
     shownOnce("home_prompt_shown");
     const how = installEvent ? "" : `<span class="meta" style="font-size:13.5px;line-height:1.45">Tap ${ICON.share()} Share, then <b>Add to Home Screen</b>.</span>`;
     return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
         <span class="strong">Put Daash on your home screen</span>
-        <span class="meta" style="font-size:13.5px;line-height:1.45">Today's session in one tap. From there, Daash can tell you each morning what's on, and how your run went once your watch syncs.</span>${how}</span>
+        <span class="meta" style="font-size:13.5px;line-height:1.45">Your plan in one tap. From there, Daash can tell you the evening before what's on, and how your run went once your watch syncs.</span>${how}</span>
       <div class="pills"><button class="pill" data-nudge="home-later">Not now</button>
         ${installEvent ? `<button class="pill light" data-nudge="install">Add to home screen</button>` : ""}</div></div>`;
   }

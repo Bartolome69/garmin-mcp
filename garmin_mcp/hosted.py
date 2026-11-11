@@ -850,8 +850,8 @@ def _with_card_check(name: str, result: Any, user: store.User) -> Any:
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     if name not in CARD_TOOLS or not base or not user.email_hash:
         return result
-    # The run card is drawn for preview accounts only, so far (Nov 11).
-    if name == "get_activity_details" and not preview.enabled():
+    # The run card: counted where it's drawn (server.run_card_on).
+    if name == "get_activity_details" and not server_mod.run_card_on():
         return result
     if not isinstance(result, dict) or "error" in result:
         return result
