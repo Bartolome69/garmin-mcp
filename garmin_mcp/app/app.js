@@ -731,7 +731,7 @@ function analysisView(d, from, panel = false) {
     parts.push(`<section class="stack"><span class="section-title">Planned and run</span><div class="card table">
       <div class="cmp head"><span>STEP</span><span>TARGET</span><span style="text-align:right">PACE</span><span style="text-align:right">HR</span></div>
       ${d.planned_and_run.map((c) => `<div class="cmp"><span class="lab"><span class="bar bg-${esc(c.colour)}"></span>
-        <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14.5px;font-weight:600">${esc(c.label)}</span><span class="meta ${c.soft ? "soft" : ""}" style="font-size:12.5px">${esc(c.note)}</span></span></span>
+        <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14.5px;font-weight:600">${esc(c.label)}</span><span class="meta ${c.soft ? "soft" : ""}" style="font-size:12.5px">${esc(c.note)}${spark(c)}</span></span></span>
         <span class="tgt">${esc(c.target || "–")}</span><span class="num ${c.soft && c.miss !== "high" ? "soft" : ""}">${esc(c.pace || "–")}</span><span class="num ${c.miss === "high" ? "soft" : ""}">${esc(c.hr || "–")}</span></div>`).join("")}
     </div></section>`);
   }
@@ -752,6 +752,13 @@ function analysisView(d, from, panel = false) {
   return parts.join("");
 }
 
+// Strides as one row (Nov 11): each one's pace as a little bar, quicker taller.
+function spark(c) {
+  if (!c.spark || c.spark.length < 2) return "";
+  const lo = Math.min(...c.spark), hi = Math.max(...c.spark), span = Math.max(hi - lo, 1);
+  return `<span class="spark" aria-hidden="true">${c.spark.map((p) => `<i class="bg-${esc(c.colour)}" style="height:${Math.round(35 + 65 * (hi - p) / span)}%"></i>`).join("")}</span>`;
+}
+
 // An easy session run harder than its target (Nov 9).
 function easyCheck(c) {
   return `<div class="card amber" style="padding:14px"><span class="stack-tight" style="gap:2px"><span class="strong">${esc(c.head)}</span>
@@ -762,7 +769,7 @@ function easyCheck(c) {
 function analysisPanel(d, ask) {
   const rows = (d.planned_and_run || []).map((c) => `<div class="pcmp"><span class="bar bg-${esc(c.colour)}"></span>
       <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14px;font-weight:600">${esc(c.label)}</span>
-        <span class="meta ${c.soft ? "soft" : ""}" style="font-size:12px">${esc(c.soft ? c.note : [c.note, c.target].filter(Boolean).join(" · "))}</span></span>
+        <span class="meta ${c.soft ? "soft" : ""}" style="font-size:12px">${esc(c.soft ? c.note : [c.note, c.target].filter(Boolean).join(" · "))}${spark(c)}</span></span>
       <span class="stack-tight" style="gap:1px;align-items:flex-end"><span class="${c.soft && c.miss !== "high" ? "soft" : ""}" style="font-size:14px;font-weight:600">${esc(c.pace || "–")}</span>
         <span class="meta ${c.miss === "high" ? "soft" : ""}" style="font-size:12px">${c.hr ? `${esc(c.hr)} bpm` : ""}</span></span></div>`).join("");
   const splits = (d.splits || []).map((s) => `<div class="psplit"><span class="meta">${esc(s.rest ? "Jogs" : s.km)}</span>

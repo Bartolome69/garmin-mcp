@@ -63,11 +63,12 @@
   .stat-l { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
   .chart { position: relative; display: flex; align-items: flex-end; gap: 4px; height: 150px; padding-top: 24px; }
-  .chart .bar { position: relative; display: flex; align-items: flex-end; justify-content: center; border-radius: 6px; min-width: 6px;
+  .chart .bar { position: relative; display: flex; align-items: flex-end; justify-content: center; border-radius: 6px; min-width: 5px;
     background: var(--grey-bar); }
   .chart .bar em { position: absolute; top: -21px; left: 50%; transform: translateX(-50%); font-size: 13.5px; font-style: normal;
     font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .chart .bar.small em { font-size: 11.5px; top: -18px; }
+  .chart .bar.stride { border-radius: 3px; }
   .chart .bar span { font-size: 11.5px; font-weight: 600; color: var(--on-bar); padding-bottom: 6px; white-space: nowrap; }
   .chart i { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--faint); pointer-events: none; }
   .chart i b { position: absolute; left: 0; top: -16px; font-size: 11px; font-weight: 400; color: var(--muted); }
@@ -256,10 +257,23 @@
     return { duration_s: t, distance_km: Math.round(d * 100) / 100, pace_per_km: perKm(t, d) || list[0].pace_per_km,
       avg_hr: hrW ? Math.round(hrT / hrW) : list[0].avg_hr, intensity: list[0].intensity, laps: list.length };
   }
+  var STRIDE_S = 45;
   function laps(p) {
     var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || [])
       .filter(function (x) { return x && x.pace_per_km; });
     if (splits.length < 2) return null;
+    // Strides (Nov 11): two or more short quick laps after a run of a km or
+    // more. They're an add-on: the run's km are the bars, the strides thin
+    // bars of their own at the end, never reps.
+    var dur = function (x) { return clockSecs(x.duration) || 0; };
+    var resting = function (x) { return x.intensity === "recovery" || x.intensity === "rest"; };
+    var strides = splits.filter(function (x) { return !resting(x) && dur(x) && dur(x) <= STRIDE_S; });
+    var steady = splits.filter(function (x) { return !resting(x) && dur(x) > STRIDE_S; });
+    var steadyKm = steady.reduce(function (t, x) { return t + (x.distance_km || 0); }, 0);
+    if (strides.length >= 2 && steadyKm >= 1) {
+      return { mixed: false, strides: strides, rows: [],
+        bars: steady.map(function (x) { return { lap: x, secs: paceSecs(x.pace_per_km), work: true }; }) };
+    }
     var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
     var known = secs.filter(function (v) { return v != null; });
     var lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
@@ -286,7 +300,8 @@
   function chart(p, colour) {
     var L = laps(p);
     if (!L) return null;
-    var bars = L.bars, secsAll = bars.map(function (b) { return b.secs; }).filter(function (v) { return v != null; });
+    var bars = L.bars, secsAll = bars.map(function (b) { return b.secs; }).concat((L.strides || []).map(function (x) { return paceSecs(x.pace_per_km); }))
+      .filter(function (v) { return v != null; });
     var lo = Math.min.apply(null, secsAll), hi = Math.max.apply(null, secsAll);
     var top = lo - Math.max(10, (hi - lo) * 0.1), bottom = hi + Math.max(25, (hi - lo) * 0.6);
     var height = function (v) { return v == null ? 12 : 14 + 78 * (bottom - v) / (bottom - top); };
@@ -301,6 +316,14 @@
          L.mixed && b.work && x.distance_km && wide > 300 ? el("span", { style: /long|race/.test(colour) ? "color:var(--on-long)" : "", text: fmtKm(x.distance_km) + " " + KMW() }) : null]);
       return bar;
     });
+    if (L.strides) {
+      kids.push(el("div", { style: "flex:0 0 6px" }));
+      L.strides.forEach(function (x) {
+        var v = paceSecs(x.pace_per_km);
+        kids.push(el("div", { class: "bar stride", style: "flex:0 0 5px;height:" + height(v).toFixed(1) + "%;background:var(--hard)",
+          title: "Stride \u00b7 " + units(x.pace_per_km) + (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "") }));
+      });
+    }
     var avg = paceSecs(sum.pace_per_km);
     if (L.mixed && avg != null && avg > top && avg < bottom) {
       kids.push(el("i", { style: "bottom:" + (height(avg) * 1.0).toFixed(1) + "%" }, [el("b", { class: "mono", text: "avg " + bare(sum.pace_per_km) })]));
@@ -315,7 +338,8 @@
       var right = !last.work && bars.length > 1 && L.groups > 1 ? name(last, "Cool down") : null;
       ends = left || right ? el("div", { class: "ends" }, [el("span", { text: left || "" }), el("span", { text: right || "" })]) : null;
     } else {
-      ends = el("div", { class: "ends" }, [el("span", { text: "Km 1" }), el("span", { text: "Km " + bars.length })]);
+      ends = el("div", { class: "ends" }, [el("span", { text: "Km 1" }),
+        el("span", { text: L.strides ? "Km " + bars.length + " \u00b7 " + L.strides.length + " strides" : "Km " + bars.length })]);
     }
     return { box: box, ends: ends, L: L };
   }
@@ -340,6 +364,13 @@
     var text = (last ? "Last " : "") + (x.distance_km ? fmtKm(x.distance_km) + " " + KMW() : "") + " at " + units(x.pace_per_km) +
       (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "");
     return el("div", { class: "line" }, [el("i", { style: "background:" + colour }), text.charAt(0).toUpperCase() + text.slice(1)]);
+  }
+  function stridesLine(list) {
+    var secs = list.map(function (x) { return clockSecs(x.duration) || 0; });
+    var each = Math.round(secs.reduce(function (a, b) { return a + b; }, 0) / list.length);
+    var fast = list.reduce(function (a, x) { var v = paceSecs(x.pace_per_km); return v != null && (a == null || v < a.v) ? { v: v, x: x } : a; }, null);
+    var text = list.length + " strides of " + each + " s" + (fast ? " \u00b7 fastest " + units(fast.x.pace_per_km) : "");
+    return el("div", { class: "line" }, [el("i", { style: "background:var(--hard)" }), text]);
   }
   function splitLine(L, colour, hr) {
     var paces = L.bars.map(function (b) { return b.lap.pace_per_km; });
@@ -392,6 +423,7 @@
         if (ch.L.mixed && ch.L.rows.length > 1) body.appendChild(repsTable(ch.L, colour, ch.L.groups > 1 ? "Reps" : "At pace"));
         else if (ch.L.mixed && ch.L.rows.length === 1) body.appendChild(workLine(ch.L.rows[0], colour, ch.L.bars));
         else if (!ch.L.mixed) body.appendChild(splitLine(ch.L, colour, hr));
+        if (ch.L.strides) body.appendChild(stridesLine(ch.L.strides));
       }
     }
     // An easy session run harder than its target says so (Nov 9).

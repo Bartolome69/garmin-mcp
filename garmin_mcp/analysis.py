@@ -27,6 +27,17 @@ DRIFT_BPM = 4
 STUB_METRES = 50.0
 # Kilometre splits within this spread read as even.
 EVEN_SPREAD_S = 20
+# A watch's automatic lap: every kilometre, or every mile set to miles. Many
+# watches lap this way inside a long step too (Nov 11: a 9.5 km easy step came
+# as eight 1 km laps and a 0.93, and each lap was taken for a step of its own).
+AUTO_LAP_METRES = (1000.0, 1609.344)
+# A step long enough for the watch to lap inside it.
+LONG_STEP_METRES = 2000.0
+LONG_STEP_SECONDS = 600.0
+# Reps this short are strides, an easy run's add-on, not the session: shown
+# as one row and kept out of the run's averages (Nov 11).
+STRIDE_SECONDS = 45.0
+STRIDE_METRES = 300.0
 
 _WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
           "eleven", "twelve"]
@@ -95,6 +106,17 @@ def _amount(step: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _size(step: Mapping[str, Any]) -> dict[str, float]:
+    """How long a step was planned: {"metres": ...} or {"seconds": ...}, or nothing."""
+    cond = ((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
+    value = float(step.get("endConditionValue") or 0)
+    if cond == "distance" and value:
+        return {"metres": value}
+    if cond == "time" and value:
+        return {"seconds": value}
+    return {}
+
+
 def planned_steps(workout: Mapping[str, Any] | None) -> list[dict[str, Any]]:
     """The steps the watch ran, repeats unrolled, each with its kind, target and rep number."""
     out: list[dict[str, Any]] = []
@@ -114,7 +136,8 @@ def planned_steps(workout: Mapping[str, Any] | None) -> list[dict[str, Any]]:
             if kind == "interval" and in_repeat:
                 rep += 1
                 number = rep
-            out.append({"kind": kind, "target": _target(step), "amount": _amount(step), "rep": number})
+            out.append({"kind": kind, "target": _target(step), "amount": _amount(step), "rep": number,
+                        **_size(step)})
 
     for segment in (workout or {}).get("workoutSegments") or []:
         walk(segment.get("workoutSteps") or [], False)
@@ -153,12 +176,61 @@ def _paired(steps: list[dict[str, Any]], laps: list[dict[str, Any]]
     if not steps or not laps:
         return None
     pairs: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
-    for i, step in enumerate(steps):
+    i = 0
+    for step in steps:
         lap = laps[i] if i < len(laps) else None
         if lap is not None and not _fits(step, lap):
             return None
+        used = 1 if lap is not None else 0
+        # A long step the watch lapped every km inside: its km laps and the
+        # shorter one that ended it are the step, joined.
+        if lap is not None and _long(step) and _auto(lap):
+            j = i + 1
+            while j < len(laps) and _auto(laps[j]) and _fits(step, laps[j]):
+                j += 1
+            if j < len(laps) and _fits(step, laps[j]) and _nearer(step, laps[i:j], laps[j]):
+                j += 1
+            used = j - i
+            lap = _joined(laps[i:j]) if used > 1 else lap
         pairs.append((step, lap))
-    return pairs, laps[len(steps):]
+        i += used
+    return pairs, laps[i:]
+
+
+def _auto(lap: Mapping[str, Any]) -> bool:
+    return any(abs(lap["metres"] - m) <= m * 0.012 for m in AUTO_LAP_METRES)
+
+
+def _long(step: Mapping[str, Any]) -> bool:
+    return (step.get("metres") or 0) >= LONG_STEP_METRES or (step.get("seconds") or 0) >= LONG_STEP_SECONDS
+
+
+def _nearer(step: Mapping[str, Any], have: Sequence[Mapping[str, Any]], last: Mapping[str, Any]) -> bool:
+    """Whether the lap after a long step's km laps is the step's own last part:
+    taking it brings the step nearer the length it was planned to be."""
+    for key, unit in (("metres", "metres"), ("seconds", "seconds")):
+        want = step.get(key)
+        if want:
+            got = sum(l[unit] for l in have)
+            return abs(got + last[unit] - want) < abs(got - want)
+    return False
+
+
+def _stride_steps(pairs: Sequence[tuple[dict[str, Any], dict[str, Any] | None]]) -> list[dict[str, Any]]:
+    """The reps that are strides: two or more, each short, in a run that has a
+    longer running part as well. Empty when the reps are the session."""
+    reps = [s for s, _ in pairs if s.get("rep")]
+    if len(reps) < 2 or not any(s["kind"] in ("interval", "warmup", "cooldown") and not s.get("rep") for s, _ in pairs):
+        return []
+
+    def short(step: Mapping[str, Any], lap: Mapping[str, Any] | None) -> bool:
+        if step.get("seconds"):
+            return step["seconds"] <= STRIDE_SECONDS
+        if step.get("metres"):
+            return step["metres"] <= STRIDE_METRES
+        return lap is not None and lap["seconds"] <= STRIDE_SECONDS
+
+    return reps if all(short(s, l) for s, l in pairs if s.get("rep")) else []
 
 
 def _weighted_hr(laps: Sequence[Mapping[str, Any]]) -> float | None:
@@ -200,9 +272,14 @@ _LABELS = {"warmup": "Warm up", "cooldown": "Cool down", "interval": "Run"}
 def _rows(pairs: list[tuple[dict[str, Any], dict[str, Any] | None]], after: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Planned and run, one row per step that isn't a recovery, then anything run after the last step."""
     body = [s for s, _ in pairs if s["kind"] == "interval" and not s["rep"]]
+    strides = _stride_steps(pairs)
     rows = []
     for step, lap in pairs:
         if step["kind"] in _RESTING:
+            continue
+        if strides and step in strides:
+            if step is strides[0]:
+                rows.append(_strides_row([(s, l) for s, l in pairs if s in strides]))
             continue
         if step["rep"]:
             label = f"Rep {step['rep']}"
@@ -241,6 +318,29 @@ def _rows(pairs: list[tuple[dict[str, Any], dict[str, Any] | None]], after: list
     return rows
 
 
+def _strides_row(pairs: Sequence[tuple[dict[str, Any], dict[str, Any] | None]]) -> dict[str, Any]:
+    """The strides as one row: how many and how long, their pace range and each one's pace."""
+    run = [l for _, l in pairs if l is not None and l["metres"] and l["seconds"]]
+    planned = pairs[0][0].get("amount") or ""
+    note = f"{len(pairs)} \u00d7 {planned}" if planned else f"{len(pairs)} strides"
+    if not run:
+        return drop_empty({"label": "Strides", "kind": "strides", "note": f"{note}, not run"})
+    paces = [l["seconds"] / l["metres"] * 1000 for l in run]
+    hr = _weighted_hr(run)
+    # The pace column has room for one pace: their average. The range goes
+    # with the count, beside each stride's bar.
+    spread = f"{pace(min(paces))}\u2013{pace(max(paces))}" if len(paces) > 1 else None
+    together = sum(l["seconds"] for l in run) / sum(l["metres"] for l in run) * 1000
+    return drop_empty({
+        "label": "Strides", "kind": "strides", "note": f"{note} \u00b7 {spread}" if spread else note,
+        "pace": pace(together),
+        "hr": round(hr) if hr else None,
+        # Each stride's pace, in order, for the row's little chart.
+        "spark": [round(p) for p in paces],
+        "_strides": run,
+    })
+
+
 def _from_recording(columns: Mapping[str, Any] | None, laps: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]] | None:
     """The running between the recoveries, sample by sample, from the watch's recording.
 
@@ -255,7 +355,8 @@ def _from_recording(columns: Mapping[str, Any] | None, laps: Sequence[Mapping[st
         return None
     bounds, at = [], 0.0
     for lap in laps:
-        bounds.append((at, at + lap["metres"], lap["mark"]))
+        # Strides go apart from the km, like the recoveries.
+        bounds.append((at, at + lap["metres"], "stride" if lap.get("stride") else lap["mark"]))
         at += lap["metres"]
     pieces, previous = [], None
     for i, (d, t) in enumerate(zip(distance, seconds)):
@@ -270,11 +371,11 @@ def _from_recording(columns: Mapping[str, Any] | None, laps: Sequence[Mapping[st
         if dd <= 0 or dt <= 0:
             continue
         mark = next((m for a, b, m in bounds if a <= middle < b), bounds[-1][2])
-        if mark in _RESTING:
+        if mark in _RESTING or mark == "stride":
             continue
         pieces.append({"metres": dd, "seconds": dt, "hr": heart[i] if i < len(heart) else None, "mark": mark})
-    want_m = sum(l["metres"] for l in laps if l["mark"] not in _RESTING)
-    want_s = sum(l["seconds"] for l in laps if l["mark"] not in _RESTING)
+    want_m = sum(l["metres"] for l in laps if l["mark"] not in _RESTING and not l.get("stride"))
+    want_s = sum(l["seconds"] for l in laps if l["mark"] not in _RESTING and not l.get("stride"))
     got_m, got_s = sum(p["metres"] for p in pieces), sum(p["seconds"] for p in pieces)
     if not pieces or not got_s or not want_m or abs(got_m - want_m) > 0.1 * want_m:
         return None
@@ -282,6 +383,11 @@ def _from_recording(columns: Mapping[str, Any] | None, laps: Sequence[Mapping[st
         piece["metres"] *= want_m / got_m
         piece["seconds"] *= want_s / got_s
     return pieces
+
+
+def _each(seconds: float) -> str:
+    """How long each stride was: "20 s", or "1:05" past a minute."""
+    return f"{round(seconds)} s" if seconds < 60 else clock(seconds)
 
 
 def splits(laps: Sequence[Mapping[str, Any]], columns: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -293,7 +399,8 @@ def splits(laps: Sequence[Mapping[str, Any]], columns: Mapping[str, Any] | None 
     that add up exactly: each split is the difference of rounded running
     totals, so rounding never drifts the sum.
     """
-    running = _from_recording(columns, laps) or [l for l in laps if l["mark"] not in _RESTING]
+    strides = [l for l in laps if l.get("stride")]
+    running = _from_recording(columns, laps) or [l for l in laps if l["mark"] not in _RESTING and not l.get("stride")]
     resting = [l for l in laps if l["mark"] in _RESTING]
     out: list[dict[str, Any]] = []
     total_m = sum(l["metres"] for l in running)
@@ -338,8 +445,26 @@ def splits(laps: Sequence[Mapping[str, Any]], columns: Mapping[str, Any] | None 
             "hr": round(hr) if hr else None,
             "partial": partial or None,
         }))
+    stride_secs = 0
+    if strides:
+        # The strides as one row, after the km: Nov 11's six 20 s strides read
+        # as a 0.5 km split at 3:45 when they were counted in with the km.
+        stride_secs = int(round(sum(l["seconds"] for l in strides)))
+        metres = sum(l["metres"] for l in strides)
+        quick = min(l["seconds"] / l["metres"] * 1000 for l in strides if l["metres"])
+        hr = _weighted_hr(strides)
+        out.append(drop_empty({
+            "km": "Strides",
+            "time": clock(stride_secs),
+            "seconds": stride_secs,
+            # As the partial km reads ("4:37 (4:58 /km)"): their pace, then how many and how long.
+            "pace": f"{pace(stride_secs / metres * 1000)} ({len(strides)} \u00d7 {_each(stride_secs / len(strides))})",
+            "fastest": pace(quick),
+            "hr": round(hr) if hr else None,
+            "strides": True,
+        }))
     if resting:
-        secs = int(round(sum(l["seconds"] for l in laps))) - previous
+        secs = int(round(sum(l["seconds"] for l in laps))) - previous - stride_secs
         metres = sum(l["metres"] for l in resting)
         out.append(drop_empty({
             "km": "Recoveries",
@@ -355,6 +480,9 @@ def splits(laps: Sequence[Mapping[str, Any]], columns: Mapping[str, Any] | None 
 def _verdict(rows: list[dict[str, Any]], laps: list[dict[str, Any]], kind: str | None,
              split_rows: list[dict[str, Any]]) -> str:
     """One or two plain sentences on how the run went against its targets."""
+    stride = next((r for r in rows if r.get("kind") == "strides"), None)
+    if stride:
+        return _with_strides(rows, stride, kind)
     reps = [r for r in rows if r.get("rep") and r.get("_target")]
     if len(reps) >= 2:
         on = [r for r in reps if not r.get("soft")]
@@ -407,6 +535,35 @@ def _verdict(rows: list[dict[str, Any]], laps: list[dict[str, Any]], kind: str |
     return f"{line}, heart rate averaging {round(hr)}." if hr else f"{line}."
 
 
+def _with_strides(rows: list[dict[str, Any]], stride: Mapping[str, Any], kind: str | None) -> str:
+    """An easy run with strides: the run itself first, from its own laps, then
+    the strides in a few words. The strides are an add-on, never the verdict."""
+    main = [r for r in rows if r.get("_lap") and r["kind"] in ("interval", "warmup", "cooldown") and not r.get("rep")]
+    laps = [r["_lap"] for r in main]
+    metres, seconds = sum(l["metres"] for l in laps), sum(l["seconds"] for l in laps)
+    hr = _weighted_hr(laps)
+    part = f"{metres / 1000:.1f} km at {pace(seconds / metres * 1000)}" if metres else None
+    part = f"{part}, heart rate {round(hr)}" if part and hr else part
+    misses = [r for r in main if r.get("soft")]
+    easy = kind in ("easy", "recovery")
+    if not part:
+        head = "Run as planned."
+    elif misses and misses[0].get("miss") == "quick":
+        head = f"Quicker than planned: {part}." + (" Easy days do their job best kept easy." if easy else "")
+    elif misses and misses[0].get("miss") == "high":
+        head = f"Heart rate above the target: {part}."
+    elif misses:
+        head = f"A little slower than planned: {part}."
+    elif any(r.get("_target") for r in main):
+        head = f"On target. {'Easy ' if easy else ''}{part}."
+    else:
+        head = f"{'Easy ' if easy else ''}{part}."
+    spark = stride.get("spark") or []
+    if not spark:
+        return head
+    return f"{head} {_word(len(spark)).capitalize()} strides, fastest {pace(min(spark))}."
+
+
 def _short(rows: list[dict[str, Any]], total_m: float, total_s: float) -> str | None:
     """The verdict in a few words, for the Done today row."""
     reps = [r for r in rows if r.get("rep") and r.get("_target")]
@@ -427,6 +584,10 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
     total_s = sum(l["seconds"] for l in laps)
     paired = _paired(planned_steps(workout), laps) if workout else None
     rows = _rows(*paired) if paired else []
+    # Stride laps go apart in the splits, as one row.
+    for r in rows:
+        for lap in r.get("_strides") or []:
+            lap["stride"] = True
     split_rows = splits(laps, stream.parse_stream(recording) if recording else None)
     reps = [r["_lap"] for r in rows if r.get("rep") and r.get("_lap")]
     if len(reps) >= 2:
@@ -446,6 +607,7 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
     for r in rows:
         r.pop("_lap", None)
         r.pop("_target", None)
+        r.pop("_strides", None)
     return drop_empty({
         "verdict": verdict,
         "short": short,

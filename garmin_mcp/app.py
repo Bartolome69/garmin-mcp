@@ -676,6 +676,9 @@ def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
     for r in rows:
         if r.get("kind") in ("warmup", "cooldown", "extra"):
             r["colour"] = "easy"
+        elif r.get("kind") == "strides":
+            # Quick, short and few: the hard colour, whatever the run around them.
+            r["colour"] = "hard"
         elif r.get("rep") or colour != "long":
             r["colour"] = colour
         else:

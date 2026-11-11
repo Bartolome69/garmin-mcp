@@ -700,10 +700,62 @@ def builder_checks() -> None:
         os.environ.pop(app_routes.BUILDER_ENV, None)
 
 
+# Bart's 10 km easy + strides, Nov 11, lap by lap as Garmin recorded it: the
+# 9.5 km easy step lapped every km (eight 1 km laps and a 0.93), then six
+# 20 s strides, each with its jog, the last jog a 4 s stub.
+STRIDES_RUN = [(1000, 320, 111), (1000, 303, 121), (1000, 293, 124), (1000, 296, 129), (1000, 295, 127),
+               (1000, 294, 132), (1000, 292, 133), (1000, 293, 132), (930, 277, 130),
+               (101.5, 20, 141, "RECOVERY", 190, 62, 140), (90.9, 20, 133, "RECOVERY", 130, 44, 136),
+               (90.5, 20, 129, "RECOVERY", 120, 43, 136), (102.0, 20, 134, "RECOVERY", 150, 53, 141),
+               (75.8, 20, 135, "RECOVERY", 120, 38, 135), (93.9, 20, 133, "RECOVERY", 10, 4, 145)]
+
+
+def strides_checks() -> None:
+    laps = []
+    for row in STRIDES_RUN:
+        laps.append({"distance": row[0], "duration": row[1], "averageHR": row[2], "intensityType": "ACTIVE"})
+        if len(row) > 3:
+            laps.append({"distance": row[4], "duration": row[5], "averageHR": row[6], "intensityType": row[3]})
+    workout = {"workoutSegments": [{"workoutSteps": [
+        {"stepOrder": 1, "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "distance"},
+         "endConditionValue": 9500, "targetType": {"workoutTargetTypeKey": "heart.rate.zone"}, "targetValueOne": 120, "targetValueTwo": 145},
+        {"stepOrder": 2, "type": "RepeatGroupDTO", "numberOfIterations": 6, "workoutSteps": [
+            {"stepOrder": 1, "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 20},
+            {"stepOrder": 2, "stepType": {"stepTypeKey": "recovery"}, "endCondition": {"conditionTypeKey": "lap.button"}}]}]}]}
+    result = analysis.analyse(workout, {"lapDTOs": laps}, "easy")
+    rows = result.get("planned_and_run") or []
+    run = next((r for r in rows if r["label"] == "Run"), {})
+    check("a long step the watch lapped every km reads as one: the whole 8.9 km easy part against its target",
+          run.get("pace") == "4:58" and run.get("hr") == 126 and not run.get("soft"), str(run))
+    stride = next((r for r in rows if r.get("kind") == "strides"), {})
+    check("six 20 s strides are one row, with their pace range and each one's pace",
+          stride.get("note") == "6 \u00d7 20 s \u00b7 3:16\u20134:24" and stride.get("pace") == "3:36"
+          and len(stride.get("spark") or []) == 6 and not any(r.get("rep") for r in rows), str(stride))
+    check("nothing is left over as run on after the workout", not any(r["label"] == "Ran on" for r in rows), str(rows))
+    check("the numbers at the top are the whole run's, not the strides'",
+          [s["l"] for s in result["stats"]] == ["km", "time", "/km avg", "bpm avg"] and result["stats"][2]["v"] == "4:57", str(result["stats"]))
+    check("the verdict is about the easy run first, then the strides in a few words",
+          result["verdict"] == "On target. Easy 8.9 km at 4:58, heart rate 126. Six strides, fastest 3:16.", result["verdict"])
+    split_labels = [s["km"] for s in result["splits"]]
+    stride_split = next((s for s in result["splits"] if s.get("strides")), {})
+    check("the splits: the km, then the strides as one row, then the jogs",
+          split_labels[:9] == [str(i) for i in range(1, 9)] + ["0.9"] and split_labels[9:] == ["Strides", "Recoveries"]
+          and stride_split.get("pace") == "3:36 (6 \u00d7 20 s)" and stride_split.get("fastest") == "3:16", str(result["splits"][8:]))
+    total = sum(s["seconds"] for s in result["splits"])
+    check("and they still add up to the run's time", total == result["seconds"], f"{total} != {result['seconds']}")
+    # Reps long enough to be the session stay reps, row by row.
+    import copy
+    long_reps = copy.deepcopy(workout)
+    long_reps["workoutSegments"][0]["workoutSteps"][1]["workoutSteps"][0]["endConditionValue"] = 180
+    check("three-minute reps are still reps, not strides",
+          not analysis._stride_steps([(s, None) for s in analysis.planned_steps(long_reps)]))
+
+
 def main() -> int:
     extra_checks()
     verdict_checks()
     analysis_checks()
+    strides_checks()
     easier_checks()
     api_checks()
     assistant_checks()

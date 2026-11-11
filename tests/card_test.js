@@ -428,8 +428,8 @@ f.src = "card.html";</script></body>`);
       share_image: { url: "https://garmin.daash.test/share/#run" },
       card: { type: "long", planned: "Long 18km w 3x2km", week: 3, weeks: 12, verdict: "All three reps on target.",
         app_url: "https://daash.test/app/#/run/7?login=abc&from=run_card" } };
-    fs.writeFileSync(path.join(dir, "rc.html"), RUN_CARD);
-    fs.writeFileSync(path.join(dir, "host.html"), host(RUN, "rc.html"));
+    fs.writeFileSync(path.join(dir, "run.html"), RUN_CARD);
+    fs.writeFileSync(path.join(dir, "host.html"), host(RUN, "run.html"));
     page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
     page.on("pageerror", (e) => errors.push(e.message));
     await listen(page);
@@ -460,7 +460,7 @@ f.src = "card.html";</script></body>`);
     const EASY = { ...RUN, card: { type: "easy", planned: "Easy 8k", verdict: "Easy and even." },
       splits: [5.20, 5.16, 5.14, 5.12].map((m, i) => ({ split: i + 1, distance_km: 1, duration: "5m " + Math.round((m % 1) * 100) + "s",
         pace_per_km: "5:" + String(Math.round((m % 1) * 100)).padStart(2, "0") + " /km", avg_hr: 126 + i * 3 })) };
-    fs.writeFileSync(path.join(dir, "host.html"), host(EASY, "rc.html"));
+    fs.writeFileSync(path.join(dir, "host.html"), host(EASY, "run.html"));
     page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto("file://" + path.join(dir, "host.html"));
@@ -470,6 +470,27 @@ f.src = "card.html";</script></body>`);
     check("an easy run: each km's pace on its bar, the splits in a line, no rep rows",
       rc.reps === 0 && rc.labels.join() === "5:20,5:16,5:14,5:12" && /Km splits 5:20 to 5:12 · heart rate 126 to 135/.test(rc.text)
       && /Easy · /.test(rc.text) === false && /^Easy/m.test(rc.text), JSON.stringify(rc).slice(0, 400));
+    await page.close();
+
+    // Nov 11: an easy run with six 20 s strides. The km are the bars, the
+    // strides thin bars after them and a line of their own, never reps.
+    const km = [[1, "5m 20s", "5:20", 111], [1, "5m 03s", "5:03", 121], [1, "4m 53s", "4:53", 124], [1, "4m 56s", "4:56", 129],
+      [1, "4m 55s", "4:55", 127], [1, "4m 54s", "4:54", 132], [1, "4m 52s", "4:52", 133], [1, "4m 53s", "4:53", 132], [0.93, "4m 37s", "4:58", 130]];
+    const strideLaps = [["3:17", 141], ["3:40", 133], ["3:41", 129], ["3:16", 134], ["4:24", 135], ["3:33", 133]];
+    const STRIDES = { ...RUN, card: { type: "easy", planned: "10 km easy + strides", verdict: "On target. Easy 8.9 km at 4:58, heart rate 126. Six strides, fastest 3:16." },
+      splits: km.map((k, i) => ({ split: i + 1, distance_km: k[0], duration: k[1], pace_per_km: k[2] + " /km", avg_hr: k[3] }))
+        .concat(strideLaps.flatMap((x, i) => [{ split: 10 + i * 2, distance_km: 0.09, duration: "20s", pace_per_km: x[0] + " /km", avg_hr: x[1] },
+          { split: 11 + i * 2, intensity: "recovery", distance_km: 0.12, duration: "45s", pace_per_km: "5:50 /km", avg_hr: 136 }])) };
+    fs.writeFileSync(path.join(dir, "host.html"), host(STRIDES, "run.html"));
+    page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("file://" + path.join(dir, "host.html"));
+    await page.waitForTimeout(800);
+    rc = await page.frames()[1].evaluate(() => ({ text: document.body.innerText, reps: document.querySelectorAll(".rep").length,
+      bars: document.querySelectorAll(".chart .bar:not(.stride)").length, strides: document.querySelectorAll(".chart .bar.stride").length }));
+    check("strides: the km as bars, six thin stride bars after them, a line for each, no rep rows",
+      rc.reps === 0 && rc.bars === 9 && rc.strides === 6 && /6 strides of 20 s · fastest 3:16 \/km/.test(rc.text)
+      && /Km 9 · 6 strides/.test(rc.text) && /Km splits 5:20 to 4:58/.test(rc.text), JSON.stringify(rc).slice(0, 500));
     await page.close();
 
     check("no page threw an error", errors.length === 0, errors.join(" | "));

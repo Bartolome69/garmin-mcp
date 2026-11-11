@@ -1419,6 +1419,16 @@
     if (!p) return [facts, el("span", { class: "dnote", text: "The laps need the chat: ask below." })];
     var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || []).filter(function (x) { return x && x.pace_per_km; });
     if (splits.length < 2) return [facts];
+    // Strides (Nov 11): short quick laps after a km or more of running are an
+    // add-on, drawn as thin bars after the km, never as reps. The run card
+    // (run.html) uses the same rule.
+    var lapSecs = function (x) { return clockSecs(x.duration) || 0; };
+    var resting = function (x) { return x.intensity === "recovery" || x.intensity === "rest"; };
+    var strideLaps = splits.filter(function (x) { return !resting(x) && lapSecs(x) && lapSecs(x) <= 45; });
+    var steadyLaps = splits.filter(function (x) { return !resting(x) && lapSecs(x) > 45; });
+    var steadyKm = steadyLaps.reduce(function (t, x) { return t + (x.distance_km || 0); }, 0);
+    if (strideLaps.length >= 2 && steadyKm >= 1 && steadyLaps.length >= 2) splits = steadyLaps;
+    else strideLaps = [];
     var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
     var known = secs.filter(function (v) { return v != null; }), lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
     var work = workLaps(splits, secs, lo, hi), colour = typeLook(s).v;
@@ -1448,6 +1458,12 @@
       var repRows = splits.filter(function (x, i) { return work[i]; });
       reps = repRows.length;
     }
+    // The strides' quicker paces are on the same scale as the km, so each
+    // stands as high as it ran.
+    if (strideLaps.length) {
+      var strideSecs = strideLaps.map(function (x) { return paceSecs(x.pace_per_km); }).filter(function (v) { return v != null; });
+      if (strideSecs.length) lo = Math.min(lo, Math.min.apply(null, strideSecs));
+    }
     var top = lo - Math.max(8, (hi - lo) * 0.08), bottom = hi + Math.max(12, (hi - lo) * 0.15);
     var height = function (v) { return 8 + 80 * (bottom - v) / (bottom - top); };
     var labelReps = reps > 1 && reps <= 8 && mixed;
@@ -1457,11 +1473,20 @@
         title: (x.split != null ? "Lap " + x.split : "km " + (x.km || i + 1)) + " · " + units(x.pace_per_km) + (x.avg_hr ? " · " + x.avg_hr + " bpm" : "") },
         work[i] && labelReps ? [el("em", { text: units(x.pace_per_km).replace(/\s*\/(km|mi)$/, "") })] : []);
     });
+    if (strideLaps.length) {
+      kids.push(el("span", { style: "flex:0 0 4px;background:transparent" }));
+      strideLaps.forEach(function (x) {
+        var v = paceSecs(x.pace_per_km);
+        kids.push(el("span", { style: "flex:0 0 4px;height:" + Math.min(100, Math.round(v == null ? 8 : height(v))) + "%;background:var(--hard)",
+          title: "Stride · " + units(x.pace_per_km) + (x.avg_hr ? " · " + x.avg_hr + " bpm" : "") }));
+      });
+    }
     var avg = paceSecs(sum.pace_per_km);
     // The average line only means something against reps; an easy run's km
     // are all near it.
     if (mixed && avg != null && avg > top && avg < bottom) kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + units(sum.pace_per_km).replace(/\s*\/(km|mi)$/, "") })]));
-    var fast = secs.indexOf(lo), slow = secs.indexOf(hi);
+    var kmSecs = secs.filter(function (v) { return v != null; });
+    var fast = secs.indexOf(Math.min.apply(null, kmSecs)), slow = secs.indexOf(Math.max.apply(null, kmSecs));
     var lapName = function (k) { return splits[k].split != null ? (work[k] && labelReps ? "rep " + (work.slice(0, k + 1).filter(Boolean).length) : "lap " + splits[k].split) : "km " + (splits[k].km || k + 1); };
     var chart = el("div", { class: "chart", role: "img", "aria-label": splits.length + " laps" }, kids);
     if (mixed) {
@@ -1476,6 +1501,10 @@
     var line = splits.length <= 12
       ? "Splits " + splits.map(function (x) { return units(x.pace_per_km).replace(/\s*\/(km|mi)$/, ""); }).join(" · ") + (hr.average_bpm ? " · " + hr.average_bpm + " bpm avg" : "")
       : "Fastest " + units(splits[fast].pace_per_km) + " (" + lapName(fast) + "), slowest " + units(splits[slow].pace_per_km) + " (" + lapName(slow) + ").";
+    if (strideLaps.length) {
+      var quickest = strideLaps.reduce(function (a, x) { var v = paceSecs(x.pace_per_km); return v != null && (a == null || v < paceSecs(a.pace_per_km)) ? x : a; }, null);
+      line = line.replace(/\.$/, "") + " \u00b7 " + strideLaps.length + " strides" + (quickest ? ", fastest " + units(quickest.pace_per_km) : "");
+    }
     return [facts, chart, el("span", { class: "dnote", text: line })];
   }
   function plannedParts(p, s) {

@@ -434,3 +434,7 @@ body.desk .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 
 .bbars .bbar.race { outline: 2px solid var(--race); outline-offset: 1px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); align-items: center; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+/* Strides as one row: each one's pace as a little bar (Nov 11). */
+.spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; margin-left: 8px; vertical-align: -1px; }
+.spark i { display: block; width: 4px; border-radius: 1px; }
