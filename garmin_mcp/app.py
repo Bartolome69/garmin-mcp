@@ -512,6 +512,24 @@ async def today_payload() -> dict[str, Any]:
     })
 
 
+async def heads_up_payload(day: str) -> dict[str, Any] | None:
+    """The session planned on one day, for the notification before it, or None.
+
+    Lighter than Today: the plan and that one workout, nothing else read from Garmin.
+    """
+    plan = await server_mod.get_plan()
+    if not isinstance(plan, Mapping) or _error(plan) or plan.get("source") == "log":
+        return None
+    lead, on_day = training_plan.day_sessions(plan, day)
+    waiting = [s for s in on_day if s.get("status") in ("today", "ahead")]
+    if not waiting:
+        return None
+    session = lead if lead in waiting else min(waiting, key=training_plan._rank)
+    workout = await _workout(session.get("workout_id"))
+    totals = training_plan.session_totals(workout, training_plan.easy_speed(plan)) if workout else None
+    return {"date": day, "name": _display(session.get("name")), "stats": _stats(totals, session.get("type"), workout)}
+
+
 # -- one session ---------------------------------------------------------------
 
 def _easier_state(workout: Mapping[str, Any] | None) -> dict[str, Any] | None:
@@ -1198,6 +1216,7 @@ async def you_payload() -> dict[str, Any]:
                   "chosen": [c for c, said in crews._TIME_WORDS.items() if said in str((member or {}).get("times") or "")]} if member else None,
         "assistant": assistant(), "ask": _ask_links(goal_prompt),
         "privacy": PRIVACY,
+        "heads_up": store.heads_up_for(user_token) if user_token else None,
     })
 
 
@@ -1606,13 +1625,22 @@ async def api_push(request: Request) -> Response:
         return _json({"error": "Daash couldn't set up notifications just now. Try again in a moment."}, 500)
 
 
+HEADS_UP_SAID = {
+    "evening": "You'll hear about a session at 8pm the evening before.",
+    "6": "You'll hear about a session at 6am that morning.",
+    "7": "You'll hear about a session at 7am that morning.",
+    "8": "You'll hear about a session at 8am that morning.",
+}
+
+
 async def _push(request: Request) -> Response:
     from . import official, push
 
     user_token = official.current()
     if request.method == "GET":
         on = await asyncio.to_thread(store.has_push, user_token) if user_token else False
-        return _json({"key": await asyncio.to_thread(push.public_key), "on_somewhere": on})
+        when = await asyncio.to_thread(store.heads_up_for, user_token) if on else None
+        return _json(drop_empty({"key": await asyncio.to_thread(push.public_key), "on_somewhere": on, "heads_up": when}))
     try:
         body = await request.json()
     except ValueError:
@@ -1624,6 +1652,14 @@ async def _push(request: Request) -> Response:
         if gone:
             _track("app_push_off", drop_empty({"layout": _layout(request), "home_screen": _home(request)}))
         return _json({"ok": True})
+    if "heads_up" in body:
+        when = str(body.get("heads_up") or "")
+        if when not in store.HEADS_UP or not user_token:
+            return _json({"error": "That isn't one of the times."}, 400)
+        if not await asyncio.to_thread(store.set_heads_up, user_token, when):
+            return _json({"error": "Turn notifications on first."}, 400)
+        _track("app_push_time", {"when": when})
+        return _json({"ok": True, "heads_up": when, "message": HEADS_UP_SAID[when]})
     found = push.valid_subscription(body.get("subscription"))
     if not found or not user_token:
         return _json({"error": "This phone's notification address didn't come through. Try again."}, 400)

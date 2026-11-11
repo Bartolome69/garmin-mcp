@@ -15,6 +15,7 @@ import re
 import secrets
 import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,7 +59,7 @@ DEMO = DemoGarmin()
 session_mod.build_client = lambda **_: DEMO
 
 import garmin_mcp.hosted as hosted  # noqa: E402
-from garmin_mcp import analysis, analytics, oauth, store  # noqa: E402
+from garmin_mcp import analysis, analytics, oauth, server, store  # noqa: E402
 
 SENT: list[dict] = []
 analytics._post = SENT.append
@@ -536,6 +537,29 @@ def api_checks() -> None:
     check("the crew sees a weekday run in the evening now", [bool(x.get("kind")) for x in weekday["segs"]] == [False, False, True],
           str(weekday))
     check("an unknown time is refused", client.post("/app/api/you/times", headers=auth, json={"times": ["noon"]}).status_code == 400)
+
+    # Notifications (Nov 11): when the session heads-up goes, from You.
+    r = client.post("/app/api/push", headers=auth, json={"heads_up": "6"})
+    check("no heads-up time without notifications on", r.status_code == 400, r.text[:120])
+    store.save_push(user_token, "https://push.example.com/runner", "p256dh-key", "auth-key", "Europe/London")
+    got = client.get("/app/api/push", headers=auth).json()
+    you = client.get("/app/api/you", headers=auth).json()
+    check("with notifications on, the heads-up goes the evening before", got.get("heads_up") == "evening"
+          and you.get("heads_up") == "evening", f"{got} / {you.get('heads_up')}")
+    r = client.post("/app/api/push", headers=auth, json={"heads_up": "6"})
+    check("it moves to 6am", r.status_code == 200 and r.json().get("message") == "You'll hear about a session at 6am that morning."
+          and client.get("/app/api/push", headers=auth).json().get("heads_up") == "6", r.text[:160])
+    check("a time not offered is refused", client.post("/app/api/push", headers=auth, json={"heads_up": "5"}).status_code == 400)
+    check("the time change is counted", any(e["properties"].get("when") == "6" for e in posted("app_push_time")), str(posted("app_push_time")))
+    # Read as the server's notification pass reads it: as this person, outside any request.
+    plan = hosted._as_person(user_token, server.get_plan)
+    days = sorted({s["date"] for w in plan.get("weeks") or [] for s in w.get("sessions") or []
+                   if s.get("status") in ("today", "ahead")})
+    ahead = hosted._as_person(user_token, app_routes.heads_up_payload, days[0])
+    check("the heads-up names the day's session and its numbers", ahead and ahead["date"] == days[0] and ahead["name"]
+          and ahead.get("stats"), str(ahead))
+    rest = next(d for d in (str(date.fromisoformat(days[0]) + timedelta(days=i)) for i in range(1, 14)) if d not in days)
+    check("a rest day has nothing to say", hosted._as_person(user_token, app_routes.heads_up_payload, rest) is None, rest)
 
     check("delete needs saying", client.post("/app/api/you/delete", headers=auth, json={}).status_code == 400)
     check("a wrong word doesn't delete", client.post("/app/api/you/delete", headers=auth, json={"confirm": "yes"}).status_code == 400

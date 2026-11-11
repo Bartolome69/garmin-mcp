@@ -1368,7 +1368,7 @@ function youView(d) {
       { l: "Ask Claude opens in", v: store.get(OPENS) === "web" ? "The browser" : "The Claude app", sub: "Tap to switch", action: "opens" }] } : g)
       .map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
       <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
-    ${pushRow()}
+    ${pushRow(d)}
     <p class="small" style="text-align:center">Daash 0.1 · <a href="${esc(d.privacy)}" target="_blank" rel="noopener">Privacy</a><br>Daash is independent and not made or endorsed by Garmin.</p>`;
 }
 
@@ -1450,7 +1450,8 @@ async function showYou() {
             toast(store.get(OPENS) === "web" ? "Ask Claude opens in the browser." : "Ask Claude opens the Claude app, or the browser without it.");
             return showYou();
           }
-          if (b.dataset.you === "push") return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => showYou());
+          if (b.dataset.you === "push") return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => { cache.drop((k) => k === "you"); showYou(); });
+          if (b.dataset.you === "headsup") return headsUpSheet(d);
           return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut();
         };
     });
@@ -1679,7 +1680,7 @@ async function signInPost(path, body) {
 
 // -- Home screen and notifications (Nov 10) -----------------------------------
 // The step 2 test: after a second day with the app, a card asks to put it on
-// the home screen; opened from there, a card offers a morning heads-up and a
+// the home screen; opened from there, a card offers a session heads-up and a
 // run's verdict once it syncs. "Not now" quiets either for two weeks.
 const DAYS_SEEN = "daash.days";
 const HOME_LATER = "daash.home.later";
@@ -1725,8 +1726,8 @@ function nudge() {
   if (!canPush() || Notification.permission === "denied" || pushIsOn() || quiet(PUSH_LATER)) return "";
   shownOnce("push_prompt_shown");
   return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
-      <span class="strong">A heads-up each morning</span>
-      <span class="meta" style="font-size:13.5px;line-height:1.45">Today's session at 7am on days you have one, and how your run went once your watch syncs. Turn them off any time in You.</span></span>
+      <span class="strong">A heads-up before each session</span>
+      <span class="meta" style="font-size:13.5px;line-height:1.45">Tomorrow's session at 8pm the evening before, and how your run went once your watch syncs. Change the time or turn them off in You.</span></span>
     <div class="pills"><button class="pill" data-nudge="push-later">Not now</button><button class="pill light" data-nudge="push">Turn on</button></div></div>`;
 }
 
@@ -1776,7 +1777,7 @@ async function turnOnPush(where) {
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { tz = null; }
     await api("push", { method: "POST", body: JSON.stringify({ subscription: sub.toJSON(), tz }) });
     store.set(PUSH_ON, "1");
-    toast("Notifications on. The first comes on your next session morning.");
+    toast("Notifications on. You'll hear about each session at 8pm the evening before. Change it in You.");
   } catch (e) {
     if (e instanceof SignedOut) return route();
     toast(e.message || "Notifications couldn't be turned on.");
@@ -1799,15 +1800,38 @@ async function turnOffPush() {
   }
 }
 
-// In You: the switch, on a phone that can have notifications at all.
-function pushRow() {
+// When the heads-up about a session goes (Nov 11). The evening before is the default.
+const HEADS_UP = [["evening", "Evening before", "8pm the night before"], ["6", "6am", "That morning"],
+  ["7", "7am", "That morning"], ["8", "8am", "That morning"]];
+
+// In You: the switch, on a phone that can have notifications at all, and when they go.
+function pushRow(d = {}) {
   if (!homeScreen() || !canPush()) return "";
   const blocked = Notification.permission === "denied";
   const on = pushIsOn();
   const r = blocked ? { l: "Notifications", v: "Blocked", sub: "Allow them for Daash in your phone's settings." }
-    : { l: "Notifications", v: on ? "On" : "Off", sub: "Morning heads-up and run verdicts. Tap to switch", action: "push" };
+    : { l: "Notifications", v: on ? "On" : "Off", sub: "Session heads-up and run verdicts. Tap to switch", action: "push" };
+  const when = HEADS_UP.find(([code]) => code === (d.heads_up || "evening"));
+  const time = on && !blocked ? youRow({ l: "Session heads-up", v: when[1], sub: "When you hear about a planned session", action: "headsup" }, {}, 1) : "";
   return `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">NOTIFICATIONS</span>
-    <div class="card" style="overflow:hidden">${youRow({ ...r, tone: on ? "ok" : undefined }, {}, 0)}</div></section>`;
+    <div class="card" style="overflow:hidden">${youRow({ ...r, tone: on ? "ok" : undefined }, {}, 0)}${time}</div></section>`;
+}
+
+function headsUpSheet(d) {
+  const chosen = d.heads_up || "evening";
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Session heads-up</span>
+      <span class="meta">When you hear what's planned. Out the door early? The evening before gives you time to get kit ready.</span></div>
+    <div class="times-grid">${HEADS_UP.map(([code, label, sub]) => `<button class="pill" data-when="${code}" aria-pressed="${code === chosen}" style="flex-direction:column;gap:2px;height:auto;padding:10px 12px"><span>${esc(label)}</span><span style="font-size:12px;opacity:0.72">${esc(sub)}</span></button>`).join("")}</div>
+    <div class="pills"><button class="pill" data-close>Cancel</button></div>`, (holder, close) => {
+    holder.querySelectorAll("[data-when]").forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const r = await api("push", { method: "POST", body: JSON.stringify({ heads_up: b.dataset.when }) });
+          close(); toast(r.message); cache.drop((k) => k === "you"); showYou();
+        } catch (e) { if (e instanceof SignedOut) return route(); toast(e.message); }
+      };
+    });
+  });
 }
 
 // Opened from the home screen: on iPhone that keeps its own storage, so

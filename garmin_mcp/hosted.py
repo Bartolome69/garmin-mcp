@@ -1309,12 +1309,15 @@ def _keep_alive_forever() -> None:
 
 
 # ---------------------------------------------------------- app notifications
-# For phones that turned them on in the app (Nov 10): a morning heads-up on a
-# day with a session, and a run's verdict once it syncs. A morning with
-# nothing planned sends nothing: a nudge is only worth it with something in it.
+# For phones that turned them on in the app (Nov 10): a heads-up about a
+# planned session, and a run's verdict once it syncs. A day with nothing
+# planned sends nothing: a nudge is only worth it with something in it.
 NOTIFY_EVERY = 10 * 60
 NOTIFY_SPACING = 2.0
-MORNING_HOURS = (7, 10)
+# The heads-up goes at the hour each person chose in You (Nov 11): the evening
+# before, or that morning. A pass that misses the hour still sends within the window.
+HEADS_UP_HOUR = {"evening": 20, "6": 6, "7": 7, "8": 8}
+HEADS_UP_WINDOW = 3
 # New runs are looked for in waking hours only: no reads on Garmin through the night.
 RUN_HOURS = (5, 23)
 # A run older than this when Daash first sees it is old news, not a notification.
@@ -1350,15 +1353,27 @@ def _local_now(tz: str | None, now: float) -> datetime:
     return datetime.fromtimestamp(now, zone)
 
 
-def morning_message(today_payload: dict[str, Any], day: str) -> dict[str, Any] | None:
-    """Today's session as a notification, or None when nothing is planned today."""
-    card = today_payload.get("next") if isinstance(today_payload, dict) else None
+def heads_up_message(card: dict[str, Any] | None, day: str, evening: bool = False) -> dict[str, Any] | None:
+    """A day's session as a notification, or None when nothing is planned that day."""
     if not isinstance(card, dict) or card.get("date") != day:
         return None
     stats = " · ".join(f"{s.get('v', '')} {s.get('u', '')}".strip() for s in card.get("stats") or [] if s.get("v"))
-    return {"title": f"Today: {card.get('name') or 'your session'}",
-            "body": stats or "On your watch and ready to go.",
-            "url": "/app/#/today?from=push_morning", "tag": f"morning-{day}"}
+    name = card.get("name") or "your session"
+    if evening:
+        return {"title": f"Tomorrow: {name}", "body": stats or "On your watch and ready to go.",
+                "url": f"/app/#/session/{day}?from=push_evening", "tag": f"session-{day}"}
+    return {"title": f"Today: {name}", "body": stats or "On your watch and ready to go.",
+            "url": "/app/#/today?from=push_morning", "tag": f"session-{day}"}
+
+
+def _heads_up_due(when: str | None, local: datetime) -> tuple[str, bool] | None:
+    """The day a heads-up is due for now, and whether it's the evening before; None outside the hours."""
+    when = when if when in HEADS_UP_HOUR else store.DEFAULT_HEADS_UP
+    start = HEADS_UP_HOUR[when]
+    if not start <= local.hour < start + HEADS_UP_WINDOW:
+        return None
+    evening = when == "evening"
+    return (local.date() + timedelta(days=1) if evening else local.date()).isoformat(), evening
 
 
 def run_message(run: dict[str, Any]) -> dict[str, Any] | None:
@@ -1405,14 +1420,17 @@ def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> di
         if user_token is None:
             continue
         local = _local_now(subs[0].get("tz"), now)
-        day = local.date().isoformat()
         try:
-            if MORNING_HOURS[0] <= local.hour < MORNING_HOURS[1] and subs[0].get("last_morning") != day:
-                message = morning_message(_as_person(user_token, app_routes.today_payload), day)
+            due = _heads_up_due(subs[0].get("heads_up"), local)
+            # last_morning holds the session day already told about, so changing
+            # the time never tells anyone about the same day twice.
+            if due and subs[0].get("last_morning") != due[0]:
+                day, evening = due
+                message = heads_up_message(_as_person(user_token, app_routes.heads_up_payload, day), day, evening)
                 # Marked once read: a read that fails is tried again next pass.
                 store.mark_push(owner, morning=day)
                 if message:
-                    counts["morning"] += _send_all(owner, subs, message, "morning")
+                    counts["morning"] += _send_all(owner, subs, message, "evening" if evening else "morning")
             latest = _latest_run(user_token) if RUN_HOURS[0] <= local.hour < RUN_HOURS[1] else None
             if latest and str(latest.get("activityId")) != (subs[0].get("last_run") or ""):
                 first_look = subs[0].get("last_run") is None

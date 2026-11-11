@@ -111,18 +111,36 @@ endpoint, p256dh, auth = push.valid_subscription(sub)
 store.save_push(user, endpoint, p256dh, auth, "Europe/London")
 check("a phone that turned them on is kept, under the person", store.has_push(user) and len(store.push_subs()) == 1)
 check("someone else can't turn another person's phone off", not store.drop_push(endpoint, "someone-else"))
+check("the heads-up goes the evening before unless they choose", store.heads_up_for(user) == "evening")
+check("they can move it to 6am, on every phone of theirs", store.set_heads_up(user, "6") and store.heads_up_for(user) == "6"
+      and store.push_subs()[0]["heads_up"] == "6")
+second = {**sub, "endpoint": sub["endpoint"] + "-ipad"}
+store.save_push(user, *push.valid_subscription(second), "Europe/London")
+check("a second phone takes the time already chosen", [p["heads_up"] for p in store.push_subs()] == ["6", "6"])
+store.drop_push(second["endpoint"], user)
+try:
+    store.set_heads_up(user, "5")
+    check("a time that isn't offered is refused", False)
+except ValueError:
+    check("a time that isn't offered is refused", True)
+check("without notifications on there's nothing to set", not store.set_heads_up("nobody", "7") and store.heads_up_for("nobody") is None)
 store.forget_push(user, store.email_hash_for(user))
 check("disconnecting forgets every phone", not store.has_push(user) and not store.push_subs())
 
 print("What they say")
 today = "2026-11-11"
-m = hosted.morning_message({"next": {"date": today, "name": "Easy run 8 km",
-                                     "stats": [{"v": "8", "u": "km"}, {"v": "~44", "u": "min"}, {"v": "5:15–5:40", "u": ""}]}}, today)
+card = {"date": today, "name": "Easy run 8 km",
+        "stats": [{"v": "8", "u": "km"}, {"v": "~44", "u": "min"}, {"v": "5:15–5:40", "u": ""}]}
+m = hosted.heads_up_message(card, today)
 check("a session day's morning: the session and its numbers, opening Today",
       m == {"title": "Today: Easy run 8 km", "body": "8 km · ~44 min · 5:15–5:40",
-            "url": "/app/#/today?from=push_morning", "tag": f"morning-{today}"}, str(m))
-check("a rest day sends nothing", hosted.morning_message({"next": {"date": "2026-11-12", "name": "X"}}, today) is None
-      and hosted.morning_message({"empty": True}, today) is None)
+            "url": "/app/#/today?from=push_morning", "tag": f"session-{today}"}, str(m))
+m = hosted.heads_up_message(card, today, evening=True)
+check("the evening before: tomorrow's session, opening that session",
+      m == {"title": "Tomorrow: Easy run 8 km", "body": "8 km · ~44 min · 5:15–5:40",
+            "url": f"/app/#/session/{today}?from=push_evening", "tag": f"session-{today}"}, str(m))
+check("a rest day sends nothing", hosted.heads_up_message({"date": "2026-11-12", "name": "X"}, today) is None
+      and hosted.heads_up_message(None, today) is None)
 r = hosted.run_message({"activity_id": 77, "name": "16 km easy", "verdict": "On pace, with heart rate steady.",
                         "effect": {"head": "Counts as done"}, "credit": "Garmin Forerunner 965"})
 check("a run on the plan: ticked, its verdict, and Garmin's credit with the watch",
@@ -137,15 +155,15 @@ check("a run that didn't load sends nothing", hosted.run_message({"error": "x"})
 print("When they go")
 sent: list[tuple[str, dict]] = []
 hosted.push.send = lambda s, msg, urgency="normal": (sent.append((s["endpoint"], msg)), "sent")[1]
-plan_day = {"next": {"date": today, "name": "Easy run 8 km", "stats": [{"v": "8", "u": "km"}]}}
+planned = {today: "Easy run 8 km", "2026-11-13": "Threshold"}
 runs = {"latest": None}
 reads = []
 
 
 def as_person(token, fn, *args):
     reads.append(getattr(fn, "__name__", "?"))
-    if fn is hosted.app_routes.today_payload:
-        return plan_day
+    if fn is hosted.app_routes.heads_up_payload:
+        return {"date": args[0], "name": planned[args[0]], "stats": [{"v": "8", "u": "km"}]} if args[0] in planned else None
     if fn is hosted.app_routes.run_payload:
         return {"activity_id": args[0], "name": "16 km easy", "verdict": "On pace.", "effect": {"head": "Counts as done"},
                 "credit": "Garmin Forerunner 965"}
@@ -156,15 +174,27 @@ hosted._as_person = as_person
 store.save_push(user, endpoint, p256dh, auth, "Europe/London")
 london = ZoneInfo("Europe/London")
 at = lambda h, m=0: datetime(2026, 11, 11, h, m, tzinfo=london).timestamp()  # noqa: E731
-hosted.notify_once(at(6, 50), spacing=0)
-check("nothing before 7am", not sent, str(sent))
+day = lambda d, h, m=0: datetime(2026, 11, d, h, m, tzinfo=london).timestamp()  # noqa: E731
+hosted.notify_once(day(10, 19, 50), spacing=0)
+check("nothing before 8pm the evening before", not sent, str(sent))
+hosted.notify_once(day(10, 20, 5), spacing=0)
+hosted.notify_once(day(10, 20, 15), spacing=0)
+check("by default the heads-up goes once, at 8pm the evening before",
+      [m["title"] for _, m in sent] == ["Tomorrow: Easy run 8 km"], str(sent))
 hosted.notify_once(at(7, 5), spacing=0)
-hosted.notify_once(at(7, 15), spacing=0)
-check("the morning heads-up goes once, at 7", [m["title"] for _, m in sent] == ["Today: Easy run 8 km"], str(sent))
+check("and not again on the morning", len(sent) == 1, str(sent))
 sent.clear()
-plan_day = {"next": {"date": "2026-11-13", "name": "Threshold"}}
-hosted.notify_once(datetime(2026, 11, 12, 7, 5, tzinfo=london).timestamp(), spacing=0)
-check("and not at all on a rest day", not sent, str(sent))
+hosted.notify_once(day(11, 20, 5), spacing=0)
+check("not at all before a rest day", not sent, str(sent))
+store.set_heads_up(user, "6")
+hosted.notify_once(day(12, 6, 5), spacing=0)
+check("switched to 6am after the evening before was told about, the same day isn't told twice", not sent, str(sent))
+hosted.notify_once(day(13, 5, 50), spacing=0)
+check("nothing before 6am", not sent, str(sent))
+hosted.notify_once(day(13, 6, 5), spacing=0)
+check("at 6am, that morning's session", [m["title"] for _, m in sent] == ["Today: Threshold"], str(sent))
+sent.clear()
+store.set_heads_up(user, "evening")
 
 old = {"activityId": 1, "activityType": {"typeKey": "running"}, "startTimeGMT": "2026-11-10 08:00:00"}
 runs["latest"] = old

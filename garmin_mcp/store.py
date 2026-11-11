@@ -67,6 +67,8 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN app_offered_at INTEGER",
     # The Monday of the last weekly email this person clicked through from.
     "ALTER TABLE users ADD COLUMN weekly_clicked TEXT",
+    # Nov 11: when the session heads-up goes, chosen in the app's You tab.
+    "ALTER TABLE push_subs ADD COLUMN heads_up TEXT",
 )
 
 # Bart's friends using Daash, named from a chat (garmin_official's friends
@@ -1478,14 +1480,42 @@ def push_owner(user_token: str) -> str:
     return email_hash_for(user_token) or user_token
 
 
+# When the heads-up about a planned session goes: the evening before (8pm), or
+# that morning at 6, 7 or 8. The evening before suits people out the door early.
+HEADS_UP = ("evening", "6", "7", "8")
+DEFAULT_HEADS_UP = "evening"
+
+
 def save_push(user_token: str, endpoint: str, p256dh: str, auth: str, tz: str | None) -> None:
+    owner = push_owner(user_token)
     with _connect() as conn:
+        # A second phone takes the time already chosen on their first.
         conn.execute(
-            "INSERT INTO push_subs (endpoint, owner, p256dh, auth, tz, created_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "INSERT INTO push_subs (endpoint, owner, p256dh, auth, tz, created_at, heads_up) VALUES (?, ?, ?, ?, ?, ?, "
+            "(SELECT heads_up FROM push_subs WHERE owner = ? AND heads_up IS NOT NULL LIMIT 1)) "
             "ON CONFLICT(endpoint) DO UPDATE SET owner = excluded.owner, p256dh = excluded.p256dh, "
             "auth = excluded.auth, tz = excluded.tz",
-            (endpoint, push_owner(user_token), p256dh, auth, tz, int(time.time())),
+            (endpoint, owner, p256dh, auth, tz, int(time.time()), owner),
         )
+
+
+def heads_up_for(user_token: str) -> str | None:
+    """When their session heads-up goes, or None without notifications on."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT heads_up FROM push_subs WHERE owner IN (?, ?) ORDER BY created_at",
+                            (push_owner(user_token), user_token)).fetchall()
+    if not rows:
+        return None
+    return rows[0][0] if rows[0][0] in HEADS_UP else DEFAULT_HEADS_UP
+
+
+def set_heads_up(user_token: str, when: str) -> bool:
+    """Set the heads-up time on all of someone's phones. False when they have none."""
+    if when not in HEADS_UP:
+        raise ValueError(when)
+    with _connect() as conn:
+        return conn.execute("UPDATE push_subs SET heads_up = ? WHERE owner IN (?, ?)",
+                            (when, push_owner(user_token), user_token)).rowcount > 0
 
 
 def drop_push(endpoint: str, user_token: str | None = None) -> bool:
@@ -1506,9 +1536,9 @@ def forget_push(user_token: str, email_hash: str | None) -> None:
 def push_subs() -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT endpoint, owner, p256dh, auth, tz, last_morning, last_run FROM push_subs ORDER BY created_at"
+            "SELECT endpoint, owner, p256dh, auth, tz, last_morning, last_run, heads_up FROM push_subs ORDER BY created_at"
         ).fetchall()
-    keys = ("endpoint", "owner", "p256dh", "auth", "tz", "last_morning", "last_run")
+    keys = ("endpoint", "owner", "p256dh", "auth", "tz", "last_morning", "last_run", "heads_up")
     return [dict(zip(keys, r)) for r in rows]
 
 
