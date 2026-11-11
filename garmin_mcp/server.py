@@ -1838,10 +1838,60 @@ def _lap_intensity(lap: dict[str, Any]) -> str | None:
     return kind if kind in ("warmup", "interval", "recovery", "rest", "cooldown") else None
 
 
+# Strides by their laps alone (Nov 11): a few short bursts, 30 s or less and
+# 200 m or less, in a run with steady running too. Shorter and fewer than a
+# session of short reps (8 x 200 m is 35 s or more each; 12 x 200 m is more than ten).
+STRIDE_LAP_SECONDS = 30
+STRIDE_LAP_METRES = 200
+STRIDES_MOST = 10
+
+
+def _stride_laps(laps: list[dict[str, Any]]) -> list[bool]:
+    """Which laps are strides: 2 to 10 short unmarked or interval laps, in a run
+    with at least 1 km of other running. Each False when there are none."""
+    def secs(lap):
+        return first_present(lap, "duration", "movingDuration", "elapsedDuration") or 0
+
+    marks = [_lap_intensity(lap) for lap in laps]
+    short = [m in (None, "interval") and 0 < secs(lap) <= STRIDE_LAP_SECONDS and 20 < (lap.get("distance") or 0) <= STRIDE_LAP_METRES
+             for lap, m in zip(laps, marks)]
+    steady = sum((lap.get("distance") or 0) for lap, m, s in zip(laps, marks, short) if not s and m not in ("recovery", "rest"))
+    if not 2 <= sum(short) <= STRIDES_MOST or steady < 1000:
+        return [False] * len(laps)
+    return short
+
+
+def _strides_summary(laps: list[dict[str, Any]], stride: list[bool]) -> dict[str, Any] | None:
+    """The strides together: how many, how long each, their pace and the fastest."""
+    run = [lap for lap, s in zip(laps, stride) if s and lap.get("distance")]
+    if len(run) < 2:
+        return None
+    secs = [first_present(lap, "duration", "movingDuration", "elapsedDuration") or 0 for lap in run]
+    dist = sum(lap.get("distance") or 0 for lap in run)
+    timed = [(lap.get("averageHR"), t) for lap, t in zip(run, secs) if lap.get("averageHR") and t]
+    hr = sum(h * t for h, t in timed) / sum(t for _, t in timed) if timed else None
+    each = sum(secs) / len(secs)
+    return drop_empty({
+        "count": len(run), "each": f"{round(each)} s", "avg_pace_per_km": pace_per_km(dist, sum(secs)),
+        "fastest_pace_per_km": pace_per_km(1000, min(t / (lap.get("distance") or 1) * 1000 for lap, t in zip(run, secs))),
+        "avg_hr": round(hr) if hr else None,
+        "note": "Strides, not reps: call them strides.",
+    })
+
+
 def _reps(laps: list[dict[str, Any]], ride: bool = False) -> dict[str, Any] | None:
     """A structured session's work reps together, from the laps Garmin marked
     as intervals: how many, their average pace (or speed) and heart rate, and
-    the fastest and slowest. None for a run without marked reps."""
+    the fastest and slowest. None for a run without marked reps.
+
+    Strides aren't reps: they and the jogs after them are left out (Nov 11: an
+    easy 9 km and six strides read as "6 reps at 4:54 over 9.48 km")."""
+    if not ride:
+        stride = _stride_laps(laps)
+        if any(stride):
+            after = [False] + stride[:-1]
+            laps = [lap for lap, s, a in zip(laps, stride, after)
+                    if not s and not (a and _lap_intensity(lap) in ("recovery", "rest"))]
     marks = [_lap_intensity(lap) for lap in laps]
     is_work = [m == "interval" for m in marks]
     if not any(is_work) and any(m in ("recovery", "rest") for m in marks):
@@ -2055,6 +2105,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             "hr_zones": hr_zones(zones),
             "easy_check": easy_check.check(planned, laps, flat),
             "reps": _reps(laps, ride),
+            "strides": None if ride else _strides_summary(laps, _stride_laps(laps)),
             "splits_count": len(laps) or None,
             "splits": lap_rows or None,
             "inside": inside,

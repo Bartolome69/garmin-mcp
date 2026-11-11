@@ -1436,6 +1436,21 @@ async def main() -> int:
                 _lap(1000, 330, 140, "COOLDOWN")])
             check("a watch lapping every km inside a rep doesn't double the reps: 3 x 8 min is 3 reps",
                   (split_reps or {}).get("count") == 3 and split_reps.get("fastest_pace_per_km", "").startswith("4:06"), str(split_reps))
+            # Nov 11: an easy 9 km and six 20 s strides read as "6 reps at 4:54 over 9.48 km".
+            easy_strides = [_lap(1000, t, h, "ACTIVE") for t, h in ((320, 111), (303, 121), (293, 124), (296, 129), (295, 127),
+                                                                   (294, 132), (292, 133), (293, 132))] + [_lap(930, 277, 130, "ACTIVE")]
+            for d, h in ((101.5, 141), (90.9, 133), (90.5, 129), (102.0, 134), (75.8, 135), (93.9, 133)):
+                easy_strides += [_lap(d, 20, h, "ACTIVE"), _lap(150, 50, 138, "RECOVERY")]
+            stride_flags = _srv._stride_laps(easy_strides)
+            told = _srv._strides_summary(easy_strides, stride_flags) or {}
+            check("strides in an easy run aren't reps", _srv._reps(easy_strides) is None, str(_srv._reps(easy_strides)))
+            check("they're summed up as strides: six of 20 s, fastest 3:16",
+                  told.get("count") == 6 and told.get("each") == "20 s" and told.get("fastest_pace_per_km", "").startswith("3:16"), str(told))
+            track = [_lap(2000, 600, 130, "WARMUP")] + [x for _ in range(8) for x in (_lap(200, 36, 165, "INTERVAL"), _lap(200, 90, 140, "RECOVERY"))] \
+                + [_lap(1500, 450, 135, "COOLDOWN")]
+            check("8 x 200 m at 36 s each are reps, not strides",
+                  (_srv._reps(track) or {}).get("count") == 8 and not any(_srv._stride_laps(track)), str(_srv._reps(track)))
+            check("a session of reps has no strides", _srv._strides_summary(easy_strides[:9], _srv._stride_laps(easy_strides[:9])) is None)
             from garmin_mcp import share as _share
             shared_laps = (_share.run_payload({"summary": {"type": "running", "name": "x", "distance_km": 5},
                                                "splits": [{"distance_km": 1, "duration": "4m 00s", "pace_per_km": "4:00 /km", "avg_hr": 150},
