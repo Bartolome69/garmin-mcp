@@ -3234,6 +3234,15 @@ def _running_clash(existing: dict[str, list[dict[str, Any]]], sessions: Any,
     return None
 
 
+# The app's plan builder watches a plan go onto the calendar session by session,
+# and after Garmin turns one away part way, sends the rest under the same code.
+plan_progress: ContextVar["Callable[[list[dict[str, Any]], int], None] | None"] = ContextVar(
+    "daash_plan_progress", default=None)
+plan_resume: ContextVar[bool] = ContextVar("daash_plan_resume", default=False)
+# Replacing a plan from next Monday: remove_plan keeps the rest of this week.
+plan_remove_from: ContextVar["date_cls | None"] = ContextVar("daash_plan_remove_from", default=None)
+
+
 @_app_tool(PLAN_VIEW)
 @tool_errors
 async def create_plan(
@@ -3298,7 +3307,7 @@ async def create_plan(
     checked = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
 
     existing = training_plan.plans_in(await _plan_calendar(first, last))
-    if code in existing:
+    if code in existing and not plan_resume.get():
         return {
             "error": (
                 f"Plan code {code} is already on the calendar between "
@@ -3360,6 +3369,9 @@ async def create_plan(
                 }
             )
         )
+        report = plan_progress.get()
+        if report:
+            report(created, len(prepared))
 
     weeks = (plan.monday_of(last) - plan.monday_of(first)).days // 7 + 1
     summary = {
@@ -3951,7 +3963,9 @@ async def _training_log(today: date_cls) -> dict[str, Any]:
             "error": (
                 "Nothing is scheduled on the Garmin calendar, and nothing was recorded "
                 f"in the last {training_plan.LOG_WEEKS} weeks."
-            )
+            ),
+            # The app's Plan tells this apart from Garmin not answering.
+            "source": "none",
         }
     summary = training_plan.summarise_log(activities, today)
     imported = any(int(a.get("activityId") or 0) >= official_data.IMPORTED_IDS for a in activities
@@ -3990,7 +4004,8 @@ async def remove_plan(label: str, confirm: str = "") -> dict[str, Any]:
     sessions = training_plan.plans_in(items).get(code) or [
         i for i in items if training_plan.label_of(i.get("title")) == code
     ]
-    ahead = [i for i in sessions if i["date"][:10] >= today.isoformat()]
+    since = max(today, plan_remove_from.get() or today)
+    ahead = [i for i in sessions if i["date"][:10] >= since.isoformat()]
     if not ahead:
         return {"label": code, "removed": 0, "note": "Nothing from today onward carries that plan code."}
 

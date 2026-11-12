@@ -82,12 +82,14 @@ jobs:
       - name: Progress matching
         run: python tests/progress_test.py
 
-      # Plans built by rules in the app, and the checker that reads every plan:
-      # a plan Daash builds must go through create_plan untouched and give the
-      # checker nothing to say.
-      - name: Plan engine and checks
+      # The plan builder's rules: weeks Monday to Sunday ending on race day,
+      # small steps, hard days apart, and every plan one create_plan takes.
+      - name: Plan builder
+        run: python tests/plan_builder_test.py
+
+      # The checker that reads every plan, and the rest of the app's helpers.
+      - name: Plan checks and app helpers
         run: |
-          python tests/plan_engine_test.py
           python tests/easy_check_test.py
           python tests/run_view_test.py
           python tests/signup_guard_test.py

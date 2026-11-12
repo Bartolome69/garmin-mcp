@@ -3080,6 +3080,7 @@ async def forget_person(token: str) -> bool:
     if removed and gone is not None:
         # Disconnect deletes everything, crews included.
         crews.forget(crews.member_key(token, gone.email_hash))
+        store.forget_race_prompts(crews.member_key(token, gone.email_hash))
         # And the phones it sent notifications to.
         store.forget_push(token, gone.email_hash)
         # And every sign-in to it: Claude, ChatGPT and the app alike.

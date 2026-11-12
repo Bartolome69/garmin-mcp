@@ -18,6 +18,7 @@ import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
+from typing import Any
 from pathlib import Path
 from typing import Any, Callable
 
@@ -93,6 +94,23 @@ CREATE TABLE IF NOT EXISTS app_handoffs (
     code_hash   TEXT PRIMARY KEY,
     subject     TEXT NOT NULL,
     expires_at  INTEGER NOT NULL
+);
+"""
+
+# Races Daash has offered to plan for, from the Garmin calendar: when each was
+# first seen, how often "Not now" put it off, and whether it's not a goal race.
+# Keyed by the crews' member key and a hash of the race's date and name, so
+# nothing here says which race it is.
+RACE_PROMPT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS race_prompts (
+    member      TEXT NOT NULL,
+    race        TEXT NOT NULL,
+    first_seen  INTEGER NOT NULL,
+    snoozes     INTEGER NOT NULL DEFAULT 0,
+    snoozed_at  INTEGER,
+    shown_at    INTEGER,
+    not_goal    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (member, race)
 );
 """
 
@@ -257,6 +275,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(FRIENDS_SCHEMA)
     conn.executescript(NOTICES_SCHEMA)
     conn.executescript(APP_SCHEMA)
+    conn.executescript(RACE_PROMPT_SCHEMA)
     conn.executescript(PUSH_SCHEMA)
     for statement in MIGRATIONS:
         try:
@@ -503,6 +522,45 @@ def claim_news(user_token: str, version: int) -> bool:
             "UPDATE users SET news_seen = ? WHERE user_token = ? AND COALESCE(news_seen, 0) < ?",
             (version, user_token, version),
         ).rowcount > 0
+
+
+def race_prompts(member: str, races: list[str], now: int | None = None) -> dict[str, dict[str, Any]]:
+    """Each race's prompt state, recording the ones seen for the first time."""
+    now = int(now or time.time())
+    with _connect() as conn:
+        conn.executemany("INSERT OR IGNORE INTO race_prompts (member, race, first_seen) VALUES (?, ?, ?)",
+                         [(member, r, now) for r in races])
+        rows = conn.execute(
+            f"SELECT race, first_seen, snoozes, snoozed_at, shown_at, not_goal FROM race_prompts WHERE member = ? "
+            f"AND race IN ({','.join('?' * len(races))})", (member, *races)).fetchall() if races else []
+    return {r[0]: {"first_seen": r[1], "snoozes": r[2], "snoozed_at": r[3], "shown_at": r[4], "not_goal": bool(r[5])}
+            for r in rows}
+
+
+def race_prompt_shown(member: str, race: str, now: int | None = None) -> bool:
+    """True once per showing of the full card: first, then again after each "Not now" runs out."""
+    now = int(now or time.time())
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE race_prompts SET shown_at = ? WHERE member = ? AND race = ? "
+            "AND (shown_at IS NULL OR (snoozed_at IS NOT NULL AND shown_at < snoozed_at))",
+            (now, member, race)).rowcount > 0
+
+
+def race_prompt_snooze(member: str, race: str, now: int | None = None) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE race_prompts SET snoozes = snoozes + 1, snoozed_at = ? WHERE member = ? AND race = ?",
+                     (int(now or time.time()), member, race))
+
+
+def race_prompt_not_goal(member: str, race: str) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE race_prompts SET not_goal = 1 WHERE member = ? AND race = ?", (member, race))
+
+
+def forget_race_prompts(member: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM race_prompts WHERE member = ?", (member,))
 
 
 def claim_crew_offer(user_token: str) -> bool:

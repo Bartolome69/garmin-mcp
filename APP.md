@@ -85,25 +85,36 @@ sign-in routes under `/app/api/sign-in/` are the only ones without a token.
 
 ## Build a plan, without the chat
 
-`#/build`: six steps (what Garmin knows, the race, days, how much, injuries,
-style) and a preview, then "Put it on my Garmin", which calls `create_plan`
-with what `plan_engine.build` returns. No model calls, and nothing is written
-before that tap. The answers live in the tab's sessionStorage, so the trip
-through Sign in with Garmin comes back to the same step. Today's empty state
-opens it when the builder is on; daash.run's "Just the app" opens
-`/app/#/build`, whose sign-in screen leads with Sign in with Garmin.
+`#/build`: seven steps (your running lately, races, the goal, days, how much,
+injuries, style) and a preview with every week's distance, then "Put it on my
+Garmin", which calls `create_plan` with what `plan_builder.create_args`
+returns. No model calls, and nothing is written before that tap, which needs
+"I'm 18 or over" ticked once on the phone. Weeks run Monday to Sunday and a
+goal race falls on the last Sunday. A plan left part way is kept on the phone
+for 14 days and Plan offers to pick it up. Today's empty state, Plan's empty
+state and the next-block card open it; so does Today's card for a race added
+to the Garmin calendar, with that race as the goal. daash.run's "Just the
+app" opens `/app/#/build`, whose sign-in screen leads with Sign in with
+Garmin.
 
-- `GET /app/api/build`: the prefill. The last 4 weeks' km and longest run
-  (`plan_checks.starting_point`'s rules: under 2 weeks of running isn't
-  enough), Garmin's race predictions and threshold pace, the races on the
-  calendar with a distance Daash recognises, and any plan already in the next
-  20 weeks.
-- `POST /app/api/build/options`: step 4's keep, build and more.
-- `POST /app/api/build/preview`: the weeks, the reasons and the plan checker's
-  notes. Writes nothing.
-- `POST /app/api/build`: refuses a plan over the weeks of one already on the
-  calendar (a double tap, or a plan running), then writes it. Counted as
-  `plan_built`.
+- `GET /app/api/build`: what Garmin knows (4 weeks of running, the longest
+  run, how long they've run, predictions, races on the calendar in the
+  plan's window), kept 15 minutes. `?replace=1` starts it next Monday in
+  place of the plan running now.
+- `POST /app/api/build/plan`: goal times, the amounts and the preview from
+  the answers so far. Writes nothing.
+- `POST /app/api/build/send`, `GET` to follow it: puts the plan on the
+  calendar in the background, removing the replaced plan's sessions from its
+  start first; a retry sends only what's missing.
+- `POST /app/api/plan/remove`: takes the plan running now off from today.
+- `GET`/`POST /app/api/race-prompt`: Today's race card, its "Not now" and
+  "Not a goal race".
+
+Counted in PostHog: `app_build_opened` (where from), `app_build_step` (each
+step the first time), `app_build_action` (back, jumps, the chart, blocked
+steps, send, retry, where they land), `app_plan_built` (with why it failed),
+`app_plan_removed` and the `race_prompt_*` events. Choices and counts only,
+never a race's name, date or time.
 
 On for preview accounts; `GARMIN_MCP_BUILDER=1` opens it to everyone. The
 rules and what isn't built yet are in docs/plan-engine-spec.md.
