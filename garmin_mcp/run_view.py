@@ -23,6 +23,9 @@ WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "
 EVEN_S = 5
 # A first km this much slower than the rest is the warm-up into the run.
 SETTLING_S = 8
+# Km splits of a steady run this close are even: crossings, bends and GPS
+# move a km by more than a lap of reps (Nov 12: 5:36-5:49 read as "varied").
+KM_EVEN_S = 15
 
 
 def _word(n: int) -> str:
@@ -309,11 +312,11 @@ def _km_pacing(kms) -> dict[str, Any] | None:
     rest = paces[lead:]
     lo, hi = pace(min(rest)), pace(max(rest))
     span = lo if lo == hi else f"{lo}–{hi}"
-    if lead and round(max(rest)) - round(min(rest)) <= 15:
+    if lead and round(max(rest)) - round(min(rest)) <= KM_EVEN_S:
         first = _list([pace(p) for p in paces[:lead]])
         which = "the first km" if lead == 1 else f"the first {_word(lead)} km"
         return {"icon": "→", "tone": "long", "head": "Settled pace.", "text": f"{first} for {which}, then {span} for the rest."}
-    if round(max(rest)) - round(min(rest)) <= EVEN_S * 2:
+    if round(max(rest)) - round(min(rest)) <= KM_EVEN_S:
         return {"icon": "→", "tone": "long", "head": "Even pace.", "text": f"Every km between {lo} and {hi}." if lo != hi else f"Every km at {lo}."}
     quickest, slowest = pace(min(paces)), pace(max(paces))
     if paces[-1] < paces[0] - EVEN_S * 2 and min(paces[-2:]) == min(paces):

@@ -117,6 +117,17 @@ check("a hard session whose laps aren't matched to a workout gets no lines", not
 check("but still its km chart", (plain.get("chart") or {}).get("mode") == "km")
 check("the screen without story has none of it", "chart" not in analysis.analyse(THRESHOLD, THRESHOLD_LAPS, "threshold"))
 
+print("Km pace lines on a steady run (Nov 12)")
+def kms(*paces):
+    return [{"km": i + 1, "p": p, "hr": 120} for i, p in enumerate(paces)]
+line = run_view._km_pacing(kms(336, 338, 348, 346, 349))
+check("13 s between km on an easy run is even, not 'varied'", line and line["head"] == "Even pace."
+      and line["text"] == "Every km between 5:36 and 5:49.", str(line))
+line = run_view._km_pacing(kms(330, 335, 352, 340, 345))
+check("22 s between km still says it varied", line and line["head"] == "Pace varied.", str(line))
+line = run_view._km_pacing(kms(345, 320, 318, 322, 325))
+check("a slow first km then steady is 'settled'", line and line["head"] == "Settled pace.", str(line))
+
 print("Against the last one")
 line = run_view.last_time({"reps": 3, "km": 9.0, "p": 243.2, "hr": 161}, {"reps": 8, "km": 8.0, "p": 244, "hr": 159},
                           "threshold session", "Sub-T 8 × 1 km", "22 Oct")

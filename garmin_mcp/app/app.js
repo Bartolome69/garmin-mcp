@@ -842,27 +842,35 @@ function runChart(c, colour) {
       const y = 18 + Math.max(0, p.p - 170) / 150 * 80;
       body += `<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, sw - 4).toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="1.5" fill="${tone("stride")}"/>`;
     });
-    body += `<text x="0" y="124">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="124" text-anchor="end">Km ${esc(kms[kms.length - 1].label)}</text>`;
-    if (strides.length) body += `<text x="${(sx + strideW / 2).toFixed(1)}" y="124" text-anchor="middle">${strides.length} strides</text>`;
+    // Heart rate straight under the bars, each km's point under its own bar
+    // with a faint guide down to it, and the km named once, under both (Nov 12).
     const hrs = kms.filter((k) => k.hr);
-    let height = 130;
+    let labelY = 124, height = 130;
     if (hrs.length >= 2) {
       const band = c.band && c.band.kind === "hr" ? c.band : null;
       const vals = hrs.map((k) => k.hr).concat(band ? [band.lo, band.hi] : []);
-      const hLo = Math.min(...vals) - 6, hHi = Math.max(...vals) + 4, hTop = 142, hBot = 192;
+      const hLo = Math.min(...vals) - 6, hHi = Math.max(...vals) + 4, hTop = bot + 20, hBot = bot + 64;
       const yHr = (h) => hBot - (h - hLo) / (hHi - hLo) * (hBot - hTop);
-      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${roomKm.toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
-      const pts = kms.map((k, i) => k.hr ? `${(i * (kmW + 3) + kmW / 2).toFixed(1)},${yHr(k.hr).toFixed(1)}` : "").filter(Boolean).join(" ");
-      body += `<polyline points="${pts}" fill="none" stroke="var(--red-text)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+      const midOf = (i) => i * (kmW + 3) + kmW / 2;
       const peak = Math.max(...hrs.map((k) => k.hr));
+      const named = (k, i) => i === 0 || i === kms.length - 1 || (k.hr === peak && hrs.findIndex((h) => h.hr === peak) === hrs.indexOf(k));
       kms.forEach((k, i) => {
         if (!k.hr) return;
-        const first = i === 0, last = i === kms.length - 1, top = k.hr === peak && hrs.findIndex((h) => h.hr === peak) === hrs.indexOf(k);
-        if (first || last || top) body += `<text x="${(i * (kmW + 3) + kmW / 2).toFixed(1)}" y="${(yHr(k.hr) - 5).toFixed(1)}" text-anchor="middle" style="fill:var(--red-text)">${k.hr}</text>`;
+        const end = yHr(k.hr) - (named(k, i) ? 17 : 3);
+        if (end > bot + 4) body += `<line class="guide" x1="${midOf(i).toFixed(1)}" y1="${(bot + 3).toFixed(1)}" x2="${midOf(i).toFixed(1)}" y2="${end.toFixed(1)}" stroke="var(--hairline)" stroke-width="1" stroke-dasharray="2 3"/>`;
       });
-      height = hBot + 6;
+      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${roomKm.toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
+      const pts = kms.map((k, i) => k.hr ? `${midOf(i).toFixed(1)},${yHr(k.hr).toFixed(1)}` : "").filter(Boolean).join(" ");
+      body += `<polyline points="${pts}" fill="none" stroke="var(--red-text)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+      kms.forEach((k, i) => {
+        if (k.hr && named(k, i)) body += `<text x="${midOf(i).toFixed(1)}" y="${(yHr(k.hr) - 5).toFixed(1)}" text-anchor="middle" style="fill:var(--red-text)">${k.hr}</text>`;
+      });
+      labelY = hBot + 16;
+      height = labelY + 4;
       key = `<span><i style="background:${tone("km")}"></i>Km pace</span>${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--red-text);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
     }
+    body += `<text x="0" y="${labelY}">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="${labelY}" text-anchor="end">Km ${esc(kms[kms.length - 1].label)}</text>`;
+    if (strides.length) body += `<text x="${(sx + strideW / 2).toFixed(1)}" y="${labelY}" text-anchor="middle">${strides.length} strides</text>`;
     body = `<svg viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(c.caption || "Each km's pace and heart rate")}">${body}</svg>`;
   }
   return `<div class="card run-chart">${body}${key ? `<div class="chart-key">${key}</div>` : ""}${c.caption ? `<span class="chart-caption">${esc(c.caption)}</span>` : ""}</div>`;
