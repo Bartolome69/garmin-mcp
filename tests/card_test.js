@@ -232,7 +232,7 @@ f.src = "card.html";</script></body>`);
     await capPage.waitForTimeout(500);
     const cap = await capPage.evaluate(() => ({ shown: !document.getElementById("cap-g").hidden, text: document.getElementById("cap").textContent }));
     check("the share page shows the same caption the chat gives",
-      cap.shown && cap.text === "Sub-T 3 × 3 km\nGarmin\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\nReps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\nvia daash.run",
+      cap.shown && cap.text === "Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\nReps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\nvia daash.run",
       JSON.stringify(cap));
     await capPage.close();
     // With the planned session, as hosted_test.py captions the same runs.
@@ -250,13 +250,13 @@ f.src = "card.html";</script></body>`);
       pl: { n: "Sub-T 3 × 3 km", ty: "threshold", k: 15.4, w: [3, 20], b: "London build", tg: "4:00–4:10/km" } };
     const repsText = await capOf(repsRun);
     check("an interval session's caption on the share page goes rep by rep, planned by daash.run",
-      repsText === "Sub-T 3 × 3 km · week 3 of 20\nGarmin\nReps: 4:03 · 4:03 · 4:04 /km (target 4:00–4:10)\n14.1 km total · 161 bpm on the reps\nEvery rep on target ✓\n\nPlanned by daash.run",
+      repsText === "Sub-T 3 × 3 km · week 3 of 20\nReps: 4:03 · 4:03 · 4:04 /km (target 4:00–4:10)\n14.1 km total · 161 bpm on the reps\nEvery rep on target ✓\n\nPlanned by daash.run",
       JSON.stringify(repsText));
     const longText = await capOf({ v: 1, run: 1, t: "Afternoon Run", s: "Sunday 8 Nov", k: "Run recap", c: "easy",
       f: [["16.3", "km"], ["1:22:00", "time"], ["5:02", "/km average"], ["139", "bpm average"]], l: [], a: 302, n: [], g: "Garmin Forerunner 265",
       pl: { n: "16 km easy", ty: "long", k: 16, w: [4, 20], b: "London build" } });
     check("and any other session says planned against ran, the same as the chat",
-      longText === "Long run · week 4 of 20 · London build\nGarmin Forerunner 265\nPlanned: 16 km easy\nRan: 16.3 km · 1:22:00 · 5:02 /km · 139 bpm\nOn plan ✓\n\nPlanned by daash.run",
+      longText === "Long run · week 4 of 20 · London build\nPlanned: 16 km easy\nRan: 16.3 km · 1:22:00 · 5:02 /km · 139 bpm\nOn plan ✓\n\nPlanned by daash.run",
       JSON.stringify(longText));
 
     console.log("a gym session");

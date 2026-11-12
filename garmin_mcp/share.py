@@ -272,9 +272,10 @@ def caption(payload: dict[str, Any]) -> str | None:
         unit = str(words).split(" ")[0]
         figures.append(str(value) if unit == "time" else f"{value} {unit}")
     plan = payload.get("pl") if isinstance(payload.get("pl"), dict) else None
-    credit = str(payload.get("g") or "")[:40]
+    # No "Garmin [device]" line: the caption goes into the Strava activity, which
+    # names the device itself; the image keeps Garmin's credit (Nov 12, Bart).
     if not plan:
-        lines = [str(payload.get("t") or "Run").replace("\u00a0", " "), credit]
+        lines = [str(payload.get("t") or "Run").replace("\u00a0", " ")]
         if figures:
             lines.append(" · ".join(figures))
         lines += [str(n[1])[:90] for n in payload.get("n") or [] if len(n) > 1 and n[1]][:1]
@@ -285,7 +286,7 @@ def caption(payload: dict[str, Any]) -> str | None:
     reps = _reps(payload.get("l") or [])
     distance = next((f for f in facts if str(f[1]).split(" ")[0] in ("km", "mi")), None)
     if plan.get("ty") in _HARD and reps:
-        lines = [" · ".join(x for x in (plan.get("n"), week_words) if x), credit]
+        lines = [" · ".join(x for x in (plan.get("n"), week_words) if x)]
         target = plan.get("tg")
         unit = distance[1].split(" ")[0] if distance else "km"
         shown = re.sub(r"\s*/(km|mi)$", "", target) if target else None
@@ -303,7 +304,7 @@ def caption(payload: dict[str, Any]) -> str | None:
             lines.append("Every rep on target ✓" if hit == len(reps) else f"{hit} of {len(reps)} reps on target")
     else:
         kind = _KIND_WORDS.get(str(plan.get("ty")), "Run")
-        lines = [" · ".join(x for x in (kind, week_words, plan.get("b")) if x), credit]
+        lines = [" · ".join(x for x in (kind, week_words, plan.get("b")) if x)]
         lines.append(f"Planned: {plan.get('n')}")
         lines.append("Ran: " + " · ".join(figures))
         try:

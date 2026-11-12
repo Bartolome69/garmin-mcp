@@ -1532,7 +1532,7 @@ async def main() -> int:
         # Nov 6: a caption to paste into Strava, as Strava's API can't be used.
         # tests/card_test.js checks the share page builds this same text.
         check("a run off the plan: its name, figures, reps and via daash.run",
-              share.run_caption(threshold_run) == ("Sub-T 3 × 3 km\nGarmin\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\n"
+              share.run_caption(threshold_run) == ("Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\n"
                                                     "Reps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\n"
                                                     "via daash.run"), repr(share.run_caption(threshold_run)))
         # Nov 8: a run that was a session on the plan says what was planned.
@@ -1554,7 +1554,7 @@ async def main() -> int:
               and planned["w"] == [3, 20] and planned["b"] == "London build" and "4:00" in planned.get("tg", ""), str(planned))
         reps_caption = share.run_caption(threshold_run, planned)
         check("an interval session's caption goes rep by rep, against the target, planned by daash.run",
-              reps_caption == ("Sub-T 3 × 3 km · week 3 of 20\nGarmin\nReps: 4:03 · 4:03 · 4:04 /km (target 4:00–4:10)"
+              reps_caption == ("Sub-T 3 × 3 km · week 3 of 20\nReps: 4:03 · 4:03 · 4:04 /km (target 4:00–4:10)"
                                "\n14.1 km total · 161 bpm on the reps\nEvery rep on target ✓\n\nPlanned by daash.run"), repr(reps_caption))
         long_run = {"summary": {"name": "Afternoon Run", "type": "running", "start_local": "2026-11-08 13:31:00",
                                 "device": "Forerunner 265",
@@ -1562,7 +1562,7 @@ async def main() -> int:
                                 "heart_rate": {"average_bpm": 139}}}
         long_caption = share.run_caption(long_run, share.plan_context(week_plan, 78))
         check("any other session: the type, week and block, planned against ran, and On plan",
-              long_caption == ("Long run · week 4 of 20 · London build\nGarmin Forerunner 265\nPlanned: 16 km easy\n"
+              long_caption == ("Long run · week 4 of 20 · London build\nPlanned: 16 km easy\n"
                                "Ran: 16.3 km · 1:22:00 · 5:02 /km · 139 bpm\nOn plan ✓\n\nPlanned by daash.run"), repr(long_caption))
         short = share.run_caption({"summary": {**long_run["summary"], "distance_km": 11.2}}, share.plan_context(week_plan, 78))
         check("cut short, it doesn't claim to be on plan", "On plan" not in short and short.endswith("Planned by daash.run"), repr(short))
