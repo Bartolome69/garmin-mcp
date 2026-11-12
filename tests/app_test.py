@@ -617,7 +617,7 @@ def build_checks() -> None:
                                content=_json.dumps({"answers": {**answers, "injury": "hurts"}, "preview": True})).json()
             check("something that hurts gets no plan", "preview" not in hurt, str(hurt)[:200])
             before = len(DEMO.scheduled)
-            sent = client.post("/app/api/build/send", headers=auth, content=_json.dumps({"answers": answers})).json()
+            sent = client.post("/app/api/build/send", headers=auth, content=_json.dumps({"answers": answers, "from": "plan"})).json()
             check("sending starts at once", sent.get("state") in ("sending", "done") and sent.get("total") == pv.get("count"), str(sent))
             for _ in range(100):
                 status = client.get("/app/api/build/send", headers=auth).json()
@@ -628,11 +628,25 @@ def build_checks() -> None:
                   and len(DEMO.scheduled) - before == pv.get("count"), f"{status} {len(DEMO.scheduled) - before}")
             on_race = [s for s in DEMO.scheduled if s["date"] == race_day.isoformat()]
             check("with the race on race day", any("Test 10K" in str(s.get("title")) for s in on_race), str(on_race)[:200])
-            check("a send is counted", any(e["properties"].get("ok") for e in posted("app_plan_built")))
-            client.post("/app/api/event", headers=auth, content=_json.dumps({"name": "build_step", "properties": {"step": "4", "secret": "x"}}))
+            built = posted("app_plan_built")[-1:]
+            check("a send is counted, with where the builder was opened from",
+                  built and built[0]["properties"].get("ok") is True and built[0]["properties"].get("from") == "plan"
+                  and "reason" not in built[0]["properties"], str(built))
+            client.post("/app/api/event", headers=auth, content=_json.dumps({"name": "build_step", "properties": {"step": "4", "from": "change", "secret": "x"}}))
             steps = posted("app_build_step")
             check("each step reached is counted, with only the fields it may carry",
-                  steps and steps[-1]["properties"].get("step") == "4" and "secret" not in steps[-1]["properties"], str(steps[-1:]))
+                  steps and steps[-1]["properties"].get("step") == "4" and steps[-1]["properties"].get("from") == "change"
+                  and "secret" not in steps[-1]["properties"], str(steps[-1:]))
+            for name, props in (("build_opened", {"from": "resume", "step": "3", "resumed": "yes"}),
+                                ("build_action", {"action": "blocked", "reason": "too close", "step": "2"})):
+                ok = client.post("/app/api/event", headers=auth, content=_json.dumps({"name": name, "properties": props})).status_code == 200
+                got_props = (posted(f"app_{name}")[-1:] or [{}])[0].get("properties", {})
+                check(f"the builder's {name} event is taken as said", ok and all(got_props.get(k) == v for k, v in props.items()), str(got_props))
+            from garmin_mcp.app import _fail_reason
+            check("a failed send says why in a word or two, never Garmin's message",
+                  [_fail_reason(e) for e in ("HTTPError: 429 Too Many Requests", "401 Unauthorized", "503 Service Unavailable",
+                                             "400 Bad Request", "something odd")]
+                  == ["garmin busy", "signed out", "garmin down", "garmin refused", "other"])
 
             # Changing the plan: the new one goes in from next Monday, the rest of this week stays.
             plan = client.get("/app/api/plan", headers=auth).json()

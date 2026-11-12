@@ -638,11 +638,11 @@ async function racePrompt() {
     if (!r || !r.key) { here.hidden = true; here.innerHTML = ""; return; }
     here.hidden = false;
     here.innerHTML = r.mode === "row"
-      ? `<a class="race-row" href="#/build?race=${esc(r.key)}" data-race="cta"><i></i><span class="stack-tight" style="gap:1px;min-width:0"><span class="race-row-t">${esc(r.name)} · ${esc(r.when)}</span><span class="meta" style="font-size:12.5px">${esc(r.row_sub)}</span></span><span class="race-row-cta">${esc(r.cta)}</span></a>`
+      ? `<a class="race-row" href="#/build?race=${esc(r.key)}&from=race" data-race="cta"><i></i><span class="stack-tight" style="gap:1px;min-width:0"><span class="race-row-t">${esc(r.name)} · ${esc(r.when)}</span><span class="meta" style="font-size:12.5px">${esc(r.row_sub)}</span></span><span class="race-row-cta">${esc(r.cta)}</span></a>`
       : `<div class="card race-card"><div class="race-kick"><i></i><span>NEW ON YOUR GARMIN CALENDAR</span></div>
           <div class="stack-tight" style="gap:6px"><span class="race-title">${esc(r.title)}</span><span class="race-sub">${esc(r.sub)}</span></div>
           <div class="race-facts">${r.facts.map((f) => `<div><span class="race-fact-v">${esc(f.v)}</span><span class="meta" style="font-size:12px">${esc(f.l)}</span></div>`).join("")}</div>
-          <div class="pills"><a class="pill tall light" style="flex:1.4" href="#/build?race=${esc(r.key)}" data-race="cta">${esc(r.cta)}</a><button type="button" class="pill tall" data-race="snooze">Not now</button></div>
+          <div class="pills"><a class="pill tall light" style="flex:1.4" href="#/build?race=${esc(r.key)}&from=race" data-race="cta">${esc(r.cta)}</a><button type="button" class="pill tall" data-race="snooze">Not now</button></div>
           <button type="button" class="race-not" data-race="not_goal">It's not a goal race</button></div>`;
     here.querySelectorAll("[data-race]").forEach((el) => { el.onclick = (e) => raceAction(r, el.dataset.race, e); });
   };
@@ -961,7 +961,7 @@ function blockView(d) {
         ? `<span class="${p.current ? "now" : ""}" title="${esc(p.label)}">${esc((p.weeks * 3 < b.bars.length / 4 ? p.label.slice(0, 2) : p.label).toUpperCase())}</span>`
         : `<span class="gap"></span>`).join("")}</div>` : "";
   const ask = askLink(d, "Edit the plan");
-  const manage = d.manage ? `<div class="card plan-manage"><a class="pill tall light" href="#/build?replace=1">Change this plan</a>
+  const manage = d.manage ? `<div class="card plan-manage"><a class="pill tall light" href="#/build?replace=1&from=change">Change this plan</a>
       <div class="plan-manage-row"><a class="link-plain" href="${esc(ask.href)}" target="_blank" rel="noopener">Ask ${esc(ask.name)} to change it</a>
       <button type="button" class="link-plain red" data-remove-plan>Remove this plan</button></div></div>` : "";
   return `<div class="card block-card"><div class="section-head"><span class="section-title">${esc(b.title)}</span><span class="meta">km per week</span></div>
@@ -982,13 +982,13 @@ function resumeRow() {
   const n = STEP_OF[d.step] || d.answers.reached || 1;
   const days = Math.floor((Date.now() - d.at) / 864e5);
   const when = days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
-  return `<div class="b-resume"><a class="b-resume-go" href="#/build${n > 1 ? `/${d.step}` : ""}${d.replace ? "?replace=1" : "?replace=0"}">
+  return `<div class="b-resume"><a class="b-resume-go" href="#/build${n > 1 ? `/${d.step}` : ""}${d.replace ? "?replace=1" : "?replace=0"}&from=resume">
       <span class="stack-tight" style="gap:1px;min-width:0"><span class="strong">Pick up your plan</span><span class="meta" style="font-size:12.5px">Step ${n} of 7 · last changed ${when}</span></span>
       <span class="b-resume-cta">Carry on</span></a><button type="button" class="link-plain" data-drop-draft>Start again</button></div>`;
 }
 function wireResume() {
   const b = document.querySelector("[data-drop-draft]");
-  if (b) b.onclick = () => { store.drop(BUILD_KEY); B.inputs = null; B.answers = null; b.closest(".b-resume").remove(); toast("Cleared. Build one fresh whenever you like."); };
+  if (b) b.onclick = () => { track("build_action", { action: "restart" }); store.drop(BUILD_KEY); B.inputs = null; B.answers = null; b.closest(".b-resume").remove(); toast("Cleared. Build one fresh whenever you like."); };
 }
 
 function removePlanSheet(m) {
@@ -1023,7 +1023,7 @@ async function showPlan(view, params, quiet = false) {
           ${resumeRow()}
           <div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Build one here</span>
             <span class="b-entry-d">${d.fresh ? "About two minutes. Tell it your usual week and it does the rest." : "About two minutes. Most answers come from Garmin, so most steps are one tap."}</span></div>
-            <a class="pill tall light" href="#/build">Build one here</a></div>
+            <a class="pill tall light" href="#/build?from=plan">Build one here</a></div>
           <div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Or talk it through</span>
             <span class="b-entry-d">${esc(d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")} asks the same questions and can handle anything unusual.</span></div>
             ${ask.html.replace("pill red tall", "pill tall")}</div>`;
@@ -1036,10 +1036,10 @@ async function showPlan(view, params, quiet = false) {
     // The plan ends within three weeks: the next block can be planned now.
     const nb = d.next_block?.none ? `<div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">Nothing planned from here</span>
         <span class="b-entry-d">Build the next plan here, or talk it through with ${esc(d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")}.</span></div>
-        <a class="pill tall light" href="#/build">Build a plan</a></div>`
+        <a class="pill tall light" href="#/build?from=nothing_ahead">Build a plan</a></div>`
       : d.next_block ? `<div class="card b-entry"><div class="stack-tight" style="gap:6px"><span class="b-entry-t">This plan ends ${esc(d.next_block.ends)}</span>
         <span class="b-entry-d">Plan the next block now and it starts the Monday after, with an easy week first.</span></div>
-        <div class="pills"><a class="pill tall light" href="#/build" style="flex:1.2">Plan the next block</a>${askLink({ ...d, ask: d.next_block.ask }, "With " + (d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")).html.replace("pill red tall", "pill tall")}</div></div>` : "";
+        <div class="pills"><a class="pill tall light" href="#/build?from=next_block" style="flex:1.2">Plan the next block</a>${askLink({ ...d, ask: d.next_block.ask }, "With " + (d.assistant === "ChatGPT" ? "ChatGPT" : "Claude")).html.replace("pill red tall", "pill tall")}</div></div>` : "";
     remember(d);
     base = "plan";
     if (desktop()) {
@@ -1630,7 +1630,16 @@ const STYLE_OPTS = [
 const VERDICT = { realistic: ["#22352A", "#8CC08F"], stretch: ["#3A2A1A", "#E8A15F"], ambitious: ["#2A2520", "#E8A15F"] };
 const WARN = svg('<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>', 18, 'style="color:var(--hard);flex-shrink:0;margin-top:1px"');
 
-const B = { inputs: null, answers: null, plan: null, sel: null, job: null, poll: null, asked: 0 };
+const B = { inputs: null, answers: null, plan: null, sel: null, job: null, poll: null, asked: 0, from: null, did: new Set() };
+
+// The builder's own events beyond the steps: what people did and what stopped them.
+// once: counted the first time in a run through, for things tapped many times over.
+function buildDid(action, props = {}, once = false) {
+  if (once) { const k = `${action}|${props.reason || ""}`; if (B.did.has(k)) return; B.did.add(k); }
+  track("build_action", { action, step: B.step, ...props });
+}
+// The goal race's distance as a word, never its name or date.
+function distOf(km) { return (DISTS.find((x) => x[2] === km) || [km > 42.2 ? "ultra" : "other"])[0]; }
 
 function day(iso) { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); }
 // The answers so far are kept on the phone, so leaving part way loses nothing: Plan offers to pick them up.
@@ -1729,7 +1738,12 @@ async function showBuild(step, params = new URLSearchParams()) {
   const wide = desktop();
   if (wide) { $("tabs").hidden = true; topbar("plan"); } else { $("topbar").hidden = true; $("tabs").hidden = true; }
   if (step === "sending" || step === "done" || step === "error") return buildSendView(step);
+  // Where it was opened from: Plan's cards, the race prompt, a draft picked up. A bare link is "direct".
+  const from = params.get("from");
+  let opened = !!from, resumed = false;
+  if (from || !B.from) B.from = from || "direct";
   if (!B.inputs) {
+    opened = true;
     loading();
     try {
       B.inputs = await api(B.replace ? "build?replace=1" : "build");
@@ -1739,7 +1753,9 @@ async function showBuild(step, params = new URLSearchParams()) {
     }
     remember(B.inputs);
     const saved = buildDraft();
-    B.answers = saved && saved.starts === B.inputs.starts && !!saved.replace === !!B.replace && !chosen ? saved.answers : freshAnswers(B.inputs);
+    resumed = !!(saved && saved.starts === B.inputs.starts && !!saved.replace === !!B.replace && !chosen);
+    B.answers = resumed ? saved.answers : freshAnswers(B.inputs);
+    B.did = new Set();
   }
   // From the card on Today: that race is the goal, and any other A becomes a B.
   if (chosen && B.answers.races.some((r) => r.key === chosen)) {
@@ -1751,6 +1767,7 @@ async function showBuild(step, params = new URLSearchParams()) {
   }
   if (!(step in STEP_OF) && step !== "hurt") step = "1";
   B.step = step;
+  if (opened) track("build_opened", { from: B.from, step, resumed: resumed ? "yes" : "no", replace: B.replace ? "yes" : "no", typed: B.inputs.none ? "yes" : "no" });
   drawBuild();
   if (["2", "4", "6", "7"].includes(step)) refreshBuild();
 }
@@ -2020,10 +2037,17 @@ function drawBuild() {
   // Each step counted the first time it's reached, so the funnel shows where people stop.
   if ((n && n > (a.reached || 0)) || (s === "hurt" && !a.hurtSeen)) {
     if (s === "hurt") a.hurtSeen = true; else a.reached = n;
-    track("build_step", { step: s, replace: B.replace ? "yes" : "no",
+    const g = n === 7 && goalRace();
+    track("build_step", { step: s, from: B.from, replace: B.replace ? "yes" : "no",
       ...(n === 7 ? { days: a.days, style: a.style, amount: a.amount, gentle: a.injury === "none" ? "no" : "yes", open: a.open ? "yes" : "no",
-        races: a.races.filter((r) => !outside(r) && r.tier !== "C").length } : {}) });
+        races: a.races.filter((r) => !outside(r) && r.tier !== "C").length, level: a.level, typed: B.inputs.none ? "yes" : "no",
+        dist: g ? distOf(g.km) : a.open ? a.open_distance || "none" : "none",
+        goal: g ? (a.goal_time ? "time" : "no time") : a.open ? a.open_goal || "open" : "none",
+        verdict: g && a.goal_time ? B.plan?.verdict?.kind : undefined } : {}) });
   }
+  // What stopped them going on: a race too close or out of range, or a plan that couldn't be made.
+  if (s === "2" && !a.open && goalRace() && (B.plan?.race_note || B.plan?.too_close)) buildDid("blocked", { reason: B.plan.race_note ? "out of range" : "too close" }, true);
+  if (s === "7" && B.plan?.failure) buildDid("blocked", { reason: "no plan" }, true);
   saveAnswers();
   const body = { 1: step1, 2: step2, "2c": step2c, 3: step3, 4: step4, 5: step5, 6: step6, 7: step7, hurt: hurtView }[s]();
   const head = n ? `<div class="b-progress"><button type="button" class="b-back" aria-label="Back" data-b="back">${ICON.left()}</button>
@@ -2065,7 +2089,7 @@ function editSheet() {
         draft[k] = Math.max(0, Math.min(k === "avg_km" ? 250 : 60, draft[k] + Number(b.dataset.d))); dialog.innerHTML = body(); wire(); dialog.querySelector(`[data-s="${k}"][data-d="${b.dataset.d}"]`).focus(); }; });
       dialog.querySelectorAll('[data-b="level"]').forEach((b) => { b.onclick = () => { draft.level = b.dataset.v; dialog.innerHTML = body(); wire(); }; });
       dialog.querySelector("[data-close]").onclick = close;
-      dialog.querySelector("[data-save]").onclick = () => { Object.assign(a, draft); saveAnswers(); close(); drawBuild(); };
+      dialog.querySelector("[data-save]").onclick = () => { Object.assign(a, draft); saveAnswers(); close(); buildDid("numbers", { typed: B.inputs.none ? "yes" : "no" }); drawBuild(); };
     };
     wire();
   });
@@ -2103,7 +2127,7 @@ function addRaceSheet() {
         const id = `u${Date.now()}`;
         a.races.push({ id, name, date: when, km, meta: `${ultra ? `Ultra · ${km} km` : DISTS.find((x) => x[0] === dist)[1]} · added`, tier: km >= 10 ? "B" : "C" });
         if (!a.races.some((r) => r.tier === "A") && km >= 10) { a.races.find((r) => r.id === id).tier = "A"; a.open = false; }
-        settle(id); saveAnswers(); close(); drawBuild(); refreshBuild();
+        settle(id); saveAnswers(); close(); buildDid("add race", { dist: distOf(km) }); drawBuild(); refreshBuild();
       };
     };
     wire();
@@ -2117,6 +2141,7 @@ function wireBuild() {
     e.preventDefault();
     const n = B.plan.preview.weeks.length, k = B.sel ?? 0;
     B.sel = e.key === "Home" ? 0 : e.key === "End" ? n - 1 : Math.max(0, Math.min(n - 1, k + (e.key === "ArrowLeft" ? -1 : 1)));
+    buildDid("chart", {}, true);
     B.keepScroll = true; drawBuild(); $("b-bars").querySelectorAll("button")[B.sel].focus();
   };
 }
@@ -2125,7 +2150,7 @@ function buildAction(act, el) {
   const a = B.answers, v = el.dataset.v;
   const redraw = (ask) => { saveAnswers(); B.keepScroll = true; drawBuild(); if (ask) refreshBuild(); };
   switch (act) {
-    case "back": { const prev = PREV_OF[B.step]; if (B.step === "1") location.hash = "#/plan"; else if (B.step === "3") go(a.open ? "2c" : "2"); else go(prev); return; }
+    case "back": { buildDid("back"); const prev = PREV_OF[B.step]; if (B.step === "1") location.hash = "#/plan"; else if (B.step === "3") go(a.open ? "2c" : "2"); else go(prev); return; }
     case "edit": return editSheet();
     case "next1": return go("2");
     case "next2": if (!goalRace()) { a.open = true; saveAnswers(); return go("2c"); } a.open = false; saveAnswers(); return go("3");
@@ -2150,14 +2175,16 @@ function buildAction(act, el) {
     case "amount": a.amount = v; return redraw();
     case "injury": a.injury = v; if (v !== "none" && a.amount === "more") a.amount = "build"; return redraw();
     case "style": if (el.getAttribute("aria-disabled") === "true") return; a.style = v; return redraw(v === "pick");
-    case "week": B.sel = Number(v); B.keepScroll = true; drawBuild(); $("b-bars").querySelectorAll("button")[B.sel].focus(); return;
-    case "prev": case "next": { const n = B.plan.preview.weeks.length; B.sel = Math.max(0, Math.min(n - 1, (B.sel ?? 0) + (act === "prev" ? -1 : 1)));
+    case "week": buildDid("chart", {}, true); B.sel = Number(v); B.keepScroll = true; drawBuild(); $("b-bars").querySelectorAll("button")[B.sel].focus(); return;
+    case "prev": case "next": { buildDid("chart", {}, true); const n = B.plan.preview.weeks.length; B.sel = Math.max(0, Math.min(n - 1, (B.sel ?? 0) + (act === "prev" ? -1 : 1)));
       B.keepScroll = true; drawBuild(); document.querySelector(`[data-b="${act}"]`).focus(); return; }
-    case "jump": return go(v);
-    case "send": return sendPlan(false);
-    case "retry": return sendPlan(true);
-    case "toPreview": return go("7");
-    case "seePlan": { const to = B.landing || "#/plan"; B.inputs = null; B.plan = null; B.job = null; B.replace = false; B.landing = null; B.clock = null; location.hash = to; return; }
+    case "jump": buildDid(el.closest(".b-whyrow") ? "why" : "jump", { to: v }); return go(v);
+    case "send": buildDid("send", { replace: B.replace ? "yes" : "no" }); return sendPlan(false);
+    case "retry": buildDid("retry", { step: "error" }); return sendPlan(true);
+    case "toPreview": buildDid("back to preview", { step: "error" }); return go("7");
+    case "seePlan": { const to = B.landing || "#/plan";
+      buildDid("landing", { step: "done", to: to.startsWith("#/today") || to === "#/" ? "today" : to.includes("week=") ? "week" : "plan" });
+      B.inputs = null; B.from = null; B.plan = null; B.job = null; B.replace = false; B.landing = null; B.clock = null; location.hash = to; return; }
     default:
   }
 }
@@ -2170,7 +2197,7 @@ document.addEventListener("click", (e) => {
 
 async function sendPlan(retry) {
   try {
-    B.job = await api("build/send", { method: "POST", body: JSON.stringify({ answers: sendable(), retry, replace: !!B.replace }) });
+    B.job = await api("build/send", { method: "POST", body: JSON.stringify({ answers: sendable(), retry, replace: !!B.replace, from: B.from }) });
     B.clock = { at: Date.now(), sent: B.job.sent || 0, moved: Date.now() };
   } catch (e) {
     if (e instanceof SignedOut) return route();
