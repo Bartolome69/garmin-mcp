@@ -326,7 +326,8 @@
     }
     var avg = paceSecs(sum.pace_per_km);
     if (L.mixed && avg != null && avg > top && avg < bottom) {
-      kids.push(el("i", { style: "bottom:" + (height(avg) * 1.0).toFixed(1) + "%" }, [el("b", { class: "mono", text: "avg " + bare(sum.pace_per_km) })]));
+      // On the bars' scale: their heights are shares of the chart less its 24px label room, not of the whole box.
+      kids.push(el("i", { style: "bottom:calc((100% - 24px) * " + (height(avg) / 100).toFixed(3) + ")" }, [el("b", { class: "mono", text: "avg " + bare(sum.pace_per_km) })]));
     }
     var box = el("div", { class: "chart", role: "img", "aria-label": bars.length + " laps" }, kids);
     // Under the chart: the grey stretches named, or the first and last km.
