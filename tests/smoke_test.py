@@ -643,6 +643,10 @@ async def check_preview_gate(check) -> None:
         plain_details = next(t for t in tools if t.name == "get_activity_details").description
         check("without preview, activity details describe a ride's power and climbs",
               "intensity factor" in plain_details and "VAM" in plain_details)
+        plan_desc = next(t for t in tools if t.name == "get_plan").description
+        check("one card per answer: 'how was my run' is the run tool alone, never with get_plan (Nov 12)",
+              "how was my run" in plain_details and "not with get_plan" in plain_details
+              and "how was my run" in plan_desc and "get_activity_details alone" in plan_desc)
         check("without preview, activity details describe a run's weather and shoes",
               "shoes worn" in plain_details)
         check("without preview, get_fitness mentions FTP",
