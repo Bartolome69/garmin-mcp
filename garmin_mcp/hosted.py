@@ -102,8 +102,10 @@ ROUTES = ("official", "password")
 SPLIT = SIGNUP_ROUTE == "split"
 SPLIT_NAME = "signup-route-oct26"
 # Nov 4: Garmin capped new connections to Daash's app while it reviewed it
-# (Starter Access, at about 100 linked accounts); reopened on Nov 11 when
-# Garmin approved the app again. "paused" sends new sign-ups to the password
+# (Starter Access, at about 100 linked accounts). Reopened on Nov 11 when
+# Garmin said it had approved the app again; two new accounts got through
+# (99 linked), then Garmin sent every new one straight back without a code
+# and nobody connected overnight, so paused again on Nov 12. "paused" sends new sign-ups to the password
 # form and keeps Garmin's page for accounts already linked; set it in
 # deploy-hosted.yml, which every deploy applies.
 OFFICIAL_SIGNUPS_OPEN = os.environ.get("GARMIN_OFFICIAL_SIGNUPS", "paused").strip().lower() == "open"
