@@ -204,6 +204,10 @@ async def main() -> int:
         "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
         "token_endpoint_auth_method": "none"}, as_json=True))
     client_id = json.loads(body)["client_id"]
+    # Other checks here turn back from Garmin's page on purpose: the guard that
+    # pauses sign-ups after failures in a row is kept out of their way, and
+    # checked on its own below.
+    hosted.signup_guard.STREAK = 1_000_000
 
     async def start(resource: str | None = None) -> tuple[str, str]:
         """A fresh connector sign-in: (flow, PKCE verifier)."""
@@ -935,6 +939,38 @@ async def main() -> int:
         approved = [p for e, p in reported if e == "garmin_approved"]
         check("reported as unknown", approved[-1].get("workouts") == "unknown", str(approved[-1:]))
         NEXT_GARMIN["permissions"] = ["ACTIVITY_EXPORT", "HEALTH_EXPORT", "WORKOUT_IMPORT"]
+
+        print("\nGarmin's page stops letting new people through (Nov 12)")
+        alerts: list[tuple[str, str]] = []
+        real_alert = hosted.support_mail.send_alert
+        hosted.support_mail.send_alert = lambda subject, text: alerts.append((subject, text)) or True
+        hosted.signup_guard.reset()
+        hosted.signup_guard.on_pause = hosted._signups_paused
+        hosted.signup_guard.STREAK = 3
+        try:
+            for _ in range(3):
+                fg, _v = await start()
+                _, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(fg)}"))
+                st = urllib.parse.parse_qs(urllib.parse.urlparse(headers.get("location", "")).query).get("state", [""])[0]
+                await run(lambda: http("GET", f"/official/callback?error=access_denied&state={urllib.parse.quote(st)}"))
+            check("three new sign-ups sent back from Garmin's page pause it, and the owner is emailed once",
+                  len(alerts) == 1 and "switched off" in alerts[0][0] and "open-YYYY-MM-DD" in alerts[0][1], str(alerts)[:200])
+            check("and it's counted", any(e == "official_signups_auto_paused" for e, _p in reported))
+            fg, _v = await start()
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={fg}&route=official"))
+            check("the next person gets the password form, not Garmin's page",
+                  "Garmin password" in body and "Continue with Garmin" not in body, body[:200])
+            code, body, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(fg)}"))
+            check("and an old Continue with Garmin button sends them to the password too",
+                  code == 200 and "Continue with your password" in body, f"{code} {body[:120]}")
+            code, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(fg)}&again=1"))
+            check("someone already linked to Garmin still gets Garmin's page",
+                  code == 302 and headers.get("location", "").startswith(official.AUTHORIZE_URL))
+        finally:
+            hosted.support_mail.send_alert = real_alert
+            hosted.signup_guard.reset()
+            hosted.signup_guard.on_pause = None
+            hosted.signup_guard.STREAK = 1_000_000
 
         print("\nturning back")
         flow5, _ = await start()

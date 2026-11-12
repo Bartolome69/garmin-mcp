@@ -213,6 +213,24 @@ def send_code(to: str, code: str) -> None:
         raise OSError("code email not sent") from None
 
 
+def send_alert(subject: str, text: str) -> bool:
+    """An alert for the owner, to the inbox support mail is passed on to.
+
+    False when there's nowhere to send it (SUPPORT_FORWARD_TO or the Resend
+    key missing) or Resend couldn't take it; the caller has logged why already.
+    """
+    to = os.environ.get("SUPPORT_FORWARD_TO", "").strip()
+    if not to or not can_send():
+        log.warning("alert not sent, no inbox set: %s", subject)
+        return False
+    try:
+        _request("POST", "/emails", {"from": FROM, "to": [to], "subject": subject, "text": text})
+    except urllib.error.URLError as exc:
+        log.warning("alert email not sent: %s", type(exc).__name__)
+        return False
+    return True
+
+
 def send_weekly(to: str, subject: str, text: str, page: str, unsubscribe: str) -> None:
     """Send one Monday email. Raises OSError if Resend couldn't take it."""
     message = {

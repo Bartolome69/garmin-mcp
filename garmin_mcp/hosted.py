@@ -40,7 +40,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, store, support_mail, weekly
+from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, weekly
 from . import app as app_routes
 from . import server as server_mod
 from .formatting import drop_empty
@@ -108,7 +108,16 @@ SPLIT_NAME = "signup-route-oct26"
 # and nobody connected overnight, so paused again on Nov 12. "paused" sends new sign-ups to the password
 # form and keeps Garmin's page for accounts already linked; set it in
 # deploy-hosted.yml, which every deploy applies.
-OFFICIAL_SIGNUPS_OPEN = os.environ.get("GARMIN_OFFICIAL_SIGNUPS", "paused").strip().lower() == "open"
+# Any value starting "open" opens it; a new one ("open-2026-11-20") also
+# clears a pause the server made itself (signup_guard).
+OFFICIAL_SIGNUPS_SWITCH = os.environ.get("GARMIN_OFFICIAL_SIGNUPS", "paused").strip().lower()
+OFFICIAL_SIGNUPS_OPEN = OFFICIAL_SIGNUPS_SWITCH.startswith("open")
+
+
+def _official_open() -> bool:
+    """New sign-ups go to Garmin's page: switched open, and not paused by the server
+    itself after Garmin stopped letting new people through (Nov 12, signup_guard)."""
+    return OFFICIAL_SIGNUPS_OPEN and not signup_guard.paused(OFFICIAL_SIGNUPS_SWITCH)
 # Nov 11: phones go to Garmin's page too, as computers do, since the sign-in
 # now carries its own mark back from Garmin (FLOW_COOKIE). Phones were on the
 # password from Oct 26 (see _signup_route); GARMIN_PHONES_OFFICIAL=0 puts them back.
@@ -1501,6 +1510,35 @@ def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> di
     return counts
 
 
+# -- sign-ups on Garmin's page, watched (Nov 12) ----------------------------------
+GUARD_EVERY = 60
+
+
+def _signups_paused(why: str, failures: list[dict[str, Any]]) -> None:
+    """Garmin's page stopped letting new people through: say so, at once, where Bart reads it."""
+    when = lambda t: datetime.fromtimestamp(t, ZoneInfo("Europe/London")).strftime("%d %b %H:%M")  # noqa: E731
+    lines = "\n".join(f"- {when(f['at'])}: {f['why']}" for f in failures[-signup_guard.STREAK:])
+    analytics.capture("official_signups_auto_paused", "daash-server", {
+        "failures": len(failures), "last_why": why, "switch": OFFICIAL_SIGNUPS_SWITCH})
+    support_mail.send_alert(
+        "Daash: sign-ups on Garmin's page switched off",
+        f"The last {signup_guard.STREAK} new sign-ups sent to Garmin's page didn't connect:\n\n{lines}\n\n"
+        "New sign-ups get the password form again from now on, as with "
+        "GARMIN_OFFICIAL_SIGNUPS=paused. Accounts already linked to Garmin keep working.\n\n"
+        "To try Garmin's page again, set GARMIN_OFFICIAL_SIGNUPS to a new value starting "
+        "\"open\" (for example open-YYYY-MM-DD) in deploy-hosted.yml and deploy.\n")
+
+
+def _guard_forever() -> None:
+    while True:
+        try:
+            if OFFICIAL_SIGNUPS_OPEN:
+                signup_guard.sweep(OFFICIAL_SIGNUPS_SWITCH)
+        except Exception:  # noqa: BLE001
+            log.exception("sign-up guard pass failed")
+        time.sleep(GUARD_EVERY)
+
+
 def _notify_forever() -> None:
     while True:
         try:
@@ -1942,7 +1980,7 @@ def _try_again(flow: str) -> str:
 
 def _fallback_ok(flow: str) -> bool:
     """Whether a refused password sign-in can be offered Garmin's own page instead."""
-    return (bool(flow) and OAUTH_ENABLED and official.configured() and OFFICIAL_SIGNUPS_OPEN
+    return (bool(flow) and OAUTH_ENABLED and official.configured() and _official_open()
             and OAUTH_PROVIDER.pending(flow) is not None)
 
 
@@ -1998,7 +2036,7 @@ async def connect_form(request: Request) -> Response:
     if flow and OAUTH_ENABLED and OAUTH_PROVIDER.password_only(flow):
         route, drawn = "password", False  # the password link: whatever the split or cookie says
     from_directory = bool(flow) and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured()
-    if from_directory and not OFFICIAL_SIGNUPS_OPEN:
+    if from_directory and not _official_open():
         # The directory address is Garmin's own sign-in only, so while Garmin's
         # cap is on it can't offer a password form: it says when to come back.
         analytics.capture("sign_in_shown", None, _with_source(request, {"via": "oauth", "route": "paused", "listed": True}))
@@ -2010,7 +2048,7 @@ async def connect_form(request: Request) -> Response:
             Accounts already connected keep working. Try again in a few days.</p>
             <p class=fine>Already connected to Daash through Garmin?</p>
             <a class=button href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin Connect™</a>""")
-    listed = from_directory and OFFICIAL_SIGNUPS_OPEN
+    listed = from_directory and _official_open()
     official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
@@ -2039,7 +2077,7 @@ async def connect_form(request: Request) -> Response:
 def _signup_route(request: Request) -> tuple[str, bool]:
     """"official" or "password": which sign-in this browser gets from the connector,
     and whether it was drawn just now for the split (so the cookie keeps it)."""
-    if not official.configured() or not OFFICIAL_SIGNUPS_OPEN or request.query_params.get("usual") == "1":
+    if not official.configured() or not _official_open() or request.query_params.get("usual") == "1":
         return "password", False
     asked = request.query_params.get("route", "")
     if asked in ROUTES:
@@ -3392,7 +3430,7 @@ async def official_signup(request: Request) -> Response:
     flow = request.query_params.get("flow", "")
     if not (OAUTH_ENABLED and official.configured()) or OAUTH_PROVIDER.pending(flow) is None:
         return _consent_expired()
-    if not OFFICIAL_SIGNUPS_OPEN and request.query_params.get("again") != "1":
+    if not _official_open() and request.query_params.get("again") != "1":
         # A Continue with Garmin button from before the pause, or a bookmark.
         analytics.capture("garmin_sign_in_paused", None, _with_source(request, {}))
         return page("Connect with your password", f"""<h1>Connect with your Garmin password</h1>
@@ -3404,6 +3442,9 @@ async def official_signup(request: Request) -> Response:
             <a href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin Connect™</a></p>""")
     via = request.query_params.get("via", "")
     analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via in GARMIN_INSTEAD_WHY else {}))
+    if request.query_params.get("again") != "1":
+        # A new sign-up: watched until it comes back (signup_guard).
+        await anyio.to_thread.run_sync(signup_guard.started, _flow_mark(flow), OFFICIAL_SIGNUPS_SWITCH)
     response = RedirectResponse(official.signup_url(flow), status_code=302)
     response.set_cookie(FLOW_COOKIE, _flow_mark(flow), max_age=1800, httponly=True,
                         secure=request.url.scheme == "https", samesite="lax")
@@ -3415,17 +3456,24 @@ async def _signup_callback(request: Request, code: str, state: str, flow: str) -
     retry = f'<a class=button href="/official/signup?flow={quote(flow, safe="")}">Try again with Garmin Connect™</a>'
     if not code:
         analytics.capture("garmin_declined", None, _with_source(request, {}))
+        await anyio.to_thread.run_sync(lambda: signup_guard.finished(
+            _flow_mark(flow), False, OFFICIAL_SIGNUPS_SWITCH, "sent back from Garmin's page without approval"))
         usual = "" if OAUTH_PROVIDER.listed(flow) else _usual_way(flow)
         return page("Not connected", f"""<h1>Not connected</h1><p>Garmin didn't share access, so nothing
                     changed and nothing was kept.</p>{retry}{usual}""")
     try:
         approval = await anyio.to_thread.run_sync(official.finish_signup, code, state)
     except official.OfficialError as exc:
+        await anyio.to_thread.run_sync(lambda: signup_guard.finished(
+            _flow_mark(flow), False, OFFICIAL_SIGNUPS_SWITCH, "approved, but finishing with Garmin failed"))
         return page("Not connected", f"<div class=err>{html.escape(str(exc))}</div>{retry}")
     except (OSError, ValueError, KeyError) as exc:
         log.warning("official sign-up failed: %s", type(exc).__name__)
+        await anyio.to_thread.run_sync(lambda: signup_guard.finished(
+            _flow_mark(flow), False, OFFICIAL_SIGNUPS_SWITCH, "approved, but Garmin couldn't be reached to finish"))
         return page("Not connected", "<div class=err>Garmin couldn't be reached to finish connecting. "
                     f"Try again in a minute.</div>{retry}")
+    await anyio.to_thread.run_sync(lambda: signup_guard.finished(_flow_mark(flow), True, OFFICIAL_SIGNUPS_SWITCH))
     if approval.new:
         # Everything is new to someone just connecting.
         store.claim_news(approval.user_token, NEWS_VERSION)
@@ -4173,6 +4221,8 @@ def main() -> None:
 
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
     threading.Thread(target=_notify_forever, name="notifications", daemon=True).start()
+    signup_guard.on_pause = _signups_paused
+    threading.Thread(target=_guard_forever, name="signup-guard", daemon=True).start()
     if WEEKLY_EMAIL and support_mail.can_send():
         threading.Thread(target=_weekly_email_forever, name="weekly-email", daemon=True).start()
         official.on_activities = _activities_arrived

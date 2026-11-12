@@ -90,6 +90,7 @@ jobs:
           python tests/plan_engine_test.py
           python tests/easy_check_test.py
           python tests/run_view_test.py
+          python tests/signup_guard_test.py
           python tests/push_test.py
           python tests/plan_checks_test.py
 

@@ -1475,6 +1475,21 @@ def secret_setting(name: str, make: Callable[[], bytes]) -> bytes:
     return _cipher().decrypt(row[0])
 
 
+def get_setting(name: str) -> str:
+    """A plain setting kept by the server (not a secret), or "" when unset."""
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
+    if not row or row[0] is None:
+        return ""
+    return row[0].decode() if isinstance(row[0], bytes) else str(row[0])
+
+
+def set_setting(name: str, value: str) -> None:
+    with _connect() as conn:
+        conn.execute("INSERT INTO settings (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+                     (name, value.encode()))
+
+
 def push_owner(user_token: str) -> str:
     """Who a phone's notifications belong to: the email fingerprint, else the token."""
     return email_hash_for(user_token) or user_token
