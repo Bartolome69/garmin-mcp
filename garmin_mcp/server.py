@@ -1337,18 +1337,25 @@ def tool_errors(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
-        started = time.monotonic()
-        settle = hooks.before_tool(fn.__name__)
-        result = await answer(*args, **kwargs)
-        if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
-            try:
-                result["credit"] = await _credit(fn.__name__, result)
-            except Exception:  # noqa: BLE001 - the answer goes out with "Garmin" alone
-                result["credit"] = share.attribution(None)
-        took = time.monotonic() - started
-        if took < settle:
-            await anyio.sleep(settle - took)
-        return hooks.after_tool(fn.__name__, result, took)
+        inside, depth = hooks.enter()
+        try:
+            if inside:
+                # Called by another tool, not the chat: its answer, unreported.
+                return await answer(*args, **kwargs)
+            started = time.monotonic()
+            settle = hooks.before_tool(fn.__name__)
+            result = await answer(*args, **kwargs)
+            if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
+                try:
+                    result["credit"] = await _credit(fn.__name__, result)
+                except Exception:  # noqa: BLE001 - the answer goes out with "Garmin" alone
+                    result["credit"] = share.attribution(None)
+            took = time.monotonic() - started
+            if took < settle:
+                await anyio.sleep(settle - took)
+            return hooks.after_tool(fn.__name__, result, took)
+        finally:
+            hooks.leave(depth)
 
     async def answer(*args, **kwargs):
         try:

@@ -1162,6 +1162,43 @@ def check_chart_config_read_only(check) -> None:
             plan_mod.CONFIG = saved
 
 
+async def check_nested_tools_report_once(check) -> None:
+    """A tool called from inside another (the run tool reads the plan) isn't
+    reported as the chat's own call: no second card, no plan clock (Nov 12)."""
+    from garmin_mcp import hooks
+    from garmin_mcp.server import tool_errors
+
+    seen: list[str] = []
+    started: list[str] = []
+
+    @tool_errors
+    async def get_plan():
+        return {"weeks": []}
+
+    @tool_errors
+    async def get_activity_details():
+        inner = await get_plan()
+        return {"inner_has_card": "_card" in inner}
+
+    def hook(name, result):
+        seen.append(name)
+        return {**result, "_card": "x"} if isinstance(result, dict) else result
+
+    async def run():
+        token = hooks.use(hook, lambda name: started.append(name) or 0.0)
+        try:
+            return await get_activity_details(), await get_plan()
+        finally:
+            hooks.reset(token)
+
+    outer, plan = await run()
+    check("a tool called inside another isn't reported: only the run tool, then the chat's own plan",
+          seen == ["get_activity_details", "get_plan"] and started == ["get_activity_details", "get_plan"],
+          f"{seen} {started}")
+    check("and its answer comes back untouched by the hook", outer.get("inner_has_card") is False
+          and plan.get("_card") == "x", str((outer, plan)))
+
+
 def check_stream_km_splits(check) -> None:
     """A 7 km steady lap recorded by a watch that did not auto-lap.
 
@@ -1585,6 +1622,7 @@ async def main() -> int:
             check("an ordinary account's run details carry the weather and shoes",
                   {"weather", "shoes"} <= set(detail), str(list(detail)))
             check_stream_km_splits(check)
+            await check_nested_tools_report_once(check)
             check_conditions(check)
             check_terrain_ignores_stops(check)
             check_shoes_and_nights(check)
