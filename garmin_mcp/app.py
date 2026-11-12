@@ -1378,7 +1378,8 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 # use sits beside Claude and ChatGPT use in PostHog. What a screen showed is
 # never sent: no paces, no sessions, no plan.
 
-APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed", "build_step"}
+APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed",
+              "build_opened", "build_step", "build_action"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you", "build"}
 
@@ -1541,10 +1542,16 @@ async def api_event(request: Request) -> Response:
                                          "ok": said.get("ok") is not False, "preloaded": True}))
         return _json({"ok": True})
     # choice: Back to my chat or New chat; saved: whether a chat was remembered.
-    keep = {k: str(v)[:40] for k, v in said.items() if k in ("to", "opens", "where", "method", "choice", "saved",
-                                                           "step", "days", "style", "amount", "gentle", "races", "dist", "replace", "open")}
+    keep = {k: str(v)[:40] for k, v in said.items() if k in _EVENT_KEYS}
     _track(f"app_{name}", {**keep, "layout": _layout(request)})
     return _json({"ok": True})
+
+
+# What the page may say about an event: choices and counts, never a name, a date or a time typed in.
+_EVENT_KEYS = ("to", "opens", "where", "method", "choice", "saved",
+               # The plan builder: where it was opened from, how far, what was picked, what got in the way.
+               "from", "step", "resumed", "action", "reason", "days", "style", "amount", "gentle", "races", "dist",
+               "replace", "open", "level", "typed", "goal", "verdict", "weeks")
 
 
 _EDITS = {"move": move, "easier": make_easier, "undo": undo_easier, "resend": resend}
@@ -1958,6 +1965,7 @@ async def _send(who: str, args: dict[str, Any], resume: bool) -> None:
         except Exception as exc:  # noqa: BLE001 - shown as Garmin's answer
             log.warning("plan builder: the old plan didn't come off: %s", exc)
             job.update(state="error", said=_garmin_said(str(exc)))
+            _track_built(who, job, resume, "old plan stuck")
             return
         finally:
             server_mod.plan_remove_from.reset(from_token)
@@ -1979,10 +1987,31 @@ async def _send(who: str, args: dict[str, Any], resume: bool) -> None:
     if isinstance(result, dict) and result.get("error"):
         log.warning("plan builder: the plan wasn't taken: %s", result["error"])
         job.update(state="error", said=_garmin_said(str(result["error"])))
+        _track_built(who, job, resume, _fail_reason(str(result["error"])))
     else:
         job.update(state="done", sent=job["total"])
-    _track("app_plan_built", drop_empty({"ok": job["state"] == "done", "weeks": job.get("weeks"),
-                                         "sessions": job["total"], "resumed": resume or None}), who)
+        _track_built(who, job, resume, None)
+
+
+def _track_built(who: str, job: Mapping[str, Any], resume: bool, reason: str | None) -> None:
+    # sent: how far it got before stopping, so a retry's share of the work shows.
+    _track("app_plan_built", drop_empty({"ok": reason is None, "reason": reason, "weeks": job.get("weeks"),
+                                         "sessions": job["total"], "sent": job.get("sent") or 0 if reason else None,
+                                         "resumed": resume or None, "replace": bool(job.get("replace")) or None,
+                                         "from": job.get("from")}), who)
+
+
+def _fail_reason(error: str) -> str:
+    """One or two words for why Garmin didn't take the plan: never the message itself."""
+    if "429" in error or "Too Many" in error:
+        return "garmin busy"
+    if re.search(r"\b(401|403)\b", error) or "auth" in error.lower():
+        return "signed out"
+    if re.search(r"\b5\d\d\b", error) or "timeout" in error.lower() or "Timeout" in error:
+        return "garmin down"
+    if re.search(r"\b4\d\d\b", error):
+        return "garmin refused"
+    return "other"
 
 
 def _garmin_said(error: str) -> str:
@@ -2026,10 +2055,21 @@ async def build_send(body: Any) -> dict[str, Any]:
         first_row = plan_builder.preview(a, fit, today, starts, inputs.get("usual_days") or ())["first"]
         job = _SENDS[who] = {"state": "sending", "sent": 0, "total": len(sessions), "label": args["label"],
                              "weeks": weeks, "first": first_row, "created": [], "first_date": sessions[0]["date"],
-                             "replace": {"labels": inputs["plan"]["labels"], "from": starts.isoformat()} if replace else None}
+                             "replace": {"labels": inputs["plan"]["labels"], "from": starts.isoformat()} if replace else None,
+                             "from": _from((body or {}).get("from"))}
     asyncio.create_task(_send(who, args, bool(resume)))
     _BUILD_INPUTS.pop(who, None)
     return _send_status(job)
+
+
+# Where the builder was opened from, as the page says it: anything else is "other".
+BUILD_FROM = {"plan", "next_block", "nothing_ahead", "change", "resume", "race", "direct"}
+
+
+def _from(said: Any) -> str | None:
+    if not said:
+        return None
+    return said if said in BUILD_FROM else "other"
 
 
 async def remove_running_plan(body: Any) -> dict[str, Any]:
