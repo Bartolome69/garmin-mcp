@@ -1002,7 +1002,7 @@
   // A run that was a session on the plan (d.pl) says what was planned against
   // what was run, an interval session rep by rep; any other run is its name,
   // figures and reps. Each ends with a line back to Daash.
-  var KIND_WORDS = { easy: "Easy run", recovery: "Recovery run", long: "Long run", race: "Race", threshold: "Threshold", sub: "Threshold", intervals: "Intervals" };
+  var KIND_WORDS = { easy: "Easy run", recovery: "Recovery run", long: "Long run", race: "Race", threshold: "Quality session", sub: "Quality session", intervals: "Quality session" };
   var REP_SLACK = 3;
   function capPace(secs) { secs = Math.round(secs); return Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0"); }
   function caption(d, facts) {

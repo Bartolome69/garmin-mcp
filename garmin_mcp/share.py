@@ -223,7 +223,7 @@ def attribution(device: Any = None) -> str:
 CAPTION_SITE = "daash.run"
 # A session's type, as a caption names it.
 _KIND_WORDS = {"easy": "Easy run", "recovery": "Recovery run", "long": "Long run", "race": "Race",
-               "threshold": "Threshold", "sub": "Threshold", "intervals": "Intervals"}
+               "threshold": "Quality session", "sub": "Quality session", "intervals": "Quality session"}
 _HARD = ("threshold", "sub", "intervals")
 # A rep is on target within this many seconds a km either side of the range,
 # about what the watch's own pace alert allows.

@@ -212,7 +212,17 @@ HRV = {"hrvSummary": {"weeklyAvg": 58, "lastNightAvg": 61, "lastNight5MinHigh": 
 
 # Fitness history, in the different shapes Garmin's range endpoints answer in:
 # rows with a date, rows nested a level down, and a map keyed by date.
-FITNESS_MONTHS = ["2026-05-15", "2026-06-15", "2026-07-15", "2026-08-15", "2026-09-15", "2026-10-05"]
+def _months_back(n: int) -> str:
+    """The 1st of the month n months before this one."""
+    first = date.today().replace(day=1)
+    year, month = divmod(first.year * 12 + first.month - 1 - n, 12)
+    return date(year, month + 1, 1).isoformat()
+
+
+# The last six months, the 1st of each, so a six-month look back always holds
+# all six whatever the day the tests run (Nov 12: fixed dates from 15 May fell
+# out of the window and left five).
+FITNESS_MONTHS = [_months_back(n) for n in range(5, -1, -1)]
 VO2_HISTORY = [
     {"generic": {"calendarDate": d, "vo2MaxPreciseValue": v},
      "cycling": {"calendarDate": d, "vo2MaxPreciseValue": 55.0}}

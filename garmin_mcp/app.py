@@ -43,10 +43,12 @@ API_PREFIX = "/app/api/"
 SIGN_IN_PREFIX = API_PREFIX + "sign-in/"
 
 # What each session type is called and which colour draws it. The chat cards
-# call a threshold session "Threshold" too, so the two doors agree.
+# call a hard session "Quality" too, so the two doors agree.
 TYPES: dict[str, tuple[str, str]] = {
     "easy": ("Easy", "easy"), "recovery": ("Recovery", "easy"), "long": ("Long", "long"),
-    "threshold": ("Threshold", "hard"), "sub": ("Threshold", "hard"), "intervals": ("Intervals", "hard"),
+    # Hard sessions all read "Quality" (Nov 12): the session's own name says
+    # which kind; the label is for skimming a week by colour.
+    "threshold": ("Quality", "hard"), "sub": ("Quality", "hard"), "intervals": ("Quality", "hard"),
     "race": ("Race", "race"), "strength": ("Strength", "strength"), "swim": ("Swim", "long"),
     "ride": ("Ride", "easy"), "other": ("Other", "rec"),
 }

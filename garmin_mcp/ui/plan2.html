@@ -621,8 +621,8 @@
   // intervals, race, with long its own. An easy ride is easy. Strength and
   // swims keep their sport's colour.
   var TYPES = {
-    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Threshold", v: "var(--threshold)", t: "var(--threshold-text)" },
-    intervals: { l: "Intervals", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
+    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Quality", v: "var(--threshold)", t: "var(--threshold-text)" },
+    intervals: { l: "Quality", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
     race: { l: "Race", v: "var(--red)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
     strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
   };
@@ -1272,8 +1272,8 @@
     return st === "done, moved" ? ((s.done_on || "") < s.date ? "early" : "moved") : st === "logged" ? "done" : st || "ahead";
   }
   var NEW_TYPES = {
-    easy: ["Easy", "var(--easy)"], long: ["Long", "var(--long)"], threshold: ["Threshold", "var(--hard)"], sub: ["Threshold", "var(--hard)"],
-    intervals: ["Intervals", "var(--hard)"], race: ["Race", "var(--race)"], strength: ["Strength", "var(--strength)"],
+    easy: ["Easy", "var(--easy)"], long: ["Long", "var(--long)"], threshold: ["Quality", "var(--hard)"], sub: ["Quality", "var(--hard)"],
+    intervals: ["Quality", "var(--hard)"], race: ["Race", "var(--race)"], strength: ["Strength", "var(--strength)"],
     ride: ["Easy", "var(--easy)"], run: ["Easy", "var(--easy)"], swim: ["Easy", "var(--easy)"], other: ["", "var(--muted)"],
   };
   function typeLook(s) {

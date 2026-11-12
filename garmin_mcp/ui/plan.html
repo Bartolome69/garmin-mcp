@@ -670,8 +670,9 @@
   // intervals, race, with long its own. An easy ride is easy. Strength and
   // swims keep their sport's colour.
   var TYPES = {
-    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Threshold", v: "var(--threshold)", t: "var(--threshold-text)" },
-    intervals: { l: "Intervals", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
+    // Every hard session reads Quality, in one colour (Nov 12): its name says which kind.
+    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Quality", v: "var(--threshold)", t: "var(--threshold-text)" },
+    intervals: { l: "Quality", v: "var(--threshold)", t: "var(--threshold-text)" }, long: { l: "Long", v: "var(--long)" },
     race: { l: "Race", v: "var(--red)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
     strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
   };
@@ -1060,8 +1061,8 @@
     m.weeks.forEach(function (w) { w.rows.forEach(function (s) { present[(TYPES[s.type] || TYPES[s.sport]) ? (s.type || s.sport) : "other"] = true; }); });
     // Easy always, then the rest in order of effort as they appear; an easy
     // ride or a plain run is easy, and an old sub is threshold.
-    if (present.sub) present.threshold = true;
-    var legend = ["easy", "threshold", "intervals", "race", "long", "strength", "swim"].filter(function (k) { return k === "easy" || present[k]; });
+    if (present.sub || present.intervals) present.threshold = true;
+    var legend = ["easy", "threshold", "race", "long", "strength", "swim"].filter(function (k) { return k === "easy" || present[k]; });
     return el("div", { class: "pane chart" + (scroll ? " long" : "") }, [
       el("div", { class: "stats" }, [
         el("span", {}, [el("strong", { text: stats.lead }), " " + stats.left]),
