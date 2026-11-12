@@ -59,7 +59,7 @@ def _raises(fn) -> bool:
         return True
     return False
 analytics._post = SENT.append
-from garmin_mcp import store  # noqa: E402
+from garmin_mcp import oauth, store  # noqa: E402
 from garmin_mcp.session import GarminSession  # noqa: E402
 
 # Each stub reports which account it belongs to, so we can prove one person's
@@ -386,23 +386,50 @@ async def main() -> int:
                 hosted._PLAN_CALLS.pop(bob, None)
                 plan_a = await call(alice, "get_plan")
                 hosted._PLAN_CALLS.pop(bob, None)
+                # The unasked mention switched off: Bob's link is for when he asks.
+                os.environ["GARMIN_MCP_APP_OFFER"] = "off"
                 plan_b = await call(bob, "get_plan")
+                os.environ.pop("GARMIN_MCP_APP_OFFER", None)
                 os.environ["GARMIN_MCP_APP_LINK"] = "off"
                 hosted._PLAN_CALLS.pop(alice, None)
                 hosted._PLAN_CALLS.pop(bob, None)
                 plan_a_off = await call(alice, "get_plan")
                 hosted._PLAN_CALLS.pop(bob, None)
                 plan_b_off = await call(bob, "get_plan")
+                os.environ.pop("GARMIN_MCP_APP_LINK", None)
+
+                async def plan_for(user_token: str) -> dict:
+                    hosted._PLAN_CALLS.pop(user_token, None)
+                    return await call(user_token, "get_plan")
+
+                def offered_days_ago(user_token: str, days: int) -> None:
+                    with store._connect() as conn:
+                        conn.execute("UPDATE users SET app_offered_at = ? WHERE user_token = ?",
+                                     (int(time.time()) - days * 24 * 3600, user_token))
+
+                # Brought up unasked at most once a week, and never to someone
+                # already using the app.
+                again_a = await plan_for(alice)
+                offered_days_ago(alice, 8)
+                week_on_a = await plan_for(alice)
+                offered_days_ago(alice, 8)
+                store.save_oauth_token("app-used-test", kind="refresh", client_id=oauth.APP_CLIENT_ID,
+                                       subject=alice, scopes="", resource=None, expires_at=None)
+                using_a = await plan_for(alice)
+                store.delete_oauth_token("app-used-test")
+                # Nov 6: on for everyone unless switched off.
+                offer_b = await plan_for(bob)
             finally:
                 os.environ.pop("GARMIN_MCP_BASE_URL", None)
                 os.environ.pop("GARMIN_MCP_APP_LINK", None)
+                os.environ.pop("GARMIN_MCP_APP_OFFER", None)
                 # Reads after these aren't sent with them, so nothing is held.
                 hosted._PLAN_CALLS.pop(alice, None)
                 hosted._PLAN_CALLS.pop(bob, None)
             app_a = plan_a.get("app") or {}
             app_b = plan_b.get("app") or {}
-            code = str(app_a.get("url", "")).partition("login=")[2]
-            code_b = str(app_b.get("url", "")).partition("login=")[2]
+            code = str(app_a.get("url", "")).partition("login=")[2].partition("&")[0]
+            code_b = str(app_b.get("url", "")).partition("login=")[2].partition("&")[0]
             check("the plan in a chat carries the Daash app's link",
                   str(app_a.get("url", "")).startswith("https://daash.test/app/#/plan?login=")
                   and "Daash app" in str(app_a.get("note")), str(plan_a)[:300])
@@ -411,6 +438,22 @@ async def main() -> int:
                   bool(code_b) and store.take_handoff(code_b) == bob, str(plan_b.get("app")))
             check("switched off, only preview accounts have it",
                   "app" in plan_a_off and "app" not in plan_b_off, str(plan_b_off.get("app")))
+            offer_note, ask_note = garmin_server.APP_OFFER_NOTE, garmin_server.APP_NOTE
+            check("the first time, a preview account's model is asked to mention the app once, and the link says so",
+                  app_a.get("note") == offer_note and str(app_a.get("url", "")).endswith("&from=chat_offer"), str(app_a))
+            check("switched off, it isn't brought up outside preview: their link is for when they ask",
+                  app_b.get("note") == ask_note and str(app_b.get("url", "")).endswith("&from=chat"), str(app_b))
+            app_again = again_a.get("app") or {}
+            check("not again the same week", app_again.get("note") == ask_note
+                  and str(app_again.get("url", "")).endswith("&from=chat"), str(app_again))
+            check("a week on, it can be mentioned again", (week_on_a.get("app") or {}).get("note") == offer_note,
+                  str(week_on_a.get("app")))
+            check("never to someone who has used the app in the last two weeks",
+                  (using_a.get("app") or {}).get("note") == ask_note, str(using_a.get("app")))
+            check("and by default it's brought up for everyone, not only preview accounts",
+                  (offer_b.get("app") or {}).get("note") == offer_note, str(offer_b.get("app")))
+            check("each mention is counted", any(e.get("event") == "app_link_offered" for e in SENT),
+                  str([e.get("event") for e in SENT][-10:]))
             check("get_plan's description is unchanged for everyone else: the tool list stays as reviewed",
                   "Daash app" in described[alice]["get_plan"]
                   and "Daash app" not in described[bob]["get_plan"])
@@ -1296,6 +1339,32 @@ async def main() -> int:
               list(hosted._TIMINGS) == ["get_readiness"], str(hosted._TIMINGS))
         tips = [e for e in events if e["event"] == "permission_tip_shown"]
         check("showing the tip is counted once", len(tips) == 1, str(len(tips)))
+        # Nov 6: a crew, offered once in a chat, to someone settled in and in no crew,
+        # late in the week; after the tip and the news, never with them.
+        import dataclasses as _dc
+        from datetime import date as _cd
+        settled = _dc.replace(store.get_user(news_user), created_at=int(time.time()) - 5 * 86400)
+        fresh = _dc.replace(settled, created_at=int(time.time()) - 3600)
+        from garmin_mcp import crews as _crews
+        key = _crews.member_key(news_user, settled.email_hash)
+        thursday, tuesday = _cd(2026, 11, 5), _cd(2026, 11, 3)
+        check("a crew is offered late in the week to someone settled in and in no crew, not early in the week or to someone new",
+              hosted._crew_offer_due(settled, key, thursday) and not hosted._crew_offer_due(settled, key, tuesday)
+              and not hosted._crew_offer_due(fresh, key, thursday))
+        weekdays, hosted.CREW_OFFER_WEEKDAYS = hosted.CREW_OFFER_WEEKDAYS, set(range(7))
+        offer_hook = hooks.use(hosted._after_tool_for(news_user, settled))
+        try:
+            before = len(SENT)
+            first = hooks.after_tool("get_plan", {"weeks": []}, 0.1)
+            second = hooks.after_tool("get_plan", {"weeks": []}, 0.1)
+            other = hooks.after_tool("get_readiness", {"ok": 1}, 0.1)
+        finally:
+            hooks.reset(offer_hook)
+            hosted.CREW_OFFER_WEEKDAYS = weekdays
+        time.sleep(0.3)
+        check("the offer rides on a plan answer once, and is counted",
+              first.get("crew_offer") == hosted.CREW_OFFER and "crew_offer" not in second and "crew_offer" not in other
+              and [e["event"] for e in SENT[before:]].count("crew_offer_shown") == 1, str(first)[:200])
         # A general question gets the plan card alone: reads sent at the same
         # time as get_plan answer with a note, and the same read asked again
         # answers in full.
@@ -1460,6 +1529,60 @@ async def main() -> int:
         check("a ride or a swim isn't",
               share.run_payload({"summary": {"type": "road_biking", "distance_km": 40}}) is None
               and share.run_payload({"summary": {"type": "lap_swimming", "distance_km": 2}}) is None)
+        # Nov 6: a caption to paste into Strava, as Strava's API can't be used.
+        # tests/card_test.js checks the share page builds this same text.
+        check("a run off the plan: its name, figures, reps and via daash.run",
+              share.run_caption(threshold_run) == ("Sub-T 3 × 3 km\n14.1 km · 1:03:17 · 4:29 /km · 148 bpm\n"
+                                                    "Reps at 4:03, 4:03, 4:04 /km · heart rate 157, 163, 163\n\n"
+                                                    "via daash.run"), repr(share.run_caption(threshold_run)))
+        # Nov 8: a run that was a session on the plan says what was planned.
+        week_plan = {"current_plan": {"name": "London build", "starts": "2026-10-12", "ends": "2027-02-28", "weeks_total": 20},
+                     "weeks": [{"sessions": [{"date": "2026-10-28", "name": "Sub-T 3x3km", "type": "threshold", "kind": "run",
+                                              "planned_km": 15.4, "activity_id": 77, "workout_id": 5}]},
+                               {"sessions": [{"date": "2026-11-08", "name": "16km easy", "type": "long", "kind": "run",
+                                              "planned_km": 16, "activity_id": 78}]}]}
+        workout = {"workoutSegments": [{"workoutSteps": [
+            {"type": "ExecutableStepDTO", "stepType": {"stepTypeKey": "warmup"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 900},
+            {"type": "RepeatGroupDTO", "numberOfIterations": 3, "workoutSteps": [
+                {"type": "ExecutableStepDTO", "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "distance"},
+                 "endConditionValue": 3000, "targetType": {"workoutTargetTypeKey": "pace.zone"},
+                 "targetValueOne": 1000 / 240, "targetValueTwo": 1000 / 250},
+                {"type": "ExecutableStepDTO", "stepType": {"stepTypeKey": "recovery"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 90}]}]}]}
+        planned = share.plan_context(week_plan, 77, workout)
+        check("the planned session behind a run: its name, type, km, week and block, and the reps' target",
+              planned and planned["n"] == "Sub-T 3 × 3 km" and planned["ty"] == "threshold" and planned["k"] == 15.4
+              and planned["w"] == [3, 20] and planned["b"] == "London build" and "4:00" in planned.get("tg", ""), str(planned))
+        reps_caption = share.run_caption(threshold_run, planned)
+        check("an interval session's caption goes rep by rep, against the target, planned by daash.run",
+              reps_caption == ("Sub-T 3 × 3 km · week 3 of 20\nReps: 4:03 · 4:03 · 4:04 /km (target 4:00–4:10)"
+                               "\n14.1 km total · 161 bpm on the reps\nEvery rep on target ✓\n\nPlanned by daash.run"), repr(reps_caption))
+        long_run = {"summary": {"name": "Afternoon Run", "type": "running", "start_local": "2026-11-08 13:31:00",
+                                "device": "Forerunner 265",
+                                "distance_km": 16.27, "duration_seconds": 4920, "pace_per_km": "5:02 /km",
+                                "heart_rate": {"average_bpm": 139}}}
+        long_caption = share.run_caption(long_run, share.plan_context(week_plan, 78))
+        check("any other session: the type, week and block, planned against ran, and On plan",
+              long_caption == ("Long run · week 4 of 20 · London build\nPlanned: 16 km easy\n"
+                               "Ran: 16.3 km · 1:22:00 · 5:02 /km · 139 bpm\nOn plan ✓\n\nPlanned by daash.run"), repr(long_caption))
+        short = share.run_caption({"summary": {**long_run["summary"], "distance_km": 11.2}}, share.plan_context(week_plan, 78))
+        check("cut short, it doesn't claim to be on plan", "On plan" not in short and short.endswith("Planned by daash.run"), repr(short))
+        check("a run that wasn't on the plan has no planned session", share.plan_context(week_plan, 99) is None)
+        # Nov 10: Garmin's credit, "Garmin [device model]", under the title of
+        # anything shown to others (developer agreement 6.4, brand guidelines).
+        check("Garmin's credit: the watch's model when known, Garmin alone when not, never Garmin twice",
+              share.attribution("Forerunner 265") == "Garmin Forerunner 265" and share.attribution(None) == "Garmin"
+              and share.attribution("Garmin Edge 840") == "Garmin Edge 840" and share.attribution("  ") == "Garmin")
+        check("and it rides in the share image's payload", share.run_payload(long_run)["g"] == "Garmin Forerunner 265"
+              and share.run_payload(threshold_run)["g"] == "Garmin")
+        off_reps = {**threshold_run, "splits": [dict(x, pace_per_km="4:20 /km") if x["intensity"] == "interval" else x
+                                                for x in threshold_run["splits"]]}
+        check("reps well off the target are counted, not ticked",
+              "0 of 3 reps on target" in share.run_caption(off_reps, planned), share.run_caption(off_reps, planned))
+        check("a run started from a watch workout loses the place Garmin puts before its name",
+              share.run_payload({"summary": {"name": "Tower Hamlets - Benchmark 5x1km · B1", "type": "running",
+                                             "location": "Tower Hamlets", "distance_km": 10.75,
+                                             "duration_seconds": 3036}})["t"] == "Benchmark 5\u00a0×\u00a01\u00a0km")
+        check("no caption for a ride", share.run_caption({"summary": {"type": "road_biking", "distance_km": 40}}) is None)
 
         # The Monday email: what it says, from the plan card's own answer.
         from datetime import date as _day
@@ -1502,8 +1625,17 @@ async def main() -> int:
         block_subject, block_text, _p = weekly.compose(block_said, "x")
         check("with a block running it says where in the block, in the subject and at the top",
               block_subject.startswith("Week 3 of 4: ")
-              and block_text.startswith("Base block (Norwegian singles style) · week 3 of 4 · 90% of sessions done so far"),
+              and block_text.startswith("Based in part on data from your Garmin.\n\n"
+                                        "Base block (Norwegian singles style) · week 3 of 4 · 90% of sessions done so far"),
               block_subject)
+        # Nov 10: Garmin's API brand guidelines ask for its credit on insights
+        # drawn from its data; the plan's answer carries the watch.
+        credited = weekly.summary({**plan_answer, "credit": "Garmin Forerunner 265"}, monday)
+        _cs, credited_text, credited_page = weekly.compose(credited, "x")
+        check("the Monday email opens with Garmin's credit, naming the watch, in text and html",
+              credited_text.startswith("Based in part on data from your Garmin Forerunner 265.")
+              and "Based in part on data from your Garmin Forerunner 265." in credited_page
+              and credited_page.index("Garmin Forerunner 265") < credited_page.index("Ask Daash"))
         # One thing last week showed, from the card's own numbers.
         def _run(day, name, kind, pace, bpm, km, reps=0):
             return {"date": day, "name": name, "type": kind, "kind": "run", "status": "done", "actual_pace": pace,
@@ -1608,17 +1740,110 @@ async def main() -> int:
         mailed: list[tuple] = []
         real_answer = hosted._plan_answer
         hosted._plan_answer = lambda token: plan_answer
+        # Nov 9: the weekly email waits for someone's first week. Everyone here
+        # connected minutes ago, so they're dated eight days back, except one
+        # person who joined yesterday.
+        fresh_email = "fresh@example.com"
+        store.save_user(session_mod.mask_email(fresh_email), '{"di_token": "x"}',
+                        email_hash=store.email_fingerprint(fresh_email), email=fresh_email)
+        yesterday = int(time.time() - 86400)
+        with store._connect() as _conn:
+            _conn.execute("UPDATE users SET created_at = ? WHERE email_hash != ?",
+                          (int(time.time() - 8 * 86400), store.email_fingerprint(fresh_email)))
+            _conn.execute("UPDATE users SET created_at = ? WHERE email_hash = ?",
+                          (yesterday, store.email_fingerprint(fresh_email)))
         try:
             first = hosted.weekly_email_once(monday, send=lambda *a: mailed.append(a), spacing=0)
             again = hosted.weekly_email_once(monday, send=lambda *a: mailed.append(a), spacing=0)
         finally:
             hosted._plan_answer = real_answer
+        check("not in someone's first week: who joined yesterday gets nothing yet",
+              not any(m[0] == fresh_email for m in mailed), str([m[0] for m in mailed]))
+        fresh_token = store.save_user(session_mod.mask_email(fresh_email), '{"di_token": "y"}',
+                                      email_hash=store.email_fingerprint(fresh_email), email=fresh_email)
+        with store._connect() as _conn:
+            kept = _conn.execute("SELECT created_at FROM users WHERE user_token = ?", (fresh_token,)).fetchone()[0]
+        check("signing in again keeps when they first joined", kept == yesterday, f"{kept} {yesterday}")
+        check("and once their week is done, they're on the list",
+              any(r[2] == store.email_fingerprint(fresh_email) for r in store.weekly_recipients(time.time() + 7 * 86400))
+              and not any(r[2] == store.email_fingerprint(fresh_email)
+                          for r in store.weekly_recipients(time.time() - 7 * 86400)))
         to_news = [m for m in mailed if m[0] == "news@example.com"]
         check("each person with an address gets it once a week, however often it runs",
-              first["sent"] >= 1 and again == {"sent": 0, "nothing_to_say": 0, "failed": 0} and len(to_news) == 1
+              first["sent"] >= 1 and again == {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0}
+              and len(to_news) == 1
               and len({m[0] for m in mailed}) == len(mailed), f"{first} {again}")
         check("with its own unsubscribe link, also in the header mail apps use",
               to_news and "/email/unsubscribe?u=" in to_news[0][4] and to_news[0][4] in to_news[0][2], str(to_news[:1])[:200])
+
+        # Nov 9: Resend allows 100 a day, sign-in codes included, so the email
+        # is capped and goes first to whoever is likeliest to open it.
+        people = store.weekly_recipients(time.time() - 7 * 86400)
+        check("enough people to test the cap with", len(people) >= 3, str(len(people)))
+        clicker, idle = people[-1], people[0]
+
+        def weekly_again(cap: int, answers=None):
+            with store._connect() as _conn:
+                _conn.execute("UPDATE users SET weekly_sent = NULL")
+            hosted._WEEKLY_NOTHING.clear()
+            out: list[tuple] = []
+            hosted._plan_answer = answers or (lambda token: plan_answer)
+            try:
+                return hosted.weekly_email_once(monday, send=lambda *a: out.append(a), spacing=0, cap=cap), out
+            finally:
+                hosted._plan_answer = real_answer
+
+        def click(path: str) -> int:
+            import http.client
+            from urllib.parse import urlsplit
+            where = urlsplit(base)
+            conn = http.client.HTTPConnection(where.hostname, where.port, timeout=15)
+            conn.request("GET", path)
+            return conn.getresponse().status
+
+        click_code = await anyio_run(click, hosted.weekly_ask_url(base, clicker[2], "ChatGPT", "week", "2026-10-19")[len(base):])
+        check("a click through from the email is remembered", click_code == 302
+              and store.weekly_standing()[clicker[2]][2] == "2026-10-19", str(click_code))
+        before = len(SENT)
+        capped, capped_mail = weekly_again(1)
+        held = [e for e in SENT[before:] if e["event"] == "weekly_email_held"]
+        check("capped: one email, to the person who clicked last week's, everyone else held",
+              capped == {"sent": 1, "nothing_to_say": 0, "failed": 0, "held": len(people) - 1}
+              and [m[0] for m in capped_mail] == [clicker[1]]
+              and held and held[0]["properties"]["held"] == len(people) - 1
+              and held[0]["properties"]["by_tier"]["clicked"] == 0,
+              f"{capped} {[m[0] for m in capped_mail]} {held[:1]}")
+        sent_events = [e for e in SENT[before:] if e["event"] == "weekly_email_sent"]
+        check("and the email says which tier it went to", sent_events and sent_events[0]["properties"]["tier"] == "clicked",
+              str(sent_events[:1]))
+        hosted._plan_answer = lambda token: plan_answer
+        try:
+            spent = hosted.weekly_email_once(monday, send=lambda *a: capped_mail.append(a), spacing=0, cap=1)
+        finally:
+            hosted._plan_answer = real_answer
+        check("once the cap is reached, later passes that Monday send nothing and read nobody",
+              spent == {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0} and len(capped_mail) == 1, str(spent))
+        no_plan = (lambda token: log_answer if token == idle[0] else plan_answer)
+        tiered, tiered_mail = weekly_again(len(people) - 1, no_plan)
+        check("someone with nothing planned waits behind everyone with a plan",
+              tiered["held"] == 1 and idle[1] not in [m[0] for m in tiered_mail] and len(tiered_mail) == len(people) - 1,
+              f"{tiered} {[m[0] for m in tiered_mail]}")
+        everyone, everyone_mail = weekly_again(len(people), no_plan)
+        check("and with room for all, everyone gets theirs, the plan nudge included",
+              everyone["held"] == 0 and len(everyone_mail) == len(people)
+              and any(m[0] == idle[1] and "build you a plan" in m[2] for m in everyone_mail), str(everyone))
+        check("tiers: a click first, then a plan and used Daash this week, a plan, nothing planned",
+              hosted.weekly_tier(True, 0, "2026-11-02", time.time()) == "clicked"
+              and hosted.weekly_tier(False, int(time.time() - 3600), "", time.time()) == "plan_active"
+              and hosted.weekly_tier(False, int(time.time() - 9 * 86400), "", time.time()) == "plan"
+              and hosted.weekly_tier(True, int(time.time()), "", time.time()) == "no_plan")
+        re_token = store.save_user(session_mod.mask_email(clicker[1]), '{"di_token": "z"}',
+                                   email_hash=clicker[2], email=clicker[1])
+        with store._connect() as _conn:
+            kept_sent, kept_click = _conn.execute(
+                "SELECT weekly_sent, weekly_clicked FROM users WHERE user_token = ?", (re_token,)).fetchone()
+        check("signing in again keeps the week's email sent and the click",
+              kept_sent == monday.isoformat() and kept_click == "2026-10-19", f"{kept_sent} {kept_click}")
 
         from garmin_mcp import support_mail as _mail
         tried: list[tuple] = []
@@ -1773,6 +1998,17 @@ async def main() -> int:
         shown = [e for e in SENT[before:] if e["event"] == "card_shown"]
         check("a forged link records nothing, and a garbled report still counts as not drawn",
               code == 204 and code_junk == 204 and len(shown) == 1 and shown[0]["properties"]["ok"] is False, str(shown)[:300])
+        # Nov 6: Open in Daash on a card, counted when tapped, apart from the card drawing.
+        before = len(SENT)
+        code = await anyio_run(post_text, link, json.dumps({"card": "plan", "tap": "open_in_daash", "opened": True, "host": "ChatGPT"}))
+        code_other = await anyio_run(post_text, link, json.dumps({"card": "plan", "tap": "anything_else", "ok": True}))
+        await asyncio.sleep(0.3)
+        tapped = [e for e in SENT[before:] if e["event"] == "card_tapped"]
+        check("a tap on Open in Daash is counted against the person, with whether the link opened, and isn't a card drawn",
+              code == 204 and len(tapped) == 1 and tapped[0]["distinct_id"] == analytics.distinct_id(erin_hash)
+              and {k: tapped[0]["properties"].get(k) for k in ("card", "tap", "opened", "app")}
+              == {"card": "plan", "tap": "open_in_daash", "opened": True, "app": "ChatGPT"}
+              and [e["event"] for e in SENT[before:]].count("card_shown") == 1, str(SENT[before:])[:400])
         # Someone on Garmin's official API alone is told how to get their full
         # history, by way of a link that counts the click.
         os.environ["GARMIN_MCP_BASE_URL"] = base
@@ -2184,6 +2420,21 @@ async def main() -> int:
               and not [t for t in together if t["date"] == (monday + _td(days=1)).isoformat()], str(together))
         check("Bob, who only runs weekend mornings, isn't put on a weekday evening",
               all("Bob" not in t["who"] for t in together if t["kind"] == "easy"), str(together))
+        # A day with a hard session is run alone, whatever else is on it: a test
+        # workout beside a planned hard run matched Bart with a crewmate (Nov 10).
+        wed = (monday + _td(days=2)).isoformat()
+        carol_week = [(1, "easy", 8.0), (3, "threshold", 11.0), (6, "long", 18.0)]
+        hosted._after_tool_for(carol, store.get_user(carol))("get_plan", plan_for(carol_week + [(2, "easy", 6.0)], "45m 20s"))
+        easy_wed = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        hosted._after_tool_for(carol, store.get_user(carol))(
+            "get_plan", plan_for(carol_week + [(2, "intervals", 9.0), (2, "easy", 6.0)], "45m 20s"))
+        hard_wed = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        hosted._after_tool_for(carol, store.get_user(carol))("get_plan", plan_for(carol_week, "45m 20s"))
+        def carol_on_wed(c):
+            return [t for t in c.get("together", []) if t["date"] == wed and "Carol" in t["who"]]
+        check("an easy run beside a hard one doesn't make the day a match: that day is run alone",
+              carol_on_wed(easy_wed) and not carol_on_wed(hard_wed),
+              f"{carol_on_wed(easy_wed)} | {carol_on_wed(hard_wed)}")
         msg = card.get("group_message", "")
         check("the week comes as a calendar for the group chat",
               msg.startswith("Friday Run Club · ") and "Tue: Carol easy 8k" in msg and "Thu: Carol hard" in msg
@@ -2266,6 +2517,11 @@ async def main() -> int:
               and re.fullmatch(r"/crew/[A-Za-z0-9_-]{24}", path) is not None, str(on))
         status, headers, body = await anyio_run(fetch, path)
         check("the page shows the crew's week", status == 200 and "__CREW_PAGE__" in body and "Carol" in body and "Friday Run Club" in body, str(status))
+        # Nov 6: the friend who opened the invite is told what Daash is, with a way in.
+        check("and, for a friend opening it, what Daash is and a way to get it",
+              "Get Daash, free" in body and "utm_source=crew-page" in body and "daash.run/crews" in body)
+        if os.environ.get("CREW_PAGE_DUMP"):
+            Path(os.environ["CREW_PAGE_DUMP"]).write_text(body)
         headers = {k.lower(): v for k, v in headers.items()}
         check("kept out of search engines, caches and referrers",
               "noindex" in headers.get("x-robots-tag", "") and headers.get("cache-control") == "no-store"

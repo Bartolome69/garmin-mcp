@@ -30,6 +30,7 @@ const ICON = {
   out: () => svg('<path d="M7 17 17 7"/><path d="M7 7h10v10"/>', 14, 'stroke-width="2.2"'),
   check: (s = 12) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="#161614" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
   watch: (s = 18) => svg('<circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/>', s),
+  grip: () => svg('<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>', 14),
   share: () => svg('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>', 16),
   today: () => svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', 20),
   plan: () => svg('<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>', 20),
@@ -100,7 +101,8 @@ function track(name, properties = {}) {
   if (!token.access) return;
   fetch(API + "event", {
     method: "POST", keepalive: true,
-    headers: { Authorization: `Bearer ${token.access}`, "Content-Type": "application/json", "X-Daash-Layout": desktop() ? "desktop" : "phone" },
+    headers: { Authorization: `Bearer ${token.access}`, "Content-Type": "application/json", "X-Daash-Layout": desktop() ? "desktop" : "phone",
+      ...(homeScreen() ? { "X-Daash-Home": "1" } : {}) },
     body: JSON.stringify({ name, properties }),
   }).catch(() => {});
 }
@@ -118,7 +120,12 @@ document.addEventListener("click", (e) => {
     track("share_clicked", { where });
   }
 }, true);
-window.addEventListener("appinstalled", () => track("installed"));
+window.addEventListener("appinstalled", () => {
+  track("installed");
+  store.set(INSTALLED, "1");
+  const card = document.getElementById("nudge");
+  if (card) card.remove();
+});
 
 async function refreshed() {
   if (!token.refresh) return false;
@@ -134,11 +141,16 @@ async function refreshed() {
 class SignedOut extends Error {}
 
 async function api(path, options = {}, retry = true) {
+  const from = options.ahead ? null : cameFrom;
+  if (from) cameFrom = null;
   const res = await fetch(API + path, {
     ...options,
     headers: { Authorization: `Bearer ${token.access}`, "X-Daash-Layout": desktop() ? "desktop" : "phone",
+      // Opened from the home screen rather than a browser tab (Nov 10: who keeps it).
+      ...(homeScreen() ? { "X-Daash-Home": "1" } : {}),
       // Fetched ahead of a tap: not counted as a screen opened.
       ...(options.ahead ? { "X-Daash-Ahead": "1" } : {}),
+      ...(from ? { "X-Daash-From": from } : {}),
       ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
   if (res.status === 401) {
@@ -274,6 +286,8 @@ function shapeBar(segments, height = 22, labels = true) {
 function askLink(data, label) {
   const app = data.assistant === "ChatGPT" ? "chatgpt" : "claude";
   const name = data.assistant === "ChatGPT" ? "ChatGPT" : "Claude";
+  // No question to ask, no button: an empty link reopens the app on Today.
+  if (!data.ask?.[app]) return { href: null, name, html: "" };
   const inApp = app === "claude" && data.ask?.claude_app ? ` data-app="${esc(data.ask.claude_app)}"` : "";
   return { href: data.ask?.[app], name, html: `<a class="pill red tall" href="${esc(data.ask?.[app])}" target="_blank" rel="noopener"${inApp}>${esc(label || `Ask ${name}`)}${ICON.out()}</a>` };
 }
@@ -472,7 +486,7 @@ function failed(message, retry) {
 // -- Today --------------------------------------------------------------------
 
 function todayParts(d) {
-  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1></header>` };
+  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline">${esc(d.headline)}</h1>${credit(d)}</header>` };
   if (d.done_today) {
     const r = d.done_today;
     p.done = `<a class="row-button" href="#/run/${r.activity_id}?from=today">
@@ -498,7 +512,13 @@ function todayParts(d) {
   } else if (!d.empty) {
     p.next = `<div class="card pad stack-tight"><span class="strong">Nothing else planned</span><span class="meta">The plan on your Garmin calendar has no more sessions.</span></div>`;
   }
-  if (d.empty) {
+  if (d.empty && d.build) {
+    // The builder makes a plan here, with no chat; the assistant stays a way to do it too.
+    const ask = askLink(d, `Or ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
+    p.next = `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>
+      <span class="meta">Build a running plan here in a couple of minutes. It goes on your Garmin calendar and your watch.</span>
+      <a class="pill light tall" href="#/build?from=today">Build a plan</a>${ask.html}</div>`;
+  } else if (d.empty) {
     const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
     p.next = `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>
       <span class="meta">Ask ${esc(ask.name)} to build a plan with Daash. It lands here and on your watch.</span>${ask.html}</div>`;
@@ -531,7 +551,7 @@ function todayParts(d) {
 
 function todayView(d) {
   const p = todayParts(d);
-  return [p.head, `<div id="race-slot" hidden></div>`, p.done, p.next, p.crew, p.ready, p.week].filter(Boolean).join("");
+  return [p.head, `<div id="race-slot" hidden></div>`, p.done, p.next, nudge(), p.crew, p.ready, p.week].filter(Boolean).join("");
 }
 
 // Desktop: three weeks as a calendar, the phone's cards on the right.
@@ -545,7 +565,7 @@ function calendarView(d) {
         ${c.missed ? `<span class="miss-ring" style="width:10px;height:10px;margin-top:3px" title="Not recorded"></span>` : ""}<span>${esc(c.name)}</span></span>
       ${c.v ? `<span class="cal-v">${esc(c.v)}</span>` : ""}</a>`;
   };
-  return `<div class="cal-top"><div class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" style="font-size:28px">${esc(d.headline)}</h1></div>
+  return `<div class="cal-top"><div class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" style="font-size:28px">${esc(d.headline)}</h1>${credit(d)}</div>
       <span class="meta">Drag a session to move it. The watch follows.</span></div>
     <div class="cal" id="cal"><div class="cal-row cal-head"><span></span>${dows.map((x) => `<span class="mono-label" style="font-size:11.5px;letter-spacing:0.06em;padding-left:4px">${x}</span>`).join("")}</div>
     ${(d.calendar || []).map((w) => `<div class="cal-row"><div class="cal-week"><span class="strong" style="font-size:13px;${w.current ? "color:var(--red-text)" : ""}">${esc(w.label)}</span>
@@ -598,6 +618,7 @@ function dragToMove(cal) {
     const moving = from;
     try {
       const r = await api(`session/${moving.date}/move`, { method: "POST", body: JSON.stringify({ to: day.dataset.date, schedule_id: Number(moving.sid) || null, via: "drag" }) });
+      store.set(DRAGGED, "1");
       toast(r.message);
       showToday();
     } catch (err) {
@@ -618,6 +639,7 @@ async function showToday(quiet = false) {
       dragToMove($("cal"));
     } else {
       $("screen").innerHTML = todayView(d);
+      wireNudge($("screen"));
     }
     base = "today";
     wire($("screen"));
@@ -673,6 +695,20 @@ async function raceAction(r, action, e) {
 
 // -- the session: preview before the run --------------------------------------
 
+// Back from a session or run: the tab it was opened from, and in Plan the
+// week that was showing.
+function backHref(from) {
+  if (from !== "plan") return "#/today";
+  const week = new URLSearchParams(location.hash.split("?")[1] || "").get("week");
+  return week ? `#/plan?week=${encodeURIComponent(week)}` : "#/plan";
+}
+
+// Garmin's credit, "Garmin [device model]", under each screen's title: Garmin's
+// API brand guidelines ask for it by the title of every view of its data (Nov 10).
+function credit(d) {
+  return `<span class="credit">${esc((d && d.credit) || "Garmin")}</span>`;
+}
+
 function stepRow(s) {
   const right = s.right || "";
   const line = s.target ? `<span class="target">${esc(s.target)}</span>` : s.sub ? `<span class="sub">${esc(s.sub)}</span>` : "";
@@ -686,8 +722,8 @@ function previewView(d, from, panel = false) {
   const back = from === "plan" ? "Plan" : "Today";
   const ask = askLink(d);
   const r = d.readiness;
-  const parts = [panel ? "" : `<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${back}</a>`,
-    `<header class="stack-8">${panel ? "" : `<span class="kicker ${d.today ? "red" : ""}">${esc(d.kicker)}</span>`}<h1 class="title-xl">${esc(d.name)}</h1>
+  const parts = [panel ? "" : `<a class="back" href="${backHref(from)}">${ICON.left()}${back}</a>`,
+    `<header class="stack-8">${panel ? "" : `<span class="kicker ${d.today ? "red" : ""}">${esc(d.kicker)}</span>`}<h1 class="title-xl">${esc(d.name)}</h1>${credit(d)}
       ${d.km ? `<span class="size">${esc(d.km)} km<span style="color:var(--muted);font-weight:500"> · ~${esc(d.minutes)} min</span></span>`
         : d.minutes ? `<span class="size">~${esc(d.minutes)} min</span>` : ""}
       ${d.why ? `<p class="why">${esc(d.why)}</p>` : ""}</header>`];
@@ -706,6 +742,7 @@ function previewView(d, from, panel = false) {
   parts.push(`<div class="card watch-row"><span class="watch-icon">${ICON.watch()}</span>
     <div class="grow" style="gap:1px"><span class="strong">${esc(d.watch.head)}</span><span class="meta" style="${d.watch.changed ? "color:var(--red-text)" : ""}">${esc(d.watch.sub)}</span></div>
     <button class="pill" data-act="resend" data-day="${d.date}" data-sid="${d.schedule_id || ""}" style="flex-shrink:0;padding:0 14px">Send again</button></div>`);
+  parts.push(editHint());
   parts.push(`<div class="actions3"><button class="pill tall" data-act="move" data-day="${d.date}" data-sid="${d.schedule_id || ""}" data-name="${esc(d.name)}">Move</button>
     ${d.easier ? `<button class="pill tall" data-act="${d.easier.applied ? "undo" : "easier"}" data-day="${d.date}" data-sid="${d.schedule_id || ""}">${esc(d.easier.label)}</button>` : `<button class="pill tall" disabled title="Nothing to shorten">Easier</button>`}
     ${ask.html}</div>
@@ -717,7 +754,7 @@ function previewView(d, from, panel = false) {
 }
 
 function restView(d, from) {
-  return `<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${from === "plan" ? "Plan" : "Today"}</a>
+  return `<a class="back" href="${backHref(from)}">${ICON.left()}${from === "plan" ? "Plan" : "Today"}</a>
     <header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">Rest day</h1></header>
     ${d.next ? `<a class="row-button" href="#/session/${d.next.date}?from=${from || "today"}"><span class="grow"><span class="meta">Next</span><span class="strong">${esc(d.next.name)}</span></span>${ICON.right(18, "var(--muted)")}</a>` : ""}`;
 }
@@ -727,10 +764,12 @@ async function showSession(day, params) {
   const sid = params.get("sid");
   return show(`session/${day}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}`, (d) => {
     if (d.done && d.activity_id) {
-      location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`);
+      location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}${params.get("week") ? `&week=${encodeURIComponent(params.get("week"))}` : ""}`);
       return;
     }
     $("screen").innerHTML = d.rest ? restView(d, params.get("from")) : previewView(d, params.get("from"));
+    if (!d.rest) store.set(LOOKED, "1");
+    wireHint($("screen"));
     wire($("screen"));
   }, (e) => failed(e.message, () => showSession(day, params)));
 }
@@ -741,18 +780,22 @@ function analysisView(d, from, panel = false) {
   const back = from === "plan" ? "Plan" : "Today";
   const ask = askLink(d, `Ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"} about it`);
   if (panel) return analysisPanel(d, ask);
-  const parts = [`<a class="back" href="#/${from === "plan" ? "plan" : "today"}">${ICON.left()}${back}</a>`,
-    `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1></header>`,
+  const parts = [`<a class="back" href="${backHref(from)}">${ICON.left()}${back}</a>`,
+    `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1>${credit(d)}</header>`,
     `<p class="verdict">${esc(d.verdict)}</p>`,
     `<div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>`];
+  const chart = runChart(d.chart, d.colour);
+  if (chart && !d.planned_and_run) parts.push(`<section class="stack"><span class="section-title">Km by km</span>${chart}</section>`);
   if (d.planned_and_run) {
-    parts.push(`<section class="stack"><span class="section-title">Planned and run</span><div class="card table">
+    parts.push(`<section class="stack"><span class="section-title">Planned and run</span>${chart}<div class="card table">
       <div class="cmp head"><span>STEP</span><span>TARGET</span><span style="text-align:right">PACE</span><span style="text-align:right">HR</span></div>
       ${d.planned_and_run.map((c) => `<div class="cmp"><span class="lab"><span class="bar bg-${esc(c.colour)}"></span>
-        <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14.5px;font-weight:600">${esc(c.label)}</span><span class="meta ${c.soft ? "soft" : ""}" style="font-size:12.5px">${esc(c.note)}</span></span></span>
+        <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14.5px;font-weight:600">${esc(c.label)}</span><span class="meta ${c.soft ? "soft" : ""}" style="font-size:12.5px">${esc(c.note)}${spark(c)}</span></span></span>
         <span class="tgt">${esc(c.target || "–")}</span><span class="num ${c.soft && c.miss !== "high" ? "soft" : ""}">${esc(c.pace || "–")}</span><span class="num ${c.miss === "high" ? "soft" : ""}">${esc(c.hr || "–")}</span></div>`).join("")}
     </div></section>`);
   }
+  const told = insightsView(d.insights);
+  if (told) parts.push(told);
   if (d.splits) {
     parts.push(`<div class="card table"><button class="splits-toggle" aria-expanded="false" aria-controls="splits" id="splits-toggle">
       <span class="strong">Splits<span style="font-weight:500;color:var(--muted)"> · ${esc(d.km)} km</span></span>
@@ -761,6 +804,7 @@ function analysisView(d, from, panel = false) {
       ${d.splits.map((s) => `<div class="splits-row"><span class="meta" style="font-size:14px">${esc(s.rest ? "Jogs" : s.km)}</span><span style="font-weight:600">${esc(s.rest ? s.pace : s.partial ? `${s.time} (${s.pace} /km)` : s.pace)}</span><span class="meta" style="font-size:14px">${esc(s.hr || "–")}</span></div>`).join("")}
       </div></div>`);
   }
+  if (d.easy_check) parts.push(easyCheck(d.easy_check));
   if (d.effect) {
     parts.push(`<div class="card effect"><span class="tick bg-${esc(d.colour)}">${ICON.check()}</span>
       <span class="stack-tight" style="gap:2px"><span class="strong">${esc(d.effect.head)}</span><span class="meta" style="font-size:13.5px;line-height:1.45">${esc(d.effect.sub)}</span></span></div>`);
@@ -769,21 +813,153 @@ function analysisView(d, from, panel = false) {
   return parts.join("");
 }
 
+// After a run (Nov 11): the session as planned with what was run inside it,
+// and a few lines on what it shows. Worked out on the server (run_view.py);
+// this only draws them.
+const clockOf = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+function runChart(c, colour) {
+  if (!c || !c.parts || c.parts.length < 2) return "";
+  const W = 340;
+  const tone = (k) => k === "work" || k === "km" ? `var(--${colour || "easy"})` : k === "stride" ? "var(--hard)" : "var(--rec)";
+  const parts = c.parts;
+  let body = "";
+  let key = "";
+  if (c.mode === "steps") {
+    const gap = 2, total = parts.reduce((a, p) => a + p.s, 0);
+    const room = W - gap * (parts.length - 1);
+    const band = c.band && c.band.kind === "pace" ? c.band : null;
+    // The target band is drawn tall enough to see where each rep landed in it;
+    // the rest of the session sits below it, quicker taller.
+    const bandTop = 34, bandBot = 78, floor = 150;
+    const others = parts.filter((p) => p.k !== "work" && p.k !== "stride" && p.p);
+    const slowest = Math.max(...others.map((p) => p.p), (band ? band.hi : 0) + 60);
+    const work = parts.filter((p) => p.k === "work" && p.p);
+    const quickest = Math.min(...work.map((p) => p.p), band ? band.lo : 9999);
+    const yWork = (p) => band ? Math.max(14, Math.min(floor - 12, bandTop + (p - band.lo) / Math.max(band.hi - band.lo, 1) * (bandBot - bandTop)))
+      : 24 + (p - quickest) / Math.max(slowest - quickest, 1) * (floor - 40);
+    const yOther = (p) => {
+      const top = band ? bandBot + 8 : 40;
+      const lo = band ? band.hi : quickest;
+      return Math.min(floor - 8, top + Math.max(0, p - lo) / Math.max(slowest - lo, 1) * (floor - 8 - top));
+    };
+    let x = 0;
+    parts.forEach((p) => {
+      const w = Math.max(3, p.s / total * room);
+      const mid = x + w / 2;
+      if (p.k === "work") {
+        const y = p.p ? yWork(p.p) : floor - 10;
+        if (band) {
+          body += `<rect x="${x.toFixed(1)}" y="${bandTop}" width="${w.toFixed(1)}" height="${floor - bandTop}" rx="3" fill="none" stroke="var(--button)" stroke-dasharray="3 3"/>`;
+          body += `<rect x="${x.toFixed(1)}" y="${bandTop}" width="${w.toFixed(1)}" height="${bandBot - bandTop}" fill="var(--band-${colour === "hard" ? "hard" : "easy"})"/>`;
+        }
+        body += `<rect x="${(x + Math.min(5, w / 6)).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, w - 2 * Math.min(5, w / 6)).toFixed(1)}" height="${(floor - y).toFixed(1)}" rx="3" fill="${tone("work")}" ${p.on === false ? 'opacity="0.55"' : ""}/>`;
+        if (w >= 26 && p.p) body += `<text class="v" x="${mid.toFixed(1)}" y="${((band ? bandTop : y) - 6).toFixed(1)}" text-anchor="middle">${clockOf(p.p)}</text>`;
+        if (w >= 40 && p.hr) body += `<text x="${mid.toFixed(1)}" y="${floor + 16}" text-anchor="middle">${p.hr} bpm</text>`;
+      } else if (p.k === "stride") {
+        const y = 20 + Math.max(0, (p.p - 170)) / 120 * 80;
+        body += `<rect x="${(x + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, w - 1).toFixed(1)}" height="${(floor - y).toFixed(1)}" rx="1.5" fill="${tone("stride")}"/>`;
+      } else {
+        const y = p.p ? yOther(p.p) : floor - 8;
+        body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${(floor - y).toFixed(1)}" rx="2" fill="${tone("rec")}"/>`;
+        if (p.label && w >= 56) body += `<text x="${(x + 2).toFixed(1)}" y="${floor + 16}">${esc(p.label)}</text>`;
+      }
+      x += w + gap;
+    });
+    body = `<svg viewBox="0 -4 ${W} ${floor + 26}" role="img" aria-label="${esc(c.caption || "The session as planned and as run")}">${body}</svg>`;
+    key = band ? `<span><i style="border:1px dashed var(--button)"></i>Planned</span><span><i style="background:var(--band-${colour === "hard" ? "hard" : "easy"})"></i>Target ${esc(band.text)}</span><span><i style="background:${tone("work")}"></i>Your rep</span>`
+      : `<span><i style="background:${tone("work")}"></i>Reps</span><span><i style="background:var(--rec)"></i>Easy and recoveries</span>`;
+  } else {
+    const kms = parts.filter((p) => p.k === "km"), strides = parts.filter((p) => p.k === "stride");
+    const strideW = strides.length ? Math.min(72, strides.length * 12) : 0;
+    const roomKm = W - (strideW ? strideW + 10 : 0);
+    const kmW = (roomKm - 3 * (kms.length - 1)) / kms.length;
+    const quick = Math.min(...kms.map((k) => k.p)), slow = Math.max(...kms.map((k) => k.p));
+    const lo = quick - 20, hi = slow + 30;
+    const top = 26, bot = 110;
+    const yKm = (p) => bot - (hi - p) / (hi - lo) * (bot - top);
+    kms.forEach((k, i) => {
+      const x = i * (kmW + 3), y = yKm(k.p);
+      body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${kmW.toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="3" fill="${tone("km")}"/>`;
+      if (kmW >= 24) body += `<text class="v" x="${(x + kmW / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" style="font-size:9.5px">${clockOf(k.p)}</text>`;
+    });
+    const sx = roomKm + 10;
+    strides.forEach((p, j) => {
+      const sw = strideW / strides.length, x = sx + j * sw;
+      const y = 18 + Math.max(0, p.p - 170) / 150 * 80;
+      body += `<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, sw - 4).toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="1.5" fill="${tone("stride")}"/>`;
+    });
+    // Heart rate straight under the bars, each km's point under its own bar
+    // with a faint guide down to it, and the km named once, under both (Nov 12).
+    const hrs = kms.filter((k) => k.hr);
+    let labelY = 124, height = 130;
+    if (hrs.length >= 2) {
+      const band = c.band && c.band.kind === "hr" ? c.band : null;
+      const vals = hrs.map((k) => k.hr).concat(band ? [band.lo, band.hi] : []);
+      const hLo = Math.min(...vals) - 6, hHi = Math.max(...vals) + 4, hTop = bot + 20, hBot = bot + 64;
+      const yHr = (h) => hBot - (h - hLo) / (hHi - hLo) * (hBot - hTop);
+      const midOf = (i) => i * (kmW + 3) + kmW / 2;
+      const peak = Math.max(...hrs.map((k) => k.hr));
+      const named = (k, i) => i === 0 || i === kms.length - 1 || (k.hr === peak && hrs.findIndex((h) => h.hr === peak) === hrs.indexOf(k));
+      kms.forEach((k, i) => {
+        if (!k.hr) return;
+        const end = yHr(k.hr) - (named(k, i) ? 17 : 3);
+        if (end > bot + 4) body += `<line class="guide" x1="${midOf(i).toFixed(1)}" y1="${(bot + 3).toFixed(1)}" x2="${midOf(i).toFixed(1)}" y2="${end.toFixed(1)}" stroke="var(--hairline)" stroke-width="1" stroke-dasharray="2 3"/>`;
+      });
+      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${roomKm.toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
+      const pts = kms.map((k, i) => k.hr ? `${midOf(i).toFixed(1)},${yHr(k.hr).toFixed(1)}` : "").filter(Boolean).join(" ");
+      body += `<polyline points="${pts}" fill="none" stroke="var(--red-text)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+      kms.forEach((k, i) => {
+        if (k.hr && named(k, i)) body += `<text x="${midOf(i).toFixed(1)}" y="${(yHr(k.hr) - 5).toFixed(1)}" text-anchor="middle" style="fill:var(--red-text)">${k.hr}</text>`;
+      });
+      labelY = hBot + 16;
+      height = labelY + 4;
+      key = `<span><i style="background:${tone("km")}"></i>Km pace</span>${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--red-text);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
+    }
+    body += `<text x="0" y="${labelY}">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="${labelY}" text-anchor="end">Km ${esc(kms[kms.length - 1].label)}</text>`;
+    if (strides.length) body += `<text x="${(sx + strideW / 2).toFixed(1)}" y="${labelY}" text-anchor="middle">${strides.length} strides</text>`;
+    body = `<svg viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(c.caption || "Each km's pace and heart rate")}">${body}</svg>`;
+  }
+  return `<div class="card run-chart">${body}${key ? `<div class="chart-key">${key}</div>` : ""}${c.caption ? `<span class="chart-caption">${esc(c.caption)}</span>` : ""}</div>`;
+}
+
+function insightsView(list) {
+  if (!list || !list.length) return "";
+  return `<section class="stack"><span class="section-title">What it shows</span><div class="card insights">${list.map((x) =>
+    `<div class="insight"><span class="ic" style="background:var(--${esc(x.tone)})" aria-hidden="true">${esc(x.icon)}</span><span><b>${esc(x.head)}</b> ${esc(x.text)}</span></div>`).join("")}</div></section>`;
+}
+
+// Strides as one row (Nov 11): each one's pace as a little bar, quicker taller.
+function spark(c) {
+  if (!c.spark || c.spark.length < 2) return "";
+  const lo = Math.min(...c.spark), hi = Math.max(...c.spark), span = Math.max(hi - lo, 1);
+  return `<span class="spark" aria-hidden="true">${c.spark.map((p) => `<i class="bg-${esc(c.colour)}" style="height:${Math.round(35 + 65 * (hi - p) / span)}%"></i>`).join("")}</span>`;
+}
+
+// An easy session run harder than its target (Nov 9).
+function easyCheck(c) {
+  return `<div class="card amber" style="padding:14px"><span class="stack-tight" style="gap:2px"><span class="strong">${esc(c.head)}</span>
+    <span class="meta" style="font-size:13.5px;line-height:1.45">${esc(c.sub)}</span></span></div>`;
+}
+
 // The panel's analysis: planned and run beside the splits, the splits open.
 function analysisPanel(d, ask) {
   const rows = (d.planned_and_run || []).map((c) => `<div class="pcmp"><span class="bar bg-${esc(c.colour)}"></span>
       <span class="stack-tight" style="gap:1px;min-width:0"><span style="font-size:14px;font-weight:600">${esc(c.label)}</span>
-        <span class="meta ${c.soft ? "soft" : ""}" style="font-size:12px">${esc(c.soft ? c.note : [c.note, c.target].filter(Boolean).join(" · "))}</span></span>
+        <span class="meta ${c.soft ? "soft" : ""}" style="font-size:12px">${esc(c.soft ? c.note : [c.note, c.target].filter(Boolean).join(" · "))}${spark(c)}</span></span>
       <span class="stack-tight" style="gap:1px;align-items:flex-end"><span class="${c.soft && c.miss !== "high" ? "soft" : ""}" style="font-size:14px;font-weight:600">${esc(c.pace || "–")}</span>
         <span class="meta ${c.miss === "high" ? "soft" : ""}" style="font-size:12px">${c.hr ? `${esc(c.hr)} bpm` : ""}</span></span></div>`).join("");
   const splits = (d.splits || []).map((s) => `<div class="psplit"><span class="meta">${esc(s.rest ? "Jogs" : s.km)}</span>
       <span style="font-weight:600;white-space:nowrap">${esc(s.rest ? s.pace.replace(" for ", " · ") : s.partial ? `${s.time} (${s.pace})` : s.pace)}</span><span class="meta" style="text-align:right">${esc(s.hr || "–")}</span></div>`).join("");
-  return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>
+  return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>${credit(d)}
     <p class="verdict" style="font-size:19px">${esc(d.verdict)}</p>
     <div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>
+    ${runChart(d.chart, d.colour)}
+    ${insightsView(d.insights)}
     <div class="panel-two">${rows ? `<section class="stack-8"><span class="strong">Planned and run</span><div class="card table">${rows}</div></section>` : ""}
       ${splits ? `<section class="stack-8"><span class="strong">Splits<span style="font-weight:500;color:var(--muted)"> · ${esc(d.km)} km</span></span>
         <div class="card table"><div class="psplit head"><span>KM</span><span>PACE</span><span style="text-align:right">HR</span></div>${splits}</div></section>` : ""}</div>
+    ${d.easy_check ? easyCheck(d.easy_check) : ""}
     ${d.effect ? `<div class="card effect"><span class="tick bg-${esc(d.colour)}">${ICON.check()}</span>
       <span class="stack-tight" style="gap:2px"><span class="strong">${esc(d.effect.head)}</span><span class="meta" style="font-size:13.5px;line-height:1.45">${esc(d.effect.sub)}</span></span></div>` : ""}
     <div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this run</a>` : `<span></span>`}${ask.html}</div>`;
@@ -803,7 +979,7 @@ async function showPanel(kind, id, params) {
   const sid = params.get("sid");
   const path = kind === "session" ? `session/${id}${sid ? `?schedule_id=${encodeURIComponent(sid)}` : ""}` : `run/${encodeURIComponent(id)}`;
   const draw = (d) => {
-    if (kind === "session" && d.done && d.activity_id) { location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}`); return; }
+    if (kind === "session" && d.done && d.activity_id) { location.replace(`#/run/${d.activity_id}?from=${params.get("from") || "today"}${params.get("week") ? `&week=${encodeURIComponent(params.get("week"))}` : ""}`); return; }
     if (!$("panel-body")) return;
     $("panel-kicker").textContent = d.kicker || "";
     $("panel-kicker").classList.toggle("red", !!d.today);
@@ -832,7 +1008,7 @@ function refreshUnderPanel() {
 function closePanel() {
   $("panel").hidden = true;
   $("panel").innerHTML = "";
-  location.hash = base === "plan" ? "#/plan" : "#/today";
+  location.hash = base === "plan" ? backHref("plan") : "#/today";
 }
 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("panel").hidden) closePanel(); });
@@ -841,6 +1017,7 @@ async function showRun(id, params) {
   tabs(params.get("from") === "plan" ? "plan" : "today");
   return show(`run/${encodeURIComponent(id)}`, (d) => {
     $("screen").innerHTML = analysisView(d, params.get("from"));
+    store.set(LOOKED, "1");
     const t = $("splits-toggle");
     if (t) t.onclick = () => {
       const open = t.getAttribute("aria-expanded") !== "true";
@@ -859,7 +1036,23 @@ function wire(root) {
   });
 }
 
+// Plans change: once, above Move and Easier, say what they do. Gone once
+// either is used or it's dismissed (Nov 11: 4 of 25 app users had changed a session).
+function editHint() {
+  if (desktop() || store.get(EDIT_HINT)) return "";
+  shownOnce("edit_hint_shown");
+  return `<div class="card pad stack-tight" id="edit-hint" style="gap:8px"><span class="strong">Plans change. Yours can too.</span>
+    <span class="meta" style="font-size:13.5px;line-height:1.45"><b>Move</b> it to another day or make it <b>Easier</b>. Your watch updates.</span>
+    <div class="pills"><button class="pill" data-hint="done">Got it</button></div></div>`;
+}
+
+function wireHint(root) {
+  const b = root.querySelector('[data-hint="done"]');
+  if (b) b.onclick = () => { store.set(EDIT_HINT, "dismissed"); track("edit_hint_dismissed"); const h = $("edit-hint"); if (h) h.remove(); };
+}
+
 async function act(action, day, sid, button) {
+  if (action === "move" || action === "easier") store.set(EDIT_HINT, "used");
   if (action === "move") return moveSheet(day, sid, button.dataset.name);
   button.disabled = true;
   try {
@@ -911,10 +1104,11 @@ function moveSheet(day, sid, name) {
 
 // -- Plan: the week, with hold to move, and the block ---------------------------
 
-function planRow(r, day, first) {
+function planRow(r, day, first, week) {
   // A run not on the plan opens as a run; it has no session of its own to open.
-  const href = (r.state === "done" || r.state === "extra") && r.activity_id ? `#/run/${r.activity_id}?from=plan`
-    : r.state === "extra" ? `#/plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan`;
+  const wk = week ? `&week=${encodeURIComponent(week)}` : "";
+  const href = (r.state === "done" || r.state === "extra") && r.activity_id ? `#/run/${r.activity_id}?from=plan${wk}`
+    : r.state === "extra" ? `#/plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan${wk}`;
   const mark = r.state === "done" || r.state === "extra" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
     : r.state === "next" ? `<span class="ring" style="width:14px;height:14px"></span>`
     : r.missed ? `<span class="miss-ring" style="width:12px;height:12px"></span>` : "";
@@ -925,7 +1119,14 @@ function planRow(r, day, first) {
       <span class="name ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.name)}</span>
       ${r.meta ? `<span class="meta ${r.state === "next" ? "red" : r.missed ? "soft" : ""}">${esc(r.meta)}</span>` : ""}
       ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
-    <span class="val ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span></a>`;
+    <span class="val ${r.state === "done" || r.state === "extra" ? "dim" : ""}">${esc(r.v)}${r.u ? `<span class="u"> ${esc(r.u)}</span>` : ""}</span>
+    <span class="grip" aria-hidden="true">${r.movable ? ICON.grip() : ""}</span></a>`;
+}
+
+// Until someone has dragged a session once, the week says it can be done (Nov 11).
+const DRAGGED = "daash.dragged";
+function dragHint(w) {
+  return !store.get(DRAGGED) && w.days.some((day) => day.sessions.some((r) => r.movable));
 }
 
 function weekView(d) {
@@ -933,15 +1134,16 @@ function weekView(d) {
   const ask = askLink({ ...d, ask: w.ask });
   const askNext = askLink({ ...d, ask: w.ask_next }, "Plan next week");
   const rows = w.days.map((day) => day.sessions.length
-    ? day.sessions.map((r, i) => planRow(r, day, i === 0)).join("")
+    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date)).join("")
     : `<div class="plan-row rest" data-date="${day.date}"><span class="day"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
         <span class="body"><span class="type c-rec">Rest</span><span class="name dim">Rest day</span></span><span></span></div>`).join("");
   const nav = (to, label, icon) => to ? `<a class="pill icon" href="#/plan?week=${to}" aria-label="${label}">${icon}</a>` : `<span class="pill icon" aria-hidden="true" style="visibility:hidden">${icon}</span>`;
   return `<div class="week-head"><div class="stack-tight" style="gap:2px;min-width:0"><span class="section-title">${esc(w.title)}</span>
       <span class="meta">${w.planned ? `<strong style="color:var(--ink);font-weight:600">${esc(w.done ?? 0)}</strong> of ${esc(w.planned)} km · ` : ""}${esc(w.range)}</span></div>
       <div class="pills" style="flex:0 0 auto">${nav(w.previous, "Week before", ICON.left())}${nav(w.next, "Week after", ICON.right())}</div></div>
+    ${dragHint(w) ? `<div class="drag-hint">${ICON.grip()}<span>Hold a session, then drag it to another day.</span></div>` : ""}
     <div class="card plan-list" id="plan-list">${rows}</div>
-    <div class="week-foot"><span class="meta" style="flex:1;font-size:13.5px;line-height:1.4">Change anything here and the watch follows. Hold a row to move it.</span>${ask.html.replace("pill red tall", "pill red")}</div>
+    <div class="week-foot"><span class="meta" style="flex:1;font-size:13.5px;line-height:1.4">Change anything here and the watch follows.${dragHint(w) ? "" : " Hold a row to move it."}</span>${ask.html.replace("pill red tall", "pill red")}</div>
     ${w.current ? `<div style="display:flex">${askNext.html.replace("pill red tall", "pill")}</div>` : ""}
     ${d.manage && !desktop() ? `<a class="link-plain" href="#/plan/block" style="align-self:flex-start">Change or remove this plan</a>` : ""}`;
 }
@@ -956,11 +1158,15 @@ function blockView(d) {
   const bars = b.bars.map((x) => `<div class="bar-col"><span class="bar-label ${x.current ? "red" : ""}">${esc(x.label)}</span>
       <div class="bar ${x.current ? "now" : x.past ? "past" : ""}" style="height:${Math.max(4, Math.round(x.h * 120))}px">
         <span style="height:${Math.round(x.fill * 100)}%"></span></div></div>`).join("");
-  const phases = b.phases ? `<div class="phases" style="grid-template-columns:${b.phases.map((p) => `${p.weeks}fr`).join(" ")}">
+  // The phases sit on the bars' own columns, each spanning its weeks, so a
+  // phase lines up with its bars (Nov 11: Base ran a bar past its last week).
+  const phases = b.phases ? `<div class="phases" style="grid-template-columns:${cols}">
       ${b.phases.map((p) => p.label
-        ? `<span class="${p.current ? "now" : ""}" title="${esc(p.label)}">${esc((p.weeks * 3 < b.bars.length / 4 ? p.label.slice(0, 2) : p.label).toUpperCase())}</span>`
-        : `<span class="gap"></span>`).join("")}</div>` : "";
-  const ask = askLink(d, "Edit the plan");
+        ? `<span class="${p.current ? "now" : ""}" style="grid-column:span ${p.weeks}" title="${esc(p.label)}" data-label="${esc(p.label.toUpperCase())}">${esc(p.label.toUpperCase())}</span>`
+        : `<span class="gap" style="grid-column:span ${p.weeks}"></span>`).join("")}</div>` : "";
+  // The block's own ask: the screen has none at its top (Nov 6: with none,
+  // the link was empty and opened the app again, on Today).
+  const ask = askLink({ ...d, ask: b.ask }, "Edit the plan");
   const manage = d.manage ? `<div class="card plan-manage"><a class="pill tall light" href="#/build?replace=1&from=change">Change this plan</a>
       <div class="plan-manage-row"><a class="link-plain" href="${esc(ask.href)}" target="_blank" rel="noopener">Ask ${esc(ask.name)} to change it</a>
       <button type="button" class="link-plain red" data-remove-plan>Remove this plan</button></div></div>` : "";
@@ -1010,12 +1216,25 @@ function removePlanSheet(m) {
   });
 }
 
+// A phase name too long for its weeks is shortened until it fits: ENDURANCE,
+// then ENDUR, then EN, then E (Nov 11: on a phone, Endurance was cut at both ends).
+function fitPhases(root) {
+  (root || document).querySelectorAll(".phases span[data-label]").forEach((el) => {
+    const full = el.dataset.label;
+    for (const text of [full, full.slice(0, 5), full.slice(0, 2), full.slice(0, 1)]) {
+      el.textContent = text;
+      if (el.scrollWidth <= el.clientWidth) break;
+    }
+  });
+}
+window.addEventListener("resize", () => fitPhases());
+
 async function showPlan(view, params, quiet = false) {
   tabs("plan");
   const week = params.get("week");
   return show(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`, (d) => {
     const seg = (id, label) => `<a href="#/plan${id === "block" ? "/block" : ""}" class="${view === id ? "on" : ""}" ${view === id ? 'aria-current="page"' : ""}>${label}</a>`;
-    const head = `<header class="stack" style="gap:12px"><h1 class="headline">Plan</h1><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
+    const head = `<header class="stack" style="gap:12px"><span class="stack-tight"><h1 class="headline">Plan</h1>${credit(d)}</span><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
     if (d.empty) {
       const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       if (d.build) {
@@ -1046,8 +1265,10 @@ async function showPlan(view, params, quiet = false) {
       $("screen").innerHTML = `<header><h1 class="headline" style="font-size:28px">Plan</h1></header>${resumeRow()}${nb}
         <div class="desk-plan"><div class="stack">${weekView(d)}</div><div class="stack">${blockView(d)}</div></div>`;
     } else {
-      $("screen").innerHTML = head + resumeRow() + nb + (view === "block" ? blockView(d) : weekView(d));
+      $("screen").innerHTML = head + resumeRow() + nb + (view === "block" ? blockView(d) : nudge() + weekView(d));
+      wireNudge($("screen"));
     }
+    fitPhases($("screen"));
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
     const rm = document.querySelector("[data-remove-plan]");
     if (rm) rm.onclick = () => removePlanSheet(d.manage);
@@ -1282,6 +1503,7 @@ function holdToMove(list, today) {
     try {
       for (const m of moves) {
         await api(`session/${m.from}/move`, { method: "POST", body: JSON.stringify({ to: m.to, schedule_id: Number(m.r.dataset.sid) || null, via: "hold" }) });
+        store.set(DRAGGED, "1");
         const dow = (week.label[m.to] || "").match(/>(\w{3})</);
         const key = dow ? dow[1].slice(0, 1).toUpperCase() + dow[1].slice(1).toLowerCase() : "";
         said.push(`${m.r.dataset.name} to ${DAY_NAMES[key] || key || m.to}`);
@@ -1310,7 +1532,11 @@ function face(f, size = 30, ring = "var(--surface)") {
 }
 
 function crewParts(d, desk = false) {
-  const p = { head: `<header class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" ${desk ? 'style="font-size:28px"' : ""}>${esc(d.headline)}</h1></header>` };
+  // This week or next: the two weeks a crew keeps.
+  const next = d.showing === "next";
+  const weeks = `<nav class="segmented" aria-label="Crew week"><a href="#/crew" class="${next ? "" : "on"}" ${next ? "" : 'aria-current="page"'}>This week</a>
+    <a href="#/crew?week=next" class="${next ? "on" : ""}" ${next ? 'aria-current="page"' : ""}>Next week</a></nav>`;
+  const p = { head: `<header class="stack" style="gap:12px"><span class="stack-tight"><span class="kicker">${esc(d.kicker)}</span><h1 class="headline" ${desk ? 'style="font-size:28px"' : ""}>${esc(d.headline)}</h1>${credit(d)}</span>${weeks}</header>` };
   if (d.hero) {
     const h = d.hero;
     p.hero = `<section class="card red" style="gap:12px" aria-label="Your best match this week">
@@ -1370,16 +1596,18 @@ function crewView(d) {
   return [p.head, p.hero, p.also, p.grid, p.invite].filter(Boolean).join("");
 }
 
-async function showCrew() {
+async function showCrew(params = new URLSearchParams()) {
   tabs("crew");
   base = "crew";
-  return show("crew", (d) => {
+  const next = params.get("week") === "next";
+  return show(next ? "crew?week=next" : "crew", (d) => {
     remember(d);
     if (d.none) {
       const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends</h1></header>
         <div class="card pad stack" style="max-width:560px"><span class="strong">You're not in a crew yet.</span>
-        <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}</div>`;
+        <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}
+        <a class="meta" href="https://daash.run/crews?utm_source=app&utm_medium=link&utm_campaign=crews" target="_blank" rel="noopener" style="font-weight:600;color:var(--red-text);text-decoration:none">How crews work</a></div>`;
       return;
     }
     $("screen").innerHTML = crewView(d);
@@ -1388,7 +1616,7 @@ async function showCrew() {
       try { await navigator.clipboard.writeText(copy.dataset.value); toast(copy.textContent.includes("link") ? "Link copied." : "Code copied."); }
       catch { toast("Couldn't copy. Press and hold the link to copy it."); }
     };
-  }, (e) => failed(e.message, showCrew));
+  }, (e) => failed(e.message, () => showCrew(params)));
 }
 
 // -- You: the watch, the doors, settings and data -------------------------------
@@ -1421,8 +1649,10 @@ function youView(d) {
       <span class="meta" style="font-size:13.5px;line-height:1.45;padding-top:10px;border-top:1px solid var(--hairline)">${esc(d.watch.line)}</span></div>
     ${d.groups.map((g) => g.title === "Assistants" && onComputer() && d.assistant !== "ChatGPT" ? { ...g, rows: [...g.rows,
       { l: "Ask Claude opens in", v: store.get(OPENS) === "web" ? "The browser" : "The Claude app", sub: "Tap to switch", action: "opens" }] } : g)
-      .map((g) => `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
+      // Notifications sit just above Account (Nov 11), for everyone.
+      .map((g) => `${g.title === "Account" ? pushRow(d) : ""}<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
       <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
+    ${d.groups.some((g) => g.title === "Account") ? "" : pushRow(d)}
     <p class="small" style="text-align:center">Daash 0.1 · <a href="${esc(d.privacy)}" target="_blank" rel="noopener">Privacy</a><br>Daash is independent and not made or endorsed by Garmin.</p>`;
 }
 
@@ -1516,6 +1746,8 @@ async function showYou() {
             toast(store.get(OPENS) === "web" ? "Ask Claude opens in the browser." : "Ask Claude opens the Claude app, or the browser without it.");
             return showYou();
           }
+          if (b.dataset.you === "push") return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => { cache.drop((k) => k === "you"); showYou(); });
+          if (b.dataset.you === "headsup") return headsUpSheet(d);
           return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut();
         };
     });
@@ -1529,10 +1761,217 @@ async function signInPost(path, body) {
   return out;
 }
 
+// -- Home screen and notifications (Nov 10) -----------------------------------
+// The step 2 test: after a second day with the app, a card asks to put it on
+// the home screen; opened from there, a card offers a session heads-up and a
+// run's verdict once it syncs. "Not now" quiets either for two weeks.
+const DAYS_SEEN = "daash.days";
+const HOME_LATER = "daash.home.later";
+const PUSH_LATER = "daash.push.later";
+// Set once a session or run has been opened: the home-screen prompt waits for it.
+const LOOKED = "daash.looked";
+// Added to the home screen from this browser: it isn't asked again here.
+const INSTALLED = "daash.installed";
+// The hint that a session can be moved or made easier, until it's used or dismissed (Nov 11).
+const EDIT_HINT = "daash.edit.hint";
+const PUSH_ON = "daash.push.on";
+const QUIET_DAYS = 14;
+let installEvent = null;
+// Chrome on Android says it can install the app some time after the page has
+// drawn: the prompt card, already showing the menu steps, swaps to the button.
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installEvent = e;
+  const card = document.getElementById("nudge");
+  if (card) { card.outerHTML = nudge(); wireNudge(document); }
+});
+
+function daysSeen() {
+  let days = [];
+  try { days = JSON.parse(store.get(DAYS_SEEN) || "[]"); } catch { days = []; }
+  const today = isoToday();
+  if (!days.includes(today)) { days = [...days, today].slice(-30); store.set(DAYS_SEEN, JSON.stringify(days)); }
+  return days.length;
+}
+const quiet = (key) => { const t = Number(store.get(key) || 0); return t && Date.now() - t < QUIET_DAYS * 86400000; };
+const iphone = () => phoneKind() === "ios";
+// Which phone, by its own words: iPadOS says it's a Mac, but with touch.
+// Anything else (a computer, a narrow window on one) gets no home-screen prompt.
+function phoneKind() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  return null;
+}
+
+// How to add the app on this phone and browser (Nov 11). Apps that open links
+// inside themselves (Instagram, Facebook, Google) can't add to the home screen.
+function homeSteps() {
+  const ua = navigator.userAgent, kind = phoneKind();
+  const share = `${ICON.share()} Share`;
+  if (/FBAN|FBAV|Instagram|Line\/|GSA\/|; wv\)/.test(ua)) {
+    return kind === "ios" ? "Open this page in Safari first, then tap Share and <b>Add to Home Screen</b>."
+      : "Open this page in Chrome first, then tap <b>⋮</b> and <b>Add to home screen</b>.";
+  }
+  if (kind === "ios") {
+    if (/CriOS/.test(ua)) return `Tap ${share} in the address bar, then <b>Add to Home Screen</b>.`;
+    if (/FxiOS|EdgiOS|OPiOS/.test(ua)) return `Open this page in Safari, tap ${share}, then <b>Add to Home Screen</b>.`;
+    return `Tap ${share} at the bottom of Safari, then <b>Add to Home Screen</b>. Don't see it? Open this page in Safari first.`;
+  }
+  if (/SamsungBrowser/.test(ua)) return "Tap <b>☰</b> at the bottom, then <b>Add page to</b> and <b>Home screen</b>.";
+  if (/Firefox/.test(ua)) return "Tap <b>⋮</b>, then <b>Install</b>.";
+  return "Tap <b>⋮</b> at the top right, then <b>Add to home screen</b>.";
+}
+const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushIsOn = () => store.get(PUSH_ON) === "1" && canPush() && Notification.permission === "granted";
+
+// Counted once a day per card, not every time Today redraws.
+function shownOnce(name) {
+  const key = `daash.${name}.shown`;
+  if (store.get(key) === isoToday()) return;
+  store.set(key, isoToday());
+  track(name);
+}
+
+function nudge() {
+  const days = daysSeen();
+  // Phones only: never on a computer, however narrow its window.
+  if (desktop() || !phoneKind()) return "";
+  if (!homeScreen()) {
+    // From the first day once they've opened a session or a run (Nov 11: on
+    // day 2 only, and on Today only, it reached nobody in its first day).
+    if ((days < 2 && !store.get(LOOKED)) || quiet(HOME_LATER) || store.get(INSTALLED)) return "";
+    shownOnce("home_prompt_shown");
+    const how = installEvent ? "" : `<span class="meta" style="font-size:13.5px;line-height:1.45">${homeSteps()}</span>`;
+    return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
+        <span class="strong">Put Daash on your home screen</span>
+        <span class="meta" style="font-size:13.5px;line-height:1.45">Your plan in one tap. From there, Daash can tell you the evening before what's on, and how your run went once your watch syncs.</span>${how}</span>
+      <div class="pills"><button class="pill" data-nudge="home-later">Not now</button>
+        ${installEvent ? `<button class="pill light" data-nudge="install">Add to home screen</button>` : ""}</div></div>`;
+  }
+  if (!canPush() || Notification.permission === "denied" || pushIsOn() || quiet(PUSH_LATER)) return "";
+  shownOnce("push_prompt_shown");
+  return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
+      <span class="strong">A heads-up before each session</span>
+      <span class="meta" style="font-size:13.5px;line-height:1.45">Tomorrow's session at 8pm the evening before, and how your run went once your watch syncs. Change the time or turn them off in You.</span></span>
+    <div class="pills"><button class="pill" data-nudge="push-later">Not now</button><button class="pill light" data-nudge="push">Turn on</button></div></div>`;
+}
+
+function wireNudge(root) {
+  root.querySelectorAll("[data-nudge]").forEach((b) => {
+    b.onclick = async () => {
+      const what = b.dataset.nudge;
+      if (what === "home-later" || what === "push-later") {
+        store.set(what === "home-later" ? HOME_LATER : PUSH_LATER, String(Date.now()));
+        track(what === "home-later" ? "home_prompt_dismissed" : "push_prompt_dismissed");
+      } else if (what === "install" && installEvent) {
+        track("home_prompt_tapped");
+        installEvent.prompt();
+        const choice = await installEvent.userChoice.catch(() => null);
+        installEvent = null;
+        if (choice && choice.outcome === "accepted") store.set(INSTALLED, "1");
+        else store.set(HOME_LATER, String(Date.now()));
+      } else if (what === "push") {
+        b.disabled = true;
+        await turnOnPush("today");
+      }
+      const card = $("nudge");
+      if (card) card.outerHTML = nudge();
+      wireNudge(root);
+    };
+  });
+}
+
+function keyBytes(key) {
+  const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - key.length % 4) % 4));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+async function turnOnPush(where) {
+  try {
+    const answer = await Notification.requestPermission();
+    if (answer !== "granted") {
+      track("push_denied", { where });
+      if (answer === "denied") toast("Notifications are blocked for Daash. Allow them in your phone's settings.");
+      else store.set(PUSH_LATER, String(Date.now()));
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const { key } = await api("push");
+    const sub = (await reg.pushManager.getSubscription())
+      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+    let tz = null;
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { tz = null; }
+    await api("push", { method: "POST", body: JSON.stringify({ subscription: sub.toJSON(), tz }) });
+    store.set(PUSH_ON, "1");
+    toast("Notifications on. You'll hear about each session at 8pm the evening before. Change it in You.");
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    toast(e.message || "Notifications couldn't be turned on.");
+  }
+}
+
+async function turnOffPush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api("push", { method: "POST", body: JSON.stringify({ off: true, endpoint: sub.endpoint }) });
+      await sub.unsubscribe();
+    }
+    store.drop(PUSH_ON);
+    toast("Notifications off.");
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    toast(e.message || "Notifications couldn't be turned off.");
+  }
+}
+
+// When the heads-up about a session goes (Nov 11). The evening before is the default.
+const HEADS_UP = [["evening", "Evening before", "8pm the night before"], ["6", "6am", "That morning"],
+  ["7", "7am", "That morning"], ["8", "8am", "That morning"]];
+
+// In You: the switch, on a phone that can have notifications at all, and when they go.
+function pushRow(d = {}) {
+  // Shown to everyone (Nov 11). iPhone only allows notifications from the
+  // home-screen app, so in Safari the row says how to get there.
+  const iosBrowser = phoneKind() === "ios" && !homeScreen();
+  const blocked = canPush() && Notification.permission === "denied";
+  const on = !iosBrowser && pushIsOn();
+  const r = iosBrowser ? { l: "Notifications", v: "Home screen first",
+      sub: "On iPhone they work once Daash is on your home screen: in Safari, tap Share, then Add to Home Screen." }
+    : !canPush() ? { l: "Notifications", v: "Not here", sub: "This browser can't show notifications. Try Chrome, Safari or the home-screen app." }
+    : blocked ? { l: "Notifications", v: "Blocked", sub: "Allow them for Daash in your browser or phone settings." }
+    : { l: "Notifications", v: on ? "On" : "Off", sub: "Session heads-up and run verdicts. Tap to switch", action: "push" };
+  const when = HEADS_UP.find(([code]) => code === (d.heads_up || "evening"));
+  const time = on && !blocked && !iosBrowser ? youRow({ l: "Session heads-up", v: when[1], sub: "When you hear about a planned session", action: "headsup" }, {}, 1) : "";
+  return `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">NOTIFICATIONS</span>
+    <div class="card" style="overflow:hidden">${youRow({ ...r, tone: on ? "ok" : undefined }, {}, 0)}${time}</div></section>`;
+}
+
+function headsUpSheet(d) {
+  const chosen = d.heads_up || "evening";
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Session heads-up</span>
+      <span class="meta">When you hear what's planned. Out the door early? The evening before gives you time to get kit ready.</span></div>
+    <div class="times-grid">${HEADS_UP.map(([code, label, sub]) => `<button class="pill" data-when="${code}" aria-pressed="${code === chosen}" style="flex-direction:column;gap:2px;height:auto;padding:10px 12px"><span>${esc(label)}</span><span style="font-size:12px;opacity:0.72">${esc(sub)}</span></button>`).join("")}</div>
+    <div class="pills"><button class="pill" data-close>Cancel</button></div>`, (holder, close) => {
+    holder.querySelectorAll("[data-when]").forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const r = await api("push", { method: "POST", body: JSON.stringify({ heads_up: b.dataset.when }) });
+          close(); toast(r.message); cache.drop((k) => k === "you"); showYou();
+        } catch (e) { if (e instanceof SignedOut) return route(); toast(e.message); }
+      };
+    });
+  });
+}
+
 // Opened from the home screen: on iPhone that keeps its own storage, so
 // someone signed in in Safari is asked again (Nov 4: two sign-ins a minute apart).
-const homeScreen = () => window.navigator.standalone === true
-  || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+function homeScreen() {
+  return window.navigator.standalone === true
+    || !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
 
 function signInView(message, step = "start", email = "") {
   $("tabs").hidden = true;
@@ -1541,6 +1980,8 @@ function signInView(message, step = "start", email = "") {
   const head = `<div class="wordmark"><img src="/app/icons/favicon.svg" width="32" height="32" alt="">Daash</div>`;
   const note = message ? `<div class="card pad meta" role="status">${esc(message)}</div>` : "";
   const foot = `<p class="small">Daash is independent and not made or endorsed by Garmin.</p>`;
+  // Sent here to build a plan (daash.run's "Just the app"): say that, not the chat.
+  const building = location.hash.startsWith("#/build");
   if (step === "code") {
     $("screen").innerHTML = `<div class="signin">${head}<h1 class="headline">Check your email</h1>
       <p class="why">If ${esc(email)} has a Daash account, a 6-digit code is on its way to it. It works for 10 minutes.</p>${note}
@@ -1554,7 +1995,8 @@ function signInView(message, step = "start", email = "") {
       const button = e.target.querySelector("button"); button.disabled = true;
       try {
         token.save(await signInPost("verify", { email, code: $("code").value }));
-        history.replaceState(null, "", "/app/#/today");
+        // Back to the screen a chat's link was opening, if it was opening one.
+        if (!/^#\/\w/.test(location.hash)) history.replaceState(null, "", "/app/#/today");
         route();
       } catch (err) { signInView(err.message, "code", email); }
     };
@@ -1566,16 +2008,21 @@ function signInView(message, step = "start", email = "") {
     return;
   }
   $("screen").innerHTML = `<div class="signin">${head}
-    <h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
-    <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>
+    ${building ? `<h1 class="headline">A running plan for your watch, built in two minutes.</h1>
+    <p class="why">Sign in with Garmin Connect™, answer six questions, and Daash puts the plan on your Garmin calendar. No chat needed.</p>`
+    : `<h1 class="headline">Your plan, from Claude or ChatGPT, on your watch.</h1>
+    <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>`}
     ${note}${homeScreen() ? `<div class="card pad meta" style="line-height:1.5">On your home screen, Daash keeps its own sign-in, apart from your browser's. Sign in once here and it stays signed in.</div>` : ""}
-    <form id="email-form" class="stack"><label class="field-label" for="email">Already use Daash? Your email</label>
+    ${building ? `<button class="pill red tall" id="garmin">Sign in with Garmin Connect™</button>
+    <p class="small">Connects your Garmin account, so the plan can go on your calendar. You can add Claude or ChatGPT later.</p>
+    <div class="or"><span>Already use Daash?</span></div>` : ""}
+    <form id="email-form" class="stack"><label class="field-label" for="email">${building ? "Your email" : "Already use Daash? Your email"}</label>
       <input id="email" class="field" type="email" autocomplete="email" value="${esc(email)}" required>
-      <button class="pill red tall" type="submit">Email me a code</button></form>
+      <button class="pill ${building ? "" : "red "}tall" type="submit">Email me a code</button></form>
     <p class="small">The email your Daash account is under, usually your Garmin one. Your plan, crew and settings are waiting.</p>
-    <div class="or"><span>New to Daash?</span></div>
-    <button class="pill tall" id="garmin">Sign in with Garmin</button>
-    <p class="small">Connects your Garmin account. You can add Claude or ChatGPT later.</p>${foot}</div>`;
+    ${building ? "" : `<div class="or"><span>New to Daash?</span></div>
+    <button class="pill tall" id="garmin">Sign in with Garmin Connect™</button>
+    <p class="small">Connects your Garmin account. You can add Claude or ChatGPT later.</p>`}${foot}</div>`;
   $("email-form").onsubmit = async (e) => {
     e.preventDefault();
     const address = $("email").value.trim();
@@ -1590,13 +2037,21 @@ function signInView(message, step = "start", email = "") {
 }
 
 // Open in Daash from a chat card carries a single-use code (login=…): it
-// signs the app in as the person who tapped it, with nothing to type.
+// signs the app in as the person who tapped it, with nothing to type. It also
+// says where it was given (from=…), sent once with the first screen it opens.
+let cameFrom = null;
 async function handOff() {
+  // The app's own links say which tab Back returns to with from=today or
+  // from=plan: those stay. Nov 9: stripping them too sent Back from a session
+  // opened in Plan to Today.
+  const from = location.hash.match(/[?&]from=(?!(?:today|plan)(?:&|$))([a-z_]{1,24})/);
   const m = location.hash.match(/[?&]login=([\w-]+)/);
-  if (!m) return null;
-  const clean = location.hash.replace(/[?&]login=[\w-]+/, "").replace(/\?$/, "");
+  if (!m && !from) return null;
+  if (from) cameFrom = from[1];
+  const clean = location.hash.replace(/[?&]login=[\w-]+/g, "")
+    .replace(/[?&]from=(?!(?:today|plan)(?:&|$))[\w-]+/g, "").replace(/^([^?]*)&/, "$1?").replace(/\?$/, "");
   history.replaceState(null, "", `/app/${clean || "#/today"}`);
-  if (token.access) return null;
+  if (!m || token.access) return null;
   try {
     token.save(await signInPost("handoff", { code: m[1] }));
     return null;
@@ -1669,6 +2124,16 @@ function freshAnswers(i) {
 }
 // What the server is sent: the answers alone, without the screen's own notes. With no race
 // in mind every A race is raced as a B, and races the plan can't reach are left out.
+// Plans are for adults: asked once on this phone, before the first plan goes on.
+const ADULT_KEY = "daash.adult";
+function adult() { return store.get(ADULT_KEY) === "yes"; }
+document.addEventListener("change", (e) => {
+  if (document.body.dataset.screen !== "build" || !e.target.matches || !e.target.matches("[data-adult]")) return;
+  if (e.target.checked) store.set(ADULT_KEY, "yes"); else store.drop(ADULT_KEY);
+  const send = document.querySelector('[data-b="send"]');
+  if (send) send.disabled = !(B.plan?.preview && adult());
+});
+
 function sendable() {
   const a = B.answers;
   const keep = ["avg_km", "longest_km", "level", "goal_time", "open_goal", "open_distance", "days", "out", "long_day", "amount", "injury", "style"];
@@ -1883,7 +2348,7 @@ function step3() {
     ${i.parkrun_day != null ? `<span class="meta" style="font-size:14px;line-height:1.5">${DAY_LONG[i.parkrun_day]} parkrun counts as one of your days. It stays easy in the weeks before a race.</span>` : ""}`;
 }
 
-function spark(from, to, flat, lo, hi) {
+function amountSpark(from, to, flat, lo, hi) {
   const y = (v) => 36 - (v - lo) / Math.max(1, hi - lo) * 32;
   const pts = [...Array(8)].map((_, k) => `${k * 13},${y(flat ? from + (k % 2) : from + (to - from) * k / 7).toFixed(1)}`);
   return { pts: pts.join(" "), ey: y(flat ? from + 1 : to).toFixed(1) };
@@ -1896,7 +2361,7 @@ function step4() {
   const hidden = a.level === "new" ? "Build more isn't offered on a first plan. It opens up once you've finished one."
     : a.injury === "niggle" || a.injury === "back" ? "Build more isn't offered while you're carrying a niggle." : "";
   return heading("How much to build", `You're running ${a.avg_km} km a week. The line shows each option from now to its peak.`)
-    + (opts.length ? `<div class="stack-8" role="radiogroup">${opts.map((o) => { const on = a.amount === o.id; const s = spark(a.avg_km, o.peak, o.id === "keep", lo, hi);
+    + (opts.length ? `<div class="stack-8" role="radiogroup">${opts.map((o) => { const on = a.amount === o.id; const s = amountSpark(a.avg_km, o.peak, o.id === "keep", lo, hi);
       return `<button type="button" class="b-opt b-amount" ${radio(on)} data-b="amount" data-v="${o.id}">${ring(on)}
         <span class="stack-tight" style="gap:3px;min-width:0"><span class="b-opt-top"><span class="b-opt-t">${esc(o.t)}</span>${o.rec ? `<span class="b-tag">SUGGESTED</span>` : ""}</span><span class="b-opt-d">${esc(o.d)}</span></span>
         <svg width="92" height="40" viewBox="0 0 92 40" aria-hidden="true" style="overflow:visible"><polyline points="${s.pts}" fill="none" stroke="${on ? "var(--ink)" : "var(--muted)"}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="91" cy="${s.ey}" r="3" fill="${on ? "var(--ink)" : "var(--muted)"}"/></svg></button>`; }).join("")}</div>`
@@ -1989,7 +2454,8 @@ function step7() {
     + (rp ? `<span class="b-replace">Replaces the ${rp.count} sessions of your current plan from ${esc(rp.from)}. Weeks you've already run stay.</span>` : "")
     + chart(pv) + weekCard(pv)
     + (desktop() ? "" : whyList(pv))
-    + `<span class="b-disclaim">General guidance for healthy adults, not medical advice. If you're unwell or pregnant, check with a doctor first.</span>`;
+    + `<span class="b-disclaim">General guidance for healthy adults, not medical advice. If you're unwell or pregnant, check with a doctor first.</span>`
+    + `<label class="b-adult"><input type="checkbox" data-adult ${adult() ? "checked" : ""}> I'm 18 or over</label>`;
 }
 
 function hurtView() {
@@ -2026,7 +2492,7 @@ function footer() {
     : out("That's not right", "edit") + light("Looks right", "next1", 1.2),
     2: light(as > 1 && !a.open ? "Continue anyway" : "Looks right", "next2").replace("<button", blocked ? "<button disabled" : "<button"),
     "2c": light("Continue", "next2c"), 3: light("Looks right", "next3"), 4: light("Continue", "next4"), 5: light("Continue", "next5"),
-    6: light("Continue", "next6"), 7: `<button type="button" class="pill tall red" style="flex:1" data-b="send" ${B.plan?.preview ? "" : "disabled"}>${B.replace && B.inputs.replacing ? "Replace my plan" : "Put it on my Garmin"}</button>` }[s];
+    6: light("Continue", "next6"), 7: `<button type="button" class="pill tall red" style="flex:1" data-b="send" ${B.plan?.preview && adult() ? "" : "disabled"}>${B.replace && B.inputs.replacing ? "Replace my plan" : "Put it on my Garmin"}</button>` }[s];
   if (!buttons) return "";
   return `<div class="b-foot"><div class="b-foot-in"><div class="pills">${buttons}</div>${s === "7" ? `<span class="meta" style="font-size:12.5px;text-align:center">Nothing goes to your watch until you tap this.</span>` : ""}</div></div>`;
 }
@@ -2287,9 +2753,9 @@ async function route(stay) {
   if (screen === "session" && /^\d{4}-\d{2}-\d{2}$/.test(arg || "")) return wide ? showPanel("session", arg, params) : showSession(arg, params);
   if (screen === "run" && /^\d+$/.test(arg || "")) return wide ? showPanel("run", arg, params) : showRun(arg, params);
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
-  if (screen === "build") return showBuild(arg, params);
-  if (screen === "crew") return showCrew();
+  if (screen === "crew") return showCrew(params);
   if (screen === "you") return showYou();
+  if (screen === "build") return showBuild(arg, params);
   return showToday();
 }
 

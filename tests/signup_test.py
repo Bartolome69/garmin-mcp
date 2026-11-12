@@ -204,6 +204,10 @@ async def main() -> int:
         "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
         "token_endpoint_auth_method": "none"}, as_json=True))
     client_id = json.loads(body)["client_id"]
+    # Other checks here turn back from Garmin's page on purpose: the guard that
+    # pauses sign-ups after failures in a row is kept out of their way, and
+    # checked on its own below.
+    hosted.signup_guard.STREAK = 1_000_000
 
     async def start(resource: str | None = None) -> tuple[str, str]:
         """A fresh connector sign-in: (flow, PKCE verifier)."""
@@ -329,15 +333,25 @@ async def main() -> int:
                   str(tagged[-2:]))
             iphone = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
                       "Version/18.0 Mobile/15E148 Safari/604.1")
-            phone_bodies = []
-            for cookie in ("", "daash_route=official"):
-                f, _v = await start()
-                _, body, headers = await run(lambda: http("GET", f"/connect?flow={f}", headers={
-                    "User-Agent": iphone, **({"Cookie": cookie} if cookie else {})}))
-                phone_bodies.append((body, headers.get("set-cookie", "")))
-            check("phones get the password sign-in, even ones the split put on Garmin's page, and aren't drawn",
-                  all("Garmin password" in b and "Continue with Garmin" not in b and "daash_route" not in c
-                      for b, c in phone_bodies), str([c for _b, c in phone_bodies]))
+            # Nov 11: phones go to Garmin's page like computers; GARMIN_PHONES_OFFICIAL=0
+            # puts them back on the password, as from Oct 26.
+            f, _v = await start()
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={f}", headers={
+                "User-Agent": iphone, "Cookie": "daash_route=official"}))
+            check("a phone the split put on Garmin's page gets Garmin's page", "Continue with Garmin" in body)
+            hosted.PHONES_ON_GARMIN_PAGE = False
+            try:
+                phone_bodies = []
+                for cookie in ("", "daash_route=official"):
+                    f, _v = await start()
+                    _, body, headers = await run(lambda: http("GET", f"/connect?flow={f}", headers={
+                        "User-Agent": iphone, **({"Cookie": cookie} if cookie else {})}))
+                    phone_bodies.append((body, headers.get("set-cookie", "")))
+                check("with phones switched off, they get the password sign-in, even ones the split put on Garmin's page",
+                      all("Garmin password" in b and "Continue with Garmin" not in b and "daash_route" not in c
+                          for b, c in phone_bodies), str([c for _b, c in phone_bodies]))
+            finally:
+                hosted.PHONES_ON_GARMIN_PAGE = True
             f, _v = await start()
             _, body, _ = await run(lambda: http("GET", f"/connect?flow={f}&route=official", headers={"User-Agent": iphone}))
             check("unless the link asks for Garmin's page by name", "Continue with Garmin" in body)
@@ -453,7 +467,8 @@ async def main() -> int:
 
         # Its first run from Garmin, emailed once, with what to ask and where to add past runs.
         sent_mail = []
-        first = {"activityType": "RUNNING", "distanceInMeters": 8000, "durationInSeconds": 2400, "startTimeInSeconds": 1}
+        first = {"activityType": "RUNNING", "distanceInMeters": 8000, "durationInSeconds": 2400, "startTimeInSeconds": 1,
+                 "deviceName": "Forerunner 965"}
         went = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
         again = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a))
         late = hosted.first_run_email("g-new-1", [first], send=lambda *a: sent_mail.append(a), now=time.time() + 30 * 86400)
@@ -473,6 +488,9 @@ async def main() -> int:
               and sent_mail[0][1] == "Your first run is in Daash" and "8.0 km" in sent_mail[0][2]
               and "/history?u=g-new-1" in sent_mail[0][2] and "How did my last run go" in sent_mail[0][2],
               str(sent_mail)[:400])
+        check("opening with Garmin's credit for the watch it came from, in text and html",
+              sent_mail and sent_mail[0][2].startswith("Based in part on data from your Garmin Forerunner 965.")
+              and "Based in part on data from your Garmin Forerunner 965." in sent_mail[0][3], str(sent_mail)[:300])
         import calendar as _cal
         pushed_at = _cal.timegm(time.strptime("2026-09-20 06:10:30", "%Y-%m-%d %H:%M:%S"))
         store.save_official_summaries("g-new-1", "activities", [("p-1", pushed_at, {
@@ -921,6 +939,38 @@ async def main() -> int:
         approved = [p for e, p in reported if e == "garmin_approved"]
         check("reported as unknown", approved[-1].get("workouts") == "unknown", str(approved[-1:]))
         NEXT_GARMIN["permissions"] = ["ACTIVITY_EXPORT", "HEALTH_EXPORT", "WORKOUT_IMPORT"]
+
+        print("\nGarmin's page stops letting new people through (Nov 12)")
+        alerts: list[tuple[str, str]] = []
+        real_alert = hosted.support_mail.send_alert
+        hosted.support_mail.send_alert = lambda subject, text: alerts.append((subject, text)) or True
+        hosted.signup_guard.reset()
+        hosted.signup_guard.on_pause = hosted._signups_paused
+        hosted.signup_guard.STREAK = 3
+        try:
+            for _ in range(3):
+                fg, _v = await start()
+                _, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(fg)}"))
+                st = urllib.parse.parse_qs(urllib.parse.urlparse(headers.get("location", "")).query).get("state", [""])[0]
+                await run(lambda: http("GET", f"/official/callback?error=access_denied&state={urllib.parse.quote(st)}"))
+            check("three new sign-ups sent back from Garmin's page pause it, and the owner is emailed once",
+                  len(alerts) == 1 and "switched off" in alerts[0][0] and "open-YYYY-MM-DD" in alerts[0][1], str(alerts)[:200])
+            check("and it's counted", any(e == "official_signups_auto_paused" for e, _p in reported))
+            fg, _v = await start()
+            _, body, _ = await run(lambda: http("GET", f"/connect?flow={fg}&route=official"))
+            check("the next person gets the password form, not Garmin's page",
+                  "Garmin password" in body and "Continue with Garmin" not in body, body[:200])
+            code, body, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(fg)}"))
+            check("and an old Continue with Garmin button sends them to the password too",
+                  code == 200 and "Continue with your password" in body, f"{code} {body[:120]}")
+            code, _, headers = await run(lambda: http("GET", f"/official/signup?flow={urllib.parse.quote(fg)}&again=1"))
+            check("someone already linked to Garmin still gets Garmin's page",
+                  code == 302 and headers.get("location", "").startswith(official.AUTHORIZE_URL))
+        finally:
+            hosted.support_mail.send_alert = real_alert
+            hosted.signup_guard.reset()
+            hosted.signup_guard.on_pause = None
+            hosted.signup_guard.STREAK = 1_000_000
 
         print("\nturning back")
         flow5, _ = await start()

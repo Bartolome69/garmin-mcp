@@ -255,7 +255,9 @@ class DemoGarmin(FakeGarmin):
             return super().get_activity(activity_id)
         summary = {k: a[k] for k in ("distance", "duration", "movingDuration", "averageHR", "maxHR", "startTimeLocal")}
         return {"activityId": a["activityId"], "activityName": a["activityName"],
-                "activityTypeDTO": {"typeKey": a["activityType"]["typeKey"]}, "summaryDTO": summary}
+                "activityTypeDTO": {"typeKey": a["activityType"]["typeKey"]}, "summaryDTO": summary,
+                # The watch it was recorded on, as Garmin sends it (named in get_devices).
+                "metadataDTO": {"manufacturer": "GARMIN", "deviceMetaDataDTO": {"deviceId": 3456789}}}
 
     def get_activity_splits(self, activity_id: int) -> dict[str, Any]:
         laps = self.demo_laps.get(int(activity_id))

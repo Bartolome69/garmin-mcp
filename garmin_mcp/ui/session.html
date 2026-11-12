@@ -54,6 +54,7 @@
   .pill { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
     background: var(--key-bg); color: var(--key-text); white-space: nowrap; }
   .type { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .credit { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 0; overflow-wrap: anywhere; }
 
   .change { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center;
@@ -171,7 +172,7 @@
   var LONG_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   var TYPES = {
-    easy: "Easy", recovery: "Recovery", threshold: "Threshold", sub: "Threshold", intervals: "Intervals",
+    easy: "Easy", recovery: "Recovery", threshold: "Quality", sub: "Quality", intervals: "Quality",
     race: "Race", long: "Long run", strength: "Strength", swim: "Swim", ride: "Ride", other: "Session",
   };
   function colourOf(type) {
@@ -361,6 +362,8 @@
     app.appendChild(el("div", {}, [
       el("div", { class: "type", style: "color:" + colourOf(s.type), text: TYPES[s.type] || TYPES[s.kind] || "Session" }),
       el("h1", { class: "title", text: name }),
+      // "Garmin [device model]" under the title: Garmin's API brand guidelines (Nov 10).
+      el("div", { class: "credit", text: c.credit || "Garmin" }),
     ]));
     if (c.change) {
       var said = el("span", {}, c.change.was ? ["Was ", el("s", { text: c.change.was }), "." + (c.change.same_ends ? " Same warm-up and cool-down." : "")] : ["Changed just now."]);
@@ -378,7 +381,7 @@
     app.appendChild(watchLine(c));
     app.appendChild(actions(c, name, whenText));
     if (c.app_url) {
-      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget); } }, ["Open in Daash"]));
+      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]));
     }
     var f = foot(c); if (f) app.appendChild(f);
     reportSize();
@@ -386,7 +389,7 @@
 
   // ---------------------------------------------------------------- actions
   // Open in Daash: the same session in the companion app, in the browser.
-  function openUrl(url, button) {
+  function openUrl(url, button, what) {
     var opened;
     if (window.openai && typeof window.openai.openExternal === "function") {
       opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
@@ -395,7 +398,8 @@
     } else {
       opened = request("ui/open-link", { url: url });
     }
-    opened.then(function () { note(button, "Opens in the browser"); }).catch(function () { note(button, "This chat app didn\u2019t open the link"); });
+    opened.then(function () { note(button, "Opens in the browser"); if (what) tapped(what, true); })
+      .catch(function () { note(button, "This chat app didn\u2019t open the link"); if (what) tapped(what, false); });
   }
   function ask(text, button) {
     if (!host) { note(button, "Would ask: “" + text + "”"); return; }
@@ -426,7 +430,15 @@
   }
   // Once, when the card has drawn or has failed to: tells Daash which, on the
   // link the answer carried. Nothing else leaves the frame.
-  var started = Date.now(), told = false, hostName = "";
+  var started = Date.now(), told = false, hostName = "", seenLink = null;
+  // A tap on Open in Daash, and whether the chat app opened the link.
+  function tapped(what, opened) {
+    if (typeof seenLink !== "string" || !window.fetch) return;
+    try {
+      fetch(seenLink, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "session", tap: what, opened: opened, host: hostName }) }).catch(function () {});
+    } catch (e) {}
+  }
   function tell(link, error) {
     if (told || typeof link !== "string" || !window.fetch) return;
     told = true;
@@ -451,6 +463,7 @@
   function onResult(result) {
     gotResult = true;
     var data = dataOf(result);
+    if (data && typeof data._card === "string") seenLink = data._card;
     try { render(data); } catch (e) { fail("drawing: " + (e && e.message)); tell(data && data._card, "drawing: " + (e && e.message)); return; }
     tell(data && data._card, "");
   }

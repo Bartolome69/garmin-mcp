@@ -141,9 +141,11 @@ async def main() -> int:
         "http://localhost:9999/callback",
         "https://claude.ai.evil.example/cb",
         "https://example.com/cb",
+        "https://grok.com/connectors/oauth/callback",
+        "https://grok.com.evil.example/cb",
     )}
-    check("sign-ins are told apart by the app they go back to",
-          list(apps.values()) == ["Claude", "ChatGPT", "Desktop or command line", "Other", "Other"],
+    check("sign-ins are told apart by the app they go back to, Grok included",
+          list(apps.values()) == ["Claude", "ChatGPT", "Desktop or command line", "Other", "Other", "Grok", "Other"],
           str(apps))
 
     # ChatGPT's return address carries an ID per connection; only that exact
@@ -177,6 +179,13 @@ async def main() -> int:
           chatgpt_page[:200])
     claude_page = consent_body("https://claude.ai/api/mcp/auth_callback", "Claude")
     check("so does Claude", "Connect Daash to Claude?" in claude_page and "not an app we recognise" not in claude_page)
+    # Nov 10, Garmin's developer agreement (15.10): before Allow, the page says
+    # the assistant is an AI, who makes it, that Daash never trains AI on the
+    # data, and links the AI Transparency Statement.
+    check("before Allow, it says Claude is an AI assistant and links the AI Transparency Statement",
+          "Claude is an AI assistant, made by Anthropic" in claude_page and "never uses your data to train AI" in claude_page
+          and "privacy/#ai" in claude_page and claude_page.index("AI Transparency Statement") < claude_page.index(">Allow<"))
+    check("and ChatGPT that it's made by OpenAI", "ChatGPT is an AI assistant, made by OpenAI" in chatgpt_page)
     stranger = consent_body("https://evil.example/cb", "ChatGPT")
     check("an app claiming a familiar name at a strange address is still warned about",
           "not an app we recognise" in stranger and "Connect Daash to" not in stranger

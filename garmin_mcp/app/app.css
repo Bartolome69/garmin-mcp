@@ -9,6 +9,7 @@
   --red: #E8322B; --red-text: #FF6A61; --red-soft: #2E2422; --red-soft-line: #6B3530;
   --easy: #8CC08F; --hard: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --rec: #4A4844; --race: #E8322B;
   --amber-soft: #2A2520; --amber-soft-line: #5C4A33;
+  --band-hard: rgba(232, 161, 95, 0.18); --band-easy: rgba(140, 192, 143, 0.16); --band-easy-line: rgba(140, 192, 143, 0.45);
   --radius: 12px;
   --sans: "Geist", -apple-system, system-ui, sans-serif;
   --mono: "Geist Mono", ui-monospace, Menlo, monospace;
@@ -36,6 +37,7 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .section-title { font-size: 16px; font-weight: 600; }
 .meta { font-size: 13px; color: var(--muted); }
+.credit { font-size: 13px; color: var(--muted); }
 .mono-label { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .stack-tight { display: flex; flex-direction: column; gap: 4px; }
@@ -182,7 +184,7 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .pill.icon { width: 44px; padding: 0; }
 .plan-list { overflow: hidden; }
 .plan-list.dragging { overflow: visible; }
-.plan-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; min-height: 60px;
+.plan-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 14px; gap: 12px; align-items: center; padding: 12px 14px; min-height: 60px;
   color: var(--ink); text-decoration: none; border-top: 1px solid var(--hairline); background: var(--surface); position: relative;
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
 .plan-row:first-child, .plan-row.same-day { border-top-color: transparent; }
@@ -225,8 +227,9 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .bar-nums { display: grid; gap: 4px; }
 .bar-nums span { font-family: var(--mono); font-size: 11px; text-align: center; color: var(--muted); }
 .phases { display: grid; gap: 4px; }
-.phases span { height: 24px; border-radius: 4px; background: var(--sunken); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--muted);
-  display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.phases span { display: block; min-width: 0; height: 24px; line-height: 24px; padding: 0 3px; border-radius: 4px; background: var(--sunken);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--muted);
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .phases span.now { color: var(--ink); }
 .phases span.gap { background: transparent; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
@@ -319,7 +322,12 @@ nav.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
 
 /* ---- desktop, 1024px and wider ------------------------------------------- */
-.topbar { position: sticky; top: 0; z-index: 10; height: 60px; display: flex; align-items: center; gap: 28px; padding: 0 28px;
+/* One width for every desktop screen and the bar above it, so a wide window
+   doesn't stretch Today and Crew edge to edge or leave the bar's ends far from
+   the page (Nov 11). The bar's line still runs the full width. */
+:root { --desk-max: 1280px; }
+.topbar { position: sticky; top: 0; z-index: 10; height: 60px; display: flex; align-items: center; gap: 28px;
+  padding: 0 max(28px, calc((100% - var(--desk-max)) / 2 + 28px));
   border-bottom: 1px solid var(--hairline); background: var(--ground); }
 .topbar-mark { font-size: 20px; font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); }
 .topbar-tabs { display: flex; gap: 4px; }
@@ -331,9 +339,8 @@ nav.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; }
 .avatar.small:hover { color: #FFFFFF; }
 
 body.desk .shell { max-width: none; }
-body.desk main { padding: 24px 28px 40px; }
-body.desk[data-screen="you"] main { max-width: 720px; margin: 0 auto; width: 100%; }
-body.desk[data-screen="plan"] main { max-width: 1180px; margin: 0 auto; width: 100%; }
+body.desk main { padding: 24px 28px 40px; max-width: var(--desk-max); margin: 0 auto; width: 100%; }
+body.desk[data-screen="you"] main { max-width: 720px; }
 body.desk .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 28px; max-width: 480px; }
 
 .desk-today { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
@@ -411,7 +418,7 @@ body.desk .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 
   .crew-grid.desk .grid-day { flex-direction: column; gap: 2px; }
 }
 
-/* ---- build a plan (preview) ------------------------------------------------ */
+/* ---- build a plan ----------------------------------------------------------- */
 body[data-screen="build"] main { padding-bottom: calc(150px + env(safe-area-inset-bottom)); padding-top: calc(12px + env(safe-area-inset-top)); }
 .b-wrap { display: flex; flex-direction: column; gap: 18px; }
 .b-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -561,6 +568,8 @@ body[data-screen="build"] main { padding-bottom: calc(150px + env(safe-area-inse
 .b-check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.45; color: var(--ink-2); }
 .b-check svg { margin-top: 2px !important; }
 .b-disclaim { font-size: 13px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+.b-adult { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; cursor: pointer; }
+.b-adult input { width: 20px; height: 20px; margin: 0; accent-color: var(--red); }
 /* the summary beside the steps, on a computer */
 .b-side { width: 360px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; padding-top: 66px; }
 .b-sum { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: flex-start;
@@ -637,3 +646,27 @@ body.desk .b-grip { display: none; }
 .b-head h1:focus { outline: none; }
 .b-sess-type { display: flex; gap: 6px; align-items: baseline; font-size: 12px; font-weight: 600; min-width: 0; }
 .b-sess-day { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Strides as one row: each one's pace as a little bar (Nov 11). */
+.spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; margin-left: 8px; vertical-align: -1px; }
+.spark i { display: block; width: 4px; border-radius: 1px; }
+
+/* after a run: the session as planned and as run, and what it shows (Nov 11) */
+.run-chart { padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.run-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.run-chart text { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+.run-chart text.v { fill: var(--ink); font-weight: 600; }
+.chart-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
+.chart-key span { display: flex; align-items: center; gap: 6px; }
+.chart-key i { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.chart-caption { font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+.insights { display: flex; flex-direction: column; }
+.insight { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--hairline); font-size: 14px; line-height: 1.45; }
+.insight:first-child { border-top: 0; }
+.insight b { font-weight: 600; }
+.insight .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--ground); }
+
+/* sessions can be held and dragged to another day (Nov 11) */
+.plan-row .grip { display: flex; align-items: center; justify-content: center; color: var(--muted); opacity: 0.55; margin-left: -4px; }
+.drag-hint { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); padding: 0 2px; margin-bottom: -6px; }
+.drag-hint svg { flex-shrink: 0; }

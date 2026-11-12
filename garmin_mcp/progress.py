@@ -55,6 +55,9 @@ class Planned:
     # A threshold or interval session, which a plainly easy run isn't; None
     # when the workout wasn't read, so its effort isn't known.
     hard: bool | None = None
+    # The workout was read and Garmin gives it neither a time nor a distance,
+    # as with an easier copy (Nov 7). False when it simply wasn't read.
+    no_size: bool = False
 
 
 @dataclass(frozen=True)
@@ -169,12 +172,26 @@ def match(
     this_week = monday_of(today)
 
     def long_enough(session: Planned, candidate: Actual) -> bool:
-        # With no estimate on the planned session there is nothing to be
-        # short of, so existence is the whole test. Strength is always
-        # existence alone: a gym session runs as long as the gym allows, and
-        # Garmin's estimate for one counts every rest to the second.
-        return (not session.seconds or session.sport == "strength"
-                or candidate.seconds >= session.seconds * min_fraction)
+        # Strength is existence alone: a gym session runs as long as the gym
+        # allows, and Garmin's estimate for one counts every rest to the
+        # second. Otherwise Garmin's time estimate, else the planned distance
+        # (an easier copy carries no estimate, Nov 7); with neither there is
+        # nothing to be short of, and unsized keeps it to its own day.
+        if session.sport == "strength":
+            return True
+        if session.seconds:
+            return candidate.seconds >= session.seconds * min_fraction
+        if session.metres and candidate.metres:
+            return candidate.metres >= session.metres * min_fraction
+        return True
+
+    def unsized(session: Planned) -> bool:
+        # A session read and found to have no size can't tell a short top-up
+        # from the real thing, so it takes only a run on its own day, never
+        # one from the day before (Nov 7: an easier parkrun tune-up claimed
+        # Friday's 1.2 km). One not read yet keeps the day's grace.
+        return (session.no_size and session.sport != "strength"
+                and not session.seconds and not session.metres)
 
     def pick(session: Planned, allowed) -> int | None:
         best, best_rank = None, None
@@ -195,7 +212,7 @@ def match(
 
     def near(session: Planned):
         def allowed(c: Actual) -> bool:
-            if abs((c.day - session.day).days) > shift_days:
+            if abs((c.day - session.day).days) > (0 if unsized(session) else shift_days):
                 return False
             if session.hard and c.easy:
                 return False
@@ -205,7 +222,7 @@ def match(
     def ahead(session: Planned):
         def allowed(c: Actual) -> bool:
             early = (session.day - c.day).days
-            return (0 < early <= shift_days and monday_of(c.day) == monday_of(session.day)
+            return (not unsized(session) and 0 < early <= shift_days and monday_of(c.day) == monday_of(session.day)
                     and session.hard is not None and c.easy is (not session.hard))
         return allowed
 

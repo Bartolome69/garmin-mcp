@@ -15,6 +15,7 @@ import re
 import secrets
 import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,8 +27,9 @@ SCRATCH.mkdir(parents=True, exist_ok=True)
 # The demo's week falls on fixed weekdays around today, and these checks
 # follow its Monday interval session, so the clock is set to this week's
 # Monday morning before anything reads it (Nov 3: run on a Tuesday, seven
-# checks failed). time-machine is a test-only package:
-#     .venv/bin/pip install time-machine
+# checks failed). time-machine is a test-only package, in the "test" extra:
+#     uv pip install --python .venv/bin/python time-machine
+# Without it, a run late in the week failed six checks (Nov 6).
 try:
     import time_machine
     from datetime import date as _date, datetime as _datetime, timedelta as _td, timezone as _tz
@@ -36,7 +38,7 @@ try:
     time_machine.travel(_datetime(_monday.year, _monday.month, _monday.day, 9, 0, tzinfo=_tz.utc), tick=True).start()
 except ImportError:
     print("time-machine isn't installed, so this runs on today's date, and some checks only hold on a Monday:\n"
-          "    .venv/bin/pip install time-machine")
+          "    uv pip install --python .venv/bin/python time-machine")
 
 from cryptography.fernet import Fernet  # noqa: E402
 
@@ -57,7 +59,7 @@ DEMO = DemoGarmin()
 session_mod.build_client = lambda **_: DEMO
 
 import garmin_mcp.hosted as hosted  # noqa: E402
-from garmin_mcp import analysis, analytics, crews, oauth, store  # noqa: E402
+from garmin_mcp import analysis, analytics, crews, oauth, server, store  # noqa: E402
 
 SENT: list[dict] = []
 analytics._post = SENT.append
@@ -310,12 +312,18 @@ def api_checks() -> None:
           str(len(block.get("bars") or [])))
     check("its title counts to race day", block.get("title") == "28 weeks to race day", block.get("title"))
     check("both blocks are named under it", len(block.get("blocks") or []) == 2)
+    # Nov 6: Edit the plan took you to Today: its ask is the block's own.
+    check("the block carries its own ask for Edit the plan", "claude.ai/new?q=" in (block.get("ask") or {}).get("claude", ""),
+          str(block.get("ask"))[:120])
     far = client.get(f"/app/api/plan?week={block['bars'][24]['starts']}", headers=auth).json()["week"]
     check("a week past the calendar's horizon has its sessions", any(d["sessions"] for d in far["days"]), far.get("title"))
     check("and its number in the whole plan", far.get("title", "").startswith("Week 25"), far.get("title"))
     check("the block's verdict is plain", plain(block.get("verdict", "")) and block["verdict"].startswith("On track."),
           block.get("verdict"))
     check("the block's phases fill its weeks", sum(p["weeks"] for p in block["phases"]) == len(block["bars"]))
+    shown = [b["n"] for b in block["bars"] if b.get("show_n")]
+    check("no two-figure week numbers side by side", not any(b - a == 1 and b >= 10 for a, b in zip(shown, shown[1:]))
+          and len(block["bars"]) in shown, str(shown))
 
     before = len(posted("app_viewed"))
     client.get("/app/api/crew", headers={**auth, "X-Daash-Ahead": "1"})
@@ -327,7 +335,14 @@ def api_checks() -> None:
           str([e["properties"] for e in late])[:160])
     check("a view naming no real screen is refused",
           client.post("/app/api/event", headers=auth, json={"name": "viewed", "properties": {"screen": "anything"}}).status_code == 400)
+    # Opened from a link in a chat: where it was given, on the first screen.
+    client.get("/app/api/plan", headers={**auth, "X-Daash-From": "chat_offer"})
+    client.get("/app/api/plan", headers={**auth, "X-Daash-From": "<b>Not a source</b>"})
+    time.sleep(0.5)
     viewed = posted("app_viewed")
+    froms = [e["properties"].get("from") for e in viewed if e["properties"].get("from")]
+    check("a screen opened from a chat's link says where the link was given", "chat_offer" in froms, str(froms))
+    check("and nothing else passes for a source", froms == ["chat_offer"], str(froms))
     check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
           str([e["properties"].get("screen") for e in viewed])[:120])
     check("with how long the screen waited", all(isinstance(e["properties"].get("seconds"), (int, float))
@@ -345,6 +360,21 @@ def api_checks() -> None:
                 json={"to": later, "via": "drag"})
     check("a drag on the calendar says so, and the layout",
           any(e["properties"].get("via") == "drag" and e["properties"].get("layout") == "desktop" for e in posted("app_edit")))
+    # Nov 10: opened from the home screen or a browser tab, on views, edits and page events.
+    before_home = len(posted("app_viewed"))
+    client.get("/app/api/today", headers={**auth, "X-Daash-Home": "1"})
+    client.get("/app/api/today", headers={**auth, "X-Daash-Home": "yes"})
+    client.post(f"/app/api/session/{later}/move", headers={**auth, "X-Daash-Home": "1"}, json={"to": later, "via": "hold"})
+    client.post("/app/api/event", headers={**auth, "X-Daash-Home": "1"}, json={"name": "share_clicked", "properties": {"where": "run"}})
+    time.sleep(0.5)
+    homes = [e["properties"].get("home_screen") for e in posted("app_viewed")[before_home:]]
+    check("a screen opened from the home screen says so, and only on the app's own header",
+          homes == [True, None], str(homes))
+    check("so does an edit made there, and a page event",
+          posted("app_edit")[-1]["properties"].get("home_screen") is True
+          and posted("app_share_clicked")[-1]["properties"].get("home_screen") is True)
+    check("and a screen opened in a browser tab carries nothing for it",
+          all("home_screen" not in e["properties"] for e in viewed), str([e["properties"] for e in viewed])[:120])
     r = client.post("/app/api/event", headers=auth, json={"name": "ask_clicked", "properties": {"to": "claude", "where": "today", "secret": "x"}})
     asked = posted("app_ask_clicked")
     check("Ask Claude pressed is recorded", r.status_code == 200 and asked and asked[-1]["properties"].get("to") == "claude")
@@ -381,6 +411,14 @@ def api_checks() -> None:
           not re.search(r"/km|bpm|\"km\"|pace|heart", text.replace("never pace, heart rate", "")), text[:80])
     check("a hard run is never a match", not any(s.get("match") and s.get("kind") == "hard"
                                               for p in crew["people"] for c in p["cells"] for s in c["segs"]))
+    # Nov 6: next week too, the other week a crew keeps.
+    nxt = client.get("/app/api/crew?week=next", headers=auth).json()
+    from datetime import date as _d, timedelta as _t
+    next_monday = _d.today() - _t(days=_d.today().weekday()) + _t(weeks=1)
+    check("the crew's next week, on asking", not nxt.get("error") and nxt.get("showing") == "next"
+          and crew.get("showing") == "this" and len(nxt.get("people") or []) == 6
+          and f"{next_monday.day} {app_routes.MONTHS[next_monday.month - 1]}".upper() in nxt.get("kicker", ""),
+          str({k: nxt.get(k) for k in ("error", "showing", "kicker", "headline")}))
     check("Today's crew line agrees", client.get("/app/api/today", headers=auth).json().get("crew", {}).get("date")
           == crew["hero"]["date"])
 
@@ -389,6 +427,11 @@ def api_checks() -> None:
     check("the run screen has a verdict", bool(run.get("verdict")), str(run.get("error")))
     check("it counts as done", (run.get("effect") or {}).get("head") == "Counts as done")
     check("it offers the share image", (run.get("share_url") or "").startswith("http"))
+    # Nov 11: the session as planned with the run inside it, and what it shows.
+    check("it draws the reps against their plan", (run.get("chart") or {}).get("mode") == "steps"
+          and sum(1 for p in run["chart"]["parts"] if p["k"] == "work") == 3, str(run.get("chart"))[:160])
+    check("and says what the run shows", any(x.get("head") for x in run.get("insights") or [])
+          and "figures" not in run, str(run.get("insights"))[:160])
 
     # Each read asked for once, and none of the chat's extras (Nov 3: the run
     # screen made about eleven calls, mostly one after another).
@@ -503,6 +546,29 @@ def api_checks() -> None:
           str(weekday))
     check("an unknown time is refused", client.post("/app/api/you/times", headers=auth, json={"times": ["noon"]}).status_code == 400)
 
+    # Notifications (Nov 11): when the session heads-up goes, from You.
+    r = client.post("/app/api/push", headers=auth, json={"heads_up": "6"})
+    check("no heads-up time without notifications on", r.status_code == 400, r.text[:120])
+    store.save_push(user_token, "https://push.example.com/runner", "p256dh-key", "auth-key", "Europe/London")
+    got = client.get("/app/api/push", headers=auth).json()
+    you = client.get("/app/api/you", headers=auth).json()
+    check("with notifications on, the heads-up goes the evening before", got.get("heads_up") == "evening"
+          and you.get("heads_up") == "evening", f"{got} / {you.get('heads_up')}")
+    r = client.post("/app/api/push", headers=auth, json={"heads_up": "6"})
+    check("it moves to 6am", r.status_code == 200 and r.json().get("message") == "You'll hear about a session at 6am that morning."
+          and client.get("/app/api/push", headers=auth).json().get("heads_up") == "6", r.text[:160])
+    check("a time not offered is refused", client.post("/app/api/push", headers=auth, json={"heads_up": "5"}).status_code == 400)
+    check("the time change is counted", any(e["properties"].get("when") == "6" for e in posted("app_push_time")), str(posted("app_push_time")))
+    # Read as the server's notification pass reads it: as this person, outside any request.
+    plan = hosted._as_person(user_token, server.get_plan)
+    days = sorted({s["date"] for w in plan.get("weeks") or [] for s in w.get("sessions") or []
+                   if s.get("status") in ("today", "ahead")})
+    ahead = hosted._as_person(user_token, app_routes.heads_up_payload, days[0])
+    check("the heads-up names the day's session and its numbers", ahead and ahead["date"] == days[0] and ahead["name"]
+          and ahead.get("stats"), str(ahead))
+    rest = next(d for d in (str(date.fromisoformat(days[0]) + timedelta(days=i)) for i in range(1, 14)) if d not in days)
+    check("a rest day has nothing to say", hosted._as_person(user_token, app_routes.heads_up_payload, rest) is None, rest)
+
     check("delete needs saying", client.post("/app/api/you/delete", headers=auth, json={}).status_code == 400)
     check("a wrong word doesn't delete", client.post("/app/api/you/delete", headers=auth, json={"confirm": "yes"}).status_code == 400
           and store.get_user(user_token) is not None)
@@ -579,8 +645,24 @@ def extra_checks() -> None:
     check("and on no other day", other == [], str(other))
 
 
+def verdict_checks() -> None:
+    """A race is named in the week's line (Nov 6: a threshold session and a parkrun said "One hard day")."""
+    days = [{"date": f"2026-11-0{i + 2}", "state": "session",
+             "colour": c} for i, c in enumerate(["strength", "easy", "easy", "hard", "easy", "race", "easy"])]
+    sessions = [{"date": "2026-11-05", "type": "threshold", "name": "Benchmark 5x1km"},
+                {"date": "2026-11-07", "type": "race", "name": "Parkrun tune-up"},
+                {"date": "2026-11-03", "type": "easy", "name": "10km easy"}]
+    said = app_routes._week_verdict(days, sessions)
+    check("the week's line names the parkrun beside the hard day", said == "No rest day this week. One hard day and a parkrun on Saturday.", said)
+    other = app_routes._week_verdict(days, [{"date": "2026-11-08", "type": "race", "name": "Goal half"}])
+    check("and any other race as a race", other == "No rest day this week. A race on Sunday.", other)
+    rest = [dict(d, state="rest") if d["date"] == "2026-11-02" else d for d in days]
+    heavy = app_routes._week_verdict(rest, sessions + [{"date": "2026-11-04", "type": "intervals", "name": "VO2"}])
+    check("a race counts towards a heavy week", heavy.startswith("A heavy week.") and "a parkrun on Saturday" in heavy, heavy)
+
+
 def build_checks() -> None:
-    """Building a plan in the app: hidden outside preview, then the steps, the preview and the send."""
+    """Building a plan in the app: closed unless switched on, then the steps, the preview and the send."""
     import json as _json
     from datetime import date as _d, timedelta as _td
 
@@ -595,6 +677,13 @@ def build_checks() -> None:
     with TestClient(hosted.build_app(), base_url="http://localhost") as client:
         check("building a plan is hidden outside preview", client.get("/app/api/build", headers=auth).status_code == 404)
         check("and Plan doesn't offer it", "next_block" not in client.get("/app/api/plan", headers=auth).json())
+        os.environ[app_routes.BUILDER_ENV] = "1"
+        try:
+            check("GARMIN_MCP_BUILDER opens it to everyone", client.get("/app/api/build", headers=auth).status_code == 200)
+            check("and still needs a token", client.get("/app/api/build").status_code == 401)
+        finally:
+            os.environ.pop(app_routes.BUILDER_ENV, None)
+            app_routes._BUILD_INPUTS.clear()
         os.environ["GARMIN_MCP_PREVIEW"] = "on"
         try:
             got = client.get("/app/api/build", headers=auth).json()
@@ -810,9 +899,62 @@ def race_prompt_checks() -> None:
         app_routes._BUILD_INPUTS.clear()
 
 
+# Bart's 10 km easy + strides, Nov 11, lap by lap as Garmin recorded it: the
+# 9.5 km easy step lapped every km (eight 1 km laps and a 0.93), then six
+# 20 s strides, each with its jog, the last jog a 4 s stub.
+STRIDES_RUN = [(1000, 320, 111), (1000, 303, 121), (1000, 293, 124), (1000, 296, 129), (1000, 295, 127),
+               (1000, 294, 132), (1000, 292, 133), (1000, 293, 132), (930, 277, 130),
+               (101.5, 20, 141, "RECOVERY", 190, 62, 140), (90.9, 20, 133, "RECOVERY", 130, 44, 136),
+               (90.5, 20, 129, "RECOVERY", 120, 43, 136), (102.0, 20, 134, "RECOVERY", 150, 53, 141),
+               (75.8, 20, 135, "RECOVERY", 120, 38, 135), (93.9, 20, 133, "RECOVERY", 10, 4, 145)]
+
+
+def strides_checks() -> None:
+    laps = []
+    for row in STRIDES_RUN:
+        laps.append({"distance": row[0], "duration": row[1], "averageHR": row[2], "intensityType": "ACTIVE"})
+        if len(row) > 3:
+            laps.append({"distance": row[4], "duration": row[5], "averageHR": row[6], "intensityType": row[3]})
+    workout = {"workoutSegments": [{"workoutSteps": [
+        {"stepOrder": 1, "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "distance"},
+         "endConditionValue": 9500, "targetType": {"workoutTargetTypeKey": "heart.rate.zone"}, "targetValueOne": 120, "targetValueTwo": 145},
+        {"stepOrder": 2, "type": "RepeatGroupDTO", "numberOfIterations": 6, "workoutSteps": [
+            {"stepOrder": 1, "stepType": {"stepTypeKey": "interval"}, "endCondition": {"conditionTypeKey": "time"}, "endConditionValue": 20},
+            {"stepOrder": 2, "stepType": {"stepTypeKey": "recovery"}, "endCondition": {"conditionTypeKey": "lap.button"}}]}]}]}
+    result = analysis.analyse(workout, {"lapDTOs": laps}, "easy")
+    rows = result.get("planned_and_run") or []
+    run = next((r for r in rows if r["label"] == "Run"), {})
+    check("a long step the watch lapped every km reads as one: the whole 8.9 km easy part against its target",
+          run.get("pace") == "4:58" and run.get("hr") == 126 and not run.get("soft"), str(run))
+    stride = next((r for r in rows if r.get("kind") == "strides"), {})
+    check("six 20 s strides are one row, with their pace range and each one's pace",
+          stride.get("note") == "6 \u00d7 20 s \u00b7 3:16\u20134:24" and stride.get("pace") == "3:36"
+          and len(stride.get("spark") or []) == 6 and not any(r.get("rep") for r in rows), str(stride))
+    check("nothing is left over as run on after the workout", not any(r["label"] == "Ran on" for r in rows), str(rows))
+    check("the numbers at the top are the whole run's, not the strides'",
+          [s["l"] for s in result["stats"]] == ["km", "time", "/km avg", "bpm avg"] and result["stats"][2]["v"] == "4:57", str(result["stats"]))
+    check("the verdict is about the easy run first, then the strides in a few words",
+          result["verdict"] == "On target. Easy 8.9 km at 4:58, heart rate 126. Six strides, fastest 3:16.", result["verdict"])
+    split_labels = [s["km"] for s in result["splits"]]
+    stride_split = next((s for s in result["splits"] if s.get("strides")), {})
+    check("the splits: the km, then the strides as one row, then the jogs",
+          split_labels[:9] == [str(i) for i in range(1, 9)] + ["0.9"] and split_labels[9:] == ["Strides", "Recoveries"]
+          and stride_split.get("pace") == "3:36 (6 \u00d7 20 s)" and stride_split.get("fastest") == "3:16", str(result["splits"][8:]))
+    total = sum(s["seconds"] for s in result["splits"])
+    check("and they still add up to the run's time", total == result["seconds"], f"{total} != {result['seconds']}")
+    # Reps long enough to be the session stay reps, row by row.
+    import copy
+    long_reps = copy.deepcopy(workout)
+    long_reps["workoutSegments"][0]["workoutSteps"][1]["workoutSteps"][0]["endConditionValue"] = 180
+    check("three-minute reps are still reps, not strides",
+          not analysis._stride_steps([(s, None) for s in analysis.planned_steps(long_reps)]))
+
+
 def main() -> int:
     extra_checks()
+    verdict_checks()
     analysis_checks()
+    strides_checks()
     easier_checks()
     api_checks()
     assistant_checks()

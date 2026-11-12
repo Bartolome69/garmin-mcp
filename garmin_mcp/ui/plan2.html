@@ -243,6 +243,16 @@
         error: d.errors.join("; "), steps: d.steps.join(" > ") }) }).catch(function () {});
     } catch (e) {}
   }
+  // A tap on Open in Daash, and whether the chat app opened the link: on
+  // the same link, as many times as it's tapped (Nov 6: 71 cards carried it
+  // and not one sign-in came of it, with nothing to say whether anyone tried).
+  d.tapped = function (what, opened) {
+    if (!d.seen || !window.fetch) return;
+    try {
+      fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "plan", tap: what, opened: opened, host: d.host }) }).catch(function () {});
+    } catch (e) {}
+  };
   function show() {
     tell();
     var box = document.getElementById("diag");
@@ -521,6 +531,7 @@
   // speed shown in miles, from the km the answers carry. KM() is the unit
   // after a distance; units() turns a pace, speed or distance in text.
   var MI = false, KM_PER_MI = 1.609344;
+  var CREDIT = "Garmin";
   function fmtKm(n) { return n == null ? "" : num(MI ? n / KM_PER_MI : n); }
   function KM() { return MI ? " mi" : " km"; }
   function units(t) {
@@ -610,8 +621,8 @@
   // intervals, race, with long its own. An easy ride is easy. Strength and
   // swims keep their sport's colour.
   var TYPES = {
-    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Threshold", v: "var(--threshold)", t: "var(--threshold-text)" },
-    intervals: { l: "Intervals", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
+    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Quality", v: "var(--threshold)", t: "var(--threshold-text)" },
+    intervals: { l: "Quality", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
     race: { l: "Race", v: "var(--red)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
     strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
   };
@@ -839,7 +850,8 @@
       var body = segs.some(function (g) { return g.k === "easy" && !g.part; });
       segs = segs.map(function (g) { return g.k === "easy" && !(body && g.part) ? { k: "work", km: g.km } : g; });
     }
-    var easy = s.type === "long" ? "long" : s.type === "easy" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
+    // A race's warm-up and cool-down are easy running, green like any other.
+    var easy = s.type === "long" ? "long" : s.type === "easy" || s.type === "race" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
     // Work in a hard session takes its colour; faster stretches of a long
     // or easy run are threshold work.
     var work = s.type === "race" ? "race" : hard ? colourOf(s) : "threshold";
@@ -876,6 +888,8 @@
 
   function render(plan) {
     MI = !!(plan && plan.units === "mi");
+    // "Garmin [device model]" by the title: Garmin's API brand guidelines (Nov 10).
+    CREDIT = (plan && plan.credit) || "Garmin";
     if (plan && plan.source === "waiting") { waiting(plan); return; }
     if (plan && plan.error) { fail(plan.error, true); return; }
     model = normalise(plan);
@@ -956,10 +970,10 @@
       el("div", { style: "display:flex;align-items:flex-start;gap:12px" }, [
         el("div", { style: "display:flex;flex-direction:column;gap:3px;flex:1;min-width:0" }, [
           el("h1", { class: "title", text: title }),
-          el("span", { class: "sub", text: [b.method, then, span].filter(Boolean).join(" · ") }),
+          el("span", { class: "sub", text: [CREDIT, b.method, then, span].filter(Boolean).join(" · ") }),
         ]),
         appUrl ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px;font-size:13.5px",
-          onclick: function (e) { openUrl(appUrl, e.currentTarget); } }, ["Open in Daash"]) : null,
+          onclick: function (e) { openUrl(appUrl, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]) : null,
       ]),
     ];
     var races = m.races, goal = races.filter(function (r) { return r.tier === "goal"; }).slice(-1)[0];
@@ -1258,8 +1272,8 @@
     return st === "done, moved" ? ((s.done_on || "") < s.date ? "early" : "moved") : st === "logged" ? "done" : st || "ahead";
   }
   var NEW_TYPES = {
-    easy: ["Easy", "var(--easy)"], long: ["Long", "var(--long)"], threshold: ["Threshold", "var(--hard)"], sub: ["Threshold", "var(--hard)"],
-    intervals: ["Intervals", "var(--hard)"], race: ["Race", "var(--race)"], strength: ["Strength", "var(--strength)"],
+    easy: ["Easy", "var(--easy)"], long: ["Long", "var(--long)"], threshold: ["Quality", "var(--hard)"], sub: ["Quality", "var(--hard)"],
+    intervals: ["Quality", "var(--hard)"], race: ["Race", "var(--race)"], strength: ["Strength", "var(--strength)"],
     ride: ["Easy", "var(--easy)"], run: ["Easy", "var(--easy)"], swim: ["Easy", "var(--easy)"], other: ["", "var(--muted)"],
   };
   function typeLook(s) {
@@ -1405,6 +1419,16 @@
     if (!p) return [facts, el("span", { class: "dnote", text: "The laps need the chat: ask below." })];
     var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || []).filter(function (x) { return x && x.pace_per_km; });
     if (splits.length < 2) return [facts];
+    // Strides (Nov 11): short quick laps after a km or more of running are an
+    // add-on, drawn as thin bars after the km, never as reps. The run card
+    // (run.html) uses the same rule.
+    var lapSecs = function (x) { return clockSecs(x.duration) || 0; };
+    var resting = function (x) { return x.intensity === "recovery" || x.intensity === "rest"; };
+    var strideLaps = splits.filter(function (x) { return !resting(x) && lapSecs(x) && lapSecs(x) <= 45; });
+    var steadyLaps = splits.filter(function (x) { return !resting(x) && lapSecs(x) > 45; });
+    var steadyKm = steadyLaps.reduce(function (t, x) { return t + (x.distance_km || 0); }, 0);
+    if (strideLaps.length >= 2 && steadyKm >= 1 && steadyLaps.length >= 2) splits = steadyLaps;
+    else strideLaps = [];
     var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
     var known = secs.filter(function (v) { return v != null; }), lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
     var work = workLaps(splits, secs, lo, hi), colour = typeLook(s).v;
@@ -1434,6 +1458,12 @@
       var repRows = splits.filter(function (x, i) { return work[i]; });
       reps = repRows.length;
     }
+    // The strides' quicker paces are on the same scale as the km, so each
+    // stands as high as it ran.
+    if (strideLaps.length) {
+      var strideSecs = strideLaps.map(function (x) { return paceSecs(x.pace_per_km); }).filter(function (v) { return v != null; });
+      if (strideSecs.length) lo = Math.min(lo, Math.min.apply(null, strideSecs));
+    }
     var top = lo - Math.max(8, (hi - lo) * 0.08), bottom = hi + Math.max(12, (hi - lo) * 0.15);
     var height = function (v) { return 8 + 80 * (bottom - v) / (bottom - top); };
     var labelReps = reps > 1 && reps <= 8 && mixed;
@@ -1443,11 +1473,20 @@
         title: (x.split != null ? "Lap " + x.split : "km " + (x.km || i + 1)) + " · " + units(x.pace_per_km) + (x.avg_hr ? " · " + x.avg_hr + " bpm" : "") },
         work[i] && labelReps ? [el("em", { text: units(x.pace_per_km).replace(/\s*\/(km|mi)$/, "") })] : []);
     });
+    if (strideLaps.length) {
+      kids.push(el("span", { style: "flex:0 0 4px;background:transparent" }));
+      strideLaps.forEach(function (x) {
+        var v = paceSecs(x.pace_per_km);
+        kids.push(el("span", { style: "flex:0 0 4px;height:" + Math.min(100, Math.round(v == null ? 8 : height(v))) + "%;background:var(--hard)",
+          title: "Stride · " + units(x.pace_per_km) + (x.avg_hr ? " · " + x.avg_hr + " bpm" : "") }));
+      });
+    }
     var avg = paceSecs(sum.pace_per_km);
     // The average line only means something against reps; an easy run's km
     // are all near it.
     if (mixed && avg != null && avg > top && avg < bottom) kids.push(el("i", { style: "bottom:" + height(avg).toFixed(1) + "%" }, [el("b", { text: "avg " + units(sum.pace_per_km).replace(/\s*\/(km|mi)$/, "") })]));
-    var fast = secs.indexOf(lo), slow = secs.indexOf(hi);
+    var kmSecs = secs.filter(function (v) { return v != null; });
+    var fast = secs.indexOf(Math.min.apply(null, kmSecs)), slow = secs.indexOf(Math.max.apply(null, kmSecs));
     var lapName = function (k) { return splits[k].split != null ? (work[k] && labelReps ? "rep " + (work.slice(0, k + 1).filter(Boolean).length) : "lap " + splits[k].split) : "km " + (splits[k].km || k + 1); };
     var chart = el("div", { class: "chart", role: "img", "aria-label": splits.length + " laps" }, kids);
     if (mixed) {
@@ -1462,6 +1501,10 @@
     var line = splits.length <= 12
       ? "Splits " + splits.map(function (x) { return units(x.pace_per_km).replace(/\s*\/(km|mi)$/, ""); }).join(" · ") + (hr.average_bpm ? " · " + hr.average_bpm + " bpm avg" : "")
       : "Fastest " + units(splits[fast].pace_per_km) + " (" + lapName(fast) + "), slowest " + units(splits[slow].pace_per_km) + " (" + lapName(slow) + ").";
+    if (strideLaps.length) {
+      var quickest = strideLaps.reduce(function (a, x) { var v = paceSecs(x.pace_per_km); return v != null && (a == null || v < paceSecs(a.pace_per_km)) ? x : a; }, null);
+      line = line.replace(/\.$/, "") + " \u00b7 " + strideLaps.length + " strides" + (quickest ? ", fastest " + units(quickest.pace_per_km) : "");
+    }
     return [facts, chart, el("span", { class: "dnote", text: line })];
   }
   function plannedParts(p, s) {
@@ -1506,7 +1549,7 @@
     ]));
     reportSize();
   }
-  function openUrl(url, btn) {
+  function openUrl(url, btn, what) {
     var opened;
     if (window.openai && typeof window.openai.openExternal === "function") {
       opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
@@ -1515,7 +1558,8 @@
     } else {
       opened = request("ui/open-link", { url: url });
     }
-    opened.then(function () { flash(btn, "Opens in the browser"); }).catch(function () { flash(btn, "This chat app didn’t open the link"); });
+    opened.then(function () { flash(btn, "Opens in the browser"); if (what && D.tapped) D.tapped(what, true); })
+      .catch(function () { flash(btn, "This chat app didn’t open the link"); if (what && D.tapped) D.tapped(what, false); });
   }
 
 
@@ -1669,7 +1713,37 @@
       }
     }
     title = title.replace(/(\d) (km|mi|min)\b/g, "$1\u00a0$2");
-    return { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3) };
+    var out = { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3),
+      // Garmin's credit for the run's own watch, from its details (Nov 10).
+      g: (p && p.credit) || "Garmin" };
+    var planned = plannedFor(s);
+    if (planned) out.pl = planned;
+    return out;
+  }
+  // The planned session a run was, for its Strava caption, as share.py's
+  // plan_context says it: { n, ty, k, w, b }. None for a run off the plan.
+  function plannedFor(s) {
+    if (!s || s.extra || !/^done/.test(String(s.status || ""))) return null;
+    var name = String(s.name || "Run").replace(/\s*\u00b7\s*[A-Z0-9]{1,6}$/, "").trim()
+      .replace(/(\d+(?:[.,]\d+)?)\s*k(?:m)?\b/gi, "$1 km").replace(/(\d)\s*[x\u00d7]\s*(\d)/gi, "$1 \u00d7 $2");
+    var pl = { n: (name.charAt(0).toUpperCase() + name.slice(1)).slice(0, 60), ty: s.type, k: s.planned_km };
+    var r = raw || {}, day = String(s.date || "").slice(0, 10), weeks = r.weeks || [];
+    var monday = function (iso) { var d = parse(iso); return d.getTime() - dow(iso) * 864e5; };
+    if (r.label) {
+      var wi = weeks.findIndex(function (w) { return (w.sessions || []).indexOf(s) >= 0; });
+      if (wi >= 0) pl.w = [wi + 1, r.weeks_total || weeks.length];
+      if (r.name || r.goal) pl.b = String(r.name || String(r.goal).replace(/\s*[(:,].*$/, "")).slice(0, 40);
+    } else {
+      ["current_plan", "upcoming_plan"].some(function (key) {
+        var p = r[key];
+        if (!p || !p.starts || !p.ends || day < p.starts || day > p.ends) return false;
+        if (p.weeks_total) pl.w = [Math.round((monday(day) - monday(p.starts)) / (7 * 864e5)) + 1, p.weeks_total];
+        if (p.name || p.goal) pl.b = String(p.name || String(p.goal).replace(/\s*[(:,].*$/, "")).slice(0, 40);
+        return true;
+      });
+    }
+    Object.keys(pl).forEach(function (k) { if (pl[k] == null) delete pl[k]; });
+    return pl;
   }
   function shareRun(p, s, btn) {
     var url = shareLink(runPayload(p, s)), opened;

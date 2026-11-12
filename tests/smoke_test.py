@@ -643,10 +643,36 @@ async def check_preview_gate(check) -> None:
         plain_details = next(t for t in tools if t.name == "get_activity_details").description
         check("without preview, activity details describe a ride's power and climbs",
               "intensity factor" in plain_details and "VAM" in plain_details)
+        plan_desc = next(t for t in tools if t.name == "get_plan").description
+        check("one card per answer: 'how was my run' is the run tool alone, never with get_plan (Nov 12)",
+              "how was my run" in plain_details and "not with get_plan" in plain_details
+              and "how was my run" in plan_desc and "get_activity_details alone" in plan_desc)
         check("without preview, activity details describe a run's weather and shoes",
               "shoes worn" in plain_details)
         check("without preview, get_fitness mentions FTP",
               "FTP" in next(t for t in tools if t.name == "get_fitness").description)
+        # Nov 11: the run card, tried by preview accounts that morning, is on for everyone,
+        # except on Garmin's official API alone; GARMIN_MCP_RUN_CARD=0 takes it back to preview.
+        details_meta = getattr(next(t for t in tools if t.name == "get_activity_details"), "meta", None) or {}
+        check("without preview, a run comes with its card", (details_meta.get("ui") or {}).get("resourceUri") == server.RUN_VIEW,
+              str(details_meta))
+        check("and its answer carries what the card draws",
+              (server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) or {}).get("planned") == "Easy 8k")
+        alone = server.use_alone(True)
+        try:
+            check("on Garmin's official API alone, a run answers in writing", not server.run_card_on()
+                  and server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) is None)
+        finally:
+            server.reset_alone(alone)
+        os.environ["GARMIN_MCP_RUN_CARD"] = "0"
+        try:
+            off = await server.mcp.list_tools()
+            off_meta = getattr(next(t for t in off if t.name == "get_activity_details"), "meta", None) or {}
+            check("with the card switched off, a run answers in writing: no run card", "ui" not in off_meta, str(off_meta))
+            check("and its answer carries nothing for the card",
+                  server._run_card(1, {"ty": "easy", "n": "Easy 8k"}, None, [], None) is None)
+        finally:
+            os.environ.pop("GARMIN_MCP_RUN_CARD", None)
     finally:
         preview.reset(token)
     token = preview.use(True)
@@ -682,6 +708,15 @@ async def check_preview_gate(check) -> None:
         progress_tool = next(t for t in listed if t.name == "get_progress")
         check("with preview, get_progress draws the same view",
               ((getattr(progress_tool, "meta", None) or {}).get("ui") or {}) == view_of(listed))
+        run_uri = ((getattr(next(t for t in listed if t.name == "get_activity_details"), "meta", None) or {}).get("ui") or {}).get("resourceUri")
+        check("with preview, a run draws the run card", re.fullmatch(r"ui://garmin/run/[0-9a-f]{10}", run_uri or "") is not None, str(run_uri))
+        run_view = list(await server.mcp.read_resource(server.RUN_VIEW))
+        check("the run card is served", run_view and "get_activity_details" in run_view[0].content and "Run" in run_view[0].content,
+              str(run_view)[:80])
+        card = server._run_card(1, {"ty": "threshold", "n": "3 × 3 km", "w": [4, 12], "b": "Half build"}, None, [], None)
+        check("with preview, the card gets the planned session's type, name and week",
+              card and card.get("type") == "threshold" and card.get("planned") == "3 × 3 km"
+              and card.get("week") == 4 and card.get("weeks") == 12, str(card))
     finally:
         preview.reset(token)
 
@@ -1127,6 +1162,43 @@ def check_chart_config_read_only(check) -> None:
             plan_mod.CONFIG = saved
 
 
+async def check_nested_tools_report_once(check) -> None:
+    """A tool called from inside another (the run tool reads the plan) isn't
+    reported as the chat's own call: no second card, no plan clock (Nov 12)."""
+    from garmin_mcp import hooks
+    from garmin_mcp.server import tool_errors
+
+    seen: list[str] = []
+    started: list[str] = []
+
+    @tool_errors
+    async def get_plan():
+        return {"weeks": []}
+
+    @tool_errors
+    async def get_activity_details():
+        inner = await get_plan()
+        return {"inner_has_card": "_card" in inner}
+
+    def hook(name, result):
+        seen.append(name)
+        return {**result, "_card": "x"} if isinstance(result, dict) else result
+
+    async def run():
+        token = hooks.use(hook, lambda name: started.append(name) or 0.0)
+        try:
+            return await get_activity_details(), await get_plan()
+        finally:
+            hooks.reset(token)
+
+    outer, plan = await run()
+    check("a tool called inside another isn't reported: only the run tool, then the chat's own plan",
+          seen == ["get_activity_details", "get_plan"] and started == ["get_activity_details", "get_plan"],
+          f"{seen} {started}")
+    check("and its answer comes back untouched by the hook", outer.get("inner_has_card") is False
+          and plan.get("_card") == "x", str((outer, plan)))
+
+
 def check_stream_km_splits(check) -> None:
     """A 7 km steady lap recorded by a watch that did not auto-lap.
 
@@ -1289,6 +1361,7 @@ ANNOTATED_TITLES = {
     "unschedule_workout": "Unschedule workout",
     "update_workout": "Update workout",
     "leave_crew": "Leave crew",
+    "check_plan": "Check training plan",
 }
 ANNOTATED_DESTRUCTIVE = {"delete_workout", "remove_plan", "unschedule_workout", "update_workout", "leave_crew",
                          "update_crew"}
@@ -1421,6 +1494,21 @@ async def main() -> int:
                 _lap(1000, 330, 140, "COOLDOWN")])
             check("a watch lapping every km inside a rep doesn't double the reps: 3 x 8 min is 3 reps",
                   (split_reps or {}).get("count") == 3 and split_reps.get("fastest_pace_per_km", "").startswith("4:06"), str(split_reps))
+            # Nov 11: an easy 9 km and six 20 s strides read as "6 reps at 4:54 over 9.48 km".
+            easy_strides = [_lap(1000, t, h, "ACTIVE") for t, h in ((320, 111), (303, 121), (293, 124), (296, 129), (295, 127),
+                                                                   (294, 132), (292, 133), (293, 132))] + [_lap(930, 277, 130, "ACTIVE")]
+            for d, h in ((101.5, 141), (90.9, 133), (90.5, 129), (102.0, 134), (75.8, 135), (93.9, 133)):
+                easy_strides += [_lap(d, 20, h, "ACTIVE"), _lap(150, 50, 138, "RECOVERY")]
+            stride_flags = _srv._stride_laps(easy_strides)
+            told = _srv._strides_summary(easy_strides, stride_flags) or {}
+            check("strides in an easy run aren't reps", _srv._reps(easy_strides) is None, str(_srv._reps(easy_strides)))
+            check("they're summed up as strides: six of 20 s, fastest 3:16",
+                  told.get("count") == 6 and told.get("each") == "20 s" and told.get("fastest_pace_per_km", "").startswith("3:16"), str(told))
+            track = [_lap(2000, 600, 130, "WARMUP")] + [x for _ in range(8) for x in (_lap(200, 36, 165, "INTERVAL"), _lap(200, 90, 140, "RECOVERY"))] \
+                + [_lap(1500, 450, 135, "COOLDOWN")]
+            check("8 x 200 m at 36 s each are reps, not strides",
+                  (_srv._reps(track) or {}).get("count") == 8 and not any(_srv._stride_laps(track)), str(_srv._reps(track)))
+            check("a session of reps has no strides", _srv._strides_summary(easy_strides[:9], _srv._stride_laps(easy_strides[:9])) is None)
             from garmin_mcp import share as _share
             shared_laps = (_share.run_payload({"summary": {"type": "running", "name": "x", "distance_km": 5},
                                                "splits": [{"distance_km": 1, "duration": "4m 00s", "pace_per_km": "4:00 /km", "avg_hr": 150},
@@ -1435,6 +1523,13 @@ async def main() -> int:
                 drawn = json.loads(_b64.urlsafe_b64decode(fragment + "=" * (-len(fragment) % 4)).decode("utf-8"))
                 check("the link carries the run as the share page reads it",
                       drawn.get("run") == 1 and drawn.get("v") == 1 and drawn["f"][0][1] == "km" and drawn.get("l"), str(drawn)[:200])
+                check("the answer itself credits the watch, for the assistant to name (Garmin's brand guidelines)",
+                      plain_run.get("credit") == "Garmin Forerunner 265", str(plain_run.get("credit")))
+                from garmin_mcp import server as _srv
+                check("and the assistant is told to name it", "credit, Garmin's required attribution" in _srv._INSTRUCTIONS and "credit, Garmin's required attribution" in _srv._OFFICIAL_INSTRUCTIONS)
+                check("and Garmin's credit with the watch it was recorded on, looked up from the run",
+                      drawn.get("g") == "Garmin Forerunner 265"
+                      and (plain_run.get("summary") or {}).get("device") == "Forerunner 265", str(drawn.get("g")))
             plain_fit = payload(await sess.call_tool("get_fitness", {}))
             check("an ordinary account's fitness has the cycling FTP",
                   (plain_fit.get("cycling_ftp") or {}).get("watts") == 250, str(plain_fit.get("cycling_ftp")))
@@ -1527,6 +1622,7 @@ async def main() -> int:
             check("an ordinary account's run details carry the weather and shoes",
                   {"weather", "shoes"} <= set(detail), str(list(detail)))
             check_stream_km_splits(check)
+            await check_nested_tools_report_once(check)
             check_conditions(check)
             check_terrain_ignores_stops(check)
             check_shoes_and_nights(check)
@@ -1657,6 +1753,7 @@ async def main() -> int:
                 "goal": "Half marathon, 1:40, mid November", "sessions": block}))
             print("   ", json.dumps(made, indent=2)[:500])
             made_info = made.get("created") or {}
+            check("without preview, a new plan comes with no checks", "checks" not in made, str(list(made)))
             check("plan created with a code from the goal, answered as its card",
                   made.get("label") == "HM" and made_info.get("sessions_created") == 4
                   and isinstance(made.get("weeks"), list), str(made)[:200])
@@ -1667,6 +1764,28 @@ async def main() -> int:
                 "goal": "Half marathon", "sessions": block}))
             check("the same code in the same window is refused",
                   "error" in again and "already" in again["error"], str(again)[:160])
+            # Nov 11: the app's plan builder opens to everyone, so a plan built
+            # there can meet one asked for in a chat. Another running plan on
+            # the same weeks, under any label, is refused; the model is told
+            # to ask the user, not to slip it in under a new code.
+            other = payload(await sess.call_tool("create_plan", {
+                "goal": "Base block", "label": "B2", "sessions": block}))
+            check("another running plan over the same weeks is refused, whatever its label",
+                  "error" in other and "running plan HM" in other["error"]
+                  and "remove_plan HM" in other["error"] and "another label" in other["error"], str(other)[:240])
+            from garmin_mcp import server as _srv_plans
+            gym = [{"date": day(3), "name": "Gym", "sport": "strength", "exercises": [{"name": "Squat"}]}]
+            ride = [{"date": day(3), "name": "Ride", "sport": "cycling", "steps": easy}]
+            held = {"HM": [{"date": day(2), "sportTypeKey": "running"}]}
+            check("a gym or bike plan alongside a running plan is fine, and two gym plans are too",
+                  _srv_plans._running_clash(held, gym) is None and _srv_plans._running_clash(held, ride) is None
+                  and _srv_plans._running_clash({"GYM": [{"date": day(2), "sportTypeKey": "strength_training"}]},
+                                                block) is None
+                  and _srv_plans._running_clash({"TR": [{"date": day(2), "sportTypeKey": "trail_running"}]},
+                                                block) is not None
+                  # The calendar comes by the month: a plan earlier that month isn't in the way.
+                  and _srv_plans._running_clash({"OLD": [{"date": day(-20), "sportTypeKey": "running"}]},
+                                                block, day(2), day(9)) is None)
 
             got = payload(await sess.call_tool("get_plan", {"label": "HM"}))
             print("   ", json.dumps(got, indent=2)[:700])
@@ -2273,6 +2392,57 @@ async def main() -> int:
             details_tool = next(t for t in tools.tools if t.name == "get_activity_details")
             check("a preview account is told what run details now include",
                   "weather" in details_tool.description and "same route" in details_tool.description)
+
+            print("\npreview account, plan checks")
+            from datetime import date as _d, timedelta as _td
+            ahead = lambda n: (_d.today() + _td(days=n)).isoformat()  # noqa: E731
+            run = lambda km: [{"type": "interval", "distance_meters": km * 1000}]  # noqa: E731
+            # A tempo the day before the long run: two hard days in a row.
+            draft = [{"date": ahead(2), "name": "Easy 8k", "steps": run(8)},
+                     {"date": ahead(5), "name": "Tempo 3x8min", "steps": [
+                         {"type": "warmup", "duration_seconds": 900},
+                         {"type": "repeat", "times": 3, "steps": [
+                             {"type": "interval", "duration_seconds": 480, "pace": ["4:50", "5:10"]},
+                             {"type": "recovery", "duration_seconds": 120}]},
+                         {"type": "cooldown", "duration_seconds": 600}]},
+                     {"date": ahead(6), "name": "Long 14k", "steps": run(14)}]
+            check("a preview account is offered check_plan, as a read",
+                  "check_plan" in preview_names
+                  and field(next(t for t in tools.tools if t.name == "check_plan").annotations, "read_only_hint", "readOnlyHint") is True)
+            create_text = next(t for t in tools.tools if t.name == "create_plan").description
+            check("create_plan says to pass checks on gently and still writes the plan",
+                  "checks" in create_text and "worth a look" in create_text and "injury risk" in create_text
+                  and "written whatever" in create_text, create_text[-300:])
+            checked = payload(await sess.call_tool("check_plan", {"goal": "Half marathon", "sessions": draft}))
+            print("   ", json.dumps(checked, indent=2)[:500])
+            check("check_plan answers with checks only",
+                  set(checked) <= {"checks", "about_checks", "not_checked"} and isinstance(checked.get("checks"), list),
+                  str(checked)[:200])
+            check("and finds the hard days in a row",
+                  "hard_days_in_a_row" in [c["rule"] for c in checked["checks"]], str(checked)[:300])
+            check("with how to pass them on", "worth a look" in str(checked.get("about_checks")))
+            check("with too little running on Garmin, it says what wasn't checked and to ask",
+                  "ask" in str(checked.get("not_checked")), str(checked.get("not_checked")))
+            told = payload(await sess.call_tool("check_plan", {"goal": "Half marathon", "sessions": draft,
+                                                               "recent_weekly_km": 5, "longest_recent_run_km": 6}))
+            check("check_plan takes the user's own recent running when Garmin's is thin",
+                  "start_volume" in [c["rule"] for c in told.get("checks") or []] and "not_checked" not in told,
+                  str(told)[:300])
+            bad = payload(await sess.call_tool("check_plan", {"goal": "Half", "sessions": [
+                {"date": ahead(2), "name": "Broken", "steps": [{"type": "interval"}]}]}))
+            check("a draft create_plan would refuse is refused the same way", "Session 1" in str(bad.get("error")),
+                  str(bad)[:160])
+            written = payload(await sess.call_tool("create_plan", {
+                "goal": "Half marathon", "label": "CK", "sessions": draft}))
+            check("create_plan writes the plan and answers with the same checks",
+                  (written.get("created") or {}).get("sessions_created") == 3
+                  and [c["rule"] for c in written.get("checks") or []] == [c["rule"] for c in checked["checks"]],
+                  str(written.get("checks"))[:300])
+            read_back = payload(await sess.call_tool("get_plan", {"label": "CK"}))
+            check("get_plan carries checks over the plan's weeks",
+                  "hard_days_in_a_row" in [c["rule"] for c in read_back.get("checks") or []],
+                  str(read_back.get("checks"))[:300])
+            await sess.call_tool("remove_plan", {"label": "CK", "confirm": "CK"})
 
             print("\npreview account, around a run")
             hilly = payload(await sess.call_tool("get_activity_details", {"activity_id": 4444}))

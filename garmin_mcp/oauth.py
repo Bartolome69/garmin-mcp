@@ -144,7 +144,8 @@ def app_for_redirect(uri: str) -> str:
         return "Daash app"
     if parsed.scheme == "http" and host in LOOPBACK_HOSTS:
         return "Desktop or command line"
-    for app, domains in (("Claude", ("claude.ai", "claude.com")), ("ChatGPT", ("chatgpt.com", "openai.com"))):
+    for app, domains in (("Claude", ("claude.ai", "claude.com")), ("ChatGPT", ("chatgpt.com", "openai.com")),
+                         ("Grok", ("grok.com", "x.ai"))):
         if any(host == d or host.endswith("." + d) for d in domains):
             return app
     return "Other"

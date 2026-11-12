@@ -212,7 +212,17 @@ HRV = {"hrvSummary": {"weeklyAvg": 58, "lastNightAvg": 61, "lastNight5MinHigh": 
 
 # Fitness history, in the different shapes Garmin's range endpoints answer in:
 # rows with a date, rows nested a level down, and a map keyed by date.
-FITNESS_MONTHS = ["2026-05-15", "2026-06-15", "2026-07-15", "2026-08-15", "2026-09-15", "2026-10-05"]
+def _months_back(n: int) -> str:
+    """The 1st of the month n months before this one."""
+    first = date.today().replace(day=1)
+    year, month = divmod(first.year * 12 + first.month - 1 - n, 12)
+    return date(year, month + 1, 1).isoformat()
+
+
+# The last six months, the 1st of each, so a six-month look back always holds
+# all six whatever the day the tests run (Nov 12: fixed dates from 15 May fell
+# out of the window and left five).
+FITNESS_MONTHS = [_months_back(n) for n in range(5, -1, -1)]
 VO2_HISTORY = [
     {"generic": {"calendarDate": d, "vo2MaxPreciseValue": v},
      "cycling": {"calendarDate": d, "vo2MaxPreciseValue": 55.0}}
@@ -496,6 +506,8 @@ class FakeGarmin:
                 "summaryDTO": {"startTimeLocal": "2026-09-29T07:00:00.0", "distance": 10000.0,
                                "duration": 3000.0, "movingDuration": 3000.0, "averageHR": 148,
                                "elevationGain": 40.0},
+                # The watch it was recorded on, named in get_devices (Nov 10).
+                "metadataDTO": {"manufacturer": "GARMIN", "deviceMetaDataDTO": {"deviceId": 3456789}},
             }
         return {
             "activityId": activity_id,
@@ -511,6 +523,13 @@ class FakeGarmin:
                 "elevationGain": 45.2,
             },
         }
+
+    def get_device_last_used(self) -> dict[str, Any]:
+        return {"lastUsedDeviceName": "Forerunner 265", "userProfileNumber": 42}
+
+    def get_devices(self) -> list[dict[str, Any]]:
+        return [{"deviceId": 1111111, "productDisplayName": "Edge 840"},
+                {"deviceId": 3456789, "productDisplayName": "Forerunner 265", "displayName": "My watch"}]
 
     def get_activity_splits(self, activity_id: int) -> dict[str, Any]:
         return INTERVAL_SPLITS if int(activity_id) == INTERVALS_ID else SPLITS

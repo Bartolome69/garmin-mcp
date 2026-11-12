@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
+from typing import Any, Callable
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -53,6 +54,8 @@ MIGRATIONS = (
     # Set once this person has been told how to stop Claude asking permission
     # for every read.
     "ALTER TABLE users ADD COLUMN tip_seen INTEGER",
+    # Set once this person has been offered a Daash crew in a chat.
+    "ALTER TABLE users ADD COLUMN crew_offer_seen INTEGER",
     # Set while a preview account tries Daash on Garmin's official API alone:
     # its reads come only from what Garmin has pushed.
     "ALTER TABLE official_links ADD COLUMN official_only INTEGER",
@@ -61,6 +64,12 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN route TEXT",
     # The Monday the weekly email last went to this person, as YYYY-MM-DD.
     "ALTER TABLE users ADD COLUMN weekly_sent TEXT",
+    # When a chat last brought up the Daash app unasked, so it's at most weekly.
+    "ALTER TABLE users ADD COLUMN app_offered_at INTEGER",
+    # The Monday of the last weekly email this person clicked through from.
+    "ALTER TABLE users ADD COLUMN weekly_clicked TEXT",
+    # Nov 11: when the session heads-up goes, chosen in the app's You tab.
+    "ALTER TABLE push_subs ADD COLUMN heads_up TEXT",
 )
 
 # Bart's friends using Daash, named from a chat (garmin_official's friends
@@ -102,6 +111,28 @@ CREATE TABLE IF NOT EXISTS race_prompts (
     shown_at    INTEGER,
     not_goal    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (member, race)
+);
+"""
+
+# Phones that asked for the app's notifications (Nov 10): where to send them,
+# and what has gone already. `owner` is the person's email fingerprint, which
+# outlives a sign-in, or their token when there is none. The endpoint is the
+# address the phone's own push service gave; p256dh and auth are the keys that
+# make what Daash sends readable on that phone alone.
+PUSH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS push_subs (
+    endpoint      TEXT PRIMARY KEY,
+    owner         TEXT NOT NULL,
+    p256dh        TEXT NOT NULL,
+    auth          TEXT NOT NULL,
+    tz            TEXT,
+    created_at    INTEGER NOT NULL,
+    last_morning  TEXT,
+    last_run      TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (
+    name   TEXT PRIMARY KEY,
+    value  BLOB NOT NULL
 );
 """
 
@@ -245,6 +276,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(NOTICES_SCHEMA)
     conn.executescript(APP_SCHEMA)
     conn.executescript(RACE_PROMPT_SCHEMA)
+    conn.executescript(PUSH_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -289,14 +321,18 @@ def save_user(
     email_enc = _cipher().encrypt(email.strip().encode()) if email and email.strip() else None
     now = int(time.time())
     with _connect() as conn:
-        news_seen = opted_out = tip_seen = None
+        news_seen = opted_out = tip_seen = crew_offer_seen = weekly_sent = weekly_clicked = None
         if email_hash:
             # The person is the same, so what they have been told and what they
             # asked for outlives the row being replaced.
-            news_seen, opted_out, tip_seen = conn.execute(
-                "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen) FROM users WHERE email_hash = ?",
+            news_seen, opted_out, tip_seen, crew_offer_seen, first_at, weekly_sent, weekly_clicked = conn.execute(
+                "SELECT MAX(news_seen), MAX(email_opt_out), MAX(tip_seen), MAX(crew_offer_seen), MIN(created_at), "
+                "MAX(weekly_sent), MAX(weekly_clicked) FROM users WHERE email_hash = ?",
                 (email_hash,),
             ).fetchone()
+            # When they first connected, too: a new sign-in isn't a new person
+            # (the weekly email waits for someone's first week, Nov 9).
+            now = min(now, first_at) if first_at else now
             # A link to Garmin's official API belongs to the person, not the
             # row, so it moves to the new one rather than going with the old.
             conn.execute(
@@ -310,14 +346,15 @@ def save_user(
             )
         conn.execute(
             "INSERT INTO users (user_token, email_masked, token_blob, created_at, email_hash, email_enc, "
-            "news_seen, email_opt_out, tip_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "news_seen, email_opt_out, tip_seen, crew_offer_seen, weekly_sent, weekly_clicked) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_token) DO UPDATE SET "
             "  token_blob = excluded.token_blob, email_masked = excluded.email_masked, "
             "  email_hash = excluded.email_hash, "
             "  email_enc = COALESCE(excluded.email_enc, users.email_enc), "
             "  route = NULL",
-            (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out, tip_seen),
+            (user_token, email_masked, encrypted, now, email_hash, email_enc, news_seen, opted_out, tip_seen,
+             crew_offer_seen, weekly_sent, weekly_clicked),
         )
         # A Garmin Connect session stands behind the row now, so it reads from
         # Connect: full history, readiness, gear. Oct 30: someone who approved
@@ -526,6 +563,15 @@ def forget_race_prompts(member: str) -> None:
         conn.execute("DELETE FROM race_prompts WHERE member = ?", (member,))
 
 
+def claim_crew_offer(user_token: str) -> bool:
+    """True the first time for each person, like claim_tip: the one offer to start a crew."""
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE users SET crew_offer_seen = 1 WHERE user_token = ? AND COALESCE(crew_offer_seen, 0) = 0",
+            (user_token,),
+        ).rowcount > 0
+
+
 def claim_tip(user_token: str) -> bool:
     """True the first time for each person, like claim_news, for the one-off tip."""
     with _connect() as conn:
@@ -533,6 +579,29 @@ def claim_tip(user_token: str) -> bool:
             "UPDATE users SET tip_seen = 1 WHERE user_token = ? AND COALESCE(tip_seen, 0) = 0",
             (user_token,),
         ).rowcount > 0
+
+
+def claim_app_offer(user_token: str, every: int, now: int | None = None) -> bool:
+    """True when a chat may bring up the Daash app: at most once per ``every`` seconds.
+
+    Claimed like claim_news, in one UPDATE, so two answers at once can't both
+    bring it up.
+    """
+    now = int(time.time()) if now is None else now
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE users SET app_offered_at = ? WHERE user_token = ? AND COALESCE(app_offered_at, 0) <= ?",
+            (now, user_token, now - every),
+        ).rowcount > 0
+
+
+def used_client_since(subject: str, client_id: str, since: int) -> bool:
+    """Whether this person signed in with, or refreshed, this client since then."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT 1 FROM oauth_tokens WHERE subject = ? AND client_id = ? AND created_at >= ? LIMIT 1",
+            (subject, client_id, since),
+        ).fetchone() is not None
 
 
 def unsubscribe_signature(email_hash: str) -> str:
@@ -600,11 +669,13 @@ def emailable() -> list[tuple[str, str]]:
     return out
 
 
-def weekly_recipients() -> list[tuple[str, str, str]]:
+def weekly_recipients(joined_before: float | None = None) -> list[tuple[str, str, str]]:
     """(user_token, email, email_hash) for each person who can be emailed, once each.
 
     One person can have several connections (Claude, ChatGPT); the email comes
-    from the one they used last, and goes once.
+    from the one they used last, and goes once. With joined_before, only people
+    who first connected before then: someone who joined last night has no week
+    to sum up yet (Nov 9).
     """
     with _connect() as conn:
         rows = conn.execute(
@@ -612,9 +683,15 @@ def weekly_recipients() -> list[tuple[str, str, str]]:
             "WHERE email_enc IS NOT NULL AND email_hash IS NOT NULL AND COALESCE(email_opt_out, 0) = 0 "
             "ORDER BY COALESCE(last_seen_at, created_at) DESC"
         ).fetchall()
+        joined = dict(conn.execute(
+            "SELECT email_hash, MIN(created_at) FROM users WHERE email_hash IS NOT NULL GROUP BY email_hash"
+        ).fetchall())
     out, seen = [], set()
     for user_token, enc, fingerprint in rows:
         if fingerprint in seen:
+            continue
+        if joined_before is not None and (joined.get(fingerprint) or 0) > joined_before:
+            seen.add(fingerprint)
             continue
         try:
             email = _cipher().decrypt(enc).decode()
@@ -623,6 +700,36 @@ def weekly_recipients() -> list[tuple[str, str, str]]:
         seen.add(fingerprint)
         out.append((user_token, email, fingerprint))
     return out
+
+
+def weekly_standing() -> dict[str, tuple[int, str, str]]:
+    """Per person (email_hash): (last used Daash, Monday of their last weekly email, of their last click).
+
+    What orders the weekly email when it can't go to everyone (Nov 9).
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT email_hash, MAX(COALESCE(last_seen_at, 0)), MAX(COALESCE(weekly_sent, '')), "
+            "MAX(COALESCE(weekly_clicked, '')) FROM users WHERE email_hash IS NOT NULL GROUP BY email_hash"
+        ).fetchall()
+    return {fp: (seen, sent, clicked) for fp, seen, sent, clicked in rows}
+
+
+def weekly_sent_count(monday: str) -> int:
+    """How many people this Monday's email has gone to (or been tried for) so far."""
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT COUNT(DISTINCT email_hash) FROM users WHERE weekly_sent = ?", (monday,)
+        ).fetchone()[0]
+
+
+def mark_weekly_clicked(email_hash: str, monday: str) -> None:
+    """Someone clicked through from a weekly email: they go first next time it's capped."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET weekly_clicked = ? WHERE email_hash = ? AND COALESCE(weekly_clicked, '') < ?",
+            (monday, email_hash, monday),
+        )
 
 
 def claim_weekly(email_hash: str, monday: str) -> bool:
@@ -1408,3 +1515,124 @@ def check_email_code(email_hash: str, code: str) -> str:
             return "ok"
         conn.execute("UPDATE email_codes SET attempts = attempts + 1 WHERE email_hash = ?", (email_hash,))
         return "locked" if row[2] + 1 >= CODE_TRIES else "wrong"
+
+
+# --------------------------------------------------------------------------
+# App notifications (Nov 10)
+# --------------------------------------------------------------------------
+
+def secret_setting(name: str, make: Callable[[], bytes]) -> bytes:
+    """A server secret kept in the database, encrypted, made once on first need."""
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
+        if row:
+            return _cipher().decrypt(row[0])
+        value = make()
+        conn.execute("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)", (name, _cipher().encrypt(value)))
+        row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
+    return _cipher().decrypt(row[0])
+
+
+def get_setting(name: str) -> str:
+    """A plain setting kept by the server (not a secret), or "" when unset."""
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
+    if not row or row[0] is None:
+        return ""
+    return row[0].decode() if isinstance(row[0], bytes) else str(row[0])
+
+
+def set_setting(name: str, value: str) -> None:
+    with _connect() as conn:
+        conn.execute("INSERT INTO settings (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+                     (name, value.encode()))
+
+
+def push_owner(user_token: str) -> str:
+    """Who a phone's notifications belong to: the email fingerprint, else the token."""
+    return email_hash_for(user_token) or user_token
+
+
+# When the heads-up about a planned session goes: the evening before (8pm), or
+# that morning at 6, 7 or 8. The evening before suits people out the door early.
+HEADS_UP = ("evening", "6", "7", "8")
+DEFAULT_HEADS_UP = "evening"
+
+
+def save_push(user_token: str, endpoint: str, p256dh: str, auth: str, tz: str | None) -> None:
+    owner = push_owner(user_token)
+    with _connect() as conn:
+        # A second phone takes the time already chosen on their first.
+        conn.execute(
+            "INSERT INTO push_subs (endpoint, owner, p256dh, auth, tz, created_at, heads_up) VALUES (?, ?, ?, ?, ?, ?, "
+            "(SELECT heads_up FROM push_subs WHERE owner = ? AND heads_up IS NOT NULL LIMIT 1)) "
+            "ON CONFLICT(endpoint) DO UPDATE SET owner = excluded.owner, p256dh = excluded.p256dh, "
+            "auth = excluded.auth, tz = excluded.tz",
+            (endpoint, owner, p256dh, auth, tz, int(time.time()), owner),
+        )
+
+
+def heads_up_for(user_token: str) -> str | None:
+    """When their session heads-up goes, or None without notifications on."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT heads_up FROM push_subs WHERE owner IN (?, ?) ORDER BY created_at",
+                            (push_owner(user_token), user_token)).fetchall()
+    if not rows:
+        return None
+    return rows[0][0] if rows[0][0] in HEADS_UP else DEFAULT_HEADS_UP
+
+
+def set_heads_up(user_token: str, when: str) -> bool:
+    """Set the heads-up time on all of someone's phones. False when they have none."""
+    if when not in HEADS_UP:
+        raise ValueError(when)
+    with _connect() as conn:
+        return conn.execute("UPDATE push_subs SET heads_up = ? WHERE owner IN (?, ?)",
+                            (when, push_owner(user_token), user_token)).rowcount > 0
+
+
+def drop_push(endpoint: str, user_token: str | None = None) -> bool:
+    """Forget one phone. With a token, only if it's that person's."""
+    with _connect() as conn:
+        if user_token is None:
+            return conn.execute("DELETE FROM push_subs WHERE endpoint = ?", (endpoint,)).rowcount > 0
+        return conn.execute("DELETE FROM push_subs WHERE endpoint = ? AND owner IN (?, ?)",
+                            (endpoint, push_owner(user_token), user_token)).rowcount > 0
+
+
+def forget_push(user_token: str, email_hash: str | None) -> None:
+    """Disconnect deletes every phone of theirs."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM push_subs WHERE owner IN (?, ?)", (user_token, email_hash or user_token))
+
+
+def push_subs() -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT endpoint, owner, p256dh, auth, tz, last_morning, last_run, heads_up FROM push_subs ORDER BY created_at"
+        ).fetchall()
+    keys = ("endpoint", "owner", "p256dh", "auth", "tz", "last_morning", "last_run", "heads_up")
+    return [dict(zip(keys, r)) for r in rows]
+
+
+def has_push(user_token: str) -> bool:
+    with _connect() as conn:
+        return conn.execute("SELECT 1 FROM push_subs WHERE owner IN (?, ?) LIMIT 1",
+                            (push_owner(user_token), user_token)).fetchone() is not None
+
+
+def mark_push(owner: str, *, morning: str | None = None, run: str | None = None) -> None:
+    """Record, for all of someone's phones, the morning or run already sent."""
+    with _connect() as conn:
+        if morning is not None:
+            conn.execute("UPDATE push_subs SET last_morning = ? WHERE owner = ?", (morning, owner))
+        if run is not None:
+            conn.execute("UPDATE push_subs SET last_run = ? WHERE owner = ?", (run, owner))
+
+
+def token_for_owner(owner: str) -> str | None:
+    """The person's current token: their newest sign-in, or the token itself."""
+    found = tokens_for(owner)
+    if found:
+        return found[-1]
+    return owner if get_user(owner) is not None else None

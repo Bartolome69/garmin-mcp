@@ -45,7 +45,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import analytics, conditions, crews, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
+from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
 from . import session as session_mod
 from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
@@ -83,7 +83,8 @@ _INSTRUCTIONS = (
     "Fetch more only when the question calls for it or they take up the "
     "offer. Someone asking where their fitness is at goes to get_fitness, "
     "answered in writing. A specific question "
-    "goes to its own tool without the card: a run to get_activity_details, "
+    "goes to its own tool without the card: a run (\"how was my run\") to "
+    "get_activity_details alone, never with get_plan, "
     "what a planned session involves (paces, recoveries, cool-down) to "
     "get_workout, "
     "whether to go hard today to get_readiness, recovery to "
@@ -103,7 +104,9 @@ _INSTRUCTIONS = (
     "day has passed. One card per answer, at most. Dates are YYYY-MM-DD and "
     "also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
-    "'error' key, show it to the user rather than retrying blindly."
+    "'error' key, show it to the user rather than retrying blindly. Answers "
+    "carry credit, Garmin's required attribution: name it once when you show their "
+    "figures or advice drawn from them (\"from your Garmin Forerunner 265\")."
 )
 
 
@@ -144,7 +147,9 @@ _OFFICIAL_INSTRUCTIONS = (
     "get_crew: call it only when the user asks about the crew as a whole. One "
     "card per answer, at most. Dates are YYYY-MM-DD and also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
-    "'error' key, show it to the user rather than retrying blindly."
+    "'error' key, show it to the user rather than retrying blindly. Answers "
+    "carry credit, Garmin's required attribution: name it once when you show their "
+    "figures or advice drawn from them (\"from your Garmin Forerunner 265\")."
 )
 # Set per request by the hosted server: whether the person asking has only
 # Garmin's official API behind them.
@@ -291,7 +296,8 @@ CREW_WRITES = {"join_crew", "update_crew", "leave_crew"}
 # Tools only preview accounts are offered yet. None at the moment: everything
 # built so far is everyone's. The mechanism stays for the next new thing.
 # update_shoes until its retire is confirmed on real accounts (Nov 1).
-_PREVIEW_ONLY: set[str] = {"garmin_official", "get_session", "update_shoes"}
+# check_plan while the plan checker is tried out (Nov 5).
+_PREVIEW_ONLY: set[str] = {"garmin_official", "get_session", "update_shoes", "check_plan"}
 
 
 # What a tool is for, as the model should read it. The model chooses a tool by
@@ -307,9 +313,9 @@ _DESCRIPTIONS = {
         "\"show my plan\", \"what's next\", \"today's session\", \"am I on "
         "track\"), any plan, a coach's too. Call it alone: its situation says where the user is (a "
         "block under way, about to start or just done; a race ahead with nothing "
-        "scheduled; regular running; or getting going) and offers one next step. "
-        "Recovery, readiness or fitness follow only when asked, or when the user "
-        "takes up that offer. "
+        "scheduled; regular running; or getting going) and offers one next step; "
+        "recovery, readiness or fitness only if asked or taken up. Not for "
+        "\"how was my run\": that's get_activity_details alone. "
         "Without a create_plan plan it reads the calendar around this week. "
         "Sessions carry workout_id and schedule_id for moving or retuning; the "
         "next one carries its steps and target paces. For any other session's "
@@ -355,19 +361,20 @@ _NOTES = {
         "call; this adds how recovery is keeping up with it."
     ),
     "get_activity_details": (
-        "\n\nFor a run, also returns share_image, a link to an image of it to post, the weather during it (temperature, dew "
-        "point, wind, and what that does to pace), the shoes worn, the terrain "
-        "(climbs, pace on uphill, flat and downhill, the pace the effort was "
-        "worth on the flat, heart-rate decoupling and where it faded) and "
-        "earlier runs of the same route with their pace and heart rate. Use "
-        "these to explain a run rather than guessing why it was slow or hard. "
+        "\n\nFor \"how was my run\" call this alone, not with get_plan: the card shows the plan. "
+        "For a run, also returns share_image (an image to post), the weather (temperature, dew "
+        "point, wind, effect on pace), the shoes worn, the terrain "
+        "(climbs, pace by gradient, flat-equivalent pace, "
+        "heart-rate decoupling and where it faded) and "
+        "earlier runs of the same route. Use "
+        "these to explain a run rather than guessing. "
         "For a ride: normalised, average and max power, intensity factor and "
-        "training stress against FTP, best efforts from 5 seconds to an hour, "
-        "variability, time in power zones, climbs with speed, VAM and power, "
-        "the weather during it, and earlier rides of the same route. For a "
+        "training stress against FTP, best efforts from 5 s to an hour, "
+        "time in power zones, climbs with VAM and power, "
+        "weather and earlier rides of the route. For a "
         "swim: pace per 100 m, pool length, SWOLF, stroke rate and strokes, and "
-        "the set as swum, each interval with its pace, stroke and the rest after "
-        "it. Talk about a swim in those terms, never pace per km."
+        "each interval's pace, stroke and rest. "
+        "Talk about a swim in those terms, never pace per km."
     ),
     "get_progress": (
         "\n\nIts result is drawn for the user as an interactive plan card, so "
@@ -379,6 +386,16 @@ _NOTES = {
 }
 
 
+# How the plan checker's notes are passed on: the same for every tool that
+# answers with them, and in the answer itself, which an account on Garmin's
+# official API alone reads without these notes.
+CHECKS_NOTE = (
+    " Pass any checks on in your own words, briefly, as worth a look rather than "
+    "as errors (\"a big jump\", never \"injury risk\"), and change the plan only if "
+    "the user wants to."
+)
+
+
 # Added after those, for preview accounts only: where get_session, the
 # workout card, takes over from get_plan.
 _PREVIEW_NOTES: dict[str, str] = {
@@ -386,7 +403,12 @@ _PREVIEW_NOTES: dict[str, str] = {
         "\n\nA question about one session (\"what's tomorrow\", \"talk me through "
         "Sunday\", today's session in a morning check-in) is get_session's, not this, "
         "even if this plan is already in the chat: one card per reply. Its answer has the "
-        "link to the Daash app, for when they ask for the app."
+        "link to the Daash app, for when they ask for the app." + CHECKS_NOTE
+    ),
+    "create_plan": (
+        "\n\nThe answer has checks: plain notes on the plan's shape, such as a big jump "
+        "in a week or two hard days in a row. The plan is written whatever they say. "
+        "check_plan gives the same notes on a draft before anything is written." + CHECKS_NOTE
     ),
     "update_workout": (
         "\n\nAfter changing one session, call get_session for its date, on its own, "
@@ -692,6 +714,15 @@ def _compact_doc(text: str) -> str:
     return "\n".join(" " * ((len(line) - len(line.lstrip(" "))) // 2) + line.strip() for line in lines)
 
 
+# The run card in chat (Nov 11): for everyone since the evening of 11 Nov, after
+# preview accounts tried it that morning. GARMIN_MCP_RUN_CARD=0 takes it back
+# to preview accounts alone. Never on Garmin's official API alone: a new way of
+# showing its data waits for the 30 days' notice Garmin asks for (6.6).
+def run_card_on(alone: bool | None = None) -> bool:
+    alone = _ALONE.get() if alone is None else alone
+    return not alone and (os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0" or preview.enabled())
+
+
 def _with_description(tool, *, preview_on: bool, alone: bool = False):
     text = OFFICIAL_DESCRIPTIONS.get(tool.name) if alone else _DESCRIPTIONS.get(tool.name)
     if alone and text is not None:
@@ -711,6 +742,9 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False):
     view = ((getattr(tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
     if preview_on and not alone and view == PLAN_VIEW:
         update["meta"] = {**tool.meta, "ui": {**tool.meta["ui"], "resourceUri": PLAN2_VIEW}, "ui/resourceUri": PLAN2_VIEW}
+    # The run card, where it's on; elsewhere runs answer in writing.
+    if view == RUN_VIEW and (alone or not (preview_on or os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0")):
+        update["meta"] = {k: v for k, v in (tool.meta or {}).items() if k not in ("ui", "ui/resourceUri")} or None
     if text:
         update["description"] = text
     return tool.model_copy(update=update)
@@ -766,6 +800,7 @@ _ANNOTATION_TITLES = {
     "update_workout": "Update workout",
     "leave_crew": "Leave crew",
     "garmin_official": "Garmin official API (preview)",
+    "check_plan": "Check training plan",
 }
 
 
@@ -868,6 +903,8 @@ PLAN_VIEW = _versioned("plan", "plan.html")
 PLAN2_VIEW = _versioned("plan2", "plan2.html")
 SESSION_VIEW = _versioned("session", "session.html")
 CREW_VIEW = _versioned("crew", "crew.html")
+# One run, as a card (Nov 11): the handoff's Run Card, for preview accounts first.
+RUN_VIEW = _versioned("run", "run.html")
 
 
 # Said to the model ahead of the data whenever a view is drawing it. Read at
@@ -898,6 +935,16 @@ SESSION_NOTE = (
     "in a line. Use the ids below for any change. The card's See the week button "
     "asks to see the week: answer it with get_plan, which draws the week as the "
     "plan card, even though this card already read the plan."
+)
+
+
+RUN_NOTE = (
+    "The user is looking at this run as a card, drawn from the data below: its numbers, "
+    "the laps as a chart (reps in colour, easy and recovery laps in grey), each rep's pace "
+    "and heart rate, and a one-line verdict. Don't list the laps or reps again: say in a few "
+    "sentences what matters about the run and what it means for the plan. The card's Share "
+    "button makes the image to post, so point there rather than pasting the share link, "
+    "unless they ask for the link or the caption."
 )
 
 
@@ -961,6 +1008,9 @@ def _app_tool(view: str, note: str = VIEW_NOTE):
         @functools.wraps(fn)
         async def answered(*args, **kwargs):
             result = await fn(*args, **kwargs)
+            # The run card's note only where the card is drawn.
+            if view == RUN_VIEW and not run_card_on():
+                return result
             if isinstance(result, dict) and "error" not in result and await _in_miles():
                 result = {**result, "units": "mi", "units_note": MILES_NOTE}
             return _for_view(result, note)
@@ -1082,6 +1132,15 @@ try:
     )
 except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
     log.debug("crew view not registered", exc_info=True)
+
+try:
+    _app_view(
+        RUN_VIEW,
+        "run.html",
+        "One run as an interactive view: its numbers, laps and reps, and a verdict against the plan.",
+    )
+except Exception:  # noqa: BLE001 - a view that can't register must not stop the tools
+    log.debug("run view not registered", exc_info=True)
 
 MAX_ACTIVITIES = 50
 
@@ -1237,6 +1296,38 @@ WRITES = {
 }
 
 
+# Tools whose answers carry data from the user's Garmin devices. Each answer's
+# credit says where it came from, "Garmin [device model]", for the assistant to credit
+# when it shows the figures, and for the cards to show by their title (Garmin's
+# API brand guidelines: downstream, derived and AI uses keep the credit; Nov 10).
+CREDITED = {
+    "get_daily_summary", "get_heart_rate", "get_sleep_data", "get_activities", "get_activity_details",
+    "get_session", "get_progress", "get_plan", "get_readiness", "get_fitness", "get_fitness_trends",
+    "get_recovery_trends", "get_plan_chart", "get_crew",
+}
+
+
+async def _credit(name: str, result: dict[str, Any]) -> str:
+    """"Garmin [device model]" for an answer: the run's own watch when it is one
+    run, else the watch last used; "Garmin" alone for a crew's runs, which come
+    from several people's devices, and whenever the model isn't known."""
+    if name == "get_crew":
+        return share.attribution(None)
+    device = (result.get("summary") or {}).get("device") if name == "get_activity_details" else None
+    return share.attribution(device or await _last_device())
+
+
+async def _last_device() -> str | None:
+    """The watch the user last synced, by its product name, remembered with the device list."""
+    if _official_only():
+        return None
+    try:
+        last = await _read(("device_last_used",), DEVICES_MEMORY, lambda c: c.get_device_last_used())
+    except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
+        return None
+    return (last or {}).get("lastUsedDeviceName") if isinstance(last, dict) else None
+
+
 def tool_errors(fn):
     """Return a clear error payload instead of letting an exception escape.
 
@@ -1246,13 +1337,25 @@ def tool_errors(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
-        started = time.monotonic()
-        settle = hooks.before_tool(fn.__name__)
-        result = await answer(*args, **kwargs)
-        took = time.monotonic() - started
-        if took < settle:
-            await anyio.sleep(settle - took)
-        return hooks.after_tool(fn.__name__, result, took)
+        inside, depth = hooks.enter()
+        try:
+            if inside:
+                # Called by another tool, not the chat: its answer, unreported.
+                return await answer(*args, **kwargs)
+            started = time.monotonic()
+            settle = hooks.before_tool(fn.__name__)
+            result = await answer(*args, **kwargs)
+            if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
+                try:
+                    result["credit"] = await _credit(fn.__name__, result)
+                except Exception:  # noqa: BLE001 - the answer goes out with "Garmin" alone
+                    result["credit"] = share.attribution(None)
+            took = time.monotonic() - started
+            if took < settle:
+                await anyio.sleep(settle - took)
+            return hooks.after_tool(fn.__name__, result, took)
+        finally:
+            hooks.leave(depth)
 
     async def answer(*args, **kwargs):
         try:
@@ -1753,10 +1856,60 @@ def _lap_intensity(lap: dict[str, Any]) -> str | None:
     return kind if kind in ("warmup", "interval", "recovery", "rest", "cooldown") else None
 
 
+# Strides by their laps alone (Nov 11): a few short bursts, 30 s or less and
+# 200 m or less, in a run with steady running too. Shorter and fewer than a
+# session of short reps (8 x 200 m is 35 s or more each; 12 x 200 m is more than ten).
+STRIDE_LAP_SECONDS = 30
+STRIDE_LAP_METRES = 200
+STRIDES_MOST = 10
+
+
+def _stride_laps(laps: list[dict[str, Any]]) -> list[bool]:
+    """Which laps are strides: 2 to 10 short unmarked or interval laps, in a run
+    with at least 1 km of other running. Each False when there are none."""
+    def secs(lap):
+        return first_present(lap, "duration", "movingDuration", "elapsedDuration") or 0
+
+    marks = [_lap_intensity(lap) for lap in laps]
+    short = [m in (None, "interval") and 0 < secs(lap) <= STRIDE_LAP_SECONDS and 20 < (lap.get("distance") or 0) <= STRIDE_LAP_METRES
+             for lap, m in zip(laps, marks)]
+    steady = sum((lap.get("distance") or 0) for lap, m, s in zip(laps, marks, short) if not s and m not in ("recovery", "rest"))
+    if not 2 <= sum(short) <= STRIDES_MOST or steady < 1000:
+        return [False] * len(laps)
+    return short
+
+
+def _strides_summary(laps: list[dict[str, Any]], stride: list[bool]) -> dict[str, Any] | None:
+    """The strides together: how many, how long each, their pace and the fastest."""
+    run = [lap for lap, s in zip(laps, stride) if s and lap.get("distance")]
+    if len(run) < 2:
+        return None
+    secs = [first_present(lap, "duration", "movingDuration", "elapsedDuration") or 0 for lap in run]
+    dist = sum(lap.get("distance") or 0 for lap in run)
+    timed = [(lap.get("averageHR"), t) for lap, t in zip(run, secs) if lap.get("averageHR") and t]
+    hr = sum(h * t for h, t in timed) / sum(t for _, t in timed) if timed else None
+    each = sum(secs) / len(secs)
+    return drop_empty({
+        "count": len(run), "each": f"{round(each)} s", "avg_pace_per_km": pace_per_km(dist, sum(secs)),
+        "fastest_pace_per_km": pace_per_km(1000, min(t / (lap.get("distance") or 1) * 1000 for lap, t in zip(run, secs))),
+        "avg_hr": round(hr) if hr else None,
+        "note": "Strides, not reps: call them strides.",
+    })
+
+
 def _reps(laps: list[dict[str, Any]], ride: bool = False) -> dict[str, Any] | None:
     """A structured session's work reps together, from the laps Garmin marked
     as intervals: how many, their average pace (or speed) and heart rate, and
-    the fastest and slowest. None for a run without marked reps."""
+    the fastest and slowest. None for a run without marked reps.
+
+    Strides aren't reps: they and the jogs after them are left out (Nov 11: an
+    easy 9 km and six strides read as "6 reps at 4:54 over 9.48 km")."""
+    if not ride:
+        stride = _stride_laps(laps)
+        if any(stride):
+            after = [False] + stride[:-1]
+            laps = [lap for lap, s, a in zip(laps, stride, after)
+                    if not s and not (a and _lap_intensity(lap) in ("recovery", "rest"))]
     marks = [_lap_intensity(lap) for lap in laps]
     is_work = [m == "interval" for m in marks]
     if not any(is_work) and any(m in ("recovery", "rest") for m in marks):
@@ -1847,7 +2000,7 @@ def _summarise_lap(lap: dict[str, Any], index: int, ride: bool = False) -> dict[
     )
 
 
-@mcp.tool()
+@_app_tool(RUN_VIEW, RUN_NOTE)
 @tool_errors
 async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
     """Splits, reps and heart rate for one activity; for a gym session, its sets and weights.
@@ -1869,7 +2022,7 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         ride = cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
         return _with_share_image(drop_empty({
             "activity_id": activity_id,
-            "summary": _summarise_activity(flat) or None,
+            "summary": _with_device(_summarise_activity(flat), flat.get("deviceName")) or None,
             "hr_zones": hr_zones(found["zones"]),
             "splits_count": len(laps) or None,
             "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
@@ -1959,20 +2112,77 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         around.setdefault("first", {}).update(await _ride_power(activity_id, flat, _optional))
 
     lap_rows = [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)]
+    planned, workout = (None, None) if ride else await _planned_and_workout(activity_id)
+    device = await _device_name(flat)
     return _with_share_image(drop_empty(
         {
             "activity_id": activity_id,
-            "summary": _with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)) or None,
+            "card": None if ride else _run_card(activity_id, planned, workout, laps, recording),
+            "summary": _with_device(_with_power(_summarise_activity(flat), around.get("first", {}).pop("power", None)), device) or None,
             **around.get("first", {}),
             "hr_zones": hr_zones(zones),
+            "easy_check": easy_check.check(planned, laps, flat),
             "reps": _reps(laps, ride),
+            "strides": None if ride else _strides_summary(laps, _stride_laps(laps)),
             "splits_count": len(laps) or None,
             "splits": lap_rows or None,
             "inside": inside,
             **around.get("last", {}),
             "warnings": warnings or None,
         }
-    ))
+    ), planned)
+
+
+# How long a run's answer waits to learn which planned session it was, for
+# its Strava caption; without it the caption is the run alone.
+PLANNED_WAIT_SECONDS = 6
+
+
+async def _planned_for(activity_id: Any) -> dict[str, Any] | None:
+    """The planned session a run was (share.plan_context), or None."""
+    return (await _planned_and_workout(activity_id))[0]
+
+
+async def _planned_and_workout(activity_id: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """The planned session a run was (share.plan_context) and its workout, from
+    the plan the chat usually read just before; (None, None) when it wasn't on
+    the plan or the plan can't be read in time: the run reads without it."""
+    try:
+        with anyio.fail_after(PLANNED_WAIT_SECONDS):
+            plan = await get_plan()
+            if not isinstance(plan, dict) or "error" in plan:
+                return None, None
+            row = next((x for w in plan.get("weeks") or [] for x in w.get("sessions") or []
+                        if x.get("activity_id") == activity_id), None)
+            wid = (row or {}).get("workout_id")
+            workout = await _read(("workout", wid), PLAN_WORKOUT_MEMORY,
+                                  lambda c, w=wid: c.get_workout_by_id(w)) if wid else None
+            workout = workout if isinstance(workout, dict) else None
+            return share.plan_context(plan, activity_id, workout), workout
+    except Exception:  # noqa: BLE001 - a caption without its plan is still a caption
+        log.debug("no planned session for the caption", exc_info=True)
+        return None, None
+
+
+def _run_card(activity_id: Any, planned: dict[str, Any] | None, workout: dict[str, Any] | None,
+              laps: Any, recording: Any) -> dict[str, Any] | None:
+    """What the run card adds to a run's answer: the planned session's type,
+    name and week, the verdict the app's run screen gives, and the app's link.
+    Only where the card is drawn (run_card_on); nothing more is read."""
+    if not run_card_on():
+        return None
+    verdict = None
+    try:
+        from . import analysis
+        verdict = analysis.analyse(workout, laps, (planned or {}).get("ty"), recording).get("verdict")
+    except Exception:  # noqa: BLE001 - the card draws without its verdict
+        log.debug("run verdict failed", exc_info=True)
+    week = (planned or {}).get("w") or [None, None]
+    return drop_empty({
+        "type": (planned or {}).get("ty"), "planned": (planned or {}).get("n"),
+        "week": week[0], "weeks": week[1], "block": (planned or {}).get("b"),
+        "verdict": verdict, "app_url": app_link(f"run/{activity_id}", "run_card"),
+    }) or None
 
 
 SHARE_IMAGE_NOTE = (
@@ -1980,6 +2190,13 @@ SHARE_IMAGE_NOTE = (
     "photo viewer) or Instagram, from these figures. Offer it in one short line at the "
     "end, as a link, the first time a run comes up in a chat, and whenever the user "
     "wants to share or post one. Don't draw an image of the run yourself."
+)
+# The caption beside it: Strava's API can't carry it (no Strava data in AI
+# apps), so the person pastes it, and it brings Daash into their followers' feeds.
+SHARE_CAPTION_NOTE = (
+    "Text to paste into the run's description on Strava. When they want to post or "
+    "share the run, or ask for a caption, give it exactly as it is, in a code block so it "
+    "copies cleanly, beside the image link. Don't offer it otherwise."
 )
 
 
@@ -1995,7 +2212,8 @@ def _flat_activity(summary: dict[str, Any]) -> dict[str, Any]:
     return flat
 
 
-def run_brief(activity: dict[str, Any], splits: Any, recording: Any) -> dict[str, Any]:
+def run_brief(activity: dict[str, Any], splits: Any, recording: Any,
+              planned: dict[str, Any] | None = None, device: str | None = None) -> dict[str, Any]:
     """A run's summary, laps and share link from the three reads the app already
     makes, without the zones, shoes, weather and earlier runs get_activity_details
     adds for a chat (Nov 3: those, one after another, were most of the app's wait)."""
@@ -2008,22 +2226,59 @@ def run_brief(activity: dict[str, Any], splits: Any, recording: Any) -> dict[str
         inside = None
     return _with_share_image(drop_empty({
         "activity_id": flat.get("activityId"),
-        "summary": _summarise_activity(flat) or None,
+        "summary": _with_device(_summarise_activity(flat), device) or None,
         "splits": [_summarise_lap(lap, i, ride) for i, lap in enumerate(laps, start=1)] or None,
         "inside": inside,
-    }))
+        "easy_check": None if ride else easy_check.check(planned, laps, flat),
+    }), planned)
 
 
-def _with_share_image(result: dict[str, Any]) -> dict[str, Any]:
+def _with_share_image(result: dict[str, Any], planned: dict[str, Any] | None = None) -> dict[str, Any]:
     """A run's answer with the link to its share image, as the plan card's
-    Share this run makes it."""
-    url = share.run_link(result) if isinstance(result, dict) and "error" not in result else None
+    Share this run makes it, and its caption, which says what was planned
+    when the run was a session on the plan."""
+    url = share.run_link(result, planned) if isinstance(result, dict) and "error" not in result else None
     if url:
         result["share_image"] = {"url": url, "note": SHARE_IMAGE_NOTE}
+        text = share.run_caption(result, planned)
+        if text:
+            result["strava_caption"] = {"text": text, "note": SHARE_CAPTION_NOTE}
     return result
 
 
 SAME_ROUTE_LOOKBACK = timedelta(weeks=26)
+
+
+# How long the account's list of devices is remembered: it changes when a
+# watch is bought, not between runs.
+DEVICES_MEMORY = 6 * 3600
+
+
+async def _device_name(flat: dict[str, Any]) -> str | None:
+    """The watch a run was recorded on, by its product name ("Forerunner 265"),
+    for Garmin's credit where the run is shown to others (Nov 10). None when
+    unknown, or when the activity didn't come from a Garmin device."""
+    if flat.get("deviceName"):
+        return str(flat["deviceName"])
+    meta = flat.get("metadataDTO") if isinstance(flat.get("metadataDTO"), dict) else {}
+    maker = str(meta.get("manufacturer") or "GARMIN").upper()
+    did = (meta.get("deviceMetaDataDTO") or {}).get("deviceId") if isinstance(meta.get("deviceMetaDataDTO"), dict) else None
+    if maker != "GARMIN" or not did:
+        return None
+    try:
+        devices = await _read(("devices",), DEVICES_MEMORY, lambda c: c.get_devices())
+    except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
+        return None
+    for d in devices if isinstance(devices, list) else []:
+        if isinstance(d, dict) and str(d.get("deviceId")) == str(did):
+            return d.get("productDisplayName") or d.get("displayName")
+    return None
+
+
+def _with_device(summary: dict[str, Any], device: str | None) -> dict[str, Any]:
+    if summary and device:
+        summary["device"] = device
+    return summary
 
 
 def _with_power(summary: dict[str, Any], richer: dict[str, Any] | None) -> dict[str, Any]:
@@ -2237,7 +2492,7 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
     card = training_plan.session_card(answer, day, today, detail, change)
     # The same session in the companion app, for the card's Open in Daash.
-    link = None if card.get("rest") else app_link(f"session/{day}")
+    link = None if card.get("rest") else app_link(f"session/{day}", "session_card")
     if link:
         card["app_url"] = link
     return card
@@ -2248,21 +2503,29 @@ def app_link_on() -> bool:
     return os.environ.get("GARMIN_MCP_APP_LINK", "").strip().lower() not in {"0", "off", "false", "no"}
 
 
-def app_link(route: str) -> str | None:
+def app_link_available() -> bool:
+    """Whether app_link would give a link for this request."""
+    return bool(os.environ.get("GARMIN_MCP_BASE_URL", "").strip()) and (preview.enabled() or app_link_on())
+
+
+def app_link(route: str, source: str | None = None) -> str | None:
     """The companion app at a route ("plan", "session/2026-11-04"), for a card.
 
     For everyone (Nov 6: only preview accounts had it, and nobody else ever
     reached the app from a chat); GARMIN_MCP_APP_LINK=off takes it back to
     preview accounts alone. It carries a single-use code, so it opens the app
     already signed in as this person: no second sign-in for someone who uses
-    the connector.
+    the connector. ``source`` says where it was given ("chat", "chat_offer",
+    "session_card"), so the app can count which ones get opened.
     """
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     if not base or not (preview.enabled() or app_link_on()):
         return None
     who = official.current()
-    login = f"?login={store.new_handoff(who)}" if who else ""
-    return f"{base}/app/#/{route}{login}"
+    query = [f"login={store.new_handoff(who)}"] if who else []
+    if source:
+        query.append(f"from={source}")
+    return f"{base}/app/#/{route}" + (f"?{'&'.join(query)}" if query else "")
 
 
 # With the plan in a chat, so "where's the app?" has an answer (Nov 3: asked
@@ -2271,6 +2534,15 @@ APP_NOTE = (
     "The Daash app: this plan, today's session and their crew, on their phone or computer. "
     "This link opens it signed in (once, within 30 minutes). Give it when they ask for Daash's app, "
     "the companion app or a link to their plan, and no other address for it. Don't offer it unasked."
+)
+
+# At most once a week, for someone who hasn't used the app lately: the one
+# time the model brings the app up itself.
+APP_OFFER_NOTE = (
+    "The Daash app: this plan, today's session and their crew, on their phone or computer. "
+    "This link opens it signed in (once, within 30 minutes). After answering, add one short line "
+    "of your own that the plan is also in the Daash app, with this link, as a plain aside: no "
+    "sales talk, and not again in this chat unless they ask. No other address for it."
 )
 
 
@@ -2932,6 +3204,36 @@ async def _calendar_months(start: date_cls, end: date_cls) -> list[Any]:
     return payloads
 
 
+def _is_run_sport(sport: Any) -> bool:
+    return str(sport or "running").lower().replace("_", " ").split(" ")[0] in ("running", "run", "trail", "track", "treadmill")
+
+
+def _running_clash(existing: dict[str, list[dict[str, Any]]], sessions: Any,
+                   first: Any = None, last: Any = None) -> str | None:
+    """Why a new plan with runs can't go on days another running plan already has, or None.
+
+    The calendar comes by whole months, so only the other plan's runs between
+    the new plan's first and last day count.
+    """
+    new_runs = any(isinstance(s, dict) and not s.get("exercises") and _is_run_sport(s.get("sport"))
+                   for s in sessions or [])
+    if not new_runs:
+        return None
+    lo, hi = (str(first)[:10] if first else ""), (str(last)[:10] if last else "9999")
+    for other, items in sorted(existing.items()):
+        runs = [i for i in items if _is_run_sport(i.get("sportTypeKey"))
+                and lo <= str(i.get("date") or "")[:10] <= hi]
+        if runs:
+            days = sorted(str(i.get("date") or "")[:10] for i in runs if i.get("date"))
+            span = f" (its runs from {days[0]} to {days[-1]})" if days else ""
+            return (f"The calendar already has running plan {other} in these weeks{span}. Two running "
+                    "plans on the same weeks put two runs on a day. Ask the user whether to replace it "
+                    f"(remove_plan {other}, then this), start this plan after it ends, or change "
+                    "sessions in it instead (update_workout, schedule_workout). Never put both on "
+                    "the calendar under another label.")
+    return None
+
+
 # The app's plan builder watches a plan go onto the calendar session by session,
 # and after Garmin turns one away part way, sends the rest under the same code.
 plan_progress: ContextVar["Callable[[list[dict[str, Any]], int], None] | None"] = ContextVar(
@@ -3000,16 +3302,26 @@ async def create_plan(
         goal, sessions, label, today, name=name, method=method, milestones=milestones, ftp=ftp,
     )
     first, last = prepared[0]["date"], prepared[-1]["date"]
+    # Notes on the plan's shape, for whoever is trying them; the plan is
+    # written whatever they say.
+    checked = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
 
     existing = training_plan.plans_in(await _plan_calendar(first, last))
     if code in existing and not plan_resume.get():
         return {
             "error": (
                 f"Plan code {code} is already on the calendar between "
-                f"{first.isoformat()} and {last.isoformat()}. Pass a different "
-                "label, or remove the old plan first with remove_plan."
+                f"{first.isoformat()} and {last.isoformat()}. Ask the user whether to replace it "
+                "(remove_plan, then this) or start this plan after it ends."
             )
         }
+    # Two running plans over the same weeks put two runs on a day, both on the
+    # watch, and the cards add them together (Nov 11: with the app's plan
+    # builder open to everyone, a plan built there and then another asked for
+    # in a chat). A strength or cycling plan alongside a running one is fine.
+    clash = _running_clash(existing, sessions, first, last) if existing else None
+    if clash:
+        return {"error": clash}
 
     created: list[dict[str, Any]] = []
     written: dict[Any, dict[str, Any]] = {}
@@ -3075,6 +3387,7 @@ async def create_plan(
             "Every session is on the Garmin calendar and syncs to the watch. "
             f"Call get_plan with label {code} to show the user the new block as a card."
         ),
+        **(checked or {}),
     }
     # Answer with the block as get_plan draws it, so the card shows the new
     # plan whether or not the model asks for it: told to, it sometimes
@@ -3096,6 +3409,9 @@ async def create_plan(
         log.warning("create_plan: reading the new plan back failed", exc_info=True)
         card = None
     if isinstance(card, dict) and "error" not in card and isinstance(card.get("weeks"), list):
+        # The plan as written, with the history before it, rather than the
+        # calendar read back from today.
+        card = {k: v for k, v in card.items() if k not in ("checks", "about_checks")}
         return {
             **card,
             "created": {
@@ -3107,8 +3423,44 @@ async def create_plan(
                 "Every session is on the Garmin calendar and syncs to the watch. "
                 "The user sees the new block as a card above: sum it up in a sentence or two."
             ),
+            **(checked or {}),
         }
     return summary
+
+
+async def _plan_checks(prepared: list[dict[str, Any]], goal: str, method: str | None,
+                       milestones: Any, today: date_cls, *, weekly_km: float | None = None,
+                       longest_km: float | None = None) -> dict[str, Any] | None:
+    """The plan checker's notes on a plan about to be written, as answer
+    fields, with the last 4 weeks' running to start from. When Garmin hasn't
+    enough of it, the shape is still checked and not_checked says what wasn't.
+    None if the notes can't be worked out: a plan is never held up by them."""
+    try:
+        monday = training_plan.monday_of(today)
+        activities: list[dict[str, Any]] | None = None
+        if not weekly_km:
+            try:
+                activities = await _call(lambda c: c.get_activities_by_date(
+                    (monday - timedelta(weeks=training_plan.LOG_WEEKS)).isoformat(), today.isoformat())) or []
+            except Exception:  # noqa: BLE001 - the shape can be checked without the history
+                log.debug("plan checks: no running history", exc_info=True)
+        history, longest, missing = plan_checks.starting_point(
+            activities, monday, weekly_km=weekly_km, longest_km=longest_km)
+        checks = plan_checks.check_prepared(
+            prepared, goal=goal, method=method, milestones=milestones, history=history,
+            longest_recent_km=longest,
+        )
+        return {**_checked(checks), **({"not_checked": missing} if missing else {})}
+    except Exception:  # noqa: BLE001 - notes are a bonus; the plan must still be made
+        log.warning("plan checks failed", exc_info=True)
+        return None
+
+
+def _checked(checks: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """The checks for an answer, with how to pass them on when there are any."""
+    if checks is None:
+        return {}
+    return {"checks": checks, **({"about_checks": CHECKS_NOTE.strip()} if checks else {})}
 
 
 @_app_tool(PLAN_VIEW)
@@ -3130,7 +3482,70 @@ async def get_plan(label: str | None = None) -> dict[str, Any]:
             now, or the most recent one.
     """
     result = await _plan_answer(label)
+    if preview.enabled() and isinstance(result, dict) and "error" not in result and result.get("weeks"):
+        try:
+            result = {**result, **_checked(plan_checks.check_answer(result, date_cls.today()))}
+        except Exception:  # noqa: BLE001 - the plan stands without its notes
+            log.warning("plan checks failed", exc_info=True)
     return result if label else await _with_situation(result)
+
+
+@mcp.tool()
+@tool_errors
+async def check_plan(
+    goal: str,
+    sessions: list[dict[str, Any]],
+    label: str | None = None,
+    name: str | None = None,
+    method: str | None = None,
+    milestones: list[dict[str, Any]] | None = None,
+    recent_weekly_km: float | None = None,
+    longest_recent_run_km: float | None = None,
+) -> dict[str, Any]:
+    """Check a draft plan before it's created: plain notes on its shape, nothing written.
+
+    Takes create_plan's arguments and answers only with checks, each
+    {"rule", "week", "date", "text"}: the first week well above the last 4
+    weeks' running, a big weekly jump, a long run that grows fast, is most
+    of its week or runs past what the goal needs, more hard sessions or fast
+    running than the plan's style usually holds (Steady, Balanced, or Faster
+    when the method names Norwegian or singles), hard days back to back, no
+    rest day in 7, no lighter week in 5, a heavy race week, and races placed
+    too close to each other or to the goal race. An empty list means nothing
+    stood out. Pass any checks on in your own words, briefly, as worth a
+    look rather than as errors ("a big jump", never "injury risk"), and
+    change the plan only if the user wants to.
+
+    The first week and first long run are checked against Garmin's last 4
+    weeks of running. When Garmin has too little of it (a new watch, runs
+    recorded elsewhere), not_checked says so: ask the user and pass their
+    answer as recent_weekly_km and longest_recent_run_km, which are used
+    instead of Garmin's numbers.
+
+    Args:
+        goal: As for create_plan.
+        sessions: As for create_plan.
+        label: As for create_plan.
+        name: As for create_plan.
+        method: As for create_plan; it decides the style the checks use.
+        milestones: As for create_plan; races with their tiers.
+        recent_weekly_km: What the user says they've run a week lately, in km.
+        longest_recent_run_km: Their longest run in the last month or so, in km.
+    """
+    today = date_cls.today()
+    sessions = [
+        {**s, "steps": await _in_zones(s.get("steps"), s.get("sport"))} if isinstance(s, dict) and s.get("steps") else s
+        for s in sessions or []
+    ]
+    ftp = await _ftp_for(*[s.get("steps") for s in sessions or [] if isinstance(s, dict)])
+    _, prepared = training_plan.prepare(
+        goal, sessions, label, today, name=name, method=method, milestones=milestones, ftp=ftp,
+    )
+    checked = await _plan_checks(prepared, goal, method, milestones, today,
+                                 weekly_km=recent_weekly_km, longest_km=longest_recent_run_km)
+    if checked is None:
+        return {"error": "The plan couldn't be checked just now. It can still be created."}
+    return checked
 
 
 async def _with_situation(result: Any) -> Any:

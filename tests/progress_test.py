@@ -394,6 +394,45 @@ def main() -> int:
           [(r["name"], r["done_on"]) for r in got.done] == [("easy", "2026-11-04")]
           and [r["name"] for r in got.missed] == ["bench"], f"{got.done} {got.missed}")
 
+    print("\nan easier copy, not run yet (Nov 7)")
+    # make_easier's copy carries no Garmin estimate, so it has no seconds.
+    # Friday's 1.2 km top-up must not tick Saturday's easier tune-up.
+    fri, sat = date(2026, 11, 6), date(2026, 11, 7)
+    top_up = Actual(day=fri, name="Morning Run", sport="run", seconds=430, metres=1190, activity_id=11, easy=True)
+    easier = Planned(day=sat, name="tune", sport="run", hard=True, no_size=True)
+    got = match([easier], [top_up], sat)
+    check("a session with no size doesn't claim yesterday's run",
+          got.done == [] and [r["name"] for r in got.missed] == ["tune"], f"{got.done} {got.missed}")
+    check("and yesterday's run stays an extra", len(got.extra) == 1, str(got.extra))
+    easy_copy = Planned(day=sat, name="easy", sport="run", hard=False, no_size=True)
+    got = match([easy_copy], [top_up], fri)
+    check("nor is it ticked a day early", got.done == [], str(got.done))
+    same_day = Actual(day=sat, name="Morning Run", sport="run", seconds=1500, metres=5000, activity_id=12)
+    got = match([easier], [top_up, same_day], sat)
+    check("a run on its own day still counts",
+          [(r["name"], r["done_on"]) for r in got.done] == [("tune", "2026-11-07")], str(got.done))
+    unread = Planned(day=sat, name="tune", sport="run")
+    got = match([unread], [top_up], sat)
+    check("one whose workout wasn't read still takes a run a day either side",
+          [r["name"] for r in got.done] == ["tune"], str(got.done))
+    sized = Planned(day=sat, name="tune", sport="run", metres=5000)
+    got = match([sized], [top_up], sat)
+    check("with a planned distance, a run far short of it doesn't count", got.done == [], str(got.done))
+    moved = Actual(day=fri, name="Morning Run", sport="run", seconds=1500, metres=4800, activity_id=13)
+    got = match([sized], [moved], sat)
+    check("but a run near that distance a day early still does",
+          [r["name"] for r in got.done] == ["tune"], str(got.done))
+
+    from garmin_mcp.training_plan import summarise_calendar
+    item = {"id": 7, "date": "2026-11-07", "title": "Parkrun tune-up (easier)", "workoutId": 70,
+            "sportTypeKey": "running"}
+    friday = {"activityId": 71, "activityName": "Morning Run", "startTimeLocal": "2026-11-06 07:00:00",
+              "activityType": {"typeKey": "running"}, "duration": 430, "distance": 1190.0}
+    cal = summarise_calendar([item], [friday], sat, planned_seconds={70: 0.0}, planned_metres={},
+                             weekly_km=True)
+    states = [s.get("status") for w in cal["weeks"] for s in w.get("sessions") or []]
+    check("on the card, the easier copy is still today's, not done", states == ["today"], str(states))
+
     print()
     if FAILED:
         print(f"{len(FAILED)} check(s) failed: {', '.join(FAILED)}")

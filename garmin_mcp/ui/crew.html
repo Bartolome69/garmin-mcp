@@ -118,8 +118,13 @@
   html.page, html.page body { background: var(--page); }
   html.page body { padding: 16px; }
   html.page #app { max-width: 680px; margin: 0 auto; }
-  .promo { font-size: 13px; color: var(--muted); }
-  .promo a { color: var(--red-text); font-weight: 600; text-decoration: none; }
+  .promo-card { max-width: 680px; margin: 14px auto 0; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .promo-kicker { font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; color: var(--red-text); text-transform: uppercase; }
+  .promo-head { font-size: 19px; letter-spacing: -0.02em; line-height: 1.25; }
+  .promo-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+  .promo-acts { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .promo-acts .act.go { display: inline-flex; align-items: center; height: 38px; padding: 0 16px; text-decoration: none; font-weight: 600; }
+  .promo-more { font-size: 13.5px; font-weight: 600; color: var(--red-text); text-decoration: none; }
   .link-row { font-size: 13px; color: var(--muted); }
   .link-row button { border: 0; background: none; padding: 0; color: var(--red-text); font-weight: 600; font-size: 13px; }
   /* Adding your own easy runs on the crew's page. */
@@ -257,7 +262,9 @@
           [svg('<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>')]),
       ]),
       el("h3", { class: "title", text: d.crew.name }),
-      el("span", { class: "sub", text: sub }),
+      // Garmin's credit by the title (API brand guidelines, Nov 10): the crew's
+      // runs come from several people's watches, so "Garmin" alone.
+      el("span", { class: "sub", text: [d.credit || "Garmin", sub].filter(Boolean).join(" \u00b7 ") }),
       weekPicker(d),
     ]);
     app.appendChild(head);
@@ -363,11 +370,27 @@
         el("button", { type: "button", onclick: function () { copyText(d.crew.page_url, status, "Link copied. Pin it in the group chat's description."); } }, ["Copy link"])])
         : (host && d.crew.you_started_it ? el("div", { class: "link-row body" }, [
           el("button", { type: "button", onclick: function (e) { ask("Turn on a link to my crew's page, so the group can see our week any time", e.currentTarget); } }, ["Get a link for the group"])]) : null),
-      PAGE && PAGE.promo ? el("div", { class: "promo" }, [PAGE.promo.text + " ",
-        el("a", { href: PAGE.promo.url, target: "_blank", rel: "noopener" }, [PAGE.promo.link])]) : null,
       status, box,
     ]));
+    if (PAGE && PAGE.promo) promoCard(PAGE.promo);
     size();
+  }
+
+  // On the crew's own page, under the crew: what Daash is, for the friend who
+  // opened the invite. A crew is how Daash spreads between friends, and this
+  // page is where they land (Nov 6: it said one small line in the card's foot).
+  function promoCard(p) {
+    if (document.getElementById("promo-card")) return;
+    var card = el("section", { class: "promo-card", id: "promo-card" }, [
+      el("span", { class: "promo-kicker", text: p.kicker }),
+      el("strong", { class: "promo-head", text: p.heading }),
+      el("p", { class: "promo-text", text: p.text }),
+      el("div", { class: "promo-acts" }, [
+        el("a", { class: "act go", href: p.url, target: "_blank", rel: "noopener" }, [p.link]),
+        p.more_url ? el("a", { class: "promo-more", href: p.more_url, target: "_blank", rel: "noopener" }, [p.more]) : null,
+      ]),
+    ]);
+    app.parentNode.insertBefore(card, app.nextSibling);
   }
 
   // This week and next: the crew keeps two weeks of runs, so those are the two to show.

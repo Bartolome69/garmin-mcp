@@ -14,9 +14,11 @@ medical advice.
 from __future__ import annotations
 
 import asyncio
+from zoneinfo import ZoneInfo
 import json
 import logging
 import re
+import os
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -27,9 +29,10 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, plan_builder, preview, store, training_plan
+from . import analysis, crews, easy_check, plan_builder, plan_checks, preview, run_view, store, training_plan
 from . import plan as plan_mod
 from . import server as server_mod
+from . import share as share_mod
 from .formatting import drop_empty
 from .server import mcp
 
@@ -41,10 +44,12 @@ API_PREFIX = "/app/api/"
 SIGN_IN_PREFIX = API_PREFIX + "sign-in/"
 
 # What each session type is called and which colour draws it. The chat cards
-# call a threshold session "Threshold" too, so the two doors agree.
+# call a hard session "Quality" too, so the two doors agree.
 TYPES: dict[str, tuple[str, str]] = {
     "easy": ("Easy", "easy"), "recovery": ("Recovery", "easy"), "long": ("Long", "long"),
-    "threshold": ("Threshold", "hard"), "sub": ("Threshold", "hard"), "intervals": ("Intervals", "hard"),
+    # Hard sessions all read "Quality" (Nov 12): the session's own name says
+    # which kind; the label is for skimming a week by colour.
+    "threshold": ("Quality", "hard"), "sub": ("Quality", "hard"), "intervals": ("Quality", "hard"),
     "race": ("Race", "race"), "strength": ("Strength", "strength"), "swim": ("Swim", "long"),
     "ride": ("Ride", "easy"), "other": ("Other", "rec"),
 }
@@ -335,12 +340,21 @@ def _week_verdict(days: list[dict[str, Any]], sessions: list[dict[str, Any]]) ->
     """One line on the shape of the week, by rule: hard days, rest, and where the long run sits."""
     if not sessions:
         return None
-    hard = sorted({s["date"] for s in sessions if s.get("type") in HARD_TYPES and s.get("type") != "race"})
+    # A race is said by name, not folded into the hard days (Nov 6: a week with
+    # a threshold session and a parkrun said "One hard day" and nothing else).
+    races = sorted(((s["date"], str(s.get("name") or "")) for s in sessions if s.get("type") == "race"))
+    race_days = {d for d, _ in races}
+    hard = sorted({s["date"] for s in sessions
+                   if s.get("type") in HARD_TYPES and s.get("type") != "race" and s["date"] not in race_days})
     rest = [DAY_NAMES[i] for i, d in enumerate(days) if d["state"] == "rest"]
     long_day = next((date.fromisoformat(s["date"]) for s in sessions if s.get("type") == "long"), None)
     parts = []
     if hard:
         parts.append(f"{_word(len(hard))} hard day{'s' if len(hard) > 1 else ''}")
+    if races:
+        named = [("a parkrun" if "parkrun" in n.lower() else "a race") + f" on {DAY_NAMES[date.fromisoformat(d).weekday()]}"
+                 for d, n in races]
+        parts.append(_join(named))
     if rest:
         parts.append(f"rest on {_join(rest)}")
     if long_day:
@@ -348,7 +362,7 @@ def _week_verdict(days: list[dict[str, Any]], sessions: list[dict[str, Any]]) ->
         easy_before = all(d["state"] == "rest" or d["colour"] in ("easy", "strength") for d in before)
         parts.append(f"the long run on {DAY_NAMES[long_day.weekday()]}"
                      + (f" with {'two easy days' if len(before) == 2 else 'an easy day'} before it" if easy_before and before else ""))
-    head = "No rest day this week." if not rest else "A heavy week." if len(hard) >= 3 else "Balanced."
+    head = "No rest day this week." if not rest else "A heavy week." if len(hard) + len(races) >= 3 else "Balanced."
     if not parts:
         return head
     line = ", ".join(parts[:-1]) + (", and " if len(parts) > 2 else " and ") + parts[-1] if len(parts) > 1 else parts[0]
@@ -460,7 +474,7 @@ async def today_payload() -> dict[str, Any]:
     await asyncio.to_thread(_keep_crew_current, plan, today)
     if plan.get("source") == "log":
         return {"today": today.isoformat(), "kicker": _short_date(today).upper(), "headline": "No plan on the calendar",
-                "empty": True, "readiness": ready,
+                "empty": True, "readiness": ready, "build": builder_on() or None,
                 "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
     kicker, headline = _headline(plan, today)
     nxt = _next(plan, today)
@@ -499,6 +513,24 @@ async def today_payload() -> dict[str, Any]:
         "ask": _ask_links(f"Use Daash to look at my training week of {today - timedelta(days=today.weekday())}. "
                           "How is it going, and is anything worth changing?"),
     })
+
+
+async def heads_up_payload(day: str) -> dict[str, Any] | None:
+    """The session planned on one day, for the notification before it, or None.
+
+    Lighter than Today: the plan and that one workout, nothing else read from Garmin.
+    """
+    plan = await server_mod.get_plan()
+    if not isinstance(plan, Mapping) or _error(plan) or plan.get("source") == "log":
+        return None
+    lead, on_day = training_plan.day_sessions(plan, day)
+    waiting = [s for s in on_day if s.get("status") in ("today", "ahead")]
+    if not waiting:
+        return None
+    session = lead if lead in waiting else min(waiting, key=training_plan._rank)
+    workout = await _workout(session.get("workout_id"))
+    totals = training_plan.session_totals(workout, training_plan.easy_speed(plan)) if workout else None
+    return {"date": day, "name": _display(session.get("name")), "stats": _stats(totals, session.get("type"), workout)}
 
 
 # -- one session ---------------------------------------------------------------
@@ -603,13 +635,33 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     recording = None if isinstance(recording, Exception) else recording
     activity = None if isinstance(activity, Exception) else activity
     row = next((s for s in _sessions(plan) if s.get("activity_id") == activity_id), None)
+    # The last session like this one, read while this one's workout is: its
+    # line is left out rather than keep the screen waiting.
+    like = asyncio.create_task(_last_like(plan, row, activity_id))
     try:
         workout = await _workout((row or {}).get("workout_id"))
     except Exception:  # noqa: BLE001 - the run reads without its plan
         workout = None
-    details = server_mod.run_brief(activity or {}, laps, recording)
+    try:
+        device = await server_mod._device_name(server_mod._flat_activity(activity or {}))
+    except Exception:  # noqa: BLE001 - the run shares with "Garmin" alone
+        device = None
+    details = server_mod.run_brief(activity or {}, laps, recording,
+                                   share_mod.plan_context(plan, activity_id, workout), device)
     kind = (row or {}).get("type") or (details.get("summary") or {}).get("type")
-    result = analysis.analyse(workout, laps, kind, recording)
+    result = analysis.analyse(workout, laps, kind, recording, story=True)
+    figures = result.pop("figures", None)
+    try:
+        before = await asyncio.wait_for(like, 3)
+    except Exception:  # noqa: BLE001 - the line is left out, the run still reads
+        before = None
+    # A hard session is compared on its reps alone: whole runs of reps and jogs say little.
+    if figures and (kind in HARD_TYPES) and not figures.get("reps"):
+        figures = None
+    if before and figures:
+        line = run_view.last_time(figures, before["figures"], before["what"], before["name"], before["day"])
+        if line:
+            result["insights"] = [*(result.get("insights") or []), line]
     summary = details.get("summary") or {}
     started = None
     start_text = str(((activity or {}).get("summaryDTO") or {}).get("startTimeLocal") or "")
@@ -643,9 +695,43 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         "activity_id": activity_id, "date": (row or {}).get("date"), "kicker": kicker.strip(" ·"),
         "name": name, **t, **{k: v for k, v in result.items() if k != "short"},
         "effect": effect, "share_url": share,
+        # The run's own watch, for Garmin's credit by its title (Nov 10).
+        "credit": share_mod.attribution(device),
+        # Nov 9: an easy session run harder than its target says so here.
+        "easy_check": easy_check.card(details.get("easy_check")),
         "assistant": assistant(),
         "ask": _ask_links(f"Use Daash to look at my run {activity_id} ({name}). How did it go against the plan?"),
     })
+
+
+# What "the last one like it" is called, by the session's type.
+LIKE_NAMES = {"easy": "easy run", "recovery": "recovery run", "long": "long run", "threshold": "threshold session",
+              "sub": "threshold session", "intervals": "interval session"}
+
+
+async def _last_like(plan: Mapping[str, Any], row: Mapping[str, Any] | None, activity_id: int) -> dict[str, Any] | None:
+    """The last session of the same type done before this one, on the plan, with
+    the figures it's compared on: its reps, or its pace and heart rate."""
+    if not row or row.get("type") not in LIKE_NAMES:
+        return None
+    day = str(row.get("done_on") or row.get("date") or "")
+    earlier = [s for s in _sessions(plan) if s.get("type") == row["type"] and s.get("activity_id")
+               and s.get("activity_id") != activity_id and str(s.get("done_on") or s.get("date") or "") < day]
+    if not earlier:
+        return None
+    last = max(earlier, key=lambda s: str(s.get("done_on") or s.get("date")))
+    aid = int(last["activity_id"])
+    laps, workout = await asyncio.gather(server_mod._call(lambda c: c.get_activity_splits(aid)),
+                                         _workout(last.get("workout_id")), return_exceptions=True)
+    if isinstance(laps, Exception):
+        return None
+    workout = None if isinstance(workout, Exception) else workout
+    figures = analysis.analyse(workout, laps, last.get("type"), story=True).get("figures")
+    if not figures:
+        return None
+    when = date.fromisoformat(str(last.get("done_on") or last["date"])[:10])
+    return {"figures": figures, "what": LIKE_NAMES[row["type"]], "name": _display(last.get("name")),
+            "day": f"{when.day} {MONTHS[when.month - 1]}"}
 
 
 def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
@@ -656,6 +742,9 @@ def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
     for r in rows:
         if r.get("kind") in ("warmup", "cooldown", "extra"):
             r["colour"] = "easy"
+        elif r.get("kind") == "strides":
+            # Quick, short and few: the hard colour, whatever the run around them.
+            r["colour"] = "hard"
         elif r.get("rep") or colour != "long":
             r["colour"] = colour
         else:
@@ -851,6 +940,17 @@ def _block_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]],
         b["label"] = str(round(b["planned"])) if b["current"] or b is peak else ""
         # On a long plan every fourth week is numbered, with the first, this week and the last.
         b["show_n"] = (not many or b["n"] == 1 or b["n"] % 4 == 0 or b["current"] or b["n"] == len(bars)) or None
+    if many:
+        # Two-figure numbers on neighbouring weeks run together on a phone ("2425",
+        # Nov 11): this week, the last and the first keep theirs, the other gives way.
+        shown: set[int] = set()
+        for b in sorted(bars, key=lambda b: (not b["current"], b["n"] != len(bars), b["n"] != 1, b["n"])):
+            if not b["show_n"]:
+                continue
+            if any(abs(b["n"] - m) == 1 and max(b["n"], m) >= 10 for m in shown):
+                b["show_n"] = None
+            else:
+                shown.add(b["n"])
     phases: list[dict[str, Any]] = []
     for b in bars:
         if not b["phase"]:
@@ -924,29 +1024,32 @@ async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
     if _error(plan) and not starting:
         return {"error": _error(plan)}
     if plan.get("source") == "log" or starting:
-        return drop_empty({"empty": True, "build": preview.enabled() or None, "fresh": starting or None, "assistant": assistant(),
+        return drop_empty({"empty": True, "build": builder_on() or None, "fresh": starting or None, "assistant": assistant(),
                            "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")})
     anchor = _day_of(week_of) or today
     monday = anchor - timedelta(days=anchor.weekday())
     season = _season(plan)
     weeks = await _season_weeks(plan, season)
-    # The plan running now, changed in the builder or taken off (preview).
+    # The plan running now, changed in the builder or taken off.
     manage = None
-    running = await _running_plan(plan, season, today) if preview.enabled() else None
+    running = await _running_plan(plan, season, today) if builder_on() else None
     if running and running["labels"]:
         manage = {"count": len(running["dates"]), "from": _short_date(date.fromisoformat(running["dates"][0])),
                   "to": _short_date(date.fromisoformat(running["dates"][-1]))}
-    # Three weeks or less to go: the next block can be planned now (preview).
+    # Three weeks or less to go: the next block can be planned now.
     # Nothing on the calendar from today (a plan finished or removed): a new one.
     next_block = None
-    if preview.enabled() and not running:
+    if builder_on() and not running:
         next_block = {"none": True}
-    elif preview.enabled() and season and today <= season["last"] <= today + timedelta(weeks=3):
+    elif builder_on() and season and today <= season["last"] <= today + timedelta(weeks=3):
         next_block = {"ends": _short_date(season["last"]),
                       "ask": _ask_links("Use Daash to plan my next training block, starting the Monday after this one ends.")}
+    block = _block_view(plan, weeks, season, today)
     return drop_empty({"today": today.isoformat(), "week": _week_view(plan, weeks, season, monday, today),
-                       "block": _block_view(plan, weeks, season, today), "assistant": assistant(),
-                       "next_block": next_block, "manage": manage})
+                       "block": block, "assistant": assistant(), "next_block": next_block, "manage": manage,
+                       # With no block to race day: what Build a block asks.
+                       "ask": None if block else _ask_links(
+                           "Use Daash to build me a training block. Ask me my goal and race date first.")})
 
 
 # -- the crew: who runs when, and the runs that line up -------------------------
@@ -996,13 +1099,20 @@ def _keep_crew_current(plan: Any, today: date) -> None:
         log.exception("crew capture failed")
 
 
-async def crew_payload() -> dict[str, Any]:
+async def crew_payload(week: str | None = None) -> dict[str, Any]:
+    """The crew's week in the app: this week, or next with week="next".
+
+    A crew keeps the two (Nov 6: the app showed only this week, where the chat's
+    card and the crew's page show either).
+    """
     today = date.today()
+    ahead = week == "next"
     if not crews.available() or not crews.in_crew():
         return {"none": True, "assistant": assistant(), "ask": _ask_links(
             "Use Daash to start a crew for me and the friends I run with, or to join one with the code a friend sent me.")}
     await asyncio.to_thread(_keep_crew_current, await server_mod.get_plan(), today)
-    week = crews.week(today=today)
+    this_monday = today - timedelta(days=today.weekday())
+    week = crews.week(this_monday + timedelta(weeks=1) if ahead else this_monday, today=today)
     days = [date.fromisoformat(week["week"]["starts"]) + timedelta(days=i) for i in range(7)]
     members = week.get("members") or []
     me = next((m["name"] for m in members if m.get("you")), None)
@@ -1053,13 +1163,15 @@ async def crew_payload() -> dict[str, Any]:
     first, last = days[0], days[-1]
     return drop_empty({
         "kicker": f"{crew.get('name', 'Crew').upper()} \u00b7 {crew.get('members', len(members))} PEOPLE \u00b7 {_range(first).upper()}",
-        "headline": "Run together this week" if together else "No runs line up yet",
+        "headline": (f"Run together {'next' if ahead else 'this'} week" if together
+                     else "Nothing lines up next week yet" if ahead else "No runs line up yet"),
+        "showing": "next" if ahead else "this",
         "hero": hero, "also": also or None,
         "days": [{"letter": "MTWTFSS"[i], "n": d.day, "today": d == today, "past": d < today} for i, d in enumerate(days)],
         "people": people,
         "invite": {"url": link, "shown": link.split("://", 1)[-1] if link else None, "code": crew.get("code")},
         "assistant": assistant(),
-        "ask": _ask_links("Use Daash to show my crew this week."),
+        "ask": _ask_links(f"Use Daash to show my crew {'next' if ahead else 'this'} week."),
     })
 
 
@@ -1181,6 +1293,7 @@ async def you_payload() -> dict[str, Any]:
                   "chosen": [c for c, said in crews._TIME_WORDS.items() if said in str((member or {}).get("times") or "")]} if member else None,
         "assistant": assistant(), "ask": _ask_links(goal_prompt),
         "privacy": PRIVACY,
+        "heads_up": store.heads_up_for(user_token) if user_token else None,
     })
 
 
@@ -1379,7 +1492,12 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 # never sent: no paces, no sessions, no plan.
 
 APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "signed_in", "installed", "viewed",
-              "build_opened", "build_step", "build_action"}
+              "build_opened", "build_step", "build_action",
+              # The home-screen and notifications test (Nov 10).
+              "home_prompt_shown", "home_prompt_tapped", "home_prompt_dismissed",
+              "push_prompt_shown", "push_prompt_dismissed", "push_denied",
+              # Nov 11: the hint that a session can be moved or made easier.
+              "edit_hint_shown", "edit_hint_dismissed"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you", "build"}
 
@@ -1400,6 +1518,20 @@ def _track(event: str, properties: Mapping[str, Any] | None = None, user_token: 
 def _layout(request: Request) -> str | None:
     found = request.headers.get("x-daash-layout", "")
     return found if found in ("phone", "desktop") else None
+
+
+def _home(request: Request) -> bool | None:
+    """True when the app was opened from the home screen, not a browser tab (Nov 10)."""
+    return True if request.headers.get("x-daash-home") == "1" else None
+
+
+_FROM = re.compile(r"[a-z_]{1,24}")
+
+
+def _came_from(request: Request) -> str | None:
+    """Where the link that opened the app was given ("chat", "session_card"), on its first screen."""
+    found = request.headers.get("x-daash-from", "")
+    return found if _FROM.fullmatch(found) else None
 
 
 def _safe(handler):
@@ -1423,8 +1555,9 @@ def _safe(handler):
             # How long the screen waited for Daash, and on its own thread: the
             # account lookups are reads a screen shouldn't wait for.
             from . import official
-            seen = drop_empty({"screen": screen, "layout": _layout(request), "ok": response.status_code < 400,
-                               "seconds": round(time.monotonic() - started, 2)})
+            seen = drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
+                               "ok": response.status_code < 400,
+                               "seconds": round(time.monotonic() - started, 2), "from": _came_from(request)})
             threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
         return response
 
@@ -1453,7 +1586,20 @@ def _schedule_id(request: Request, body: Mapping[str, Any] | None = None) -> int
 @mcp.custom_route(API_PREFIX + "today", methods=["GET"])
 @_safe
 async def api_today(request: Request) -> Response:
-    return _json(await today_payload())
+    return _json(await _credited(await today_payload()))
+
+
+async def _credited(body: Any, crew: bool = False) -> Any:
+    """A screen's answer with Garmin's credit, "Garmin [device model]", for its
+    title: the watch last used, or "Garmin" alone for a crew's runs, which come
+    from several people's watches (Garmin's API brand guidelines, Nov 10)."""
+    if isinstance(body, dict) and "error" not in body and "credit" not in body:
+        try:
+            device = None if crew else await server_mod._last_device()
+        except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
+            device = None
+        body["credit"] = share_mod.attribution(device)
+    return body
 
 
 @mcp.custom_route(API_PREFIX + "session/{day}", methods=["GET"])
@@ -1462,7 +1608,7 @@ async def api_session(request: Request) -> Response:
     day = _day(request)
     if not day:
         return _json({"error": "A date like 2026-11-03."}, 400)
-    return _json(await session_payload(day, _schedule_id(request)))
+    return _json(await _credited(await session_payload(day, _schedule_id(request))))
 
 
 @mcp.custom_route(API_PREFIX + "run/{activity_id}", methods=["GET"])
@@ -1479,14 +1625,14 @@ async def api_run(request: Request) -> Response:
 @_safe
 async def api_plan(request: Request) -> Response:
     week = request.query_params.get("week")
-    return _json(await plan_payload(week if week and _DAY_RE.match(week) else None))
+    return _json(await _credited(await plan_payload(week if week and _DAY_RE.match(week) else None)))
 
 
 @mcp.custom_route(API_PREFIX + "crew", methods=["GET"])
 @_safe
 async def api_crew(request: Request) -> Response:
     try:
-        return _json(await crew_payload())
+        return _json(await _credited(await crew_payload("next" if request.query_params.get("week") == "next" else None), crew=True))
     except crews.CrewError as exc:
         return _json({"error": str(exc)}, 409)
 
@@ -1538,12 +1684,74 @@ async def api_event(request: Request) -> Response:
         screen = str(said.get("screen") or "")
         if screen not in APP_SCREENS:
             return _json({"error": "Unknown screen."}, 400)
-        _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request),
+        _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
                                          "ok": said.get("ok") is not False, "preloaded": True}))
         return _json({"ok": True})
     # choice: Back to my chat or New chat; saved: whether a chat was remembered.
     keep = {k: str(v)[:40] for k, v in said.items() if k in _EVENT_KEYS}
-    _track(f"app_{name}", {**keep, "layout": _layout(request)})
+    _track(f"app_{name}", drop_empty({**keep, "layout": _layout(request), "home_screen": _home(request)}))
+    return _json({"ok": True})
+
+
+@mcp.custom_route(API_PREFIX + "push", methods=["GET", "POST"])
+async def api_push(request: Request) -> Response:
+    """Notifications for this phone: GET the key to ask with, POST to turn them on or off (Nov 10).
+
+    Not wrapped in _safe: asking for the key isn't a screen opened.
+    """
+    try:
+        return await _push(request)
+    except Exception:  # noqa: BLE001 - reported, never a bare 500
+        log.exception("app push route failed")
+        return _json({"error": "Daash couldn't set up notifications just now. Try again in a moment."}, 500)
+
+
+HEADS_UP_SAID = {
+    "evening": "You'll hear about a session at 8pm the evening before.",
+    "6": "You'll hear about a session at 6am that morning.",
+    "7": "You'll hear about a session at 7am that morning.",
+    "8": "You'll hear about a session at 8am that morning.",
+}
+
+
+async def _push(request: Request) -> Response:
+    from . import official, push
+
+    user_token = official.current()
+    if request.method == "GET":
+        on = await asyncio.to_thread(store.has_push, user_token) if user_token else False
+        when = await asyncio.to_thread(store.heads_up_for, user_token) if on else None
+        return _json(drop_empty({"key": await asyncio.to_thread(push.public_key), "on_somewhere": on, "heads_up": when}))
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    if body.get("off"):
+        endpoint = str(body.get("endpoint") or "")
+        gone = await asyncio.to_thread(store.drop_push, endpoint, user_token) if endpoint and user_token else False
+        if gone:
+            _track("app_push_off", drop_empty({"layout": _layout(request), "home_screen": _home(request)}))
+        return _json({"ok": True})
+    if "heads_up" in body:
+        when = str(body.get("heads_up") or "")
+        if when not in store.HEADS_UP or not user_token:
+            return _json({"error": "That isn't one of the times."}, 400)
+        if not await asyncio.to_thread(store.set_heads_up, user_token, when):
+            return _json({"error": "Turn notifications on first."}, 400)
+        _track("app_push_time", {"when": when})
+        return _json({"ok": True, "heads_up": when, "message": HEADS_UP_SAID[when]})
+    found = push.valid_subscription(body.get("subscription"))
+    if not found or not user_token:
+        return _json({"error": "This phone's notification address didn't come through. Try again."}, 400)
+    tz = str(body.get("tz") or "")[:64] or None
+    if tz:
+        try:
+            ZoneInfo(tz)
+        except Exception:  # noqa: BLE001 - an unknown zone is left out, London is assumed
+            tz = None
+    await asyncio.to_thread(store.save_push, user_token, *found, tz)
+    _track("app_push_on", drop_empty({"layout": _layout(request), "home_screen": _home(request), "tz": tz}))
     return _json({"ok": True})
 
 
@@ -1577,9 +1785,11 @@ async def api_edit(request: Request) -> Response:
         else:
             result = await _EDITS[action](day, _schedule_id(request, body))
     except EditError as exc:
-        _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": False, "layout": _layout(request)}))
+        _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": False, "layout": _layout(request),
+                                       "home_screen": _home(request)}))
         return _json({"error": str(exc)}, 409)
-    _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": True, "layout": _layout(request)}))
+    _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": True, "layout": _layout(request),
+                                   "home_screen": _home(request)}))
     return _json(result)
 
 
@@ -1682,9 +1892,17 @@ async def sign_in_verify(request: Request) -> Response:
 
 
 # -- building a plan: the six steps, the preview, and sending it to Garmin ------------------
-# A preview feature. What Garmin knows fills each step in; the plan itself is
-# made by plan_builder from the answers, the same way every time, and nothing
-# is written until "Put it on my Garmin". See docs/plan-engine-spec.md.
+# What Garmin knows fills each step in; the plan itself is made by
+# plan_builder from the answers, the same way every time, and nothing is
+# written until "Put it on my Garmin". See docs/plan-engine-spec.md. Preview
+# accounts first; GARMIN_MCP_BUILDER=1 opens it, and Today's race card, to
+# everyone.
+BUILDER_ENV = "GARMIN_MCP_BUILDER"
+
+
+def builder_on() -> bool:
+    return preview.enabled() or os.environ.get(BUILDER_ENV, "").strip().lower() in ("1", "on", "true", "yes")
+
 
 # What Garmin knows is read once and kept a few minutes, so each step's answer
 # doesn't wait on Garmin again. Sends are kept while they run, by person.
@@ -1891,7 +2109,7 @@ def _answers(body: Any, inputs: Mapping[str, Any], after: date | None = None) ->
 
 
 async def build_payload(replace: bool = False) -> dict[str, Any]:
-    if not preview.enabled():
+    if not builder_on():
         raise BuildUnavailable()
     today = date.today()
     inputs, _ = await _build_inputs(today)
@@ -1910,7 +2128,7 @@ async def build_payload(replace: bool = False) -> dict[str, Any]:
 
 async def build_plan_payload(body: Any) -> dict[str, Any]:
     """What a step needs from the answers so far: goal times, the amounts, and the whole preview."""
-    if not preview.enabled():
+    if not builder_on():
         raise BuildUnavailable()
     today = date.today()
     inputs, fit = await _build_inputs(today)
@@ -2030,7 +2248,7 @@ async def build_send(body: Any) -> dict[str, Any]:
     """Put the plan on the calendar, in the background: the app asks how it's going."""
     from . import official
 
-    if not preview.enabled():
+    if not builder_on():
         raise BuildUnavailable()
     who = official.current() or "local"
     job = _SENDS.get(who)
@@ -2068,7 +2286,7 @@ async def build_send(body: Any) -> dict[str, Any]:
 
 
 # Where the builder was opened from, as the page says it: anything else is "other".
-BUILD_FROM = {"plan", "next_block", "nothing_ahead", "change", "resume", "race", "direct"}
+BUILD_FROM = {"today", "plan", "next_block", "nothing_ahead", "change", "resume", "race", "direct"}
 
 
 def _from(said: Any) -> str | None:
@@ -2081,7 +2299,7 @@ async def remove_running_plan(body: Any) -> dict[str, Any]:
     """Take the plan running now off the calendar from today, every block of it. Past runs stay."""
     from . import official
 
-    if not preview.enabled():
+    if not builder_on():
         raise BuildUnavailable()
     if str((body or {}).get("confirm") or "") != "remove":
         raise plan_builder.BuildError("Confirm to remove the plan.")
@@ -2113,7 +2331,7 @@ def _send_status(job: Mapping[str, Any]) -> dict[str, Any]:
 async def build_send_status() -> dict[str, Any]:
     from . import official
 
-    if not preview.enabled():
+    if not builder_on():
         raise BuildUnavailable()
     job = _SENDS.get(official.current() or "local")
     return _send_status(job) if job else {"state": "none"}
@@ -2206,7 +2424,7 @@ def _not_goal(races: list[dict[str, Any]]) -> set[str]:
 async def race_prompt_payload() -> dict[str, Any]:
     """The one race worth a card on Today, or nothing."""
     me = crews.current()
-    if not preview.enabled() or me is None:
+    if not builder_on() or me is None:
         return {}
     today = date.today()
     inputs, fit = await _build_inputs(today)
@@ -2283,7 +2501,7 @@ def _race_prompt(r: Mapping[str, Any], inputs: Mapping[str, Any], fit: plan_buil
 
 def race_prompt_action(body: Any) -> dict[str, Any]:
     me = crews.current()
-    if not preview.enabled() or me is None:
+    if not builder_on() or me is None:
         raise BuildUnavailable()
     key = str((body or {}).get("key") or "") if isinstance(body, dict) else ""
     action = str((body or {}).get("action") or "") if isinstance(body, dict) else ""

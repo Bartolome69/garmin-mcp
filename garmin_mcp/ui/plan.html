@@ -290,6 +290,16 @@
         error: d.errors.join("; "), steps: d.steps.join(" > ") }) }).catch(function () {});
     } catch (e) {}
   }
+  // A tap on Open in Daash, and whether the chat app opened the link: on
+  // the same link, as many times as it's tapped (Nov 6: 71 cards carried it
+  // and not one sign-in came of it, with nothing to say whether anyone tried).
+  d.tapped = function (what, opened) {
+    if (!d.seen || !window.fetch) return;
+    try {
+      fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "plan", tap: what, opened: opened, host: d.host }) }).catch(function () {});
+    } catch (e) {}
+  };
   function show() {
     tell();
     var box = document.getElementById("diag");
@@ -570,6 +580,7 @@
   // speed shown in miles, from the km the answers carry. KM() is the unit
   // after a distance; units() turns a pace, speed or distance in text.
   var MI = false, KM_PER_MI = 1.609344;
+  var CREDIT = "Garmin";
   function fmtKm(n) { return n == null ? "" : num(MI ? n / KM_PER_MI : n); }
   function KM() { return MI ? " mi" : " km"; }
   function units(t) {
@@ -659,8 +670,9 @@
   // intervals, race, with long its own. An easy ride is easy. Strength and
   // swims keep their sport's colour.
   var TYPES = {
-    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Threshold", v: "var(--threshold)", t: "var(--threshold-text)" },
-    intervals: { l: "Intervals", v: "var(--intervals)" }, long: { l: "Long", v: "var(--long)" },
+    // Every hard session reads Quality, in one colour (Nov 12): its name says which kind.
+    easy: { l: "Easy", v: "var(--easy)" }, threshold: { l: "Quality", v: "var(--threshold)", t: "var(--threshold-text)" },
+    intervals: { l: "Quality", v: "var(--threshold)", t: "var(--threshold-text)" }, long: { l: "Long", v: "var(--long)" },
     race: { l: "Race", v: "var(--red)" }, ride: { l: "Ride", v: "var(--easy)" }, swim: { l: "Swim", v: "var(--swim)" },
     strength: { l: "Strength", v: "var(--strength)" }, run: { l: "Run", v: "var(--easy)" }, other: { l: "Session", v: "var(--muted)" },
   };
@@ -855,6 +867,8 @@
 
   function render(plan) {
     MI = !!(plan && plan.units === "mi");
+    // "Garmin [device model]" by the title: Garmin's API brand guidelines (Nov 10).
+    CREDIT = (plan && plan.credit) || "Garmin";
     if (plan && plan.source === "waiting") { waiting(plan); return; }
     model = normalise(plan);
     if (model.error) { fail(model.error); return; }
@@ -909,10 +923,10 @@
       el("div", { style: "display:flex;align-items:flex-start;gap:12px" }, [
         el("div", { style: "display:flex;flex-direction:column;gap:3px;flex:1;min-width:0" }, [
           el("h3", { class: "title" + (title.length > 24 ? " long" : ""), text: title }),
-          el("span", { class: "sub", text: sub }),
+          el("span", { class: "sub", text: [CREDIT, sub].filter(Boolean).join(" \u00b7 ") }),
         ]),
         appLink ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px",
-          onclick: function (e) { openUrl(appLink, e.currentTarget); } }, ["Open in Daash"]) : null,
+          onclick: function (e) { openUrl(appLink, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]) : null,
       ]),
     ]);
     var nodes = timeline(m);
@@ -1047,8 +1061,8 @@
     m.weeks.forEach(function (w) { w.rows.forEach(function (s) { present[(TYPES[s.type] || TYPES[s.sport]) ? (s.type || s.sport) : "other"] = true; }); });
     // Easy always, then the rest in order of effort as they appear; an easy
     // ride or a plain run is easy, and an old sub is threshold.
-    if (present.sub) present.threshold = true;
-    var legend = ["easy", "threshold", "intervals", "race", "long", "strength", "swim"].filter(function (k) { return k === "easy" || present[k]; });
+    if (present.sub || present.intervals) present.threshold = true;
+    var legend = ["easy", "threshold", "race", "long", "strength", "swim"].filter(function (k) { return k === "easy" || present[k]; });
     return el("div", { class: "pane chart" + (scroll ? " long" : "") }, [
       el("div", { class: "stats" }, [
         el("span", {}, [el("strong", { text: stats.lead }), " " + stats.left]),
@@ -1342,7 +1356,8 @@
       var body = segs.some(function (g) { return g.k === "easy" && !g.part; });
       segs = segs.map(function (g) { return g.k === "easy" && !(body && g.part) ? { k: "work", km: g.km } : g; });
     }
-    var easy = s.type === "long" ? "long" : s.type === "easy" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
+    // A race's warm-up and cool-down are easy running, green like any other.
+    var easy = s.type === "long" ? "long" : s.type === "easy" || s.type === "race" || !TYPES[s.type] || hard ? "easy" : colourOf(s);
     // Work in a hard session takes its colour; faster stretches of a long
     // or easy run are threshold work.
     var work = s.type === "race" ? "race" : hard ? colourOf(s) : "threshold";
@@ -1410,7 +1425,7 @@
     ])]));
     reportSize();
   }
-  function openUrl(url, btn) {
+  function openUrl(url, btn, what) {
     var opened;
     if (window.openai && typeof window.openai.openExternal === "function") {
       opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
@@ -1419,7 +1434,8 @@
     } else {
       opened = request("ui/open-link", { url: url });
     }
-    opened.then(function () { flash(btn, "Opens in the browser"); }).catch(function () { flash(btn, "This chat app didn\u2019t open the link"); });
+    opened.then(function () { flash(btn, "Opens in the browser"); if (what && D.tapped) D.tapped(what, true); })
+      .catch(function () { flash(btn, "This chat app didn\u2019t open the link"); if (what && D.tapped) D.tapped(what, false); });
   }
 
   // ---------------------------------------------------------------- actions
@@ -1572,7 +1588,37 @@
       }
     }
     title = title.replace(/(\d) (km|mi|min)\b/g, "$1\u00a0$2");
-    return { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3) };
+    var out = { v: 1, run: 1, t: title, s: sub, k: kicker, c: colourOf(s), f: facts, l: laps, a: paceSecs(pace), n: notes.slice(0, 3),
+      // Garmin's credit for the run's own watch, from its details (Nov 10).
+      g: (p && p.credit) || "Garmin" };
+    var planned = plannedFor(s);
+    if (planned) out.pl = planned;
+    return out;
+  }
+  // The planned session a run was, for its Strava caption, as share.py's
+  // plan_context says it: { n, ty, k, w, b }. None for a run off the plan.
+  function plannedFor(s) {
+    if (!s || s.extra || !/^done/.test(String(s.status || ""))) return null;
+    var name = String(s.name || "Run").replace(/\s*\u00b7\s*[A-Z0-9]{1,6}$/, "").trim()
+      .replace(/(\d+(?:[.,]\d+)?)\s*k(?:m)?\b/gi, "$1 km").replace(/(\d)\s*[x\u00d7]\s*(\d)/gi, "$1 \u00d7 $2");
+    var pl = { n: (name.charAt(0).toUpperCase() + name.slice(1)).slice(0, 60), ty: s.type, k: s.planned_km };
+    var r = raw || {}, day = String(s.date || "").slice(0, 10), weeks = r.weeks || [];
+    var monday = function (iso) { var d = parse(iso); return d.getTime() - dow(iso) * 864e5; };
+    if (r.label) {
+      var wi = weeks.findIndex(function (w) { return (w.sessions || []).indexOf(s) >= 0; });
+      if (wi >= 0) pl.w = [wi + 1, r.weeks_total || weeks.length];
+      if (r.name || r.goal) pl.b = String(r.name || String(r.goal).replace(/\s*[(:,].*$/, "")).slice(0, 40);
+    } else {
+      ["current_plan", "upcoming_plan"].some(function (key) {
+        var p = r[key];
+        if (!p || !p.starts || !p.ends || day < p.starts || day > p.ends) return false;
+        if (p.weeks_total) pl.w = [Math.round((monday(day) - monday(p.starts)) / (7 * 864e5)) + 1, p.weeks_total];
+        if (p.name || p.goal) pl.b = String(p.name || String(p.goal).replace(/\s*[(:,].*$/, "")).slice(0, 40);
+        return true;
+      });
+    }
+    Object.keys(pl).forEach(function (k) { if (pl[k] == null) delete pl[k]; });
+    return pl;
   }
   function shareRun(p, s, btn) {
     var url = shareLink(runPayload(p, s)), opened;

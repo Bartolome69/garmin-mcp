@@ -62,6 +62,7 @@
   .friend h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
   .friend p { margin: 0; color: var(--body); font-size: 15px; }
   .status { min-height: 1.6em; font-size: 14px; color: var(--muted); }
+  .cap { margin: 0; padding: 12px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; font: 14px/1.5 inherit; font-family: inherit; white-space: pre-wrap; word-break: break-word; user-select: all; -webkit-user-select: all; }
   .small { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.55; }
   .empty { grid-column: 1 / -1; max-width: 560px; }
   [hidden] { display: none !important; }
@@ -136,6 +137,12 @@
       </div>
       <p class="hint" id="hold">On a phone you can also press and hold the image to save it.</p>
       <div class="status" id="status" role="status"></div>
+    </div>
+    <div class="group" id="cap-g" hidden>
+      <span class="label">Caption for Strava</span>
+      <pre class="cap" id="cap"></pre>
+      <div class="row"><button type="button" class="btn" id="cap-copy">Copy caption</button></div>
+      <div class="status" id="cap-status" role="status"></div>
     </div>
     <div class="friend">
       <h2>Know someone who runs with a Garmin?</h2>
@@ -326,7 +333,7 @@
     var title = wrap(ctx, wk.t, W - 2 * P, 2);
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 80); });
     y += (title.length - 1) * 80;
-    if (wk.s) { y += 54; font(ctx, 400, 34); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, wk.s, W - 2 * P), P, y); }
+    y += 54; font(ctx, 400, 34); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, ["Garmin", wk.s].filter(Boolean).join(" \u00b7 "), W - 2 * P), P, y);
 
     // The headline figure, and without a plan the weeks before it as bars.
     y += story ? 140 : 124;
@@ -380,7 +387,7 @@
     // Footer: where it came from, for anyone who wants their own.
     font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
     font(ctx, 400, 28); ctx.fillStyle = T.muted; ctx.textAlign = "right";
-    ctx.fillText("Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.fillText("Coaching in ChatGPT and Claude", W - P, footY + 50);
     ctx.textAlign = "left";
   }
 
@@ -453,7 +460,7 @@
     var title = wrap(ctx, cw.c, W - 2 * P, 2);
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 72); });
     y += (title.length - 1) * 72 + 50;
-    font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(span, P, y);
+    font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, "Garmin \u00b7 " + span, W - 2 * P), P, y);
 
     // The grid: a name column, then the seven days.
     y += story ? 70 : 56;
@@ -547,7 +554,7 @@
     ctx.textAlign = "left";
     font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
     font(ctx, 400, 26); ctx.fillStyle = T.muted; ctx.textAlign = "right";
-    ctx.fillText(cw.code ? "Join: tell your Daash the code " + cw.code : "Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.fillText(cw.code ? "Join: tell your Daash the code " + cw.code : "Coaching in ChatGPT and Claude", W - P, footY + 50);
     ctx.textAlign = "left";
   }
 
@@ -601,7 +608,7 @@
     font(ctx, 700, 66); ctx.fillStyle = T.text;
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 72); });
     y += (title.length - 1) * 72 + 52;
-    font(ctx, 400, 30); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, pl.s, W - 2 * P), P, y);
+    font(ctx, 400, 30); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, ["Garmin", pl.s].filter(Boolean).join(" \u00b7 "), W - 2 * P), P, y);
     y += 64;
     font(ctx, 600, 30); ctx.fillStyle = T.text; ctx.fillText(fit(ctx, planSummary(pl, true), W - 2 * P), P, y);
 
@@ -664,7 +671,7 @@
     var footY = H - 150;
     font(ctx, 700, 36); ctx.fillStyle = T.redText; ctx.fillText("daash.run", P, footY + 52);
     font(ctx, 400, 28); ctx.fillStyle = T.muted; ctx.textAlign = "right";
-    ctx.fillText("Garmin coaching in ChatGPT and Claude", W - P, footY + 50);
+    ctx.fillText("Coaching in ChatGPT and Claude", W - P, footY + 50);
     ctx.textAlign = "left";
   }
 
@@ -694,7 +701,7 @@
     var notes = Array.isArray(d.n) ? d.n.slice(0, 3).map(function (n) {
       return Array.isArray(n) ? { c: n[0] === "c" ? c : COLOURS.indexOf(n[0]) >= 0 ? n[0] : "other", t: str(n[1], 90) } : null;
     }).filter(function (n) { return n && n.t; }) : [];
-    return joinReps({ run: true, t: t, s: str(d.s, 60), k: str(d.k, 40) || "Run recap", c: c, f: facts, l: laps, a: num(d.a, 60, 1800), n: notes });
+    return joinReps({ run: true, t: t, s: str(d.s, 60), g: str(d.g, 40), k: str(d.k, 40) || "Run recap", c: c, f: facts, l: laps, a: num(d.a, 60, 1800), n: notes });
   }
   // A watch that laps every km splits an 8-minute rep in two: Roo's 3 x 8 min
   // drew as six reps with their paces printed over each other (Nov 3). Work
@@ -757,7 +764,10 @@
     var title = wrap(ctx, rn.t, W - 2 * P, 2);
     title.forEach(function (line, i) { ctx.fillText(line, P, y + i * 78); });
     y += (title.length - 1) * 78;
-    if (rn.s) { y += 52; font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, rn.s, W - 2 * P), P, y); }
+    // Garmin's credit, "Garmin [device model]", first on the line under the
+    // title (Garmin's API brand guidelines, Nov 10).
+    var under = [rn.g, rn.s].filter(Boolean).join(" \u00b7 ");
+    if (under) { y += 52; font(ctx, 400, 32); ctx.fillStyle = T.muted; ctx.fillText(fit(ctx, under, W - 2 * P), P, y); }
 
     // The headline numbers, between two rules.
     if (rn.f.length) {
@@ -906,7 +916,7 @@
         });
       }
     });
-    add(doc, "p", "foot", "Made with Daash: Garmin coaching in ChatGPT and Claude. daash.run");
+    add(doc, "p", "foot", "Made with Daash: coaching in ChatGPT and Claude. daash.run");
   }
 
   // ---------------------------------------------------------------- page
@@ -985,6 +995,67 @@
       .then(function () { status.textContent = ""; })
       .catch(function (e) { if (!e || e.name !== "AbortError") status.textContent = "Sharing didn’t work here. Save the image instead."; });
   });
+
+  // A run's caption to paste into its description on Strava, which Strava's
+  // API can't carry (its 2026 policy bars Strava data in AI apps).
+  // garmin_mcp/share.py builds the same text for a chat; keep the two in step.
+  // A run that was a session on the plan (d.pl) says what was planned against
+  // what was run, an interval session rep by rep; any other run is its name,
+  // figures and reps. Each ends with a line back to Daash. No "Garmin [device]"
+  // line: the Strava activity names the device; the image keeps the credit.
+  var KIND_WORDS = { easy: "Easy run", recovery: "Recovery run", long: "Long run", race: "Race", threshold: "Quality session", sub: "Quality session", intervals: "Quality session" };
+  var REP_SLACK = 3;
+  function capPace(secs) { secs = Math.round(secs); return Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0"); }
+  function caption(d, facts) {
+    var figs = facts.map(function (f) { var unit = f[1].split(" ")[0]; return unit === "time" ? f[0] : f[0] + " " + unit; });
+    var plan = d.pl && typeof d.pl === "object" ? d.pl : null;
+    if (!plan) {
+      var lines = [str(d.t, 80).replace(/\u00a0/g, " ")];
+      if (figs.length) lines.push(figs.join(" \u00b7 "));
+      var note = (Array.isArray(d.n) ? d.n : []).filter(function (n) { return Array.isArray(n) && n.length > 1; })[0];
+      if (note && str(note[1], 90)) lines.push(str(note[1], 90));
+      return lines.filter(Boolean).join("\n") + "\n\nvia daash.run";
+    }
+    var w = Array.isArray(plan.w) ? plan.w : [], weekWords = w.length === 2 ? "week " + w[0] + " of " + w[1] : null;
+    var laps = Array.isArray(d.l) ? d.l : [];
+    var work = laps.filter(function (l) { return Array.isArray(l) && l[2]; });
+    var reps = work.length > 1 && work.length < laps.length && work.length <= 8 ? work : [];
+    var dist = facts.filter(function (f) { var u = f[1].split(" ")[0]; return u === "km" || u === "mi"; })[0];
+    var out;
+    if (["threshold", "sub", "intervals"].indexOf(plan.ty) >= 0 && reps.length) {
+      var unit = dist ? dist[1].split(" ")[0] : "km";
+      var shown = plan.tg ? String(plan.tg).replace(/\s*\/(km|mi)$/, "") : null;
+      out = [[plan.n, weekWords].filter(Boolean).join(" \u00b7 "),
+        "Reps: " + reps.map(function (r) { return capPace(r[1]); }).join(" \u00b7 ") + " /" + unit + (shown ? " (target " + shown + ")" : "")];
+      var bpm = reps.map(function (r) { return r[4]; }).filter(Boolean);
+      var avg = facts.filter(function (f) { return /^bpm/.test(f[1]); })[0];
+      out.push([dist ? dist[0] + " " + unit + " total" : null,
+        bpm.length === reps.length ? Math.round(bpm.reduce(function (a, b) { return a + b; }, 0) / bpm.length) + " bpm on the reps"
+          : (avg ? avg[0] + " bpm average" : null)].filter(Boolean).join(" \u00b7 "));
+      var m = String(plan.tg || "").match(/(\d+):(\d{2})\D+(\d+):(\d{2})/);
+      if (m && /km/.test(plan.tg)) {
+        var a = +m[1] * 60 + +m[2], b = +m[3] * 60 + +m[4], lo = Math.min(a, b), hi = Math.max(a, b);
+        var hit = reps.filter(function (r) { return r[1] >= lo - REP_SLACK && r[1] <= hi + REP_SLACK; }).length;
+        out.push(hit === reps.length ? "Every rep on target \u2713" : hit + " of " + reps.length + " reps on target");
+      }
+    } else {
+      out = [[KIND_WORDS[plan.ty] || "Run", weekWords, plan.b].filter(Boolean).join(" \u00b7 "), "Planned: " + plan.n, "Ran: " + figs.join(" \u00b7 ")];
+      var ran = dist ? parseFloat(dist[0]) * (/^mi/.test(dist[1]) ? 1.609344 : 1) : NaN, meant = parseFloat(plan.k);
+      if (meant && ran / meant >= 0.9 && ran / meant <= 1.15) out.push("On plan \u2713");
+    }
+    return out.filter(Boolean).join("\n") + "\n\nPlanned by daash.run";
+  }
+  if (wk.run) {
+    var capText = caption(raw, wk.f), capStatus = document.getElementById("cap-status");
+    document.getElementById("cap").textContent = capText;
+    document.getElementById("cap-g").hidden = false;
+    document.getElementById("cap-copy").addEventListener("click", function () {
+      var done = function () { capStatus.textContent = "Copied. Paste it into the run's description on Strava."; };
+      var fail = function () { capStatus.textContent = "Press and hold the caption to copy it."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(capText).then(done, fail);
+      else fail();
+    });
+  }
 
   // The friend link: the front page, marked as having come from a share so
   // the site can tell these visits apart. Nothing about this week is in it.

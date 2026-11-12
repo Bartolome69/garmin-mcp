@@ -26,6 +26,24 @@ _before: ContextVar["Before | None"] = ContextVar("garmin_tool_before", default=
 _seconds: ContextVar["float | None"] = ContextVar("garmin_tool_seconds", default=None)
 
 
+# How many tools deep the current call is. A tool that calls another (the run
+# tool reads the plan to find the session a run was) reports only itself: the
+# one inside isn't a call from the chat, so it isn't counted, timed, carded or
+# taken as a get_plan the chat sent (Nov 12: every run card was logged with a
+# plan card beside it, and the plan clock held back reads sent after it).
+_depth: ContextVar[int] = ContextVar("garmin_tool_depth", default=0)
+
+
+def enter() -> tuple[bool, Any]:
+    """Note a tool starting; (whether it was called from inside another tool, token for leave)."""
+    depth = _depth.get()
+    return depth > 0, _depth.set(depth + 1)
+
+
+def leave(token) -> None:
+    _depth.reset(token)
+
+
 def use(hook: Hook | None, before: Before | None = None):
     """Set the hooks for the current context; returns a token for resetting."""
     return _hook.set(hook), _before.set(before)

@@ -1456,6 +1456,10 @@ def summarise(
             name=str(i.get("id")),  # the schedule id, so each verdict maps back to its row
             sport=category(i.get("sportTypeKey") or "running"),
             seconds=float(planned_seconds.get(i.get("workoutId"), 0.0)),
+            metres=float(planned_metres.get(i.get("workoutId"), 0.0)),
+            no_size=(i.get("workoutId") in planned_seconds
+                     and not planned_seconds.get(i.get("workoutId"))
+                     and not planned_metres.get(i.get("workoutId"))),
             workout_id=i.get("workoutId"),
             title=strip_tag(i.get("title") or i.get("workoutName") or ""),
             hard=(efforts.get(i.get("workoutId")) in ("threshold", "intervals")

@@ -29,7 +29,7 @@ import secrets
 import threading
 import time
 from contextvars import ContextVar
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -40,7 +40,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, store, support_mail, weekly
+from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, weekly
 from . import app as app_routes
 from . import server as server_mod
 from .formatting import drop_empty
@@ -101,12 +101,27 @@ ROUTES = ("official", "password")
 # cookie, to see which more people finish and keep using (from Oct 26).
 SPLIT = SIGNUP_ROUTE == "split"
 SPLIT_NAME = "signup-route-oct26"
-# Nov 4: Garmin capped new connections to Daash's app while it reviews it
-# (Starter Access, at about 100 linked accounts). Until Garmin lifts it, no
-# new sign-up is sent to Garmin's page, where the cap would stop them: they
-# get the password form. Accounts already linked keep working. Reopen with
-# GARMIN_OFFICIAL_SIGNUPS=open (deploy-hosted.yml) once Garmin says so.
-OFFICIAL_SIGNUPS_OPEN = os.environ.get("GARMIN_OFFICIAL_SIGNUPS", "paused").strip().lower() == "open"
+# Nov 4: Garmin capped new connections to Daash's app while it reviewed it
+# (Starter Access, at about 100 linked accounts). Reopened on Nov 11 when
+# Garmin said it had approved the app again; two new accounts got through
+# (99 linked), then Garmin sent every new one straight back without a code
+# and nobody connected overnight, so paused again on Nov 12. "paused" sends new sign-ups to the password
+# form and keeps Garmin's page for accounts already linked; set it in
+# deploy-hosted.yml, which every deploy applies.
+# Any value starting "open" opens it; a new one ("open-2026-11-20") also
+# clears a pause the server made itself (signup_guard).
+OFFICIAL_SIGNUPS_SWITCH = os.environ.get("GARMIN_OFFICIAL_SIGNUPS", "paused").strip().lower()
+OFFICIAL_SIGNUPS_OPEN = OFFICIAL_SIGNUPS_SWITCH.startswith("open")
+
+
+def _official_open() -> bool:
+    """New sign-ups go to Garmin's page: switched open, and not paused by the server
+    itself after Garmin stopped letting new people through (Nov 12, signup_guard)."""
+    return OFFICIAL_SIGNUPS_OPEN and not signup_guard.paused(OFFICIAL_SIGNUPS_SWITCH)
+# Nov 11: phones go to Garmin's page too, as computers do, since the sign-in
+# now carries its own mark back from Garmin (FLOW_COOKIE). Phones were on the
+# password from Oct 26 (see _signup_route); GARMIN_PHONES_OFFICIAL=0 puts them back.
+PHONES_ON_GARMIN_PAGE = os.environ.get("GARMIN_PHONES_OFFICIAL", "1").strip() != "0"
 # Set as someone leaves for Garmin's page, and looked for when Garmin sends
 # them back: missing means they came back in a different browser than the one
 # Claude or ChatGPT opened for signing in (a phone handing Garmin's page to
@@ -686,6 +701,33 @@ PERMISSION_TIP = (
 )
 # For the model, with the tip, on someone's first answer: their first chat is
 # where gathering everything at once is most tempting, and slowest.
+# A crew is how Daash spreads between friends, and in its first three weeks
+# five people joined one (Nov 6): nothing in a chat ever mentioned it. So
+# once, to someone settled in (connected three days or more) and in no crew,
+# on a plan answer late in the week, when weekend runs are coming up.
+CREW_OFFER = (
+    "Once, as one short line at the end of your reply, ask whether they'd like to start a "
+    "Daash crew: the friends they run with see who's running when and which easy and long "
+    "runs they could do together (days and times only, never pace, heart rate or routes). "
+    "If they say yes, start it with join_crew (start_new_crew) and give them the invite to "
+    "send. If not, leave it: don't bring it up again."
+)
+CREW_OFFER_AFTER_DAYS = 3
+CREW_OFFER_WEEKDAYS = {3, 4, 5, 6}  # Thursday to Sunday
+
+
+def _crew_offer_due(user: store.User, crew_key: str, today: date | None = None) -> bool:
+    today = today or date.today()
+    if today.weekday() not in CREW_OFFER_WEEKDAYS:
+        return False
+    if time.time() - (user.created_at or 0) < CREW_OFFER_AFTER_DAYS * 86400:
+        return False
+    try:
+        return not crews.in_crew(crew_key)
+    except Exception:  # noqa: BLE001 - an offer is never a reason to fail an answer
+        return False
+
+
 WELCOME = (
     "For you, not to repeat: this person has only just connected Daash. Get to "
     "know where they are before anything else. For a question about their "
@@ -823,6 +865,9 @@ def _with_card_check(name: str, result: Any, user: store.User) -> Any:
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     if name not in CARD_TOOLS or not base or not user.email_hash:
         return result
+    # The run card: counted where it's drawn (server.run_card_on).
+    if name == "get_activity_details" and not server_mod.run_card_on():
+        return result
     if not isinstance(result, dict) or "error" in result:
         return result
     view = secrets.token_urlsafe(6)
@@ -900,9 +945,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
         # The app's link rides on the plan in a chat, not on the app's own
         # reads of it, which pass no hook: a code made for each screen is waste.
         if name in ("get_plan", "create_plan") and isinstance(result, dict) and "error" not in result:
-            link = server_mod.app_link("plan")
-            if link:
-                result = {**result, "app": {"url": link, "note": server_mod.APP_NOTE}}
+            result = _with_app_link(name, result, user_token, user)
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -926,8 +969,63 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
                 {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
             )
             return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
+        if (
+            name == "get_plan" and isinstance(result, dict) and "error" not in result
+            # One ask per answer: not on the answer that brings up the app.
+            and (result.get("app") or {}).get("note") != server_mod.APP_OFFER_NOTE
+            and _crew_offer_due(user, crew_key) and store.claim_crew_offer(user_token)
+        ):
+            email = store.email_for(user_token)
+            analytics.capture(
+                "crew_offer_shown",
+                user.email_hash or user_token,
+                {"account": user.email_masked, **({"email": email} if email else {})},
+            )
+            return {**result, "crew_offer": CREW_OFFER}
         return result
     return after
+
+
+# How often a chat may bring the app up unasked, and how recently someone must
+# have used the app for it to stop: they know where it is.
+APP_OFFER_EVERY = 7 * 24 * 3600
+APP_USED_WITHIN = 14 * 24 * 3600
+
+
+def _app_offer_on() -> bool:
+    """Whether a chat may bring the app up unasked for accounts outside preview.
+
+    On for everyone (Nov 6: the app is to reach every account, not preview
+    ones alone); GARMIN_MCP_APP_OFFER=off takes it back to preview accounts.
+    """
+    return os.environ.get("GARMIN_MCP_APP_OFFER", "").strip().lower() not in {"0", "off", "false", "no"}
+
+
+def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -> dict:
+    """The plan with the Daash app's link, and when the model should give it.
+
+    Normally only when asked. At most once a week, for someone who hasn't
+    opened the app in two weeks, the note asks for one line about it instead.
+    """
+    # No link to give, no mention used up: the week's one is kept for when there is.
+    if not server_mod.app_link_available():
+        return result
+    offer = (
+        (preview.enabled() or _app_offer_on())
+        and not store.used_client_since(user_token, oauth.APP_CLIENT_ID, int(time.time()) - APP_USED_WITHIN)
+        and store.claim_app_offer(user_token, APP_OFFER_EVERY)
+    )
+    link = server_mod.app_link("plan", "chat_offer" if offer else "chat")
+    if not link:
+        return result
+    if offer:
+        email = store.email_for(user_token)
+        analytics.capture(
+            "app_link_offered",
+            user.email_hash or user_token,
+            {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+        )
+    return {**result, "app": {"url": link, "note": server_mod.APP_OFFER_NOTE if offer else server_mod.APP_NOTE}}
 
 
 def session_for(user_token: str) -> GarminSession:
@@ -1016,24 +1114,78 @@ def _plan_answer(user_token: str) -> Any:
         reset_session(token)
 
 
+# How long someone has had Daash before the weekly email starts.
+WEEKLY_FIRST_WEEK_SECONDS = 7 * 86400
+# At most this many weekly emails a Monday. Resend allows 100 emails a day on
+# the current plan and sign-in codes and first-run emails come out of the same
+# allowance: on Nov 2 and 9 the weekly email alone was 175 and 202, so a code
+# asked for that day could go unsent. Set WEEKLY_EMAIL_CAP to change it.
+WEEKLY_CAP = int(os.environ.get("WEEKLY_EMAIL_CAP") or 80)
+# Who the capped email goes to first, by tier (Nov 9): people who clicked one
+# before, then people with a plan who used Daash last week, people with a plan,
+# and last people with nothing planned. Plan holders clicked 12% on Nov 2,
+# those without 7%.
+WEEKLY_TIERS = ("clicked", "plan_active", "plan", "no_plan")
+WEEKLY_ACTIVE_SECONDS = 7 * 86400
+# People with nothing to say this week, read once per process, not every pass.
+_WEEKLY_NOTHING: dict[str, set[str]] = {}
+
+
+def weekly_tier(no_plan: bool, last_seen: int, clicked: str, now: float) -> str:
+    """Which of WEEKLY_TIERS someone is in this Monday."""
+    if clicked:
+        return "clicked"
+    if no_plan:
+        return "no_plan"
+    return "plan_active" if last_seen and now - last_seen < WEEKLY_ACTIVE_SECONDS else "plan"
+
+
 def weekly_email_once(today: date | None = None, send: Callable[..., None] | None = None,
-                      spacing: float = WEEKLY_SPACING) -> dict[str, int]:
-    """Send this week's email to everyone it hasn't gone to. Returns counts."""
+                      spacing: float = WEEKLY_SPACING, now: float | None = None,
+                      cap: int | None = None) -> dict[str, int]:
+    """Send this week's email, up to the cap, to whoever it hasn't gone to. Returns counts.
+
+    Only to people whose first week with Daash is done: someone who connected
+    on Sunday night got "your week" the next morning (Nov 9), with no week
+    behind it. They get it the Monday after their first seven days.
+
+    Everyone's week is read first, then the email goes by tier (WEEKLY_TIERS),
+    and within a tier to whoever has gone longest without one, until the cap.
+    The rest are held: no email this week, and first in their tier next week.
+    """
     today = today or datetime.now(ZoneInfo("Europe/London")).date()
+    now = now if now is not None else time.time()
+    cap = WEEKLY_CAP if cap is None else cap
     monday = (today - timedelta(days=today.weekday())).isoformat()
     send = send or support_mail.send_weekly
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    counts = {"sent": 0, "nothing_to_say": 0, "failed": 0}
-    for user_token, email, fingerprint in store.weekly_recipients():
-        if not store.claim_weekly(fingerprint, monday):
+    counts = {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0}
+    room = cap - store.weekly_sent_count(monday)
+    if room <= 0:
+        return counts
+    standing = store.weekly_standing()
+    nothing = _WEEKLY_NOTHING.setdefault(monday, set())
+    ready = []
+    for user_token, email, fingerprint in store.weekly_recipients(now - WEEKLY_FIRST_WEEK_SECONDS):
+        last_seen, last_sent, clicked = standing.get(fingerprint, (0, "", ""))
+        if last_sent >= monday or fingerprint in nothing:
             continue
         try:
             said = weekly.summary(_plan_answer(user_token), today)
         except Exception as exc:  # noqa: BLE001 - one person's Garmin never stops the rest
             log.info("weekly email: no plan for one person (%s)", type(exc).__name__)
             said = None
+        time.sleep(spacing)
         if not said:
+            nothing.add(fingerprint)
             counts["nothing_to_say"] += 1
+            continue
+        tier = weekly_tier(bool(said.get("no_plan")), last_seen, clicked, now)
+        ready.append((WEEKLY_TIERS.index(tier), last_sent, -last_seen, tier, user_token, email, fingerprint, said))
+    ready.sort(key=lambda r: r[:3])
+    counts["held"] = max(0, len(ready) - room)
+    for _rank, _sent, _seen, tier, user_token, email, fingerprint, said in ready[:room]:
+        if not store.claim_weekly(fingerprint, monday):
             continue
         link = unsubscribe_url(base, fingerprint)
         ask = ((lambda app, kind, f=fingerprint: weekly_ask_url(base, f, app, kind, monday))
@@ -1048,11 +1200,17 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
             counts["sent"] += 1
             analytics.capture("weekly_email_sent", fingerprint, {
                 "key_sessions": len(said.get("key_sessions") or []), "no_plan": bool(said.get("no_plan")),
-                "crew_line": not crewed,
+                "crew_line": not crewed, "tier": tier,
                 "$process_person_profile": False})
         except OSError:
             counts["failed"] += 1
-        time.sleep(spacing)
+        # Resend takes two requests a second.
+        time.sleep(min(spacing, 1.0))
+    if counts["held"]:
+        analytics.capture("weekly_email_held", "daash-server", {
+            "week": monday, "held": counts["held"], "sent": counts["sent"], "cap": cap,
+            "by_tier": {t: sum(1 for r in ready[room:] if r[3] == t) for t in WEEKLY_TIERS},
+            "$process_person_profile": False})
     return counts
 
 
@@ -1063,7 +1221,8 @@ def _weekly_email_forever() -> None:
             try:
                 counts = weekly_email_once(now.date())
                 if any(counts.values()):
-                    log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, %(failed)d failed", counts)
+                    log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, "
+                             "%(failed)d failed, %(held)d held for the cap", counts)
             except Exception:  # noqa: BLE001
                 log.exception("Weekly email pass failed")
         time.sleep(WEEKLY_EVERY)
@@ -1125,9 +1284,10 @@ def first_run_email(garmin_user_id: str, activities: list[dict], send: Callable[
 
 
 def _activities_arrived(garmin_user_id: str, activities: list[dict]) -> None:
-    """Garmin waits on its push: the email goes from its own thread."""
+    """Garmin waits on its push: the email and the phone notification go from their own threads."""
     threading.Thread(target=first_run_email, args=(garmin_user_id, activities),
                      name="first-run-email", daemon=True).start()
+    threading.Thread(target=run_arrived, args=(garmin_user_id,), name="run-notification", daemon=True).start()
 
 
 # Garmin's starter access to its official API allows this many users. Past it
@@ -1162,6 +1322,232 @@ def _keep_alive_forever() -> None:
         except Exception:  # noqa: BLE001
             log.exception("Keep-alive pass failed")
         time.sleep(KEEP_ALIVE_EVERY)
+
+
+# ---------------------------------------------------------- app notifications
+# For phones that turned them on in the app (Nov 10): a heads-up about a
+# planned session, and a run's verdict once it syncs. A day with nothing
+# planned sends nothing: a nudge is only worth it with something in it.
+# Every 3 minutes, so a run's verdict follows the watch's sync closely (Nov 11).
+# Only people with notifications on are read, and runs read from Garmin's
+# official API go the moment Garmin pushes them (run_arrived).
+NOTIFY_EVERY = 3 * 60
+NOTIFY_SPACING = 2.0
+# The heads-up goes at the hour each person chose in You (Nov 11): the evening
+# before, or that morning. A pass that misses the hour still sends within the window.
+HEADS_UP_HOUR = {"evening": 20, "6": 6, "7": 7, "8": 8}
+HEADS_UP_WINDOW = 3
+# New runs are looked for in waking hours only: no reads on Garmin through the night.
+RUN_HOURS = (5, 23)
+# A run older than this when Daash first sees it is old news, not a notification.
+RUN_FRESH_SECONDS = 12 * 3600
+# Garmin's agreement asks for 30 days' notice of a new way of showing its API's
+# data (6.6). Until then a run read from the official API gets no notification;
+# runs read through Garmin Connect, and the plan's morning heads-up, go now.
+OFFICIAL_RUN_PUSH_FROM = os.environ.get("OFFICIAL_RUN_PUSH_FROM", "2026-12-11")
+
+
+def _as_person(user_token: str, fn: Callable[..., Any], *args: Any) -> Any:
+    """Run one of the app's reads as this person, without counting them active."""
+    session = GarminSession(
+        tokenstore=lambda t=user_token: store.load_blob(t),
+        on_refresh=lambda blob, t=user_token: store.update_blob(t, blob, in_use=False),
+    )
+    token = use_session(session)
+    official_token = official.use(user_token)
+    alone_token = server_mod.use_alone(not store.has_connect(user_token))
+    try:
+        return anyio.run(fn, *args)
+    finally:
+        server_mod.reset_alone(alone_token)
+        official.reset(official_token)
+        reset_session(token)
+
+
+def _local_now(tz: str | None, now: float) -> datetime:
+    try:
+        zone = ZoneInfo(tz) if tz else ZoneInfo("Europe/London")
+    except Exception:  # noqa: BLE001 - an unknown zone falls back to London
+        zone = ZoneInfo("Europe/London")
+    return datetime.fromtimestamp(now, zone)
+
+
+def heads_up_message(card: dict[str, Any] | None, day: str, evening: bool = False) -> dict[str, Any] | None:
+    """A day's session as a notification, or None when nothing is planned that day."""
+    if not isinstance(card, dict) or card.get("date") != day:
+        return None
+    stats = " · ".join(f"{s.get('v', '')} {s.get('u', '')}".strip() for s in card.get("stats") or [] if s.get("v"))
+    name = card.get("name") or "your session"
+    if evening:
+        return {"title": f"Tomorrow: {name}", "body": stats or "On your watch and ready to go.",
+                "url": f"/app/#/session/{day}?from=push_evening", "tag": f"session-{day}"}
+    return {"title": f"Today: {name}", "body": stats or "On your watch and ready to go.",
+            "url": "/app/#/today?from=push_morning", "tag": f"session-{day}"}
+
+
+def _heads_up_due(when: str | None, local: datetime) -> tuple[str, bool] | None:
+    """The day a heads-up is due for now, and whether it's the evening before; None outside the hours."""
+    when = when if when in HEADS_UP_HOUR else store.DEFAULT_HEADS_UP
+    start = HEADS_UP_HOUR[when]
+    if not start <= local.hour < start + HEADS_UP_WINDOW:
+        return None
+    evening = when == "evening"
+    return (local.date() + timedelta(days=1) if evening else local.date()).isoformat(), evening
+
+
+def run_message(run: dict[str, Any]) -> dict[str, Any] | None:
+    """A synced run's verdict as a notification, with Garmin's credit."""
+    if not isinstance(run, dict) or run.get("error"):
+        return None
+    name = run.get("name") or "Your run"
+    hard = run.get("easy_check")
+    on_plan = (run.get("effect") or {}).get("head") == "Counts as done"
+    title = f"{name}: harder than planned" if hard else (f"{name}: on plan \u2713" if on_plan else name)
+    line = (hard or {}).get("sub") or run.get("verdict") or ""
+    credit = run.get("credit") or "Garmin"
+    return {"title": title, "body": f"{line}\nFrom your {credit}" if line else f"From your {credit}",
+            "url": f"/app/#/run/{run.get('activity_id')}?from=push_run", "tag": f"run-{run.get('activity_id')}"}
+
+
+def _send_all(owner: str, subs: list[dict[str, Any]], message: dict[str, Any], kind: str) -> int:
+    sent = 0
+    for sub in subs:
+        result = push.send(sub, message)
+        sent += result == "sent"
+        analytics.capture("push_sent", owner, {"kind": kind, "result": result})
+    return sent
+
+
+def _latest_run(user_token: str) -> dict[str, Any] | None:
+    found = _as_person(user_token, server_mod._call, lambda c: c.get_activities(0, 3))
+    for activity in found or []:
+        key = str(((activity.get("activityType") or {}).get("typeKey")) or "")
+        if "running" in key:
+            return activity
+    return None
+
+
+# The polling pass and Garmin's push can look for the same run at once: one at a time.
+_RUN_LOCK = threading.Lock()
+
+
+def _check_run(owner: str, user_token: str, local: datetime, now: float) -> int:
+    """Tell someone's phones about their newest run, once. Returns the phones it reached."""
+    with _RUN_LOCK:
+        subs = [s for s in store.push_subs() if s["owner"] == owner]
+        latest = _latest_run(user_token) if subs else None
+        if not latest or str(latest.get("activityId")) == (subs[0].get("last_run") or ""):
+            return 0
+        first_look = subs[0].get("last_run") is None
+        store.mark_push(owner, run=str(latest.get("activityId")))
+    started = str(latest.get("startTimeGMT") or latest.get("startTimeLocal") or "")
+    try:
+        age = now - datetime.fromisoformat(started.replace(" ", "T")).replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        age = RUN_FRESH_SECONDS + 1
+    official_read = store.official_only(user_token) or not store.has_connect(user_token)
+    held = official_read and local.date().isoformat() < OFFICIAL_RUN_PUSH_FROM
+    if first_look or age > RUN_FRESH_SECONDS or held:
+        return 0
+    message = run_message(_as_person(user_token, app_routes.run_payload, int(latest["activityId"])))
+    return _send_all(owner, subs, message, "run") if message else 0
+
+
+def run_arrived(garmin_user_id: str, now: float | None = None) -> int:
+    """Garmin's official API pushed a new activity: tell their phones now, not at the next pass.
+
+    Only once Garmin's notice period is over (OFFICIAL_RUN_PUSH_FROM): the push
+    itself is Garmin's API data, so nothing acts on it before then.
+    """
+    now = now or time.time()
+    link = store.official_link_for_garmin_user(garmin_user_id)
+    if link is None:
+        return 0
+    owner = store.push_owner(link.user_token)
+    subs = [s for s in store.push_subs() if s["owner"] == owner]
+    if not subs:
+        return 0
+    local = _local_now(subs[0].get("tz"), now)
+    if local.date().isoformat() < OFFICIAL_RUN_PUSH_FROM:
+        return 0
+    user_token = store.token_for_owner(owner) or link.user_token
+    try:
+        return _check_run(owner, user_token, local, now)
+    except Exception as exc:  # noqa: BLE001 - the next pass tries again
+        log.info("Run notification on Garmin's push skipped (%s)", type(exc).__name__)
+        return 0
+
+
+def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> dict[str, int]:
+    """One pass over the phones with notifications on. Returns counts."""
+    now = now or time.time()
+    counts = {"morning": 0, "run": 0}
+    by_owner: dict[str, list[dict[str, Any]]] = {}
+    for sub in store.push_subs():
+        by_owner.setdefault(sub["owner"], []).append(sub)
+    for owner, subs in by_owner.items():
+        user_token = store.token_for_owner(owner)
+        if user_token is None:
+            continue
+        local = _local_now(subs[0].get("tz"), now)
+        try:
+            due = _heads_up_due(subs[0].get("heads_up"), local)
+            # last_morning holds the session day already told about, so changing
+            # the time never tells anyone about the same day twice.
+            if due and subs[0].get("last_morning") != due[0]:
+                day, evening = due
+                message = heads_up_message(_as_person(user_token, app_routes.heads_up_payload, day), day, evening)
+                # Marked once read: a read that fails is tried again next pass.
+                store.mark_push(owner, morning=day)
+                if message:
+                    counts["morning"] += _send_all(owner, subs, message, "evening" if evening else "morning")
+            if RUN_HOURS[0] <= local.hour < RUN_HOURS[1]:
+                counts["run"] += _check_run(owner, user_token, local, now)
+        except Exception as exc:  # noqa: BLE001 - one person's reads never stop the others
+            log.info("Notification pass skipped someone (%s)", type(exc).__name__)
+        if spacing:
+            time.sleep(spacing)
+    return counts
+
+
+# -- sign-ups on Garmin's page, watched (Nov 12) ----------------------------------
+GUARD_EVERY = 60
+
+
+def _signups_paused(why: str, failures: list[dict[str, Any]]) -> None:
+    """Garmin's page stopped letting new people through: say so, at once, where Bart reads it."""
+    when = lambda t: datetime.fromtimestamp(t, ZoneInfo("Europe/London")).strftime("%d %b %H:%M")  # noqa: E731
+    lines = "\n".join(f"- {when(f['at'])}: {f['why']}" for f in failures[-signup_guard.STREAK:])
+    analytics.capture("official_signups_auto_paused", "daash-server", {
+        "failures": len(failures), "last_why": why, "switch": OFFICIAL_SIGNUPS_SWITCH})
+    support_mail.send_alert(
+        "Daash: sign-ups on Garmin's page switched off",
+        f"The last {signup_guard.STREAK} new sign-ups sent to Garmin's page didn't connect:\n\n{lines}\n\n"
+        "New sign-ups get the password form again from now on, as with "
+        "GARMIN_OFFICIAL_SIGNUPS=paused. Accounts already linked to Garmin keep working.\n\n"
+        "To try Garmin's page again, set GARMIN_OFFICIAL_SIGNUPS to a new value starting "
+        "\"open\" (for example open-YYYY-MM-DD) in deploy-hosted.yml and deploy.\n")
+
+
+def _guard_forever() -> None:
+    while True:
+        try:
+            if OFFICIAL_SIGNUPS_OPEN:
+                signup_guard.sweep(OFFICIAL_SIGNUPS_SWITCH)
+        except Exception:  # noqa: BLE001
+            log.exception("sign-up guard pass failed")
+        time.sleep(GUARD_EVERY)
+
+
+def _notify_forever() -> None:
+    while True:
+        try:
+            counts = notify_once()
+            if counts["morning"] or counts["run"]:
+                log.info("Notifications: %(morning)d morning, %(run)d after a run", counts)
+        except Exception:  # noqa: BLE001
+            log.exception("Notification pass failed")
+        time.sleep(NOTIFY_EVERY)
 
 
 # The hourly test sign-in, run by the server on its own clock. It ran from
@@ -1594,7 +1980,7 @@ def _try_again(flow: str) -> str:
 
 def _fallback_ok(flow: str) -> bool:
     """Whether a refused password sign-in can be offered Garmin's own page instead."""
-    return (bool(flow) and OAUTH_ENABLED and official.configured() and OFFICIAL_SIGNUPS_OPEN
+    return (bool(flow) and OAUTH_ENABLED and official.configured() and _official_open()
             and OAUTH_PROVIDER.pending(flow) is not None)
 
 
@@ -1631,7 +2017,7 @@ def _garmin_instead(flow: str, why: str = "blocked") -> str:
     return (
         f"<div class=instead>{lead}"
         "If you already use Daash, enter the same email afterwards and you keep everything."
-        f'<a class=button href="/official/signup?flow={quote(flow, safe="")}&amp;via={why}">Continue with Garmin</a></div>'
+        f'<a class=button href="/official/signup?flow={quote(flow, safe="")}&amp;via={why}">Continue with Garmin Connect™</a></div>'
     )
 
 
@@ -1650,7 +2036,7 @@ async def connect_form(request: Request) -> Response:
     if flow and OAUTH_ENABLED and OAUTH_PROVIDER.password_only(flow):
         route, drawn = "password", False  # the password link: whatever the split or cookie says
     from_directory = bool(flow) and OAUTH_ENABLED and OAUTH_PROVIDER.listed(flow) and official.configured()
-    if from_directory and not OFFICIAL_SIGNUPS_OPEN:
+    if from_directory and not _official_open():
         # The directory address is Garmin's own sign-in only, so while Garmin's
         # cap is on it can't offer a password form: it says when to come back.
         analytics.capture("sign_in_shown", None, _with_source(request, {"via": "oauth", "route": "paused", "listed": True}))
@@ -1661,8 +2047,8 @@ async def connect_form(request: Request) -> Response:
             <p>Garmin is reviewing Daash, and has paused new connections to it until the review is done.
             Accounts already connected keep working. Try again in a few days.</p>
             <p class=fine>Already connected to Daash through Garmin?</p>
-            <a class=button href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin</a>""")
-    listed = from_directory and OFFICIAL_SIGNUPS_OPEN
+            <a class=button href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin Connect™</a>""")
+    listed = from_directory and _official_open()
     official_route = bool(flow) and OAUTH_ENABLED and (listed or route == "official")
     # Counted, not attributed: there is no one to attribute it to until they
     # sign in. Shown against submitted and connected says who leaves here.
@@ -1691,17 +2077,16 @@ async def connect_form(request: Request) -> Response:
 def _signup_route(request: Request) -> tuple[str, bool]:
     """"official" or "password": which sign-in this browser gets from the connector,
     and whether it was drawn just now for the split (so the cookie keeps it)."""
-    if not official.configured() or not OFFICIAL_SIGNUPS_OPEN or request.query_params.get("usual") == "1":
+    if not official.configured() or not _official_open() or request.query_params.get("usual") == "1":
         return "password", False
     asked = request.query_params.get("route", "")
     if asked in ROUTES:
         return asked, False
-    if _device(request).get("device") == "phone":
+    if not PHONES_ON_GARMIN_PAGE and _device(request).get("device") == "phone":
         # Oct 26: on phones, Garmin's page approved Daash but Claude never
         # collected the sign-in (0 of 5 tries, while computers and tablets
         # went through first time), and the same people got in at once with
-        # a password. Phones get the password until that's fixed, whatever
-        # the split drew for them before.
+        # a password. GARMIN_PHONES_OFFICIAL=0 puts phones back on the password.
         return "password", False
     chosen = request.cookies.get(ROUTE_COOKIE, "")
     if chosen in ROUTES:
@@ -1725,10 +2110,10 @@ def _garmin_intro(flow: str, usual: bool = True) -> Response:
         Garmin asks you to approve that on its own page.</p>
         <p class=note>Garmin shares what your watch syncs from now on, so last night&rsquo;s
         sleep and earlier runs won&rsquo;t show. Each sync after this adds to it.</p>
-        <p class=secure>{_LOCK}<span>You sign in on Garmin&rsquo;s site. Daash never sees your password.</span></p>
+        <p class=secure>{_LOCK}<span>You sign in on Garmin Connect™. Daash never sees your password.</span></p>
         <p class=note>Garmin&rsquo;s page shows a grey note saying it hasn&rsquo;t reviewed
         Daash yet. That&rsquo;s normal for new apps.</p>
-        <a class=button href="/official/signup?flow={quote(flow, safe='')}">Continue with Garmin</a>
+        <a class=button href="/official/signup?flow={quote(flow, safe='')}">Continue with Garmin Connect™</a>
         {_usual_way(flow) if usual else ""}
         <p class=note style="margin-top:20px;text-align:center"><a href="{PRIVACY_URL}"
         target=_blank rel=noopener>What&rsquo;s stored, and what isn&rsquo;t</a></p>
@@ -1740,7 +2125,7 @@ def _password_form(flow: str) -> Response:
     return page(
         "Sign in to Garmin",
         f"""
-        <h1>Sign in to Garmin</h1>
+        <h1>Sign in to Garmin Connect™</h1>
         <p class=secure>{_LOCK}<span>These go straight to Garmin. Your password is never stored.</span></p>
         <form method=post action=/connect data-wait="Connecting to Garmin&hellip;">
           <input type=hidden name=flow value="{flow}">
@@ -1936,6 +2321,11 @@ def _signin_error(
     )
 
 
+# Garmin's developer agreement (15.10) asks for an AI transparency statement;
+# the consent page links to it before anything is shared (Nov 10).
+AI_STATEMENT_URL = "https://garmin.daash.run/privacy/#ai"
+
+
 def _consent_page(
     consent_token: str, parked: dict[str, Any], *, ask_email: bool = False, garmin: bool = False,
     email: str = "", email_error: str = "", phone: bool = False,
@@ -2012,6 +2402,9 @@ def _consent_page(
         <h1>Connect Daash to {app}?</h1>
         <p class=secure>{_TICK if garmin else _LOCK}<span>{opening} {app} will be able
         to read your Garmin data and add or change workouts on your watch.</span></p>
+        <p class=note>{app} is an AI assistant, made by {"Anthropic" if app == "Claude" else "OpenAI"}. It reads
+        your Garmin data only to answer what you ask it, and Daash never uses your data to train AI.
+        <a href="{AI_STATEMENT_URL}" target=_blank rel=noopener>AI Transparency Statement</a></p>
         <p class=note>Access goes back to {html.escape(host)} only.</p>
         {phone_note}
         {form}
@@ -2034,6 +2427,8 @@ def _consent_page(
         <p><strong>{html.escape(str(name))}</strong> is asking to read your Garmin
         data and write workouts to your watch.</p>
         {warning}
+        <p class=note>If it is an AI assistant, it will read your Garmin data to answer you. Daash never
+        uses your data to train AI. <a href="{AI_STATEMENT_URL}" target=_blank rel=noopener>AI Transparency Statement</a></p>
         <p class=note>It will be sent to:</p>
         <div class=url>{html.escape(destination)}</div>
         {form}
@@ -2393,6 +2788,8 @@ async def email_ask(request: Request) -> Response:
     week = query.get("w", "")
     device = _device(request).get("device")
     if fingerprint and hmac.compare_digest(signature, store.unsubscribe_signature(fingerprint)):
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week):
+            store.mark_weekly_clicked(fingerprint, week)
         analytics.capture("weekly_email_clicked", fingerprint, {
             "app": app, "question": kind, "week": week if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week) else None,
             "device": device, "$process_person_profile": False})
@@ -2575,8 +2972,10 @@ async def unsubscribe(request: Request) -> Response:
 # while the server had long since answered). So each card answer carries a
 # link the card calls once it has drawn, or failed to: a card sent and never
 # reported is one that didn't appear.
-CARD_TOOLS = {"get_plan", "get_progress", "create_plan", "get_session"}
+CARD_TOOLS = {"get_plan", "get_progress", "create_plan", "get_session", "get_activity_details"}
 _CARD_SEEN_LONGEST = 4000
+# The card buttons whose taps are counted.
+CARD_TAPS = {"open_in_daash", "share_run"}
 
 
 def card_signature(email_hash: str, view: str) -> str:
@@ -2608,6 +3007,17 @@ async def card_seen(request: Request) -> Response:
     except ValueError:
         said = {}
     said = said if isinstance(said, dict) else {}
+    # A button tapped on the card (Open in Daash), on the same link: counted
+    # apart from the card being drawn, and as often as it's tapped.
+    if said.get("tap") in CARD_TAPS:
+        analytics.capture("card_tapped", fingerprint, drop_empty({
+            "view": view,
+            "card": _clip(said.get("card"), 20),
+            "tap": said["tap"],
+            "opened": said.get("opened") is True,
+            "app": _clip(said.get("host"), 120),
+        }))
+        return Response(status_code=204)
     ms = said.get("ms")
     analytics.capture("card_shown", fingerprint, drop_empty({
         "view": view,
@@ -2671,6 +3081,8 @@ async def forget_person(token: str) -> bool:
         # Disconnect deletes everything, crews included.
         crews.forget(crews.member_key(token, gone.email_hash))
         store.forget_race_prompts(crews.member_key(token, gone.email_hash))
+        # And the phones it sent notifications to.
+        store.forget_push(token, gone.email_hash)
         # And every sign-in to it: Claude, ChatGPT and the app alike.
         store.delete_tokens_for_subject(token)
     return removed
@@ -3019,7 +3431,7 @@ async def official_signup(request: Request) -> Response:
     flow = request.query_params.get("flow", "")
     if not (OAUTH_ENABLED and official.configured()) or OAUTH_PROVIDER.pending(flow) is None:
         return _consent_expired()
-    if not OFFICIAL_SIGNUPS_OPEN and request.query_params.get("again") != "1":
+    if not _official_open() and request.query_params.get("again") != "1":
         # A Continue with Garmin button from before the pause, or a bookmark.
         analytics.capture("garmin_sign_in_paused", None, _with_source(request, {}))
         return page("Connect with your password", f"""<h1>Connect with your Garmin password</h1>
@@ -3028,9 +3440,12 @@ async def official_signup(request: Request) -> Response:
             keeps the password.</p>
             <a class=button href="{_connect_url(flow)}&amp;usual=1">Continue with your password</a>
             <p class=fine>Connected on Garmin&rsquo;s page before?
-            <a href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin</a></p>""")
+            <a href="/official/signup?flow={quote(flow, safe='')}&amp;again=1">Continue with Garmin Connect™</a></p>""")
     via = request.query_params.get("via", "")
     analytics.capture("garmin_sign_in_started", None, _with_source(request, {"via": via} if via in GARMIN_INSTEAD_WHY else {}))
+    if request.query_params.get("again") != "1":
+        # A new sign-up: watched until it comes back (signup_guard).
+        await anyio.to_thread.run_sync(signup_guard.started, _flow_mark(flow), OFFICIAL_SIGNUPS_SWITCH)
     response = RedirectResponse(official.signup_url(flow), status_code=302)
     response.set_cookie(FLOW_COOKIE, _flow_mark(flow), max_age=1800, httponly=True,
                         secure=request.url.scheme == "https", samesite="lax")
@@ -3039,20 +3454,27 @@ async def official_signup(request: Request) -> Response:
 
 async def _signup_callback(request: Request, code: str, state: str, flow: str) -> Response:
     """Back from Garmin's page during a sign-up: make or find the account, then the Allow page."""
-    retry = f'<a class=button href="/official/signup?flow={quote(flow, safe="")}">Try again with Garmin</a>'
+    retry = f'<a class=button href="/official/signup?flow={quote(flow, safe="")}">Try again with Garmin Connect™</a>'
     if not code:
         analytics.capture("garmin_declined", None, _with_source(request, {}))
+        await anyio.to_thread.run_sync(lambda: signup_guard.finished(
+            _flow_mark(flow), False, OFFICIAL_SIGNUPS_SWITCH, "sent back from Garmin's page without approval"))
         usual = "" if OAUTH_PROVIDER.listed(flow) else _usual_way(flow)
         return page("Not connected", f"""<h1>Not connected</h1><p>Garmin didn't share access, so nothing
                     changed and nothing was kept.</p>{retry}{usual}""")
     try:
         approval = await anyio.to_thread.run_sync(official.finish_signup, code, state)
     except official.OfficialError as exc:
+        await anyio.to_thread.run_sync(lambda: signup_guard.finished(
+            _flow_mark(flow), False, OFFICIAL_SIGNUPS_SWITCH, "approved, but finishing with Garmin failed"))
         return page("Not connected", f"<div class=err>{html.escape(str(exc))}</div>{retry}")
     except (OSError, ValueError, KeyError) as exc:
         log.warning("official sign-up failed: %s", type(exc).__name__)
+        await anyio.to_thread.run_sync(lambda: signup_guard.finished(
+            _flow_mark(flow), False, OFFICIAL_SIGNUPS_SWITCH, "approved, but Garmin couldn't be reached to finish"))
         return page("Not connected", "<div class=err>Garmin couldn't be reached to finish connecting. "
                     f"Try again in a minute.</div>{retry}")
+    await anyio.to_thread.run_sync(lambda: signup_guard.finished(_flow_mark(flow), True, OFFICIAL_SIGNUPS_SWITCH))
     if approval.new:
         # Everything is new to someone just connecting.
         store.claim_news(approval.user_token, NEWS_VERSION)
@@ -3130,9 +3552,14 @@ _CREW_PAGE_HEADERS = {
     ),
 }
 CREW_PAGE_PROMO = {
-    "text": "Got a Garmin? Daash fills in your runs for you.",
-    "link": "Try Daash",
+    "kicker": "Daash",
+    "heading": "Got a Garmin? Let Daash fill in your runs.",
+    "text": ("Daash is a free running coach in Claude or ChatGPT. It plans your training, puts every "
+             "session on your watch, and adds your easy and long runs to the crew for you."),
+    "link": "Get Daash, free",
     "url": "https://daash.run/?utm_source=crew-page&utm_medium=link&utm_campaign=crews",
+    "more": "How crews work",
+    "more_url": "https://daash.run/crews?utm_source=crew-page&utm_medium=link&utm_campaign=crews",
 }
 
 
@@ -3794,6 +4221,9 @@ def main() -> None:
     refuse_wrong_key()
 
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
+    threading.Thread(target=_notify_forever, name="notifications", daemon=True).start()
+    signup_guard.on_pause = _signups_paused
+    threading.Thread(target=_guard_forever, name="signup-guard", daemon=True).start()
     if WEEKLY_EMAIL and support_mail.can_send():
         threading.Thread(target=_weekly_email_forever, name="weekly-email", daemon=True).start()
         official.on_activities = _activities_arrived

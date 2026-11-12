@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run</title>
+<style>
+  /* The run card get_activity_details draws inside the chat (Nov 11, the
+     handoff's Run Card, variant d): the run's date and what it was on the
+     plan, its numbers, the laps as a chart with the work in colour and the
+     easy and recovery laps grey, each rep's pace and heart rate, a verdict,
+     then Share and the week. Colour means intensity, never sport. The host
+     says light or dark. */
+  :root {
+    color-scheme: light;
+    --card: #FFFFFF; --text: #1F1E1B; --muted: #6B6A64; --faint: #73726C; --border: #E6E4DD; --line: #EEECE6;
+    --subtle: #F0EEE8; --btn-border: #D9D7CF; --red: #E0312A; --red-text: #C8261F; --grey-bar: #E0DED7; --on-bar: #1F1E1B; --on-long: #FFFFFF;
+    --easy: #3F8A47; --long: #2F68B0; --hard: #C27A12; --race: #E0312A; --strength: #7E57C2;
+    --amber-bg: #FBEEDF; --amber-text: #8F5A0B;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --card: #30302E; --text: #F4F3EE; --muted: #A6A59F; --faint: #9A9993; --border: #3D3D3A; --line: #3D3D3A;
+      --subtle: #3A3936; --btn-border: #4A4844; --red: #E8322B; --red-text: #FF6A61; --grey-bar: #4A4844; --on-bar: #1F1E1B; --on-long: #1F1E1B;
+      --easy: #8CC08F; --long: #74A3DB; --hard: #E3B23F; --race: #E8322B; --strength: #A98BE0;
+      --amber-bg: rgba(227,178,63,.14); --amber-text: #E3B23F;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --card: #30302E; --text: #F4F3EE; --muted: #A6A59F; --faint: #9A9993; --border: #3D3D3A; --line: #3D3D3A;
+    --subtle: #3A3936; --btn-border: #4A4844; --red: #E8322B; --red-text: #FF6A61; --grey-bar: #4A4844; --on-bar: #1F1E1B; --on-long: #1F1E1B;
+    --easy: #8CC08F; --long: #74A3DB; --hard: #E3B23F; --race: #E8322B; --strength: #A98BE0;
+    --amber-bg: rgba(227,178,63,.14); --amber-text: #E3B23F;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body { color: var(--text); font: 14px/1.4 Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  .mono { font-family: "Geist Mono", ui-monospace, Menlo, monospace; }
+
+  .card { width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
+  .empty { padding: 24px 18px; color: var(--muted); }
+  .brand { padding: 14px 18px 0; display: flex; align-items: center; gap: 8px; }
+  .wordmark { font-weight: 800; font-style: italic; letter-spacing: -0.03em; color: var(--red-text); font-size: 16px; }
+  .kicker { font-size: 11px; letter-spacing: 0.14em; color: var(--muted); }
+  .date { margin-left: auto; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .body { padding: 12px 18px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .head { display: flex; flex-direction: column; gap: 4px; }
+  .type { font-size: 13px; color: var(--muted); }
+  .type b { font-weight: 600; }
+  .title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; overflow-wrap: anywhere; }
+  .credit { font-size: 13px; color: var(--muted); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stats.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-v { font-size: 19px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .stat-l { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  .chart { position: relative; display: flex; align-items: flex-end; gap: 4px; height: 150px; padding-top: 24px; }
+  .chart .bar { position: relative; display: flex; align-items: flex-end; justify-content: center; border-radius: 6px; min-width: 5px;
+    background: var(--grey-bar); }
+  .chart .bar em { position: absolute; top: -21px; left: 50%; transform: translateX(-50%); font-size: 13.5px; font-style: normal;
+    font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .chart .bar.small em { font-size: 11.5px; top: -18px; }
+  .chart .bar.stride { border-radius: 3px; }
+  .chart .bar span { font-size: 11.5px; font-weight: 600; color: var(--on-bar); padding-bottom: 6px; white-space: nowrap; }
+  .chart i { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--faint); pointer-events: none; }
+  .chart i b { position: absolute; left: 0; top: -16px; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .chart i b.mono { font-family: "Geist Mono", ui-monospace, Menlo, monospace; }
+  .ends { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--muted); margin-top: -6px; }
+
+  .reps { display: flex; flex-direction: column; }
+  .reps-h { display: grid; grid-template-columns: 1fr 86px 92px; font-size: 10.5px; letter-spacing: 0.08em; color: var(--muted);
+    text-transform: uppercase; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .reps-h span:not(:first-child) { text-align: right; }
+  .rep { display: grid; grid-template-columns: 1fr 86px 92px; align-items: center; min-height: 44px; border-bottom: 1px solid var(--line); }
+  .rep:last-child { border-bottom: 0; }
+  .rep-n { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .rep-n i { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
+  .rep-n b { font-weight: 600; font-size: 15px; }
+  .rep-n small, .rep-v small { color: var(--muted); font-size: 12.5px; }
+  .rep-v { text-align: right; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rep-v small { font-weight: 400; margin-left: 2px; }
+  .line { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); }
+  .line i { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
+
+  .check { background: var(--amber-bg); color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
+  .check b { color: var(--amber-text); }
+  .verdict { margin: 0; font-size: 15px; line-height: 1.45; }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .act { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--btn-border); background: transparent;
+    font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; }
+  .act:hover { background: var(--subtle); }
+  .see { align-self: flex-start; border: 0; background: none; font-weight: 600; padding: 4px 0; color: var(--red-text); }
+  .sent { font-size: 12.5px; color: var(--muted); }
+  .diag { margin: 12px 0; padding: 12px 14px; border-radius: 10px; background: #FFF3CD; color: #3D2C00;
+    border: 1px solid #E8C96A; font: 14px/1.45 system-ui, -apple-system, Roboto, sans-serif; }
+  .diag[hidden] { display: none; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="card" id="app"><div class="empty">Loading the run&hellip;</div></div>
+<div class="diag" id="diag" hidden></div>
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------- bridge
+  // The host speaks JSON-RPC over postMessage; only what this card needs.
+  var host = window.parent !== window ? window.parent : null;
+  var nextId = 1, pending = {}, hostContext = {};
+  function send(msg) { if (host) host.postMessage(Object.assign({ jsonrpc: "2.0" }, msg), "*"); }
+  function request(method, params) {
+    var id = nextId++;
+    return new Promise(function (resolve, reject) {
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ id: id, method: method, params: params || {} });
+      setTimeout(function () { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 20000);
+    });
+  }
+  function notify(method, params) { send({ method: method, params: params || {} }); }
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.jsonrpc !== "2.0") return;
+    if (data.id != null && !data.method && pending[data.id]) {
+      var p = pending[data.id]; delete pending[data.id];
+      data.error ? p.reject(new Error(data.error.message || "error")) : p.resolve(data.result);
+      return;
+    }
+    switch (data.method) {
+      case "ui/notifications/tool-result": onResult(data.params); break;
+      case "ui/notifications/host-context-changed": applyContext(data.params || {}); break;
+      case "ui/notifications/tool-cancelled": fail("The run could not be loaded."); break;
+      case "ui/resource-teardown": case "ping": if (data.id != null) send({ id: data.id, result: {} }); break;
+    }
+  });
+  function applyContext(ctx) {
+    Object.assign(hostContext, ctx);
+    if (ctx.theme) document.documentElement.setAttribute("data-theme", ctx.theme);
+    var fonts = ctx.styles && ctx.styles.css && ctx.styles.css.fonts;
+    if (fonts && !document.getElementById("host-fonts")) {
+      var st = document.createElement("style"); st.id = "host-fonts"; st.textContent = fonts; document.head.appendChild(st);
+    }
+    reportSize();
+  }
+  // The card tells the host its natural height, so the frame fits it.
+  var sent = { w: 0, h: 0 }, measuring = false, root = document.documentElement;
+  function reportSize() {
+    if (measuring) return;
+    measuring = true;
+    requestAnimationFrame(function () {
+      measuring = false;
+      var was = root.style.height; root.style.height = "max-content";
+      var h = Math.ceil(root.getBoundingClientRect().height); root.style.height = was;
+      var w = Math.ceil(window.innerWidth);
+      if (host && h && (w !== sent.w || h !== sent.h)) { sent = { w: w, h: h }; notify("ui/notifications/size-changed", { width: w, height: h }); }
+    });
+  }
+  if (window.ResizeObserver) { var ro = new ResizeObserver(reportSize); ro.observe(root); ro.observe(document.body); }
+
+  // ---------------------------------------------------------------- helpers
+  var DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // The planned session's type, as the plan card names and colours it.
+  var TYPES = {
+    easy: ["Easy", "easy"], recovery: ["Recovery", "easy"], long: ["Long", "long"], threshold: ["Quality", "hard"],
+    sub: ["Quality", "hard"], tempo: ["Quality", "hard"], intervals: ["Quality", "hard"], race: ["Race", "race"],
+  };
+  var SPORTS = { running: "RUN", trail_running: "RUN", treadmill_running: "RUN", track_running: "RUN", cycling: "RIDE",
+    road_biking: "RIDE", indoor_cycling: "RIDE", virtual_ride: "RIDE", mountain_biking: "RIDE", lap_swimming: "SWIM",
+    open_water_swimming: "SWIM", strength_training: "STRENGTH", walking: "WALK", hiking: "HIKE" };
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "class") node.className = attrs[k];
+      else if (k === "text") node.textContent = attrs[k];
+      else if (k === "onclick") node.addEventListener("click", attrs[k]);
+      else if (k === "style") node.setAttribute("style", attrs[k]);
+      else node.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) { if (c == null || c === false) return; node.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return node;
+  }
+  function svg(path, size) {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("width", size); s.setAttribute("height", size); s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "2");
+    s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true");
+    s.innerHTML = path; return s;
+  }
+  var SHARE = '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>';
+  var ARROW = '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>';
+  function num(n) { if (n == null) return ""; var r = Math.round(n * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); }
+  // A Garmin set to miles (the answer's "units"): distances and paces in
+  // miles, from the km the answer carries, as the other cards do.
+  var MI = false, KM_PER_MI = 1.609344;
+  function fmtKm(n) { return num(MI ? n / KM_PER_MI : n); }
+  function KMW() { return MI ? "mi" : "km"; }
+  function units(t) {
+    if (!MI || !t) return t;
+    return String(t)
+      .replace(/(\d+):(\d{2})(?=[^/]*\/\s?km)/g, function (_, m, sec) {
+        var v = Math.round((+m * 60 + +sec) * KM_PER_MI); return Math.floor(v / 60) + ":" + String(v % 60).padStart(2, "0"); })
+      .replace(/\/\s?km\b/g, "/mi");
+  }
+  function bare(pace) { return units(pace || "").replace(/\s*\/(km|mi)$/, ""); }
+  function paceSecs(text) { var m = /(\d+):(\d+)/.exec(text || ""); return m ? +m[1] * 60 + +m[2] : null; }
+  // "1h 02m 03s", "4m 10s" or "45s" in seconds.
+  function clockSecs(text) {
+    var m = /^(?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?$/.exec(String(text || "").trim());
+    return m && (m[1] || m[2] || m[3]) ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : null;
+  }
+  function clock(secs) {
+    if (secs == null) return "";
+    secs = Math.round(secs);
+    var h = Math.floor(secs / 3600), m = Math.floor(secs % 3600 / 60), s = secs % 60;
+    return h ? h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") : m + ":" + String(s).padStart(2, "0");
+  }
+  function perKm(secs, km) { if (!secs || !km) return null; var v = Math.round(secs / km); return Math.floor(v / 60) + ":" + String(v % 60).padStart(2, "0") + " /km"; }
+  function dateLine(start) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(start || ""));
+    if (!m) return "";
+    var d = new Date(+m[1], +m[2] - 1, +m[3]);
+    return DAYS[(d.getDay() + 6) % 7] + " " + d.getDate() + " " + MONTHS[d.getMonth()] + " · " + m[4] + ":" + m[5];
+  }
+
+  // ---------------------------------------------------------------- the laps
+  // Which laps were the work: a structured workout says so lap by lap; a run
+  // without one is read from its paces, the fast ones being the work when the
+  // laps split clearly into fast and slow. The same rule the plan card uses.
+  function workLaps(splits, secs, lo, hi) {
+    var said = splits.some(function (x) { return x.intensity; });
+    if (said) {
+      var reps = splits.some(function (x) { return x.intensity === "interval"; });
+      return splits.map(function (x) { return reps ? x.intensity === "interval" : !x.intensity; });
+    }
+    if (hi - lo < 40) return splits.map(function () { return true; });
+    var mid = (lo + hi) / 2;
+    return secs.map(function (v) { return v != null && v < mid; });
+  }
+  // Laps back to back of the same kind as one: steady stretches into one grey
+  // block, and work laps into one rep (a watch lapping every km splits an
+  // 8-minute rep in two).
+  function join(list) {
+    var t = 0, d = 0, hrT = 0, hrW = 0;
+    list.forEach(function (x) {
+      var s = clockSecs(x.duration) || 0; t += s; d += x.distance_km || 0;
+      if (x.avg_hr) { hrT += x.avg_hr * s; hrW += s; }
+    });
+    return { duration_s: t, distance_km: Math.round(d * 100) / 100, pace_per_km: perKm(t, d) || list[0].pace_per_km,
+      avg_hr: hrW ? Math.round(hrT / hrW) : list[0].avg_hr, intensity: list[0].intensity, laps: list.length };
+  }
+  var STRIDE_S = 45;
+  function laps(p) {
+    var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || [])
+      .filter(function (x) { return x && x.pace_per_km; });
+    if (splits.length < 2) return null;
+    // Strides (Nov 11): two or more short quick laps after a run of a km or
+    // more. They're an add-on: the run's km are the bars, the strides thin
+    // bars of their own at the end, never reps.
+    var dur = function (x) { return clockSecs(x.duration) || 0; };
+    var resting = function (x) { return x.intensity === "recovery" || x.intensity === "rest"; };
+    var strides = splits.filter(function (x) { return !resting(x) && dur(x) && dur(x) <= STRIDE_S; });
+    var steady = splits.filter(function (x) { return !resting(x) && dur(x) > STRIDE_S; });
+    var steadyKm = steady.reduce(function (t, x) { return t + (x.distance_km || 0); }, 0);
+    if (strides.length >= 2 && steadyKm >= 1) {
+      return { mixed: false, strides: strides, rows: [],
+        bars: steady.map(function (x) { return { lap: x, secs: paceSecs(x.pace_per_km), work: true }; }) };
+    }
+    var secs = splits.map(function (x) { return paceSecs(x.pace_per_km); });
+    var known = secs.filter(function (v) { return v != null; });
+    var lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
+    var work = workLaps(splits, secs, lo, hi);
+    var reps = work.filter(Boolean).length, mixed = reps > 0 && reps < splits.length;
+    if (!mixed) {
+      return { mixed: false, bars: splits.map(function (x, i) { return { lap: x, secs: secs[i], work: true }; }), rows: [] };
+    }
+    // Contiguous stretches of the same kind.
+    var runs = [];
+    splits.forEach(function (x, i) {
+      var last = runs[runs.length - 1];
+      if (last && last.work === work[i]) last.list.push(x); else runs.push({ work: work[i], list: [x] });
+    });
+    var groups = runs.filter(function (r) { return r.work; }).length;
+    var bars = runs.map(function (r) { var j = join(r.list); return { lap: j, secs: paceSecs(j.pace_per_km), work: r.work }; });
+    // The reps as rows: each rep when there are several; the km of one long
+    // stretch of work (a marathon-pace finish) when there's one.
+    var rows = groups > 1 ? bars.filter(function (b) { return b.work; }).map(function (b) { return b.lap; })
+      : runs.filter(function (r) { return r.work; })[0].list;
+    return { mixed: true, groups: groups, bars: bars, rows: rows };
+  }
+
+  function chart(p, colour) {
+    var L = laps(p);
+    if (!L) return null;
+    var bars = L.bars, secsAll = bars.map(function (b) { return b.secs; }).concat((L.strides || []).map(function (x) { return paceSecs(x.pace_per_km); }))
+      .filter(function (v) { return v != null; });
+    var lo = Math.min.apply(null, secsAll), hi = Math.max.apply(null, secsAll);
+    var top = lo - Math.max(10, (hi - lo) * 0.1), bottom = hi + Math.max(25, (hi - lo) * 0.6);
+    var height = function (v) { return v == null ? 12 : 14 + 78 * (bottom - v) / (bottom - top); };
+    var sum = p.summary || {};
+    var labelAll = !L.mixed && bars.length <= 10, small = bars.length > 7;
+    var kids = bars.map(function (b) {
+      var x = b.lap, wide = (x.duration_s || clockSecs(x.duration)) || (x.distance_km ? x.distance_km * (b.secs || 300) : 0) || 1;
+      var showPace = (L.mixed ? b.work : labelAll);
+      var bar = el("div", { class: "bar" + (small ? " small" : ""), style: "flex-grow:" + Math.round(wide) + ";height:" + height(b.secs).toFixed(1) + "%;" +
+          (b.work ? "background:" + colour : ""), title: units(x.pace_per_km) + (x.avg_hr ? " · " + x.avg_hr + " bpm" : "") },
+        [showPace ? el("em", { style: "color:" + colour, text: bare(x.pace_per_km) }) : null,
+         L.mixed && b.work && x.distance_km && wide > 300 ? el("span", { style: /long|race/.test(colour) ? "color:var(--on-long)" : "", text: fmtKm(x.distance_km) + " " + KMW() }) : null]);
+      return bar;
+    });
+    if (L.strides) {
+      kids.push(el("div", { style: "flex:0 0 6px" }));
+      L.strides.forEach(function (x) {
+        var v = paceSecs(x.pace_per_km);
+        kids.push(el("div", { class: "bar stride", style: "flex:0 0 5px;height:" + height(v).toFixed(1) + "%;background:var(--hard)",
+          title: "Stride \u00b7 " + units(x.pace_per_km) + (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "") }));
+      });
+    }
+    var avg = paceSecs(sum.pace_per_km);
+    if (L.mixed && avg != null && avg > top && avg < bottom) {
+      // On the bars' scale: their heights are shares of the chart less its 24px label room, not of the whole box.
+      kids.push(el("i", { style: "bottom:calc((100% - 24px) * " + (height(avg) / 100).toFixed(3) + ")" }, [el("b", { class: "mono", text: "avg " + bare(sum.pace_per_km) })]));
+    }
+    var box = el("div", { class: "chart", role: "img", "aria-label": bars.length + " laps" }, kids);
+    // Under the chart: the grey stretches named, or the first and last km.
+    var ends;
+    if (L.mixed) {
+      var first = bars[0], last = bars[bars.length - 1];
+      var name = function (b, word) { return word + " " + fmtKm(b.lap.distance_km) + " " + KMW() + " · " + bare(b.lap.pace_per_km); };
+      var left = !first.work ? name(first, L.groups > 1 ? "Warm up" : "Steady") : null;
+      var right = !last.work && bars.length > 1 && L.groups > 1 ? name(last, "Cool down") : null;
+      ends = left || right ? el("div", { class: "ends" }, [el("span", { text: left || "" }), el("span", { text: right || "" })]) : null;
+    } else {
+      ends = el("div", { class: "ends" }, [el("span", { text: "Km 1" }),
+        el("span", { text: L.strides ? "Km " + bars.length + " \u00b7 " + L.strides.length + " strides" : "Km " + bars.length })]);
+    }
+    return { box: box, ends: ends, L: L };
+  }
+
+  function repsTable(L, colour, label) {
+    var rows = L.rows.slice(0, 16);
+    return el("div", { class: "reps" }, [
+      el("div", { class: "reps-h mono" }, [el("span", { text: label }), el("span", { text: "Pace" }), el("span", { text: "Heart rate" })]),
+    ].concat(rows.map(function (x, k) {
+      var kmName = x.km != null ? "Km " + x.km : x.split != null ? "Lap " + x.split : "Km " + (k + 1);
+      return el("div", { class: "rep" }, [
+        el("span", { class: "rep-n" }, [el("i", { style: "background:" + colour }), el("b", { text: L.groups > 1 ? "Rep " + (k + 1) : kmName }),
+          x.distance_km ? el("small", { text: fmtKm(x.distance_km) + " " + KMW() }) : null]),
+        el("span", { class: "rep-v" }, [bare(x.pace_per_km), el("small", { text: "/" + KMW() })]),
+        el("span", { class: "rep-v" }, x.avg_hr ? [String(x.avg_hr), el("small", { text: "bpm" })] : ["–"]),
+      ]);
+    })));
+  }
+
+  function workLine(x, colour, bars) {
+    var last = bars[bars.length - 1].work;
+    var text = (last ? "Last " : "") + (x.distance_km ? fmtKm(x.distance_km) + " " + KMW() : "") + " at " + units(x.pace_per_km) +
+      (x.avg_hr ? " \u00b7 " + x.avg_hr + " bpm" : "");
+    return el("div", { class: "line" }, [el("i", { style: "background:" + colour }), text.charAt(0).toUpperCase() + text.slice(1)]);
+  }
+  function stridesLine(list) {
+    var secs = list.map(function (x) { return clockSecs(x.duration) || 0; });
+    var each = Math.round(secs.reduce(function (a, b) { return a + b; }, 0) / list.length);
+    var fast = list.reduce(function (a, x) { var v = paceSecs(x.pace_per_km); return v != null && (a == null || v < a.v) ? { v: v, x: x } : a; }, null);
+    var text = list.length + " strides of " + each + " s" + (fast ? " \u00b7 fastest " + units(fast.x.pace_per_km) : "");
+    return el("div", { class: "line" }, [el("i", { style: "background:var(--hard)" }), text]);
+  }
+  function splitLine(L, colour, hr) {
+    var paces = L.bars.map(function (b) { return b.lap.pace_per_km; });
+    var hrs = L.bars.map(function (b) { return b.lap.avg_hr; }).filter(Boolean);
+    var first = bare(paces[0]), lastPace = bare(paces[paces.length - 1]);
+    var text = (first === lastPace ? "Km splits even at " + first : "Km splits " + first + " to " + lastPace) +
+      (hrs.length > 1 ? " · heart rate " + Math.min.apply(null, hrs) + " to " + Math.max.apply(null, hrs) : hr ? " · " + hr + " bpm avg" : "");
+    return el("div", { class: "line" }, [el("i", { style: "background:" + colour }), text]);
+  }
+
+  // ---------------------------------------------------------------- drawing
+  function render(p) {
+    MI = !!(p && p.units === "mi");
+    var app = document.getElementById("app");
+    app.textContent = "";
+    if (!p || p.error) { app.appendChild(el("div", { class: "empty", text: (p && p.error) || "No run to show." })); reportSize(); return; }
+    var sum = p.summary || {}, c = p.card || {}, hr = (sum.heart_rate || {}).average_bpm;
+    var sport = SPORTS[String(sum.type || "running")] || "RUN";
+    var t = TYPES[c.type] || null, colour = "var(--" + (t ? t[1] : "easy") + ")";
+    app.appendChild(el("div", { class: "brand" }, [
+      el("span", { class: "wordmark", text: "Daash" }), el("span", { class: "kicker mono", text: sport }),
+      el("span", { class: "date", text: dateLine(sum.start_local) }),
+    ]));
+    var body = el("div", { class: "body" });
+    app.appendChild(body);
+    // What it was on the plan, where it was a planned session: the type and the week.
+    var typeLine = t ? el("span", { class: "type" }, [el("b", { style: "color:" + colour, text: t[0] }),
+      c.week && c.weeks ? " · Week " + c.week + " of " + c.weeks : c.block ? " · " + c.block : ""]) : null;
+    body.appendChild(el("div", { class: "head" }, [typeLine,
+      el("h1", { class: "title", text: c.planned || sum.name || "Run" }),
+      // "Garmin [device model]" under the title: Garmin's API brand guidelines (Nov 10).
+      el("span", { class: "credit", text: p.credit || "Garmin" })]));
+    var secs = sum.moving_time_seconds || sum.duration_seconds || clockSecs(sum.moving_time || sum.duration);
+    var stats = [
+      sum.distance_km != null ? [fmtKm(sum.distance_km), KMW()] : null,
+      secs ? [clock(secs), "time"] : null,
+      sum.pace_per_km ? [bare(sum.pace_per_km), "/" + KMW() + " avg"] : sum.avg_speed_kmh ? [num(MI ? sum.avg_speed_kmh / KM_PER_MI : sum.avg_speed_kmh), (MI ? "mph" : "km/h") + " avg"] : null,
+      hr ? [String(hr), "bpm avg"] : null,
+    ].filter(Boolean);
+    if (stats.length) {
+      body.appendChild(el("div", { class: "stats" + (stats.length === 3 ? " three" : stats.length <= 2 ? " two" : "") }, stats.map(function (s) {
+        return el("div", {}, [el("div", { class: "stat-v", text: s[0] }), el("div", { class: "stat-l", text: s[1] })]);
+      })));
+    }
+    if (sport === "RUN") {
+      var ch = chart(p, colour);
+      if (ch) {
+        body.appendChild(ch.box);
+        if (ch.ends) body.appendChild(ch.ends);
+        if (ch.L.mixed && ch.L.rows.length > 1) body.appendChild(repsTable(ch.L, colour, ch.L.groups > 1 ? "Reps" : "At pace"));
+        else if (ch.L.mixed && ch.L.rows.length === 1) body.appendChild(workLine(ch.L.rows[0], colour, ch.L.bars));
+        else if (!ch.L.mixed) body.appendChild(splitLine(ch.L, colour, hr));
+        if (ch.L.strides) body.appendChild(stridesLine(ch.L.strides));
+      }
+    }
+    // An easy session run harder than its target says so (Nov 9).
+    var ec = p.easy_check;
+    if (ec && ec.verdict === "too_hard") {
+      body.appendChild(el("div", { class: "check" }, [el("b", { text: "Easy run, run harder than planned" }),
+        el("span", { text: (ec.detail ? ec.detail.charAt(0).toUpperCase() + ec.detail.slice(1) + ". " : "") + "Easy days kept easy leave the legs for the hard ones." })]));
+    }
+    if (c.verdict) body.appendChild(el("p", { class: "verdict", text: units(c.verdict) }));
+    var share = p.share_image && p.share_image.url;
+    body.appendChild(el("div", { class: "acts" }, [
+      share ? el("button", { class: "act", onclick: function (e) { openUrl(share, e.currentTarget, "share_run"); } }, [svg(SHARE, 16), "Share"]) : null,
+      el("button", { class: "act", onclick: function (e) { ask("Show me this week on my plan card.", e.currentTarget); } }, ["See this week", svg(ARROW, 15)]),
+    ]));
+    if (c.app_url) {
+      body.appendChild(el("button", { class: "see", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]));
+    }
+    reportSize();
+  }
+
+  // ---------------------------------------------------------------- actions
+  function openUrl(url, button, what) {
+    var opened;
+    if (window.openai && typeof window.openai.openExternal === "function") {
+      opened = Promise.resolve().then(function () { return window.openai.openExternal({ href: url }); });
+    } else if (!host) {
+      opened = Promise.resolve(window.open(url, "_blank", "noopener"));
+    } else {
+      opened = request("ui/open-link", { url: url });
+    }
+    opened.then(function () { note(button, "Opens in the browser"); if (what) tapped(what, true); })
+      .catch(function () { note(button, "This chat app didn’t open the link"); if (what) tapped(what, false); });
+  }
+  function ask(text, button) {
+    if (!host) { note(button, "Would ask: “" + text + "”"); return; }
+    var block = { type: "text", text: text };
+    request("ui/message", { role: "user", content: [block] })
+      .catch(function () { return request("ui/message", { role: "user", content: block }); })
+      .then(function () { note(button, "Added to the chat"); })
+      .catch(function () { note(button, "The chat did not accept that"); });
+  }
+  function note(button, msg) {
+    var app = document.getElementById("app");
+    var old = app.querySelector(".sent"); if (old) old.remove();
+    var where = button.closest(".acts") || button;
+    where.insertAdjacentElement("afterend", el("div", { class: "sent", text: msg }));
+    reportSize();
+  }
+
+  // ---------------------------------------------------------------- data in
+  function dataOf(result) {
+    var data = result && result.structuredContent;
+    if (!data && result && result.content) {
+      for (var i = 0; i < result.content.length; i++) {
+        var c = result.content[i];
+        if (c.type === "text") { try { data = JSON.parse(c.text); break; } catch (e) {} }
+      }
+    }
+    return data;
+  }
+  // Once, when the card has drawn or has failed to: tells Daash which, on the
+  // link the answer carried. Nothing else leaves the frame.
+  var started = Date.now(), told = false, hostName = "", seenLink = null;
+  function tapped(what, opened) {
+    if (typeof seenLink !== "string" || !window.fetch) return;
+    try {
+      fetch(seenLink, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "run", tap: what, opened: opened, host: hostName }) }).catch(function () {});
+    } catch (e) {}
+  }
+  function tell(link, error) {
+    if (told || typeof link !== "string" || !window.fetch) return;
+    told = true;
+    try {
+      fetch(link, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "run", ok: !error, ms: Date.now() - started, host: hostName, error: error || "" }) }).catch(function () {});
+    } catch (e) {}
+  }
+  var gotResult = false;
+  function early(stage) {
+    var at = window.__DAASH_CARD_OPENED__;
+    if (!at || !window.fetch) return;
+    try {
+      fetch(at, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
+        card: "run", stage: stage, ms: Date.now() - started, host: hostName }) }).catch(function () {});
+    } catch (e) {}
+  }
+  early("opened");
+  setTimeout(function () { if (!gotResult) early("waiting"); }, 8000);
+  function onResult(result) {
+    gotResult = true;
+    var data = dataOf(result);
+    if (data && typeof data._card === "string") seenLink = data._card;
+    try { render(data); } catch (e) { fail("drawing: " + (e && e.message)); tell(data && data._card, "drawing: " + (e && e.message)); return; }
+    tell(data && data._card, "");
+  }
+  function fail(msg) {
+    var box = document.getElementById("diag");
+    box.textContent = "The run didn't load here. Ask for it as text instead. (" + msg + ")";
+    box.hidden = false; reportSize();
+  }
+
+  // ---------------------------------------------------------------- start
+  if (window.__RUN_DEMO__) { render(window.__RUN_DEMO__); return; }
+  if (!host) { fail("This view opens inside a chat that supports MCP Apps."); return; }
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "garmin-run", version: "1.0.0" },
+    clientInfo: { name: "garmin-run", version: "1.0.0" },
+    appCapabilities: { availableDisplayModes: ["inline"] },
+  }).then(function (result) {
+    var info = (result && (result.hostInfo || result.serverInfo)) || {}, ctx = (result && result.hostContext) || {};
+    hostName = [info.name, info.version, ctx.platform].filter(Boolean).join(" ");
+    applyContext(ctx);
+    notify("ui/notifications/initialized", {});
+  }).catch(function () { notify("ui/notifications/initialized", {}); });
+})();
+</script>
+</body>
+</html>
