@@ -1839,6 +1839,17 @@ function deleteSheet() {
   });
 }
 
+// Sign out asks first (Nov 13): one tap on a row was enough to land on the sign-in screen.
+function signOutSheet() {
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Sign out of the Daash app?</span>
+      <span class="meta" style="line-height:1.5">Only this device signs out. Your plan, the workouts on your watch, and Daash in Claude and ChatGPT carry on as they are. You can sign back in any time.</span></div>
+    <div class="pills"><button type="button" class="pill tall" data-close>Stay signed in</button><button type="button" class="pill tall red" id="signout-go">Sign out</button></div>`,
+  (holder, close) => {
+    holder.querySelector("[data-close]").focus();
+    $("signout-go").onclick = () => { close(); signOut(); };
+  });
+}
+
 async function signOut() {
   const access = token.access, client = CLIENT_ID;
   token.clear();
@@ -1866,7 +1877,7 @@ async function showYou() {
           }
           if (b.dataset.you === "push") return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => { cache.drop((k) => k === "you"); showYou(); });
           if (b.dataset.you === "headsup") return headsUpSheet(d);
-          return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOut();
+          return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOutSheet();
         };
     });
   }, (e) => failed(e.message, showYou));
