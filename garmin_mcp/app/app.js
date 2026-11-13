@@ -28,7 +28,7 @@ const ICON = {
   left: () => svg('<path d="m15 18-6-6 6-6"/>'),
   down: () => svg('<path d="m6 9 6 6 6-6"/>', 16),
   out: () => svg('<path d="M7 17 17 7"/><path d="M7 7h10v10"/>', 14, 'stroke-width="2.2"'),
-  check: (s = 12) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="#161614" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
+  check: (s = 12) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" style="stroke:var(--on-tag)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
   watch: (s = 18) => svg('<circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05"/>', s),
   grip: () => svg('<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>', 14),
   share: () => svg('<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>', 16),
@@ -2200,7 +2200,7 @@ const STYLE_OPTS = [
   { id: "faster", t: "Faster", d: "Several controlled threshold sessions, kept in check by heart rate.", based: "BASED ON NORWEGIAN SINGLES STYLE" },
   { id: "pick", t: "Pick for me", d: "Chosen from your days, races and history.", based: "" },
 ];
-const VERDICT = { realistic: ["#22352A", "#8CC08F"], stretch: ["#3A2A1A", "#E8A15F"], ambitious: ["#2A2520", "#E8A15F"] };
+const VERDICT = { realistic: ["var(--tint-easy)", "var(--easy)"], stretch: ["var(--tint-hard)", "var(--hard)"], ambitious: ["var(--amber-soft)", "var(--hard)"] };
 const WARN = svg('<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>', 18, 'style="color:var(--hard);flex-shrink:0;margin-top:1px"');
 
 const B = { inputs: null, answers: null, plan: null, sel: null, job: null, poll: null, asked: 0, from: null, did: new Set() };
