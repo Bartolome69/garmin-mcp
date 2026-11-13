@@ -1660,7 +1660,7 @@ function crewParts(d, desk = false) {
       <div style="display:flex;align-items:center;gap:12px"><div class="faces">${h.faces.map((f) => face(f, desk ? 38 : 36, "var(--red-soft)")).join("")}</div>
         <span style="font-size:22px;font-weight:700;letter-spacing:-0.025em;line-height:1.15">${esc(h.names)}</span></div>
       <span style="font-size:14px;line-height:1.45;color:var(--ink-2)">${esc(h.line)}</span>
-      <a class="pill red" href="${esc(h.whatsapp)}" target="_blank" rel="noopener">Ask the group on WhatsApp</a></section>`;
+      ${h.whatsapp ? `<a class="pill red" href="${esc(h.whatsapp)}" target="_blank" rel="noopener">Ask the group on WhatsApp</a>` : ""}</section>`;
   } else {
     p.hero = `<div class="card pad stack-tight"><span class="strong">Nothing to run together yet</span><span class="meta" style="line-height:1.45">When two of you have an easy or long run at the same time of day, it shows here.</span></div>`;
   }
@@ -1684,7 +1684,7 @@ function crewParts(d, desk = false) {
     ? `<span class="who desk" role="rowheader">${face({ i: person.name[0], you: person.you, c: person.c }, 26, "transparent")}
         <span class="stack-tight" style="gap:0;flex:1;min-width:0"><span class="name ${person.you ? "you" : ""}">${esc(person.name)}</span>${person.by_hand ? `<span class="hand">by hand</span>` : ""}</span>${key}</span>`
     : `<span class="who" role="rowheader"><span class="name ${person.you ? "you" : ""}">${esc(person.name)}</span>${person.by_hand ? `<span class="hand">by hand</span>` : ""}</span>`;
-  p.grid = `<section class="stack"><div class="section-head" style="align-items:center${desk ? ";padding-top:30px" : ""}"><span class="section-title" ${desk ? 'style="font-size:17px"' : ""}>Who runs when</span><span class="view-only">${eye}View only</span></div>
+  p.grid = `<section class="stack"><div class="section-head" style="align-items:center${desk ? ";padding-top:30px" : ""}"><span class="section-title" ${desk ? 'style="font-size:17px"' : ""}>Who runs when</span>${d.example ? "" : `<span class="view-only">${eye}View only</span>`}</div>
     <div class="crew-grid ${desk ? "desk" : ""}" role="table" aria-label="Crew calendar, view only">
       <div class="grid-row head" role="row">${desk ? "<span></span>" : `<span class="slots" aria-hidden="true"><span>AM</span><span>PM</span><span>EVE</span></span>`}
         ${d.days.map((x) => `<span class="grid-day ${x.past ? "past" : ""}" role="columnheader"><span class="d">${desk ? ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"][d.days.indexOf(x)] : x.letter}</span><span class="n ${x.today ? "today" : ""}">${x.n}</span></span>`).join("")}</div>
@@ -1692,7 +1692,7 @@ function crewParts(d, desk = false) {
         ${person.cells.map((c) => `<span class="cell ${c.past ? "past" : ""}" role="cell">${c.segs.map(seg).join("")}</span>`).join("")}</div>`).join("")}
       <div class="legend" style="padding-top:8px;border-top:1px solid var(--hairline);font-size:12px"><span><i class="lg bg-easy"></i>Easy</span><span><i class="lg bg-long"></i>Long</span>
         <span><i class="lg hard"></i>Hard, runs alone</span><span><i class="lg bg-easy match"></i>Same time</span></div></div>
-    <span class="meta" style="line-height:1.45;text-wrap:pretty">Runs fill in from each person's watch or plan. Yours follow your plan; <a href="#/plan">change them in Plan</a>.</span></section>`;
+    ${d.example ? "" : `<span class="meta" style="line-height:1.45;text-wrap:pretty">Runs fill in from each person's watch or plan. Yours follow your plan; <a href="#/plan">change them in Plan</a>.</span>`}</section>`;
   const inv = d.invite || {};
   const value = inv.url || inv.code || "";
   p.invite = `<div class="card pad stack" style="gap:10px"><span class="strong">Invite a friend</span>
@@ -1712,6 +1712,44 @@ function crewView(d) {
   return [p.head, p.hero, p.also, p.grid, p.invite].filter(Boolean).join("");
 }
 
+// Not in a crew (Nov 13): a made-up crew's week shows what one looks like,
+// marked as an example and not interactive, under who a crew is for.
+function exampleCrew() {
+  const monday = new Date(); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const n = (i) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i).getDate();
+  const E = { kind: "easy" }, EM = { kind: "easy", match: true }, LM = { kind: "long", match: true }, H = { kind: "hard" }, _ = {};
+  // Each person's week: seven days of [morning, afternoon, evening].
+  const week = (runs) => Array.from({ length: 7 }, (x, i) => ({ segs: runs[i] || [_, _, _] }));
+  return {
+    example: true,
+    hero: { kicker: "SAT · MORNING", colour: "long", type_label: "Long", names: "You, Priya and Tom",
+      faces: [{ i: "Y", you: true }, { i: "P", c: 0 }, { i: "T", c: 1 }],
+      line: "Three long runs on the same morning. Agree a start in the group chat." },
+    days: [0, 1, 2, 3, 4, 5, 6].map((i) => ({ letter: "MTWTFSS"[i], n: n(i) })),
+    people: [
+      { name: "You", you: true, cells: week({ 1: [EM, _, _], 3: [_, _, H], 5: [LM, _, _] }) },
+      { name: "Priya", c: 0, cells: week({ 1: [EM, _, _], 5: [LM, _, _] }) },
+      { name: "Tom", c: 1, cells: week({ 0: [_, _, E], 3: [_, _, H], 5: [LM, _, _] }) },
+      { name: "Jess", c: 2, cells: week({ 2: [_, E, _], 6: [E, _, _] }) },
+    ],
+  };
+}
+
+function crewEmpty(d) {
+  const who = d.assistant === "ChatGPT" ? "ChatGPT" : "Claude";
+  const ask = askLink(d, `Start a crew with ${who}`);
+  const head = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends nearby</h1></header>`;
+  const card = `<div class="card pad stack"><span class="strong">For friends who run near you</span>
+    <span class="meta" style="line-height:1.5">A crew is a few local running friends. Daash lines up your easy and long runs by day and time of day, so you can see when you're out at the same time and run together. They see days and times only, never pace, heart rate or routes.</span>${ask.html}
+    <span class="meta" style="line-height:1.5">Have a code from a friend? Ask ${who} to join with it. <a href="https://daash.run/crews?utm_source=app&utm_medium=link&utm_campaign=crews" target="_blank" rel="noopener" style="font-weight:600;color:var(--ink)">How crews work</a></span></div>`;
+  const desk = desktop();
+  const p = crewParts(exampleCrew(), desk);
+  const label = `<div class="section-head" style="align-items:center"><span class="section-title">What a crew looks like</span><span class="view-only">Example</span></div>`;
+  const example = (inner) => `<div class="stack crew-example" inert aria-label="An example crew">${inner}</div>`;
+  if (desk) return `<div class="desk-crew"><div class="stack" style="gap:16px">${head}${card}</div>${example(label + p.hero + p.grid)}</div>`;
+  return `${head}${card}${example(label + p.hero + p.grid)}`;
+}
+
 async function showCrew(params = new URLSearchParams()) {
   tabs("crew");
   base = "crew";
@@ -1719,11 +1757,7 @@ async function showCrew(params = new URLSearchParams()) {
   return show(next ? "crew?week=next" : "crew", (d) => {
     remember(d);
     if (d.none) {
-      const ask = askLink(d, `Start a crew with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
-      $("screen").innerHTML = `<header class="stack-tight"><span class="kicker">CREW</span><h1 class="headline">Run with friends</h1></header>
-        <div class="card pad stack" style="max-width:560px"><span class="strong">You're not in a crew yet.</span>
-        <span class="meta" style="line-height:1.5">A crew is a few friends who see each other's easy and long runs, by day and time of day, and line them up. Never pace, heart rate or routes. Have a code from a friend? Ask your assistant to join with it.</span>${ask.html}
-        <a class="meta" href="https://daash.run/crews?utm_source=app&utm_medium=link&utm_campaign=crews" target="_blank" rel="noopener" style="font-weight:600;color:var(--ink)">How crews work</a></div>`;
+      $("screen").innerHTML = crewEmpty(d);
       return;
     }
     $("screen").innerHTML = crewView(d);
