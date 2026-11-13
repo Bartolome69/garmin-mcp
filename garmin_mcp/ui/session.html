@@ -381,7 +381,7 @@
     app.appendChild(watchLine(c));
     app.appendChild(actions(c, name, whenText));
     if (c.app_url) {
-      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in app"]));
+      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in Daash app"]));
     }
     var f = foot(c); if (f) app.appendChild(f);
     reportSize();

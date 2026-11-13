@@ -973,7 +973,7 @@
           el("span", { class: "sub", text: [CREDIT, b.method, then, span].filter(Boolean).join(" · ") }),
         ]),
         appUrl ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px;font-size:13.5px",
-          onclick: function (e) { openUrl(appUrl, e.currentTarget, "open_in_daash"); } }, ["Open in app"]) : null,
+          onclick: function (e) { openUrl(appUrl, e.currentTarget, "open_in_daash"); } }, ["Open in Daash app"]) : null,
       ]),
     ];
     var races = m.races, goal = races.filter(function (r) { return r.tier === "goal"; }).slice(-1)[0];

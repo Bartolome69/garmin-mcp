@@ -186,7 +186,7 @@ f.src = "card.html";
     for (const width of [320, 390]) {
       ({ page, card } = await open(withApp, width, 900));
       got = await card.evaluate(() => {
-        const b = [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in app");
+        const b = [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash app");
         const title = document.querySelector(".head .title"), kicker = document.querySelector(".head .brand .kicker");
         const doc = document.documentElement;
         return { button: !!b, overflow: doc.scrollWidth > doc.clientWidth + 1,
@@ -197,14 +197,14 @@ f.src = "card.html";
       check(`at ${width}px: Open in Daash sits beside the title, on one line, without a sideways scroll`,
         got.button && !got.overflow && got.oneLine && got.beside && got.right, JSON.stringify(got));
       if (width === 390) {
-        await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in app").click());
+        await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash app").click());
         await page.waitForTimeout(200);
         check("and opens the app's link", (await page.evaluate(() => window.opened)) === withApp.app.url, String(await page.evaluate(() => window.opened)));
       }
       await page.close();
     }
     ({ page, card } = await open(plan(), 390, 900));
-    check("no link, no button", !(await card.evaluate(() => /Open in app/.test(document.body.innerText))));
+    check("no link, no button", !(await card.evaluate(() => /Open in Daash app/.test(document.body.innerText))));
     await page.close();
 
     console.log("states");

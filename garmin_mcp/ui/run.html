@@ -440,7 +440,7 @@
       el("button", { class: "act", onclick: function (e) { ask("Show me this week on my plan card.", e.currentTarget); } }, ["See this week", svg(ARROW, 15)]),
     ]));
     if (c.app_url) {
-      body.appendChild(el("button", { class: "see", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in app"]));
+      body.appendChild(el("button", { class: "see", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in Daash app"]));
     }
     reportSize();
   }
