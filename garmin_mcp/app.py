@@ -442,6 +442,9 @@ def _calendar(plan: Mapping[str, Any], today: date, crew_days: Mapping[str, str]
     return weeks
 
 
+DONE_RUN_MEMORY = 6 * 3600
+
+
 async def _done_today(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
     done = [s for s in _sessions(plan) if s.get("date") == today.isoformat()
             and str(s.get("status", "")).startswith("done") and s.get("activity_id")]
@@ -449,9 +452,13 @@ async def _done_today(plan: Mapping[str, Any], today: date) -> dict[str, Any] | 
         return None
     s = min(done, key=training_plan._rank)
     aid = int(s["activity_id"])
+    # A finished run doesn't change, so a second look at Today today asks Garmin
+    # for neither again (a rename through Daash clears the memory).
     laps, workout, activity = await asyncio.gather(
-        server_mod._call(lambda c: c.get_activity_splits(aid)), _workout(s.get("workout_id")),
-        server_mod._call(lambda c: c.get_activity(aid)), return_exceptions=True)
+        server_mod._read(("today_splits", aid), DONE_RUN_MEMORY, lambda c: c.get_activity_splits(aid)),
+        _workout(s.get("workout_id")),
+        server_mod._read(("today_activity", aid), DONE_RUN_MEMORY, lambda c: c.get_activity(aid)),
+        return_exceptions=True)
     short = None
     if not isinstance(laps, Exception):
         result = analysis.analyse(None if isinstance(workout, Exception) else workout, laps, s.get("type"))

@@ -630,9 +630,12 @@ function dragToMove(cal) {
 
 let base = null;  // the desktop screen under the side panel
 
+// The server's day, which Today's answer is for (Fly's clock is UTC).
+const serverDay = () => new Date().toISOString().slice(0, 10);
+
 async function showToday(quiet = false) {
   tabs("today");
-  return show("today", (d) => {
+  return show("today", (d, saved) => {
     remember(d);
     if (desktop()) {
       $("screen").innerHTML = todayDesk(d);
@@ -640,6 +643,15 @@ async function showToday(quiet = false) {
     } else {
       $("screen").innerHTML = todayView(d);
       wireNudge($("screen"));
+    }
+    // Yesterday's copy, drawn while today's is fetched: said so, and dimmed,
+    // rather than passed off as today (Nov 13).
+    const old = saved && d.today && d.today !== serverDay();
+    $("screen").classList.toggle("stale", !!old);
+    if (old) {
+      // Its date line is yesterday's: say what's happening in its place.
+      const line = $("screen").querySelector(".kicker");
+      if (line) { line.textContent = "Updating to today…"; line.classList.add("updating"); line.setAttribute("role", "status"); }
     }
     base = "today";
     wire($("screen"));
@@ -2733,6 +2745,7 @@ function buildSendView(step) {
 async function route(stay) {
   calm = stay === true;
   $("sheet").innerHTML = "";
+  $("screen").classList.remove("stale");
   // A link from scripts/app_dev.py carries a local token, so the demo opens signed in.
   const dev = location.hash.match(/dev-token=([\w-]+)/);
   if (dev) {
@@ -2758,6 +2771,21 @@ async function route(stay) {
   if (screen === "build") return showBuild(arg, params);
   return showToday();
 }
+
+// Back from the background (a home-screen app left open overnight, a tab
+// switched back to): the screen catches up on its own, without the skeleton,
+// once it has been away a minute or the day has turned (Nov 13).
+const RESUME_AFTER_MS = 60 * 1000;
+let awayAt = 0, awayDay = "";
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { awayAt = Date.now(); awayDay = serverDay(); return; }
+  if (!awayAt || !token.access) return;
+  const long = Date.now() - awayAt >= RESUME_AFTER_MS || serverDay() !== awayDay;
+  awayAt = 0;
+  const screen = document.body.dataset.screen;
+  if (!long || dragging || document.querySelector("dialog[open]") || $("sheet").innerHTML) return;
+  if (["today", "plan", "crew", "you"].includes(screen)) route(true);
+});
 
 async function start() {
   let message = null;

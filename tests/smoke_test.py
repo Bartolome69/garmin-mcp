@@ -1111,6 +1111,31 @@ async def check_reads_at_once(check) -> None:
         ])
         check("reads at once come back in the order asked", answers == [0, 1, 2], str(answers))
 
+        # The plan opened again two minutes later (Nov 13): only this month and
+        # next go back to Garmin; the rest of the dozen months come from memory.
+        months: list[tuple[int, int]] = []
+
+        class Counting(Slow):
+            def get_scheduled_workouts(self, year, month):
+                months.append((int(year), int(month)))
+                return FakeGarmin.get_scheduled_workouts(self, year, month)
+
+        session_mod.build_client = lambda **_: Counting()
+        session_mod.session.reset()
+        session_mod.session.client()
+        await server.get_plan()
+        first = len(months)
+        memo = session_mod.session._target()._memo
+        for key in list(memo):
+            when, value = memo[key]
+            memo[key] = (when - 120, value)
+        months.clear()
+        began = _t.monotonic()
+        await server.get_plan()
+        took = _t.monotonic() - began
+        check("the plan opened again 2 minutes later reads only this month and next from Garmin",
+              first >= 6 and len(months) == 2, f"first open {first} months, again {len(months)}: {months}")
+
         # Garmin refuses the stored session while several reads are in flight:
         # one fresh sign-in, then every read goes through.
         class Refused(Slow):
@@ -1160,6 +1185,18 @@ def check_chart_config_read_only(check) -> None:
         finally:
             folder.chmod(stat.S_IRWXU)
             plan_mod.CONFIG = saved
+
+
+def check_calendar_memory(check) -> None:
+    """Months that rarely change are kept longer than this month and next (Nov 13)."""
+    from datetime import date
+    from garmin_mcp import server as s
+    today = date(2026, 11, 13)
+    check("this month and next are re-read after 90 s",
+          s._calendar_memory(2026, 11, today) == s.CALENDAR_MEMORY == 90 and s._calendar_memory(2026, 12, today) == 90)
+    check("months two or more ahead are kept 15 minutes, across the new year too",
+          s._calendar_memory(2027, 1, today) == s.CALENDAR_FAR_MEMORY == 900 and s._calendar_memory(2027, 6, today) == 900)
+    check("months gone by are kept an hour", s._calendar_memory(2026, 10, today) == s._calendar_memory(2025, 12, today) == 3600)
 
 
 async def check_nested_tools_report_once(check) -> None:
@@ -1623,6 +1660,7 @@ async def main() -> int:
                   {"weather", "shoes"} <= set(detail), str(list(detail)))
             check_stream_km_splits(check)
             await check_nested_tools_report_once(check)
+            check_calendar_memory(check)
             check_conditions(check)
             check_terrain_ignores_stops(check)
             check_shoes_and_nights(check)

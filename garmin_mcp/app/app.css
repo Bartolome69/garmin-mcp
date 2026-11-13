@@ -670,3 +670,8 @@ body.desk .b-grip { display: none; }
 .plan-row .grip { display: flex; align-items: center; justify-content: center; color: var(--muted); opacity: 0.55; margin-left: -4px; }
 .drag-hint { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); padding: 0 2px; margin-bottom: -6px; }
 .drag-hint svg { flex-shrink: 0; }
+
+/* Yesterday's Today, shown while today's arrives (Nov 13). */
+#screen.stale > * { opacity: 0.45; transition: opacity 0.2s; }
+#screen.stale > :first-child { opacity: 1; }
+#screen.stale > :first-child > :not(.updating) { opacity: 0.45; }

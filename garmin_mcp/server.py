@@ -1265,6 +1265,22 @@ async def _call(fn: Callable[[Any], Any]) -> Any:
 # Garmin app shows after this long at most.
 CALENDAR_MEMORY = 90
 WORKOUT_MEMORY = 600
+# A plan scan reads about a dozen months, and each open of the app or the plan
+# card read them all again after 90 s (Nov 13: the app's Today waited 1-3 s on
+# it). Only this month and next change from day to day; months gone by and
+# months well ahead are kept longer. Anything written through Daash clears all
+# of it at once; an edit made in the Garmin app to a far month shows within this.
+CALENDAR_FAR_MEMORY = 15 * 60
+CALENDAR_PAST_MEMORY = 60 * 60
+
+
+def _calendar_memory(year: int, month: int, today: date_cls | None = None) -> float:
+    """How long a month of the calendar may be answered from memory."""
+    today = today or date_cls.today()
+    ahead = (year - today.year) * 12 + (month - today.month)
+    if ahead < 0:
+        return CALENDAR_PAST_MEMORY
+    return CALENDAR_MEMORY if ahead <= 1 else CALENDAR_FAR_MEMORY
 
 
 def _remembered(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
@@ -3187,7 +3203,7 @@ async def _calendar_months(start: date_cls, end: date_cls) -> list[Any]:
     months = training_plan.months_between(start, end)
     answers = await _together([
         functools.partial(
-            _read, ("calendar", year, month), CALENDAR_MEMORY,
+            _read, ("calendar", year, month), _calendar_memory(year, month),
             lambda c, y=year, m=month: c.get_scheduled_workouts(y, m),
         )
         for year, month in months
