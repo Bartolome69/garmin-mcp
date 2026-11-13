@@ -147,6 +147,20 @@ CREATE TABLE IF NOT EXISTS watch_sends (
 );
 """
 
+# Everyone who has ever connected, one row a person, kept when they disconnect
+# (Nov 13), for the front page's count. Keyed like watch_sends. A trigger fills
+# it on every new users row, whichever sign-in made it.
+PEOPLE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS people_ever (
+    person        TEXT PRIMARY KEY,
+    first_at      INTEGER NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS people_ever_on_user AFTER INSERT ON users BEGIN
+    INSERT OR IGNORE INTO people_ever (person, first_at)
+    VALUES (COALESCE(NEW.email_hash, NEW.user_token), NEW.created_at);
+END;
+"""
+
 FRIENDS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS friends (
     email_hash    TEXT PRIMARY KEY,
@@ -294,6 +308,7 @@ def _connect() -> sqlite3.Connection:
             conn.execute(statement)
         except sqlite3.OperationalError:
             pass  # Already applied.
+    conn.executescript(PEOPLE_SCHEMA)
     return conn
 
 
@@ -408,6 +423,22 @@ def repair_password_on_official() -> int:
                 "UPDATE official_links SET official_only = NULL WHERE official_only = 1 AND user_token IN "
                 "(SELECT user_token FROM users WHERE COALESCE(route, '') != 'official')")
     return len(joined)
+
+
+def record_people() -> int:
+    """Add everyone connected now to people_ever, for rows from before it. Returns how many were new."""
+    with _connect() as conn:
+        return conn.execute(
+            "INSERT OR IGNORE INTO people_ever (person, first_at) "
+            "SELECT COALESCE(email_hash, user_token), MIN(created_at) FROM users "
+            "GROUP BY COALESCE(email_hash, user_token)"
+        ).rowcount
+
+
+def count_people_since(since: int) -> int:
+    """People whose first connection was at or after `since`, disconnected or not."""
+    with _connect() as conn:
+        return conn.execute("SELECT COUNT(*) FROM people_ever WHERE first_at >= ?", (since,)).fetchone()[0]
 
 
 def add_friends(emails: list[tuple[str, str]]) -> int:

@@ -530,10 +530,25 @@ async def main() -> int:
 
         code, cors, stats_raw = await anyio_run(fetch_stats)
         stats_body = json.loads(stats_raw) if code == 200 else {}
-        check("stats serve one public count",
-              code == 200 and list(stats_body) == ["active_30d"], stats_raw[:80])
+        check("stats serve the two public counts",
+              code == 200 and list(stats_body) == ["active_30d", "connected_ever"], stats_raw[:80])
         check("stats count both recent users",
               stats_body.get("active_30d") == 2, stats_raw[:80])
+        check("everyone ever connected: the count before Nov 13 19:00 UTC, plus both users since",
+              stats_body.get("connected_ever") == hosted.CONNECTED_BEFORE + 2, stats_raw[:80])
+        # Nov 13: someone who connects and then leaves stays counted, once, and
+        # signing in again doesn't count them twice.
+        since = hosted.COUNTED_FROM
+        counted = store.count_people_since(since)
+        store.save_user("p***@example.com", json.dumps({"di_token": "p"}), email_hash="passing-hash")
+        store.save_user("p***@example.com", json.dumps({"di_token": "p2"}), email_hash="passing-hash")
+        with store._connect() as conn:
+            conn.execute("DELETE FROM users WHERE email_hash = 'passing-hash'")
+        check("someone who connected and left is still counted, once",
+              store.count_people_since(since) == counted + 1, str(store.count_people_since(since) - counted))
+        check("rows from before the record are added once at start, never twice",
+              store.record_people() == 0 and store.count_people_since(since) == counted + 1)
+        hosted._STATS_CACHE["at"] = 0.0
         check("stats readable from the website's origin", cors == "*", repr(cors))
         check("stats reveal nothing else",
               SECRET not in stats_raw and "example.com" not in stats_raw

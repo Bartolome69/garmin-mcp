@@ -3835,9 +3835,16 @@ async def crew_runner(request: Request) -> Response:
     return _crew_answer(answer)
 
 
+# Everyone who has ever connected (Nov 13): the people who had by 19:00 UTC
+# that day, from PostHog's connector_connected (the team's own accounts left
+# out), plus everyone whose first connection came after, kept when they leave.
+COUNTED_FROM = 1794596400  # 2026-11-13 19:00 UTC
+CONNECTED_BEFORE = 418
+
+
 @mcp.custom_route("/stats", methods=["GET"])
 async def stats(request: Request) -> Response:
-    """How many people used this in the last 30 days, for the front page.
+    """How many people used this in the last 30 days, and have ever connected, for the front page.
 
     Public on purpose: it is the number the site quotes, and it is all this
     returns. No emails, no tokens, no per-person anything. The CORS header is
@@ -3845,7 +3852,10 @@ async def stats(request: Request) -> Response:
     """
     now = time.time()
     if now - _STATS_CACHE["at"] > _STATS_TTL:
-        _STATS_CACHE["body"] = json.dumps({"active_30d": store.count_active(30)})
+        _STATS_CACHE["body"] = json.dumps({
+            "active_30d": store.count_active(30),
+            "connected_ever": CONNECTED_BEFORE + store.count_people_since(COUNTED_FROM),
+        })
         _STATS_CACHE["at"] = now
     return Response(
         _STATS_CACHE["body"],
@@ -4289,6 +4299,10 @@ def build_app() -> Any:
     an environment variable rather than a rollback. The URL mode stays the
     default until the OAuth one has been run against a real client.
     """
+    try:
+        store.record_people()
+    except Exception:  # noqa: BLE001 - a count must never stop the server starting
+        log.exception("recording people for the count failed")
     try:
         repaired = store.repair_password_on_official()
         if repaired:
