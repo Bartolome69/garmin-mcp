@@ -1313,7 +1313,7 @@ async def delete_account() -> dict[str, Any]:
     from . import hosted, official
 
     _track("app_account_deleted")
-    await hosted.forget_person(official.current() or "")
+    await hosted.forget_person(official.current() or "", via="app")
     return {"message": "Deleted. Daash no longer has your Garmin session or anything kept for you."}
 
 
@@ -1573,6 +1573,12 @@ def _safe(handler):
                                "seconds": round(time.monotonic() - started, 2), "from": _came_from(request),
                                "pulled": pulled or None})
             threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
+            if str(seen.get("from") or "").startswith("push_"):
+                # push_opened (Nov 13): a notification tapped. Only the first
+                # screen carries "from", so each tap counts once.
+                opened = {"kind": seen["from"][len("push_"):], "screen": screen}
+                threading.Thread(target=_track, args=("push_opened", opened, official.current()),
+                                 daemon=True).start()
         return response
 
     return answered

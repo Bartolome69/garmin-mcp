@@ -353,6 +353,12 @@ def api_checks() -> None:
     froms = [e["properties"].get("from") for e in viewed if e["properties"].get("from")]
     check("a screen opened from a chat's link says where the link was given", "chat_offer" in froms, str(froms))
     check("and nothing else passes for a source", froms == ["chat_offer"], str(froms))
+    client.get("/app/api/today", headers={**auth, "X-Daash-From": "push_run"})
+    opened = [e["properties"] for e in posted("push_opened")]
+    check("a tapped notification counts as one push opened, with its kind",
+          len(opened) == 1 and opened[0].get("kind") == "run" and opened[0].get("screen") == "today", str(opened))
+    check("and only a notification's tap: a chat link isn't one",
+          not any(o.get("kind") == "offer" for o in opened), str(opened))
     check("opening a screen is recorded, by name", any(e["properties"].get("screen") == "today" for e in viewed),
           str([e["properties"].get("screen") for e in viewed])[:120])
     check("with how long the screen waited", all(isinstance(e["properties"].get("seconds"), (int, float))
@@ -594,6 +600,10 @@ def api_checks() -> None:
     check("delete answers", r.status_code == 200, r.text[:120])
     check("the account is gone", store.get_user(user_token) is None)
     check("deleting the account is recorded", bool(posted("app_account_deleted")))
+    gone_events = [e["properties"] for e in posted("connector_disconnected")]
+    check("and counted as a disconnect, from the app, of everything",
+          any(g.get("via") == "app" and g.get("what") == "everything" and g.get("login_route") for g in gone_events),
+          str(gone_events))
     check("its sign-ins stop working", client.get("/app/api/today", headers=auth).status_code == 401)
     check("and it has left the crew", not crews.in_crew(crews.member_key(user_token, store.email_fingerprint(email))))
 

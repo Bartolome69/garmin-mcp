@@ -758,9 +758,19 @@ def main() -> int:
 
     official.finish("code-2", official._seal({"u": again, "v": "v" * 50}))
     official.handle_push(json.dumps({"dailies": [day]}).encode())
-    official.handle_push(json.dumps({"deregistrations": [{"userId": "garmin-user-1"}]}).encode())
+    import garmin_mcp.analytics as analytics
+    said: list[tuple] = []
+    real_capture, analytics.capture = analytics.capture, lambda *a: said.append(a)
+    try:
+        official.handle_push(json.dumps({"deregistrations": [{"userId": "garmin-user-1"}]}).encode())
+        official.handle_push(json.dumps({"deregistrations": [{"userId": "nobody-here"}]}).encode())
+    finally:
+        analytics.capture = real_capture
     check("a deregistration from Garmin deletes the link and its data",
           store.official_link(again) is None and store.official_summaries("garmin-user-1", "dailies") == [])
+    check("and is counted once as a disconnect at Garmin's end; an unknown account isn't",
+          [(e, p.get("via"), p.get("what")) for e, _, p in said]
+          == [("connector_disconnected", "garmin", "official_link")], str(said))
 
     print("\nthe server's routes")
     from starlette.testclient import TestClient

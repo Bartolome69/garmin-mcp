@@ -4778,8 +4778,14 @@ async def garmin_official(action: str = "status", date: str = "tomorrow", emails
             "is deleted. Tell the person that and ask. Only if they say yes, call again with action "
             "'disconnect_confirmed'.")}
     if action == "disconnect_confirmed":
+        person = store.get_user(user_token)
+        route = "password" if store.has_connect(user_token) else "official"
         gone = await anyio.to_thread.run_sync(official.disconnect, user_token)
-        analytics.capture("official_disconnected", None, {"by": "garmin_official", "gone": gone})
+        if gone:
+            # Was official_disconnected with no person on it (never fired): now
+            # the one disconnect event, counted against the person (Nov 13).
+            analytics.disconnected(person.email_hash or user_token if person else user_token, "chat", route,
+                                   "official_link", person.created_at if person else None)
         return {"disconnected": gone}
     if action == "test_workout":
         model, summary, _ = build_workout(

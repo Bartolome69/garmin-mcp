@@ -36,7 +36,7 @@ from typing import Any, Callable
 
 from cryptography.fernet import InvalidToken
 
-from . import official_data, official_fit, store
+from . import analytics, official_data, official_fit, store
 
 log = logging.getLogger(__name__)
 
@@ -452,6 +452,17 @@ def _start(summary: dict) -> int | None:
 on_activities: Callable[[str, list[dict]], None] | None = None
 
 
+def _report_deregistered(garmin_user_id: str) -> None:
+    """connector_disconnected for a link removed at Garmin's end, read before it's deleted here."""
+    link = store.official_link_for_garmin_user(garmin_user_id)
+    if link is None:
+        return
+    person = store.get_user(link.user_token)
+    route = "password" if store.has_connect(link.user_token) else "official"
+    analytics.disconnected((person.email_hash if person else None) or link.user_token, "garmin", route,
+                           "official_link", link.created_at)
+
+
 def handle_push(body: bytes) -> dict[str, int]:
     """Keep what Garmin pushed, for accounts linked here. Returns counts per kind.
 
@@ -472,6 +483,7 @@ def handle_push(body: bytes) -> dict[str, int]:
         if kind == "deregistrations":
             for item in items:
                 if isinstance(item, dict) and item.get("userId"):
+                    _report_deregistered(str(item["userId"]))
                     store.forget_official_user(str(item["userId"]))
             kept[kind] = len(items)
             continue

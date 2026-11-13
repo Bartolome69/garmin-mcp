@@ -127,6 +127,22 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
     threading.Thread(target=_post, args=(payload,), daemon=True).start()
 
 
+def disconnected(person: str | None, via: str, login_route: str, what: str,
+                 connected_at: int | None = None) -> None:
+    """connector_disconnected (Nov 13): a link to someone's Garmin ended, however it ended.
+
+    via: disconnect_page, app (deleted in the app), chat (the official link
+    ended from the chat) or garmin (removed at Garmin's end). what: everything
+    (the whole account went) or official_link (only Garmin's official link;
+    a Garmin Connect sign-in may still stand behind the account).
+    """
+    days = round((time.time() - connected_at) / 86400, 1) if connected_at else None
+    capture("connector_disconnected", person, {
+        "via": via, "login_route": login_route, "what": what,
+        **({"days_connected": days} if days is not None else {}),
+    })
+
+
 def _post(payload: dict[str, Any]) -> None:
     try:
         request = urllib.request.Request(

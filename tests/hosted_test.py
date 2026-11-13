@@ -628,6 +628,10 @@ async def main() -> int:
             code, body = await anyio_run(post, "/disconnect", {"t": second.group(1)})
             check("disconnect deletes the stored session",
                   code == 200 and store.get_user(second.group(1)) is None)
+            gone = [e["properties"] for e in SENT if e.get("event") == "connector_disconnected"]
+            check("and is counted as a disconnect from the page, with its route",
+                  any(g.get("via") == "disconnect_page" and g.get("login_route") == "password"
+                      and g.get("what") == "everything" for g in gone), str(gone))
 
         # Connect pressed three times while Garmin is still answering the first:
         # one login, and every press gets the same result.

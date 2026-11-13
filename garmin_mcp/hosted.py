@@ -3182,10 +3182,12 @@ async def card_opened(request: Request) -> Response:
     return Response(status_code=204)
 
 
-async def forget_person(token: str) -> bool:
+async def forget_person(token: str, via: str = "disconnect_page") -> bool:
     """Delete someone's stored session and everything kept for them. True if there was one."""
     _SESSIONS.pop(token, None)
     gone = store.get_user(token)
+    # Read before the row goes: afterwards there is nothing left to say which route it was.
+    route = login_route(not store.has_connect(token)) if gone is not None else ""
     if gone is not None and official.configured():
         # Garmin's official link goes too, told to Garmin as well as deleted here.
         await anyio.to_thread.run_sync(official.disconnect, token)
@@ -3198,6 +3200,7 @@ async def forget_person(token: str) -> bool:
         store.forget_push(token, gone.email_hash)
         # And every sign-in to it: Claude, ChatGPT and the app alike.
         store.delete_tokens_for_subject(token)
+        analytics.disconnected(gone.email_hash or token, via, route, "everything", gone.created_at)
     return removed
 
 
