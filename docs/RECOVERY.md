@@ -82,6 +82,9 @@ session`.** The key changed. Set it back to the copy in the password manager:
 `fly secrets set -a garmin-mcp-1b4387 GARMIN_MCP_SECRET=<the stored value>`.
 Nothing was lost; it stopped before touching anyone.
 
+**A deploy broke Daash, but the data is fine.** Deploy the commit before it:
+[ROLLBACK.md](ROLLBACK.md).
+
 **A deploy damaged the data.** Restore the snapshot that deploy took (it's
 the newest one from just before the deploy's time) with the volume swap
 below.

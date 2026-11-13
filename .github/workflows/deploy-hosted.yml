@@ -37,6 +37,10 @@ on:
         description: "Deploy even if the new code can't sign in to Garmin (only when Garmin itself is down and this deploy is the fix)"
         type: boolean
         default: false
+      ref:
+        description: "Commit to deploy instead of main's latest. Leave blank normally; to roll back, paste the last good commit (docs/ROLLBACK.md)"
+        type: string
+        default: ""
 
 # The app name is public — it is the connector address people paste into
 # Claude. fly.toml deliberately carries a placeholder so a self-hoster does not
@@ -51,6 +55,9 @@ jobs:
     runs-on: ubuntu-24.04  # Nov 10: ubuntu-latest became 26.04, where Playwright has no Chromium yet
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Blank on a push and on a normal deploy: the commit that started the run.
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -148,6 +155,9 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Blank on a push and on a normal deploy: the commit that started the run.
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
@@ -203,6 +213,9 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Blank on a push and on a normal deploy: the commit that started the run.
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
