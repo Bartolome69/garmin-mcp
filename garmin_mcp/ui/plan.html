@@ -926,7 +926,7 @@
           el("span", { class: "sub", text: [CREDIT, sub].filter(Boolean).join(" \u00b7 ") }),
         ]),
         appLink ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px",
-          onclick: function (e) { openUrl(appLink, e.currentTarget, "open_in_daash"); } }, ["Open in Daash"]) : null,
+          onclick: function (e) { openUrl(appLink, e.currentTarget, "open_in_daash"); } }, ["Open in app"]) : null,
       ]),
     ]);
     var nodes = timeline(m);

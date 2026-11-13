@@ -152,7 +152,7 @@ function decode(url) {
     const APP = "https://daash.test/app/#/plan?login=abc";
     ({ page, card } = await open({ ...PLAN, app: { url: APP, note: "x" }, _card: SEEN }));
     let app = await card.evaluate(() => {
-      const b = [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash");
+      const b = [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in app");
       const title = document.querySelector(".head .title"), doc = document.documentElement;
       return { button: !!b, overflow: doc.scrollWidth > doc.clientWidth + 1,
         oneLine: !!b && b.getBoundingClientRect().height < 50,
@@ -160,7 +160,7 @@ function decode(url) {
     });
     check("Open in Daash sits beside the title, on one line, without a sideways scroll",
       app.button && !app.overflow && app.oneLine && app.beside, JSON.stringify(app));
-    await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash").click());
+    await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in app").click());
     await page.waitForTimeout(200);
     check("and opens the app's link", (await page.evaluate(() => window.opened)) === APP, String(await page.evaluate(() => window.opened)));
     const taps = pings.filter((p) => p.body.tap);
@@ -447,7 +447,7 @@ f.src = "card.html";</script></body>`);
     await page.waitForTimeout(200);
     check("Share opens the run's share image", (await page.evaluate(() => window.opened)) === RUN.share_image.url,
       String(await page.evaluate(() => window.opened)));
-    await page.frames()[1].evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent === "Open in Daash").click());
+    await page.frames()[1].evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent === "Open in app").click());
     await page.waitForTimeout(200);
     check("Open in Daash opens the run in the app", (await page.evaluate(() => window.opened)) === RUN.card.app_url);
     const runTaps = pings.filter((p) => p.body.card === "run" && p.body.tap);
