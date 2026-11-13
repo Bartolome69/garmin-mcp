@@ -139,10 +139,15 @@ async function refreshed() {
 }
 
 class SignedOut extends Error {}
+// The screen a pull to refresh is fetching afresh (below), until its request goes.
+let pullFresh = null;
 
 async function api(path, options = {}, retry = true) {
   const from = options.ahead ? null : cameFrom;
   if (from) cameFrom = null;
+  // One request per pull goes past the server's memory: the pulled screen's own.
+  const pulled = !!pullFresh && !options.ahead && path.split(/[/?]/)[0] === pullFresh;
+  if (pulled) pullFresh = null;
   const res = await fetch(API + path, {
     ...options,
     headers: { Authorization: `Bearer ${token.access}`, "X-Daash-Layout": desktop() ? "desktop" : "phone",
@@ -151,6 +156,8 @@ async function api(path, options = {}, retry = true) {
       // Fetched ahead of a tap: not counted as a screen opened.
       ...(options.ahead ? { "X-Daash-Ahead": "1" } : {}),
       ...(from ? { "X-Daash-From": from } : {}),
+      // Pulled down to refresh: Garmin's latest, past the server's memory.
+      ...(pulled ? { "X-Daash-Fresh": "1" } : {}),
       ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
   if (res.status === 401) {
@@ -2787,12 +2794,89 @@ document.addEventListener("visibilitychange", () => {
   if (["today", "plan", "crew", "you"].includes(screen)) route(true);
 });
 
+// -- pull to refresh (Nov 13) -----------------------------------------------
+// At the top of a screen, pulling down drags the page with some resistance and
+// draws a ring that fills as it goes; past the line it gives a tick (where the
+// phone can), and letting go spins the ring while Garmin's latest comes in,
+// then shows a check and springs back. The browser's own pull (Chrome's reload)
+// is held off by overscroll-behavior in the CSS.
+const PULL_AT = 72, PULL_MAX = 128, PULL_LEAST_MS = 650;
+function pullToRefresh() {
+  const ring = document.createElement("div");
+  ring.id = "ptr";
+  ring.setAttribute("aria-hidden", "true");
+  ring.innerHTML = `<svg class="ptr-ring" viewBox="0 0 32 32" width="26" height="26"><circle class="track" cx="16" cy="16" r="11"/><circle class="arc" cx="16" cy="16" r="11" pathLength="100"/></svg><span class="tick-done">${ICON.check(16)}</span>`;
+  document.body.appendChild(ring);
+  const live = document.createElement("p");
+  live.className = "sr-only"; live.setAttribute("role", "status");
+  document.body.appendChild(live);
+  const arc = ring.querySelector(".arc");
+  let y0 = null, x0 = 0, dy = 0, busy = false, armed = false, t0 = 0, onRow = false;
+  // Rubber band: the further it goes, the harder it pulls back.
+  const band = (d) => PULL_MAX * (1 - Math.exp(-d / (PULL_MAX * 1.6)));
+  const spring = "cubic-bezier(.2, .9, .25, 1.12)";
+  const place = (d, animate) => {
+    const screen = $("screen");
+    const t = animate ? `transform .5s ${spring}` : "none";
+    screen.style.transition = t;
+    screen.style.transform = d ? `translate3d(0, ${d}px, 0)` : "";
+    const p = Math.min(1, d / PULL_AT);
+    ring.style.transition = animate ? `transform .5s ${spring}, opacity .3s ease` : "none";
+    ring.style.opacity = d ? String(Math.min(1, p * 1.5)) : "0";
+    ring.style.transform = `translate3d(-50%, ${Math.round(d * 0.62) - 44}px, 0) scale(${(0.7 + 0.3 * p).toFixed(3)})`;
+    if (!busy) { arc.style.strokeDasharray = `${(p * 86).toFixed(1)} 100`; ring.querySelector(".ptr-ring").style.transform = `rotate(${Math.round(p * 220)}deg)`; }
+  };
+  const blocked = () => busy || !token.access || desktop() || dragging || document.querySelector("dialog[open]") ||
+    $("sheet").innerHTML || document.body.dataset.screen === "build" || window.scrollY > 0;
+  addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || blocked()) { y0 = null; return; }
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; dy = 0; armed = false;
+    t0 = Date.now(); onRow = !!(e.target.closest && e.target.closest("[data-movable]"));
+  }, { passive: true });
+  addEventListener("touchmove", (e) => {
+    if (y0 === null) return;
+    const down = e.touches[0].clientY - y0, across = Math.abs(e.touches[0].clientX - x0);
+    // Scrolling up, sideways, or a row held long enough to lift (holdToMove): not a pull.
+    const held = dy === 0 && onRow && Date.now() - t0 >= HOLD_MS - 60;
+    if ((dy === 0 && (down <= 0 || across > down)) || held || dragging || window.scrollY > 0) {
+      if (dy) place(0, true);
+      y0 = null; return;
+    }
+    e.preventDefault();
+    dy = band(down);
+    place(dy, false);
+    if (!armed && dy >= PULL_AT) { armed = true; ring.classList.add("armed"); navigator.vibrate?.(8); }
+    else if (armed && dy < PULL_AT) { armed = false; ring.classList.remove("armed"); }
+  }, { passive: false });
+  const release = async () => {
+    if (y0 === null) return;
+    y0 = null;
+    if (dy < PULL_AT) { place(0, true); return; }
+    busy = true;
+    ring.classList.add("spin");
+    place(PULL_AT * 0.78, true);
+    live.textContent = "Refreshing";
+    const began = Date.now();
+    pullFresh = document.body.dataset.screen || "today";
+    try { await route(true); } catch { /* the screen says what went wrong */ } finally { pullFresh = null; }
+    await new Promise((ok) => setTimeout(ok, Math.max(0, PULL_LEAST_MS - (Date.now() - began))));
+    ring.classList.add("done");
+    live.textContent = "Up to date";
+    await new Promise((ok) => setTimeout(ok, 420));
+    place(0, true);
+    setTimeout(() => { ring.classList.remove("spin", "done", "armed"); busy = false; }, 500);
+  };
+  addEventListener("touchend", release);
+  addEventListener("touchcancel", release);
+}
+
 async function start() {
   let message = null;
   if (location.pathname.startsWith("/app/callback")) message = await finishSignIn();
   if (message) return signInView(message);
   window.addEventListener("hashchange", route);
   route();
+  pullToRefresh();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).catch(() => {});
 }
 

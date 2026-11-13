@@ -675,3 +675,26 @@ body.desk .b-grip { display: none; }
 #screen.stale > * { opacity: 0.45; transition: opacity 0.2s; }
 #screen.stale > :first-child { opacity: 1; }
 #screen.stale > :first-child > :not(.updating) { opacity: 0.45; }
+
+/* Pull to refresh (Nov 13): the browser's own pull is held off, ours takes it. */
+html, body { overscroll-behavior-y: contain; }
+#ptr { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 10px); z-index: 40; width: 40px; height: 40px;
+  border-radius: 50%; background: var(--surface); border: 1px solid var(--hairline); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  display: grid; place-items: center; opacity: 0; pointer-events: none; transform: translate3d(-50%, -44px, 0); will-change: transform, opacity; }
+#ptr .ptr-ring { grid-area: 1 / 1; transition: opacity .25s ease, transform .25s ease; }
+#ptr .track { fill: none; stroke: var(--hairline); stroke-width: 2.4; }
+#ptr .arc { fill: none; stroke: var(--muted); stroke-width: 2.4; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%;
+  transition: stroke .2s ease; }
+#ptr.armed .arc, #ptr.spin .arc { stroke: var(--red-text); }
+#ptr.spin .ptr-ring { animation: ptr-spin .75s linear infinite; }
+#ptr.spin .arc { stroke-dasharray: 30 100 !important; }
+#ptr .tick-done { grid-area: 1 / 1; width: 24px; height: 24px; border-radius: 50%; background: var(--easy); display: grid; place-items: center;
+  opacity: 0; transform: scale(.4); transition: opacity .2s ease, transform .35s cubic-bezier(.2, .9, .25, 1.3); }
+#ptr.done .ptr-ring { opacity: 0; transform: scale(.6); animation: none; }
+#ptr.done .tick-done { opacity: 1; transform: scale(1); }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #ptr.spin .ptr-ring { animation-duration: 2.4s; }
+  #ptr .tick-done { transition: opacity .2s ease; transform: none; }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

@@ -220,6 +220,16 @@ def api_checks() -> None:
     check("the app's callback is a recognised redirect", oauth.recognised_redirect("http://localhost/app/callback"))
 
     today = client.get("/app/api/today", headers=auth).json()
+    # Pulled to refresh (Nov 13): the server's memory of earlier reads is
+    # dropped for that request, so Garmin's latest answers it; a plain open
+    # keeps using what is remembered.
+    held = hosted.session_for(user_token)
+    held.remember(("calendar", 1999, 1), "kept")
+    client.get("/app/api/today", headers=auth)
+    check("an ordinary open keeps what the server remembers", held.knows(("calendar", 1999, 1), 3600))
+    pulled = client.get("/app/api/today", headers={**auth, "X-Daash-Fresh": "1"})
+    check("a pull to refresh asks Garmin afresh, and still answers",
+          not held.knows(("calendar", 1999, 1), 3600) and pulled.status_code == 200 and pulled.json().get("headline"))
     check("today counts down to the goal race, in the block after this one",
           today.get("headline", "").startswith("London Marathon in"), str(today.get("headline") or today.get("error")))
     check("and numbers the week across the whole plan", today.get("kicker", "").endswith("WEEK 4 OF 28"), today.get("kicker"))

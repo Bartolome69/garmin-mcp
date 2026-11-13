@@ -1550,6 +1550,12 @@ def _safe(handler):
         # Each screen opened, by name: today, session, run, plan, crew, you.
         screen = request.url.path[len(API_PREFIX):].split("/")[0]
         started = time.monotonic()
+        pulled = request.method == "GET" and request.headers.get("x-daash-fresh") == "1"
+        if pulled:
+            # Pulled down to refresh (Nov 13): the person asked for Garmin's
+            # latest, so nothing remembered from earlier reads answers for it.
+            from . import session as session_mod
+            session_mod.session.forget()
         try:
             response = await handler(request)
         except Exception:  # noqa: BLE001 - one screen's failure is reported, never a bare 500
@@ -1564,7 +1570,8 @@ def _safe(handler):
             from . import official
             seen = drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
                                "ok": response.status_code < 400,
-                               "seconds": round(time.monotonic() - started, 2), "from": _came_from(request)})
+                               "seconds": round(time.monotonic() - started, 2), "from": _came_from(request),
+                               "pulled": pulled or None})
             threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
         return response
 
