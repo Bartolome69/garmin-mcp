@@ -91,15 +91,28 @@ def forget_friends() -> None:
     _FRIENDS["at"] = None
 
 
+def internal_ids() -> frozenset[str]:
+    """PostHog ids of Daash's own accounts (Bart's, test ones), from ANALYTICS_INTERNAL_IDS.
+
+    Set as a secret on the server, never in the repo: the ids are kept out of
+    it. Their events carry internal: true, so a count can leave them out
+    without a list of ids pasted into every query (Nov 13).
+    """
+    return frozenset(i.strip() for i in os.environ.get("ANALYTICS_INTERNAL_IDS", "").split(",") if i.strip())
+
+
 def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:
     """Record one event. Returns at once; the request goes out on its own thread."""
     if not KEY:
         return
     friend = bool(subject) and subject in _friends()
+    who = distinct_id(subject)
+    if who in internal_ids():
+        properties = {**(properties or {}), "internal": True}
     payload = {
         "api_key": KEY,
         "event": event,
-        "distinct_id": distinct_id(subject),
+        "distinct_id": who,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "properties": {
             **(properties or {}),

@@ -2589,10 +2589,12 @@ async def create_workout(
     sport: str = "running",
     description: str | None = None,
     pool_length_meters: float | None = None,
+    date: str | None = None,
 ) -> dict[str, Any]:
     """Create a structured workout in Garmin Connect: always a new one, never an edit.
 
-    schedule_workout then puts it on a date so it syncs to the watch.
+    With date ('tomorrow', YYYY-MM-DD) it's also scheduled, so on the watch,
+    in one call; without, schedule_workout does that.
 
     Args:
         name: Shown in Garmin Connect and on the watch.
@@ -2600,18 +2602,16 @@ async def create_workout(
             rest, cooldown or repeat) and exactly one of "duration_seconds",
             "distance_meters" or "until_lap": true (ends on the lap button: a
             walk recovery between strides, a warm-up by feel, a rep to a
-            landmark; still its own lap, so recoveries stay out of the rep
-            splits). A repeat is {"type": "repeat", "times": 5, "steps": [...]}
+            landmark). A repeat is {"type": "repeat", "times": 5, "steps": [...]}
             and can't contain another repeat.
             Optional target: "pace" ("4:05" or ["4:00", "4:10"], min/km), "hr"
             ([150, 165] bpm, or their Garmin zone: "z2", "z3-z4") or "power"
             (watts, 250 or [240, 260]; a share of the FTP set in Garmin, "95%"
             or ["88%", "94%"]; or a power zone, "z3").
-            By default only the work reps carry a target, pace for a run;
-            warm-ups, cool-downs and recoveries carry none, so the watch stays
-            quiet, and the chat and the workout's description say what easy
-            pace to run them at: marathon pace plus 45-75 s/km, from
-            get_fitness. The watch beeps off target, so a pace target is never
+            By default only the work reps carry a target (pace for a run);
+            warm-ups, cool-downs and recoveries carry none, and the description
+            says what easy pace to run them at: marathon pace plus 45-75 s/km,
+            from get_fitness. The watch beeps off target, so a pace target is never
             narrower than 5 s/km either side ("4:00" becomes 3:55-4:05;
             tighter is widened around its middle): about 5 either side for
             reps, 10 for tempo and threshold, 15-20 for steady and long runs,
@@ -2621,8 +2621,8 @@ async def create_workout(
             and an FTP (get_fitness): sweet spot 88-94%, threshold 95-105%, VO2
             max 106-120%, endurance 56-75%. One value becomes a range 5% either
             side. Without a power meter, heart rate.
-            Example, 15 min warm-up, 5 x 1 km at 4:05 with 90 s recoveries, 10
-            min cool-down: [{"type": "warmup", "duration_seconds": 900},
+            E.g. 15 min warm-up, 5 x 1 km at 4:05, 90 s recoveries, 10 min
+            cool-down: [{"type": "warmup", "duration_seconds": 900},
             {"type": "repeat", "times": 5, "steps": [{"type": "interval",
             "distance_meters": 1000, "pace": "4:05"}, {"type": "recovery",
             "duration_seconds": 90}]}, {"type": "cooldown", "duration_seconds": 600}]
@@ -2637,8 +2637,8 @@ async def create_workout(
     beeping target. A "rest" with no duration waits for the lap button, as
     swimmers rest at the wall; "duration_seconds" fixes it. A "note" (e.g.
     "kick with board") shows on the step. Set paces from recent swims
-    (get_activities, per 100 m) or their CSS. Example, 8 x 100 free at 1:45
-    with 15 s rest: [{"type": "warmup", "distance_meters": 400, "stroke":
+    (get_activities, per 100 m) or their CSS. E.g. 8 x 100 free at 1:45, 15 s
+    rest: [{"type": "warmup", "distance_meters": 400, "stroke":
     "any"}, {"type": "repeat", "times": 8, "steps": [{"type": "interval",
     "distance_meters": 100, "stroke": "freestyle", "pace": "1:45"}, {"type":
     "rest", "duration_seconds": 15}]}, {"type": "cooldown", "distance_meters":
@@ -2657,17 +2657,25 @@ async def create_workout(
             "raw_response": str(result)[:300],
         }
 
-    return {
+    made = {
         "workout_id": workout_id,
         "name": name,
         "sport": str(sport).lower(),
         "estimated_duration": duration(estimated),
         "summary": summary,
-        "next_step": (
+    }
+    if not date:
+        return {**made, "next_step": (
             "Call schedule_workout with this workout_id and a date to put it on "
             "the Garmin calendar so it reaches the watch."
-        ),
-    }
+        )}
+    # Saved and scheduled in one go (Nov 13): a first session on the watch is
+    # one confirmation, not two calls the chat has to string together.
+    scheduled = await schedule_workout(workout_id, date)
+    if isinstance(scheduled, dict) and "error" in scheduled:
+        return {**made, "schedule_error": scheduled["error"],
+                "next_step": "The workout is saved but not on the calendar: say so, and offer schedule_workout."}
+    return {**made, "scheduled": {k: v for k, v in scheduled.items() if k != "note"}, "note": scheduled.get("note")}
 
 
 @mcp.tool()
@@ -2868,6 +2876,11 @@ async def create_strength_workout(
 # the whole week at once. Asked for once, at the end: a card per move is
 # noise, and a card drawn alongside the last move can read the calendar
 # before that move has landed.
+# Said to the user, in these words, whenever a workout reaches the Garmin
+# calendar (Nov 13): the watch picks it up at its next sync, not at once.
+ON_WATCH = "Sent to your watch. It'll be there the next time your watch syncs with Garmin Connect."
+ON_WATCH_NOTE = f'Tell the user, in these words: "{ON_WATCH}"'
+
 AFTER_MOVE = (
     "Once every change the user asked for is made, call get_plan on its own "
     "so they see the week as it now stands: once, after the last change, "
@@ -2898,7 +2911,7 @@ async def schedule_workout(workout_id: int | str, date: str) -> dict[str, Any]:
         "workout_id": workout_id,
         "scheduled_for": day,
         "schedule_id": first_present(result, "workoutScheduleId", "id"),
-        "note": "Sync the watch (or open Garmin Connect on your phone) to pick it up. " + AFTER_MOVE,
+        "note": ON_WATCH_NOTE + " " + AFTER_MOVE,
     }
 
 
@@ -3400,8 +3413,8 @@ async def create_plan(
         "sessions_created": len(created),
         "first_sessions": created[:7],
         "next_step": (
-            "Every session is on the Garmin calendar and syncs to the watch. "
-            f"Call get_plan with label {code} to show the user the new block as a card."
+            f"Every session is on the Garmin calendar. Call get_plan with label {code} to show the user "
+            f"the new block as a card, and end with: \"{ON_WATCH}\""
         ),
         **(checked or {}),
     }
@@ -3436,8 +3449,8 @@ async def create_plan(
                 "first_sessions": created[:7],
             },
             "next_step": (
-                "Every session is on the Garmin calendar and syncs to the watch. "
-                "The user sees the new block as a card above: sum it up in a sentence or two."
+                "Every session is on the Garmin calendar. The user sees the new block as a card above: "
+                f"sum it up in a sentence or two, and end with: \"{ON_WATCH}\""
             ),
             **(checked or {}),
         }

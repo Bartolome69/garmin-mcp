@@ -1711,6 +1711,58 @@ def _when(weeks_away: int) -> str:
     return f"in {weeks_away} weeks"
 
 
+# A first session to put on the watch when nothing is planned (Nov 13: 65% of
+# new people read their data and leave; a whole block is a big first ask).
+# Easy, at about their usual length, never more than 10% up on it.
+SUGGEST_LEAST_MIN = 20
+SUGGEST_MOST_MIN = 60
+
+
+def suggest_tomorrow(answer: Any, today: date) -> dict[str, Any] | None:
+    """An easy session for tomorrow from the last four weeks of a no-plan answer, or None.
+
+    Rules, nothing more: run three days running, or a session yesterday half
+    as long again as usual, and tomorrow is short; otherwise about the usual
+    length. With almost nothing to go on, 20 minutes. Steps are create_workout's.
+    """
+    if not isinstance(answer, dict) or not isinstance(answer.get("weeks"), list):
+        return None
+    ride = answer.get("primary") == "ride"
+    sport = "ride" if ride else "run"
+    done = sorted(
+        (str(x.get("date"))[:10], int(x.get("secs") or 0))
+        for w in answer["weeks"] if isinstance(w, Mapping)
+        for x in (w.get("sessions") or []) if isinstance(x, Mapping)
+        and x.get("sport") == sport and x.get("secs") and str(x.get("date") or "")[:10] < today.isoformat()
+    )
+    lengths = sorted(secs for _, secs in done)
+    days = {d for d, _ in done}
+    usual = lengths[len(lengths) // 2] / 60 if lengths else 0
+    yesterday = (today - timedelta(days=1)).isoformat()
+    run_of_three = all((today - timedelta(days=n)).isoformat() in days for n in (1, 2, 3))
+    big_yesterday = any(d == yesterday and secs / 60 > usual * 1.5 for d, secs in done)
+    if len(done) < 2:
+        minutes, why = SUGGEST_LEAST_MIN, "an easy start, with little recent training to go on"
+    elif run_of_three or big_yesterday:
+        minutes = max(SUGGEST_LEAST_MIN, usual * 0.6)
+        why = "short and easy, after " + ("three days in a row" if run_of_three else "a bigger day yesterday")
+    elif usual > SUGGEST_MOST_MIN:
+        minutes, why = SUGGEST_MOST_MIN, f"easy, an hour, against your usual {round(usual)} minutes lately"
+    else:
+        minutes = usual
+        why = f"easy, about your usual {round(usual)} minutes over the last four weeks"
+    # Down to the nearest 5 minutes: never more than they've been doing.
+    minutes = max(SUGGEST_LEAST_MIN, int(5 * (min(SUGGEST_MOST_MIN, minutes) // 5)))
+    kind = "ride" if ride else "run"
+    return {
+        "name": f"Easy {kind} {minutes} min",
+        "sport": "cycling" if ride else "running",
+        "minutes": minutes,
+        "why": why,
+        "steps": [{"type": "interval", "duration_seconds": minutes * 60}],
+    }
+
+
 def situation(answer: Any, today: date, events: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any] | None:
     """What the person is up to, and one next step to offer, from a get_plan answer.
 
@@ -1725,15 +1777,31 @@ def situation(answer: Any, today: date, events: Sequence[Mapping[str, Any]] = ()
     ride = answer.get("primary") == "ride"
     sport = "riding" if ride else "running"
 
-    def found(stage: str, offer: str) -> dict[str, Any]:
-        return drop_empty({"stage": stage, "race": race, "offer": offer})
+    def found(stage: str, offer: str, kind: str, **more: Any) -> dict[str, Any]:
+        return drop_empty({"stage": stage, "race": race, "offer": offer, "offer_kind": kind, **more})
 
     if "error" in answer or answer.get("source") == "log":
+        # Nothing planned: tomorrow's session first, a whole block second
+        # (Nov 13). One yes puts something on the watch the same day.
+        tomorrow = suggest_tomorrow(answer, today) if "error" not in answer else None
+        if tomorrow:
+            first = (f"Want me to put tomorrow's session on your watch: {tomorrow['name'].lower()} "
+                     f"({tomorrow['why']})?")
+            send = ("On yes, create_workout with suggested_tomorrow's name, sport and steps and date "
+                    "'tomorrow', in one call.")
+            if race:
+                then = f"Then I can build a block for {race['name']}, {_when(race['weeks_away'])}."
+                return found("race_ahead", f"{first} {then}", "tomorrow", suggested_tomorrow=tomorrow, how=send)
+            regular = (answer.get("rides") if ride else answer.get("runs")) or 0
+            then = ("Or I can build a whole plan for your next race or goal, with every session on your watch."
+                    if regular >= REGULAR_IN_LOG else f"Or a gentle plan to build your {sport} up from here.")
+            return found("just_training" if regular >= REGULAR_IN_LOG else "getting_going",
+                         f"{first} {then}", "tomorrow", suggested_tomorrow=tomorrow, how=send)
         if race:
             return found(
                 "race_ahead",
                 f"{race['name']} is {_when(race['weeks_away'])}. Want me to build a block "
-                f"for it from where your {sport} is now?",
+                f"for it from where your {sport} is now?", "plan",
             )
         regular = (answer.get("rides") if ride else answer.get("runs")) or 0
         if "error" not in answer and regular >= REGULAR_IN_LOG:
@@ -1742,9 +1810,9 @@ def situation(answer: Any, today: date, events: Sequence[Mapping[str, Any]] = ()
             return found(
                 "just_training",
                 f"Want me to build you a plan for your next race or goal, set from your recent "
-                f"{sport} and with every session on your watch?",
+                f"{sport} and with every session on your watch?", "plan",
             )
-        return found("getting_going", f"Want a gentle plan to build your {sport} up from here?")
+        return found("getting_going", f"Want a gentle plan to build your {sport} up from here?", "plan")
 
     weeks = answer.get("weeks")
     if not isinstance(weeks, list):
@@ -1761,18 +1829,19 @@ def situation(answer: Any, today: date, events: Sequence[Mapping[str, Any]] = ()
     if not ahead:
         return found(
             "block_done",
-            "That block is done. Want to see where your fitness has landed, or plan what's next?",
+            "That block is done. Want to see where your fitness has landed, or plan what's next?", "plan_next",
         )
     if len(ahead) == len(dates) and ahead[0] > now:
         start = date.fromisoformat(ahead[0])
         return found(
             "starting",
             f"Your block starts {start.strftime('%A')} {start.day} {start.strftime('%b')}. "
-            "Want a quick check of where your fitness is at before it begins?",
+            "Want a quick check of where your fitness is at before it begins?", "fitness_check",
         )
     if ahead[0] == now:
-        return found("mid_block", "Want me to check today's session against how recovered you are?")
-    return found("mid_block", "Want me to check how you're recovering, or move anything around this week?")
+        return found("mid_block", "Want me to check today's session against how recovered you are?", "readiness_check")
+    return found("mid_block", "Want me to check how you're recovering, or move anything around this week?",
+                 "recovery_check")
 
 
 # --------------------------------------------------------------------------

@@ -136,6 +136,17 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+# When each person first had a workout reach their watch through Daash (Nov 13:
+# activation is a workout on the watch within a day of connecting). Keyed by
+# the email fingerprint, or the token for a row without one, so a fresh
+# sign-in, which replaces the users row, keeps it.
+WATCH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS watch_sends (
+    person        TEXT PRIMARY KEY,
+    first_at      INTEGER NOT NULL
+);
+"""
+
 FRIENDS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS friends (
     email_hash    TEXT PRIMARY KEY,
@@ -277,6 +288,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(APP_SCHEMA)
     conn.executescript(RACE_PROMPT_SCHEMA)
     conn.executescript(PUSH_SCHEMA)
+    conn.executescript(WATCH_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -1531,6 +1543,24 @@ def secret_setting(name: str, make: Callable[[], bytes]) -> bytes:
         conn.execute("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)", (name, _cipher().encrypt(value)))
         row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
     return _cipher().decrypt(row[0])
+
+
+def mark_sent_to_watch(person: str, now: int | None = None) -> bool:
+    """Note that a workout reached this person's watch. True the first time ever."""
+    if not person:
+        return False
+    with _connect() as conn:
+        cur = conn.execute("INSERT OR IGNORE INTO watch_sends (person, first_at) VALUES (?, ?)",
+                           (person, int(now or time.time())))
+    return cur.rowcount == 1
+
+
+def has_sent_to_watch(person: str) -> bool:
+    """Whether a workout has ever reached this person's watch through Daash."""
+    if not person:
+        return False
+    with _connect() as conn:
+        return conn.execute("SELECT 1 FROM watch_sends WHERE person = ?", (person,)).fetchone() is not None
 
 
 def get_setting(name: str) -> str:

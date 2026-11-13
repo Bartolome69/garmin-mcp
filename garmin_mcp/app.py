@@ -1804,7 +1804,24 @@ async def api_edit(request: Request) -> Response:
         return _json({"error": str(exc)}, 409)
     _track("app_edit", drop_empty({"action": action, "via": _via(body), "ok": True, "layout": _layout(request),
                                    "home_screen": _home(request)}))
+    if action in ("move", "easier", "undo", "resend"):
+        # Each of these writes the session to the calendar again, so to the watch.
+        _watch_sent(f"app_{action}", 1)
     return _json(result)
+
+
+def _watch_sent(source: str, sessions: int, user_token: str | None = None) -> None:
+    """workout_sent_to_watch for a write the app made (Nov 13): the app's edits
+    and its plan builder don't pass through the chat's tool hook."""
+    from . import hosted, official
+
+    token = user_token or official.current()
+    if not token or token == "local":
+        return
+    try:
+        hosted.sent_to_watch(token, store.get_user(token), source, sessions, not store.has_connect(token))
+    except Exception:  # noqa: BLE001 - counting never fails the edit
+        log.debug("workout_sent_to_watch not recorded", exc_info=True)
 
 
 def _via(body: Mapping[str, Any]) -> str:
@@ -2228,6 +2245,7 @@ async def _send(who: str, args: dict[str, Any], resume: bool) -> None:
     else:
         job.update(state="done", sent=job["total"])
         _track_built(who, job, resume, None)
+        _watch_sent("app_builder", int(job.get("total") or 0), who)
 
 
 def _track_built(who: str, job: Mapping[str, Any], resume: bool, reason: str | None) -> None:

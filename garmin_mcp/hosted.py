@@ -728,6 +728,45 @@ def _crew_offer_due(user: store.User, crew_key: str, today: date | None = None) 
         return False
 
 
+# Nov 13: two thirds of new people read their data and leave with nothing on
+# the watch, and those who send one in their first day come back more (80% in
+# week 2 against 62%). So for the first day, until something reaches the watch,
+# the first few answers end with one offer: tomorrow's session.
+FIRST_DAY_HOURS = 24
+FIRST_DAY_NOTES = 2
+# Not get_plan: its own situation already makes this offer when nothing is planned.
+FIRST_DAY_READS = {"get_activities", "get_activity_details", "get_readiness", "get_sleep_data",
+                   "get_daily_summary", "get_fitness", "get_recovery_trends", "get_profile"}
+FIRST_DAY_NOTE = (
+    "For you, not to repeat: their first day with Daash, and nothing on their watch yet. End this "
+    "answer with one question: shall I put tomorrow's session on your watch? get_plan's situation "
+    "suggests one from their recent training (if it's already in this chat, use it). On yes, "
+    "create_workout with date 'tomorrow' sends it in one call. Not if a session is already planned "
+    "for tomorrow. Ask once in this chat; if they say no or ask for something else, drop it."
+)
+_FIRST_DAY_SAID: dict[str, tuple[str, int]] = {}
+
+
+def _first_day_due(user_token: str, user: store.User, name: str, result: Any) -> bool:
+    """Whether this answer should carry the first-day offer (FIRST_DAY_NOTE)."""
+    if name not in FIRST_DAY_READS or not isinstance(result, dict) or "error" in result:
+        return False
+    hours = hours_since_connect(user)
+    if hours is None or hours > FIRST_DAY_HOURS:
+        return False
+    if store.has_sent_to_watch(user.email_hash or user_token):
+        return False
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    day, said = _FIRST_DAY_SAID.get(user_token, (today, 0))
+    said = said if day == today else 0
+    if said >= FIRST_DAY_NOTES:
+        return False
+    if len(_FIRST_DAY_SAID) > 20000:
+        _FIRST_DAY_SAID.clear()
+    _FIRST_DAY_SAID[user_token] = (today, said + 1)
+    return True
+
+
 WELCOME = (
     "For you, not to repeat: this person has only just connected Daash. Get to "
     "know where they are before anything else. For a question about their "
@@ -875,7 +914,48 @@ def _with_card_check(name: str, result: Any, user: store.User) -> Any:
     return {**result, "_card": card_seen_url(base, user.email_hash, view)}
 
 
-def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> hooks.Hook:
+# Tools whose success puts something on the watch, and how many sessions it was.
+def _sessions_sent(name: str, result: Any) -> int:
+    """How many sessions a successful answer put on the Garmin calendar, so on the watch."""
+    if not isinstance(result, dict) or "error" in result:
+        return 0
+    if name == "schedule_workout":
+        return 1 if result.get("scheduled_for") else 0
+    if name == "create_workout":
+        return 1 if (result.get("scheduled") or {}).get("scheduled_for") else 0
+    if name == "create_plan":
+        made = (result.get("created") or {}).get("sessions_created") or result.get("sessions_created")
+        return int(made or 0)
+    return 0
+
+
+_WATCH_SOURCE = {"schedule_workout": "chat_schedule", "create_workout": "chat_create", "create_plan": "chat_plan"}
+
+
+def login_route(alone: bool) -> str:
+    """How Daash reads this account: Garmin's official API alone, or a Garmin Connect sign-in."""
+    return "official" if alone else "password"
+
+
+def hours_since_connect(user: store.User | None, now: float | None = None) -> float | None:
+    if user is None or not user.created_at:
+        return None
+    return round(((now or time.time()) - user.created_at) / 3600, 1)
+
+
+def sent_to_watch(user_token: str, user: store.User | None, source: str, sessions: int, alone: bool) -> None:
+    """workout_sent_to_watch: the activation event, sent only when a write succeeded (Nov 13)."""
+    if sessions <= 0 or user is None:
+        return
+    person = user.email_hash or user_token
+    first = store.mark_sent_to_watch(person)
+    analytics.capture("workout_sent_to_watch", person, drop_empty({
+        "source": source, "sessions": sessions, "login_route": login_route(alone),
+        "hours_since_connect": hours_since_connect(user), "first_ever": first,
+    }))
+
+
+def _after_tool_for(user_token: str, user: store.User, alone: bool = False, client: str | None = None) -> hooks.Hook:
     """The hook for one person's request: report the tool, carry any news.
 
     An account on the official API alone gets its answers as they are: no read
@@ -883,14 +963,39 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
     directories ask that a connector not talk to the model past its own data.
     """
     crew_key = crews.member_key(user_token, user.email_hash)
+    person = user.email_hash or user_token
+
+    def _report_call(name: str, result: Any, held: bool) -> None:
+        """tool_called, once per call (Nov 13): tool_used counts a tool once a day,
+        and twice after a restart, so calls per person couldn't be counted."""
+        error = result.get("error") if isinstance(result, dict) else None
+        kind = (("unexpected" if isinstance(error, str) and _UNEXPECTED.match(error) else "expected")
+                if error else None)
+        seconds = hooks.seconds()
+        analytics.capture("tool_called", person, drop_empty({
+            "tool": name, "ok": not error, "error_kind": kind, "held": held or None,
+            "login_route": login_route(alone), "client": client,
+            "hours_since_connect": hours_since_connect(user),
+            "seconds": round(seconds, 2) if seconds is not None else None,
+        }))
+        sessions = 0 if error else _sessions_sent(name, result)
+        if sessions:
+            sent_to_watch(user_token, user, _WATCH_SOURCE[name], sessions, alone)
+        offer = (result.get("situation") or {}) if name == "get_plan" and isinstance(result, dict) else {}
+        if offer.get("offer"):
+            analytics.capture("offer_made", person, drop_empty({
+                "stage": offer.get("stage"), "offer_kind": offer.get("offer_kind"),
+                "login_route": login_route(alone), "hours_since_connect": hours_since_connect(user)}))
 
     def after(name: str, result: Any) -> Any:
         if name == "get_plan" and user_token in _PLAN_CALLS:
             _PLAN_CALLS[user_token] = (_PLAN_CALLS[user_token][0], time.monotonic())
-        if (
+        held = (
             not alone and name in WITH_PLAN_HELD and isinstance(result, dict) and "error" not in result
             and _sent_with_plan(user_token, name)
-        ):
+        )
+        _report_call(name, result, held)
+        if held:
             email = store.email_for(user_token)
             analytics.capture(
                 "tool_held",
@@ -969,6 +1074,11 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False) -> h
                 {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
             )
             return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
+        if _first_day_due(user_token, user, name, result):
+            analytics.capture("offer_made", person, drop_empty({
+                "stage": "first_day", "offer_kind": "tomorrow", "tool": name,
+                "login_route": login_route(alone), "hours_since_connect": hours_since_connect(user)}))
+            return {**result, "first_day": FIRST_DAY_NOTE}
         if (
             name == "get_plan" and isinstance(result, dict) and "error" not in result
             # One ask per answer: not on the answer that brings up the app.
@@ -2516,6 +2626,7 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
         **({"email": email} if email else {}),
         "via": "oauth",
         "route": "official",
+        "login_route": "official",
         **({"app": app} if app else {}),
         "returning": returning,
         "joined": joined,
@@ -2692,6 +2803,8 @@ def _finish(
             # "direct" is someone who reached the form without Claude's request
             # attached; the page below sends them back to start from Claude.
             "via": ("oauth" if flow else "direct") if OAUTH_ENABLED else "url",
+            # Nov 13: only Garmin's page said its route; both do now, under one name.
+            "login_route": "password",
             # Claude, ChatGPT or another app, from where the sign-in goes back to.
             **({"app": app} if (app := (oauth.app_for_flow(flow) if OAUTH_ENABLED and flow else None)) else {}),
             "mfa": mfa,
@@ -4073,7 +4186,9 @@ class SessionBinding:
                 analytics.capture(
                     "first_tool_call",
                     user.email_hash or user_token,
-                    {"account": user.email_masked, **({"email": email} if email else {})},
+                    {"account": user.email_masked, **({"email": email} if email else {}),
+                     "login_route": login_route(not store.has_connect(user_token)), **({"client": app} if app else {}),
+                     "hours_since_connect": hours_since_connect(user)},
                 )
 
         today = time.strftime("%Y-%m-%d", time.gmtime(now))
@@ -4093,7 +4208,7 @@ class SessionBinding:
         # The chat's hooks pace and count answers for a conversation; the
         # app's screens are not one, so they run without them.
         hook_token = (hooks.use(None, None) if for_app else
-                      hooks.use(_after_tool_for(user_token, user, alone), _before_tool_for(user_token, alone)))
+                      hooks.use(_after_tool_for(user_token, user, alone, app), _before_tool_for(user_token, alone)))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
         alone_token = server_mod.use_alone(alone)

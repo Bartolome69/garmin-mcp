@@ -980,11 +980,17 @@ async def check_calendar_fallback(check) -> None:
             server._calendar_months = lambda start, end: _months([{"calendarItems": [
                 {"id": 7, "itemType": "event", "date": race_day, "title": "Berlin Half"}]}])
             racing = await scenario([])
-            check("with nothing scheduled and a race on the calendar, a block for it is offered",
-                  (racing.get("situation") or {}).get("stage") == "race_ahead"
-                  and racing["situation"]["race"]["name"] == "Berlin Half"
-                  and "Berlin Half is in 10 weeks" in racing["situation"]["offer"],
-                  str(racing.get("situation")))
+            sit = racing.get("situation") or {}
+            check("with nothing scheduled and a race on the calendar: tomorrow's session first, then a block for it (Nov 13)",
+                  sit.get("stage") == "race_ahead" and sit["race"]["name"] == "Berlin Half"
+                  and sit.get("offer_kind") == "tomorrow" and sit["offer"].startswith("Want me to put tomorrow's session")
+                  and "build a block for Berlin Half, in 10 weeks" in sit["offer"], str(sit))
+            tomorrow = sit.get("suggested_tomorrow") or {}
+            check("and the session is ready for create_workout: a name, a sport, steps, and how to send it",
+                  tomorrow.get("name", "").startswith("Easy run") and tomorrow.get("sport") == "running"
+                  and tomorrow.get("steps") and "date 'tomorrow'" in sit.get("how", ""), str(tomorrow))
+            check("getting going is offered tomorrow's session too",
+                  (quiet.get("situation") or {}).get("offer_kind") == "tomorrow", str(quiet.get("situation")))
             with_event = await scenario([on(61, -2), on(62, 2)])
             berlin = next((r for r in with_event.get("races") or [] if r.get("name") == "Berlin Half"), None)
             check("a race added as a Garmin event is one of the plan's races, with its week and distance",
@@ -1133,6 +1139,19 @@ async def check_reads_at_once(check) -> None:
         began = _t.monotonic()
         await server.get_plan()
         took = _t.monotonic() - began
+        # Nov 13: a first session saved and on the calendar in one call.
+        steps = [{"type": "interval", "duration_seconds": 2400}]
+        both = await server.create_workout("Easy run 40 min", steps, "running", date="tomorrow")
+        check("create_workout with a date saves it and puts it on that day, in one call",
+              both.get("workout_id") and (both.get("scheduled") or {}).get("scheduled_for")
+              and server.ON_WATCH in (both.get("note") or "") and "next_step" not in both, str(both)[:300])
+        plain = await server.create_workout("Easy run 40 min", steps, "running")
+        check("without a date it's only saved, and says how to schedule it",
+              "scheduled" not in plain and "schedule_workout" in plain.get("next_step", ""), str(plain)[:200])
+        late = await server.create_workout("Easy run 40 min", steps, "running", date="last tuesday")
+        check("a date that can't be read leaves it saved, and says it isn't on the calendar",
+              late.get("workout_id") and late.get("schedule_error") and "not on the calendar" in late.get("next_step", ""),
+              str(late)[:240])
         check("the plan opened again 2 minutes later reads only this month and next from Garmin",
               first >= 6 and len(months) == 2, f"first open {first} months, again {len(months)}: {months}")
 
@@ -1709,6 +1728,8 @@ async def main() -> int:
             check("a move ends with the week as a card, once",
                   "call get_plan on its own" in scheduled.get("note", "")
                   and "not after each one" in scheduled.get("note", ""))
+            check("and tells the user, in set words, that it's sent and syncs next time (Nov 13)",
+                  __import__("garmin_mcp.server").server.ON_WATCH in scheduled.get("note", ""), scheduled.get("note"))
 
             print("\nupdate_workout")
             renamed = payload(await sess.call_tool(

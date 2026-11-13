@@ -366,6 +366,14 @@ def api_checks() -> None:
     check("each edit is recorded, with how it was made",
           {e["properties"]["action"] for e in edits} >= {"easier", "undo", "move"}
           and all(e["properties"].get("via") == "button" for e in edits), str([e["properties"] for e in edits])[:160])
+    # Nov 13: an edit made in the app writes the session to the calendar
+    # again, so it counts as a workout sent to the watch, by source.
+    sends = posted("workout_sent_to_watch")
+    check("app edits are counted as sent to the watch, by source, once ever as the first",
+          {e["properties"].get("source") for e in sends} >= {"app_easier", "app_move"}
+          and sum(1 for e in sends if e["properties"].get("first_ever")) <= 1
+          and all(e["properties"].get("login_route") in ("password", "official") for e in sends),
+          str([e["properties"] for e in sends])[:240])
     client.post(f"/app/api/session/{later}/move", headers={**auth, "X-Daash-Layout": "desktop"},
                 json={"to": later, "via": "drag"})
     check("a drag on the calendar says so, and the layout",

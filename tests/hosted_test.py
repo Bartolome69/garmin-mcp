@@ -1429,6 +1429,64 @@ async def main() -> int:
               and tool_failures[0]["properties"].get("error_type") == "KeyError"
               and "secret-run-name" not in json.dumps(tool_failures[0]),
               str(tool_failures))
+        # Nov 13: every call is counted with its route and client; a write that
+        # reaches the watch is the activation event, first_ever once; the
+        # first day's answers end with one offer, twice at most, until then.
+        newbie = store.save_user("n***@example.com", "{}", email_hash="fp-newbie-1113", email="newbie1113@example.com")
+        store.claim_news(newbie, hosted.NEWS_VERSION)
+        store.claim_tip(newbie)
+        hosted._FIRST_DAY_SAID.clear()
+        hook = hosted._after_tool_for(newbie, store.get_user(newbie), False, "Claude")
+        before = len(SENT)
+        first = hook("get_activities", {"activities": []})
+        second = hook("get_readiness", {"readiness": {}})
+        third = hook("get_sleep_data", {"sleep": {}})
+        refused = hook("schedule_workout", {"error": "That date has passed."})
+        calls = [e for e in SENT[before:] if e["event"] == "tool_called"]
+        check("each call is a tool_called, with its route, client and how long since connecting",
+              [e["properties"]["tool"] for e in calls] == ["get_activities", "get_readiness", "get_sleep_data", "schedule_workout"]
+              and all(e["properties"].get("login_route") == "password" and e["properties"].get("client") == "Claude"
+                      and e["properties"].get("hours_since_connect") is not None for e in calls), str(calls)[:300])
+        check("a refused call is ok: false, an expected refusal, and sends nothing to the watch",
+              calls[-1]["properties"].get("ok") is False and calls[-1]["properties"].get("error_kind") == "expected"
+              and not [e for e in SENT[before:] if e["event"] == "workout_sent_to_watch"], str(calls[-1]))
+        check("the first day's first two answers end with the offer, the third doesn't",
+              first.get("first_day") == hosted.FIRST_DAY_NOTE and second.get("first_day") and "first_day" not in third
+              and "first_day" not in refused, str([("first_day" in x) for x in (first, second, third)]))
+        before = len(SENT)
+        hook("schedule_workout", {"workout_id": 1, "scheduled_for": "2026-11-14", "schedule_id": 9})
+        hook("create_plan", {"weeks": [], "created": {"sessions_created": 12, "weeks": 4}})
+        sends = [e for e in SENT[before:] if e["event"] == "workout_sent_to_watch"]
+        check("a workout that reaches the watch is workout_sent_to_watch, first_ever only the first time",
+              [(e["properties"]["source"], e["properties"]["sessions"], e["properties"].get("first_ever")) for e in sends]
+              == [("chat_schedule", 1, True), ("chat_plan", 12, False)], str([e["properties"] for e in sends]))
+        hosted._FIRST_DAY_SAID.clear()
+        check("once something is on the watch, the first-day offer stops",
+              "first_day" not in hook("get_activities", {"activities": []}))
+        old = store.save_user("o***@example.com", "{}", email_hash="fp-old-1113", email="old1113@example.com")
+        with store._connect() as conn:
+            conn.execute("UPDATE users SET created_at = created_at - 3 * 86400 WHERE user_token = ?", (old,))
+        store.claim_news(old, hosted.NEWS_VERSION)
+        store.claim_tip(old)
+        check("someone connected days ago gets no first-day offer",
+              "first_day" not in hosted._after_tool_for(old, store.get_user(old))("get_activities", {"activities": []}))
+        check("an official-only account gets no note added",
+              "first_day" not in hosted._after_tool_for(newbie, store.get_user(newbie), True)("get_plan", {"weeks": []}))
+        before = len(SENT)
+        hook("get_plan", {"weeks": [], "situation": {"stage": "getting_going", "offer": "Want…?", "offer_kind": "tomorrow"}})
+        offers = [e for e in SENT[before:] if e["event"] == "offer_made"]
+        check("the plan's next-step offer is counted, by stage and kind",
+              offers and offers[0]["properties"].get("stage") == "getting_going"
+              and offers[0]["properties"].get("offer_kind") == "tomorrow", str(offers))
+        me = analytics.distinct_id("fp-newbie-1113")
+        os.environ["ANALYTICS_INTERNAL_IDS"] = f"someone-else, {me}"
+        before = len(SENT)
+        hook("get_profile", {"name": "x"})
+        os.environ.pop("ANALYTICS_INTERNAL_IDS")
+        hook("get_profile", {"name": "x"})
+        marks = [e["properties"].get("internal") for e in SENT[before:] if e["event"] == "tool_called"]
+        check("an account listed as internal has its events marked, and only while listed", marks == [True, None], str(marks))
+
         # The hourly test sign-in the server runs on its own clock: passes on
         # Garmin's "wrong email or password", fails otherwise, reported either
         # way, and never by anything but reasons and timings.
