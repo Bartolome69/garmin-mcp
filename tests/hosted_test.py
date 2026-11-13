@@ -1341,6 +1341,46 @@ async def main() -> int:
               and "@" not in json.dumps(rows[0]), str(rows))
         check("the next hour starts with only its own calls",
               list(hosted._TIMINGS) == ["get_readiness"], str(hosted._TIMINGS))
+        # Nov 13: one person's chat calls are capped, so one chat reading a year
+        # day by day can't get the server's Garmin access slowed for everyone.
+        hosted._CALLS.clear()
+        hosted._LIMIT_REPORTED.clear()
+        ran = []
+
+        async def _counted_tool():
+            ran.append(1)
+            return {"ok": 1}
+        _counted_tool.__name__ = "get_shoes"
+        capped = garmin_server.tool_errors(_counted_tool)
+        capped_user = store.get_user(news_user)
+        cap_hook = hooks.use(hosted._after_tool_for(news_user, capped_user),
+                             hosted._before_tool_for(news_user, user=capped_user))
+        before = len(SENT)
+        try:
+            answers = [await capped() for _ in range(hosted.CALL_LIMIT)]
+            over = await capped()
+            again = await capped()
+        finally:
+            hooks.reset(cap_hook)
+        check("calls up to the cap go through", all(a == {"ok": 1} for a in answers) and len(ran) == hosted.CALL_LIMIT)
+        check("the next one is turned away before reaching Garmin, saying why and for how long",
+              len(ran) == hosted.CALL_LIMIT and isinstance(over, dict)
+              and "pausing this account for about 10 minutes" in over.get("error", "")
+              and "300 requests in 10 minutes" in over["error"] and again.get("error") == over["error"], str(over))
+        for _ in range(40):
+            reached = [e for e in SENT[before:] if e["event"] == "call_limit_reached"]
+            called = [e for e in SENT[before:] if e["event"] == "tool_called"]
+            if reached and len(called) >= hosted.CALL_LIMIT:
+                break
+            time.sleep(0.05)
+        check("reaching the cap is reported once, and calls turned away aren't counted as calls",
+              len(reached) == 1 and reached[0]["properties"]["calls"] == hosted.CALL_LIMIT
+              and len(called) == hosted.CALL_LIMIT, f"{len(reached)} {len(called)}")
+        later = time.monotonic() + hosted.CALL_WINDOW + 1
+        hosted._within_call_limit(news_user, capped_user, now=later)
+        check("once the window has moved on, calls go through again", len(hosted._CALLS[news_user]) == 1)
+        hosted._CALLS.clear()
+        hosted._LIMIT_REPORTED.clear()
         tips = [e for e in events if e["event"] == "permission_tip_shown"]
         check("showing the tip is counted once", len(tips) == 1, str(len(tips)))
         # Nov 6: a crew, offered once in a chat, to someone settled in and in no crew,

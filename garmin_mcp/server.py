@@ -1429,7 +1429,11 @@ def tool_errors(fn):
                 # Called by another tool, not the chat: its answer, unreported.
                 return await answer(*args, **kwargs)
             started = time.monotonic()
-            settle = hooks.before_tool(fn.__name__)
+            try:
+                settle = hooks.before_tool(fn.__name__)
+            except hooks.Paused as paused:
+                # Turned away before reaching Garmin: not run, so not reported.
+                return {"error": str(paused)}
             result = await answer(*args, **kwargs)
             if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
                 try:

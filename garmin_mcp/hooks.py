@@ -55,13 +55,22 @@ def reset(token) -> None:
     _hook.reset(hook_token)
 
 
+class Paused(Exception):
+    """Raised by a start hook to turn a call away: its message is the tool's answer."""
+
+
 def before_tool(name: str) -> float:
-    """Tell the hook a tool is starting; the seconds its answer should take, at least."""
+    """Tell the hook a tool is starting; the seconds its answer should take, at least.
+
+    Raises Paused when the hook turns the call away (too many calls too fast).
+    """
     before = _before.get()
     if before is None:
         return 0.0
     try:
         return float(before(name) or 0.0)
+    except Paused:
+        raise
     except Exception:  # noqa: BLE001 - a reporting hiccup must not hold up an answer
         log.debug("tool start hook failed for %s", name, exc_info=True)
         return 0.0

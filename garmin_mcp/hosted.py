@@ -808,14 +808,58 @@ _HELD: dict[tuple[str, str], float] = {}
 _STARTED: ContextVar[float] = ContextVar("hosted_tool_started", default=0.0)
 
 
-def _before_tool_for(user_token: str, alone: bool = False) -> hooks.Before:
-    """The start hook for one person's request: note a get_plan, pace the reads sent with one.
+# A cap on one person's calls from chat (Nov 13). Every call reaches Garmin from
+# this one server, so one chat reading a year day by day (4,117 calls in 25
+# minutes that afternoon) puts everyone's access at risk. The busiest normal
+# use that day was 82 calls in ten minutes. Calls turned away don't count, so
+# a chat that keeps asking gets through again once the window moves on.
+CALL_LIMIT = 300
+CALL_WINDOW = 600.0
+_CALLS: dict[str, list[float]] = {}
+# When each person was last reported as reaching the cap, so it's reported once a window.
+_LIMIT_REPORTED: dict[str, float] = {}
+
+
+def _call_limit_note(wait: float) -> str:
+    minutes = max(1, -(-int(wait) // 60))
+    return (
+        f"Daash is pausing this account for about {minutes} minute{'s' if minutes != 1 else ''}: "
+        f"this chat asked Garmin for a lot in a short time ({CALL_LIMIT} requests in "
+        f"{int(CALL_WINDOW // 60)} minutes). Tell the user, and ask for a shorter period or a "
+        "weekly view instead of reading day by day. Don't retry until then."
+    )
+
+
+def _within_call_limit(user_token: str, user: store.User | None = None, now: float | None = None) -> None:
+    """Count one call from chat; raise hooks.Paused once a person is over the cap."""
+    now = time.monotonic() if now is None else now
+    if len(_CALLS) > 20000:
+        _CALLS.clear()
+        _LIMIT_REPORTED.clear()
+    recent = [t for t in _CALLS.get(user_token, ()) if now - t < CALL_WINDOW]
+    if len(recent) >= CALL_LIMIT:
+        _CALLS[user_token] = recent
+        if now - _LIMIT_REPORTED.get(user_token, -CALL_WINDOW) >= CALL_WINDOW:
+            _LIMIT_REPORTED[user_token] = now
+            log.warning("call limit reached: %d calls in %ds", len(recent), int(CALL_WINDOW))
+            if user is not None:
+                analytics.capture("call_limit_reached", user.email_hash or user_token,
+                                  {"calls": len(recent), "window_s": int(CALL_WINDOW), "account": user.email_masked})
+        raise hooks.Paused(_call_limit_note(CALL_WINDOW - (now - recent[0])))
+    recent.append(now)
+    _CALLS[user_token] = recent
+
+
+def _before_tool_for(user_token: str, alone: bool = False, user: store.User | None = None) -> hooks.Before:
+    """The start hook for one person's request: hold to the call cap, note a get_plan,
+    pace the reads sent with one.
 
     An account on the official API alone, as the directories list Daash, holds
-    nothing back, so nothing is paced.
+    nothing back, so nothing is paced; the cap applies to everyone.
     """
 
     def before(name: str) -> float:
+        _within_call_limit(user_token, user)
         now = time.monotonic()
         _STARTED.set(now)
         if name == "get_plan":
@@ -4218,7 +4262,7 @@ class SessionBinding:
         # The chat's hooks pace and count answers for a conversation; the
         # app's screens are not one, so they run without them.
         hook_token = (hooks.use(None, None) if for_app else
-                      hooks.use(_after_tool_for(user_token, user, alone, app), _before_tool_for(user_token, alone)))
+                      hooks.use(_after_tool_for(user_token, user, alone, app), _before_tool_for(user_token, alone, user)))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
         alone_token = server_mod.use_alone(alone)
