@@ -750,3 +750,32 @@ html, body { overscroll-behavior-y: contain; }
   #ptr .tick-done { transition: opacity .2s ease; transform: none; }
 }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Should-haves (Nov 13): rest days lighter, next week in short, block stats and phases. */
+.plan-row.rest { min-height: 48px; padding-top: 10px; padding-bottom: 10px; }
+.plan-row.rest .rest-name { font-size: 14px; font-weight: 500; color: var(--muted); }
+.rest-note { font-size: 12.5px; line-height: 1.4; }
+.next-week { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.nw-list { display: flex; flex-direction: column; gap: 6px; }
+.nw-row { display: grid; grid-template-columns: 34px 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 14px; }
+.nw-d { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.nw-dot { width: 8px; height: 8px; border-radius: 999px; }
+.nw-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-v { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.nw-go { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; font-weight: 600; }
+.block-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.block-stats > div { padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--hairline); }
+.block-stats > div:nth-child(-n+2) { border-top: 0; }
+.block-stats > div:nth-child(2n) { border-left: 1px solid var(--hairline); }
+.block-stats .l { font-size: 12px; color: var(--muted); }
+.block-stats .v { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.block-stats .n { font-size: 12.5px; color: var(--muted); }
+.phase-list { display: flex; flex-direction: column; }
+.ph-row { padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+.ph-row + .ph-row { border-top: 1px solid var(--hairline); }
+.ph-head { display: flex; align-items: center; gap: 8px; }
+.ph-swatch { width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--hairline); }
+.ph-swatch.b0 { background: rgba(244, 243, 238, 0.06); }
+.ph-swatch.b1 { background: rgba(244, 243, 238, 0.16); }
+.ph-row.now .strong { color: var(--ink); }
+.ph-line { font-size: 13.5px; line-height: 1.45; }

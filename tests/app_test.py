@@ -727,6 +727,33 @@ def extra_checks() -> None:
         {"type": "repeat", "times": 3, "steps": [{"type": "interval", "distance_meters": 2000, "pace": ["4:00", "4:08"]},
                                                  {"type": "recovery", "duration_seconds": 90}]},
         {"type": "cooldown", "distance_meters": 2000, "hr": [120, 145]}], "")
+    # Nov 13 should-haves: what next week does, each phase in a line, the plan's numbers, today's rest note.
+    bars = [{"n": 1, "planned": 50, "phase": "Build"}, {"n": 2, "planned": 38, "phase": "Build", "cutback": True},
+            {"n": 3, "planned": 60, "phase": "Build"}, {"n": 4, "planned": 40, "phase": "Taper"},
+            {"n": 5, "planned": 30, "phase": "Taper", "race": {"tier": "A", "name": "London"}}]
+    check("next week: drops to recover, builds, tapers, or is race week",
+          app_routes._next_week_line(bars, bars[0]) == "Next week drops to 38 km to recover."
+          and app_routes._next_week_line(bars, bars[1]) == "Next week builds to 60 km."
+          and app_routes._next_week_line(bars, bars[2]) == "Next week tapers to 40 km."
+          and app_routes._next_week_line(bars, bars[3]) == "Next week is race week: London.",
+          str([app_routes._next_week_line(bars, b) for b in bars[:4]]))
+    wks = {"2026-11-02": {"sessions": [{"type": "threshold"}, {"type": "long", "planned_km": 16}]},
+           "2026-11-09": {"sessions": [{"type": "threshold"}, {"type": "intervals"}, {"type": "long", "planned_km": 18}]}}
+    lines = app_routes._phase_lines([{"label": "Build", "from": 1, "to": 2}],
+                                    [{"n": 1, "starts": "2026-11-02", "planned": 54, "current": True},
+                                     {"n": 2, "starts": "2026-11-09", "planned": 58, "current": False}], wks)
+    check("a phase in a line, from its own weeks only",
+          lines[0]["line"] == "54–58 km a week, two hard sessions a week, long runs 16–18 km." and lines[0]["weeks"] == "weeks 1–2",
+          str(lines))
+    check("today's rest note says only what Garmin has",
+          app_routes._rest_note({"sleep": {"total": "7h 42m", "score": 81}, "hrv": {"status": "BALANCED"}})
+          == "Slept 7:42, score 81 · HRV in range · from Garmin"
+          and app_routes._rest_note({"sleep": {}, "hrv": {}}) is None,
+          str(app_routes._rest_note({"sleep": {"total": "7h 42m", "score": 81}, "hrv": {"status": "BALANCED"}})))
+    check("no goal race distance, no prediction to compare",
+          app_routes._race_distance({"name": "Club champs"}) is None
+          and app_routes._race_distance({"name": "London", "distance_km": 42.2})[0] == "timeMarathon"
+          and app_routes._race_distance({"name": "Big Half"})[0] == "timeHalfMarathon")
     check("a session's target is its reps' pace, not its warm-up's heart rate",
           (app_routes._main_target(model.to_dict()) or "").endswith(" /km")
           and (app_routes._main_target(model.to_dict()) or "")[:3] in ("3:5", "4:0"), str(app_routes._main_target(model.to_dict())))

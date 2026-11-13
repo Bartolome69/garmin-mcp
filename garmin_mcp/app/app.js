@@ -1178,7 +1178,7 @@ function weekRows(w) {
   return w.days.map((day) => day.sessions.length
     ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date)).join("")
     : `<div class="plan-row rest ${day.today ? "is-today" : ""}" data-date="${day.date}"><span class="day"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span>${day.today ? `<span class="today-tag">Today</span>` : ""}</span>
-        <span class="body"><span class="type c-rec">Rest</span><span class="name dim">Rest day</span></span><span></span></div>`).join("");
+        <span class="body"><span class="name rest-name">Rest day</span>${day.today && w.rest_note ? `<span class="meta rest-note">${esc(w.rest_note)}</span>` : ""}</span><span></span></div>`).join("");
 }
 
 // Nov 13: the week's progress, km done against planned and its hard sessions.
@@ -1190,10 +1190,19 @@ function weekProgress(w) {
         ${w.hard ? `<span><strong>${esc(w.hard.done)}</strong> of ${esc(w.hard.planned)} hard</span>` : ""}</div></div>` : "";
 }
 
+// Next week in short, under this one (Nov 13): its sessions a line each, and a way in.
+function nextWeekPreview(n) {
+  return `<section class="card next-week" aria-label="Next week"><div class="section-head"><span class="stack-tight" style="gap:1px">
+      <span class="section-title">Next week</span><span class="meta">${esc(n.title || "")} · ${esc(n.range || "")}</span></span>
+      ${n.planned ? `<span class="meta"><strong style="color:var(--ink)">${esc(n.planned)}</strong> km planned</span>` : ""}</div>
+    <div class="nw-list">${(n.sessions || []).map((x) => `<div class="nw-row"><span class="nw-d">${esc(x.dow)}</span><i class="nw-dot bg-${esc(x.colour)}" aria-hidden="true"></i>
+      <span class="nw-name">${esc(x.name)}</span><span class="nw-v">${x.km ? `${esc(x.km)} km` : x.min ? `~${esc(x.min)} min` : ""}</span></div>`).join("")}</div>
+    <a class="link-plain nw-go" href="#/plan?week=${esc(n.starts)}">See next week ${ICON.right(14)}</a></section>`;
+}
+
 function weekView(d) {
   const w = d.week;
   const ask = askLink({ ...d, ask: w.ask });
-  const askNext = askLink({ ...d, ask: w.ask_next }, "Plan next week");
   const rows = weekRows(w);
   const nav = (to, label, icon) => to ? `<a class="pill icon" href="#/plan?week=${to}" aria-label="${label}">${icon}</a>` : `<span class="pill icon" aria-hidden="true" style="visibility:hidden">${icon}</span>`;
   const progress = weekProgress(w);
@@ -1204,7 +1213,7 @@ function weekView(d) {
     ${dragHint(w) ? `<div class="drag-hint">${ICON.grip()}<span>Hold a session, then drag it to another day.</span></div>` : ""}
     <div class="card plan-list" id="plan-list">${rows}</div>
     <div class="week-foot"><span class="meta" style="flex:1;font-size:13.5px;line-height:1.4">Change anything here and the watch follows.${dragHint(w) ? "" : " Hold a row to move it."}</span>${ask.html.replace("pill red tall", "pill red")}</div>
-    ${w.current ? `<div style="display:flex">${askNext.html.replace("pill red tall", "pill")}</div>` : ""}
+    ${w.current && d.next_week ? nextWeekPreview(d.next_week) : ""}
     ${d.manage && !desktop() ? `<a class="link-plain" href="#/plan/block" style="align-self:flex-start">Change or remove this plan</a>` : ""}`;
 }
 
@@ -1256,6 +1265,10 @@ function blockView(d) {
       <div class="legend"><span><i class="run"></i>Run</span><span><i class="tick-l"></i>Was planned</span><span><i class="planned"></i>Planned</span>${b.bars.some((x) => x.race?.tier === "A") ? `<span><i class="flag-l">${FLAG(13)}</i>Goal race</span>` : ""}${b.bars.some((x) => x.race?.tier === "B") ? `<span><i class="flag-l b">${FLAG(10)}</i>Other races</span>` : ""}</div>
       <span class="meta tap-hint">Tap a week to see its sessions.</span>
       <span class="block-verdict">${esc(b.verdict)}</span></div>
+    ${b.stats ? `<div class="card block-stats">${b.stats.map((x) => `<div><span class="l">${esc(x.l)}</span><span class="v">${esc(x.v)}</span>${x.sub ? `<span class="n">${esc(x.sub)}</span>` : ""}</div>`).join("")}</div>` : ""}
+    ${b.phase_lines ? `<section class="stack-8" aria-label="Phases"><span class="section-title">The phases</span><div class="card phase-list">${b.phase_lines.map((p, i) => `<div class="ph-row ${p.current ? "now" : ""}">
+        <span class="ph-head"><span class="ph-swatch b${i % 2}"></span><span class="strong">${esc(p.label)}</span><span class="meta">${esc(p.weeks)}${p.current ? " · now" : ""}</span></span>
+        ${p.line ? `<span class="meta ph-line">${esc(p.line)}</span>` : ""}</div>`).join("")}</div></section>` : ""}
     <div class="week-foot"><div class="stack-tight" style="gap:2px;flex:1;min-width:0"><span class="strong">${esc(b.name)}</span><span class="meta">${esc(b.dates)}</span>
       ${(b.blocks || []).map((x) => `<span class="meta" style="font-size:12.5px">${esc(x.name)}${x.dates ? ` · ${esc(x.dates)}` : ""}</span>`).join("")}</div>
       ${d.manage || d.next_block?.none ? "" : ask.html.replace("pill red tall", "pill")}</div>${manage}`;
