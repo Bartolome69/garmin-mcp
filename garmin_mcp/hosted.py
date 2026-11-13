@@ -3835,13 +3835,6 @@ async def crew_runner(request: Request) -> Response:
     return _crew_answer(answer)
 
 
-# Everyone who has ever connected (Nov 13): the people who had by 19:00 UTC
-# that day, from PostHog's connector_connected (the team's own accounts left
-# out), plus everyone whose first connection came after, kept when they leave.
-COUNTED_FROM = 1794596400  # 2026-11-13 19:00 UTC
-CONNECTED_BEFORE = 418
-
-
 @mcp.custom_route("/stats", methods=["GET"])
 async def stats(request: Request) -> Response:
     """How many people used this in the last 30 days, and have ever connected, for the front page.
@@ -3854,7 +3847,11 @@ async def stats(request: Request) -> Response:
     if now - _STATS_CACHE["at"] > _STATS_TTL:
         _STATS_CACHE["body"] = json.dumps({
             "active_30d": store.count_active(30),
-            "connected_ever": CONNECTED_BEFORE + store.count_people_since(COUNTED_FROM),
+            # Everyone connected now plus everyone who has connected since Nov 13
+            # and left. PostHog's own count started late and undercounted (418
+            # against the server's 423 active in 30 days), so the server's
+            # record is the one to trust.
+            "connected_ever": store.count_people_since(0),
         })
         _STATS_CACHE["at"] = now
     return Response(

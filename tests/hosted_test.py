@@ -534,11 +534,11 @@ async def main() -> int:
               code == 200 and list(stats_body) == ["active_30d", "connected_ever"], stats_raw[:80])
         check("stats count both recent users",
               stats_body.get("active_30d") == 2, stats_raw[:80])
-        check("everyone ever connected: the count before Nov 13 19:00 UTC, plus both users since",
-              stats_body.get("connected_ever") == hosted.CONNECTED_BEFORE + 2, stats_raw[:80])
+        check("everyone ever connected: both users, from the server's own record",
+              stats_body.get("connected_ever") == 2, stats_raw[:80])
         # Nov 13: someone who connects and then leaves stays counted, once, and
         # signing in again doesn't count them twice.
-        since = hosted.COUNTED_FROM
+        since = 0
         counted = store.count_people_since(since)
         store.save_user("p***@example.com", json.dumps({"di_token": "p"}), email_hash="passing-hash")
         store.save_user("p***@example.com", json.dumps({"di_token": "p2"}), email_hash="passing-hash")
