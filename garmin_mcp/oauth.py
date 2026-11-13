@@ -80,6 +80,13 @@ CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 # Matched exactly apart from the ID, so no other path on chatgpt.com counts.
 CHATGPT_CALLBACK = re.compile(r"https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}")
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# Gemini (gemini.google.com custom apps) and Grok (grok.com/connectors), Nov 13:
+# their exact callback paths aren't published, so a return address on that
+# host over https, with no query or fragment to carry the code on elsewhere,
+# counts as theirs. Claude and ChatGPT keep their exact shapes above.
+FIRST_PARTY_HOSTS = {"gemini.google.com": "Gemini", "grok.com": "Grok"}
+# Who makes each assistant, as the page before Allow says it.
+MAKERS = {"Claude": "Anthropic", "ChatGPT": "OpenAI", "Gemini": "Google", "Gemini CLI": "Google", "Grok": "xAI"}
 
 
 def _extra_redirects() -> set[str]:
@@ -145,10 +152,18 @@ def app_for_redirect(uri: str) -> str:
     if parsed.scheme == "http" and host in LOOPBACK_HOSTS:
         return "Desktop or command line"
     for app, domains in (("Claude", ("claude.ai", "claude.com")), ("ChatGPT", ("chatgpt.com", "openai.com")),
-                         ("Grok", ("grok.com", "x.ai"))):
+                         ("Grok", ("grok.com", "x.ai")), ("Gemini", ("gemini.google.com",))):
         if any(host == d or host.endswith("." + d) for d in domains):
             return app
     return "Other"
+
+
+def app_named(app: str, client_name: str | None) -> str:
+    """The Gemini CLI says its name when it registers; on its own its local
+    callback reads as any desktop or command-line client."""
+    if app == "Desktop or command line" and "gemini" in str(client_name or "").lower():
+        return "Gemini CLI"
+    return app
 
 
 def app_for_flow(flow: str) -> str | None:
@@ -156,7 +171,7 @@ def app_for_flow(flow: str) -> str | None:
     entry = _PENDING_AUTH.get(flow)
     if not entry:
         return None
-    return app_for_redirect(entry["params"].redirect_uri)
+    return app_named(app_for_redirect(entry["params"].redirect_uri), entry.get("client_name"))
 
 
 _APP_FOR_CLIENT: dict[str, str] = {}
@@ -167,13 +182,16 @@ def app_for_client(client_id: str) -> str:
     if client_id not in _APP_FOR_CLIENT:
         raw = store.load_oauth_client(client_id)
         uris: list[str] = []
+        name = None
         if raw:
             try:
-                uris = json.loads(raw).get("redirect_uris") or []
+                info = json.loads(raw)
+                uris, name = info.get("redirect_uris") or [], info.get("client_name")
             except (ValueError, AttributeError):
                 uris = []
         apps = {app_for_redirect(u) for u in uris}
-        _APP_FOR_CLIENT[client_id] = apps.pop() if len(apps) == 1 else ("Other" if apps else "Unknown")
+        found = apps.pop() if len(apps) == 1 else ("Other" if apps else "Unknown")
+        _APP_FOR_CLIENT[client_id] = app_named(found, name)
     return _APP_FOR_CLIENT[client_id]
 
 
@@ -204,6 +222,9 @@ def recognised_redirect(uri: str) -> bool:
     if uri == app_callback():
         return True
     parsed = urlparse(uri)
+    if (parsed.scheme == "https" and parsed.hostname in FIRST_PARTY_HOSTS and not parsed.query
+            and not parsed.fragment and not parsed.username and parsed.port is None and "@" not in uri):
+        return True
     return parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS
 
 

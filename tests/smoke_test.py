@@ -721,6 +721,51 @@ async def check_preview_gate(check) -> None:
         preview.reset(token)
 
 
+async def check_no_card_clients(check) -> None:
+    """Nov 13: Gemini, the Gemini CLI and Grok draw no cards. Their tool list has
+    no views and no anyOf, and answers ask for words and tables instead of
+    pointing at a card; Claude and ChatGPT's list and notes stay as they were."""
+    import json as _json
+    from garmin_mcp import server
+
+    with_cards = await server.mcp.list_tools()
+    token = server.use_cards(False)
+    try:
+        plain = await server.mcp.list_tools()
+        plan_note = server._for_view({"weeks": []})["for_the_assistant"]
+        session_note = server._for_view({"name": "x"}, server.SESSION_NOTE)["for_the_assistant"]
+        run_on = server.run_card_on(False)
+    finally:
+        server.reset_cards(token)
+    dumped = [t.model_dump(exclude_none=True, by_alias=True) for t in plain]
+    dumped_cards = [t.model_dump(exclude_none=True, by_alias=True) for t in with_cards]
+    check("an app without cards gets the same tools, with no anyOf or oneOf in any schema",
+          [d["name"] for d in dumped] == [d["name"] for d in dumped_cards]
+          and not any("anyOf" in _json.dumps(d.get("inputSchema")) or "oneOf" in _json.dumps(d.get("inputSchema"))
+                      for d in dumped),
+          str([d["name"] for d in dumped if "anyOf" in _json.dumps(d.get("inputSchema"))]))
+    check("and no card views to fetch", not any(((d.get("_meta") or {}).get("ui")) for d in dumped),
+          str([d["name"] for d in dumped if (d.get("_meta") or {}).get("ui")]))
+    ids = {d["name"]: d["inputSchema"]["properties"] for d in dumped}
+    check("ids are numbers and optional values plain, still optional",
+          ids["schedule_workout"]["workout_id"].get("type") == "integer"
+          and ids["get_plan"]["label"].get("type") == "string" and "label" not in (
+              next(d for d in dumped if d["name"] == "get_plan")["inputSchema"].get("required") or []),
+          str(ids["schedule_workout"]["workout_id"]) + str(ids["get_plan"]["label"]))
+    check("every tool still carries its read-only and destructive hints",
+          all("readOnlyHint" in (d.get("annotations") or {}) and "destructiveHint" in (d.get("annotations") or {})
+              for d in dumped))
+    check("the plan answer asks for words and a table, not a card",
+          "doesn't show Daash's cards" in plan_note and "table" in plan_note and "card" not in plan_note.replace(
+              "Daash's cards", ""), plan_note[:120])
+    check("so does a session's", "doesn't show Daash's cards" in session_note and "table" in session_note)
+    check("and the run card's note is left off", run_on is False)
+    check("Claude and ChatGPT's list still names its views and keeps its schemas",
+          any(((d.get("_meta") or {}).get("ui")) for d in dumped_cards)
+          and any("anyOf" in _json.dumps(d.get("inputSchema")) for d in dumped_cards)
+          and server._for_view({"weeks": []})["for_the_assistant"] == server.VIEW_NOTE)
+
+
 async def check_tool_list_nudge(check) -> None:
     """Any tool asks the host to re-list tools, once per person per listing."""
     from garmin_mcp import server
@@ -2024,6 +2069,7 @@ async def main() -> int:
             await check_calendar_fallback(check)
             await check_reads_at_once(check)
             await check_tool_list_nudge(check)
+            await check_no_card_clients(check)
 
             # -- heart rate through a night ---------------------------------
             # The fake watch is off from 22:24 to 01:12 every night, and lowest

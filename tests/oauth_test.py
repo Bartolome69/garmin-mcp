@@ -191,6 +191,40 @@ async def main() -> int:
           "not an app we recognise" in stranger and "Connect Daash to" not in stranger
           and "https://evil.example/cb" in stranger)
 
+    # Nov 13: Gemini and Grok. Their callback paths aren't published, so an
+    # https return address on gemini.google.com or grok.com with nothing to
+    # carry the code on elsewhere counts as theirs; anything else still warns.
+    first_party = {u: (hosted.oauth.recognised_redirect(u), hosted.oauth.app_for_redirect(u)) for u in (
+        "https://gemini.google.com/mcp/oauth/callback",
+        "https://grok.com/connectors/oauth/callback",
+        "https://gemini.google.com/cb?next=https://evil.example/",
+        "https://grok.com/cb#https://evil.example/",
+        "http://gemini.google.com/cb",
+        "https://gemini.google.com.evil.example/cb",
+        "https://user@grok.com/cb",
+        "https://grok.com:8443/cb",
+    )}
+    check("Gemini and Grok's return addresses are recognised and named, and only plain https ones",
+          [v for v in first_party.values()] == [
+              (True, "Gemini"), (True, "Grok"), (False, "Gemini"), (False, "Grok"), (False, "Gemini"),
+              (False, "Other"), (False, "Grok"), (False, "Grok")],
+          str(first_party))
+    check("the Gemini CLI is known by the name it registers with, not as any local client",
+          hosted.oauth.app_named("Desktop or command line", "Gemini CLI MCP Client") == "Gemini CLI"
+          and hosted.oauth.app_named("Desktop or command line", "Some Tool") == "Desktop or command line"
+          and hosted.oauth.app_named("Claude", "gemini") == "Claude")
+    gemini_page = consent_body("https://gemini.google.com/mcp/oauth/callback", "Gemini")
+    grok_page = consent_body("https://grok.com/connectors/oauth/callback", "Grok")
+    check("Gemini gets the calm page, naming Google as its maker, with no warning",
+          "Connect Daash to Gemini?" in gemini_page and "Gemini is an AI assistant, made by Google" in gemini_page
+          and "not an app we recognise" not in gemini_page and "goes back to gemini.google.com only" in gemini_page,
+          gemini_page[:240])
+    check("and Grok, naming xAI", "Connect Daash to Grok?" in grok_page and "Grok is an AI assistant, made by xAI" in grok_page
+          and "not an app we recognise" not in grok_page)
+    check("Claude and ChatGPT's pages are unchanged by it",
+          "Claude is an AI assistant, made by Anthropic" in consent_body("https://claude.ai/api/mcp/auth_callback", "Claude")
+          and "ChatGPT is an AI assistant, made by OpenAI" in chatgpt_page)
+
     app = hosted.build_app()
     routes = sorted({getattr(r, "path", "") for r in app.routes})
     for needed in ("/authorize", "/token", "/register", "/revoke", "/mcp"):
@@ -511,6 +545,31 @@ async def main() -> int:
         used = [p for e, p in reported if e == "connector_used"]
         check("the daily use report names the app",
               bool(used) and used[-1].get("app") == "Desktop or command line", str(used[-1:]))
+        check("and says it again as ai_client, for the dashboard",
+              bool(used) and used[-1].get("ai_client") == "Desktop or command line", str(used[-1:]))
+
+        # -- 9b. Gemini, the Gemini CLI and Grok register and start a sign-in
+        # the same way any client does: open registration, PKCE, no secret.
+        for label, client_name, redirect, expected in (
+            ("Gemini", "Gemini", "https://gemini.google.com/mcp/oauth/callback", "Gemini"),
+            ("the Gemini CLI", "Gemini CLI MCP Client", "http://localhost:7777/oauth/callback", "Gemini CLI"),
+            ("Grok", "Grok", "https://grok.com/connectors/oauth/callback", "Grok"),
+        ):
+            code, body, _ = await run(lambda n=client_name, r=redirect: http("POST", "/register", {
+                "client_name": n, "redirect_uris": [r],
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"], "token_endpoint_auth_method": "none",
+            }, as_json=True))
+            cid = (json.loads(body) if code in (200, 201) else {}).get("client_id", "")
+            query = urllib.parse.urlencode({
+                "response_type": "code", "client_id": cid, "redirect_uri": redirect,
+                "code_challenge": challenge, "code_challenge_method": "S256", "state": "s",
+            })
+            status, _, headers = await run(lambda q=query: http("GET", f"/authorize?{q}"))
+            check(f"{label} registers without a secret, is named {expected}, and its PKCE sign-in starts",
+                  bool(cid) and hosted.oauth.app_for_client(cid) == expected
+                  and status in (302, 303, 307) and "flow=" in headers.get("location", ""),
+                  f"{code} {status} {hosted.oauth.app_for_client(cid) if cid else ''} {headers.get('location', '')[:80]}")
 
         # -- 10. a second app does not disconnect the first --------------
         # Connecting ChatGPT, or Claude on a second account, signs in to

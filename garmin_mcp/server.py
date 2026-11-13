@@ -164,6 +164,21 @@ def reset_alone(token) -> None:
     _ALONE.reset(token)
 
 
+# Set per request by the hosted server (Nov 13): whether the app asking draws
+# Daash's cards. Claude and ChatGPT do; Gemini, the Gemini CLI and Grok show
+# only what the model writes, so their answers carry a note asking for a short
+# written answer or table instead of pointing at a card nobody can see.
+_CARDS: ContextVar[bool] = ContextVar("daash_cards", default=True)
+
+
+def use_cards(value: bool):
+    return _CARDS.set(bool(value))
+
+
+def reset_cards(token) -> None:
+    _CARDS.reset(token)
+
+
 # Set per request by the hosted server: whether it came in through the address
 # Daash is listed under in the app directories. Tools not yet through their
 # review stay off that address, so the directories see what they reviewed.
@@ -203,8 +218,9 @@ class _Server(MCPServer):
         on = preview.enabled()
         crew_on = crews.available()
         alone = _ALONE.get()
+        cards = _CARDS.get()
         return [
-            _with_description(tool, preview_on=on, alone=alone)
+            _with_description(tool, preview_on=on, alone=alone, cards=cards)
             for tool in tools
             if tool.name not in _REPLACED_BY_VIEWS and (on or tool.name not in _PREVIEW_ONLY)
             and (crew_on or tool.name not in CREW_TOOLS)
@@ -720,10 +736,37 @@ def _compact_doc(text: str) -> str:
 # showing its data waits for the 30 days' notice Garmin asks for (6.6).
 def run_card_on(alone: bool | None = None) -> bool:
     alone = _ALONE.get() if alone is None else alone
-    return not alone and (os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0" or preview.enabled())
+    return not alone and _CARDS.get() and (os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0" or preview.enabled())
 
 
-def _with_description(tool, *, preview_on: bool, alone: bool = False):
+def _plain_schema(schema: Any) -> Any:
+    """A schema without anyOf, for apps whose function calling handles it badly (Nov 13: Gemini, Grok).
+
+    Every union here is an optional value or null, or an id given as a number
+    or text. The first becomes its value's type (leaving it out is how to say
+    none); the second a number, which the tool turns text into anyway. The
+    tools still accept what they did: only what the model is shown changes.
+    """
+    if isinstance(schema, list):
+        return [_plain_schema(v) for v in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: _plain_schema(v) for k, v in schema.items() if k != "anyOf"}
+    union = schema.get("anyOf")
+    if isinstance(union, list):
+        kinds = [u for u in union if isinstance(u, dict) and u.get("type") != "null"]
+        if len(kinds) > 1 and {u.get("type") for u in kinds} == {"integer", "string"}:
+            kinds = [{"type": "integer"}]
+        if len(kinds) == 1:
+            out = {**_plain_schema(kinds[0]), **out}
+            if out.get("default", 0) is None:
+                del out["default"]
+        else:
+            out["anyOf"] = _plain_schema(union)
+    return out
+
+
+def _with_description(tool, *, preview_on: bool, alone: bool = False, cards: bool = True):
     text = OFFICIAL_DESCRIPTIONS.get(tool.name) if alone else _DESCRIPTIONS.get(tool.name)
     if alone and text is not None:
         preview_on = False
@@ -735,7 +778,7 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False):
     update = {"annotations": _annotations(tool.name)}
     for field in ("input_schema", "output_schema", "inputSchema", "outputSchema"):
         if isinstance(getattr(tool, field, None), dict):
-            update[field] = _untitled(getattr(tool, field))
+            update[field] = _untitled(getattr(tool, field)) if cards else _plain_schema(_untitled(getattr(tool, field)))
     if tool.name in _TITLES:
         update["title"] = _TITLES[tool.name]
     # Preview accounts see the redesigned plan card while it's being tried.
@@ -745,6 +788,10 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False):
     # The run card, where it's on; elsewhere runs answer in writing.
     if view == RUN_VIEW and (alone or not (preview_on or os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0")):
         update["meta"] = {k: v for k, v in (tool.meta or {}).items() if k not in ("ui", "ui/resourceUri")} or None
+    # An app that draws no cards isn't told about them: no view to fetch.
+    if not cards and (tool.meta or {}).get("ui"):
+        update["meta"] = {k: v for k, v in (update.get("meta") or tool.meta or {}).items()
+                          if k not in ("ui", "ui/resourceUri")} or None
     if text:
         update["description"] = text
     return tool.model_copy(update=update)
@@ -948,6 +995,27 @@ RUN_NOTE = (
 )
 
 
+# The same notes for an app that draws no cards (Nov 13: Gemini, Grok): the
+# person sees only what the model writes, so the answer carries what matters,
+# and a short table when the plan, a week, a session or a run is asked for.
+TEXT_NOTES = {
+    VIEW_NOTE: (
+        "This app doesn't show Daash's cards: the user sees only what you write. The data below was "
+        "fetched just now, so it is current. Answer in a few sentences about what matters, such as how the "
+        "week is going and what's next. When they ask to see the plan or a week, show it as a short table "
+        "(day, session, distance, target pace), this week first, not the whole block unless asked. Use the "
+        "ids below for any change. If there is a situation below, close with its offer as one short question "
+        "in your own words, unless the user already asked for that or it was offered earlier in this chat."
+    ),
+    SESSION_NOTE: (
+        "This app doesn't show Daash's cards: the user sees only what you write. Give the session as a "
+        "short table of its steps (step, duration or distance, target), then a sentence or two on how to "
+        "run it and how it fits the week. If it shows a change, say what changed in a line. Use the ids "
+        "below for any change."
+    ),
+}
+
+
 def _for_view(result: Any, note: str = VIEW_NOTE) -> Any:
     """A tool's result with the note to the model as its first field.
 
@@ -957,6 +1025,8 @@ def _for_view(result: Any, note: str = VIEW_NOTE) -> Any:
     """
     if not isinstance(result, dict) or "error" in result:
         return result
+    if not _CARDS.get():
+        note = TEXT_NOTES.get(note, note)
     return {"for_the_assistant": note, **result}
 
 
@@ -4627,6 +4697,14 @@ async def _crew_card(week_of: str | None = None) -> dict[str, Any]:
             "update_crew with group_link \"on\" (it takes that argument even if an older copy of its "
             "description doesn't show it). It asks first, then call again with confirm=true. That page is "
             "also how friends without Garmin or Daash join the crew's week: they add their easy runs there."
+        )
+    if not _CARDS.get():
+        note = note.replace(
+            "The user is looking at their crew's week as an interactive card. Don't redraw it: "
+            "say in a sentence or two which runs they could do together and who with.",
+            "This app doesn't show Daash's cards: the user sees only what you write. Say in a sentence "
+            "or two which runs they could do together and who with, and show the week as a short table "
+            "(day, who's running, what) if they ask to see it.",
         )
     return {"for_the_assistant": note, **card}
 

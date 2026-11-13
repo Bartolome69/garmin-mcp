@@ -955,6 +955,10 @@ def sent_to_watch(user_token: str, user: store.User | None, source: str, session
     }))
 
 
+# The apps that show only what the model writes (Nov 13): no cards for them.
+NO_CARDS = {"Gemini", "Gemini CLI", "Grok"}
+
+
 def _after_tool_for(user_token: str, user: store.User, alone: bool = False, client: str | None = None) -> hooks.Hook:
     """The hook for one person's request: report the tool, carry any news.
 
@@ -974,7 +978,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         seconds = hooks.seconds()
         analytics.capture("tool_called", person, drop_empty({
             "tool": name, "ok": not error, "error_kind": kind, "held": held or None,
-            "login_route": login_route(alone), "client": client,
+            "login_route": login_route(alone), "client": client, "ai_client": client,
             "hours_since_connect": hours_since_connect(user),
             "seconds": round(seconds, 2) if seconds is not None else None,
         }))
@@ -2500,7 +2504,7 @@ def _consent_page(
     # The person started this from that app a minute ago, so the page says so
     # plainly instead of showing them a raw address to inspect.
     app = oauth.app_for_redirect(destination) if known else None
-    if app in ("Claude", "ChatGPT"):
+    if app in ("Claude", "ChatGPT", "Gemini", "Grok"):
         host = urlparse(destination).hostname or ""
         opening = "Garmin approved." if garmin else f"You started this from {app}."
         # Oct 31: after Garmin's page, Claude's phone app often never
@@ -2512,7 +2516,7 @@ def _consent_page(
         <h1>Connect Daash to {app}?</h1>
         <p class=secure>{_TICK if garmin else _LOCK}<span>{opening} {app} will be able
         to read your Garmin data and add or change workouts on your watch.</span></p>
-        <p class=note>{app} is an AI assistant, made by {"Anthropic" if app == "Claude" else "OpenAI"}. It reads
+        <p class=note>{app} is an AI assistant, made by {oauth.MAKERS[app]}. It reads
         your Garmin data only to answer what you ask it, and Daash never uses your data to train AI.
         <a href="{AI_STATEMENT_URL}" target=_blank rel=noopener>AI Transparency Statement</a></p>
         <p class=note>Access goes back to {html.escape(host)} only.</p>
@@ -2620,14 +2624,15 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
     user = store.get_user(user_token)
     email = store.email_for(user_token)
     destination = str(parked["params"].redirect_uri)
-    app = oauth.app_for_redirect(destination) if oauth.recognised_redirect(destination) else None
+    app = (oauth.app_named(oauth.app_for_redirect(destination), parked.get("client_name"))
+           if oauth.recognised_redirect(destination) else None)
     analytics.capture("connector_connected", (user.email_hash if user else None) or None, _with_source(request, {
         "account": user.email_masked if user else None,
         **({"email": email} if email else {}),
         "via": "oauth",
         "route": "official",
         "login_route": "official",
-        **({"app": app} if app else {}),
+        **({"app": app, "ai_client": app} if app else {}),
         "returning": returning,
         "joined": joined,
         "listed": bool(parked.get("listed")),
@@ -2806,7 +2811,8 @@ def _finish(
             # Nov 13: only Garmin's page said its route; both do now, under one name.
             "login_route": "password",
             # Claude, ChatGPT or another app, from where the sign-in goes back to.
-            **({"app": app} if (app := (oauth.app_for_flow(flow) if OAUTH_ENABLED and flow else None)) else {}),
+            **({"app": app, "ai_client": app}
+               if (app := (oauth.app_for_flow(flow) if OAUTH_ENABLED and flow else None)) else {}),
             "mfa": mfa,
             "returning": bool(previous),
             **(took or {}),
@@ -4190,7 +4196,8 @@ class SessionBinding:
                     "first_tool_call",
                     user.email_hash or user_token,
                     {"account": user.email_masked, **({"email": email} if email else {}),
-                     "login_route": login_route(not store.has_connect(user_token)), **({"client": app} if app else {}),
+                     "login_route": login_route(not store.has_connect(user_token)),
+                     **({"client": app, "ai_client": app} if app else {}),
                      "hours_since_connect": hours_since_connect(user)},
                 )
 
@@ -4201,7 +4208,7 @@ class SessionBinding:
             analytics.capture(
                 "connector_used",
                 user.email_hash or user_token,
-                {"account": user.email_masked, "day": today, **({"app": app} if app else {}),
+                {"account": user.email_masked, "day": today, **({"app": app, "ai_client": app} if app else {}),
                  **({"email": email} if email else {})},
             )
 
@@ -4216,9 +4223,12 @@ class SessionBinding:
         official_token = official.use(user_token)
         alone_token = server_mod.use_alone(alone)
         listed_token = server_mod.use_listed(named == oauth.LISTED_PATH)
+        # Gemini, the Gemini CLI and Grok draw no cards: their answers ask for words instead.
+        cards_token = server_mod.use_cards(app not in NO_CARDS)
         try:
             await self.app(scope, receive, send)
         finally:
+            server_mod.reset_cards(cards_token)
             server_mod.reset_listed(listed_token)
             server_mod.reset_alone(alone_token)
             official.reset(official_token)
