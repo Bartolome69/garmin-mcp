@@ -672,6 +672,24 @@ def extra_checks() -> None:
     other = app_routes._week_view({"weeks": [week]}, {day: week}, None, monday, _d.today())["days"][1]["sessions"]
     check("and on no other day", other == [], str(other))
 
+    # Nov 13: 49 run (an extra run included) with 20 still to come read "49 of 66".
+    # The week's figure is done plus what's left when that's more than the plan,
+    # optional sessions aside; a week behind its plan keeps the plan's figure.
+    tally = {"starts": day, "run_km": 49.3, "planned_km": 65.6, "sessions": [
+        {"date": day, "sport": "run", "status": "done", "planned_km": 45.6},
+        {"date": day, "sport": "run", "status": "ahead", "planned_km": 5, "optional": True},
+        {"date": day, "sport": "run", "status": "ahead", "planned_km": 20}]}
+    shown = app_routes._week_view({"weeks": [tally]}, {day: tally}, None, monday, _d.today())
+    check("this week reads done of done-plus-to-go when that's more than planned",
+          shown.get("done") == 49 and shown.get("planned") == 69, str({k: shown.get(k) for k in ("done", "planned")}))
+    behind = {**tally, "run_km": 30.0}
+    shown = app_routes._week_view({"weeks": [behind]}, {day: behind}, None, monday, _d.today())
+    check("but a week behind its plan keeps the plan's figure", shown.get("planned") == 66, str(shown.get("planned")))
+    last = monday - _td(weeks=1)
+    past = {**tally, "starts": last.isoformat()}
+    shown = app_routes._week_view({"weeks": [past]}, {last.isoformat(): past}, None, last, _d.today())
+    check("and a past week still reads against its plan", shown.get("planned") == 66, str(shown.get("planned")))
+
 
 def verdict_checks() -> None:
     """A race is named in the week's line (Nov 6: a threshold session and a parkrun said "One hard day")."""

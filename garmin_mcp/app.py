@@ -422,6 +422,8 @@ def _calendar(plan: Mapping[str, Any], today: date, crew_days: Mapping[str, str]
         week = by_monday.get(monday.isoformat()) or {}
         n = _season_week(season, monday)
         run, planned = round(week.get("run_km") or 0), round(week.get("planned_km") or 0)
+        if shift == 0:
+            planned = _week_total(week, run, planned)
         km = (f"{planned} km planned" if shift > 0 else f"{run} of {planned} km") if planned else (f"{run} km" if run else "")
         days = []
         for i in range(7):
@@ -906,6 +908,8 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
             + [_extra_row(x) for x in extra],
         })
     run, planned = week.get("run_km"), week.get("planned_km")
+    if planned and monday == today - timedelta(days=today.weekday()):
+        planned = _week_total(week, round(run or 0), round(planned))
     earlier, later = monday - timedelta(weeks=1), monday + timedelta(weeks=1)
     within = lambda m: m.isoformat() in weeks or _season_week(season, m) is not None  # noqa: E731
     return drop_empty({
@@ -921,6 +925,22 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
         "ask": _ask_links(f"Use Daash to look at my training week of {monday.isoformat()}. "
                           "Is it balanced, and is anything worth changing?"),
     })
+
+
+def _week_total(week: Mapping[str, Any], done: int, planned: int) -> int:
+    """This week's "of" figure: what's planned, or done plus what's still to come if that's more.
+
+    Nov 13: a run nobody planned, and runs that came out longer than planned,
+    count in what's done but not in the plan, so "49 of 66 km" with 20 km
+    still to run read as falling short of a 69 km week. Done plus what's
+    left (optional sessions aside) says where the week is heading, the way
+    the chat card's projected total does. A week behind its plan keeps the
+    plan's figure, so a missed session still shows.
+    """
+    sport = "ride" if "ride_km" in week else "run"
+    to_go = sum(s.get("planned_km") or 0 for s in week.get("sessions") or []
+                if s.get("status") in ("today", "ahead") and not s.get("optional") and s.get("sport") == sport)
+    return max(planned, done + round(to_go))
 
 
 def _block_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], season: Mapping[str, Any] | None,
