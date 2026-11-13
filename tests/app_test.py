@@ -690,6 +690,47 @@ def extra_checks() -> None:
     shown = app_routes._week_view({"weeks": [past]}, {last.isoformat(): past}, None, last, _d.today())
     check("and a past week still reads against its plan", shown.get("planned") == 66, str(shown.get("planned")))
 
+    # Nov 13: each row says what was planned, how it went, its target, and whether it's on the watch.
+    today = _d.today()
+    mon = today - _td(days=today.weekday())
+    wk = {"starts": mon.isoformat(), "run_km": 18.0, "planned_km": 30.0, "sessions": [
+        {"date": mon.isoformat(), "type": "threshold", "sport": "run", "status": "done", "planned_km": 10, "actual_km": 10.3,
+         "actual_pace": "4:30 /km", "actual": "46m 10s", "schedule_id": 11, "workout_id": 1, "activity_id": 5},
+        {"date": mon.isoformat(), "type": "strength", "sport": "strength", "status": "missed", "planned_min": 27,
+         "schedule_id": 12, "workout_id": 2},
+        {"date": mon.isoformat(), "type": "easy", "sport": "run", "status": "done", "planned_km": 8, "actual_km": 10,
+         "schedule_id": 13, "workout_id": 3, "activity_id": 6},
+        {"date": mon.isoformat(), "type": "easy", "sport": "run", "status": "done", "planned_km": 8, "actual_km": 5,
+         "schedule_id": 14, "workout_id": 3, "activity_id": 7},
+        {"date": (today + _td(days=1)).isoformat(), "type": "intervals", "sport": "run", "status": "ahead",
+         "planned_km": 12, "schedule_id": 15, "workout_id": 4}]}
+    targets = {15: {"target": "3:50–3:58 /km", "minutes": 55}}
+    view = app_routes._week_view({"weeks": [wk]}, {mon.isoformat(): wk}, None, mon, today, targets)
+    rows = {r["schedule_id"]: r for d in view["days"] for r in d["sessions"]}
+    check("a run within 10% of its plan is on target, with planned beside done and its pace",
+          rows[11].get("outcome") == "on" and rows[11].get("plan_km") == "10" and rows[11].get("done_km") == "10.3"
+          and rows[11].get("done_pace") == "4:30/km", str(rows[11]))
+    check("longer is over, shorter is short, and a missed session says so",
+          rows[13].get("outcome") == "over" and rows[14].get("outcome") == "short" and rows[12].get("outcome") == "missed",
+          str([rows[k].get("outcome") for k in (12, 13, 14)]))
+    check("a session still to come carries its target, its length and that it's on the watch",
+          rows[15].get("target") == "3:50–3:58 /km" and rows[15].get("plan_min") == 55 and rows[15].get("watch") is True
+          and not rows[11].get("watch") and not rows[12].get("watch"), str(rows[15]))
+    check("the week counts its hard sessions, and how many are done",
+          view.get("hard") == {"done": 1, "planned": 2}, str(view.get("hard")))
+    check("the app says Threshold for Sub-T, whoever named it",
+          app_routes._display("Sub-T 4x2.5km") == "Threshold 4 × 2.5km"
+          and app_routes._display("Long 18km w 3x2km sub-T") == "Long 18km w 3 × 2km threshold")
+    from garmin_mcp.workouts import build_workout
+    model, _, _ = build_workout("3 x 2 km", "running", [
+        {"type": "warmup", "distance_meters": 2000, "hr": [120, 145]},
+        {"type": "repeat", "times": 3, "steps": [{"type": "interval", "distance_meters": 2000, "pace": ["4:00", "4:08"]},
+                                                 {"type": "recovery", "duration_seconds": 90}]},
+        {"type": "cooldown", "distance_meters": 2000, "hr": [120, 145]}], "")
+    check("a session's target is its reps' pace, not its warm-up's heart rate",
+          (app_routes._main_target(model.to_dict()) or "").endswith(" /km")
+          and (app_routes._main_target(model.to_dict()) or "")[:3] in ("3:5", "4:0"), str(app_routes._main_target(model.to_dict())))
+
 
 def verdict_checks() -> None:
     """A race is named in the week's line (Nov 6: a threshold session and a parkrun said "One hard day")."""

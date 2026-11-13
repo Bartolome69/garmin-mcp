@@ -172,6 +172,13 @@ class DemoGarmin(FakeGarmin):
         first = monday - timedelta(weeks=THIS_WEEK - 1)
         last = first + timedelta(weeks=WEEKS - 1, days=6)
         race = {"label": "Half marathon", "date": last.isoformat(), "target": "under 1:35", "tier": "key"}
+        # DEMO_MIXED=1: a week as weeks go, for screenshots (Nov 13): this week's
+        # strength missed, Thursday's run gone long, and a 10K tune-up in week 7.
+        self.mixed = os.environ.get("DEMO_MIXED") == "1"
+        milestones = [race]
+        if self.mixed:
+            milestones = [{"label": "10K tune-up", "date": (first + timedelta(weeks=6, days=5)).isoformat(),
+                           "target": "41:00", "tier": "tune"}, race]
         self.scheduled = []
         self.demo_activities: dict[int, dict[str, Any]] = {}
         self.demo_laps: dict[int, list[dict[str, Any]]] = {}
@@ -182,7 +189,7 @@ class DemoGarmin(FakeGarmin):
                 day = first + timedelta(weeks=week - 1, days=weekday)
                 description = training_plan.describe(
                     GOAL, LABEL, first, last, note, name="12-week half", phase=_phase(week),
-                    milestones=[race], phases=PHASES)
+                    milestones=milestones, phases=PHASES)
                 title = training_plan.tagged(name, LABEL)
                 key = (title, _phase(week))
                 if key not in built:
@@ -199,8 +206,12 @@ class DemoGarmin(FakeGarmin):
                     built[key] = wid
                 wid = built[key]
                 self.schedule_workout(wid, day.isoformat())
+                this_week = week == THIS_WEEK
+                if self.mixed and this_week and sport == "strength":
+                    continue  # missed
                 if day < self.today or (day == self.today and self.ran_today):
-                    self._record(next_activity, day, wid, sport, name)
+                    self._record(next_activity, day, wid, sport, name,
+                                 stretch=1.25 if self.mixed and this_week and weekday == 3 else 1.0)
                     next_activity += 1
 
         # Then the build to the marathon, a block of its own, as a long plan is:
@@ -222,12 +233,14 @@ class DemoGarmin(FakeGarmin):
 
     # -- recorded runs ------------------------------------------------------
 
-    def _record(self, activity_id: int, day: date, workout_id: int, sport: str, name: str) -> None:
+    def _record(self, activity_id: int, day: date, workout_id: int, sport: str, name: str, stretch: float = 1.0) -> None:
         workout = self.uploaded[workout_id]
         if sport == "strength":
             laps = [{"metres": 0, "seconds": 2100, "hr0": 92, "hr1": 104, "intensity": "ACTIVE"}]
         else:
             laps = _laps_for(workout, activity_id, day == self.today)
+            if stretch != 1.0:
+                laps = [dict(l, metres=round(l["metres"] * stretch), seconds=round(l["seconds"] * stretch)) for l in laps]
         metres = sum(l["metres"] for l in laps)
         seconds = sum(l["seconds"] for l in laps)
         hr = round(sum((l["hr0"] + l["hr1"]) / 2 * l["seconds"] for l in laps) / seconds)
