@@ -27,6 +27,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import threading
 import time
 import urllib.request
@@ -101,8 +102,80 @@ def internal_ids() -> frozenset[str]:
     return frozenset(i.strip() for i in os.environ.get("ANALYTICS_INTERNAL_IDS", "").split(",") if i.strip())
 
 
-def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:
-    """Record one event. Returns at once; the request goes out on its own thread."""
+# A whole email address anywhere in a value. Nov 14: twenty events had been
+# sending the full address alongside the masked one; nothing may now.
+_ADDRESS = re.compile(r"[^\s@<>\"']+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+
+
+def _masked(match: re.Match[str]) -> str:
+    local = match.group(0).split("@", 1)[0]
+    return f"{local[:1]}{'*' * max(1, len(local) - 1)}@{match.group(1)}"
+
+
+def _scrub(value: Any, key: str = "") -> Any:
+    """No full email address reaches PostHog, whatever a caller passes.
+
+    The masked form (first letter and domain, as the store keeps it) stays;
+    a key named email goes altogether; an address inside any other text is
+    masked where it stands.
+    """
+    if isinstance(value, dict):
+        return {k: _scrub(v, k) for k, v in value.items() if k.lower() not in ("email", "$email")}
+    if isinstance(value, (list, tuple)):
+        return [_scrub(v, key) for v in value]
+    if isinstance(value, str) and "@" in value:
+        return _ADDRESS.sub(_masked, value)
+    return value
+
+
+# A website visitor's PostHog id, as posthog-js makes them: letters, digits
+# and dashes. Anything else is not linked.
+_VISITOR = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+_LINKED: dict[tuple[str, str], float] = {}
+
+
+def visitor_id(value: str | None) -> str | None:
+    value = (value or "").strip()
+    return value if _VISITOR.fullmatch(value) else None
+
+
+def _identify(who: str, visitor: str) -> dict[str, Any] | None:
+    """$identify joining a website visitor to the same person here (Nov 14).
+
+    The website's started_setup is sent under the browser's anonymous PostHog
+    id; everything here under an HMAC of the person's email fingerprint. One
+    $identify with the browser's id as $anon_distinct_id makes them one person,
+    so a funnel can run from the website to the watch. It needs a person
+    profile, which is all it creates: no properties are set on it.
+    """
+    if who == "anonymous" or visitor == who:
+        return None
+    now = time.time()
+    if _LINKED.get((who, visitor), 0) > now - 86400:
+        return None
+    _LINKED[(who, visitor)] = now
+    if len(_LINKED) > 5000:
+        for pair, at in list(_LINKED.items()):
+            if at < now - 86400:
+                _LINKED.pop(pair, None)
+    return {
+        "api_key": KEY,
+        "event": "$identify",
+        "distinct_id": who,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "properties": {"$anon_distinct_id": visitor, "$process_person_profile": True,
+                       "$lib": "garmin-mcp-hosted"},
+    }
+
+
+def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None,
+            *, visitor: str | None = None) -> None:
+    """Record one event. Returns at once; the request goes out on its own thread.
+
+    `visitor` is the website visitor's PostHog id, where this browser came
+    from daash.run: the person is joined to it first, in the same thread, so
+    the join lands before the event does.
+    """
     if not KEY:
         return
     friend = bool(subject) and subject in _friends()
@@ -115,7 +188,7 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
         "distinct_id": who,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "properties": {
-            **(properties or {}),
+            **_scrub(properties or {}),
             # No person is built up from these; the id only lets uniq() work.
             # Bart's friends are the exception: a profile marked friend, so
             # the PostHog cohort of them fills itself.
@@ -124,7 +197,13 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
             "$lib": "garmin-mcp-hosted",
         },
     }
-    threading.Thread(target=_post, args=(payload,), daemon=True).start()
+    link = _identify(who, visitor) if (visitor := visitor_id(visitor)) and subject else None
+    threading.Thread(target=_post_all, args=([link, payload] if link else [payload],), daemon=True).start()
+
+
+def _post_all(payloads: list[dict[str, Any]]) -> None:
+    for payload in payloads:
+        _post(payload)
 
 
 def disconnected(person: str | None, via: str, login_route: str, what: str,

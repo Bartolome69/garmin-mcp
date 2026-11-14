@@ -618,9 +618,6 @@ def _refresh_refused(seen: dict | None, client_id: str) -> None:
     props: dict[str, Any] = {"reason": reason}
     if user:
         props["account"] = user.email_masked
-        email = store.email_for(user.user_token)
-        if email:
-            props["email"] = email
     analytics.capture(
         "connection_refresh_refused",
         (user.email_hash or user.user_token) if user else None,

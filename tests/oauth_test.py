@@ -140,7 +140,7 @@ async def main() -> int:
 
     # Reports are recorded here rather than sent, to check what they say.
     reported: list[tuple[str, dict]] = []
-    hosted.analytics.capture = lambda event, subject=None, props=None: reported.append((event, props or {}))
+    hosted.analytics.capture = lambda event, subject=None, props=None, **_: reported.append((event, props or {}))
 
     # Which app a sign-in is for, from where its code goes back to.
     apps = {u: hosted.oauth.app_for_redirect(u) for u in (
@@ -633,7 +633,7 @@ async def main() -> int:
 
         check("the second connection is marked as a reconnect, the first was not",
               [p.get("reconnect") for e, p in reported if e == "connector_connected"
-               and p.get("email") == "oauth@example.com"][-2:] == [False, True],
+               and p.get("account") == hosted.mask_email("oauth@example.com")][-2:] == [False, True],
               str([p.get("reconnect") for e, p in reported if e == "connector_connected"]))
         answers = [p for e, p in reported if e == "consent_answered"]
         check("each answer on the Allow page is recorded, with which app and route",

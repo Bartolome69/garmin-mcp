@@ -1871,9 +1871,8 @@ def _track(event: str, properties: Mapping[str, Any] | None = None, user_token: 
     if user is None:
         analytics.capture(event, None, dict(properties or {}))
         return
-    email = store.email_for(token)
     analytics.capture(event, user.email_hash or token, {
-        "account": user.email_masked, **({"email": email} if email else {}), **dict(properties or {})})
+        "account": user.email_masked, **dict(properties or {})})
 
 
 def _layout(request: Request) -> str | None:

@@ -185,7 +185,7 @@ async def main() -> int:
             failures.append(name)
 
     reported: list[tuple[str, dict]] = []
-    hosted.analytics.capture = lambda event, subject=None, props=None: reported.append((event, props or {}))
+    hosted.analytics.capture = lambda event, subject=None, props=None, **_: reported.append((event, props or {}))
 
     app = hosted.build_app()
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="error"))
@@ -532,8 +532,8 @@ async def main() -> int:
             conn.execute("DELETE FROM official_summaries WHERE garmin_user_id = ? AND kind = ?",
                          ("g-new-1", official_data.IMPORTED))
         connected = [p for e, p in reported if e == "connector_connected"]
-        check("and is reported as an official sign-up, with the address",
-              connected and connected[-1].get("route") == "official" and connected[-1].get("email") == "sam@example.com"
+        check("and is reported as an official sign-up, with the address masked",
+              connected and connected[-1].get("route") == "official" and connected[-1].get("account") == hosted.mask_email("sam@example.com") and "email" not in connected[-1]
               and connected[-1].get("returning") is False, str(connected[-1:]))
         check("the chip goes with it", [p for e, p in reported if e == "heard_from"][-1].get("answer") == "friend")
         check("Reddit is a choice, Search no longer is, and somewhere else can say where",

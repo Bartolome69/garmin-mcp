@@ -760,7 +760,7 @@ def main() -> int:
     official.handle_push(json.dumps({"dailies": [day]}).encode())
     import garmin_mcp.analytics as analytics
     said: list[tuple] = []
-    real_capture, analytics.capture = analytics.capture, lambda *a: said.append(a)
+    real_capture, analytics.capture = analytics.capture, lambda *a, **_: said.append(a)
     try:
         official.handle_push(json.dumps({"deregistrations": [{"userId": "garmin-user-1"}]}).encode())
         official.handle_push(json.dumps({"deregistrations": [{"userId": "nobody-here"}]}).encode())

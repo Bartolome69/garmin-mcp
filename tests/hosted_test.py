@@ -772,7 +772,7 @@ async def main() -> int:
               f'value="{WRONG_PASSWORD_EMAIL}"' in body and "name=password" in body
               and body.index("didn&rsquo;t accept") < body.index("name=password"))
         wrong = [e for e in SENT if e["event"] == "sign_in_failed"
-                 and e["properties"].get("email") == WRONG_PASSWORD_EMAIL]
+                 and e["properties"].get("account") == hosted.mask_email(WRONG_PASSWORD_EMAIL)]
         check("a failed sign-in reports what failed, by type, never by message",
               wrong and wrong[-1]["properties"].get("error_type") == "GarminConnectAuthenticationError"
               and "Possible causes" not in json.dumps(wrong[-1]),
@@ -792,7 +792,7 @@ async def main() -> int:
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, LOCKED_TITLE_EMAIL)
         locked = [e for e in SENT if e["event"] == "sign_in_failed"
-                  and e["properties"].get("email") == LOCKED_TITLE_EMAIL]
+                  and e["properties"].get("account") == hosted.mask_email(LOCKED_TITLE_EMAIL)]
         check("Garmin's lock page reads as the lock, not as a wrong password",
               code == 400 and "locked sign-ins to your account" in body and "didn&rsquo;t accept" not in body
               and locked and locked[-1]["properties"].get("reason") == "account_locked"
@@ -800,6 +800,59 @@ async def main() -> int:
               f"status {code} {locked[-1]['properties'] if locked else None}")
         hosted._ATTEMPTS.clear()
         hosted._WRONG_PASSWORD.clear()
+
+        # Nov 14: the sign-in form's helpers. "Forgot your Garmin password?"
+        # opens Garmin in a new tab so this one, and the request, stay put.
+        code, body = await anyio_run(fetch, "/connect")
+        check("the form links Garmin's password page in a new tab, tracked",
+              "Forgot your Garmin password?" in body and 'target=_blank rel=noopener data-tap=reset' in body
+              and hosted.GARMIN_RESET_URL in body and "/connect/tap" in body, body[:120])
+        check("the Apple or Google line stays off until Garmin's handling is confirmed",
+              "Apple or Google" not in body)
+        before = len(SENT)
+        for what in ("reset", "show_password", "nonsense"):
+            status, _ = await anyio_run(post, "/connect/tap", {"what": what, "flow": ""})
+        time.sleep(0.3)
+        taps = [e for e in SENT[before:] if e["event"] == "sign_in_tap"]
+        check("a tap on the reset link or the eye is counted, the word only, and nothing else is",
+              status == 204 and [e["properties"]["what"] for e in taps] == ["reset", "show_password"]
+              and all(e["distinct_id"] == "anonymous" and "account" not in e["properties"] for e in taps),
+              str([e["properties"] for e in taps]))
+
+        # A visitor from daash.run: the website's PostHog id rides in on a
+        # parent-domain cookie and is joined to the person at sign-in.
+        def signin_from_website(email: str, visitor: str) -> tuple:
+            request = urllib.request.Request(
+                f"{base}/connect", data=urllib.parse.urlencode({"email": email, "password": "pw"}).encode(),
+                headers={"content-type": "application/x-www-form-urlencoded",
+                         "cookie": f"daash_vid={visitor}; daash_src=chatgpt.com"})
+            try:
+                with urllib.request.urlopen(request, timeout=20) as r:
+                    return r.status, r.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+
+        before = len(SENT)
+        code, _ = await anyio_run(signin_from_website, "visitor@example.com", "01a1db21-e53b-7c79-9c25-d3682b7f3006")
+        time.sleep(0.3)
+        mine = SENT[before:]
+        names = [e["event"] for e in mine]
+        identify = [e for e in mine if e["event"] == "$identify"]
+        started_ev = [e for e in mine if e["event"] == "sign_in_started"]
+        check("a sign-in from a daash.run visitor joins the visit to the person, once, before the sign-in events",
+              code == 200 and len(identify) == 1 and names.index("$identify") < names.index("sign_in_started")
+              and identify[0]["properties"].get("$anon_distinct_id") == "01a1db21-e53b-7c79-9c25-d3682b7f3006"
+              and identify[0]["properties"].get("$process_person_profile") is True
+              and identify[0]["distinct_id"] == started_ev[0]["distinct_id"]
+              and "$set" not in identify[0]["properties"], str(names))
+        check("and the sign-in says it came from the website",
+              started_ev and started_ev[0]["properties"].get("website_visitor") is True)
+        before = len(SENT)
+        code, _ = await anyio_run(signin_from_website, "visitor2@example.com", 'bad"value')
+        time.sleep(0.3)
+        check("a cookie that isn't a PostHog id is ignored",
+              code == 200 and not [e for e in SENT[before:] if e["event"] == "$identify"])
+        hosted._ATTEMPTS.clear()
         hosted._paused_until = 0.0
         code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
         check("a rate limit says to wait, not to worry",
@@ -1206,17 +1259,17 @@ async def main() -> int:
               later_fail and later_ok and later_fail[0]["distinct_id"] == later_ok[-1]["distinct_id"]
               and later_fail[0]["distinct_id"] != "anonymous",
               f"{[e['distinct_id'][:8] for e in later_fail]} {[e['distinct_id'][:8] for e in later_ok]}")
-        # The address travels in its own field, masked and in full, and
-        # nowhere else; no token, password or blob ever does. Every address
-        # the suite signs in with is listed so a regression on any path shows.
+        # Nov 14: only the masked address travels, never the full one; no
+        # token, password or blob ever does. Every address the suite signs in
+        # with is listed so a regression on any path shows.
         full_addresses = ("someone@example.com", "friend@example.com",
                           "spray@example.com", "gatecrasher@example.com", MFA_EMAIL,
                           "later@example.com", WRONG_PASSWORD_EMAIL, RATE_LIMITED_EMAIL,
                           BLOCKED_EMAIL, REFUSED_ONCE_EMAIL, SLOW_EMAIL_2)
-        check("a sign-in and a failure each name who, in full",
-              all("@" in e["properties"].get("email", "") and "*" not in e["properties"]["email"]
+        check("a sign-in and a failure each name who, masked only",
+              all("email" not in e["properties"] and e["properties"].get("account", "").count("*") >= 1
                   for e in connected + named),
-              str([e["properties"].get("email") for e in connected + named][:4]))
+              str([e["properties"].get("account") for e in connected + named][:4]))
         started = by_name.get("sign_in_started", [])
         succeeded = by_name.get("sign_in_succeeded", [])
         check("every press of Connect is a sign_in_started, and every success a sign_in_succeeded",
@@ -1230,18 +1283,14 @@ async def main() -> int:
               all(e["properties"].get("reconnect") is e["properties"].get("returning") for e in connected)
               and any(e["properties"].get("reconnect") for e in connected)
               and any(not e["properties"].get("reconnect") for e in connected))
-        check("a first use names who where the email was kept, and only the masked form where not",
-              sorted(e["properties"].get("email", "-") for e in first_calls) == ["-", "alice@example.com"],
-              str([e["properties"] for e in first_calls]))
-        without_email = json.dumps([
-            {**e, "properties": {k: v for k, v in e["properties"].items() if k != "email"}}
-            for e in SENT
-        ])
-        blob = json.dumps(SENT)
-        check("the full address is only ever in its own field",
-              all(e["properties"].get("account", "").count("*") >= 1
-                  for e in connected + first_calls)
-              and not any(addr in without_email for addr in full_addresses))
+        check("a first use names who by the masked address only, even where the email was kept",
+              all("email" not in e["properties"] and e["properties"].get("account", "").count("*") >= 1
+                  for e in first_calls), str([e["properties"] for e in first_calls]))
+        without_email = blob = json.dumps(SENT)
+        check("no full address reaches analytics, in any event or field",
+              not any(addr in blob for addr in full_addresses + ("alice@example.com", "idle@example.com"))
+              and not any("email" in e["properties"] for e in SENT), str(
+                  [a for a in full_addresses if a in blob]))
         check("no token, password or Garmin session ever reaches analytics",
               alice not in blob and bob not in blob
               and SECRET not in blob and "their-own-password" not in blob
@@ -1269,8 +1318,12 @@ async def main() -> int:
         raw = b"".join(p.read_bytes() for p in DB.parent.glob(DB.name + "*"))
         check("the database never holds an email in clear",
               not any(addr.encode() in raw for addr in full_addresses + ("alice@example.com",)))
-        check("analytics build no person profile",
-              all(e["properties"].get("$process_person_profile") is False for e in SENT))
+        # The one exception (Nov 14): $identify, joining a daash.run visit to
+        # the person, which needs a profile and sets nothing on it.
+        check("analytics build no person profile, beyond the website join, which sets nothing",
+              all(e["properties"].get("$process_person_profile") is False for e in SENT if e["event"] != "$identify")
+              and all(set(e["properties"]) == {"$anon_distinct_id", "$process_person_profile", "$lib"}
+                      for e in SENT if e["event"] == "$identify"))
         check("analytics stay silent without a key",
               analytics.enabled() and (lambda: (
                   setattr(analytics, "KEY", ""), analytics.capture("x", None, {}),
@@ -1334,8 +1387,9 @@ async def main() -> int:
             hosted.GarminSession = real_session
         lapsed = [e for e in SENT[before:] if e["event"] == "garmin_session_lapsed"]
         check("a lapsed Garmin session is counted", counts["lapsed"] >= 1, str(counts))
-        check("a lapsed Garmin session is reported with who it was",
-              any(e["properties"].get("email") == "idle@example.com" for e in lapsed), str(lapsed)[:200])
+        check("a lapsed Garmin session is reported with who it was, masked",
+              any(e["properties"].get("account") == hosted.mask_email("idle@example.com") for e in lapsed)
+              and "idle@example.com" not in json.dumps(lapsed), str(lapsed)[:200])
         check("a lapsed session is kept, not deleted", store.get_user(idle) is not None)
 
         # In use, a session Garmin refuses says how to fix it from the phone,
@@ -1391,7 +1445,8 @@ async def main() -> int:
         check("and the tip is said once", "tip" not in third_answer)
         shown = [e for e in events if e["event"] == "whats_new_shown"]
         check("showing it is counted once, with who it was",
-              len(shown) == 1 and shown[0]["properties"].get("email") == "news@example.com"
+              len(shown) == 1 and shown[0]["properties"].get("account") == hosted.mask_email("news@example.com")
+              and "email" not in shown[0]["properties"]
               and shown[0]["properties"].get("version") == hosted.NEWS_VERSION, str(shown)[:200])
         used = [e["properties"]["tool"] for e in events if e["event"] == "tool_used"]
         check("each tool is counted once a day, not once a call",

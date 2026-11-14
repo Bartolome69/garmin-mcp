@@ -230,6 +230,17 @@ def _heard_properties(heard: str, where: str) -> dict[str, Any]:
     return {"answer": heard, **({"where": where} if where else {})}
 
 
+# The website visitor's PostHog id, set by daash.run on the parent domain
+# beside daash_src (Nov 14), so the sign-in can be joined to the visit that
+# led to it. Only there when the sign-in opens in the browser that visited
+# daash.run; an app's own browser on a phone usually has neither cookie.
+VISITOR_COOKIE = "daash_vid"
+
+
+def _visitor(request: Request | None) -> str | None:
+    return analytics.visitor_id(request.cookies.get(VISITOR_COOKIE)) if request is not None else None
+
+
 def _source(request: Request) -> str | None:
     raw = request.cookies.get(SOURCE_COOKIE, "")
     clean = re.sub(r"[^a-z0-9._-]", "", raw.lower())[:40]
@@ -333,9 +344,13 @@ def _sign_in_started(request: Request, email: str, flow: str) -> None:
                 if at < now - FIRST_TRY_WINDOW:
                     _FIRST_TRY.pop(key, None)
     tries = _FIRST_TRY.get(fingerprint, (now, 0))[1] if fingerprint else 0
+    visitor = _visitor(request)
     analytics.capture("sign_in_started", fingerprint, _with_source(request, {
         **_signin_context(None, flow), "earlier_failures": tries,
-    }))
+        # Whether this browser came from daash.run, so how often the visit
+        # survives the hop through Claude or ChatGPT can be counted.
+        "website_visitor": bool(visitor),
+    }), visitor=visitor)
 
 
 def _sign_in_succeeded(request: Request, email: str, flow: str, *, mfa: bool = False,
@@ -347,7 +362,7 @@ def _sign_in_succeeded(request: Request, email: str, flow: str, *, mfa: bool = F
         **_signin_context(None, flow), "login_route": route, "mfa": mfa,
         **({"time_to_success_seconds": round(time.time() - began[0], 1),
             "earlier_failures": began[1]} if began else {}),
-    }))
+    }), visitor=_visitor(request))
 
 
 def _failed(reason: str, email: str = "", *, request: Request | None = None, flow: str = "",
@@ -359,7 +374,7 @@ def _failed(reason: str, email: str = "", *, request: Request | None = None, flo
     person line up in the report and whoever got stuck can be helped.
     """
     email = email.strip()
-    who = {"account": mask_email(email), "email": email} if email else {}
+    who = {"account": mask_email(email)} if email else {}
     fingerprint = store.email_fingerprint(email) if email else None
     if fingerprint and fingerprint in _FIRST_TRY:
         at, failures = _FIRST_TRY[fingerprint]
@@ -379,7 +394,7 @@ def _retried(reason: str, then: str, email: str = "") -> None:
     when the proxy itself failed, which needs looking at.
     """
     email = email.strip()
-    who = {"account": mask_email(email), "email": email} if email else {}
+    who = {"account": mask_email(email)} if email else {}
     analytics.capture(
         "sign_in_retried",
         store.email_fingerprint(email) if email else None,
@@ -732,11 +747,10 @@ def report_lapsed(user_token: str, *, source: str) -> None:
     user = store.get_user(user_token)
     if user is None:
         return
-    email = store.email_for(user_token)
     analytics.capture(
         "garmin_session_lapsed",
         user.email_hash or user_token,
-        {"account": user.email_masked, "source": source, **({"email": email} if email else {})},
+        {"account": user.email_masked, "source": source},
     )
 
 
@@ -1123,11 +1137,10 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         )
         _report_call(name, result, held)
         if held:
-            email = store.email_for(user_token)
             analytics.capture(
                 "tool_held",
                 user.email_hash or user_token,
-                {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+                {"tool": name, "account": user.email_masked},
             )
             return {"for_the_assistant": WITH_PLAN_NOTE}
         # A crew member's coming runs reach their crew whenever they look at
@@ -1143,12 +1156,11 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         )
         if failed:
             # The type only: the message can hold the person's own data.
-            email = store.email_for(user_token)
             analytics.capture(
                 "tool_failed",
                 user.email_hash or user_token,
                 {"tool": name, "error_type": failed.group(1), "account": user.email_masked,
-                 **({"email": email} if email else {})},
+                 },
             )
         seconds = hooks.seconds()
         cold = user_token not in _WARM
@@ -1164,12 +1176,11 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             _TOOL_REPORTED[(user_token, name)] = today
             if len(_TOOL_REPORTED) > 20000:
                 _TOOL_REPORTED.clear()
-            email = store.email_for(user_token)
             analytics.capture(
                 "tool_used",
                 user.email_hash or user_token,
                 {"tool": name, "account": user.email_masked, **timing,
-                 **({"email": email} if email else {})},
+                 },
             )
         if alone:
             return result
@@ -1182,23 +1193,21 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
         ):
-            email = store.email_for(user_token)
             analytics.capture(
                 "whats_new_shown",
                 user.email_hash or user_token,
                 {"version": NEWS_VERSION, "tool": name, "account": user.email_masked,
-                 **({"email": email} if email else {})},
+                 },
             )
             return {"whats_new": NEWS, **result}
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_tip(user_token)
         ):
-            email = store.email_for(user_token)
             analytics.capture(
                 "permission_tip_shown",
                 user.email_hash or user_token,
-                {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+                {"tool": name, "account": user.email_masked},
             )
             return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
         if _first_day_due(user_token, user, name, result):
@@ -1212,11 +1221,10 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             and (result.get("app") or {}).get("note") != server_mod.APP_OFFER_NOTE
             and _crew_offer_due(user, crew_key) and store.claim_crew_offer(user_token)
         ):
-            email = store.email_for(user_token)
             analytics.capture(
                 "crew_offer_shown",
                 user.email_hash or user_token,
-                {"account": user.email_masked, **({"email": email} if email else {})},
+                {"account": user.email_masked},
             )
             return {**result, "crew_offer": CREW_OFFER}
         return result
@@ -1256,11 +1264,10 @@ def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -
     if not link:
         return result
     if offer:
-        email = store.email_for(user_token)
         analytics.capture(
             "app_link_offered",
             user.email_hash or user_token,
-            {"tool": name, "account": user.email_masked, **({"email": email} if email else {})},
+            {"tool": name, "account": user.email_masked},
         )
     return {**result, "app": {"url": link, "note": server_mod.APP_OFFER_NOTE if offer else server_mod.APP_NOTE}}
 
@@ -1993,6 +2000,7 @@ code, .url { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-si
   padding:12px; display:block; word-break:break-all; color:var(--ink) }
 .note { font-size:0.9rem }
 .hint { margin:6px 0 0 }
+.forgot { margin:8px 0 0; text-align:right } .social { margin:14px 0 0 }
 .foot { text-align:center; margin-top:18px; font-size:0.85rem }
 a { color:var(--ink); text-decoration:underline; text-decoration-color:var(--line);
   text-underline-offset:3px }
@@ -2030,7 +2038,17 @@ _EYE = ('<svg class=on width=20 height=20 viewBox="0 0 24 24" fill=none stroke=c
 _PASSWORD_SCRIPT = """<script>
 (function () {
   var input = document.getElementById("password"), eye = document.getElementById("show-password"),
-      caps = document.getElementById("caps-hint");
+      caps = document.getElementById("caps-hint"), flow = document.querySelector("input[name=flow]");
+  // Which of the form's helpers get used (Nov 14): the word only, and the
+  // request it belongs to, so it can be told which app the person came from.
+  function tap(what) {
+    try {
+      navigator.sendBeacon("/connect/tap", new URLSearchParams({what: what, flow: flow ? flow.value : ""}));
+    } catch (e) {}
+  }
+  document.querySelectorAll("a[data-tap]").forEach(function (a) {
+    a.addEventListener("click", function () { tap(a.getAttribute("data-tap")); });
+  });
   if (!input || !eye) return;
   function shown(on) {
     input.type = on ? "text" : "password";
@@ -2039,6 +2057,7 @@ _PASSWORD_SCRIPT = """<script>
   }
   eye.addEventListener("click", function () {
     shown(input.type === "password");
+    tap(input.type === "text" ? "show_password" : "hide_password");
     input.focus();
   });
   // Hidden again before it's sent, so the browser never keeps it as plain text
@@ -2323,10 +2342,57 @@ def _garmin_instead(flow: str, why: str = "blocked") -> str:
     )
 
 
+# Where "Forgot your Garmin password?" goes: Garmin's own sign-in, in a new
+# tab, so this tab and the request from Claude or ChatGPT stay put. Garmin's
+# page has its own "Forgot password" link. GARMIN_RESET_URL can point
+# straight at Garmin's reset page once that address is confirmed.
+GARMIN_RESET_URL = os.environ.get("GARMIN_RESET_URL", "").strip() or "https://connect.garmin.com/signin/"
+
+# One line under the form for people who sign in to Garmin with Apple or
+# Google, and so have no Garmin password to type here. Off until what Garmin
+# offers those accounts is confirmed (Nov 14); the wording is ready.
+SOCIAL_SIGNIN_NOTE = os.environ.get("GARMIN_SOCIAL_NOTE", "") == "1"
+SOCIAL_SIGNIN_TEXT = ("Signed in to Garmin with Apple or Google? Set a Garmin password in "
+                      "Garmin Connect first, then come back.")
+
+
+def _reset_link(text: str = "Forgot your Garmin password?") -> str:
+    return (f'<a href="{html.escape(GARMIN_RESET_URL, quote=True)}" target=_blank rel=noopener '
+            f'data-tap=reset>{text}</a>')
+
+
 _INVITE_FIELD = """
           <label for=invite>Invite code</label>
           <input id=invite name=invite required autocomplete=off>
 """
+
+
+# What a tap on the sign-in form can say. Anything else is ignored.
+TAPS = ("reset", "show_password", "hide_password", "check_on_garmin")
+_TAPS_BY_ADDRESS: dict[str, list[float]] = {}
+
+
+@mcp.custom_route("/connect/tap", methods=["POST"])
+async def connect_tap(request: Request) -> Response:
+    """sign_in_tap: the reset link or the show-password eye was used (Nov 14).
+
+    The word, the app the sign-in is for and the kind of device: nobody's
+    address, and nothing typed. A few a minute per address at most, so the
+    count can't be run up.
+    """
+    form = await request.form()
+    what = str(form.get("what", ""))
+    flow = str(form.get("flow", ""))[:64]
+    now = time.time()
+    recent = [t for t in _TAPS_BY_ADDRESS.get(_client_address(request), []) if t > now - 600]
+    if what in TAPS and len(recent) < 30:
+        recent.append(now)
+        _TAPS_BY_ADDRESS[_client_address(request)] = recent
+        if len(_TAPS_BY_ADDRESS) > 5000:
+            _TAPS_BY_ADDRESS.clear()
+        analytics.capture("sign_in_tap", None, _with_source(request, {
+            "what": what, **_signin_context(None, flow), "website_visitor": bool(_visitor(request))}))
+    return Response(status_code=204)
 
 
 @mcp.custom_route("/connect", methods=["GET"])
@@ -2454,7 +2520,9 @@ def _password_form(flow: str, *, email: str = "", notice: str = "", status: int 
                     aria-pressed=false aria-label="Show password">{_EYE}</button>
           </div>
           <p class="note hint" id=caps-hint role=status hidden>Caps Lock is on.</p>
+          <p class="note forgot">{_reset_link()}</p>
           <button>Connect</button>
+          {f'<p class="note social">{SOCIAL_SIGNIN_TEXT}</p>' if SOCIAL_SIGNIN_NOTE else ""}
           <p class=fine>Occasional Daash emails, easy to stop.</p>
           <p class="note wait" role=status hidden
              data-later="Still working. Garmin can be slow to answer, and Daash keeps
@@ -2641,11 +2709,11 @@ def _signin_error(
         warning = (
             "Garmin has now turned down more than one try. Another wrong one can make Garmin "
             "lock sign-ins for about 30 minutes, so check your password at "
-            '<a href="https://connect.garmin.com/" target=_blank rel=noopener>connect.garmin.com</a> '
+            '<a href="https://connect.garmin.com/" target=_blank rel=noopener data-tap=check_on_garmin>connect.garmin.com</a> '
             "first, or reset it there with &ldquo;Forgot password&rdquo;."
             if wrong_before else
             "Check your password by signing in at "
-            '<a href="https://connect.garmin.com/" target=_blank rel=noopener>connect.garmin.com</a>, '
+            '<a href="https://connect.garmin.com/" target=_blank rel=noopener data-tap=check_on_garmin>connect.garmin.com</a>, '
             "then try again here. Forgotten it? Reset it there with &ldquo;Forgot password&rdquo;."
         )
         return (
@@ -2877,18 +2945,16 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
                         returning: bool, joined: bool = False) -> None:
     """connector_connected, for someone who came in through Garmin's page."""
     user = store.get_user(user_token)
-    email = store.email_for(user_token)
     destination = str(parked["params"].redirect_uri)
     app = (oauth.app_named(oauth.app_for_redirect(destination), parked.get("client_name"))
            if oauth.recognised_redirect(destination) else None)
     # The funnel's sign-in step, for Garmin's page: the approval came back.
     analytics.capture("sign_in_succeeded", (user.email_hash if user else None) or None, _with_source(request, {
         "via": "oauth", "login_route": "official", **({"app": app, "ai_client": app} if app else {}),
-    }))
+    }), visitor=_visitor(request))
     analytics.capture("connector_connected", (user.email_hash if user else None) or None, _with_source(request, {
         "account": user.email_masked if user else None,
-        **({"email": email} if email else {}),
-        "via": "oauth",
+                "via": "oauth",
         "route": "official",
         "login_route": "official",
         **({"app": app, "ai_client": app} if app else {}),
@@ -3071,7 +3137,6 @@ def _finish(
         fingerprint,
         _with_source(request, {
             "account": masked,
-            "email": email.strip(),
             # "direct" is someone who reached the form without Claude's request
             # attached; the page below sends them back to start from Claude.
             "via": ("oauth" if flow else "direct") if OAUTH_ENABLED else "url",
@@ -4509,11 +4574,10 @@ class SessionBinding:
         if now - _TOUCHED.get(user_token, 0.0) > _TOUCH_EVERY:
             _TOUCHED[user_token] = now
             if store.touch_user(user_token):
-                email = store.email_for(user_token)
                 analytics.capture(
                     "first_tool_call",
                     user.email_hash or user_token,
-                    {"account": user.email_masked, **({"email": email} if email else {}),
+                    {"account": user.email_masked,
                      "login_route": login_route(not store.has_connect(user_token)),
                      **({"client": app, "ai_client": app} if app else {}),
                      "hours_since_connect": hours_since_connect(user)},
@@ -4522,12 +4586,11 @@ class SessionBinding:
         today = time.strftime("%Y-%m-%d", time.gmtime(now))
         if _USED_ON.get(user_token) != today:
             _USED_ON[user_token] = today
-            email = store.email_for(user_token)
             analytics.capture(
                 "connector_used",
                 user.email_hash or user_token,
                 {"account": user.email_masked, "day": today, **({"app": app, "ai_client": app} if app else {}),
-                 **({"email": email} if email else {})},
+                 },
             )
 
         token = use_session(session_for(user_token))
