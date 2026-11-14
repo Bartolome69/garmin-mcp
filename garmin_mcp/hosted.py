@@ -1879,6 +1879,13 @@ label { display:block; font-weight:600; font-size:0.92rem; color:var(--ink); mar
 input { width:100%; padding:12px 14px; font-size:1rem; border:1px solid var(--line);
   border-radius:10px; background:var(--surface); color:var(--ink) }
 input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(230,48,35,0.15) }
+.pw { position:relative } .pw input { padding-right:52px }
+.pw button.eye { position:absolute; top:50%; right:6px; transform:translateY(-50%); margin:0; width:42px; height:42px;
+  padding:0; display:grid; place-items:center; border-radius:8px; background:none; color:var(--muted) }
+.pw button.eye:hover { background:var(--ground); color:var(--ink) }
+.pw button.eye:focus-visible { outline:2px solid var(--accent); outline-offset:1px }
+.pw button.eye .off, .pw button.eye[aria-pressed=true] .on { display:none }
+.pw button.eye[aria-pressed=true] .off { display:inline }
 button { margin-top:22px; width:100%; padding:13px; font-size:1rem; font-weight:600;
   border:0; border-radius:999px; background:var(--accent); color:#fff; cursor:pointer }
 button:hover { background:var(--accent-ink) }
@@ -1931,6 +1938,41 @@ _TICK = (
 # with a mistyped ".com", the form offers the likely address. It never blocks
 # sending: a real address can look unusual. A link, not a button: the busy
 # script below takes the form's first button to be the one that submits.
+# Nov 14: most failed sign-ins are a mistyped password, and a few of those go on
+# to Garmin's 30-minute lock. The password can be shown while it's typed, and
+# a note says when Caps Lock is on. Nothing else about the sign-in changes.
+_EYE = ('<svg class=on width=20 height=20 viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 '
+        'stroke-linecap=round stroke-linejoin=round aria-hidden=true><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 '
+        '19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx=12 cy=12 r=3 /></svg>'
+        '<svg class=off width=20 height=20 viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2 '
+        'stroke-linecap=round stroke-linejoin=round aria-hidden=true><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 '
+        '13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>'
+        '<path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1=2 y1=2 x2=22 y2=22 /></svg>')
+_PASSWORD_SCRIPT = """<script>
+(function () {
+  var input = document.getElementById("password"), eye = document.getElementById("show-password"),
+      caps = document.getElementById("caps-hint");
+  if (!input || !eye) return;
+  function shown(on) {
+    input.type = on ? "text" : "password";
+    eye.setAttribute("aria-pressed", on ? "true" : "false");
+    eye.setAttribute("aria-label", on ? "Hide password" : "Show password");
+  }
+  eye.addEventListener("click", function () {
+    shown(input.type === "password");
+    input.focus();
+  });
+  // Hidden again before it's sent, so the browser never keeps it as plain text
+  // and password managers see a password field as before.
+  if (input.form) input.form.addEventListener("submit", function () { shown(false); });
+  function capsCheck(e) {
+    if (caps && e.getModifierState) caps.hidden = !e.getModifierState("CapsLock");
+  }
+  input.addEventListener("keydown", capsCheck);
+  input.addEventListener("keyup", capsCheck);
+  input.addEventListener("blur", function () { if (caps) caps.hidden = true; });
+})();
+</script>"""
 _EMAIL_HINT_SCRIPT = """<script>
 (function () {
   var input = document.getElementById("email"), hint = document.getElementById("email-hint");
@@ -2004,7 +2046,7 @@ _EMAIL_HINT_SCRIPT = """<script>
 # press and ignores the rest; coming back with the back button resets it.
 _BUSY_SCRIPT = """<script>
 document.querySelectorAll("form[data-wait]").forEach(function (f) {
-  var b = f.querySelector("button"), label = b ? b.innerHTML : "";
+  var b = f.querySelector("button:not([type=button])"), label = b ? b.innerHTML : "";
   f.addEventListener("submit", function (e) {
     if (f.dataset.sent) { e.preventDefault(); return; }
     f.dataset.sent = "1";
@@ -2292,8 +2334,13 @@ def _password_form(flow: str) -> Response:
           <input id=email name=email type=email required autocomplete=username>
           <p class="note hint" id=email-hint role=status hidden></p>
           <label for=password>Garmin password</label>
-          <input id=password name=password type=password required
-                 autocomplete=current-password>
+          <div class=pw>
+            <input id=password name=password type=password required
+                   autocomplete=current-password>
+            <button type=button class=eye id=show-password aria-controls=password
+                    aria-pressed=false aria-label="Show password">{_EYE}</button>
+          </div>
+          <p class="note hint" id=caps-hint role=status hidden>Caps Lock is on.</p>
           <button>Connect</button>
           <p class=fine>Occasional Daash emails, easy to stop.</p>
           <p class="note wait" role=status hidden
@@ -2307,6 +2354,7 @@ def _password_form(flow: str) -> Response:
         &middot; <a href="{GUIDE_URL}" target=_blank rel=noopener>New to Daash?
         See what you can ask it</a></p>
         {_EMAIL_HINT_SCRIPT}
+        {_PASSWORD_SCRIPT}
         """,
     )
 

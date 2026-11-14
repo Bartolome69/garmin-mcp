@@ -305,6 +305,13 @@ async def main() -> int:
         _, body, _ = await run(lambda: http("GET", f"/connect?flow={flow}&usual=1",
                                             headers={"Cookie": "daash_route=official"}))
         check("'Sign in the usual way' is today's password form", "Garmin password" in body)
+        # Nov 14: most failed sign-ins were a mistyped password.
+        check("the password can be shown while typed, and Caps Lock is said",
+              'id=show-password' in body and 'aria-pressed=false' in body and 'id=caps-hint' in body
+              and 'getModifierState("CapsLock")' in body)
+        check("it's hidden again before it's sent, and the wait spinner goes on Connect, not the eye",
+              'addEventListener("submit", function () { shown(false); })' in body
+              and 'querySelector("button:not([type=button])")' in body)
         shown = [p for e, p in reported if e == "sign_in_shown"]
         check("each showing says which route it was", [p.get("route") for p in shown[-4:]]
               == ["password", "official", "official", "password"], str(shown[-4:]))
