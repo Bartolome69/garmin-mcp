@@ -372,6 +372,26 @@ def workout_steps(workout: Mapping[str, Any] | None) -> list[dict[str, Any]] | N
     return steps or None
 
 
+def _with_efforts(steps: list[dict[str, Any]] | None, efforts: Sequence[str]) -> list[dict[str, Any]] | None:
+    """Each step with "effort" (easy, work or rec) as the shape bar classed it (Nov 14:
+    the chat card coloured a long run's steps one way and its bar another).
+
+    Left as they are when the two lists don't line up step for step.
+    """
+    def leaves(items: Sequence[Mapping[str, Any]]) -> int:
+        return sum(leaves(i.get("steps") or []) if i.get("kind") == "repeat" else 1 for i in items)
+
+    if not steps or len(efforts) != leaves(steps):
+        return steps
+    queue = iter(efforts)
+
+    def mark(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        return [{**i, "steps": mark(i.get("steps") or [])} if i.get("kind") == "repeat" else {**i, "effort": next(queue)}
+                for i in items]
+
+    return mark(steps)
+
+
 def goal_from_description(text: str | None, label: str) -> str | None:
     found = re.search(rf"Plan {re.escape(label)}: (.+?), \d{{4}}-\d{{2}}-\d{{2}} to", text or "")
     return found.group(1) if found else None
@@ -519,7 +539,7 @@ def _speed(step: Mapping[str, Any]) -> float | None:
 
 
 def workout_shape(workout: Mapping[str, Any] | None, easy_mps: float | None = None,
-                  timed: bool = False) -> list[dict[str, Any]] | None:
+                  timed: bool = False, efforts: list[str] | None = None) -> list[dict[str, Any]] | None:
     """A run or ride as segments the card draws: easy, work and recovery, each by its distance.
 
     Built from the structured steps, repeats unrolled, time steps converted at
@@ -534,7 +554,9 @@ def workout_shape(workout: Mapping[str, Any] | None, easy_mps: float | None = No
 
     With easy_mps, untargeted steps are converted at that speed (the runner's
     own easy pace) instead of the default; timed adds each segment's seconds,
-    and "by": "time" on segments whose step was set by time.
+    and "by": "time" on segments whose step was set by time. With efforts, a
+    list, it gets each step as written (repeats not unrolled) classed the same
+    way, "easy", "work" or "rec", so a step list can be coloured like the bar.
     """
     if not workout:
         return None
@@ -543,6 +565,7 @@ def workout_shape(workout: Mapping[str, Any] | None, easy_mps: float | None = No
     if category(sport) != "run" and not ride:
         return None
     flat: list[tuple[str, float, tuple[str, float] | None, bool, float, bool]] = []
+    written: list[int] = []  # each step as written, by its place in flat
 
     def walk(steps: Sequence[Mapping[str, Any]], in_repeat: bool) -> None:
         for step in sorted(steps or [], key=lambda x: x.get("stepOrder") or 0):
@@ -565,6 +588,7 @@ def workout_shape(workout: Mapping[str, Any] | None, easy_mps: float | None = No
                 metres, seconds = value * speed, value
             else:
                 metres = seconds = 0.0
+            written.append(len(flat))
             flat.append((kind, metres, level, in_repeat, seconds, cond == "time"))
 
     for segment in workout.get("workoutSegments") or []:
@@ -614,6 +638,8 @@ def workout_shape(workout: Mapping[str, Any] | None, easy_mps: float | None = No
             return "work"
         return "work" if unit in warm and value >= warm[unit] * ratio else "easy"
 
+    if efforts is not None:
+        efforts.extend(classify(flat[i][0], flat[i][2], flat[i][3]) for i in written)
     segments: list[dict[str, Any]] = []
     for kind, metres, level, in_repeat, seconds, by_time in flat:
         km = metres / 1000
@@ -2014,8 +2040,9 @@ def session_card(answer: Mapping[str, Any], day: str, today: str, workout: Mappi
         "actual": drop_empty({k: main.get(k) for k in ("actual_km", "actual_pace", "actual_bpm", "actual")}) or None,
     })
     card["totals"] = session_totals(workout, easy) if workout else None
-    card["segments"] = workout_shape(workout, easy_mps=easy, timed=True) if workout else None
-    card["steps"] = steps
+    efforts: list[str] = []
+    card["segments"] = workout_shape(workout, easy_mps=easy, timed=True, efforts=efforts) if workout else None
+    card["steps"] = _with_efforts(steps, efforts)
     card["also"] = [drop_empty({"name": display_name(s), "type": s.get("type"), "kind": s.get("kind"),
                                 "km": s.get("planned_km"), "status": s.get("status")})
                     for s in on_day if s is not main] or None

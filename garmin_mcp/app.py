@@ -183,7 +183,13 @@ def _step_rows(steps: Any, kind: str | None, indent: int = 0) -> list[dict[str, 
             rows.extend(_step_rows(step.get("steps"), kind, indent + 16))
             continue
         k = step.get("kind")
-        if k in ("recovery", "rest"):
+        effort = step.get("effort")
+        if effort and kind != "strength":
+            # Classed as the bar is (Nov 14), so the list and the bar agree: a long
+            # run's easy running is blue and its faster stretch amber, cool-down included.
+            colour = ("rec" if effort == "rec" else "race" if kind == "race" and k not in ("warmup", "cooldown")
+                      else "hard" if effort == "work" else "long" if kind == "long" else "easy")
+        elif k in ("recovery", "rest"):
             colour = "rec"
         elif k in ("warmup", "cooldown"):
             colour = "easy"

@@ -259,14 +259,24 @@
     if (!cells.length) return null;
     return el("div", { class: "stats" + (cells.length === 2 ? " two" : cells.length === 1 ? " one" : "") }, cells);
   }
+  // One rule for the bar and the steps, as the app and the plan card have it (Nov 14):
+  // a long run's easy running is blue and its faster stretch amber; work in a hard
+  // session takes that session's colour; a race is red outside its warm-up and cool-down.
+  var HARD = { threshold: 1, sub: 1, intervals: 1 };
+  function effortColour(type, effort, end) {
+    if (effort === "rec") return "var(--rec)";
+    if (type === "race" && !end) return "var(--race)";
+    if (effort === "work") return HARD[type] ? colourOf(type) : "var(--threshold)";
+    return type === "long" ? "var(--long)" : "var(--easy)";
+  }
   function shape(c) {
     var segs = (c.segments || []).filter(function (g) { return g.secs || g.km; });
     if (segs.length < 2) return null;
-    var work = colourOf((c.session || {}).type);
+    var type = (c.session || {}).type;
     var reps = segs.filter(function (g) { return g.k === "work"; }).length;
     var firstWork = true;
     return el("div", { class: "shape", "aria-hidden": "true" }, segs.map(function (g) {
-      var colour = g.k === "work" ? work : g.k === "rec" ? "var(--rec)" : "var(--easy)";
+      var colour = effortColour(type, g.k === "work" ? "work" : g.k === "rec" ? "rec" : "easy", !!g.part);
       var h = g.k === "work" ? 24 : g.k === "rec" ? 8 : 14;
       // A long set labels its first rep only, so the labels never collide.
       var label = null;
@@ -279,7 +289,7 @@
     }));
   }
   var STEP_LABELS = { warmup: "Warm up", cooldown: "Cool down", recovery: "Jog", rest: "Rest", interval: "Run" };
-  function stepRow(st, workColour) {
+  function stepRow(st, workColour, type) {
     var kind = st.kind || "";
     var label = (kind === "interval" && st.label && st.label !== "Run") ? st.label : (STEP_LABELS[kind] || st.label || "Run");
     var target = st.target ? units(st.target.replace(/\/km$/, " /km")) : "";
@@ -287,7 +297,8 @@
     if (target) detail += (detail ? " at " : "") + target;
     else if ((kind === "warmup" || kind === "cooldown") && /km|mi|m$/.test(detail)) detail += " easy";
     if (st.note) detail += (detail ? " · " : "") + st.note;
-    var rail = kind === "recovery" || kind === "rest" ? "var(--rec)" : kind === "interval" ? workColour : "var(--easy)";
+    var rail = st.effort ? effortColour(type, st.effort, kind === "warmup" || kind === "cooldown")
+      : kind === "recovery" || kind === "rest" ? "var(--rec)" : kind === "interval" ? workColour : "var(--easy)";
     return el("div", { class: "step" }, [
       el("span", { class: "rail", style: "background:" + rail }),
       el("span", { class: "step-l", text: label }),
@@ -297,13 +308,14 @@
   function steps(c) {
     var list = c.steps || [];
     if (!list.length) return null;
-    var work = colourOf((c.session || {}).type);
+    var type = (c.session || {}).type;
+    var work = colourOf(type);
     return el("div", { class: "steps" }, list.map(function (st) {
       if (st.kind === "repeat") {
         return el("div", { class: "rep" }, [el("div", { class: "rep-h mono", text: st.times + " ×" })]
-          .concat((st.steps || []).map(function (x) { return stepRow(x, work); })));
+          .concat((st.steps || []).map(function (x) { return stepRow(x, work, type); })));
       }
-      return stepRow(st, work);
+      return stepRow(st, work, type);
     }));
   }
   function watchLine(c) {

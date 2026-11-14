@@ -1825,6 +1825,28 @@ async def main() -> int:
               [g["k"] for g in segs] == ["easy", "work", "rec", "work", "rec", "work", "rec", "easy"]
               and segs[1]["secs"] == 729 and segs[2].get("by") == "time"
               and not any("secs" in g for g in tp.workout_shape(three_by_three)), str(segs[:3]))
+        # Nov 14: each step classed as the bar is, so the card's and the app's step
+        # lists colour a long run's easy running blue and its fast finish amber.
+        efforts: list = []
+        tp.workout_shape(three_by_three, easy_mps=1000 / 312, efforts=efforts)
+        check("each step as written is classed like the bar, a repeat's steps once",
+              efforts == ["easy", "work", "rec", "easy"], str(efforts))
+        hm_finish = {"sportType": {"sportTypeKey": "running"}, "workoutSegments": [{"workoutSteps": [
+            {**_step(1, "interval", "distance", 16000), "targetType": {"workoutTargetTypeKey": "heart.rate.zone"},
+             "targetValueOne": 125, "targetValueTwo": 148},
+            _step(2, "interval", "distance", 3000, (226, 236)),
+            _step(3, "cooldown", "distance", 1000)]}]}
+        efforts = []
+        tp.workout_shape(hm_finish, easy_mps=1000 / 312, efforts=efforts)
+        marked = tp._with_efforts(tp.workout_steps(hm_finish), efforts)
+        from garmin_mcp import app as app_mod
+        rows = app_mod._step_rows(marked, "long")
+        check("a long run with a fast finish: easy, then the finish as work, then the cool-down easy",
+              [s.get("effort") for s in marked] == ["easy", "work", "easy"], str(marked))
+        check("and the app lists it blue, amber, blue, as its bar draws it",
+              [r["colour"] for r in rows] == ["long", "hard", "long"], str(rows))
+        check("a step list that doesn't line up with the classes is left as it was",
+              tp._with_efforts(tp.workout_steps(hm_finish), ["easy"]) == tp.workout_steps(hm_finish))
         easy_week = {"weeks": [{"starts": "2026-10-19", "sessions": [
             {"date": f"2026-10-{20 + i}", "type": "easy", "kind": "run", "status": "done",
              "actual_pace": pace, "actual_km": 9} for i, pace in enumerate(["5:20 /km", "5:00 /km", "5:10 /km"])]}]}
