@@ -456,6 +456,25 @@ f.src = "card.html";</script></body>`);
     await page.close();
     pings.length = 0;
 
+    // Nov 14: a long run of 16 km steady then 3 km at half-marathon pace, both
+    // "interval" laps on the watch, drew as one 19 km bar "at pace".
+    const PARTS = { ...RUN, card: { type: "long", planned: "Long 20 km w 3 km HM", verdict: "On plan." },
+      splits: [{ split: 1, intensity: "interval", distance_km: 16, pace_per_km: "4:55 /km", duration: "1h 18m 40s", avg_hr: 138 },
+        { split: 2, intensity: "interval", distance_km: 3, pace_per_km: "3:51 /km", duration: "11m 33s", avg_hr: 173 },
+        { split: 3, intensity: "cooldown", distance_km: 1, pace_per_km: "4:55 /km", duration: "4m 55s", avg_hr: 146 }] };
+    fs.writeFileSync(path.join(dir, "host.html"), host(PARTS, "run.html"));
+    page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("file://" + path.join(dir, "host.html"));
+    await page.waitForTimeout(800);
+    rc = await page.frames()[1].evaluate(() => ({ text: document.body.innerText,
+      fills: [...document.querySelectorAll(".chart .bar")].map((b) => b.style.background) }));
+    check("a long run's steady part and quicker stretch are two bars, blue then amber, as two named rows",
+      rc.fills.length === 3 && /--long/.test(rc.fills[0]) && /--hard/.test(rc.fills[1]) && !rc.fills[2]
+      && /Steady\s*16 km/.test(rc.text) && /Quicker\s*3 km/.test(rc.text) && !/19 km/.test(rc.text) && !/AT PACE/i.test(rc.text),
+      JSON.stringify(rc).slice(0, 400));
+    await page.close();
+
     // An easy run: every km in colour with its pace, and the splits in a line, no reps.
     const EASY = { ...RUN, card: { type: "easy", planned: "Easy 8k", verdict: "Easy and even." },
       splits: [5.20, 5.16, 5.14, 5.12].map((m, i) => ({ split: i + 1, distance_km: 1, duration: "5m " + Math.round((m % 1) * 100) + "s",

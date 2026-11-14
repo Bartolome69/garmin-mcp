@@ -258,6 +258,8 @@
       avg_hr: hrW ? Math.round(hrT / hrW) : list[0].avg_hr, intensity: list[0].intensity, laps: list.length };
   }
   var STRIDE_S = 45;
+  // A long run's lap this much quicker a km than its slowest part is its quicker stretch.
+  var QUICK_GAP_S = 20;
   function laps(p) {
     var splits = (p.splits && p.splits.length > 1 ? p.splits : (p.inside && p.inside.km_splits) || p.splits || [])
       .filter(function (x) { return x && x.pace_per_km; });
@@ -278,6 +280,20 @@
     var known = secs.filter(function (v) { return v != null; });
     var lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
     var work = workLaps(splits, secs, lo, hi);
+    // A long run's parts are "interval" laps alike: 16 km steady then 3 km at
+    // half-marathon pace drew as one 19 km bar "at pace" (Nov 14). Its slower
+    // work laps are its steady running, in the run's colour; the quicker
+    // stretch is the work, amber, as in the app and on the share image.
+    var steadyLap = splits.map(function () { return false; });
+    if ((p.card || {}).type === "long") {
+      var wp = secs.filter(function (v, i) { return work[i] && v != null; });
+      var slowest = Math.max.apply(null, wp);
+      if (wp.length >= 2 && slowest - Math.min.apply(null, wp) >= QUICK_GAP_S) {
+        steadyLap = secs.map(function (v, i) { return !!(work[i] && v != null && v > slowest - QUICK_GAP_S); });
+        work = work.map(function (w, i) { return w && !steadyLap[i]; });
+      }
+    }
+    var parts = steadyLap.some(Boolean);
     var reps = work.filter(Boolean).length, mixed = reps > 0 && reps < splits.length;
     if (!mixed) {
       return { mixed: false, bars: splits.map(function (x, i) { return { lap: x, secs: secs[i], work: true }; }), rows: [] };
@@ -286,10 +302,16 @@
     var runs = [];
     splits.forEach(function (x, i) {
       var last = runs[runs.length - 1];
-      if (last && last.work === work[i]) last.list.push(x); else runs.push({ work: work[i], list: [x] });
+      if (last && last.work === work[i] && last.steady === steadyLap[i]) last.list.push(x);
+      else runs.push({ work: work[i], steady: steadyLap[i], list: [x] });
     });
     var groups = runs.filter(function (r) { return r.work; }).length;
-    var bars = runs.map(function (r) { var j = join(r.list); return { lap: j, secs: paceSecs(j.pace_per_km), work: r.work }; });
+    var bars = runs.map(function (r) { var j = join(r.list); return { lap: j, secs: paceSecs(j.pace_per_km), work: r.work, steady: r.steady }; });
+    if (parts) {
+      // The parts as rows, each named: steady running and the quicker stretch.
+      return { mixed: true, parts: true, groups: groups, bars: bars,
+        rows: bars.filter(function (b) { return b.work || b.steady; }).map(function (b) { return Object.assign({ part: b.work ? "Quicker" : "Steady" }, b.lap); }) };
+    }
     // The reps as rows: each rep when there are several; the km of one long
     // stretch of work (a marathon-pace finish) when there's one.
     var rows = groups > 1 ? bars.filter(function (b) { return b.work; }).map(function (b) { return b.lap; })
@@ -307,13 +329,15 @@
     var height = function (v) { return v == null ? 12 : 14 + 78 * (bottom - v) / (bottom - top); };
     var sum = p.summary || {};
     var labelAll = !L.mixed && bars.length <= 10, small = bars.length > 7;
+    var quickColour = L.parts ? "var(--hard)" : colour;
     var kids = bars.map(function (b) {
       var x = b.lap, wide = (x.duration_s || clockSecs(x.duration)) || (x.distance_km ? x.distance_km * (b.secs || 300) : 0) || 1;
-      var showPace = (L.mixed ? b.work : labelAll);
+      var shown = b.work || b.steady, fill = b.steady ? colour : b.work ? quickColour : null;
+      var showPace = (L.mixed ? shown : labelAll);
       var bar = el("div", { class: "bar" + (small ? " small" : ""), style: "flex-grow:" + Math.round(wide) + ";height:" + height(b.secs).toFixed(1) + "%;" +
-          (b.work ? "background:" + colour : ""), title: units(x.pace_per_km) + (x.avg_hr ? " · " + x.avg_hr + " bpm" : "") },
-        [showPace ? el("em", { style: "color:" + colour, text: bare(x.pace_per_km) }) : null,
-         L.mixed && b.work && x.distance_km && wide > 300 ? el("span", { style: /long|race/.test(colour) ? "color:var(--on-long)" : "", text: fmtKm(x.distance_km) + " " + KMW() }) : null]);
+          (fill ? "background:" + fill : ""), title: units(x.pace_per_km) + (x.avg_hr ? " · " + x.avg_hr + " bpm" : "") },
+        [showPace ? el("em", { style: "color:" + (fill || colour), text: bare(x.pace_per_km) }) : null,
+         L.mixed && shown && x.distance_km && wide > 300 ? el("span", { style: /long|race/.test(colour) && fill === colour ? "color:var(--on-long)" : "", text: fmtKm(x.distance_km) + " " + KMW() }) : null]);
       return bar;
     });
     if (L.strides) {
@@ -325,7 +349,8 @@
       });
     }
     var avg = paceSecs(sum.pace_per_km);
-    if (L.mixed && avg != null && avg > top && avg < bottom) {
+    // Not on a long run's parts: a whole-run average says little against steady and quick (Nov 14).
+    if (L.mixed && !L.parts && avg != null && avg > top && avg < bottom) {
       // On the bars' scale: their heights are shares of the chart less its 24px label room, not of the whole box.
       kids.push(el("i", { style: "bottom:calc((100% - 24px) * " + (height(avg) / 100).toFixed(3) + ")" }, [el("b", { class: "mono", text: "avg " + bare(sum.pace_per_km) })]));
     }
@@ -335,8 +360,8 @@
     if (L.mixed) {
       var first = bars[0], last = bars[bars.length - 1];
       var name = function (b, word) { return word + " " + fmtKm(b.lap.distance_km) + " " + KMW() + " · " + bare(b.lap.pace_per_km); };
-      var left = !first.work ? name(first, L.groups > 1 ? "Warm up" : "Steady") : null;
-      var right = !last.work && bars.length > 1 && L.groups > 1 ? name(last, "Cool down") : null;
+      var left = !first.work && !first.steady ? name(first, L.groups > 1 || L.parts ? "Warm up" : "Steady") : null;
+      var right = !last.work && !last.steady && bars.length > 1 && (L.groups > 1 || L.parts) ? name(last, "Cool down") : null;
       ends = left || right ? el("div", { class: "ends" }, [el("span", { text: left || "" }), el("span", { text: right || "" })]) : null;
     } else {
       ends = el("div", { class: "ends" }, [el("span", { text: "Km 1" }),
@@ -346,13 +371,15 @@
   }
 
   function repsTable(L, colour, label) {
+    var quickColour = L.parts ? "var(--hard)" : colour;
     var rows = L.rows.slice(0, 16);
     return el("div", { class: "reps" }, [
       el("div", { class: "reps-h mono" }, [el("span", { text: label }), el("span", { text: "Pace" }), el("span", { text: "Heart rate" })]),
     ].concat(rows.map(function (x, k) {
       var kmName = x.km != null ? "Km " + x.km : x.split != null ? "Lap " + x.split : "Km " + (k + 1);
       return el("div", { class: "rep" }, [
-        el("span", { class: "rep-n" }, [el("i", { style: "background:" + colour }), el("b", { text: L.groups > 1 ? "Rep " + (k + 1) : kmName }),
+        el("span", { class: "rep-n" }, [el("i", { style: "background:" + (x.part === "Steady" ? colour : quickColour) }),
+          el("b", { text: x.part || (L.groups > 1 ? "Rep " + (k + 1) : kmName) }),
           x.distance_km ? el("small", { text: fmtKm(x.distance_km) + " " + KMW() }) : null]),
         el("span", { class: "rep-v" }, [bare(x.pace_per_km), el("small", { text: "/" + KMW() })]),
         el("span", { class: "rep-v" }, x.avg_hr ? [String(x.avg_hr), el("small", { text: "bpm" })] : ["–"]),
@@ -421,7 +448,7 @@
       if (ch) {
         body.appendChild(ch.box);
         if (ch.ends) body.appendChild(ch.ends);
-        if (ch.L.mixed && ch.L.rows.length > 1) body.appendChild(repsTable(ch.L, colour, ch.L.groups > 1 ? "Reps" : "At pace"));
+        if (ch.L.mixed && ch.L.rows.length > 1) body.appendChild(repsTable(ch.L, colour, ch.L.parts ? "Parts" : ch.L.groups > 1 ? "Reps" : "At pace"));
         else if (ch.L.mixed && ch.L.rows.length === 1) body.appendChild(workLine(ch.L.rows[0], colour, ch.L.bars));
         else if (!ch.L.mixed) body.appendChild(splitLine(ch.L, colour, hr));
         if (ch.L.strides) body.appendChild(stridesLine(ch.L.strides));
