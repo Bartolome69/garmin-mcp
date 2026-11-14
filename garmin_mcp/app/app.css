@@ -25,10 +25,11 @@
   color-scheme: dark;
 }
 
-/* Light mode (Nov 13): follows the phone's setting. The type colours are darker
+/* Light mode (Nov 13): follows the phone's setting, unless You > Appearance picks
+   Light or Dark (Nov 14), which sets data-theme on <html>. The type colours are darker
    here so each still reads at 4.5:1 on white; red stays for the main action and today. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --ground: #F5F4F0; --surface: #FFFFFF; --sunken: #ECEAE4; --hairline: #DEDCD5; --button: #C9C6BE;
     --ink: #161614; --ink-2: #2E2D2A; --muted: #5E5D57;
     --red: #C8251E; --red-text: #C21F18; --red-soft: #FDECEA; --red-soft-line: #F2B8B3;
@@ -45,6 +46,23 @@
     --shadow: rgba(22, 22, 20, 0.14); --shadow-2: rgba(22, 22, 20, 0.18);
     color-scheme: light;
   }
+}
+:root[data-theme="light"] {
+  --ground: #F5F4F0; --surface: #FFFFFF; --sunken: #ECEAE4; --hairline: #DEDCD5; --button: #C9C6BE;
+  --ink: #161614; --ink-2: #2E2D2A; --muted: #5E5D57;
+  --red: #C8251E; --red-text: #C21F18; --red-soft: #FDECEA; --red-soft-line: #F2B8B3;
+  --easy: #2A7030; --hard: #9C4D0B; --long: #2563A8; --strength: #6A47B0; --rec: #C9C6BE; --race: #9C4D0B;
+  --amber: #7F5A00; --amber-soft: #FFF5DD; --amber-soft-line: #E8CF94;
+  --band-hard: rgba(156, 77, 11, 0.12); --band-easy: rgba(42, 112, 48, 0.10); --band-easy-line: rgba(42, 112, 48, 0.40);
+  --hover: rgba(22, 22, 20, 0.04); --hover-soft: rgba(22, 22, 20, 0.03);
+  --band-0: rgba(22, 22, 20, 0.025); --band-1: rgba(22, 22, 20, 0.06);
+  --band-0b: rgba(22, 22, 20, 0.04); --band-1b: rgba(22, 22, 20, 0.08);
+  --swatch-0: rgba(22, 22, 20, 0.06); --swatch-1: rgba(22, 22, 20, 0.16);
+  --tint-easy: #E3F1E3; --tint-hard: #FBEBDC; --tint-long: #E2ECF8; --tint-strength: #EDE7F8; --tint-race: #FBE4E1;
+  --chip-easy: #E3F1E3; --race-bar: #E8A39C; --panel: #FAF9F6; --done-week: #EFEEE9; --dash: #8A8982; --cal-v: #3A3936;
+  --red-hover: #B01F19; --light-hover: #2E2D2A; --on-tag: #FFFFFF; --scrim: rgba(22, 22, 20, 0.35);
+  --shadow: rgba(22, 22, 20, 0.14); --shadow-2: rgba(22, 22, 20, 0.18);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }

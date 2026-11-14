@@ -1802,9 +1802,9 @@ function youView(d) {
     ${d.groups.map((g) => g.title === "Assistants" && onComputer() && d.assistant !== "ChatGPT" ? { ...g, rows: [...g.rows,
       { l: "Ask Claude opens in", v: store.get(OPENS) === "web" ? "The browser" : "The Claude app", sub: "Tap to switch", action: "opens" }] } : g)
       // Notifications sit just above Account (Nov 11), for everyone.
-      .map((g) => `${g.title === "Account" ? pushRow(d) : ""}<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
+      .map((g) => `${g.title === "Account" ? appearanceRow() + pushRow(d) : ""}<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">${esc(g.title.toUpperCase())}</span>
       <div class="card" style="overflow:hidden">${g.rows.map((r, i) => youRow(r, d, i)).join("")}</div></section>`).join("")}
-    ${d.groups.some((g) => g.title === "Account") ? "" : pushRow(d)}
+    ${d.groups.some((g) => g.title === "Account") ? "" : appearanceRow() + pushRow(d)}
     <p class="small" style="text-align:center">Daash 0.1 · <a href="${esc(d.privacy)}" target="_blank" rel="noopener">Privacy</a><br>Daash is independent and not made or endorsed by Garmin.</p>`;
 }
 
@@ -1911,6 +1911,7 @@ async function showYou() {
           }
           if (b.dataset.you === "push") return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => { cache.drop((k) => k === "you"); showYou(); });
           if (b.dataset.you === "headsup") return headsUpSheet(d);
+          if (b.dataset.you === "theme") return themeSheet();
           return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOutSheet();
         };
     });
@@ -2095,6 +2096,41 @@ const HEADS_UP = [["evening", "Evening before", "8pm the night before"], ["6", "
   ["7", "7am", "That morning"], ["8", "8am", "That morning"]];
 
 // In You: the switch, on a phone that can have notifications at all, and when they go.
+// Appearance (Nov 14): match the phone, or always light or dark, on this device.
+const THEME = "daash-theme";
+const THEMES = [["system", "Match phone", "Follows your phone's light or dark setting"], ["light", "Light", "Always light"], ["dark", "Dark", "Always dark"]];
+const themeNow = () => { const t = store.get(THEME); return t === "light" || t === "dark" ? t : "system"; };
+
+function applyTheme(choice) {
+  const root = document.documentElement;
+  if (choice === "light" || choice === "dark") { store.set(THEME, choice); root.dataset.theme = choice; }
+  else { store.drop(THEME); delete root.dataset.theme; }
+  // The bar colour above the app follows what's drawn.
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    const forLight = (m.getAttribute("media") || "").includes("light");
+    m.content = choice === "light" ? "#F5F4F0" : choice === "dark" ? "#161614" : forLight ? "#F5F4F0" : "#161614";
+  });
+}
+
+function appearanceRow() {
+  const now = THEMES.find(([code]) => code === themeNow());
+  return `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">APPEARANCE</span>
+    <div class="card" style="overflow:hidden">${youRow({ l: "Theme", v: now[1], sub: "Tap to change", action: "theme" }, {}, 0)}</div></section>`;
+}
+
+function themeSheet() {
+  const chosen = themeNow();
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Theme</span>
+      <span class="meta">For the Daash app on this device.</span></div>
+    <div class="stack-8">${THEMES.map(([code, label, sub]) => `<button class="pill" data-theme-pick="${code}" aria-pressed="${code === chosen}" style="flex-direction:column;align-items:flex-start;gap:2px;height:auto;padding:10px 14px;border-radius:12px"><span>${esc(label)}</span><span style="font-size:12px;opacity:0.72">${esc(sub)}</span></button>`).join("")}</div>
+    <div class="pills"><button class="pill" data-close>Done</button></div>`, (holder, close) => {
+    holder.querySelector('[aria-pressed="true"]')?.focus();
+    holder.querySelectorAll("[data-theme-pick]").forEach((b) => {
+      b.onclick = () => { applyTheme(b.dataset.themePick); close(); showYou(); };
+    });
+  });
+}
+
 function pushRow(d = {}) {
   // Shown to everyone (Nov 11). iPhone only allows notifications from the
   // home-screen app, so in Safari the row says how to get there.

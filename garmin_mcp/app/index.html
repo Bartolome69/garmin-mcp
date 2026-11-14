@@ -25,6 +25,16 @@
 <link rel="apple-touch-icon" href="/app/icons/apple-touch-icon.png">
 <link rel="preload" href="/app/fonts/Geist.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/app/app.css">
+<script>
+  // You > Appearance (Nov 14): Light or Dark chosen on this device, set before the page draws.
+  try {
+    var t = localStorage.getItem("daash-theme");
+    if (t === "light" || t === "dark") {
+      document.documentElement.dataset.theme = t;
+      document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.content = t === "light" ? "#F5F4F0" : "#161614"; });
+    }
+  } catch (e) { /* storage blocked: follow the phone */ }
+</script>
 </head>
 <body>
 <header class="topbar" id="topbar" hidden></header>
