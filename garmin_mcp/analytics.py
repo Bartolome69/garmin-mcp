@@ -9,7 +9,9 @@ Three events close it: a sign-in succeeded, a sign-in failed (and roughly
 why), and a connection was used for the first time. Each carries a handful of
 flags and the masked form of the account's email (first letter and domain, as
 the store keeps it), so the person running this can tell one friend's row from
-another's in a report. Never the full address, a token or any Garmin data. The
+another's in a report. Never the full address on an event, a token or any
+Garmin data. The full account email sits in one place only, on the person's
+profile, set by one $identify when they connect (Nov 14). The
 distinct id is an HMAC of the user's token under the server secret, and person
 profiles are turned off so nothing accumulates against it, except for the few
 of Bart's friends (named from a chat, or in GARMIN_MCP_FRIENDS), whose profile
@@ -131,7 +133,7 @@ def _scrub(value: Any, key: str = "") -> Any:
 # A website visitor's PostHog id, as posthog-js makes them: letters, digits
 # and dashes. Anything else is not linked.
 _VISITOR = re.compile(r"^[A-Za-z0-9-]{8,64}$")
-_LINKED: dict[tuple[str, str], float] = {}
+_LINKED: dict[tuple[str, str, str], float] = {}
 
 
 def visitor_id(value: str | None) -> str | None:
@@ -139,21 +141,24 @@ def visitor_id(value: str | None) -> str | None:
     return value if _VISITOR.fullmatch(value) else None
 
 
-def _identify(who: str, visitor: str) -> dict[str, Any] | None:
-    """$identify joining a website visitor to the same person here (Nov 14).
+def _identify(who: str, visitor: str | None = None, email: str | None = None) -> dict[str, Any] | None:
+    """$identify for a person who has just connected (Nov 14).
 
-    The website's started_setup is sent under the browser's anonymous PostHog
-    id; everything here under an HMAC of the person's email fingerprint. One
-    $identify with the browser's id as $anon_distinct_id makes them one person,
-    so a funnel can run from the website to the watch. It needs a person
-    profile, which is all it creates: no properties are set on it.
+    The account email goes on the person's PostHog profile, once, so Bart can
+    tell who is who, and never on an event: events keep the masked form only.
+    Where the browser came from daash.run, the same call joins the visit (its
+    anonymous PostHog id) to the person, so started_setup and the sign-in are
+    one person in a funnel. Only after a successful connection: a failed
+    sign-in can carry a typo or somebody else's address.
     """
-    if who == "anonymous" or visitor == who:
+    email = (email or "").strip()
+    if who == "anonymous" or (not visitor and not email) or visitor == who:
         return None
     now = time.time()
-    if _LINKED.get((who, visitor), 0) > now - 86400:
+    key = (who, visitor or "", hashlib.sha256(email.lower().encode()).hexdigest()[:16] if email else "")
+    if _LINKED.get(key, 0) > now - 86400:
         return None
-    _LINKED[(who, visitor)] = now
+    _LINKED[key] = now
     if len(_LINKED) > 5000:
         for pair, at in list(_LINKED.items()):
             if at < now - 86400:
@@ -163,18 +168,23 @@ def _identify(who: str, visitor: str) -> dict[str, Any] | None:
         "event": "$identify",
         "distinct_id": who,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "properties": {"$anon_distinct_id": visitor, "$process_person_profile": True,
-                       "$lib": "garmin-mcp-hosted"},
+        "properties": {
+            **({"$anon_distinct_id": visitor} if visitor else {}),
+            **({"$set": {"email": email}} if email else {}),
+            "$process_person_profile": True,
+            "$lib": "garmin-mcp-hosted",
+        },
     }
 
 
 def capture(event: str, subject: str | None = None, properties: dict[str, Any] | None = None,
-            *, visitor: str | None = None) -> None:
+            *, visitor: str | None = None, email: str | None = None) -> None:
     """Record one event. Returns at once; the request goes out on its own thread.
 
     `visitor` is the website visitor's PostHog id, where this browser came
-    from daash.run: the person is joined to it first, in the same thread, so
-    the join lands before the event does.
+    from daash.run, and `email` the account email of someone who has just
+    connected: both go on the person with one $identify, sent first in the
+    same thread so it lands before the event. Neither is ever put on the event.
     """
     if not KEY:
         return
@@ -197,7 +207,7 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
             "$lib": "garmin-mcp-hosted",
         },
     }
-    link = _identify(who, visitor) if (visitor := visitor_id(visitor)) and subject else None
+    link = _identify(who, visitor_id(visitor), email) if subject else None
     threading.Thread(target=_post_all, args=([link, payload] if link else [payload],), daemon=True).start()
 
 

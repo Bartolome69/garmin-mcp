@@ -839,19 +839,20 @@ async def main() -> int:
         names = [e["event"] for e in mine]
         identify = [e for e in mine if e["event"] == "$identify"]
         started_ev = [e for e in mine if e["event"] == "sign_in_started"]
-        check("a sign-in from a daash.run visitor joins the visit to the person, once, before the sign-in events",
-              code == 200 and len(identify) == 1 and names.index("$identify") < names.index("sign_in_started")
+        check("a sign-in from a daash.run visitor joins the visit to the person, once, when Garmin accepts it",
+              code == 200 and len(identify) == 1 and names.index("$identify") < names.index("sign_in_succeeded")
               and identify[0]["properties"].get("$anon_distinct_id") == "01a1db21-e53b-7c79-9c25-d3682b7f3006"
               and identify[0]["properties"].get("$process_person_profile") is True
               and identify[0]["distinct_id"] == started_ev[0]["distinct_id"]
-              and "$set" not in identify[0]["properties"], str(names))
+              and identify[0]["properties"].get("$set") == {"email": "visitor@example.com"}, str(names))
         check("and the sign-in says it came from the website",
               started_ev and started_ev[0]["properties"].get("website_visitor") is True)
         before = len(SENT)
         code, _ = await anyio_run(signin_from_website, "visitor2@example.com", 'bad"value')
         time.sleep(0.3)
-        check("a cookie that isn't a PostHog id is ignored",
-              code == 200 and not [e for e in SENT[before:] if e["event"] == "$identify"])
+        check("a cookie that isn't a PostHog id is ignored: the person gets their email, and no visit",
+              code == 200 and [e["properties"].get("$anon_distinct_id") for e in SENT[before:]
+                               if e["event"] == "$identify"] == [None])
         hosted._ATTEMPTS.clear()
         hosted._paused_until = 0.0
         code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
@@ -1286,11 +1287,28 @@ async def main() -> int:
         check("a first use names who by the masked address only, even where the email was kept",
               all("email" not in e["properties"] and e["properties"].get("account", "").count("*") >= 1
                   for e in first_calls), str([e["properties"] for e in first_calls]))
-        without_email = blob = json.dumps(SENT)
-        check("no full address reaches analytics, in any event or field",
+        # Nov 14: the full address goes on the person, by one $identify after
+        # a successful connection, and on no event at all.
+        events_only = [e for e in SENT if e["event"] != "$identify"]
+        without_email = blob = json.dumps(events_only)
+        check("no full address reaches any event, in any field",
               not any(addr in blob for addr in full_addresses + ("alice@example.com", "idle@example.com"))
-              and not any("email" in e["properties"] for e in SENT), str(
+              and not any("email" in e["properties"] for e in events_only), str(
                   [a for a in full_addresses if a in blob]))
+        identified = [e for e in SENT if e["event"] == "$identify"]
+        set_emails = {e["properties"].get("$set", {}).get("email") for e in identified} - {None}
+        check("the account email goes on the person once a connection succeeds",
+              "someone@example.com" in set_emails and MFA_EMAIL in set_emails, str(sorted(set_emails)))
+        check("a failed sign-in never puts its address on anyone",
+              not ({WRONG_PASSWORD_EMAIL, LOCKED_TITLE_EMAIL, RATE_LIMITED_EMAIL, BLOCKED_EMAIL} & set_emails),
+              str(sorted(set_emails)))
+        by_person: dict[str, set] = {}
+        for e in identified:
+            if e["properties"].get("$set"):
+                by_person.setdefault(e["properties"]["$set"]["email"], set()).add(e["distinct_id"])
+        connected_ids = {e["distinct_id"] for e in connected}
+        check("the profile carrying the email is the same id the person's events use",
+              all(ids <= connected_ids for ids in by_person.values()), str(len(by_person)))
         check("no token, password or Garmin session ever reaches analytics",
               alice not in blob and bob not in blob
               and SECRET not in blob and "their-own-password" not in blob
@@ -1320,9 +1338,10 @@ async def main() -> int:
               not any(addr.encode() in raw for addr in full_addresses + ("alice@example.com",)))
         # The one exception (Nov 14): $identify, joining a daash.run visit to
         # the person, which needs a profile and sets nothing on it.
-        check("analytics build no person profile, beyond the website join, which sets nothing",
+        check("analytics build person profiles only through $identify, which sets the email and nothing else",
               all(e["properties"].get("$process_person_profile") is False for e in SENT if e["event"] != "$identify")
-              and all(set(e["properties"]) == {"$anon_distinct_id", "$process_person_profile", "$lib"}
+              and all(set(e["properties"]) <= {"$anon_distinct_id", "$set", "$process_person_profile", "$lib"}
+                      and set(e["properties"].get("$set", {})) <= {"email"}
                       for e in SENT if e["event"] == "$identify"))
         check("analytics stay silent without a key",
               analytics.enabled() and (lambda: (

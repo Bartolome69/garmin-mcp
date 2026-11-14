@@ -350,19 +350,24 @@ def _sign_in_started(request: Request, email: str, flow: str) -> None:
         # Whether this browser came from daash.run, so how often the visit
         # survives the hop through Claude or ChatGPT can be counted.
         "website_visitor": bool(visitor),
-    }), visitor=visitor)
+    }))  # joined to the visit only once Garmin accepts the address: see _sign_in_succeeded
 
 
 def _sign_in_succeeded(request: Request, email: str, flow: str, *, mfa: bool = False,
-                       route: str = "password") -> None:
-    """Garmin accepted the sign-in; time_to_success_seconds counts from the first try."""
+                       route: str = "password", account_email: str | None = None) -> None:
+    """Garmin accepted the sign-in; time_to_success_seconds counts from the first try.
+
+    The person's PostHog profile gets their account email here (Nov 14): the
+    address Daash keeps for them, which is the Garmin login unless they gave
+    Daash another. On the profile only, never on this or any other event.
+    """
     fingerprint = store.email_fingerprint(email) if email else None
     began = _FIRST_TRY.pop(fingerprint, None) if fingerprint else None
     analytics.capture("sign_in_succeeded", fingerprint, _with_source(request, {
         **_signin_context(None, flow), "login_route": route, "mfa": mfa,
         **({"time_to_success_seconds": round(time.time() - began[0], 1),
             "earlier_failures": began[1]} if began else {}),
-    }), visitor=_visitor(request))
+    }), visitor=_visitor(request), email=account_email or email)
 
 
 def _failed(reason: str, email: str = "", *, request: Request | None = None, flow: str = "",
@@ -2951,7 +2956,7 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
     # The funnel's sign-in step, for Garmin's page: the approval came back.
     analytics.capture("sign_in_succeeded", (user.email_hash if user else None) or None, _with_source(request, {
         "via": "oauth", "login_route": "official", **({"app": app, "ai_client": app} if app else {}),
-    }), visitor=_visitor(request))
+    }), visitor=_visitor(request), email=store.email_for(user_token))
     analytics.capture("connector_connected", (user.email_hash if user else None) or None, _with_source(request, {
         "account": user.email_masked if user else None,
                 "via": "oauth",
@@ -3123,7 +3128,7 @@ def _finish(
         # Everything is new to someone just connecting; the note is for those
         # who were here before it.
         store.claim_news(user_token, NEWS_VERSION)
-    _sign_in_succeeded(request, email, flow, mfa=mfa)
+    _sign_in_succeeded(request, email, flow, mfa=mfa, account_email=store.email_for(user_token))
     if OAUTH_ENABLED and flow and OAUTH_PROVIDER.pending(flow) is None:
         # Garmin said yes but the app's request had run out, so nothing is
         # connected to anything: counting it as a connection made the person's
