@@ -65,6 +65,8 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
         def login(self, tokenstore=None):
             if email == "wrongpw@example.com":
                 raise GarminConnectAuthenticationError("Authentication failed (401 Unauthorized).")
+            if email == "twostep@example.com" and not tokenstore:
+                return ("needs_mfa", "state")
             if tokenstore:
                 try:
                     self._marker = json.loads(tokenstore).get("di_token", "none")
@@ -75,6 +77,12 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
 
         def get_user_profile(self):
             return {**PROFILE, "fullName": self.full_name}
+
+        def resume_login(self, state, code):
+            if code != "123456":
+                raise GarminConnectAuthenticationError("MFA verification failed")
+            self.full_name = f"account:{self._marker}"
+            return (None, None)
 
     stub = Stub()
     stub.password = password
@@ -298,9 +306,10 @@ async def main() -> int:
         code, body, headers = await run(lambda: http("POST", "/connect", {
             "email": "wrongpw@example.com", "password": "pw", "flow": flow,
         }))
-        check("a failed sign-in's retry link keeps the flow",
-              code == 400 and f"flow={urllib.parse.quote(flow, safe='')}" in body,
-              f"{code} {body[body.find('Try again') - 120 : body.find('Try again')]}")
+        check("a wrong password brings the form back on the same request, email kept",
+              code == 400 and f'name=flow value="{flow}"' in body
+              and 'value="wrongpw@example.com"' in body,
+              f"{code} {body[:200]}")
         code, body, headers = await run(lambda: http("POST", "/connect", {
             "email": "direct@example.com", "password": "pw",
         }))
@@ -621,6 +630,100 @@ async def main() -> int:
             )
             check(f"{label} still works after the second connects", status == 200,
                   f"got {status} {body[:90]}")
+
+        check("the second connection is marked as a reconnect, the first was not",
+              [p.get("reconnect") for e, p in reported if e == "connector_connected"
+               and p.get("email") == "oauth@example.com"][-2:] == [False, True],
+              str([p.get("reconnect") for e, p in reported if e == "connector_connected"]))
+        answers = [p for e, p in reported if e == "consent_answered"]
+        check("each answer on the Allow page is recorded, with which app and route",
+              answers and answers[-1].get("decision") == "allow" and answers[-1].get("login_route") == "password"
+              and answers[-1].get("expired") is False, str(answers[-1:]))
+
+        # -- 10b. the request from the app waits half an hour, and says so when it has run out
+        # Nov 14: ten minutes ran out on people checking a password or waiting
+        # for a code, and the page then said to start again "in Claude" to
+        # people who had come from ChatGPT.
+        chatgpt_redirect = "https://chatgpt.com/connector_platform_oauth_redirect"
+        code, body, _ = await run(lambda: http("POST", "/register", {
+            "client_name": "ChatGPT", "redirect_uris": [chatgpt_redirect],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"], "token_endpoint_auth_method": "none",
+        }, as_json=True))
+        chatgpt_client = json.loads(body).get("client_id", "") if code in (200, 201) else ""
+
+        async def chatgpt_flow() -> str:
+            q = urllib.parse.urlencode({
+                "response_type": "code", "client_id": chatgpt_client, "redirect_uri": chatgpt_redirect,
+                "code_challenge": challenge2, "code_challenge_method": "S256", "state": "s3",
+            })
+            _, _, h = await run(lambda: http("GET", f"/authorize?{q}"))
+            return urllib.parse.parse_qs(urllib.parse.urlparse(h.get("location", "")).query).get("flow", [""])[0]
+
+        slow = await chatgpt_flow()
+        hosted.oauth._PENDING_AUTH[slow]["started"] -= 20 * 60
+        _, body, _ = await run(lambda: http("POST", "/connect", {
+            "email": "slow@example.com", "password": "pw", "flow": slow,
+        }))
+        check("twenty minutes into a sign-in, the request from ChatGPT is still there",
+              "Allow access?" in body and "name=consent" in body, body[body.find("<body"):][:400])
+
+        gone = await chatgpt_flow()
+        hosted.oauth._PENDING_AUTH[gone]["started"] -= 31 * 60
+        _, body, _ = await run(lambda: http("GET", f"/connect?flow={gone}"))
+        check("an expired request says so before any password is typed, naming ChatGPT",
+              "This sign-in timed out" in body and "Go back to ChatGPT" in body
+              and "name=password" not in body and "Claude" not in body, body[:200])
+        before = len(reported)
+        _, body, _ = await run(lambda: http("POST", "/connect", {
+            "email": "late@example.com", "password": "pw", "flow": gone,
+        }))
+        late = reported[before:]
+        check("a password sent to an expired request isn't passed to Garmin, and isn't a connection",
+              "Go back to ChatGPT" in body and not [e for e, _ in late if e == "connector_connected"]
+              and [p.get("reason") for e, p in late if e == "sign_in_failed"] == ["request_expired"]
+              and [p.get("ai_client") for e, p in late if e == "sign_in_failed"] == ["ChatGPT"],
+              str(late))
+
+        # Two-step verification inside ChatGPT's sign-in: the code page, a
+        # mistyped code, the right one, and then ChatGPT's Allow page.
+        two = await chatgpt_flow()
+        _, body, _ = await run(lambda: http("POST", "/connect", {
+            "email": "twostep@example.com", "password": "pw", "flow": two,
+        }))
+        pending_id = (re.search(r'name=pending value="([^"]+)"', body) or [None, ""])[1]
+        _, body, _ = await run(lambda: http("POST", "/mfa", {"pending": pending_id, "code": "999999"}))
+        check("in ChatGPT's sign-in, a mistyped code is asked again", "wasn&rsquo;t accepted" in body
+              and f'value="{pending_id}"' in body)
+        _, body, _ = await run(lambda: http("POST", "/mfa", {"pending": pending_id, "code": "123456"}))
+        check("and the right code goes on to ChatGPT's Allow page",
+              "Allow access?" in body and "name=consent" in body, body[body.find("<main"):][:200])
+        succeeded = [p for e, p in reported if e == "sign_in_succeeded" and p.get("mfa")]
+        check("a two-step sign-in is a success for ChatGPT, marked as two-step",
+              succeeded and succeeded[-1].get("ai_client") == "ChatGPT", str(succeeded[-1:]))
+
+        # Expiring between Garmin's yes and the hand-over: not a connection either.
+        between = await chatgpt_flow()
+        real_succeeded = hosted._sign_in_succeeded
+
+        def succeed_then_expire(*a, _real=real_succeeded, **k):
+            _real(*a, **k)
+            hosted.oauth._PENDING_AUTH.pop(between, None)
+
+        hosted._ATTEMPTS.clear()
+        before = len(reported)
+        hosted._sign_in_succeeded = succeed_then_expire
+        try:
+            _, body, _ = await run(lambda: http("POST", "/connect", {
+                "email": "between@example.com", "password": "pw", "flow": between,
+            }))
+        finally:
+            hosted._sign_in_succeeded = real_succeeded
+        late = reported[before:]
+        check("a sign-in whose request ran out meanwhile is a success, then an expiry, not a connection",
+              "Go back to ChatGPT" in body and [e for e, _ in late if e.startswith(("sign_in_s", "connector_c"))]
+              == ["sign_in_started", "sign_in_succeeded"] and not [e for e, _ in late if e == "connector_connected"],
+              str([e for e, _ in late]))
 
         # -- 11. a connection whose Garmin session is gone asks to reconnect
         # A 401 is what Claude turns into a Reconnect button; a 404 read as a

@@ -44,8 +44,18 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from . import analytics, store
 
-# Long enough to sign in to Garmin and fetch a code from email, no longer.
+# How long an issued code lives before the app collects it: seconds, in practice.
 CODE_TTL = 600
+# How long a request from Claude or ChatGPT waits for the person to sign in to
+# Garmin and press Allow. Nov 14: ten minutes wasn't enough. A wrong password,
+# then checking it on connect.garmin.com, or waiting for a code by email, ran
+# past it, and the sign-in that followed ended on "expired": 8 of the 10
+# connections with no app behind them were redone from the start in ChatGPT
+# or Claude. Half an hour covers that, and the request is still one use only.
+PENDING_TTL = 1800
+# Which app an expired request was for, so the page can say where to start
+# again ("in ChatGPT", not "in Claude"). The app's name only, for a day.
+FLOW_APP_TTL = 86400
 ACCESS_TTL = 3600
 # A year, counted from the last renewal rather than from sign-in: every refresh
 # issues a new token with a new year. Connecting is meant to be done once, so a
@@ -70,6 +80,9 @@ _PENDING_AUTH: dict[str, dict[str, Any]] = {}
 # on the consent page. Separate from _PENDING_AUTH because the Garmin session
 # already exists by this point; only the handover to the client is outstanding.
 _AWAITING_CONSENT: dict[str, dict[str, Any]] = {}
+
+# flow -> (app name, when): outlives the request itself; see FLOW_APP_TTL.
+_FLOW_APPS: dict[str, tuple[str, float]] = {}
 
 # Where a code may be sent without comment. Anything else still works, because
 # refusing an unrecognised client would break ChatGPT and whatever comes next,
@@ -174,6 +187,23 @@ def app_for_flow(flow: str) -> str | None:
     return app_named(app_for_redirect(entry["params"].redirect_uri), entry.get("client_name"))
 
 
+def app_once_for(flow: str) -> str | None:
+    """The app a request was for, even once it has expired or been used."""
+    if not flow:
+        return None
+    live = app_for_flow(flow)
+    if live:
+        return live
+    remembered = _FLOW_APPS.get(flow)
+    return remembered[0] if remembered else None
+
+
+def expired(flow: str) -> bool:
+    """A request that came from an app and has since run out, rather than one never made."""
+    _sweep()
+    return bool(flow) and flow not in _PENDING_AUTH and flow in _FLOW_APPS
+
+
 _APP_FOR_CLIENT: dict[str, str] = {}
 
 
@@ -243,13 +273,17 @@ NAMED_PATHS = (LISTED_PATH, PASSWORD_PATH)
 
 
 def _sweep() -> None:
-    cutoff = time.time() - CODE_TTL
+    now = time.time()
+    cutoff = now - PENDING_TTL
     for key, value in list(_PENDING_AUTH.items()):
         if value["started"] < cutoff:
             _PENDING_AUTH.pop(key, None)
     for key, value in list(_AWAITING_CONSENT.items()):
         if value["started"] < cutoff:
             _AWAITING_CONSENT.pop(key, None)
+    for key, (_, at) in list(_FLOW_APPS.items()):
+        if at < now - FLOW_APP_TTL:
+            _FLOW_APPS.pop(key, None)
 
 
 def _issued_for(resource: str | None) -> str | None:
@@ -334,6 +368,9 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
             # Asked for by the password address: the password form only.
             "password": str(params.resource or "").rstrip("/").endswith(PASSWORD_PATH),
         }
+        app = app_for_flow(flow)
+        if app:
+            _FLOW_APPS[flow] = (app, time.time())
         return f"/connect?{urlencode({'flow': flow})}"
 
     def pending(self, flow: str) -> dict[str, Any] | None:

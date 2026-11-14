@@ -277,7 +277,81 @@ def _where(request: Request) -> dict[str, str]:
     return {"country": code} if code else {}
 
 
-def _failed(reason: str, email: str = "", **extra: Any) -> None:
+# The reason a sign-in failed, in the words the setup report groups by (Nov
+# 14). `reason` stays as it was, so older reports still line up; `category`
+# folds the ones that need the same answer from the person together.
+FAILURE_CATEGORY = {
+    "bad_credentials": "wrong_credentials",
+    "account_locked": "account_locked",
+    "account_paused": "account_locked",
+    "rate_limited": "garmin_rate_limited",
+    "blocked_by_garmin": "garmin_rate_limited",
+    "paused": "garmin_rate_limited",
+    "garmin_down": "garmin_down",
+    "timeout": "timeout",
+    "mfa_rejected": "mfa_rejected",
+    "mfa_expired": "mfa_rejected",
+    "request_expired": "request_expired",
+    "throttled": "too_many_tries",
+    "proxy_failed": "server_error",
+}
+
+
+def _signin_context(request: Request | None, flow: str) -> dict[str, Any]:
+    """Which app, which route and which kind of device, for the sign-in events.
+
+    Nothing about the person: the app's name, the route's name, and phone or
+    computer with the browser's family and system, as connector_connected has.
+    """
+    app = oauth.app_once_for(flow) if OAUTH_ENABLED and flow else None
+    return {
+        "via": ("oauth" if flow else "direct") if OAUTH_ENABLED else "url",
+        "login_route": "password",
+        **({"app": app, "ai_client": app} if app else {}),
+        **(_device(request) if request is not None else {}),
+        **(_where(request) if request is not None else {}),
+    }
+
+
+# When each person's current run of sign-in attempts began, and how many had
+# failed, by email fingerprint: sign_in_succeeded says how long getting in
+# took, wrong passwords and all. In memory; an hour is plenty.
+_FIRST_TRY: dict[str, tuple[float, int]] = {}
+FIRST_TRY_WINDOW = 3600
+
+
+def _sign_in_started(request: Request, email: str, flow: str) -> None:
+    """Someone pressed Connect: the first step of the setup funnel."""
+    fingerprint = store.email_fingerprint(email) if email else None
+    now = time.time()
+    if fingerprint:
+        began = _FIRST_TRY.get(fingerprint)
+        if began is None or began[0] < now - FIRST_TRY_WINDOW:
+            _FIRST_TRY[fingerprint] = (now, 0)
+        if len(_FIRST_TRY) > 5000:
+            for key, (at, _) in list(_FIRST_TRY.items()):
+                if at < now - FIRST_TRY_WINDOW:
+                    _FIRST_TRY.pop(key, None)
+    tries = _FIRST_TRY.get(fingerprint, (now, 0))[1] if fingerprint else 0
+    analytics.capture("sign_in_started", fingerprint, _with_source(request, {
+        **_signin_context(None, flow), "earlier_failures": tries,
+    }))
+
+
+def _sign_in_succeeded(request: Request, email: str, flow: str, *, mfa: bool = False,
+                       route: str = "password") -> None:
+    """Garmin accepted the sign-in; time_to_success_seconds counts from the first try."""
+    fingerprint = store.email_fingerprint(email) if email else None
+    began = _FIRST_TRY.pop(fingerprint, None) if fingerprint else None
+    analytics.capture("sign_in_succeeded", fingerprint, _with_source(request, {
+        **_signin_context(None, flow), "login_route": route, "mfa": mfa,
+        **({"time_to_success_seconds": round(time.time() - began[0], 1),
+            "earlier_failures": began[1]} if began else {}),
+    }))
+
+
+def _failed(reason: str, email: str = "", *, request: Request | None = None, flow: str = "",
+            **extra: Any) -> None:
     """Record a failed sign-in: the reason, and who tried.
 
     The address tried, masked and in full, and the same per-person id a
@@ -286,10 +360,15 @@ def _failed(reason: str, email: str = "", **extra: Any) -> None:
     """
     email = email.strip()
     who = {"account": mask_email(email), "email": email} if email else {}
+    fingerprint = store.email_fingerprint(email) if email else None
+    if fingerprint and fingerprint in _FIRST_TRY:
+        at, failures = _FIRST_TRY[fingerprint]
+        _FIRST_TRY[fingerprint] = (at, failures + 1)
     analytics.capture(
         "sign_in_failed",
-        store.email_fingerprint(email) if email else None,
-        {"reason": reason, **who, **extra},
+        fingerprint,
+        {"reason": reason, "category": FAILURE_CATEGORY.get(reason, "other"),
+         **_signin_context(request, flow), **who, **extra},
     )
 
 
@@ -2175,7 +2254,30 @@ def _connect_url(flow: str) -> str:
 
 
 def _try_again(flow: str) -> str:
-    return f'<p><a href="{_connect_url(flow)}">Try again</a></p>'
+    # A button, not a small link (Nov 14): after a failure it is the one next
+    # step, and it stays on the same request from Claude or ChatGPT, so nobody
+    # has to go back to the app and start over.
+    return f'<a class=button href="{_connect_url(flow)}">Try again</a>'
+
+
+def _app_words(flow: str) -> str:
+    """The app this sign-in came from, by name, for "go back to ..."."""
+    app = oauth.app_once_for(flow) if OAUTH_ENABLED and flow else None
+    return app if app in ("Claude", "ChatGPT", "Gemini", "Grok", "Gemini CLI") else "Claude or ChatGPT"
+
+
+def _request_expired(flow: str, status: int = 400) -> Response:
+    """The request from the app ran out: say which app, and the one thing to do there."""
+    app = _app_words(flow)
+    return page(
+        "Start again from " + app,
+        f"""<h1>This sign-in timed out</h1>
+        <div class=err>The request from {html.escape(app)} waited too long and has closed.
+        Nothing is wrong with your Garmin account.</div>
+        <p>Go back to {html.escape(app)} and press <strong>Connect</strong> on Daash
+        again. It opens a fresh sign-in, and it only takes a minute.</p>""",
+        status,
+    )
 
 
 def _fallback_ok(flow: str) -> bool:
@@ -2232,6 +2334,11 @@ async def connect_form(request: Request) -> Response:
     # Set when Claude sent them here from /authorize; it ties this sign-in back
     # to the waiting authorization request.
     flow = request.query_params.get("flow", "")
+    if flow and OAUTH_ENABLED and oauth.expired(flow):
+        # Said before a password is typed, not after (Nov 14: the sign-in went
+        # through and then said "expired", and the person started again anyway).
+        _failed("request_expired", request=request, flow=flow, step="form")
+        return _request_expired(flow, 200)
     route, drawn = _signup_route(request)
     if flow and OAUTH_ENABLED and OAUTH_PROVIDER.password_only(flow):
         route, drawn = "password", False  # the password link: whatever the split or cookie says
@@ -2321,22 +2428,28 @@ def _garmin_intro(flow: str, usual: bool = True) -> Response:
     )
 
 
-def _password_form(flow: str) -> Response:
+def _password_form(flow: str, *, email: str = "", notice: str = "", status: int = 200) -> Response:
+    """The sign-in form. After a wrong password it comes back with what went
+    wrong above it and the email still filled in, so trying again is retyping
+    the password and nothing else (Nov 14)."""
+    value = f' value="{html.escape(email.strip(), quote=True)}"' if email.strip() else ""
+    focus = " autofocus" if email.strip() else ""
     return page(
         "Sign in to Garmin",
         f"""
+        {notice}
         <h1>Sign in to Garmin Connect™</h1>
         <p class=secure>{_LOCK}<span>These go straight to Garmin. Your password is never stored.</span></p>
         <form method=post action=/connect data-wait="Connecting to Garmin&hellip;">
           <input type=hidden name=flow value="{flow}">
           {_INVITE_FIELD if INVITE_CODE else ""}
           <label for=email>Garmin email</label>
-          <input id=email name=email type=email required autocomplete=username>
+          <input id=email name=email type=email required autocomplete=username{value}>
           <p class="note hint" id=email-hint role=status hidden></p>
           <label for=password>Garmin password</label>
           <div class=pw>
             <input id=password name=password type=password required
-                   autocomplete=current-password>
+                   autocomplete=current-password{focus}>
             <button type=button class=eye id=show-password aria-controls=password
                     aria-pressed=false aria-label="Show password">{_EYE}</button>
           </div>
@@ -2356,6 +2469,7 @@ def _password_form(flow: str) -> Response:
         {_EMAIL_HINT_SCRIPT}
         {_PASSWORD_SCRIPT}
         """,
+        status,
     )
 
 
@@ -2407,10 +2521,20 @@ def _failure_reason(exc: BaseException) -> str:
         return "proxy_failed"
     if name == "GarminConnectTooManyRequestsError" or status == 429 or "429" in text:
         return "rate_limited"
+    # Nov 14: Garmin's own lock comes back as a sign-in page titled "Account
+    # Locked", which the library raises as a wrong password. It isn't one, and
+    # telling the person to check their password sent them back into the lock.
+    if name == "GarminConnectAuthenticationError" and "locked" in text:
+        return "account_locked"
     if name == "GarminConnectAuthenticationError" or status == 401 or "401" in text:
         return "bad_credentials"
     if status == 403 or "403" in text or "cloudflare" in text or "forbidden" in text:
         return "blocked_by_garmin"
+    if "timeout" in name.lower() or "timed out" in text or "timeout" in text:
+        return "timeout"
+    if (status is not None and status >= 500) or any(
+            k in text for k in ("server error", "bad gateway", "service unavailable", "502", "503", "504")):
+        return "garmin_down"
     if "unauthorized" in text or "invalid" in text or "password" in text:
         return "bad_credentials"
     return "other"
@@ -2430,7 +2554,7 @@ def _log_signin_failure(exc: BaseException, reason: str) -> None:
 
 def _signin_error(
     exc: BaseException, flow: str = "", *, paused: bool = True, tries: int = 1,
-    account_paused: bool = False, email: str = "",
+    account_paused: bool = False, email: str = "", inline: bool = False, wrong_before: bool = False,
 ) -> str:
     """Explain a failed sign-in in terms that make sense on a web page.
 
@@ -2441,6 +2565,7 @@ def _signin_error(
     """
     reason = _failure_reason(exc)
     _log_signin_failure(exc, reason)
+    account_paused = account_paused or reason == "account_locked"
     # The address as typed, where a password was the problem: a slip such as
     # ".con" for ".com" (Oct 13) is then plain to see.
     typed = (
@@ -2509,21 +2634,43 @@ def _signin_error(
             + _try_again(flow)
         )
     if reason == "bad_credentials":
+        # Nov 14: 47 people in a week, 36 of whom got in a few minutes later.
+        # The form comes back underneath (`inline`), email filled in. Garmin's
+        # lock follows a few wrong tries, so the second wrong one says so
+        # plainly before the third.
+        warning = (
+            "Garmin has now turned down more than one try. Another wrong one can make Garmin "
+            "lock sign-ins for about 30 minutes, so check your password at "
+            '<a href="https://connect.garmin.com/" target=_blank rel=noopener>connect.garmin.com</a> '
+            "first, or reset it there with &ldquo;Forgot password&rdquo;."
+            if wrong_before else
+            "Check your password by signing in at "
+            '<a href="https://connect.garmin.com/" target=_blank rel=noopener>connect.garmin.com</a>, '
+            "then try again here. Forgotten it? Reset it there with &ldquo;Forgot password&rdquo;."
+        )
         return (
-            "<div class=err><strong>Garmin didn't accept that email and password.</strong> "
-            "Check them by signing in at connect.garmin.com, then come back and "
-            "try again. Not sure of your Garmin password? Reset it there with "
-            "&ldquo;Forgot password&rdquo;. Garmin pauses an account after a few "
-            "wrong tries, so it is worth checking there before trying again here. "
-            "If Garmin asks you for a code there, you have two-step verification "
-            "on, and you'll be asked for the same code here.</div>"
-            + typed
+            "<div class=err><strong>Garmin didn&rsquo;t accept that email and password.</strong> "
+            f"{warning}</div>"
+            + ("" if inline else typed)
             + _garmin_instead(flow, "password")
+            + ("" if inline else _try_again(flow))
+        )
+    if reason == "garmin_down":
+        return (
+            "<div class=err><strong>Garmin&rsquo;s sign-in isn&rsquo;t answering right now.</strong> "
+            "It&rsquo;s on Garmin&rsquo;s side, not your password. Try again in a few minutes.</div>"
+            + _try_again(flow)
+        )
+    if reason == "timeout":
+        return (
+            "<div class=err><strong>Garmin took too long to answer.</strong> "
+            "It&rsquo;s not your password. Try again in a minute.</div>"
             + _try_again(flow)
         )
     return (
-        f"<div class=err>Sign-in failed: {type(exc).__name__}. "
-        "Try again in a moment.</div>" + _try_again(flow)
+        "<div class=err><strong>Garmin didn&rsquo;t finish signing you in.</strong> "
+        "Try again in a minute. If it happens again, email support@daash.run and we&rsquo;ll "
+        "sort it out.</div>" + _try_again(flow)
     )
 
 
@@ -2657,6 +2804,21 @@ async def oauth_consent(request: Request) -> Response:
     heard, where = _heard_from(form)
     subject = OAUTH_PROVIDER.staged_subject(consent_token)
     via_garmin = consent_token in _GARMIN_CONSENTS
+    held = OAUTH_PROVIDER.staged(consent_token)
+    # Allow or Cancel, the step between signing in and the app getting access
+    # (Nov 14: nothing recorded it, so a sign-in that stopped here looked like
+    # a connection).
+    answered_app = None
+    if held:
+        destination_uri = str(held[1]["params"].redirect_uri)
+        answered_app = oauth.app_named(oauth.app_for_redirect(destination_uri), held[1].get("client_name"))
+    analytics.capture("consent_answered", store.email_hash_for(subject) if subject else None,
+                      _with_source(request, {
+                          "decision": "allow" if allow else "deny",
+                          "login_route": "official" if via_garmin else "password",
+                          "expired": held is None,
+                          **({"app": answered_app, "ai_client": answered_app} if answered_app else {}),
+                      }))
 
     if allow and subject and via_garmin:
         staged = OAUTH_PROVIDER.staged(consent_token)
@@ -2701,11 +2863,12 @@ async def oauth_consent(request: Request) -> Response:
     return _consent_expired()
 
 
-def _consent_expired() -> Response:
+def _consent_expired(flow: str = "") -> Response:
+    app = _app_words(flow)
     return page(
         "Request expired",
-        "<div class=err>That request has expired or was already answered. "
-        "Start again from the connector in Claude.</div>",
+        f"<div class=err>That request has expired or was already answered.</div>"
+        f"<p>Go back to {html.escape(app)} and press <strong>Connect</strong> on Daash again.</p>",
         400,
     )
 
@@ -2718,6 +2881,10 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
     destination = str(parked["params"].redirect_uri)
     app = (oauth.app_named(oauth.app_for_redirect(destination), parked.get("client_name"))
            if oauth.recognised_redirect(destination) else None)
+    # The funnel's sign-in step, for Garmin's page: the approval came back.
+    analytics.capture("sign_in_succeeded", (user.email_hash if user else None) or None, _with_source(request, {
+        "via": "oauth", "login_route": "official", **({"app": app, "ai_client": app} if app else {}),
+    }))
     analytics.capture("connector_connected", (user.email_hash if user else None) or None, _with_source(request, {
         "account": user.email_masked if user else None,
         **({"email": email} if email else {}),
@@ -2726,6 +2893,7 @@ def _official_connected(request: Request, user_token: str, parked: dict[str, Any
         "login_route": "official",
         **({"app": app, "ai_client": app} if app else {}),
         "returning": returning,
+        "reconnect": returning,
         "joined": joined,
         "listed": bool(parked.get("listed")),
         "workouts": official.can_write(user_token),
@@ -2889,6 +3057,13 @@ def _finish(
         # Everything is new to someone just connecting; the note is for those
         # who were here before it.
         store.claim_news(user_token, NEWS_VERSION)
+    _sign_in_succeeded(request, email, flow, mfa=mfa)
+    if OAUTH_ENABLED and flow and OAUTH_PROVIDER.pending(flow) is None:
+        # Garmin said yes but the app's request had run out, so nothing is
+        # connected to anything: counting it as a connection made the person's
+        # real one, minutes later, look like a duplicate (Nov 14).
+        _failed("request_expired", email, request=request, flow=flow, step="after_sign_in")
+        return _request_expired(flow)
     # The address goes along, so the report says who connected and whoever
     # runs this can get in touch if their connection goes wrong.
     analytics.capture(
@@ -2907,6 +3082,9 @@ def _finish(
                if (app := (oauth.app_for_flow(flow) if OAUTH_ENABLED and flow else None)) else {}),
             "mfa": mfa,
             "returning": bool(previous),
+            # This Garmin account was connected to Daash already: another app,
+            # or the same one again. Not a new person (Nov 14).
+            "reconnect": bool(previous),
             **(took or {}),
         }),
     )
@@ -2924,12 +3102,7 @@ def _finish(
                 if destination:
                     return RedirectResponse(destination, status_code=303)
             return _consent_page(consent_token, parked)
-        return page(
-            "Sign-in expired",
-            "<div class=err>That sign-in took too long and the request has "
-            "expired. Start again from the connector in Claude.</div>",
-            400,
-        )
+        return _request_expired(flow)
 
     if OAUTH_ENABLED:
         # Signed in, but not on Claude's behalf, so there is nothing to hand
@@ -3419,8 +3592,10 @@ async def _answer_in_time(task: "asyncio.Future[Response]", flow: str) -> Respon
 
 
 async def _connect_attempt(request: Request, form: Any, email: str, password: str, flow: str) -> Response:
+    # Every press of Connect, whatever happens next: the funnel's first step.
+    _sign_in_started(request, email, flow)
     if _too_many_attempts(_client_address(request)):
-        _failed("throttled", email, **_where(request))
+        _failed("throttled", email, request=request, flow=flow)
         return page(
             "Sign in to Garmin",
             "<div class=err>Too many sign-in attempts. Wait fifteen minutes and "
@@ -3447,7 +3622,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
 
     left = _pause_left()
     if left:
-        _failed("paused", email, **_where(request), **({"fallback": True} if _fallback_ok(flow) else {}))
+        _failed("paused", email, request=request, flow=flow, **({"fallback": True} if _fallback_ok(flow) else {}))
         minutes = max(1, -(-left // 60))
         return page(
             "Sign in to Garmin",
@@ -3458,6 +3633,12 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             "Garmin's limit in place for longer.</div>" + _garmin_instead(flow) + _try_again(flow),
             429,
         )
+
+    if flow and OAUTH_ENABLED and oauth.expired(flow):
+        # Checked before Garmin is asked: signing in would work and then have
+        # nowhere to go.
+        _failed("request_expired", email, request=request, flow=flow, step="submit")
+        return _request_expired(flow)
 
     # Where the last attempt went out from: a proxy address, or "" for the
     # server's own. The code step has to come from the same place, and only
@@ -3502,7 +3683,7 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
                 return _try(egress)
             except Exception as exc:  # noqa: BLE001
                 reason = _failure_reason(exc)
-                if not egress or reason == "bad_credentials":
+                if not egress or reason in ("bad_credentials", "account_locked"):
                     raise
                 if wrong_before and reason in ("blocked_by_garmin", "rate_limited"):
                     # Their account is paused; another address can't help, and
@@ -3528,17 +3709,24 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         client, result = await anyio.to_thread.run_sync(_login)
     except Exception as exc:  # noqa: BLE001
         reason = _failure_reason(exc)
-        account_paused = wrong_before and reason in ("blocked_by_garmin", "rate_limited")
+        account_paused = reason == "account_locked" or (
+            wrong_before and reason in ("blocked_by_garmin", "rate_limited"))
         if reason == "bad_credentials":
             _note_wrong_password(email)
-        elif account_paused:
+        elif account_paused and reason != "account_locked":
             reason = "account_paused"
         paused = not egress and not account_paused
         if paused:
             _pause_sign_ins(reason)
         offered = reason in ("rate_limited", "blocked_by_garmin") and _fallback_ok(flow)
-        _failed(reason, email, **took(), **_error_detail(exc), **_where(request),
-                **({"fallback": True} if offered else {}))
+        _failed(reason, email, request=request, flow=flow, **took(), **_error_detail(exc),
+                **({"fallback": True} if offered else {}),
+                **({"wrong_before": True} if wrong_before else {}))
+        if reason == "bad_credentials":
+            # The form again, under what went wrong, with the email kept.
+            return _password_form(flow, email=email, status=400, notice=_signin_error(
+                exc, flow, paused=paused, tries=tries, email=email, inline=True,
+                wrong_before=wrong_before))
         return page(
             "Sign in to Garmin",
             _signin_error(exc, flow, paused=paused, tries=tries,
@@ -3564,25 +3752,38 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
             "took": took(),
             "started": time.time(),
         }
-        return page(
-            "Enter your code",
-            f"""
-            <h1>Enter your code</h1>
-            <p>Garmin has sent you a code by text message or email, whichever you
-            chose when you turned on two-step verification. It can take a minute to
-            arrive. If it went to email, check your spam folder too.</p>
-            <form method=post action=/mfa data-wait="Checking your code&hellip;">
-              <input type=hidden name=pending value="{pending_id}">
-              <label for=code>Code</label>
-              <input id=code name=code inputmode=numeric autocomplete=one-time-code required>
-              <button>Continue</button>
-              <p class="note wait" role=status hidden>Checking with Garmin. Please
-              don&rsquo;t press again.</p>
-            </form>
-            """,
-        )
+        analytics.capture("sign_in_code_asked", store.email_fingerprint(email),
+                          _with_source(request, _signin_context(None, flow)))
+        return _code_form(pending_id)
 
     return _finish(request, client, email, flow, took=took())
+
+
+# Wrong codes allowed before the sign-in has to start again. Garmin keeps the
+# code step open after a wrong one, so a typo is fixed on the same page.
+MFA_TRIES = 3
+
+
+def _code_form(pending_id: str, error: str = "", status: int = 200) -> Response:
+    return page(
+        "Enter your code",
+        f"""
+        {error}
+        <h1>Enter your code</h1>
+        <p>Garmin has sent you a code by text message or email, whichever you
+        chose when you turned on two-step verification. It can take a minute to
+        arrive. If it went to email, check your spam folder too.</p>
+        <form method=post action=/mfa data-wait="Checking your code&hellip;">
+          <input type=hidden name=pending value="{pending_id}">
+          <label for=code>Code</label>
+          <input id=code name=code inputmode=numeric autocomplete=one-time-code required{" autofocus" if error else ""}>
+          <button>Continue</button>
+          <p class="note wait" role=status hidden>Checking with Garmin. Please
+          don&rsquo;t press again.</p>
+        </form>
+        """,
+        status,
+    )
 
 
 @mcp.custom_route("/mfa", methods=["POST"])
@@ -3593,9 +3794,15 @@ async def mfa_submit(request: Request) -> Response:
     _sweep_pending()
     pending = _PENDING.pop(pending_id, None)
     if not pending:
-        return RedirectResponse("/connect", status_code=303)
+        # The code step ran out (ten minutes) or was already used. Back to the
+        # form for the same request, if there was one, rather than a bare one.
+        _failed("mfa_expired", request=request)
+        return page("Enter your code", "<div class=err><strong>That code step has closed.</strong> "
+                    "Garmin&rsquo;s codes only last a few minutes. Sign in again and Garmin will "
+                    "send you a new one.</div>" + _try_again(""), 400)
 
     client = pending["client"]
+    flow = pending.get("flow", "")
     try:
         def _resume() -> Any:
             with login_egress(pending.get("egress")):
@@ -3603,15 +3810,28 @@ async def mfa_submit(request: Request) -> Response:
 
         await anyio.to_thread.run_sync(_resume)
     except Exception as exc:  # noqa: BLE001
-        _failed("mfa_rejected", pending.get("email", ""), **_error_detail(exc))
-        return page(
-            "Enter your code",
-            f"<div class=err>That code wasn't accepted ({type(exc).__name__}). "
-            f'Start again from <a href="{_connect_url(pending.get("flow", ""))}">'
-            "the sign-in page</a>.</div>",
-            400,
-        )
-    return _finish(request, client, pending["email"], pending.get("flow", ""), mfa=True,
+        tries = pending.get("code_tries", 0) + 1
+        _failed("mfa_rejected", pending.get("email", ""), request=request, flow=flow,
+                code_try=tries, **_error_detail(exc))
+        # A wrong code leaves Garmin's code step open: ask again on the same
+        # page (Nov 14: three people were sent back to the start instead).
+        retryable = type(exc).__name__ in ("GarminConnectAuthenticationError",
+                                           "GarminConnectTooManyRequestsError")
+        if retryable and tries < MFA_TRIES and (flow == "" or not oauth.expired(flow)):
+            _PENDING[pending_id] = {**pending, "code_tries": tries}
+            slow = type(exc).__name__ == "GarminConnectTooManyRequestsError"
+            return _code_form(pending_id, status=400, error=(
+                "<div class=err><strong>Garmin is busy checking codes.</strong> "
+                "Wait a minute, then press Continue again with the same code.</div>" if slow else
+                "<div class=err><strong>That code wasn&rsquo;t accepted.</strong> Check it against "
+                "the latest one Garmin sent and type it again. If you asked for more than one, "
+                "only the newest works.</div>"))
+        if flow and oauth.expired(flow):
+            return _request_expired(flow)
+        return _password_form(flow, email=pending.get("email", ""), status=400, notice=(
+            "<div class=err><strong>That code wasn&rsquo;t accepted.</strong> Sign in again "
+            "below and Garmin will send you a new code.</div>"))
+    return _finish(request, client, pending["email"], flow, mfa=True,
                    took=pending.get("took"))
 
 
@@ -3644,7 +3864,7 @@ async def official_signup(request: Request) -> Response:
     """From Connect your Garmin to Garmin's own approval page, with the connector's request carried along."""
     flow = request.query_params.get("flow", "")
     if not (OAUTH_ENABLED and official.configured()) or OAUTH_PROVIDER.pending(flow) is None:
-        return _consent_expired()
+        return _request_expired(flow)
     if not _official_open() and request.query_params.get("again") != "1":
         # A Continue with Garmin button from before the pause, or a bookmark.
         analytics.capture("garmin_sign_in_paused", None, _with_source(request, {}))
@@ -3698,8 +3918,7 @@ async def _signup_callback(request: Request, code: str, state: str, flow: str) -
         "workouts": "unknown" if approval.permissions is None else "WORKOUT_IMPORT" in approval.permissions}))
     staged = OAUTH_PROVIDER.stage(approval.flow, approval.user_token)
     if not staged:
-        return page("Sign-in expired", "<div class=err>That sign-in took too long and the request has "
-                    "expired. Start again from the connector in Claude.</div>", 400)
+        return _request_expired(approval.flow)
     consent_token, parked = staged
     now = time.time()
     for stale in [t for t, at in _GARMIN_CONSENTS.items() if at < now - 3600]:

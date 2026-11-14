@@ -78,6 +78,11 @@ SLOW_EMAIL_2 = "tardy@example.com"
 WRONG_PASSWORD_EMAIL = "wrongpw@example.com"
 RATE_LIMITED_EMAIL = "toomany@example.com"
 BLOCKED_EMAIL = "blocked@example.com"
+# Garmin's own lock, as its sign-in page says it and the library raises it:
+# as a wrong password, with the page's title in the message (Nov 14).
+LOCKED_TITLE_EMAIL = "garminlock@example.com"
+# The code that the stub's code step turns down, as Garmin does a mistyped one.
+WRONG_CODE = "000000"
 # A wrong password, then Garmin pausing the account: refused outright from
 # then on, wherever the attempt comes from (Tom, Oct 13).
 LOCKED_EMAIL = "lockedout@example.com"
@@ -162,6 +167,8 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
                     "Login failed: 403 Client Error: Forbidden for url: "
                     "https://sso.garmin.com/sso/signin"
                 )
+            if email == LOCKED_TITLE_EMAIL:
+                raise GarminConnectAuthenticationError("Widget authentication failed: 'Account Locked'")
             if email == WRONG_PASSWORD_EMAIL:
                 raise GarminConnectAuthenticationError(
                     "Authentication failed (401 Unauthorized). Possible causes: ..."
@@ -197,6 +204,9 @@ def fake_build_client(*, prompt_mfa, email=None, password=None):
 
         def resume_login(self, state, code):
             EGRESS.append((f"code:{email}", seen_proxy()))
+            if code == WRONG_CODE:
+                # Garmin's answer to a mistyped code; its code step stays open.
+                raise GarminConnectAuthenticationError("MFA verification failed: ['INVALID_MFA_CODE']")
             self.full_name = f"account:{email}-token"
             return (None, None)
 
@@ -705,6 +715,27 @@ async def main() -> int:
         check("no plaintext password survives in the pending sign-in",
               all(p["client"].password is None for p in hosted._PENDING.values()),
               str([p["client"].password for p in hosted._PENDING.values()]))
+        # Nov 14: a mistyped code sent people back to the start. Garmin keeps
+        # its code step open, so the same page asks again.
+        pending_id = re.search(r'name=pending value="([^"]+)"', body).group(1)
+        code, body = await anyio_run(post, "/mfa", {"pending": pending_id, "code": WRONG_CODE})
+        check("a wrong code asks again on the same page, for the same sign-in",
+              code == 400 and f'name=pending value="{pending_id}"' in body
+              and "wasn&rsquo;t accepted" in body and "action=/mfa" in body, f"status {code}")
+        code, body = await anyio_run(post, "/mfa", {"pending": pending_id, "code": "123456"})
+        check("and the right code then gets in", code == 200 and "/mcp" in body and not hosted._PENDING,
+              f"status {code}")
+        hosted._ATTEMPTS.clear()
+        code, body = await anyio_run(signin, MFA_EMAIL)
+        pending_id = re.search(r'name=pending value="([^"]+)"', body).group(1)
+        for _ in range(hosted.MFA_TRIES):
+            code, body = await anyio_run(post, "/mfa", {"pending": pending_id, "code": WRONG_CODE})
+        check("after three wrong codes, the sign-in form comes back with the email kept",
+              code == 400 and f'value="{MFA_EMAIL}"' in body and "name=password" in body
+              and pending_id not in hosted._PENDING, f"status {code}")
+        code, body = await anyio_run(post, "/mfa", {"pending": pending_id, "code": "123456"})
+        check("a code step that has closed says so, with a way back",
+              code == 400 and "has closed" in body and 'class=button href="/connect"' in body, f"status {code}")
         hosted._PENDING.clear()
 
         # The credential must not reach the logs.
@@ -736,15 +767,39 @@ async def main() -> int:
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
         check("a wrong password is called a wrong password",
-              code == 400 and "didn't accept that email and password" in body, f"status {code}")
-        check("a wrong password shows the email as typed, to make a slip plain",
-              f"Email used: <strong>{WRONG_PASSWORD_EMAIL}</strong>" in body)
+              code == 400 and "didn&rsquo;t accept that email and password" in body, f"status {code}")
+        check("a wrong password brings the form back with the email as typed, to fix a slip or retype the password",
+              f'value="{WRONG_PASSWORD_EMAIL}"' in body and "name=password" in body
+              and body.index("didn&rsquo;t accept") < body.index("name=password"))
         wrong = [e for e in SENT if e["event"] == "sign_in_failed"
                  and e["properties"].get("email") == WRONG_PASSWORD_EMAIL]
         check("a failed sign-in reports what failed, by type, never by message",
               wrong and wrong[-1]["properties"].get("error_type") == "GarminConnectAuthenticationError"
               and "Possible causes" not in json.dumps(wrong[-1]),
               str(wrong[-1]["properties"] if wrong else None))
+        check("a first wrong password says how to check it, without the lock warning",
+              "Forgot password" in body and "more than one try" not in body)
+        check("a failed sign-in carries the category the setup report groups by, and the device",
+              wrong[-1]["properties"].get("category") == "wrong_credentials"
+              and wrong[-1]["properties"].get("device") == "computer"
+              and wrong[-1]["properties"].get("login_route") == "password", str(wrong[-1]["properties"]))
+        hosted._ATTEMPTS.clear()
+        code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
+        check("a second wrong password warns that Garmin's lock comes next",
+              code == 400 and "more than one try" in body and "30 minutes" in body, f"status {code}")
+        # Nov 14: Garmin's lock page came back as a wrong password, which sent
+        # the person to try another password and keep the lock going.
+        hosted._ATTEMPTS.clear()
+        code, body = await anyio_run(signin, LOCKED_TITLE_EMAIL)
+        locked = [e for e in SENT if e["event"] == "sign_in_failed"
+                  and e["properties"].get("email") == LOCKED_TITLE_EMAIL]
+        check("Garmin's lock page reads as the lock, not as a wrong password",
+              code == 400 and "locked sign-ins to your account" in body and "didn&rsquo;t accept" not in body
+              and locked and locked[-1]["properties"].get("reason") == "account_locked"
+              and locked[-1]["properties"].get("category") == "account_locked",
+              f"status {code} {locked[-1]['properties'] if locked else None}")
+        hosted._ATTEMPTS.clear()
+        hosted._WRONG_PASSWORD.clear()
         hosted._paused_until = 0.0
         code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
         check("a rate limit says to wait, not to worry",
@@ -827,7 +882,7 @@ async def main() -> int:
             code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
             check("a wrong password is not retried", code == 400 and len(EGRESS) == 1, str(len(EGRESS)))
             check("a wrong password says how to check or reset it",
-                  "Forgot password" in body and "pauses an account" in body)
+                  "Forgot password" in body and "connect.garmin.com" in body)
 
             # After wrong passwords Garmin pauses the account, and its refusal
             # must read as that: not "it is not your password", not a retry
@@ -1137,10 +1192,12 @@ async def main() -> int:
               {"throttled", "bad_credentials", "rate_limited", "blocked_by_garmin", "paused"} <= reasons
               and reasons <= {"throttled", "blocked_by_garmin", "rate_limited",
                               "bad_credentials", "other", "mfa_rejected", "paused",
-                              "account_paused"},
+                              "account_paused", "account_locked", "mfa_expired"},
               str(reasons))
+        # A code step that has closed has no address left to name.
+        named = [e for e in failed if e["properties"].get("reason") != "mfa_expired"]
         check("failed sign-ins carry the masked address that was tried",
-              all(e["properties"].get("account", "").count("*") >= 1 for e in failed),
+              all(e["properties"].get("account", "").count("*") >= 1 for e in named),
               str([e["properties"].get("account") for e in failed][:4]))
         later_fail = [e for e in failed if e["properties"].get("reason") == "paused"]
         later_ok = [e for e in connected if e["properties"].get("account", "").startswith("l")
@@ -1158,8 +1215,21 @@ async def main() -> int:
                           BLOCKED_EMAIL, REFUSED_ONCE_EMAIL, SLOW_EMAIL_2)
         check("a sign-in and a failure each name who, in full",
               all("@" in e["properties"].get("email", "") and "*" not in e["properties"]["email"]
-                  for e in connected + failed),
-              str([e["properties"].get("email") for e in connected + failed][:4]))
+                  for e in connected + named),
+              str([e["properties"].get("email") for e in connected + named][:4]))
+        started = by_name.get("sign_in_started", [])
+        succeeded = by_name.get("sign_in_succeeded", [])
+        check("every press of Connect is a sign_in_started, and every success a sign_in_succeeded",
+              len(started) >= len(succeeded) >= 1 and len(succeeded) >= len(connected), f"{len(started)} {len(succeeded)}")
+        check("sign_in_succeeded says how long getting in took, from the first try",
+              all(isinstance(e["properties"].get("time_to_success_seconds"), float) for e in succeeded),
+              str([e["properties"] for e in succeeded][:2]))
+        check("sign-in events carry nobody's address", not any(
+            "email" in e["properties"] or "account" in e["properties"] for e in started + succeeded))
+        check("a connection says whether this Garmin account was connected before",
+              all(e["properties"].get("reconnect") is e["properties"].get("returning") for e in connected)
+              and any(e["properties"].get("reconnect") for e in connected)
+              and any(not e["properties"].get("reconnect") for e in connected))
         check("a first use names who where the email was kept, and only the masked form where not",
               sorted(e["properties"].get("email", "-") for e in first_calls) == ["-", "alice@example.com"],
               str([e["properties"] for e in first_calls]))
