@@ -616,6 +616,12 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
         told = {"chart": run_view.chart(pairs, after, laps, split_rows),
                 "insights": run_view.insights(pairs, laps, split_rows, kind) or None,
                 "figures": run_view.figures(pairs, laps)}
+    # The quicker stretch of a run without reps (a long run's half-marathon-pace
+    # finish), for its colour in the table: one rule with the run screen's figures.
+    from .run_view import quick_parts
+    for r, q in zip(rows, quick_parts([(r.get("kind") or "", bool(r.get("rep")), r.get("_target")) for r in rows])):
+        if q:
+            r["quick"] = True
     for r in rows:
         r.pop("_lap", None)
         r.pop("_target", None)

@@ -691,7 +691,8 @@
     var laps = Array.isArray(d.l) ? d.l.slice(0, 60).map(function (l) {
       if (!Array.isArray(l)) return null;
       var secs = num(l[0], 1, 36000), pace = num(l[1], 60, 1800);
-      return secs ? { s: secs, p: pace, w: l[2] === 1, km: num(l[3], 0, 500), hr: num(l[4], 30, 240) } : null;
+      // 2 is a long run's steady part: drawn and labelled like the work, in the run's own colour (Nov 14).
+      return secs ? { s: secs, p: pace, w: l[2] === 1 || l[2] === 2, steady: l[2] === 2, km: num(l[3], 0, 500), hr: num(l[4], 30, 240) } : null;
     }).filter(Boolean) : [];
     // A lap of a few seconds is the watch, not the run: stopping it walking
     // left a 2-second lap at 15:43 /km, drawn as the cool-down and setting
@@ -711,7 +712,7 @@
   function joinReps(rn) {
     var laps = rn.l, reps = [];
     laps.forEach(function (l, i) {
-      if (!l.w) return;
+      if (!l.w || l.steady) return;
       var last = reps[reps.length - 1];
       if (last && last.to === i - 1) last.to = i; else reps.push({ from: i, to: i });
     });
@@ -810,6 +811,9 @@
         var tight = 2, free = W - 2 * P - gap * (rn.l.length - 1 - joins) - tight * joins, x = P, spans = {};
         var hOf = function (p) { return ch * (0.08 + 0.92 * Math.min(1, Math.max(0, (slow - p) / (slow - fast)))); };
         var c = T.c[rn.c] || T.c.easy;
+        // A long run's quicker stretch is amber against its steady blue, as in the app (Nov 14).
+        var parts = rn.l.some(function (l) { return l.steady; });
+        var quickC = parts ? T.c.threshold : c, quickLabel = parts ? (T.label.threshold || T.c.threshold) : (T.label[rn.c] || c);
         rn.l.forEach(function (l, i) {
           if (i && l.rep != null && l.rep === rn.l[i - 1].rep) x -= gap - tight;
           var w = Math.max(3, free * l.s / total), h = l.p ? hOf(l.p) : ch * 0.08;
@@ -817,10 +821,10 @@
             var sp = spans[l.rep] || (spans[l.rep] = { x0: x, top: chartBottom - h, bars: [] });
             sp.x1 = x + w; sp.top = Math.min(sp.top, chartBottom - h); sp.bars.push({ x: x, w: w, km: l.km });
           }
-          ctx.fillStyle = l.w || !labelled && paced.length === rn.l.length && hi - lo < 40 ? c : T.c.rec;
+          ctx.fillStyle = l.w ? (l.steady ? c : quickC) : !labelled && paced.length === rn.l.length && hi - lo < 40 ? c : T.c.rec;
           rrect(ctx, x, chartBottom - h, w, h, Math.min(12, w / 3)); ctx.fill();
           if (labelled && l.w && l.rep == null) {
-            font(ctx, 700, 34); ctx.fillStyle = T.label[rn.c] || c; ctx.textAlign = "center";
+            font(ctx, 700, 34); ctx.fillStyle = l.steady ? (T.label[rn.c] || c) : quickLabel; ctx.textAlign = "center";
             // Only where it fits over its own bar: side by side, two paces ran into one (Nov 3).
             if (l.p && ctx.measureText(paceText(l.p)).width <= w + gap - 6) ctx.fillText(paceText(l.p), x + w / 2, chartBottom - h - 16);
             if (l.km && w > 60) { font(ctx, 600, 24); ctx.fillStyle = T.bg; ctx.fillText(fmtKm(l.km) + " km", x + w / 2, chartBottom - 18); }

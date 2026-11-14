@@ -73,14 +73,7 @@ check("warm-up, three reps, the jogs and the cool-down, in order",
 check("each rep marked on target", [p.get("on") for p in c["parts"] if p["k"] == "work"] == [True, True, True])
 check("the caption says so, with each rep's pace", c.get("caption") == "All three reps inside the target: 4:03, 4:03 and 4:04.",
       c.get("caption"))
-heads = [x["head"] for x in t.get("insights") or []]
-texts = " ".join(x["text"] for x in t.get("insights") or [])
-check("lines on pacing, heart rate and recoveries", heads == ["Even pacing.", "Heart rate settled.", "Recoveries."], str(heads))
-check("pacing: within 1 s, inside the target", "4:03, 4:03 and 4:04: all three within 1 s of each other, inside the target." in texts,
-      texts)
-check("heart rate: each rep's, and that it levelled off", "On the reps: 157, 163 and 163." in texts and "levelled off" in texts)
-check("recoveries: their heart rate against the reps'", "In the 90 s recoveries heart rate averaged 148–149, against 157–163 on the reps."
-      in texts, texts)
+check("no lines that restate the table (Nov 14)", not t.get("insights"), str(t.get("insights")))
 check("compared on its reps", t.get("figures", {}).get("reps") == 3 and t["figures"]["km"] == 9.0 and t["figures"]["hr"] == 161,
       str(t.get("figures")))
 
@@ -90,8 +83,6 @@ slow["lapDTOs"][5]["duration"] = 765  # rep 3 at 4:15
 t2 = analysis.analyse(THRESHOLD, slow, "threshold", story=True)
 check("the caption counts it out", (t2["chart"].get("caption") or "").startswith("Two of three reps inside the target"),
       t2["chart"].get("caption"))
-check("and the line names it", t2["insights"][0]["head"] == "Off target." and "Rep 3 missed 3:58–4:08" in t2["insights"][0]["text"],
-      str(t2["insights"][0]))
 
 print("An easy run with strides: km by km, heart rate against its target")
 e = analysis.analyse(EASY, {"lapDTOs": EASY_LAPS}, "easy", story=True)
@@ -103,13 +94,9 @@ check("the last part-km keeps its own pace (0.93 km at 4:58)", kms[-1]["p"] == 2
 check("the heart-rate target is the band", c.get("band", {}).get("text") == "120–145")
 check("caption: in the target from km 2, all strides done",
       c.get("caption") == "Heart rate in the target from km 2 on. All six strides done.", c.get("caption"))
-texts = [x["text"] for x in e.get("insights") or []]
-check("easy stayed easy, with the warm-up km said", texts and texts[0] ==
-      "Heart rate was in 120–145 from km 2 on, peaking at 133. Km 1 was 111 while you warmed up.", str(texts[:1]))
-check("pace settled after two km", "5:20 and 5:03 for the first two km, then 4:52–4:58 for the rest." in texts, str(texts))
-check("strides: the fastest and the slow one", "Fastest 3:16, on the fourth. The fifth was slower, at 4:24." in texts, str(texts))
+check("no lines that restate the table", not e.get("insights"), str(e.get("insights")))
 check("compared on the run, strides left out", e.get("figures", {}).get("km") == 8.9 and e["figures"].get("hr") == 126
-      and not e["figures"].get("reps"), str(e.get("figures")))
+      and not e["figures"].get("reps") and e["figures"].get("steady", {}).get("km") == 8.9, str(e.get("figures")))
 
 print("Nothing made up")
 plain = analysis.analyse(None, THRESHOLD_LAPS, "threshold", story=True)
@@ -117,26 +104,67 @@ check("a hard session whose laps aren't matched to a workout gets no lines", not
 check("but still its km chart", (plain.get("chart") or {}).get("mode") == "km")
 check("the screen without story has none of it", "chart" not in analysis.analyse(THRESHOLD, THRESHOLD_LAPS, "threshold"))
 
-print("Km pace lines on a steady run (Nov 12)")
-def kms(*paces):
-    return [{"km": i + 1, "p": p, "hr": 120} for i, p in enumerate(paces)]
-line = run_view._km_pacing(kms(336, 338, 348, 346, 349))
-check("13 s between km on an easy run is even, not 'varied'", line and line["head"] == "Even pace."
-      and line["text"] == "Every km between 5:36 and 5:49.", str(line))
-line = run_view._km_pacing(kms(330, 335, 352, 340, 345))
-check("22 s between km still says it varied", line and line["head"] == "Pace varied.", str(line))
-line = run_view._km_pacing(kms(345, 320, 318, 322, 325))
-check("a slow first km then steady is 'settled'", line and line["head"] == "Settled pace.", str(line))
+print("A long run with a half-marathon-pace finish (Bart's of 14 Nov)")
+HM = {"targetType": {"workoutTargetTypeKey": "pace.zone"}, "targetValueOne": 1000 / 226, "targetValueTwo": 1000 / 236}
+LONG_HR = {"targetType": {"workoutTargetTypeKey": "heart.rate.zone"}, "targetValueOne": 125, "targetValueTwo": 148}
+LONG = {"workoutSegments": [{"workoutSteps": [
+    step(1, "interval", "distance", 16000, LONG_HR), step(2, "interval", "distance", 3000, HM),
+    step(3, "cooldown", "distance", 1000)]}]}
+LONG_LAPS = {"lapDTOs": [lap(16000, 4720, 138, "interval"), lap(3000, 693, 173, "interval"),
+                         lap(1000, 295, 146, "cooldown"), lap(800, 242, 151)]}
+lr = analysis.analyse(LONG, LONG_LAPS, "long", story=True)
+rows = lr.get("planned_and_run") or []
+check("the table marks the 3 km as the quicker stretch, not the 16 km",
+      [bool(r.get("quick")) for r in rows][:3] == [False, True, False], str([(r.get("kind"), r.get("quick")) for r in rows]))
+f = lr.get("figures") or {}
+check("compared on its quicker stretch, with its steady 16 km kept apart",
+      f.get("part") and f.get("km") == 3.0 and f.get("hr") == 173 and round(f["p"]) == 231
+      and f.get("steady", {}).get("km") == 16.0 and f["steady"].get("hr") == 138, str(f))
+splits = [{"km": str(i + 1), "seconds": 295, "pace": "4:55", "hr": 138} for i in range(16)] + \
+         [{"km": str(17 + i), "seconds": 231, "pace": "3:51", "hr": 172} for i in range(3)] + \
+         [{"km": "20", "seconds": 295, "pace": "4:55", "hr": 146}, {"km": "0.8", "partial": True, "seconds": 242, "pace": "5:02", "hr": 151}]
+pairs = analysis._paired(analysis.planned_steps(LONG), analysis._laps(LONG_LAPS))[0]
+c = run_view.chart(pairs, [], analysis._laps(LONG_LAPS), splits)
+check("its heart-rate caption judges only the 16 km set by heart rate",
+      c and c.get("caption") == "Heart rate in the target the whole way.", str(c and c.get("caption")))
 
 print("Against the last one")
+line = run_view.last_time({"part": True, "km": 3.0, "p": 231, "hr": 173}, {"part": True, "km": 3.0, "p": 235, "hr": 175},
+                          "long run", "Long 18 km w 3 km HM", "31 Oct")
+check("a long run's quicker stretch against the last one's",
+      line and line["text"] == "Then 3:55 at 175 bpm over 3 km at the quicker pace. Today 3:51 at 173 bpm over 3 km "
+      "at the quicker pace: quicker, for a lower heart rate.", str(line))
+check("a whole run isn't compared: route and weather move it more than fitness",
+      run_view.last_time({"km": 8.9, "p": 298, "hr": 126}, {"km": 11.4, "p": 305, "hr": 131}, "easy run", None, "7 Nov") is None)
+check("nor a quicker stretch with a whole run",
+      run_view.last_time({"part": True, "km": 3, "p": 231, "hr": 173}, {"km": 18, "p": 290, "hr": 140}, "long run", None, "1 Nov") is None)
+
+print("Easy running against a month ago")
+def act(km, pace_s, hr, label="AEROBIC_BASE", key="running", day="2026-10-10"):
+    return {"activityType": {"typeKey": key}, "distance": km * 1000, "movingDuration": km * pace_s, "averageHR": hr,
+            "trainingEffectLabel": label, "startTimeLocal": day + " 07:00:00"}
+then = run_view.easy_then([act(8, 305, 140), act(10, 300, 139, day="2026-10-04"), act(6, 310, 141),
+                           act(8, 240, 165, label="LACTATE_THRESHOLD"), act(3, 300, 135), act(10, 300, 138, key="treadmill_running")])
+check("only easy outdoor runs of 4 km or more, as Garmin read them", then and then["runs"] == 3 and then["km"] == 24, str(then))
+line = run_view.easy_trend({"km": 16.0, "p": 295, "hr": 138}, then, long_run=True)
+check("quicker for a lower heart rate says so, with both sets of numbers",
+      line and line["head"] == "Easy running is getting quicker."
+      and line["text"] == "Your steady 16 km: 4:55 at 138 bpm. Your 3 easy runs 3 to 7 weeks ago averaged 5:04 at 140 bpm: "
+      "9 s/km quicker, for a lower heart rate.", str(line))
+check("level, or quicker for a higher heart rate, says nothing",
+      run_view.easy_trend({"km": 10, "p": then["p"] - 2, "hr": then["hr"]}, then) is None
+      and run_view.easy_trend({"km": 10, "p": then["p"] - 10, "hr": then["hr"] + 6}, then) is None)
+check("slower at the same heart rate is said too",
+      (run_view.easy_trend({"km": 10, "p": then["p"] + 8, "hr": then["hr"]}, then) or {}).get("head")
+      == "Easy running is costing more than a month ago.")
+check("fewer than three easy runs then says nothing", run_view.easy_then([act(8, 305, 140), act(8, 300, 139)]) is None)
+check("a short easy run today says nothing", run_view.easy_trend({"km": 3, "p": 280, "hr": 130}, then) is None)
+
 line = run_view.last_time({"reps": 3, "km": 9.0, "p": 243.2, "hr": 161}, {"reps": 8, "km": 8.0, "p": 244, "hr": 159},
                           "threshold session", "Sub-T 8 × 1 km", "22 Oct")
 check("reps against reps, both figures said",
       line and line["head"] == "Against your last threshold session (Sub-T 8 × 1 km, 22 Oct)."
       and line["text"] == "Then 4:04 at 159 bpm over 8 km of reps. Today 4:03 at 161 bpm over 9 km of reps.", str(line))
-line = run_view.last_time({"km": 8.9, "p": 298, "hr": 126}, {"km": 11.4, "p": 305, "hr": 131}, "easy run", None, "7 Nov")
-check("quicker for a lower heart rate says so", line and line["text"].endswith("Today 4:58 at 126 bpm over 8.9 km: quicker, for a lower heart rate."),
-      str(line))
 check("reps aren't compared with a whole run", run_view.last_time({"reps": 3, "km": 9, "p": 243, "hr": 161},
                                                                   {"km": 10, "p": 300, "hr": 130}, "x", None, "1 Nov") is None)
 

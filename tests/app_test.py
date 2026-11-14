@@ -454,7 +454,9 @@ def api_checks() -> None:
     # Nov 11: the session as planned with the run inside it, and what it shows.
     check("it draws the reps against their plan", (run.get("chart") or {}).get("mode") == "steps"
           and sum(1 for p in run["chart"]["parts"] if p["k"] == "work") == 3, str(run.get("chart"))[:160])
-    check("and says what the run shows", any(x.get("head") for x in run.get("insights") or [])
+    # Nov 14: no lines that restate the table; with no earlier session like it,
+    # there's nothing to compare, so nothing is said.
+    check("and says nothing the table already shows", not run.get("insights")
           and "figures" not in run, str(run.get("insights"))[:160])
 
     # Each read asked for once, and none of the chat's extras (Nov 3: the run

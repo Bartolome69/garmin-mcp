@@ -4,10 +4,9 @@ inside it (the chart), and a few plain lines on what it shows (Nov 11).
 Before a run the app draws the session's shape; after it, until now, only a
 table. The chart keeps that shape and fills it: each rep inside its target
 band, or for an easy run each km with heart rate against its target. The lines
-say what the numbers mean: how even the reps were, how heart rate moved, how
-far the recoveries brought it down, and how it compares with the last session
-of the same kind. Every line is worked out from the run's own laps and splits;
-a line with nothing behind it isn't written.
+(Nov 14) say how the run compares: with the last session of the same kind, on
+its reps or its quicker stretch, and its easy running with the easy runs of a
+month before. A line with nothing real behind it isn't written.
 """
 from __future__ import annotations
 
@@ -16,16 +15,7 @@ from typing import Any
 
 from .analysis import PACE_GRACE_S, _RESTING, _stride_steps, _weighted_hr, pace
 
-ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
-            "eleventh", "twelfth")
 WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve")
-# Within this many seconds per km of each other, reps (or km) read as even.
-EVEN_S = 5
-# A first km this much slower than the rest is the warm-up into the run.
-SETTLING_S = 8
-# Km splits of a steady run this close are even: crossings, bends and GPS
-# move a km by more than a lap of reps (Nov 12: 5:36-5:49 read as "varied").
-KM_EVEN_S = 15
 
 
 def _word(n: int) -> str:
@@ -73,6 +63,38 @@ def _km_rows(split_rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+# A pace part this much quicker than the slowest paced part is the quicker stretch.
+QUICK_GAP_S = 5
+
+
+def quick_parts(parts: Sequence[tuple[str, bool, Mapping[str, Any] | None]]) -> list[bool]:
+    """Which of a run's parts were its quicker stretch, from (kind, rep, target) for each step.
+
+    A long run of 16 km by heart rate and 3 km at half-marathon pace has two
+    "interval" steps and no reps: the 3 km is the quicker one (Nov 14: the run
+    table coloured it as the steady part, and the share image called both
+    "reps"). A paced step is quick when the run's other parts are set by heart
+    rate or nothing, or when it's clearly quicker than the slowest paced one.
+    """
+    body = [i for i, (kind, rep, _) in enumerate(parts) if kind == "interval" and not rep]
+    out = [False] * len(parts)
+    if len(body) < 2:
+        return out
+    paced = [i for i in body if (parts[i][2] or {}).get("kind") == "pace"]
+    steady = [i for i in body if (parts[i][2] or {}).get("kind") != "pace"]
+    if not paced:
+        return out
+    slowest = max((parts[i][2]["lo"] + parts[i][2]["hi"]) / 2 for i in paced)
+    for i in paced:
+        if steady or (parts[i][2]["lo"] + parts[i][2]["hi"]) / 2 < slowest - QUICK_GAP_S:
+            out[i] = True
+    return out
+
+
+def _quick_pairs(pairs) -> list[bool]:
+    return quick_parts([(s.get("kind") or "", bool(s.get("rep")), s.get("target")) for s, _ in pairs or []])
+
+
 def _work(pairs: Sequence[tuple[dict[str, Any], dict[str, Any] | None]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """The session's reps that were run, strides apart."""
     strides = _stride_steps(pairs)
@@ -92,12 +114,47 @@ def _shared_target(work: Sequence[tuple[dict[str, Any], dict[str, Any]]]) -> dic
 
 def _main_hr_target(pairs) -> dict[str, Any] | None:
     """An easy session's heart-rate target: the target of its longest running step, when that's heart rate."""
+    span = _main_hr_span(pairs)
+    return span[0] if span else None
+
+
+def _main_hr_span(pairs) -> tuple[dict[str, Any], float, float] | None:
+    """That target, with the km of the run its step covered (from, to).
+
+    Nov 14: a long run's 16 km set by heart rate, then 3 km at half-marathon
+    pace, read as "heart rate went over 148 in km 17, 18, 19": the 148 was
+    only ever the first 16 km's.
+    """
     body = [(s, l) for s, l in pairs or [] if s["kind"] in ("interval", "warmup", "cooldown") and not s.get("rep") and l]
     if not body:
         return None
-    step, _ = max(body, key=lambda p: p[1]["seconds"])
+    step, lap = max(body, key=lambda p: p[1]["seconds"])
     target = step.get("target")
-    return target if target and target.get("kind") == "hr" else None
+    if not target or target.get("kind") != "hr":
+        return None
+    start = 0.0
+    for s, l in pairs:
+        if s is step:
+            break
+        start += (l or {}).get("metres") or 0
+    return target, start / 1000, (start + (lap.get("metres") or 0)) / 1000
+
+
+def _within(kms, span: tuple[Any, float, float] | None):
+    """The km rows inside the step's stretch, by where each km's middle falls."""
+    if not span:
+        return kms
+    _, start, end = span
+    out, done = [], 0.0
+    for k in kms:
+        try:
+            length = min(1.0, float(k["km"]))
+        except (TypeError, ValueError):
+            length = 1.0
+        if start - 0.05 <= done + length / 2 <= end + 0.05:
+            out.append(k)
+        done += length
+    return out
 
 
 # -- B: the chart -----------------------------------------------------------------
@@ -125,7 +182,7 @@ def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str,
     if target:
         out["band"] = {"kind": "hr", "lo": round(target["lo"]), "hi": round(target["hi"]),
                        "text": f"{target['lo']:.0f}–{target['hi']:.0f}"}
-        out["caption"] = _hr_caption(kms, target, len(strides), planned_strides)
+        out["caption"] = _hr_caption(_within(kms, _main_hr_span(pairs)), target, len(strides), planned_strides)
     return out
 
 
@@ -193,194 +250,142 @@ def _hr_caption(kms, target, strides_run: int, strides_planned: int) -> str | No
 
 # -- C: what it shows -------------------------------------------------------------
 
-# Sessions whose story is their reps: km by km they read as noise.
-HARD = {"threshold", "sub", "intervals", "race", "tempo"}
+# Nov 14: the lines that said what the table already showed ("Pace varied",
+# "Even pacing", heart rate rep by rep) are gone. What it shows now is how this
+# run compares: with the last session like it, and its easy running with a
+# month ago. A line is only written when there's something real to compare.
 
 
 def insights(pairs, laps: Sequence[Mapping[str, Any]], split_rows: Sequence[Mapping[str, Any]],
              kind: str | None = None) -> list[dict[str, Any]]:
-    """A few lines on what the run shows, each worked out from its laps and splits."""
-    work = _work(pairs) if pairs else []
-    if len(work) >= 2:
-        lines = [_pacing(work), _rep_hr(work), _recoveries(pairs)]
-    elif kind in HARD:
-        # A hard session whose laps didn't line up with its workout: its km
-        # splits mix reps and jogs, so there's nothing honest to say about them.
-        lines = []
-    else:
-        target = _main_hr_target(pairs)
-        kms = _km_rows(split_rows)
-        lines = [_easy_hr(kms, target) if target else None, _km_pacing(kms)]
-    lines.append(_strides(laps))
-    return [x for x in lines if x]
-
-
-def _pacing(work) -> dict[str, Any] | None:
-    paces = [_secs(l) for _, l in work]
-    spread = round(max(paces)) - round(min(paces))
-    target = _shared_target(work)
-    shown = _list([pace(p) for p in paces]) if len(paces) <= 6 else f"{pace(min(paces))} to {pace(max(paces))}"
-    if target:
-        off = [s["rep"] for s, l in work if not _on(target, _secs(l))]
-        if off:
-            which = _list([str(r) for r in off])
-            return {"icon": "!", "tone": "hard", "head": "Off target.",
-                    "text": f"{shown}. Rep{'s' if len(off) > 1 else ''} {which} missed {pace(target['lo'])}–{pace(target['hi'])}."}
-    if spread <= EVEN_S:
-        tail = " of each other" + (", inside the target." if target else ".")
-        within = "within 1 s" if spread <= 1 else f"within {spread} s"
-        return {"icon": "✓", "tone": "easy", "head": "Even pacing.",
-                "text": f"{shown}: all {_word(len(paces))} {within}{tail}"}
-    quicker = paces[-1] < paces[0] - EVEN_S
-    slower = paces[-1] > paces[0] + EVEN_S
-    head = "Got quicker." if quicker else "Faded." if slower else "Pace varied."
-    return {"icon": "→", "tone": "long", "head": head, "text": f"{shown}."}
-
-
-def _rep_hr(work) -> dict[str, Any] | None:
-    hrs = [round(l["hr"]) for _, l in work if l.get("hr")]
-    if len(hrs) < 2 or len(hrs) != len(work):
-        return None
-    shown = _list([str(h) for h in hrs]) if len(hrs) <= 6 else f"{hrs[0]} on the first, {hrs[-1]} on the last"
-    later = hrs[1:]
-    if max(later) - min(later) <= 3 and hrs[1] > hrs[0]:
-        head, tail = "Heart rate settled.", " It levelled off after the first rep rather than climbing rep on rep."
-    elif hrs[-1] - hrs[0] >= 8:
-        head, tail = "Heart rate climbed.", f" Up {hrs[-1] - hrs[0]} bpm from the first rep to the last."
-    else:
-        head, tail = "Heart rate steady.", ""
-    return {"icon": "♥", "tone": "hard", "head": head, "text": f"On the reps: {shown}.{tail}"}
-
-
-def _recoveries(pairs) -> dict[str, Any] | None:
-    """Heart rate in the recoveries between reps, against the reps either side."""
-    recs = []
-    for i, (step, lap) in enumerate(pairs):
-        if step["kind"] not in _RESTING or not lap or not lap.get("hr"):
-            continue
-        before = next((l for s, l in reversed(pairs[:i]) if s.get("rep") and l), None)
-        later = next((l for s, l in pairs[i + 1:] if s.get("rep") and l), None)
-        if before and later:  # only the recoveries between two reps
-            recs.append(lap)
-    if not recs:
-        return None
-    hrs = sorted(round(l["hr"]) for l in recs)
-    work_hr = [round(l["hr"]) for s, l in _work(pairs) if l.get("hr")]
-    secs = round(sum(l["seconds"] for l in recs) / len(recs))
-    length = f"{secs} s" if secs < 120 else f"{secs // 60} min" + (f" {secs % 60} s" if secs % 60 else "")
-    span = f"{hrs[0]}" if hrs[0] == hrs[-1] else f"{hrs[0]}–{hrs[-1]}"
-    versus = f", against {min(work_hr)}–{max(work_hr)} on the reps" if work_hr and min(work_hr) != max(work_hr) else (
-        f", against {work_hr[0]} on the reps" if work_hr else "")
-    return {"icon": "↓", "tone": "long", "head": "Recoveries.",
-            "text": f"In the {length} recoveries heart rate averaged {span}{versus}."}
-
-
-def _easy_hr(kms, target) -> dict[str, Any] | None:
-    hrs = [(k["km"], k["hr"]) for k in kms if k.get("hr")]
-    if len(hrs) < 2:
-        return None
-    lo, hi = target["lo"], target["hi"]
-    peak = max(h for _, h in hrs)
-    band = f"{lo:.0f}–{hi:.0f}"
-    over = [km for km, h in hrs if h > hi + 1]
-    if over:
-        return {"icon": "!", "tone": "hard", "head": "Harder than planned.",
-                "text": f"Heart rate went over {hi:.0f} in km {_list(over)}, peaking at {peak}."}
-    start = next((i for i in range(len(hrs)) if all(h >= lo - 1 for _, h in hrs[i:])), None)
-    if start == 0:
-        text = f"Heart rate stayed in {band} the whole way, peaking at {peak}."
-    elif start is not None:
-        warm = _list([str(h) for _, h in hrs[:start]])
-        text = (f"Heart rate was in {band} from km {hrs[start][0]} on, peaking at {peak}. "
-                f"Km {_list([km for km, _ in hrs[:start]])} {'was' if start == 1 else 'were'} {warm} while you warmed up.")
-    else:
-        text = f"Heart rate stayed under {hi:.0f} the whole way, peaking at {peak}."
-    return {"icon": "✓", "tone": "easy", "head": "Easy stayed easy.", "text": text}
-
-
-def _km_pacing(kms) -> dict[str, Any] | None:
-    if len(kms) < 3:
-        return None
-    paces = [k["p"] for k in kms]
-    lead = 0
-    while lead < min(2, len(paces) - 2):
-        rest = sorted(paces[lead + 1:])
-        if paces[lead] > rest[len(rest) // 2] + SETTLING_S:
-            lead += 1
-        else:
-            break
-    rest = paces[lead:]
-    lo, hi = pace(min(rest)), pace(max(rest))
-    span = lo if lo == hi else f"{lo}–{hi}"
-    if lead and round(max(rest)) - round(min(rest)) <= KM_EVEN_S:
-        first = _list([pace(p) for p in paces[:lead]])
-        which = "the first km" if lead == 1 else f"the first {_word(lead)} km"
-        return {"icon": "→", "tone": "long", "head": "Settled pace.", "text": f"{first} for {which}, then {span} for the rest."}
-    if round(max(rest)) - round(min(rest)) <= KM_EVEN_S:
-        return {"icon": "→", "tone": "long", "head": "Even pace.", "text": f"Every km between {lo} and {hi}." if lo != hi else f"Every km at {lo}."}
-    quickest, slowest = pace(min(paces)), pace(max(paces))
-    if paces[-1] < paces[0] - EVEN_S * 2 and min(paces[-2:]) == min(paces):
-        return {"icon": "→", "tone": "long", "head": "Got quicker.",
-                "text": f"{pace(paces[0])} for the first km, {pace(paces[-1])} for the last."}
-    return {"icon": "→", "tone": "long", "head": "Pace varied.", "text": f"Km splits between {quickest} and {slowest}."}
-
-
-def _strides(laps) -> dict[str, Any] | None:
-    run = [l for l in laps if l.get("stride") and _secs(l)]
-    if len(run) < 2:
-        return None
-    paces = [_secs(l) for l in run]
-    best = min(range(len(paces)), key=lambda i: paces[i])
-    middle = sorted(paces)[len(paces) // 2]
-    slow = [i for i, p in enumerate(paces) if p > middle + 30]
-    text = f"Fastest {pace(paces[best])}, on the {ORDINALS[best] if best < len(ORDINALS) else f'number {best + 1}'}."
-    if slow:
-        names = _list([ORDINALS[i] if i < len(ORDINALS) else f"number {i + 1}" for i in slow])
-        text += f" The {names} {'was' if len(slow) == 1 else 'were'} slower, at {_list([pace(paces[i]) for i in slow])}."
-    return {"icon": "⚡", "tone": "hard", "head": "Strides.", "text": text}
+    """Nothing from the run on its own: the comparisons are added where the earlier runs are read."""
+    return []
 
 
 # -- C: against the last one --------------------------------------------------------
 
+def _sum(laps: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    metres = sum(l.get("metres") or 0 for l in laps)
+    if not metres:
+        return None
+    hr = _weighted_hr(list(laps))
+    return {"km": round(metres / 1000, 1), "p": sum(l["seconds"] for l in laps) / metres * 1000,
+            "hr": round(hr) if hr else None}
+
+
 def figures(pairs, laps: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
     """What a run is compared on: its reps (pace, heart rate, km of reps) when it
-    had them, otherwise the whole run's pace and heart rate."""
+    had them; a long run's quicker stretch ("part") when it had one; and its
+    steady running ("steady"), for its easy pace against earlier weeks."""
     work = _work(pairs) if pairs else []
     if len(work) >= 2:
         metres = sum(l["metres"] for _, l in work)
         secs = sum(l["seconds"] for _, l in work)
         hr = _weighted_hr([l for _, l in work])
         return {"reps": len(work), "km": round(metres / 1000, 1), "p": secs / metres * 1000, "hr": round(hr) if hr else None}
+    quick = _quick_pairs(pairs)
+    if any(quick):
+        fast = [l for (s, l), q in zip(pairs, quick) if q and l and l.get("metres")]
+        calm = [l for (s, l), q in zip(pairs, quick) if not q and l and l.get("metres") and s["kind"] == "interval"]
+        part, steady = _sum(fast), _sum(calm)
+        if not part:
+            return None
+        return {**part, "part": True, **({"steady": steady} if steady and steady["km"] >= 4 else {})}
     running = [l for l in laps if l["mark"] not in _RESTING and not l.get("stride") and l.get("metres")]
-    metres = sum(l["metres"] for l in running)
-    if metres < 1000:
+    whole = _sum(running)
+    if not whole or whole["km"] < 1:
         return None
-    hr = _weighted_hr(running)
-    return {"km": round(metres / 1000, 1), "p": sum(l["seconds"] for l in running) / metres * 1000,
-            "hr": round(hr) if hr else None}
+    return {**whole, "steady": whole} if whole["km"] >= 4 else whole
 
 
 def last_time(this: Mapping[str, Any] | None, before: Mapping[str, Any] | None, what: str, name: str | None,
               day: str) -> dict[str, Any] | None:
-    """This run against the last session of the same kind, in one line."""
-    if not this or not before or bool(this.get("reps")) != bool(before.get("reps")):
+    """This session against the last one like it, on what they were built round:
+    the reps, or a long run's quicker stretch. Whole runs aren't compared: a
+    route, a hill or a warm day moves a whole run's pace more than fitness does."""
+    if not this or not before:
         return None
-    on = "of reps" if this.get("reps") else ""
+    if this.get("reps") and before.get("reps"):
+        on = " of reps"
+    elif this.get("part") and before.get("part"):
+        on = " at the quicker pace"
+    else:
+        return None
 
     def said(f: Mapping[str, Any]) -> str:
         hr = f" at {f['hr']} bpm" if f.get("hr") else ""
-        return f"{pace(f['p'])}{hr} over {f['km']:g} km" + (f" {on}" if on else "")
+        return f"{pace(f['p'])}{hr} over {f['km']:g} km{on}"
 
-    head = f"Against your last {what}"
+    quicker, slower = this["p"] < before["p"] - 2, this["p"] > before["p"] + 2
+    lower = bool(this.get("hr") and before.get("hr") and this["hr"] < before["hr"] - 1)
+    higher = bool(this.get("hr") and before.get("hr") and this["hr"] > before["hr"] + 1)
+    tail = (": quicker, for a lower heart rate" if quicker and lower else ": quicker, at the same heart rate" if quicker and not higher
+            else ": the same pace, for a lower heart rate" if lower and not slower else ": quicker" if quicker else "")
     detail = f" ({name}, {day})" if name else f" ({day})"
-    quicker = this["p"] < before["p"] - 2
-    calmer = this.get("hr") and before.get("hr") and this["hr"] < before["hr"] - 1
-    tail = ""
-    if quicker and calmer:
-        tail = ": quicker, for a lower heart rate"
-    elif quicker:
-        tail = ": quicker"
-    elif calmer:
-        tail = ": a lower heart rate"
-    return {"icon": "↺", "tone": "muted", "head": head + detail + ".",
+    return {"icon": "↺", "tone": "muted", "head": f"Against your last {what}{detail}.",
             "text": f"Then {said(before)}. Today {said(this)}{tail}."}
+
+
+# -- C: easy running, against a month ago -----------------------------------------
+
+# The weeks easy running is compared with: 3 to 7 weeks before this run.
+TREND_FROM_DAYS, TREND_TO_DAYS = 49, 21
+# At least this many easy runs then, each at least this long, to say anything.
+TREND_MIN_RUNS, TREND_MIN_KM = 3, 4
+# Garmin's own reading of a run as easy: what it trained.
+EASY_LABELS = ("RECOVERY", "AEROBIC_BASE", "BASE")
+# Without a label: easy when under this share of the run was in zone 3 or above.
+EASY_ZONE_SHARE = 0.1
+
+
+def easy_then(activities: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """Easy runs from Garmin's activity list, as one pace and heart rate: runs
+    Garmin read as base or recovery training (or, without its label, run mostly
+    under heart-rate zone 3), with a heart rate, of 4 km or more."""
+    runs = []
+    for a in activities or []:
+        key = str(((a.get("activityType") or {}).get("typeKey")) or "").lower()
+        label = str(a.get("trainingEffectLabel") or "").upper()
+        metres, secs, hr = float(a.get("distance") or 0), float(a.get("movingDuration") or a.get("duration") or 0), a.get("averageHR")
+        zones = [a.get(f"hrTimeInZone_{n}") for n in range(1, 6)]
+        timed = all(isinstance(z, (int, float)) for z in zones) and sum(zones) > 0
+        # Garmin's label when it gives one; else time in heart-rate zones, mostly under zone 3.
+        easy = label in EASY_LABELS if label else (timed and sum(zones[2:]) / sum(zones) < EASY_ZONE_SHARE)
+        if "run" not in key or "trail" in key or "treadmill" in key or not easy:
+            continue
+        if metres < TREND_MIN_KM * 1000 or not secs or not hr:
+            continue
+        runs.append((metres, secs, float(hr), str(a.get("startTimeLocal") or "")[:10]))
+    if len(runs) < TREND_MIN_RUNS:
+        return None
+    metres = sum(r[0] for r in runs)
+    secs = sum(r[1] for r in runs)
+    return {"runs": len(runs), "km": round(metres / 1000), "p": secs / metres * 1000,
+            "hr": round(sum(r[2] * r[1] for r in runs) / secs), "first": min(r[3] for r in runs), "last": max(r[3] for r in runs)}
+
+
+def easy_trend(steady: Mapping[str, Any] | None, then: Mapping[str, Any] | None, long_run: bool = False) -> dict[str, Any] | None:
+    """Today's easy running against the easy runs of 3 to 7 weeks ago, in one line,
+    only when it moved clearly one way: quicker for the same heart rate or less,
+    or the same pace for a lower one (or the reverse). Mixed or level says nothing."""
+    if not steady or not then or not steady.get("hr") or steady.get("km", 0) < TREND_MIN_KM:
+        return None
+    dp, dh = steady["p"] - then["p"], steady["hr"] - then["hr"]
+    better = (dp <= -5 and dh <= 1) or (dh <= -3 and dp <= 3)
+    worse = (dp >= 5 and dh >= -1) or (dh >= 3 and dp >= -3)
+    if better == worse:
+        return None
+    if better:
+        tail = (f"{abs(round(dp))} s/km quicker, for a lower heart rate" if dp <= -5 and dh <= -2
+                else f"{abs(round(dp))} s/km quicker, at the same heart rate" if dp <= -5
+                else f"the same pace, {abs(dh)} bpm lower")
+        head = "Easy running is getting quicker." if dp <= -5 else "Easy running is costing less."
+    else:
+        tail = (f"{round(dp)} s/km slower, for a higher heart rate" if dp >= 5 and dh >= 2
+                else f"{round(dp)} s/km slower, at the same heart rate" if dp >= 5
+                else f"the same pace, {dh} bpm higher")
+        head = "Easy running is costing more than a month ago."
+    what = f"Your steady {steady['km']:g} km" if long_run else f"Today's {steady['km']:g} km"
+    return {"icon": "↗" if better else "↘", "tone": "easy" if better else "muted", "head": head,
+            "text": f"{what}: {pace(steady['p'])} at {steady['hr']} bpm. Your {then['runs']} easy runs 3 to 7 weeks ago "
+                    f"averaged {pace(then['p'])} at {then['hr']} bpm: {tail}."}

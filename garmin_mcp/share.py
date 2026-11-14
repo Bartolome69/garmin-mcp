@@ -78,6 +78,15 @@ def _colour(name: str) -> str:
     return "easy"
 
 
+# A long run's lap this much quicker a km than its slowest part is its quicker stretch.
+LONG_QUICK_GAP_S = 20
+
+
+def _pace_text(secs: float) -> str:
+    secs = round(secs)
+    return f"{secs // 60}:{secs % 60:02d}"
+
+
 def _work_laps(splits: list[dict[str, Any]], secs: list[int | None]) -> list[bool]:
     """Which laps were the work: what a structured workout says lap by lap, or
     else the fast ones when the laps split clearly into fast and slow."""
@@ -185,14 +194,34 @@ def run_payload(details: dict[str, Any], planned: dict[str, Any] | None = None) 
     if 1 < len(splits) <= 60:
         secs = [_secs(x.get("pace_per_km")) for x in splits]
         work = _work_laps(splits, secs)
-        for x, s, w in zip(splits, secs, work):
+        # A long run's parts are its "work" laps too, steady and quick alike: the
+        # quicker stretch is drawn as the work, the steady parts in the run's own
+        # colour (Nov 14: a 16 km steady and a 3 km at half-marathon pace both
+        # drew blue, captioned "Reps at 4:55, 3:51").
+        long_run = (planned or {}).get("ty") == "long" or _colour(name) == "long"
+        steady = [False] * len(splits)
+        paced = [v for v, w in zip(secs, work) if w and v]
+        if long_run and len(paced) >= 2 and max(paced) - min(paced) >= LONG_QUICK_GAP_S:
+            slowest = max(paced)
+            steady = [bool(w and v and v > slowest - LONG_QUICK_GAP_S) for v, w in zip(secs, work)]
+            work = [bool(w and not st) for w, st in zip(work, steady)]
+        for x, s, w, st in zip(splits, secs, work, steady):
             dist = x.get("distance_km")
             took = _clock_secs(x.get("duration")) or (round(dist * (s or 300)) if dist else 0) or 1
             hr = x.get("avg_hr")
-            laps.append([took, s or 0, 1 if w else 0, round(dist, 2) if dist is not None else None,
+            laps.append([took, s or 0, 2 if st else 1 if w else 0, round(dist, 2) if dist is not None else None,
                          int(hr) if hr else None])
         reps = [x for x, w in zip(splits, work) if w]
-        if 1 < len(reps) < len(splits) and len(reps) <= 8:
+        if any(steady) and reps:
+            # The quicker stretch in one line, in the colour it's drawn in.
+            quick = [l for l in laps if l[2] == 1]
+            took_s, km = sum(l[0] for l in quick), sum(l[3] or 0 for l in quick)
+            if km:
+                line = f"{_fmt_km(km)} km at {_pace_text(took_s / km)} /km"
+                if all(l[4] for l in quick):
+                    line += f" · heart rate {round(sum(l[4] * l[0] for l in quick) / took_s)}"
+                notes.append(["threshold", line])
+        elif 1 < len(reps) < len(splits) and len(reps) <= 8:
             line = "Reps at " + ", ".join(re.sub(r"\s*/km$", "", x["pace_per_km"]) for x in reps) + " /km"
             if all(x.get("avg_hr") for x in reps):
                 line += " · heart rate " + ", ".join(str(int(x["avg_hr"])) for x in reps)

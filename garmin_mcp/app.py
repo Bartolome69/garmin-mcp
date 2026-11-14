@@ -660,6 +660,11 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     # The last session like this one, read while this one's workout is: its
     # line is left out rather than keep the screen waiting.
     like = asyncio.create_task(_last_like(plan, row, activity_id))
+    # And the easy runs of 3 to 7 weeks before, for its easy running against them (Nov 14).
+    kind_now = (row or {}).get("type")
+    run_day = str((row or {}).get("done_on") or (row or {}).get("date")
+                  or ((activity or {}).get("summaryDTO") or {}).get("startTimeLocal") or "")[:10]
+    then = asyncio.create_task(_easy_before(run_day)) if kind_now in ("easy", "recovery", "long") or not row else None
     try:
         workout = await _workout((row or {}).get("workout_id"))
     except Exception:  # noqa: BLE001 - the run reads without its plan
@@ -682,6 +687,14 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         figures = None
     if before and figures:
         line = run_view.last_time(figures, before["figures"], before["what"], before["name"], before["day"])
+        if line:
+            result["insights"] = [*(result.get("insights") or []), line]
+    try:
+        earlier = await asyncio.wait_for(then, 3) if then else None
+    except Exception:  # noqa: BLE001 - the line is left out, the run still reads
+        earlier = None
+    if earlier and figures and kind not in HARD_TYPES:
+        line = run_view.easy_trend(figures.get("steady"), earlier, long_run=kind == "long")
         if line:
             result["insights"] = [*(result.get("insights") or []), line]
     summary = details.get("summary") or {}
@@ -756,21 +769,39 @@ async def _last_like(plan: Mapping[str, Any], row: Mapping[str, Any] | None, act
             "day": f"{when.day} {MONTHS[when.month - 1]}"}
 
 
+async def _easy_before(day: str) -> dict[str, Any] | None:
+    """The easy runs of 3 to 7 weeks before a run, as one pace and heart rate, from Garmin's activity list."""
+    try:
+        when = date.fromisoformat(day)
+    except ValueError:
+        return None
+    since = (when - timedelta(days=run_view.TREND_FROM_DAYS)).isoformat()
+    until = (when - timedelta(days=run_view.TREND_TO_DAYS)).isoformat()
+    try:
+        rows = await server_mod._call(lambda c: c.get_activities_by_date(since, until))
+    except Exception:  # noqa: BLE001 - no line rather than a wrong one
+        return None
+    return run_view.easy_then(rows if isinstance(rows, list) else [])
+
+
 def _row_colours(rows: list[dict[str, Any]], colour: str) -> None:
     """Warm-up and cool-down easy, reps in the session's colour; of a long run's
     parts, the steady ones long and the quicker ones (a goal-pace finish) hard."""
-    parts = [r for r in rows if r.get("kind") == "interval" and not r.get("rep")]
-    slowest = max((r.get("target") or "" for r in parts), default="")
     for r in rows:
         if r.get("kind") in ("warmup", "cooldown", "extra"):
-            r["colour"] = "easy"
+            # A long run is blue end to end, as its bar and card draw it (Nov 14).
+            r["colour"] = "long" if colour == "long" else "easy"
         elif r.get("kind") == "strides":
             # Quick, short and few: the hard colour, whatever the run around them.
             r["colour"] = "hard"
         elif r.get("rep") or colour != "long":
             r["colour"] = colour
         else:
-            r["colour"] = "long" if len(parts) < 2 or (r.get("target") or "") == slowest else "hard"
+            # The quicker stretch, as analysis marked it (Nov 14: the slowest
+            # target was picked by its text, so "125–148 bpm" against "3:46–3:56"
+            # coloured the half-marathon-pace 3 km as the steady part).
+            r["colour"] = "hard" if r.get("quick") else "long"
+        r.pop("quick", None)
 
 
 # -- the plan: one week, and the block ------------------------------------------
