@@ -806,7 +806,7 @@ function analysisView(d, from, panel = false) {
     `<p class="verdict">${esc(d.verdict)}</p>`,
     `<div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>`];
   const chart = runChart(d.chart, d.colour);
-  if (chart && !d.planned_and_run) parts.push(`<section class="stack"><span class="section-title">Km by km</span>${chart}</section>`);
+  if (chart && !d.planned_and_run) parts.push(`<section class="stack"><span class="section-title">${esc(d.chart_title || "Km by km")}</span>${chart}</section>`);
   if (d.planned_and_run) {
     parts.push(`<section class="stack"><span class="section-title">Planned and run</span>${chart}<div class="card table">
       <div class="cmp head"><span>STEP</span><span>TARGET</span><span style="text-align:right">PACE</span><span style="text-align:right">HR</span></div>
@@ -821,7 +821,7 @@ function analysisView(d, from, panel = false) {
     parts.push(`<div class="card table"><button class="splits-toggle" aria-expanded="false" aria-controls="splits" id="splits-toggle">
       <span class="strong">Splits<span style="font-weight:500;color:var(--muted)"> · ${esc(d.km)} km</span></span>
       <span class="meta" style="display:flex;align-items:center;gap:6px;font-size:13.5px"><span id="splits-word">Show</span>${ICON.down()}</span></button>
-      <div id="splits" hidden><div class="splits-row head"><span>KM</span><span>PACE</span><span>HR</span></div>
+      <div id="splits" hidden><div class="splits-row head">${(d.split_cols || ["KM", "PACE", "HR"]).map((h) => `<span>${esc(h)}</span>`).join("")}</div>
       ${d.splits.map((s) => `<div class="splits-row"><span class="meta" style="font-size:14px">${esc(s.rest ? "Jogs" : s.km)}</span><span style="font-weight:600">${esc(s.rest ? s.pace : s.partial ? `${s.time} (${s.pace} /km)` : s.pace)}</span><span class="meta" style="font-size:14px">${esc(s.hr || "–")}</span></div>`).join("")}
       </div></div>`);
   }
@@ -830,7 +830,7 @@ function analysisView(d, from, panel = false) {
     parts.push(`<div class="card effect"><span class="tick bg-${esc(d.colour)}">${ICON.check()}</span>
       <span class="stack-tight" style="gap:2px"><span class="strong">${esc(d.effect.head)}</span><span class="meta" style="font-size:13.5px;line-height:1.45">${esc(d.effect.sub)}</span></span></div>`);
   }
-  parts.push(`<div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this run</a>` : `<span></span>`}${ask.html}</div>`);
+  parts.push(`<div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this ${d.ride ? "ride" : "run"}</a>` : `<span></span>`}${ask.html}</div>`);
   return parts.join("");
 }
 
@@ -902,7 +902,9 @@ function runChart(c, colour) {
     kms.forEach((k, i) => {
       const x = i * (kmW + 3), y = yKm(k.p);
       body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${kmW.toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="3" fill="${tone("km")}"/>`;
-      if (kmW >= 24) body += `<text class="v" x="${(x + kmW / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" style="font-size:11px">${clockOf(k.p)}</text>`;
+      // A ride's bars are its speed (Nov 15); a run's its pace.
+      const shown = c.unit === "kmh" ? (3600 / k.p).toFixed(1) : clockOf(k.p);
+      if (kmW >= 24) body += `<text class="v" x="${(x + kmW / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" style="font-size:11px">${shown}</text>`;
     });
     const sx = roomKm + 10;
     strides.forEach((p, j) => {
@@ -935,11 +937,11 @@ function runChart(c, colour) {
       });
       labelY = hBot + 16;
       height = labelY + 4;
-      key = `<span><i style="background:${tone("km")}"></i>Km pace</span>${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--ink-2);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
+      key = `<span><i style="background:${tone("km")}"></i>${esc(c.bar_label || "Km pace")}</span>${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--ink-2);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
     }
     body += `<text x="0" y="${labelY}">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="${labelY}" text-anchor="end">Km ${esc(kms[kms.length - 1].label)}</text>`;
     if (strides.length) body += `<text x="${(sx + strideW / 2).toFixed(1)}" y="${labelY}" text-anchor="middle">${strides.length} strides</text>`;
-    body = `<svg viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(c.caption || "Each km's pace and heart rate")}">${body}</svg>`;
+    body = `<svg viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(c.caption || (c.unit === "kmh" ? "Each lap's speed and heart rate" : "Each km's pace and heart rate"))}">${body}</svg>`;
   }
   return `<div class="card run-chart">${body}${key ? `<div class="chart-key">${key}</div>` : ""}${c.caption ? `<span class="chart-caption">${esc(c.caption)}</span>` : ""}</div>`;
 }
@@ -979,11 +981,11 @@ function analysisPanel(d, ask) {
     ${insightsView(d.insights)}
     <div class="panel-two">${rows ? `<section class="stack-8"><span class="strong">Planned and run</span><div class="card table">${rows}</div></section>` : ""}
       ${splits ? `<section class="stack-8"><span class="strong">Splits<span style="font-weight:500;color:var(--muted)"> · ${esc(d.km)} km</span></span>
-        <div class="card table"><div class="psplit head"><span>KM</span><span>PACE</span><span style="text-align:right">HR</span></div>${splits}</div></section>` : ""}</div>
+        <div class="card table"><div class="psplit head">${(d.split_cols || ["KM", "PACE", "HR"]).map((h, i) => `<span${i === 2 ? ' style="text-align:right"' : ""}>${esc(h)}</span>`).join("")}</div>${splits}</div></section>` : ""}</div>
     ${d.easy_check ? easyCheck(d.easy_check) : ""}
     ${d.effect ? `<div class="card effect"><span class="tick bg-${esc(d.colour)}">${ICON.check()}</span>
       <span class="stack-tight" style="gap:2px"><span class="strong">${esc(d.effect.head)}</span><span class="meta" style="font-size:13.5px;line-height:1.45">${esc(d.effect.sub)}</span></span></div>` : ""}
-    <div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this run</a>` : `<span></span>`}${ask.html}</div>`;
+    <div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this ${d.ride ? "ride" : "run"}</a>` : `<span></span>`}${ask.html}</div>`;
 }
 
 // Desktop: a session or run opens in a panel over the calendar, and closing

@@ -10,6 +10,7 @@ token.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import secrets
@@ -482,6 +483,26 @@ def api_checks() -> None:
           again.get("verdict") == run.get("verdict") and again.get("share_url") == run.get("share_url")
           and again.get("planned_and_run") == run.get("planned_and_run") and again.get("splits") == run.get("splits"))
 
+    # Nov 15: a ride opened as a run, with pace, "Km by km" and an easy-running
+    # verdict. A ride reads by speed, power, climbing and heart rate.
+    ride = client.get("/app/api/run/2222", headers=auth).json()
+    labels = [x["l"] for x in ride.get("stats") or []]
+    check("a ride reads as a ride: kicker, speed in km/h, no pace",
+          ride.get("ride") is True and ride.get("kicker", "").endswith("RIDE") and "km/h avg" in labels
+          and not any("/km" in x for x in labels) and "/km" not in json.dumps(ride.get("splits") or []),
+          f"{ride.get('kicker')} {labels}")
+    check("its verdict is in cycling terms, and no running verdicts are drawn",
+          "km/h" in (ride.get("verdict") or "") and not ride.get("insights") and not ride.get("easy_check")
+          and not ride.get("planned_and_run"), str(ride.get("verdict")))
+    check("its laps are speed bars and a speed column",
+          (ride.get("chart") or {}).get("unit") == "kmh" and (ride.get("chart") or {}).get("bar_label") == "Speed"
+          and ride.get("split_cols") == ["KM", "SPEED", "HR"]
+          and all(r["pace"].endswith("km/h") for r in ride.get("splits") or []), str(ride.get("splits"))[:160])
+    check("and it says rides don't count toward running km",
+          "Rides don't count" in ((ride.get("effect") or {}).get("sub") or ""), str(ride.get("effect")))
+    run_again = client.get(f"/app/api/run/{done['activityId']}", headers=auth).json()
+    check("a run still reads as a run", not run_again.get("ride") and "RIDE" not in run_again.get("kicker", ""))
+
     # -- signing in without Garmin again --------------------------------
     from garmin_mcp import support_mail
     from tests import fake_garmin
@@ -673,6 +694,29 @@ def extra_checks() -> None:
           and rows[1].get("activity_id") == 2, str(rows))
     other = app_routes._week_view({"weeks": [week]}, {day: week}, None, monday, _d.today())["days"][1]["sessions"]
     check("and on no other day", other == [], str(other))
+
+    # Nov 15: a ride done today, not on the plan, was on the Plan tab and
+    # nowhere on Today.
+    import asyncio as _asyncio
+    today_iso = _d.today().isoformat()
+    ridden = {"weeks": [{"starts": day, "sessions": [], "extra": [
+        {"date": today_iso, "name": "Tower Hamlets Road Cycling", "sport": "ride", "kind": "ride",
+         "actual_km": 37.9, "actual": "1:21:24", "activity_id": 2222}]}]}
+    real_read = app_routes.server_mod._read
+
+    async def fake_read(key, ttl, fn):
+        return DEMO.get_activity(2222)
+
+    app_routes.server_mod._read = fake_read
+    try:
+        shown = _asyncio.run(app_routes._done_today(ridden, _d.today()))
+    finally:
+        app_routes.server_mod._read = real_read
+    check("a ride done today shows on Today, by distance and speed, opening the ride",
+          shown and shown.get("activity_id") == 2222 and "37.9 km" in shown.get("line", "")
+          and "km/h" in shown.get("line", "") and "/km" not in shown.get("line", ""), str(shown))
+    ride_row = app_routes._extra_row(ridden["weeks"][0]["extra"][0])
+    check("and on the Plan tab it's called a ride", ride_row.get("type_label") == "Ride", str(ride_row))
 
     # Nov 13: 49 run (an extra run included) with 20 still to come read "49 of 66".
     # The week's figure is done plus what's left when that's more than the plan,

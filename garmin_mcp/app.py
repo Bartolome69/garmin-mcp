@@ -29,7 +29,7 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, easy_check, plan_builder, plan_checks, preview, run_view, store, training_plan
+from . import analysis, crews, cycling, easy_check, plan_builder, plan_checks, preview, run_view, store, training_plan
 from . import plan as plan_mod
 from . import server as server_mod
 from . import share as share_mod
@@ -460,11 +460,34 @@ def _calendar(plan: Mapping[str, Any], today: date, crew_days: Mapping[str, str]
 DONE_RUN_MEMORY = 6 * 3600
 
 
+async def _extra_today(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
+    """Something done today that wasn't on the plan, such as a ride (Nov 15: a
+    morning ride was on the Plan tab and nowhere on Today)."""
+    extras = [x for w in plan.get("weeks") or [] for x in w.get("extra") or []
+              if x.get("date") == today.isoformat() and x.get("activity_id")]
+    if not extras:
+        return None
+    x = extras[-1]
+    aid = int(x["activity_id"])
+    activity = await server_mod._read(("today_activity", aid), DONE_RUN_MEMORY, lambda c: c.get_activity(aid))
+    flat = server_mod._flat_activity(dict(activity or {})) if isinstance(activity, dict) else {}
+    summary = server_mod._summarise_activity(flat) if flat else {}
+    started = str(flat.get("startTimeLocal") or "")
+    ride = x.get("sport") == "ride" or _is_ride(activity if isinstance(activity, dict) else None)
+    bits = [f"{x['actual_km']:g} km" if x.get("actual_km") else None,
+            f"{summary['avg_speed_kmh']:g} km/h" if ride and summary.get("avg_speed_kmh") else None,
+            x.get("actual") if not x.get("actual_km") else None]
+    figures = " · ".join(b for b in bits if b)
+    return drop_empty({"activity_id": aid, "name": _display(x.get("name")), "at": started[11:16] if len(started) >= 16 else None,
+                       "line": f"{_display(x.get('name'))} · {figures}" if figures else _display(x.get("name")),
+                       "colour": _type("ride" if ride else "other")["colour"]})
+
+
 async def _done_today(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
     done = [s for s in _sessions(plan) if s.get("date") == today.isoformat()
             and str(s.get("status", "")).startswith("done") and s.get("activity_id")]
     if not done:
-        return None
+        return await _extra_today(plan, today)
     s = min(done, key=training_plan._rank)
     aid = int(s["activity_id"])
     # A finished run doesn't change, so a second look at Today today asks Garmin
@@ -657,6 +680,10 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     recording = None if isinstance(recording, Exception) else recording
     activity = None if isinstance(activity, Exception) else activity
     row = next((s for s in _sessions(plan) if s.get("activity_id") == activity_id), None)
+    if _is_ride(activity):
+        # Nov 15: a ride opened as a run (pace, "Km by km", an easy-running
+        # verdict against runs). A ride reads in its own terms.
+        return await _ride_payload(activity_id, activity, laps, recording, row)
     # The last session like this one, read while this one's workout is: its
     # line is left out rather than keep the screen waiting.
     like = asyncio.create_task(_last_like(plan, row, activity_id))
@@ -736,6 +763,102 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         "easy_check": easy_check.card(details.get("easy_check")),
         "assistant": assistant(),
         "ask": _ask_links(f"Use Daash to look at my run {activity_id} ({name}). How did it go against the plan?"),
+    })
+
+
+def _is_ride(activity: Mapping[str, Any] | None) -> bool:
+    flat = server_mod._flat_activity(dict(activity or {}))
+    return cycling.is_ride((flat.get("activityType") or {}).get("typeKey"))
+
+
+def _clock(seconds: Any) -> str | None:
+    """1:21:24, or 48:05 under the hour: how the run screen writes a time."""
+    try:
+        secs = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return None
+    h, rest = divmod(secs, 3600)
+    m, sec = divmod(rest, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
+def _ride_stats(summary: Mapping[str, Any]) -> list[dict[str, str]]:
+    """A ride's numbers, by speed and power: only those Garmin recorded (none estimated)."""
+    power = summary.get("power") or {}
+    hr = (summary.get("heart_rate") or {}).get("average_bpm")
+    picks = [
+        (summary.get("distance_km"), "km"),
+        (_clock(summary.get("duration_seconds")) or summary.get("duration"), "time"),
+        (summary.get("avg_speed_kmh"), "km/h avg"),
+        (power.get("average_w"), "W avg"),
+        (hr, "bpm avg"),
+        (summary.get("elevation_gain_m"), "m climbed"),
+        (power.get("normalized_w"), "W normalised"),
+        (summary.get("avg_cadence_rpm"), "rpm avg"),
+        (summary.get("max_speed_kmh"), "km/h max"),
+    ]
+    stats = [{"v": f"{v:g}" if isinstance(v, (int, float)) else str(v), "l": label} for v, label in picks if v]
+    return stats[:8]  # two rows of four at most
+
+
+def _ride_chart(splits: list[Mapping[str, Any]]) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None, str]:
+    """Each lap's speed and heart rate as bars and a line, and the laps as a table."""
+    laps = [s for s in splits if s.get("avg_speed_kmh") and (s.get("distance_km") or 0) >= 0.2]
+    if len(laps) < 2:
+        return None, None, "Laps"
+    done, parts, rows = 0.0, [], []
+    for lap in laps:
+        done += float(lap.get("distance_km") or 0)
+        speed = float(lap["avg_speed_kmh"])
+        parts.append(drop_empty({"k": "km", "p": round(3600 / speed, 1), "hr": lap.get("avg_hr"), "label": f"{done:.1f}".rstrip("0").rstrip(".")}))
+        rows.append(drop_empty({"km": f"{done:.1f}".rstrip("0").rstrip("."), "pace": f"{speed:.1f} km/h", "hr": lap.get("avg_hr"),
+                                "w": ((lap.get("power") or {}).get("average_w"))}))
+    whole_km = all(0.9 <= float(lap.get("distance_km") or 0) <= 1.1 for lap in laps[:-1])
+    chart = {"mode": "km", "unit": "kmh", "bar_label": "Speed", "parts": parts,
+             "caption": None}
+    return chart, rows, "Km by km" if whole_km else "Lap by lap"
+
+
+async def _ride_payload(activity_id: int, activity: Mapping[str, Any] | None, laps: Any, recording: Any,
+                        row: Mapping[str, Any] | None) -> dict[str, Any]:
+    """A ride's screen: speed, power, climbing and heart rate, lap by lap. No running verdicts."""
+    flat = server_mod._flat_activity(dict(activity or {}))
+    try:
+        device = await server_mod._device_name(flat)
+    except Exception:  # noqa: BLE001 - the ride reads with "Garmin" alone
+        device = None
+    details = server_mod.run_brief(dict(activity or {}), laps, recording, None, device)
+    summary = details.get("summary") or {}
+    started = None
+    start_text = str(flat.get("startTimeLocal") or "")
+    if start_text:
+        started = datetime.fromisoformat(start_text.replace(" ", "T").split(".")[0])
+    name = _display((row or {}).get("name") or summary.get("name") or "Ride")
+    t = _type("ride")
+    kicker = (f"{_short_date(started.date()).upper()} · {started.strftime('%H:%M')} · " if started else "") + "RIDE"
+    power = (summary.get("power") or {}).get("average_w")
+    hr = (summary.get("heart_rate") or {}).get("average_bpm")
+    bits = [f"{summary['distance_km']:g} km" if summary.get("distance_km") else None,
+            f"in {_clock(summary.get('duration_seconds')) or summary['duration']}" if summary.get("duration") else None,
+            f"at {summary['avg_speed_kmh']:g} km/h" if summary.get("avg_speed_kmh") else None]
+    verdict = " ".join(b for b in bits if b)
+    tail = f"{power:g} W average" if power else f"heart rate averaging {hr:g}" if hr else None
+    if summary.get("elevation_gain_m"):
+        tail = f"{tail} and {summary['elevation_gain_m']:g} m climbed" if tail else f"{summary['elevation_gain_m']:g} m climbed"
+    verdict = (f"{verdict}, {tail}." if tail else f"{verdict}.") if verdict else None
+    chart, rows, chart_title = _ride_chart(details.get("splits") or [])
+    effect = ({"head": "Counts as done", "sub": "It's on the plan, and this ride was it."} if row else
+              {"head": "Not on the plan", "sub": "Rides don't count toward your running km. Nothing on the plan changes."})
+    share = (details.get("share_image") or {}).get("url")
+    return drop_empty({
+        "activity_id": activity_id, "date": (row or {}).get("date"), "kicker": kicker, "name": name, **t,
+        "ride": True, "verdict": verdict, "stats": _ride_stats(summary),
+        "chart": chart, "chart_title": chart_title, "splits": rows, "km": summary.get("distance_km"),
+        "split_cols": ["KM", "SPEED", "HR"],
+        "effect": effect, "share_url": share,
+        "credit": share_mod.attribution(device),
+        "assistant": assistant(),
+        "ask": _ask_links(f"Use Daash to look at my ride {activity_id} ({name}). How did it go?"),
     })
 
 
@@ -1004,8 +1127,10 @@ def _extra_row(x: Mapping[str, Any]) -> dict[str, Any]:
     """A run or session not on the plan, as the week shows it: it counts in the week's total,
     so it's in the list too (Nov 6: a 1.2 km top-up was in the total and nowhere else)."""
     km = x.get("actual_km")
+    ride = x.get("sport") == "ride"
     return drop_empty({
-        "date": x["date"], "name": _display(x.get("name")), "type": "extra", "type_label": "Extra", "colour": "rec",
+        "date": x["date"], "name": _display(x.get("name")), "type": "extra", "type_label": "Ride" if ride else "Extra",
+        "colour": "rec",
         "state": "extra", "meta": " · ".join(v for v in ("Not on the plan", x.get("actual")) if v),
         "v": f"{round(float(km), 1):g}" if km else (f"{x['actual_min']}" if x.get("actual_min") else ""),
         "u": "km" if km else "min" if x.get("actual_min") else "",
