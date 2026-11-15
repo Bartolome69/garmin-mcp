@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from zoneinfo import ZoneInfo
+import hashlib
 import json
 import logging
 import re
@@ -787,7 +788,7 @@ def _ride_stats(summary: Mapping[str, Any]) -> list[dict[str, str]]:
     power = summary.get("power") or {}
     hr = (summary.get("heart_rate") or {}).get("average_bpm")
     picks = [
-        (summary.get("distance_km"), "km"),
+        (round(float(summary["distance_km"]), 1) if summary.get("distance_km") else None, "km"),
         (_clock(summary.get("duration_seconds")) or summary.get("duration"), "time"),
         (summary.get("avg_speed_kmh"), "km/h avg"),
         (power.get("average_w"), "W avg"),
@@ -838,7 +839,7 @@ async def _ride_payload(activity_id: int, activity: Mapping[str, Any] | None, la
     kicker = (f"{_short_date(started.date()).upper()} · {started.strftime('%H:%M')} · " if started else "") + "RIDE"
     power = (summary.get("power") or {}).get("average_w")
     hr = (summary.get("heart_rate") or {}).get("average_bpm")
-    bits = [f"{summary['distance_km']:g} km" if summary.get("distance_km") else None,
+    bits = [f"{round(float(summary['distance_km']), 1):g} km" if summary.get("distance_km") else None,
             f"in {_clock(summary.get('duration_seconds')) or summary['duration']}" if summary.get("duration") else None,
             f"at {summary['avg_speed_kmh']:g} km/h" if summary.get("avg_speed_kmh") else None]
     verdict = " ".join(b for b in bits if b)
@@ -853,7 +854,8 @@ async def _ride_payload(activity_id: int, activity: Mapping[str, Any] | None, la
     return drop_empty({
         "activity_id": activity_id, "date": (row or {}).get("date"), "kicker": kicker, "name": name, **t,
         "ride": True, "verdict": verdict, "stats": _ride_stats(summary),
-        "chart": chart, "chart_title": chart_title, "splits": rows, "km": summary.get("distance_km"),
+        "chart": chart, "chart_title": chart_title, "splits": rows,
+        "km": round(float(summary["distance_km"]), 1) if summary.get("distance_km") else None,
         "split_cols": ["KM", "SPEED", "HR"],
         "effect": effect, "share_url": share,
         "credit": share_mod.attribution(device),
@@ -2062,10 +2064,26 @@ def _safe(handler):
     return answered
 
 
+def _build() -> str:
+    """The app's build: a short fingerprint of its script and styles. The page
+    loads them by it, and every API answer carries it, so an app left open
+    across a deploy knows to reload (Nov 15)."""
+    digest = hashlib.sha256()
+    for name in ("app.js", "app.css"):
+        try:
+            digest.update((APP_DIR / name).read_bytes())
+        except OSError:
+            pass
+    return digest.hexdigest()[:12]
+
+
+APP_BUILD = _build()
+
+
 def _json(body: Any, status: int = 200) -> JSONResponse:
     if isinstance(body, dict) and body.get("error") and status == 200:
         status = 502
-    return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
+    return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store", "X-Daash-Build": APP_BUILD})
 
 
 def _day(request: Request) -> str | None:
@@ -3078,6 +3096,11 @@ def _file(path: str) -> Response:
     if APP_DIR not in target.parents and target != APP_DIR or not target.is_file():
         target = APP_DIR / "index.html"
     headers = {"Cache-Control": "no-cache"}
+    if target.name == "index.html":
+        # The script and styles by this build, so a new deploy is a new address.
+        page = target.read_text().replace('src="/app/app.js"', f'src="/app/app.js?v={APP_BUILD}"') \
+            .replace('href="/app/app.css"', f'href="/app/app.css?v={APP_BUILD}"')
+        return Response(page, media_type=_TYPES[".html"], headers=headers)
     if target.name == "sw.js":
         headers["Service-Worker-Allowed"] = "/app/"
     return FileResponse(target, media_type=_TYPES.get(target.suffix), headers=headers)

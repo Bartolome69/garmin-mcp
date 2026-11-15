@@ -2,6 +2,22 @@
 // No AI in here. Ask Claude opens Claude with the context filled in.
 
 const API = "/app/api/";
+// Which build of the app this is, from the address the page loaded it by
+// (Nov 15: a phone kept the old screen open after a deploy and drew a ride's
+// new figures with the old labels). Every answer says the build that's live;
+// when they differ, the app reloads at the next change of screen or return.
+const BUILD = new URL(import.meta.url).searchParams.get("v") || "";
+let outdated = false;
+function reloadIfOutdated() {
+  if (!outdated) return false;
+  try {
+    // Once a minute at most, so a cache that keeps serving the old copy can't loop.
+    if (Date.now() - Number(sessionStorage.getItem("daash-reloaded") || 0) < 60000) return false;
+    sessionStorage.setItem("daash-reloaded", String(Date.now()));
+  } catch { /* storage refused: reload anyway, the guard is a nicety */ }
+  location.reload();
+  return true;
+}
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode: signed in for this tab only */ } },
@@ -160,6 +176,8 @@ async function api(path, options = {}, retry = true) {
       ...(pulled ? { "X-Daash-Fresh": "1" } : {}),
       ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
+  const live = res.headers.get("X-Daash-Build");
+  if (BUILD && live && live !== BUILD) outdated = true;
   if (res.status === 401) {
     if (retry && await refreshed()) return api(path, options, false);
     token.clear();
@@ -2932,6 +2950,7 @@ function buildSendView(step) {
 // -- routing ------------------------------------------------------------------
 
 async function route(stay) {
+  if (reloadIfOutdated()) return;
   calm = stay === true;
   $("sheet").innerHTML = "";
   $("screen").classList.remove("stale");
@@ -2968,6 +2987,7 @@ const RESUME_AFTER_MS = 60 * 1000;
 let awayAt = 0, awayDay = "";
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { awayAt = Date.now(); awayDay = serverDay(); return; }
+  if (reloadIfOutdated()) return;
   if (!awayAt || !token.access) return;
   const long = Date.now() - awayAt >= RESUME_AFTER_MS || serverDay() !== awayDay;
   awayAt = 0;

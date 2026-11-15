@@ -216,7 +216,8 @@ def api_checks() -> None:
                                          for path in ("/app", "/app/api/today", "/")),
           str([client.get(path).headers.get("x-robots-tag") for path in ("/app", "/app/api/today", "/")]))
     check("so is its script", "text/javascript" in client.get("/app/app.js").headers.get("content-type", ""))
-    check("a path can't climb out", all(Path(app_routes._file(bad).path).name == "index.html"
+    # A path outside the app gets the app's own page (served with its build since Nov 15).
+    check("a path can't climb out", all(b"app.js?v=" in app_routes._file(bad).body
                                         for bad in ("../store.py", "../../../etc/passwd", "fonts/../../app.py")))
     check("the app's callback is a recognised redirect", oauth.recognised_redirect("http://localhost/app/callback"))
 
@@ -519,6 +520,11 @@ def api_checks() -> None:
           and all(r["pace"].endswith("km/h") for r in ride.get("splits") or []), str(ride.get("splits"))[:160])
     check("and it says rides don't count toward running km",
           "Rides don't count" in ((ride.get("effect") or {}).get("sub") or ""), str(ride.get("effect")))
+    page = client.get("/app")
+    check("the page loads its script and styles by build, and every answer names the live build",
+          f'app.js?v={app_routes.APP_BUILD}' in page.text and f'app.css?v={app_routes.APP_BUILD}' in page.text
+          and client.get("/app/api/today", headers=auth).headers.get("x-daash-build") == app_routes.APP_BUILD,
+          page.text[page.text.find("app.js") - 20:page.text.find("app.js") + 40])
     run_again = client.get(f"/app/api/run/{done['activityId']}", headers=auth).json()
     check("a run still reads as a run", not run_again.get("ride") and "RIDE" not in run_again.get("kicker", ""))
 
