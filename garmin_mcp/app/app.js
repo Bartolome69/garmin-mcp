@@ -1405,12 +1405,24 @@ async function showPlan(view, params, quiet = false) {
     }
     fitPhases($("screen"));
     if (desktop() || view !== "block") holdToMove($("plan-list"), d.today);
+    if (desktop() || view !== "block") spotlight(params.get("focus"));
     document.querySelectorAll(".bar-col[data-week]").forEach((b) => { b.onclick = () => weekSheet(b.dataset.week); });
     const rm = document.querySelector("[data-remove-plan]");
     if (rm) rm.onclick = () => removePlanSheet(d.manage);
     wireResume();
     warm();
   }, (e) => failed(e.message, () => showPlan(view, params)), quiet || base === "plan");
+}
+
+// A link from a chat card names the run it was about (Nov 15): that day's
+// rows picked out on the week, and scrolled to.
+function spotlight(day) {
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+  const rows = [...document.querySelectorAll(`.plan-row[data-date="${day}"]`)];
+  if (!rows.length) return;
+  rows.forEach((r) => r.classList.add("is-focus"));
+  const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  requestAnimationFrame(() => rows[0].scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" }));
 }
 
 // Hold a row, drag it to another day, let go: the same move as the session's
@@ -1960,6 +1972,16 @@ const INSTALLED = "daash.installed";
 const EDIT_HINT = "daash.edit.hint";
 const PUSH_ON = "daash.push.on";
 const QUIET_DAYS = 14;
+// How many times the app has been opened in this browser, and on which open
+// the home-screen prompt was shown (Nov 15: from the second open, on that one
+// open only, rather than on every visit until dismissed).
+const OPEN_COUNT = "daash.open.count";
+const HOME_OPEN = "daash.home.open";
+const openNo = (() => {
+  const n = (Number(store.get(OPEN_COUNT)) || 0) + 1;
+  store.set(OPEN_COUNT, String(n));
+  return n;
+})();
 let installEvent = null;
 // Chrome on Android says it can install the app some time after the page has
 // drawn: the prompt card, already showing the menu steps, swaps to the button.
@@ -2022,9 +2044,13 @@ function nudge() {
   // Phones only: never on a computer, however narrow its window.
   if (desktop() || !phoneKind()) return "";
   if (!homeScreen()) {
-    // From the first day once they've opened a session or a run (Nov 11: on
-    // day 2 only, and on Today only, it reached nobody in its first day).
-    if ((days < 2 && !store.get(LOOKED)) || quiet(HOME_LATER) || store.get(INSTALLED)) return "";
+    // From the second open (Nov 15), and once: on that open's screens alone.
+    // Someone who used the app on two days before this counted opens has had
+    // their first already.
+    if ((openNo < 2 && days < 2) || quiet(HOME_LATER) || store.get(INSTALLED)) return "";
+    const at = Number(store.get(HOME_OPEN)) || 0;
+    if (at && at !== openNo) return "";
+    if (!at) store.set(HOME_OPEN, String(openNo));
     shownOnce("home_prompt_shown");
     const how = installEvent ? "" : `<span class="meta" style="font-size:13.5px;line-height:1.45">${homeSteps()}</span>`;
     return `<div class="card pad stack" id="nudge" style="gap:12px"><span class="stack-tight" style="gap:4px">
@@ -2262,20 +2288,29 @@ let cameFrom = null;
 async function handOff() {
   // The app's own links say which tab Back returns to with from=today or
   // from=plan: those stay. Nov 9: stripping them too sent Back from a session
-  // opened in Plan to Today.
-  const from = location.hash.match(/[?&]from=(?!(?:today|plan)(?:&|$))([a-z_]{1,24})/);
+  // opened in Plan to Today. Nov 15: links from outside say where they were
+  // given as source= (card, ai_mention, weekly_email); from= still works.
+  const from = location.hash.match(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))([a-z_]{1,24})/);
   const m = location.hash.match(/[?&]login=([\w-]+)/);
   if (!m && !from) return null;
   if (from) cameFrom = from[1];
   const clean = location.hash.replace(/[?&]login=[\w-]+/g, "")
-    .replace(/[?&]from=(?!(?:today|plan)(?:&|$))[\w-]+/g, "").replace(/^([^?]*)&/, "$1?").replace(/\?$/, "");
+    .replace(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))[\w-]+/g, "").replace(/^([^?&]*)&/, "$1?").replace(/\?$/, "");
+  // The screen the link was opening stays in the address, so signing in by
+  // hand after a spent or expired link still lands on it.
   history.replaceState(null, "", `/app/${clean || "#/today"}`);
-  if (!m || token.access) return null;
+  if (!m) return null;
+  const source = from ? from[1] : undefined;
+  if (token.access) {
+    // Already signed in: the link is spent and counted, nothing else changes.
+    signInPost("handoff", { code: m[1], source, signed_in: true }).catch(() => {});
+    return null;
+  }
   try {
-    token.save(await signInPost("handoff", { code: m[1] }));
+    token.save(await signInPost("handoff", { code: m[1], source }));
     return null;
   } catch (err) {
-    return `${err.message} Sign in once here and the app remembers you.`;
+    return `${err.message} Sign in once here and the app remembers you, then it opens where the link was going.`;
   }
 }
 

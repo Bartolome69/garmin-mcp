@@ -7,6 +7,7 @@ the password or the cached token.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 from collections import defaultdict
 import inspect
@@ -1468,6 +1469,12 @@ def tool_errors(fn):
                     result["credit"] = await _credit(fn.__name__, result)
                 except Exception:  # noqa: BLE001 - the answer goes out with "Garmin" alone
                     result["credit"] = share.attribution(None)
+            if fn.__name__ in APP_CARD_TOOLS and isinstance(result, dict) and "error" not in result:
+                # The card button's wording is an experiment (Nov 15): asked of
+                # PostHog off the event loop, once an hour per person, so the
+                # hook that adds the link reads it from memory.
+                with contextlib.suppress(Exception):
+                    await anyio.to_thread.run_sync(analytics.flag_variant, APP_BUTTON_FLAG, card_subject())
             took = time.monotonic() - started
             if took < settle:
                 await anyio.sleep(settle - took)
@@ -2299,7 +2306,7 @@ def _run_card(activity_id: Any, planned: dict[str, Any] | None, workout: dict[st
     return drop_empty({
         "type": (planned or {}).get("ty"), "planned": (planned or {}).get("n"),
         "week": week[0], "weeks": week[1], "block": (planned or {}).get("b"),
-        "verdict": verdict, "app_url": app_link(f"run/{activity_id}", "run_card"),
+        "verdict": verdict, "app_url": app_link(f"run/{activity_id}", "card"),
     }) or None
 
 
@@ -2610,10 +2617,37 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
     card = training_plan.session_card(answer, day, today, detail, change)
     # The same session in the companion app, for the card's Open in Daash.
-    link = None if card.get("rest") else app_link(f"session/{day}", "session_card")
+    link = None if card.get("rest") else app_link("plan", "card", week=monday_of(day), focus=day)
     if link:
         card["app_url"] = link
+        button = app_button()
+        card["app_label"], card["app_variant"] = button["label"], button["variant"]
     return card
+
+
+# The card button's wording, a PostHog experiment (Nov 15): "Open in Daash app"
+# against two that say what the app is for. On the week card "this run" has
+# nothing to point at, so its second variant names the runs.
+APP_BUTTON_FLAG = "app-button-copy"
+APP_BUTTON_COPY = {"control": "Open in Daash app", "see_week": "See your week", "move_edit": "Move or edit this run"}
+APP_BUTTON_WEEK_COPY = {**APP_BUTTON_COPY, "move_edit": "Move or edit your runs"}
+# The tools whose cards carry the button, and so the experiment.
+APP_CARD_TOOLS = {"get_plan", "create_plan", "get_session"}
+
+
+def card_subject() -> str | None:
+    """Who a card is for, as card_shown and card_tapped name them: the email
+    fingerprint, or the account token for the few rows without one."""
+    who = official.current()
+    user = store.get_user(who) if who else None
+    return (user.email_hash or who) if user else None
+
+
+def app_button(week: bool = False) -> dict[str, str]:
+    """The card button's wording and the experiment variant behind it."""
+    variant = analytics.known_variant(APP_BUTTON_FLAG, card_subject()) or "control"
+    copy = APP_BUTTON_WEEK_COPY if week else APP_BUTTON_COPY
+    return {"label": copy.get(variant, copy["control"]), "variant": variant if variant in copy else "control"}
 
 
 def app_link_on() -> bool:
@@ -2626,7 +2660,8 @@ def app_link_available() -> bool:
     return bool(os.environ.get("GARMIN_MCP_BASE_URL", "").strip()) and (preview.enabled() or app_link_on())
 
 
-def app_link(route: str, source: str | None = None) -> str | None:
+def app_link(route: str, source: str | None = None, week: str | None = None,
+             focus: str | None = None) -> str | None:
     """The companion app at a route ("plan", "session/2026-11-04"), for a card.
 
     For everyone (Nov 6: only preview accounts had it, and nobody else ever
@@ -2641,16 +2676,40 @@ def app_link(route: str, source: str | None = None) -> str | None:
         return None
     who = official.current()
     query = [f"login={store.new_handoff(who)}"] if who else []
+    # Nov 15: the week a session is in, with the session picked out, rather
+    # than the app's front screen; and where the link was given as source=.
+    if week:
+        query.append(f"week={week}")
+    if focus:
+        query.append(f"focus={focus}")
     if source:
-        query.append(f"from={source}")
+        query.append(f"source={source}")
     return f"{base}/app/#/{route}" + (f"?{'&'.join(query)}" if query else "")
+
+
+def first_watch_note(url: str) -> str:
+    """For the assistant, after someone's first workout ever reaches their watch
+    (Nov 15): one line pointing at the app, this once."""
+    return (
+        "This is the first workout they've sent to their watch. After confirming it, add one line, "
+        f"in these words or close to them: \"It's on your watch. Your whole week is in the Daash app "
+        f"if you want to see it on a calendar or drag things around: {url}\" Give that link as it is, "
+        "and no other address for the app: it opens the app signed in, once, within 15 minutes. "
+        "Mention it this once; don't bring it up again unless they ask."
+    )
+
+
+def monday_of(day: str) -> str:
+    """The Monday of a YYYY-MM-DD day's week."""
+    d = date_cls.fromisoformat(day[:10])
+    return (d - timedelta(days=d.weekday())).isoformat()
 
 
 # With the plan in a chat, so "where's the app?" has an answer (Nov 3: asked
 # in ChatGPT, the model knew of no app and offered daash.run).
 APP_NOTE = (
     "The Daash app: this plan, today's session and their crew, on their phone or computer. "
-    "This link opens it signed in (once, within 30 minutes). Give it when they ask for Daash's app, "
+    "This link opens it signed in (once, within 15 minutes). Give it when they ask for Daash's app, "
     "the companion app or a link to their plan, and no other address for it. Don't offer it unasked."
 )
 
@@ -2658,7 +2717,7 @@ APP_NOTE = (
 # time the model brings the app up itself.
 APP_OFFER_NOTE = (
     "The Daash app: this plan, today's session and their crew, on their phone or computer. "
-    "This link opens it signed in (once, within 30 minutes). After answering, add one short line "
+    "This link opens it signed in (once, within 15 minutes). After answering, add one short line "
     "of your own that the plan is also in the Daash app, with this link, as a plain aside: no "
     "sales talk, and not again in this chat unless they ask. No other address for it."
 )

@@ -1085,16 +1085,44 @@ def hours_since_connect(user: store.User | None, now: float | None = None) -> fl
     return round(((now or time.time()) - user.created_at) / 3600, 1)
 
 
-def sent_to_watch(user_token: str, user: store.User | None, source: str, sessions: int, alone: bool) -> None:
-    """workout_sent_to_watch: the activation event, sent only when a write succeeded (Nov 13)."""
+def sent_to_watch(user_token: str, user: store.User | None, source: str, sessions: int, alone: bool) -> bool:
+    """workout_sent_to_watch: the activation event, sent only when a write succeeded (Nov 13).
+
+    True when this was the person's first ever, as the store keeps it.
+    """
     if sessions <= 0 or user is None:
-        return
+        return False
     person = user.email_hash or user_token
     first = store.mark_sent_to_watch(person)
     analytics.capture("workout_sent_to_watch", person, drop_empty({
         "source": source, "sessions": sessions, "login_route": login_route(alone),
         "hours_since_connect": hours_since_connect(user), "first_ever": first,
     }))
+    return bool(first)
+
+
+def _sent_day(name: str, result: Any) -> str | None:
+    """The day a watch write put a workout on, where it says (for the app link)."""
+    if not isinstance(result, dict):
+        return None
+    day = result.get("scheduled_for") if name == "schedule_workout" else (
+        (result.get("scheduled") or {}).get("scheduled_for") if name == "create_workout" else None)
+    return day[:10] if isinstance(day, str) and len(day) >= 10 else None
+
+
+def _with_first_watch_mention(name: str, result: dict, person: str) -> dict:
+    """After someone's first workout ever reaches their watch (Nov 15): the
+    app's link, signed in and on that week with the workout picked out, and a
+    note asking the assistant to mention it in one line. Once per person: the
+    store's watch_sends row is what makes a send the first."""
+    if not server_mod.app_link_available():
+        return result
+    day = _sent_day(name, result)
+    link = server_mod.app_link("plan", "ai_mention", week=server_mod.monday_of(day) if day else None, focus=day)
+    if not link:
+        return result
+    analytics.capture("app_link_offered", person, {"trigger": "first_watch_send", "tool": name})
+    return {**result, "app": {**(result.get("app") or {}), "url": link, "note": server_mod.first_watch_note(link)}}
 
 
 # The apps that show only what the model writes (Nov 13): no cards for them.
@@ -1111,7 +1139,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
     crew_key = crews.member_key(user_token, user.email_hash)
     person = user.email_hash or user_token
 
-    def _report_call(name: str, result: Any, held: bool) -> None:
+    def _report_call(name: str, result: Any, held: bool) -> bool:
         """tool_called, once per call (Nov 13): tool_used counts a tool once a day,
         and twice after a restart, so calls per person couldn't be counted."""
         error = result.get("error") if isinstance(result, dict) else None
@@ -1125,13 +1153,13 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             "seconds": round(seconds, 2) if seconds is not None else None,
         }))
         sessions = 0 if error else _sessions_sent(name, result)
-        if sessions:
-            sent_to_watch(user_token, user, _WATCH_SOURCE[name], sessions, alone)
+        first = bool(sessions) and sent_to_watch(user_token, user, _WATCH_SOURCE[name], sessions, alone)
         offer = (result.get("situation") or {}) if name == "get_plan" and isinstance(result, dict) else {}
         if offer.get("offer"):
             analytics.capture("offer_made", person, drop_empty({
                 "stage": offer.get("stage"), "offer_kind": offer.get("offer_kind"),
                 "login_route": login_route(alone), "hours_since_connect": hours_since_connect(user)}))
+        return first
 
     def after(name: str, result: Any) -> Any:
         if name == "get_plan" and user_token in _PLAN_CALLS:
@@ -1140,7 +1168,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             not alone and name in WITH_PLAN_HELD and isinstance(result, dict) and "error" not in result
             and _sent_with_plan(user_token, name)
         )
-        _report_call(name, result, held)
+        first_send = _report_call(name, result, held)
         if held:
             analytics.capture(
                 "tool_held",
@@ -1194,6 +1222,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         # reads of it, which pass no hook: a code made for each screen is waste.
         if name in ("get_plan", "create_plan") and isinstance(result, dict) and "error" not in result:
             result = _with_app_link(name, result, user_token, user)
+        if first_send and isinstance(result, dict) and "error" not in result:
+            result = _with_first_watch_mention(name, result, person)
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -1274,7 +1304,14 @@ def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -
             user.email_hash or user_token,
             {"tool": name, "account": user.email_masked},
         )
-    return {**result, "app": {"url": link, "note": server_mod.APP_OFFER_NOTE if offer else server_mod.APP_NOTE}}
+    # The card's own button gets its own code, marked as the card's, opening on
+    # the week the card shows: the card adds which week (and which run) it's on.
+    card_link = server_mod.app_link("plan", "card")
+    button = server_mod.app_button(week=True)
+    return {**result, "app": drop_empty({
+        "url": link, "note": server_mod.APP_OFFER_NOTE if offer else server_mod.APP_NOTE,
+        "card_url": card_link, "card_label": button["label"], "card_variant": button["variant"],
+    })}
 
 
 def session_for(user_token: str) -> GarminSession:
@@ -3437,6 +3474,10 @@ def card_signature(email_hash: str, view: str) -> str:
     return hmac.new(key, f"card:{email_hash}:{view}".encode(), hashlib.sha256).hexdigest()[:16]
 
 
+# The cards with the "Open in Daash app" button whose wording is tested.
+EXPERIMENT_CARDS = {"plan", "plan2", "session"}
+
+
 def card_seen_url(base: str, email_hash: str, view: str) -> str:
     return f"{base}/card/seen?u={email_hash}&v={view}&s={card_signature(email_hash, view)}"
 
@@ -3461,26 +3502,46 @@ async def card_seen(request: Request) -> Response:
     except ValueError:
         said = {}
     said = said if isinstance(said, dict) else {}
+    card = _clip(said.get("card"), 20)
+    # The button-wording experiment (Nov 15): the variant the card drew, which
+    # it says itself, else the one worked out for this person. Only the cards
+    # that carry the button are in it.
+    variant = None
+    if card in EXPERIMENT_CARDS:
+        shown = said.get("variant")
+        variant = (shown if shown in server_mod.APP_BUTTON_COPY
+                   else analytics.known_variant(server_mod.APP_BUTTON_FLAG, fingerprint))
+    flag = {f"$feature/{server_mod.APP_BUTTON_FLAG}": variant} if variant else {}
     # A button tapped on the card (Open in Daash), on the same link: counted
     # apart from the card being drawn, and as often as it's tapped.
     if said.get("tap") in CARD_TAPS:
         analytics.capture("card_tapped", fingerprint, drop_empty({
             "view": view,
-            "card": _clip(said.get("card"), 20),
+            "card": card,
             "tap": said["tap"],
             "opened": said.get("opened") is True,
             "app": _clip(said.get("host"), 120),
+            "variant": variant if said["tap"] == "open_in_daash" else None,
+            **(flag if said["tap"] == "open_in_daash" else {}),
         }))
         return Response(status_code=204)
     ms = said.get("ms")
+    ok = said.get("ok") is True
+    if variant and ok and said.get("button") is True:
+        # Exposure, as PostHog's experiments count it: someone saw the button.
+        analytics.capture("$feature_flag_called", fingerprint, {
+            "$feature_flag": server_mod.APP_BUTTON_FLAG, "$feature_flag_response": variant, **flag})
     analytics.capture("card_shown", fingerprint, drop_empty({
         "view": view,
-        "card": _clip(said.get("card"), 20),
-        "ok": said.get("ok") is True,
+        "card": card,
+        "ok": ok,
         "seconds": round(ms / 1000, 1) if isinstance(ms, (int, float)) else None,
         "app": _clip(said.get("host"), 120),
         "error": _clip(said.get("error"), 300),
         "steps": _clip(said.get("steps"), 400),
+        "variant": variant,
+        "button": said.get("button") is True or None,
+        **flag,
     }))
     return Response(status_code=204)
 

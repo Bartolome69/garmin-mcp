@@ -70,6 +70,9 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN weekly_clicked TEXT",
     # Nov 11: when the session heads-up goes, chosen in the app's You tab.
     "ALTER TABLE push_subs ADD COLUMN heads_up TEXT",
+    # Nov 15: a spent magic link is kept a day, marked, so a second tap reads
+    # as "used" rather than "invalid".
+    "ALTER TABLE app_handoffs ADD COLUMN used_at INTEGER",
 )
 
 # Bart's friends using Daash, named from a chat (garmin_official's friends
@@ -987,7 +990,11 @@ def load_oauth_token(token: str, kind: str) -> dict | None:
     }
 
 
-HANDOFF_LIFETIME = 30 * 60
+# Nov 15: 15 minutes (was 30). A card tapped later than that falls back to
+# the app's own sign-in, with the screen it was opening kept.
+HANDOFF_LIFETIME = 15 * 60
+# How long a used or expired code is remembered, to say which it was.
+HANDOFF_KEPT = 24 * 3600
 
 
 def new_handoff(subject: str, lifetime: int = HANDOFF_LIFETIME) -> str:
@@ -995,7 +1002,7 @@ def new_handoff(subject: str, lifetime: int = HANDOFF_LIFETIME) -> str:
     code = secrets.token_urlsafe(24)
     now = int(time.time())
     with _connect() as conn:
-        conn.execute("DELETE FROM app_handoffs WHERE expires_at < ?", (now,))
+        conn.execute("DELETE FROM app_handoffs WHERE expires_at < ?", (now - HANDOFF_KEPT,))
         conn.execute("INSERT INTO app_handoffs (code_hash, subject, expires_at) VALUES (?, ?, ?)",
                      (token_hash(code), subject, now + lifetime))
     return code
@@ -1003,13 +1010,33 @@ def new_handoff(subject: str, lifetime: int = HANDOFF_LIFETIME) -> str:
 
 def take_handoff(code: str) -> str | None:
     """Whose sign-in a code carries, spending it. None if unknown, used or expired."""
+    subject, result = redeem_handoff(code)
+    return subject if result == "success" else None
+
+
+def redeem_handoff(code: str) -> tuple[str | None, str]:
+    """Spend a magic-link code: (whose it is, what happened).
+
+    The result is "success", "expired", "used" or "invalid". The subject comes
+    back for expired and used codes too, so the attempt can be counted against
+    the right person; it signs nobody in.
+    """
+    now = int(time.time())
     with _connect() as conn:
-        row = conn.execute("SELECT subject, expires_at FROM app_handoffs WHERE code_hash = ?",
+        row = conn.execute("SELECT subject, expires_at, used_at FROM app_handoffs WHERE code_hash = ?",
                            (token_hash(code),)).fetchone()
-        conn.execute("DELETE FROM app_handoffs WHERE code_hash = ?", (token_hash(code),))
-    if not row or row[1] < time.time():
-        return None
-    return row[0]
+        if not row:
+            return None, "invalid"
+        subject, expires_at, used_at = row
+        if used_at:
+            return subject, "used"
+        if expires_at < now:
+            return subject, "expired"
+        # Spent at once, in the same statement that checks it was unspent, so
+        # two taps at the same moment can't both sign in.
+        spent = conn.execute("UPDATE app_handoffs SET used_at = ? WHERE code_hash = ? AND used_at IS NULL",
+                             (now, token_hash(code))).rowcount
+    return (subject, "success") if spent == 1 else (subject, "used")
 
 
 def clients_for(subject: str) -> list[str]:

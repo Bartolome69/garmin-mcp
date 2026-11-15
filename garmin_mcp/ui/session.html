@@ -393,7 +393,9 @@
     app.appendChild(watchLine(c));
     app.appendChild(actions(c, name, whenText));
     if (c.app_url) {
-      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, ["Open in Daash app"]));
+      // The wording is a PostHog experiment (Nov 15): the card says which it drew.
+      button = { variant: c.app_variant || "control" };
+      app.appendChild(el("button", { class: "see", style: "align-self:flex-start", onclick: function (e) { openUrl(c.app_url, e.currentTarget, "open_in_daash"); } }, [c.app_label || "Open in Daash app"]));
     }
     var f = foot(c); if (f) app.appendChild(f);
     reportSize();
@@ -442,13 +444,13 @@
   }
   // Once, when the card has drawn or has failed to: tells Daash which, on the
   // link the answer carried. Nothing else leaves the frame.
-  var started = Date.now(), told = false, hostName = "", seenLink = null;
+  var started = Date.now(), told = false, hostName = "", seenLink = null, button = null;
   // A tap on Open in Daash, and whether the chat app opened the link.
   function tapped(what, opened) {
     if (typeof seenLink !== "string" || !window.fetch) return;
     try {
       fetch(seenLink, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
-        card: "session", tap: what, opened: opened, host: hostName }) }).catch(function () {});
+        card: "session", tap: what, opened: opened, host: hostName, variant: button ? button.variant : undefined }) }).catch(function () {});
     } catch (e) {}
   }
   function tell(link, error) {
@@ -456,7 +458,8 @@
     told = true;
     try {
       fetch(link, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
-        card: "session", ok: !error, ms: Date.now() - started, host: hostName, error: error || "" }) }).catch(function () {});
+        card: "session", ok: !error, ms: Date.now() - started, host: hostName, error: error || "",
+        button: !!button, variant: button ? button.variant : undefined }) }).catch(function () {});
     } catch (e) {}
   }
   // Before the session arrives: that the card opened, and if it's still

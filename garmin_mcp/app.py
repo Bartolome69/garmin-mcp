@@ -2051,6 +2051,8 @@ def _safe(handler):
             seen = drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
                                "ok": response.status_code < 400,
                                "seconds": round(time.monotonic() - started, 2), "from": _came_from(request),
+                               # Nov 15: the same word under the name the setup funnel uses.
+                               "source": _came_from(request),
                                "pulled": pulled or None})
             threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
             if str(seen.get("from") or "").startswith("push_"):
@@ -2354,14 +2356,29 @@ async def sign_in_handoff(request: Request) -> Response:
     # Not paced like the email code: 32 random characters can't be guessed,
     # and someone tapping Open in Daash a few times shouldn't be locked out.
     try:
-        code = str((await request.json() or {}).get("code") or "")
+        asked = await request.json() or {}
     except ValueError:
-        code = ""
-    subject = store.take_handoff(code) if code else None
-    if not subject or store.get_user(subject) is None:
-        _track("app_sign_in_failed", {"method": "chat link", "reason": "used or expired"})
-        return _json({"error": "That link has been used or has expired."}, 401)
-    _track("app_signed_in", {"method": "chat link"}, subject)
+        asked = {}
+    code = str(asked.get("code") or "")
+    source = str(asked.get("source") or "")
+    source = source if _FROM.fullmatch(source) else None
+    subject, result = store.redeem_handoff(code) if code else (None, "invalid")
+    if result == "success" and store.get_user(subject) is None:
+        result = "invalid"  # the account has gone since the link was made
+    # Nov 15: what became of each magic link, against the person it was for.
+    if asked.get("signed_in") and result == "success":
+        # The app was signed in already: the link is spent, nothing changes.
+        _track("app_magic_link_opened", drop_empty({"result": "already_signed_in", "source": source}), subject)
+        return _json({"ok": True})
+    _track("app_magic_link_opened", drop_empty({"result": result, "source": source}),
+           subject if result != "invalid" else None)
+    if result != "success":
+        _track("app_sign_in_failed", {"method": "magic_link", "reason": result})
+        said = {"expired": "That link from the chat has expired: they last 15 minutes.",
+                "used": "That link from the chat has already been used.",
+                "invalid": "That link from the chat doesn't work."}[result]
+        return _json({"error": said, "result": result}, 401)
+    _track("app_signed_in", drop_empty({"method": "magic_link", "source": source}), subject)
     return _json(_tokens(subject))
 
 

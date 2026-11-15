@@ -59,6 +59,8 @@ def _raises(fn) -> bool:
         return True
     return False
 analytics._post = SENT.append
+# No flags asked of PostHog from the tests: every flag reads as its control.
+analytics._fetch_flags = lambda who: {}
 from garmin_mcp import oauth, store  # noqa: E402
 from garmin_mcp.session import GarminSession  # noqa: E402
 
@@ -450,12 +452,12 @@ async def main() -> int:
                   "app" in plan_a_off and "app" not in plan_b_off, str(plan_b_off.get("app")))
             offer_note, ask_note = garmin_server.APP_OFFER_NOTE, garmin_server.APP_NOTE
             check("the first time, a preview account's model is asked to mention the app once, and the link says so",
-                  app_a.get("note") == offer_note and str(app_a.get("url", "")).endswith("&from=chat_offer"), str(app_a))
+                  app_a.get("note") == offer_note and str(app_a.get("url", "")).endswith("&source=chat_offer"), str(app_a))
             check("switched off, it isn't brought up outside preview: their link is for when they ask",
-                  app_b.get("note") == ask_note and str(app_b.get("url", "")).endswith("&from=chat"), str(app_b))
+                  app_b.get("note") == ask_note and str(app_b.get("url", "")).endswith("&source=chat"), str(app_b))
             app_again = again_a.get("app") or {}
             check("not again the same week", app_again.get("note") == ask_note
-                  and str(app_again.get("url", "")).endswith("&from=chat"), str(app_again))
+                  and str(app_again.get("url", "")).endswith("&source=chat"), str(app_again))
             check("a week on, it can be mentioned again", (week_on_a.get("app") or {}).get("note") == offer_note,
                   str(week_on_a.get("app")))
             check("never to someone who has used the app in the last two weeks",
@@ -1663,6 +1665,41 @@ async def main() -> int:
         check("a workout that reaches the watch is workout_sent_to_watch, first_ever only the first time",
               [(e["properties"]["source"], e["properties"]["sessions"], e["properties"].get("first_ever")) for e in sends]
               == [("chat_schedule", 1, True), ("chat_plan", 12, False)], str([e["properties"] for e in sends]))
+        # Nov 15: the first workout ever on the watch brings one line about the
+        # app, with a link signed in and on that week; never a second time,
+        # never for an account on the official API alone.
+        first_app = [e for e in SENT[before:] if e["event"] == "app_link_offered"]
+        check("without the app's address, the first send mentions nothing", not first_app, str(first_app))
+        os.environ["GARMIN_MCP_BASE_URL"] = "https://daash.test"
+        try:
+            sender = store.save_user("s***@example.com", "{}", email_hash="fp-sender-1115", email="sender1115@example.com")
+            store.claim_news(sender, hosted.NEWS_VERSION)
+            store.claim_tip(sender)
+            send_hook = hosted._after_tool_for(sender, store.get_user(sender), False, "ChatGPT")
+            bound = garmin_server.official.use(sender)
+            try:
+                before = len(SENT)
+                first_send = send_hook("create_workout", {"workout_id": 5, "scheduled": {"scheduled_for": "2026-11-14"}})
+                again_send = send_hook("schedule_workout", {"workout_id": 6, "scheduled_for": "2026-11-18", "schedule_id": 2})
+            finally:
+                garmin_server.official.reset(bound)
+            said = (first_send.get("app") or {})
+            url = said.get("url", "")
+            offered = [e for e in SENT[before:] if e["event"] == "app_link_offered"]
+            check("the first workout ever on the watch brings the app's link, signed in, on that week with it picked out",
+                  "login=" in url and "week=2026-11-09" in url and "focus=2026-11-14" in url and url.endswith("source=ai_mention")
+                  and url in said.get("note", "") and "It's on your watch. Your whole week is in the Daash app" in said.get("note", ""),
+                  str(said))
+            check("and app_link_offered says why, once",
+                  [(e["properties"].get("trigger"), e["properties"].get("tool")) for e in offered]
+                  == [("first_watch_send", "create_workout")], str(offered))
+            check("the second send doesn't mention it again", "app" not in again_send, str(again_send.get("app")))
+            lone = store.save_user("l***@example.com", "{}", email_hash="fp-lone-1115", email="lone1115@example.com")
+            lone_send = hosted._after_tool_for(lone, store.get_user(lone), True)("schedule_workout",
+                                                                                 {"workout_id": 7, "scheduled_for": "2026-11-18"})
+            check("an account on the official API alone gets no mention", "app" not in lone_send, str(lone_send))
+        finally:
+            os.environ.pop("GARMIN_MCP_BASE_URL", None)
         hosted._FIRST_DAY_SAID.clear()
         check("once something is on the watch, the first-day offer stops",
               "first_day" not in hook("get_activities", {"activities": []}))
@@ -2292,6 +2329,57 @@ async def main() -> int:
               and {k: tapped[0]["properties"].get(k) for k in ("card", "tap", "opened", "app")}
               == {"card": "plan", "tap": "open_in_daash", "opened": True, "app": "ChatGPT"}
               and [e["event"] for e in SENT[before:]].count("card_shown") == 1, str(SENT[before:])[:400])
+        # Nov 15: the button's wording is an experiment. The card says which
+        # variant it drew; card_shown and card_tapped carry it as PostHog's
+        # $feature/ property, and a card that drew the button counts as the
+        # exposure. Cards without the button (run) aren't in it.
+        before = len(SENT)
+        await anyio_run(post_text, link, json.dumps({"card": "plan", "ok": True, "button": True, "variant": "see_week"}))
+        await anyio_run(post_text, link, json.dumps({"card": "plan", "tap": "open_in_daash", "opened": True, "variant": "see_week"}))
+        await anyio_run(post_text, link, json.dumps({"card": "run", "ok": True, "variant": "see_week"}))
+        await anyio_run(post_text, link, json.dumps({"card": "session", "ok": True, "button": True, "variant": "made_up"}))
+        await asyncio.sleep(0.3)
+        got = [(e["event"], e["properties"].get("card"), e["properties"].get("$feature/app-button-copy"),
+                e["properties"].get("$feature_flag_response")) for e in SENT[before:]]
+        check("the variant rides on card_shown and card_tapped, with one exposure for the card that drew the button",
+              got == [("$feature_flag_called", None, "see_week", "see_week"), ("card_shown", "plan", "see_week", None),
+                      ("card_tapped", "plan", "see_week", None), ("card_shown", "run", None, None),
+                      # A variant the card can't have drawn: the one worked out for them.
+                      ("$feature_flag_called", None, "control", "control"), ("card_shown", "session", "control", None)],
+              str(got))
+        # The variant comes from PostHog's flags endpoint, an hour at a time,
+        # and anything going wrong is the control.
+        asked = []
+
+        def flags_answer(who):
+            asked.append(who)
+            return {"flags": {"app-button-copy": {"enabled": True, "variant": "move_edit"}}}
+
+        def flags_down(who):
+            raise OSError("down")
+
+        real_fetch = analytics._fetch_flags
+        analytics._FLAGS.clear()
+        try:
+            analytics._fetch_flags = flags_answer
+            first_v = analytics.flag_variant("app-button-copy", erin_hash)
+            second_v = analytics.flag_variant("app-button-copy", erin_hash)
+            bound = garmin_server.official.use(erin)
+            try:
+                week_button, run_button = garmin_server.app_button(week=True), garmin_server.app_button()
+            finally:
+                garmin_server.official.reset(bound)
+            analytics._fetch_flags = flags_down
+            down_v = analytics.flag_variant("app-button-copy", "someone-else")
+        finally:
+            analytics._fetch_flags = real_fetch
+        check("the flag is asked of PostHog once an hour per person, by the id the events use",
+              first_v == second_v == "move_edit" and asked == [analytics.distinct_id(erin_hash)], str((first_v, second_v, asked)))
+        check("and the card's button reads that variant's words",
+              week_button == {"label": "Move or edit your runs", "variant": "move_edit"}
+              and run_button == {"label": "Move or edit this run", "variant": "move_edit"}, str((week_button, run_button)))
+        check("PostHog not answering is the control", down_v == "control", down_v)
+        analytics._FLAGS.clear()
         # Someone on Garmin's official API alone is told how to get their full
         # history, by way of a link that counts the click.
         os.environ["GARMIN_MCP_BASE_URL"] = base

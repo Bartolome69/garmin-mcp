@@ -240,7 +240,7 @@
     try {
       fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
         card: "plan2", ok: d.rendered && !d.errors.length, ms: Date.now() - d.start, host: d.host,
-        error: d.errors.join("; "), steps: d.steps.join(" > ") }) }).catch(function () {});
+        error: d.errors.join("; "), steps: d.steps.join(" > "), button: !!d.button, variant: d.variant || undefined }) }).catch(function () {});
     } catch (e) {}
   }
   // A tap on Open in Daash, and whether the chat app opened the link: on
@@ -250,7 +250,7 @@
     if (!d.seen || !window.fetch) return;
     try {
       fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
-        card: "plan", tap: what, opened: opened, host: d.host }) }).catch(function () {});
+        card: "plan2", tap: what, opened: opened, host: d.host, variant: d.variant || undefined }) }).catch(function () {});
     } catch (e) {}
   };
   function show() {
@@ -959,7 +959,19 @@
     var span = b === raw ? range(b.starts, b.ends) : range(first.starts, iso(addDays(parse(last.starts), 6)));
     // The same plan in the Daash app, signed in, for accounts trying it:
     // beside the title, as the brand line has no room for it at phone width.
-    var appUrl = p && p.app && p.app.url;
+    // The card's own link and the button's wording from the experiment (Nov
+    // 15), opening on the week shown with the next run picked out.
+    var appUrl = p && p.app && (p.app.card_url || p.app.url);
+    var appLabel = (p && p.app && p.app.card_label) || "Open in Daash app";
+    D.button = !!appUrl;
+    D.variant = (p && p.app && p.app.card_variant) || D.variant;
+    function appAt() {
+      var w = m.weeks[state.sel];
+      if (!appUrl || !w || !w.starts || appUrl.indexOf("#/plan") < 0) return appUrl;
+      var url = appUrl + (appUrl.indexOf("?") < 0 ? "?" : "&") + "week=" + iso(mondayOf(parse(w.starts)));
+      if (m.next && m.next.date && state.sel === m.nextWeek) url += "&focus=" + m.next.date;
+      return url;
+    }
     var tools = el("span", { class: "tools" }, [
       canShare() ? el("button", { class: "iconbtn", "aria-label": shareWords(m), title: shareWords(m), onclick: share }, [svg(ICON.share, 16)]) : null,
       el("button", { class: "iconbtn refresh", "aria-label": "Refresh", onclick: refresh }, [svg(ICON.refresh, 16)]),
@@ -973,7 +985,7 @@
           el("span", { class: "sub", text: [CREDIT, b.method, then, span].filter(Boolean).join(" · ") }),
         ]),
         appUrl ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px;font-size:13.5px",
-          onclick: function (e) { openUrl(appUrl, e.currentTarget, "open_in_daash"); } }, ["Open in Daash app"]) : null,
+          onclick: function (e) { openUrl(appAt(), e.currentTarget, "open_in_daash"); } }, [appLabel]) : null,
       ]),
     ];
     var races = m.races, goal = races.filter(function (r) { return r.tier === "goal"; }).slice(-1)[0];

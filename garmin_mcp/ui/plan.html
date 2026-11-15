@@ -287,7 +287,7 @@
     try {
       fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
         card: "plan", ok: d.rendered && !d.errors.length, ms: Date.now() - d.start, host: d.host,
-        error: d.errors.join("; "), steps: d.steps.join(" > ") }) }).catch(function () {});
+        error: d.errors.join("; "), steps: d.steps.join(" > "), button: !!d.button, variant: d.variant || undefined }) }).catch(function () {});
     } catch (e) {}
   }
   // A tap on Open in Daash, and whether the chat app opened the link: on
@@ -297,7 +297,7 @@
     if (!d.seen || !window.fetch) return;
     try {
       fetch(d.seen, { method: "POST", mode: "no-cors", keepalive: true, body: JSON.stringify({
-        card: "plan", tap: what, opened: opened, host: d.host }) }).catch(function () {});
+        card: "plan", tap: what, opened: opened, host: d.host, variant: d.variant || undefined }) }).catch(function () {});
     } catch (e) {}
   };
   function show() {
@@ -544,7 +544,12 @@
     raw = isProgress(plan) ? fromProgress(plan) : plan;
     // The same plan in the Daash app, signed in. Kept across a refresh whose
     // answer came without one.
-    appLink = (plan.app && plan.app.url) || appLink;
+    // The card's own link where the answer has one (Nov 15): marked as the
+    // card's, with the button's wording from the experiment.
+    appLink = (plan.app && (plan.app.card_url || plan.app.url)) || appLink;
+    appLabel = (plan.app && plan.app.card_label) || appLabel;
+    D.button = !!appLink;
+    D.variant = (plan.app && plan.app.card_variant) || D.variant;
     state.sel = null;
     render(raw);
     D.done();
@@ -857,7 +862,16 @@
   }
 
   // ---------------------------------------------------------------- render
-  var state = { sel: null }, raw = null, model = null, appLink = null;
+  var state = { sel: null }, raw = null, model = null, appLink = null, appLabel = null;
+  // The app on the week the card is showing, with the next run picked out
+  // when it's in that week (Nov 15: the button opened the app's front screen).
+  function appAt(m) {
+    var w = m && m.weeks && m.weeks[state.sel];
+    if (!appLink || !w || !w.starts || appLink.indexOf("#/plan") < 0) return appLink;
+    var url = appLink + (appLink.indexOf("?") < 0 ? "?" : "&") + "week=" + iso(mondayOf(parse(w.starts)));
+    if (m.next && m.next.date && state.sel === m.nextWeek) url += "&focus=" + m.next.date;
+    return url;
+  }
 
   function fail(message) {
     var app = document.getElementById("app");
@@ -926,7 +940,7 @@
           el("span", { class: "sub", text: [CREDIT, sub].filter(Boolean).join(" \u00b7 ") }),
         ]),
         appLink ? el("button", { class: "act", style: "flex-shrink:0;white-space:nowrap;padding:0 14px",
-          onclick: function (e) { openUrl(appLink, e.currentTarget, "open_in_daash"); } }, ["Open in Daash app"]) : null,
+          onclick: function (e) { openUrl(appAt(model), e.currentTarget, "open_in_daash"); } }, [appLabel || "Open in Daash app"]) : null,
       ]),
     ]);
     var nodes = timeline(m);

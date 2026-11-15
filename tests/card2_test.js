@@ -199,7 +199,9 @@ f.src = "card.html";
       if (width === 390) {
         await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash app").click());
         await page.waitForTimeout(200);
-        check("and opens the app's link", (await page.evaluate(() => window.opened)) === withApp.app.url, String(await page.evaluate(() => window.opened)));
+        // Nov 15: on the week shown, with the next run picked out when it's in it.
+        const went = String(await page.evaluate(() => window.opened));
+        check("and opens the app's link, on the week shown", went.startsWith(withApp.app.url + "&week=") && /week=\d{4}-\d{2}-\d{2}/.test(went), went);
       }
       await page.close();
     }

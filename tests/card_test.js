@@ -162,7 +162,9 @@ function decode(url) {
       app.button && !app.overflow && app.oneLine && app.beside, JSON.stringify(app));
     await card.evaluate(() => [...document.querySelectorAll(".head button")].find((x) => x.textContent === "Open in Daash app").click());
     await page.waitForTimeout(200);
-    check("and opens the app's link", (await page.evaluate(() => window.opened)) === APP, String(await page.evaluate(() => window.opened)));
+    // Nov 15: on the week the card shows, as the card's own link.
+    const went = String(await page.evaluate(() => window.opened));
+    check("and opens the app's link, on the week shown", went.startsWith(APP + "&week=") && /week=\d{4}-\d{2}-\d{2}/.test(went), went);
     const taps = pings.filter((p) => p.body.tap);
     check("and says it was tapped, and that the link opened, on the card's own link",
       taps.length === 1 && taps[0].url === SEEN && taps[0].body.tap === "open_in_daash" && taps[0].body.opened === true, JSON.stringify(taps));

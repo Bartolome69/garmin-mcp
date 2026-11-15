@@ -64,6 +64,8 @@ from garmin_mcp import analysis, analytics, crews, oauth, server, store  # noqa:
 
 SENT: list[dict] = []
 analytics._post = SENT.append
+# No flags asked of PostHog from the tests: every flag reads as its control.
+analytics._fetch_flags = lambda who: {}
 
 
 def posted(event: str) -> list[dict]:
@@ -541,6 +543,28 @@ def api_checks() -> None:
     check("the code works once", client.post("/app/api/sign-in/handoff", json={"code": handoff}).status_code == 401)
     late = store.new_handoff(user_token, lifetime=-1)
     check("and not after it expires", client.post("/app/api/sign-in/handoff", json={"code": late}).status_code == 401)
+    # Nov 15: each magic link's fate, against the person it was for, and the
+    # app's sign-in counted as magic_link with where the link came from.
+    fresh = store.new_handoff(user_token)
+    good = client.post("/app/api/sign-in/handoff", json={"code": fresh, "source": "card"})
+    reused = client.post("/app/api/sign-in/handoff", json={"code": fresh, "source": "card"})
+    bogus = client.post("/app/api/sign-in/handoff", json={"code": "not-a-code"})
+    spare = store.new_handoff(user_token)
+    already = client.post("/app/api/sign-in/handoff", json={"code": spare, "source": "ai_mention", "signed_in": True})
+    check("a spent link and a made-up one say which, so the app can say so",
+          good.status_code == 200 and reused.json().get("result") == "used" and "already been used" in reused.json().get("error", "")
+          and bogus.json().get("result") == "invalid", f"{reused.text} {bogus.text}")
+    check("opened in an app already signed in, the link is spent and nothing else changes",
+          already.status_code == 200 and already.json() == {"ok": True} and store.redeem_handoff(spare)[1] == "used", already.text)
+    opened = [(e["properties"].get("result"), e["properties"].get("source"), e["distinct_id"]) for e in posted("app_magic_link_opened")]
+    me = analytics.distinct_id(store.get_user(user_token).email_hash or user_token)
+    check("app_magic_link_opened says what happened to each, against the person where known",
+          ("success", "card", me) in opened and ("used", "card", me) in opened and ("expired", None, me) in opened
+          and ("already_signed_in", "ai_mention", me) in opened
+          and any(r == "invalid" and d != me for r, _s, d in opened), str(opened))
+    check("and the sign-in is app_signed_in, method magic_link, with its source",
+          any(e["properties"].get("method") == "magic_link" and e["properties"].get("source") == "card"
+              for e in posted("app_signed_in")), str(posted("app_signed_in")))
     refreshed = client.post("/token", data={"grant_type": "refresh_token", "refresh_token": handed.get("refresh_token", ""),
                                              "client_id": "daash-app"})
     check("the app's sign-in refreshes like any other", refreshed.status_code == 200 and refreshed.json().get("access_token"),
@@ -563,9 +587,9 @@ def api_checks() -> None:
           store.load_oauth_token(r.json().get("access_token", ""), "access")["subject"] == user_token)
     check("a code works once", client.post("/app/api/sign-in/verify", json={"email": email, "code": code}).status_code == 401)
     methods = {e["properties"].get("method") for e in posted("app_signed_in")}
-    check("signing in is recorded, by how", methods >= {"chat link", "email"}, str(methods))
+    check("signing in is recorded, by how", methods >= {"magic_link", "email"}, str(methods))
     failed = {(e["properties"].get("method"), e["properties"].get("reason")) for e in posted("app_sign_in_failed")}
-    check("and failed sign-ins, with why", ("email", "wrong code") in failed and ("chat link", "used or expired") in failed,
+    check("and failed sign-ins, with why", ("email", "wrong code") in failed and ("magic_link", "used") in failed and ("magic_link", "expired") in failed,
           str(failed))
 
     # Signing in with Garmin from the app: Daash's own client goes straight back, no consent page.

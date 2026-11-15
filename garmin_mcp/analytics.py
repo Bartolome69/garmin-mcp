@@ -211,6 +211,63 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
     threading.Thread(target=_post_all, args=([link, payload] if link else [payload],), daemon=True).start()
 
 
+# Feature flags, asked of PostHog for one person and remembered an hour, so a
+# card doesn't wait on PostHog each time it's drawn (Nov 15: the card button's
+# wording, tested against "Open in Daash app"). Anything going wrong is the
+# control: the experiment never stands between someone and their card.
+_FLAGS: dict[tuple[str, str], tuple[float, str]] = {}
+FLAG_MEMORY = 3600
+FLAG_TIMEOUT = 1.5
+
+
+def _fetch_flags(who: str) -> dict[str, Any]:
+    """PostHog's flags for one distinct id (the tests put their own here)."""
+    request = urllib.request.Request(
+        f"{HOST}/flags/?v=2",
+        data=json.dumps({"api_key": KEY, "distinct_id": who}).encode(),
+        headers={"content-type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=FLAG_TIMEOUT) as response:
+        answer = json.loads(response.read() or b"{}")
+    return answer if isinstance(answer, dict) else {}
+
+
+def flag_variant(key: str, subject: str | None) -> str:
+    """The variant of a multivariate flag for this person: "control" when off,
+    unknown, or PostHog doesn't answer in time."""
+    if not KEY or not subject:
+        return "control"
+    who = distinct_id(subject)
+    now = time.monotonic()
+    held = _FLAGS.get((key, who))
+    if held and held[0] > now:
+        return held[1]
+    variant = "control"
+    try:
+        answer = _fetch_flags(who)
+        flag = (answer.get("flags") or {}).get(key)
+        if isinstance(flag, dict) and flag.get("enabled") and isinstance(flag.get("variant"), str):
+            variant = flag["variant"]
+        elif isinstance((answer.get("featureFlags") or {}).get(key), str):
+            variant = answer["featureFlags"][key]
+        memory = FLAG_MEMORY
+    except Exception:  # noqa: BLE001 - the control, and asked again in five minutes
+        log.debug("flag %s not read", key, exc_info=True)
+        memory = 300
+    if len(_FLAGS) > 20000:
+        _FLAGS.clear()
+    _FLAGS[(key, who)] = (now + memory, variant)
+    return variant
+
+
+def known_variant(key: str, subject: str | None) -> str | None:
+    """The variant already worked out for this person, without asking PostHog."""
+    if not subject:
+        return None
+    held = _FLAGS.get((key, distinct_id(subject)))
+    return held[1] if held else None
+
+
 def _post_all(payloads: list[dict[str, Any]]) -> None:
     for payload in payloads:
         _post(payload)
