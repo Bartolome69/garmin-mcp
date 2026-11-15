@@ -527,6 +527,40 @@ def api_checks() -> None:
           f'app.js?v={app_routes.APP_BUILD}' in page.text and f'app.css?v={app_routes.APP_BUILD}' in page.text
           and client.get("/app/api/today", headers=auth).headers.get("x-daash-build") == app_routes.APP_BUILD,
           page.text[page.text.find("app.js") - 20:page.text.find("app.js") + 40])
+    # Nov 15: the script and styles compressed, and kept on the phone for good
+    # under this build's address only; the chat connection never compressed.
+    build = app_routes.APP_BUILD
+    script = client.get(f"/app/app.js?v={build}", headers={"Accept-Encoding": "gzip"})
+    styles = client.get(f"/app/app.css?v={build}", headers={"Accept-Encoding": "gzip"})
+    check("the script and styles come compressed, kept for good under this build",
+          script.headers.get("content-encoding") == "gzip" and styles.headers.get("content-encoding") == "gzip"
+          and "immutable" in script.headers.get("cache-control", "") and "immutable" in styles.headers.get("cache-control", "")
+          and "import" in script.text, f"{dict(script.headers)}")
+    stale = client.get("/app/app.js?v=000000000000")
+    bare = client.get("/app/app.js")
+    check("an older build's address, or none, isn't kept: it gets today's file",
+          stale.headers.get("cache-control") == "no-cache" and bare.headers.get("cache-control") == "no-cache", str(stale.headers))
+    check("the page itself is asked for each time", client.get("/app").headers.get("cache-control") == "no-cache")
+    check("fonts are kept a week", "max-age=604800" in client.get("/app/fonts/Geist.woff2").headers.get("cache-control", ""))
+    big = client.get("/app/api/plan", headers={**auth, "Accept-Encoding": "gzip"})
+    check("the app's answers come compressed too", big.headers.get("content-encoding") == "gzip" and big.json(),
+          str(big.headers))
+    mcp_answer = client.post("/mcp", headers={"Accept-Encoding": "gzip"}, json={})
+    check("the chat connection isn't compressed", mcp_answer.headers.get("content-encoding") != "gzip", str(mcp_answer.headers))
+    # How long an open waited for its first screen: numbers and known words only.
+    before = len(posted("app_ready"))
+    ok = client.post("/app/api/event", headers=auth, json={"name": "ready", "properties": {
+        "ms": 1840.4, "screen": "plan", "saved": False, "shell": "network", "worker": True, "net": "4g", "source": "card"}})
+    junk = client.post("/app/api/event", headers=auth, json={"name": "ready", "properties": {"ms": "soon", "screen": "plan"}})
+    odd = client.post("/app/api/event", headers=auth, json={"name": "ready", "properties": {
+        "ms": 900, "screen": "today", "shell": "<b>", "net": "fiber", "source": "a b"}})
+    readies = posted("app_ready")[before:]
+    check("app_ready says how long, which screen, and why",
+          ok.status_code == 200 and junk.status_code == 400 and len(readies) == 2
+          and {k: readies[0]["properties"].get(k) for k in ("ms", "seconds", "screen", "saved", "shell", "worker", "net", "source")}
+          == {"ms": 1840, "seconds": 1.84, "screen": "plan", "saved": False, "shell": "network", "worker": True, "net": "4g",
+              "source": "card"}
+          and not {"shell", "net", "source"} & set(readies[1]["properties"]), str(readies))
     run_again = client.get(f"/app/api/run/{done['activityId']}", headers=auth).json()
     check("a run still reads as a run", not run_again.get("ride") and "RIDE" not in run_again.get("kicker", ""))
 

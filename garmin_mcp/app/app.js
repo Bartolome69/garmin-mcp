@@ -245,6 +245,24 @@ function fresh(path, ahead = false) {
   inflight.set(path, { p, ahead });
   return p;
 }
+// How long someone waited (Nov 15): from opening the app to its first screen
+// drawn, once per open. Opens that went through the sign-in screen aren't
+// counted, as that time is typing. Whether the screen came from the saved copy,
+// and whether the script came from the phone or the network, say why.
+let readyTold = false, signInSeen = false;
+const workerAtOpen = !!navigator.serviceWorker?.controller;
+function ready(path, saved) {
+  if (readyTold || signInSeen) return;
+  readyTold = true;
+  const script = (performance.getEntriesByType?.("resource") || []).find((r) => /\/app\/app\.js/.test(r.name));
+  const size = script && typeof script.transferSize === "number" ? script.transferSize : null;
+  track("ready", {
+    ms: Math.round(performance.now()), screen: path.split(/[/?]/)[0], saved: !!saved,
+    shell: size == null ? undefined : size === 0 ? "phone" : "network",
+    worker: workerAtOpen, net: navigator.connection?.effectiveType,
+    source: openedFrom || undefined,
+  });
+}
 let showing = 0;
 // Set by route(true), after an edit: the screen stays put while it catches up.
 let calm = false;
@@ -254,7 +272,7 @@ let calm = false;
 async function show(path, render, onFail, quiet = false) {
   const mine = ++showing;
   const hit = cache.get(path);
-  if (hit) render(hit, true); else if (!quiet && !calm) loading();
+  if (hit) { render(hit, true); ready(path, true); } else if (!quiet && !calm) loading();
   try {
     const d = await fresh(path);
     if (mine !== showing) return;
@@ -263,6 +281,7 @@ async function show(path, render, onFail, quiet = false) {
     if (dragging) return;
     const y = window.scrollY;
     render(d, false);
+    ready(path, false);
     if (hit) window.scrollTo(0, y);
   } catch (e) {
     if (e instanceof SignedOut) return route();
@@ -2219,6 +2238,7 @@ function homeScreen() {
 }
 
 function signInView(message, step = "start", email = "") {
+  signInSeen = true;
   $("tabs").hidden = true;
   $("topbar").hidden = true;
   base = null;
@@ -2285,6 +2305,8 @@ function signInView(message, step = "start", email = "") {
 // signs the app in as the person who tapped it, with nothing to type. It also
 // says where it was given (from=…), sent once with the first screen it opens.
 let cameFrom = null;
+// The same, kept for the whole open (app_ready says where the open came from).
+let openedFrom = null;
 async function handOff() {
   // The app's own links say which tab Back returns to with from=today or
   // from=plan: those stay. Nov 9: stripping them too sent Back from a session
@@ -2293,7 +2315,7 @@ async function handOff() {
   const from = location.hash.match(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))([a-z_]{1,24})/);
   const m = location.hash.match(/[?&]login=([\w-]+)/);
   if (!m && !from) return null;
-  if (from) cameFrom = from[1];
+  if (from) cameFrom = openedFrom = from[1];
   const clean = location.hash.replace(/[?&]login=[\w-]+/g, "")
     .replace(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))[\w-]+/g, "").replace(/^([^?&]*)&/, "$1?").replace(/\?$/, "");
   // The screen the link was opening stays in the address, so signing in by

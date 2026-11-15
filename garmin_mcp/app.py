@@ -1985,7 +1985,9 @@ APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "s
               # Nov 11: the hint that a session can be moved or made easier.
               "edit_hint_shown", "edit_hint_dismissed",
               # Nov 13: a week opened from its bar on the Block view.
-              "block_week_opened"}
+              "block_week_opened",
+              # Nov 15: how long an open took to its first screen.
+              "ready"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you", "build"}
 
@@ -2204,6 +2206,20 @@ async def api_event(request: Request) -> Response:
             return _json({"error": "Unknown screen."}, 400)
         _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
                                          "ok": said.get("ok") is not False, "preloaded": True}))
+        return _json({"ok": True})
+    if name == "ready":
+        # Numbers and a few known words only: what the wait was, and why.
+        ms = said.get("ms")
+        screen = str(said.get("screen") or "")
+        if not isinstance(ms, (int, float)) or not 0 <= ms <= 120000 or screen not in APP_SCREENS:
+            return _json({"error": "Unknown wait."}, 400)
+        net = str(said.get("net") or "")
+        _track("app_ready", drop_empty({
+            "ms": int(ms), "seconds": round(ms / 1000, 2), "screen": screen, "saved": said.get("saved") is True,
+            "shell": said.get("shell") if said.get("shell") in ("phone", "network") else None,
+            "worker": said.get("worker") is True, "net": net if net in ("slow-2g", "2g", "3g", "4g") else None,
+            "source": said.get("source") if _FROM.fullmatch(str(said.get("source") or "")) else None,
+            "layout": _layout(request), "home_screen": _home(request)}))
         return _json({"ok": True})
     # choice: Back to my chat or New chat; saved: whether a chat was remembered.
     keep = {k: str(v)[:40] for k, v in said.items() if k in _EVENT_KEYS}
@@ -3105,14 +3121,27 @@ async def app_file(request: Request) -> Response:
     path = request.path_params.get("path", "")
     if path.startswith("api/"):
         return _json({"error": "Not found"}, 404)
-    return _file(path or "index.html")
+    return _file(path or "index.html", request.query_params.get("v"))
 
 
-def _file(path: str) -> Response:
+# Kept on the phone for good (Nov 15): the script and styles under this
+# build's address never change, so a phone needn't ask again. A week for the
+# fonts and icons, which change rarely and aren't worth a round trip each open.
+FOREVER = "public, max-age=31536000, immutable"
+A_WEEK = "public, max-age=604800"
+
+
+def _file(path: str, version: str | None = None) -> Response:
     target = (APP_DIR / path).resolve()
     if APP_DIR not in target.parents and target != APP_DIR or not target.is_file():
         target = APP_DIR / "index.html"
     headers = {"Cache-Control": "no-cache"}
+    if target.name in ("app.js", "app.css") and version and version == APP_BUILD:
+        # Only this build's address: an older page asking for its own build
+        # gets today's file, and that must not be kept under the old name.
+        headers["Cache-Control"] = FOREVER
+    elif target.parent.name in ("fonts", "icons"):
+        headers["Cache-Control"] = A_WEEK
     if target.name == "index.html":
         # The script and styles by this build, so a new deploy is a new address.
         page = target.read_text().replace('src="/app/app.js"', f'src="/app/app.js?v={APP_BUILD}"') \

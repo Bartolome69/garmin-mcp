@@ -39,7 +39,8 @@ async function phone(browser, device, opens) {
     const u = new URL(r.request().url());
     // A link tapped in the sheet: where it went, and nothing loaded.
     if (u.hostname !== "localhost") { visited.push(r.request().url()); return r.fulfill({ status: 200, body: "" }); }
-    if (u.pathname === "/app/api/event") { events.push(JSON.parse(r.request().postData())); return r.fulfill({ json: { ok: true } }); }
+    // app_ready (how long the open took) is counted on every open: not what this test is about.
+    if (u.pathname === "/app/api/event") { const e = JSON.parse(r.request().postData()); if (e.name !== "ready") events.push(e); return r.fulfill({ json: { ok: true } }); }
     if (u.pathname.startsWith("/app/api/crew")) {
       return r.fulfill({ json: { none: true, assistant: "Claude", ask: { claude: NEW,
         chatgpt: "https://chatgpt.com/?q=" + encodeURIComponent(QUESTION), claude_app: "claude://claude.ai/new?q=" + encodeURIComponent(QUESTION) } } });

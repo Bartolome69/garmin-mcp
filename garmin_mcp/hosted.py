@@ -4545,6 +4545,28 @@ class NoIndex:
         await self.app(scope, receive, sending)
 
 
+class AppCompression:
+    """Gzip for the companion app's files and API answers, and nothing else.
+
+    Nov 15: nothing was compressed, so a phone opening the app from a chat
+    card downloaded 270KB of script and styles where 73KB would do. Only paths
+    under /app: the chat connection (/mcp, /u/…) streams and is left alone.
+    """
+
+    def __init__(self, app: Any) -> None:
+        from starlette.middleware.gzip import GZipMiddleware
+
+        self.app = app
+        self.gzip = GZipMiddleware(app, minimum_size=1024, compresslevel=6)
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        path = scope.get("path", "") if scope.get("type") == "http" else ""
+        if path == "/app" or path.startswith("/app/"):
+            await self.gzip(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
+
 class SessionBinding:
     """Resolves /u/<token>/mcp to a Garmin session for the request's duration.
 
@@ -4710,6 +4732,7 @@ def build_app() -> Any:
         )
         app.add_middleware(SessionBinding)
         app.add_middleware(NoIndex)
+        app.add_middleware(AppCompression)
         return app
 
     from mcp.server.auth.settings import (
@@ -4752,6 +4775,7 @@ def build_app() -> Any:
     )
     app.add_middleware(SessionBinding)
     app.add_middleware(NoIndex)
+    app.add_middleware(AppCompression)
     return app
 
 
