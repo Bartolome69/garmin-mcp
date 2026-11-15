@@ -281,6 +281,12 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .wp-bar span { display: block; height: 100%; background: var(--ink-2); border-radius: 999px; }
 .wp-nums { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
 .wp-nums strong { color: var(--ink); font-weight: 600; }
+/* Past the plan (Nov 15): the bar fills, the part over it in the easy green. */
+.wp-bar.is-over { display: flex; gap: 2px; }
+.wp-bar.is-over span { border-radius: 0; }
+.wp-bar.is-over span:first-child { border-radius: 999px 0 0 999px; }
+.wp-bar .wp-over { background: var(--easy); border-radius: 0 999px 999px 0; }
+.wp-heading { color: var(--muted); }
 .mini-shape { display: flex; align-items: flex-end; gap: 1.5px; height: 10px; margin-top: 4px; max-width: 200px; }
 .mini-shape i { flex-basis: 0; border-radius: 2px; min-width: 2px; }
 /* Once a row is lifted the page doesn't scroll under the finger. */

@@ -436,9 +436,10 @@ def _calendar(plan: Mapping[str, Any], today: date, crew_days: Mapping[str, str]
         week = by_monday.get(monday.isoformat()) or {}
         n = _season_week(season, monday)
         run, planned = round(week.get("run_km") or 0), round(week.get("planned_km") or 0)
-        if shift == 0:
-            planned = _week_total(week, run, planned)
+        heading = _week_heading(week, run, planned) if shift == 0 else None
         km = (f"{planned} km planned" if shift > 0 else f"{run} of {planned} km") if planned else (f"{run} km" if run else "")
+        if km and heading:
+            km += f" · on course for {heading}"
         days = []
         for i in range(7):
             d = monday + timedelta(days=i)
@@ -1159,8 +1160,8 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
             + [_extra_row(x) for x in extra],
         })
     run, planned = week.get("run_km"), week.get("planned_km")
-    if planned and monday == today - timedelta(days=today.weekday()):
-        planned = _week_total(week, round(run or 0), round(planned))
+    heading = (_week_heading(week, round(run or 0), round(planned))
+               if planned and monday == today - timedelta(days=today.weekday()) else None)
     earlier, later = monday - timedelta(weeks=1), monday + timedelta(weeks=1)
     within = lambda m: m.isoformat() in weeks or _season_week(season, m) is not None  # noqa: E731
     hard = [s for s in sessions if s.get("type") in HARD_TYPES and not s.get("optional")]
@@ -1171,6 +1172,7 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
         if hard else None,
         "title": f"Week {n}" + (f" · {phase}" if phase else "") if n else f"Week of {monday.day} {MONTHS[monday.month - 1]}",
         "done": round(run) if run is not None else None, "planned": round(planned) if planned else None,
+        "heading": heading,
         "range": _range(monday), "current": monday == today - timedelta(days=today.weekday()) or None,
         "days": days,
         "previous": earlier.isoformat() if within(earlier) else None,
@@ -1182,20 +1184,23 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
     })
 
 
-def _week_total(week: Mapping[str, Any], done: int, planned: int) -> int:
-    """This week's "of" figure: what's planned, or done plus what's still to come if that's more.
+def _week_heading(week: Mapping[str, Any], done: int, planned: int) -> int | None:
+    """Where this week is heading, beside the plan's figure, never in its place.
 
-    Nov 13: a run nobody planned, and runs that came out longer than planned,
-    count in what's done but not in the plan, so "49 of 66 km" with 20 km
-    still to run read as falling short of a 69 km week. Done plus what's
-    left (optional sessions aside) says where the week is heading, the way
-    the chat card's projected total does. A week behind its plan keeps the
-    plan's figure, so a missed session still shows.
+    The target is the plan's figure, fixed for the week, and what's done can
+    go past it: "71 of 66 km" (Nov 15). From Nov 13 the target itself grew to
+    done plus what's left, so a finished week with an extra run read "71 of
+    71", saying nothing. Done plus what's still to come (optional sessions
+    aside) is shown as its own note while sessions remain, and only when it
+    differs from the plan: "49 of 66 km · on course for 69".
     """
     sport = "ride" if "ride_km" in week else "run"
     to_go = sum(s.get("planned_km") or 0 for s in week.get("sessions") or []
                 if s.get("status") in ("today", "ahead") and not s.get("optional") and s.get("sport") == sport)
-    return max(planned, done + round(to_go))
+    if not planned or round(to_go) <= 0:
+        return None
+    heading = done + round(to_go)
+    return heading if heading != planned else None
 
 
 def _rest_note(r: Mapping[str, Any]) -> str | None:

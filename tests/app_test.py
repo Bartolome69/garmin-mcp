@@ -801,23 +801,34 @@ def extra_checks() -> None:
     ride_row = app_routes._extra_row(ridden["weeks"][0]["extra"][0])
     check("and on the Plan tab it's called a ride", ride_row.get("type_label") == "Ride", str(ride_row))
 
-    # Nov 13: 49 run (an extra run included) with 20 still to come read "49 of 66".
-    # The week's figure is done plus what's left when that's more than the plan,
-    # optional sessions aside; a week behind its plan keeps the plan's figure.
+    # Nov 15: the plan's figure is the week's target and stays put; what's done
+    # can go past it. While sessions remain, where the week is heading is its
+    # own note, and only when it differs from the plan.
     tally = {"starts": day, "run_km": 49.3, "planned_km": 65.6, "sessions": [
         {"date": day, "sport": "run", "status": "done", "planned_km": 45.6},
         {"date": day, "sport": "run", "status": "ahead", "planned_km": 5, "optional": True},
         {"date": day, "sport": "run", "status": "ahead", "planned_km": 20}]}
     shown = app_routes._week_view({"weeks": [tally]}, {day: tally}, None, monday, _d.today())
-    check("this week reads done of done-plus-to-go when that's more than planned",
-          shown.get("done") == 49 and shown.get("planned") == 69, str({k: shown.get(k) for k in ("done", "planned")}))
+    check("mid-week with an extra run: 49 of 66, on course for 69",
+          (shown.get("done"), shown.get("planned"), shown.get("heading")) == (49, 66, 69),
+          str({k: shown.get(k) for k in ("done", "planned", "heading")}))
     behind = {**tally, "run_km": 30.0}
     shown = app_routes._week_view({"weeks": [behind]}, {day: behind}, None, monday, _d.today())
-    check("but a week behind its plan keeps the plan's figure", shown.get("planned") == 66, str(shown.get("planned")))
+    check("a week behind its plan says so: 30 of 66, on course for 50",
+          (shown.get("planned"), shown.get("heading")) == (66, 50), str((shown.get("planned"), shown.get("heading"))))
+    finished = {**tally, "run_km": 71.2, "sessions": [{**x, "status": "done"} for x in tally["sessions"]]}
+    shown = app_routes._week_view({"weeks": [finished]}, {day: finished}, None, monday, _d.today())
+    check("a finished week with an extra run reads 71 of 66, no note",
+          (shown.get("done"), shown.get("planned")) == (71, 66) and "heading" not in shown,
+          str({k: shown.get(k) for k in ("done", "planned", "heading")}))
+    on_plan = {**tally, "run_km": 45.6}
+    shown = app_routes._week_view({"weeks": [on_plan]}, {day: on_plan}, None, monday, _d.today())
+    check("heading where the plan does: no note", "heading" not in shown and shown.get("planned") == 66, str(shown.get("heading")))
     last = monday - _td(weeks=1)
     past = {**tally, "starts": last.isoformat()}
     shown = app_routes._week_view({"weeks": [past]}, {last.isoformat(): past}, None, last, _d.today())
-    check("and a past week still reads against its plan", shown.get("planned") == 66, str(shown.get("planned")))
+    check("and a past week reads against its plan, no note", shown.get("planned") == 66 and "heading" not in shown,
+          str(shown.get("planned")))
 
     # Nov 13: each row says what was planned, how it went, its target, and whether it's on the watch.
     today = _d.today()

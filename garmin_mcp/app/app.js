@@ -1221,11 +1221,19 @@ function weekRows(w) {
 }
 
 // Nov 13: the week's progress, km done against planned and its hard sessions.
+// Nov 15: the plan's figure is the target and stays put; past it, the bar
+// fills and the part over the plan shows in green, and while sessions remain
+// a note says where the week is heading.
 function weekProgress(w) {
-  const share = w.planned ? Math.min(1, (w.done || 0) / w.planned) : 0;
+  const done = w.done || 0;
+  const over = w.planned && done > w.planned;
+  const share = w.planned ? Math.min(1, done / w.planned) : 0;
+  const fill = over
+    ? `<span style="width:${Math.round(w.planned / done * 100)}%"></span><span class="wp-over" style="width:${100 - Math.round(w.planned / done * 100)}%"></span>`
+    : `<span style="width:${Math.round(share * 100)}%"></span>`;
   return w.planned || w.hard ? `<div class="week-progress">
-      ${w.planned ? `<div class="wp-bar" role="progressbar" aria-label="Kilometres done this week" aria-valuemin="0" aria-valuemax="${esc(w.planned)}" aria-valuenow="${esc(w.done ?? 0)}"><span style="width:${Math.round(share * 100)}%"></span></div>` : ""}
-      <div class="wp-nums">${w.planned ? `<span><strong>${esc(w.done ?? 0)}</strong> of ${esc(w.planned)} km</span>` : "<span></span>"}
+      ${w.planned ? `<div class="wp-bar${over ? " is-over" : ""}" role="progressbar" aria-label="Kilometres done this week" aria-valuemin="0" aria-valuemax="${esc(w.planned)}" aria-valuenow="${esc(done)}">${fill}</div>` : ""}
+      <div class="wp-nums">${w.planned ? `<span><strong>${esc(w.done ?? 0)}</strong> of ${esc(w.planned)} km${w.heading ? `<span class="wp-heading"> · on course for ${esc(w.heading)}</span>` : ""}</span>` : "<span></span>"}
         ${w.hard ? `<span><strong>${esc(w.hard.done)}</strong> of ${esc(w.hard.planned)} hard</span>` : ""}</div></div>` : "";
 }
 
