@@ -483,6 +483,25 @@ def api_checks() -> None:
           again.get("verdict") == run.get("verdict") and again.get("share_url") == run.get("share_url")
           and again.get("planned_and_run") == run.get("planned_and_run") and again.get("splits") == run.get("splits"))
 
+    # Nov 15: after a morning ride the last device synced was the bike
+    # computer, and Today credited the running plan to it. The watch Garmin
+    # takes training status from is the one named.
+    real_last, real_status = DEMO.get_device_last_used, DEMO.get_training_status
+    DEMO.get_device_last_used = lambda: {"lastUsedDeviceName": "Edge 840"}
+    DEMO.get_training_status = lambda day: {"mostRecentTrainingStatus": {"latestTrainingStatusData": {
+        "3456789": {"deviceId": 3456789, "primaryTrainingDevice": True}}}}
+    try:
+        credited = client.get("/app/api/today", headers={**auth, "X-Daash-Fresh": "1"}).json()
+        DEMO.get_training_status = lambda day: {}
+        fallback = client.get("/app/api/today", headers={**auth, "X-Daash-Fresh": "1"}).json()
+    finally:
+        DEMO.get_device_last_used, DEMO.get_training_status = real_last, real_status
+    check("Today names the training watch, not the bike computer that synced last",
+          "Forerunner 265" in str(credited.get("credit")) and "Edge" not in str(credited.get("credit")),
+          str(credited.get("credit")))
+    check("and with no training watch named, the last device synced",
+          "Edge 840" in str(fallback.get("credit")), str(fallback.get("credit")))
+
     # Nov 15: a ride opened as a run, with pace, "Km by km" and an easy-running
     # verdict. A ride reads by speed, power, climbing and heart rate.
     ride = client.get("/app/api/run/2222", headers=auth).json()

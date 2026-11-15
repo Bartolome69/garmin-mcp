@@ -1403,15 +1403,43 @@ async def _credit(name: str, result: dict[str, Any]) -> str:
     return share.attribution(device or await _last_device())
 
 
+def _training_device(status: Any, devices: Any) -> str | None:
+    """The watch Garmin takes training status and readiness from (its "primary
+    training device"), by product name. Nov 15: after a morning ride the last
+    device synced was the bike computer, so a running plan read "Garmin Edge
+    840" over its sleep and readiness, which come from the watch."""
+    found = ((status or {}).get("mostRecentTrainingStatus") or {}).get("latestTrainingStatusData") \
+        if isinstance(status, dict) else None
+    did = next((entry.get("deviceId") or key for key, entry in (found or {}).items()
+                if isinstance(entry, dict) and entry.get("primaryTrainingDevice")), None)
+    if not did:
+        return None
+    for d in devices if isinstance(devices, list) else []:
+        if isinstance(d, dict) and str(d.get("deviceId")) == str(did):
+            return d.get("productDisplayName") or d.get("displayName")
+    return None
+
+
 async def _last_device() -> str | None:
-    """The watch the user last synced, by its product name, remembered with the device list."""
+    """The user's watch by its product name: their primary training device where
+    Garmin names one, else the device they last synced. The three reads go at
+    once, each remembered for hours."""
     if _official_only():
         return None
-    try:
-        last = await _read(("device_last_used",), DEVICES_MEMORY, lambda c: c.get_device_last_used())
-    except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
-        return None
-    return (last or {}).get("lastUsedDeviceName") if isinstance(last, dict) else None
+    day = datetime.now().date().isoformat()
+
+    async def quiet(key: tuple, fn: Callable[[Any], Any]) -> Any:
+        try:
+            return await _read(key, DEVICES_MEMORY, fn)
+        except Exception:  # noqa: BLE001 - "Garmin" alone is still a credit
+            return None
+
+    status, devices, last = await _together([
+        functools.partial(quiet, ("training_device", day), lambda c: c.get_training_status(day)),
+        functools.partial(quiet, ("devices",), lambda c: c.get_devices()),
+        functools.partial(quiet, ("device_last_used",), lambda c: c.get_device_last_used())])
+    return _training_device(status, devices) or \
+        ((last or {}).get("lastUsedDeviceName") if isinstance(last, dict) else None)
 
 
 def tool_errors(fn):
