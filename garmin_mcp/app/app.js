@@ -160,7 +160,9 @@ let pullFresh = null;
 
 async function api(path, options = {}, retry = true) {
   const from = options.ahead ? null : cameFrom;
+  const link = options.ahead ? null : cameLink;
   if (from) cameFrom = null;
+  if (link) cameLink = null;
   // One request per pull goes past the server's memory: the pulled screen's own.
   const pulled = !!pullFresh && !options.ahead && path.split(/[/?]/)[0] === pullFresh;
   if (pulled) pullFresh = null;
@@ -172,6 +174,8 @@ async function api(path, options = {}, retry = true) {
       // Fetched ahead of a tap: not counted as a screen opened.
       ...(options.ahead ? { "X-Daash-Ahead": "1" } : {}),
       ...(from ? { "X-Daash-From": from } : {}),
+      // Which link in an email it was (Nov 16: primary_button, day_row).
+      ...(link ? { "X-Daash-Link": link } : {}),
       // Pulled down to refresh: Garmin's latest, past the server's memory.
       ...(pulled ? { "X-Daash-Fresh": "1" } : {}),
       ...(options.body ? { "Content-Type": "application/json" } : {}) },
@@ -2315,6 +2319,8 @@ function signInView(message, step = "start", email = "") {
 let cameFrom = null;
 // The same, kept for the whole open (app_ready says where the open came from).
 let openedFrom = null;
+// Which link of the weekly email opened the app (Nov 16), sent the same way.
+let cameLink = null;
 async function handOff() {
   // The app's own links say which tab Back returns to with from=today or
   // from=plan: those stay. Nov 9: stripping them too sent Back from a session
@@ -2322,22 +2328,25 @@ async function handOff() {
   // given as source= (card, ai_mention, weekly_email); from= still works.
   const from = location.hash.match(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))([a-z_]{1,24})/);
   const m = location.hash.match(/[?&]login=([\w-]+)/);
-  if (!m && !from) return null;
+  const linked = location.hash.match(/[?&]link=([a-z_]{1,24})/);
+  if (!m && !from && !linked) return null;
   if (from) cameFrom = openedFrom = from[1];
-  const clean = location.hash.replace(/[?&]login=[\w-]+/g, "")
+  if (linked) cameLink = linked[1];
+  const clean = location.hash.replace(/[?&]login=[\w-]+/g, "").replace(/[?&]link=[a-z_]+/g, "")
     .replace(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))[\w-]+/g, "").replace(/^([^?&]*)&/, "$1?").replace(/\?$/, "");
   // The screen the link was opening stays in the address, so signing in by
   // hand after a spent or expired link still lands on it.
   history.replaceState(null, "", `/app/${clean || "#/today"}`);
   if (!m) return null;
   const source = from ? from[1] : undefined;
+  const link = linked ? linked[1] : undefined;
   if (token.access) {
     // Already signed in: the link is spent and counted, nothing else changes.
-    signInPost("handoff", { code: m[1], source, signed_in: true }).catch(() => {});
+    signInPost("handoff", { code: m[1], source, link, signed_in: true }).catch(() => {});
     return null;
   }
   try {
-    token.save(await signInPost("handoff", { code: m[1], source }));
+    token.save(await signInPost("handoff", { code: m[1], source, link }));
     return null;
   } catch (err) {
     return `${err.message} Sign in once here and the app remembers you, then it opens where the link was going.`;

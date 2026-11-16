@@ -596,6 +596,31 @@ def api_checks() -> None:
           ("success", "card", me) in opened and ("used", "card", me) in opened and ("expired", None, me) in opened
           and ("already_signed_in", "ai_mention", me) in opened
           and any(r == "invalid" and d != me for r, _s, d in opened), str(opened))
+    # Nov 16: from the weekly email, which link it was and that it came from
+    # the email, on the link's fate, the sign-in and the first screen; a link
+    # opened hours later says so in the email's words.
+    mailed = store.new_handoff(user_token)
+    by_mail = client.post("/app/api/sign-in/handoff", json={"code": mailed, "source": "weekly_email", "link": "day_row"})
+    stale = store.new_handoff(user_token, lifetime=-1)
+    late = client.post("/app/api/sign-in/handoff", json={"code": stale, "source": "weekly_email", "link": "primary_button"})
+    gone = client.post("/app/api/sign-in/handoff", json={"code": "deleted-after-a-day", "source": "weekly_email"})
+    from_mail = [e["properties"] for e in posted("app_magic_link_opened") if e["properties"].get("source") == "weekly_email"]
+    check("from the email: app_magic_link_opened carries link and utm_source=weekly_email",
+          by_mail.status_code == 200 and any(p.get("result") == "success" and p.get("link") == "day_row"
+                                             and p.get("utm_source") == "weekly_email" for p in from_mail)
+          and any(p.get("result") == "expired" and p.get("link") == "primary_button" for p in from_mail), str(from_mail))
+    check("an email link opened late, expired or long gone, says it in the email's words",
+          "link from your email has expired" in late.json().get("error", "")
+          and "link from your email has expired" in gone.json().get("error", ""), f"{late.text} {gone.text}")
+    check("and the sign-in from the email says which link",
+          any(e["properties"].get("method") == "magic_link" and e["properties"].get("link") == "day_row"
+              and e["properties"].get("utm_source") == "weekly_email" for e in posted("app_signed_in")))
+    mail_auth = {"Authorization": f"Bearer {by_mail.json().get('access_token')}"}
+    client.get("/app/api/plan", headers={**mail_auth, "X-Daash-From": "weekly_email", "X-Daash-Link": "day_row"})
+    viewed = [e["properties"] for e in posted("app_viewed") if e["properties"].get("source") == "weekly_email"]
+    check("the first screen opened from the email says which link and utm_source",
+          viewed and viewed[-1].get("link") == "day_row" and viewed[-1].get("utm_source") == "weekly_email"
+          and "email" not in viewed[-1], str(viewed[-1:]))
     check("and the sign-in is app_signed_in, method magic_link, with its source",
           any(e["properties"].get("method") == "magic_link" and e["properties"].get("source") == "card"
               for e in posted("app_signed_in")), str(posted("app_signed_in")))

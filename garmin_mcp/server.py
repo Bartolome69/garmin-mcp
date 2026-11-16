@@ -4833,12 +4833,15 @@ async def _weekly_email_test(user_token: str) -> dict[str, Any]:
         return {"error": f"Nothing to say for the week of {monday}: nothing done last week and nothing planned."}
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     link = f"{base}/email/unsubscribe?u={user.email_hash}&s={store.unsubscribe_signature(user.email_hash)}"
-    from . import oauth
+    from . import hosted
 
-    app = await anyio.to_thread.run_sync(oauth.app_for_user, user_token)
-    subject, text, page_html = weekly.compose(said, link, app, in_crew=crews.in_crew())
+    # The same email the weekly send makes (Nov 16): its links into the app,
+    # with a fresh sign-in code, and into the chat.
+    subject, text, page_html = await anyio.to_thread.run_sync(
+        hosted.weekly_message, base, user_token, user.email_hash, said, monday.isoformat())
     try:
-        await anyio.to_thread.run_sync(support_mail.send_weekly, email, subject, text, page_html, link)
+        await anyio.to_thread.run_sync(functools.partial(support_mail.send_weekly, kind="test"),
+                                       email, subject, text, page_html, link)
     except OSError:
         return {"error": "The email didn't send. Try again in a minute."}
     return {"sent_to": user.email_masked, "as_of_monday": monday.isoformat(), "subject": subject}

@@ -188,6 +188,16 @@ def handle(body: bytes, headers: dict[str, str]) -> tuple[int, str]:
 CODE_FROM = os.environ.get("CODE_FROM", "Daash <hello@daash.run>")
 
 
+def _counted(kind: str) -> None:
+    """Count a send Resend took (Nov 16): the weekly email spends only what the
+    free plan's daily and monthly caps leave after codes and alerts."""
+    try:
+        from . import store
+        store.note_email_sent(kind)
+    except Exception:  # noqa: BLE001 - a count never stops an email
+        log.warning("email not counted (%s)", kind)
+
+
 def can_send() -> bool:
     return bool(os.environ.get("RESEND_API_KEY"))
 
@@ -211,6 +221,7 @@ def send_code(to: str, code: str) -> None:
     except urllib.error.URLError as exc:
         log.warning("code email not sent: %s", type(exc).__name__)
         raise OSError("code email not sent") from None
+    _counted("code")
 
 
 def send_alert(subject: str, text: str) -> bool:
@@ -228,11 +239,12 @@ def send_alert(subject: str, text: str) -> bool:
     except urllib.error.URLError as exc:
         log.warning("alert email not sent: %s", type(exc).__name__)
         return False
+    _counted("alert")
     return True
 
 
-def send_weekly(to: str, subject: str, text: str, page: str, unsubscribe: str) -> None:
-    """Send one Monday email. Raises OSError if Resend couldn't take it."""
+def send_weekly(to: str, subject: str, text: str, page: str, unsubscribe: str, kind: str = "weekly") -> None:
+    """Send one Monday email (or another update, by `kind`). Raises OSError if Resend couldn't take it."""
     message = {
         "from": CODE_FROM,
         "to": [to],
@@ -247,3 +259,4 @@ def send_weekly(to: str, subject: str, text: str, page: str, unsubscribe: str) -
     except urllib.error.URLError as exc:
         log.warning("weekly email not sent: %s", type(exc).__name__)
         raise OSError("weekly email not sent") from None
+    _counted(kind)

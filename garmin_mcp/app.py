@@ -2022,6 +2022,12 @@ def _home(request: Request) -> bool | None:
 _FROM = re.compile(r"[a-z_]{1,24}")
 
 
+def _came_link(request: Request) -> str | None:
+    """Which link of an email opened the app ("primary_button", "day_row"), on its first screen."""
+    found = request.headers.get("x-daash-link", "")
+    return found if _FROM.fullmatch(found) else None
+
+
 def _came_from(request: Request) -> str | None:
     """Where the link that opened the app was given ("chat", "session_card"), on its first screen."""
     found = request.headers.get("x-daash-from", "")
@@ -2060,6 +2066,9 @@ def _safe(handler):
                                "seconds": round(time.monotonic() - started, 2), "from": _came_from(request),
                                # Nov 15: the same word under the name the setup funnel uses.
                                "source": _came_from(request),
+                               # Nov 16: which link of the weekly email opened it.
+                               "link": _came_link(request),
+                               "utm_source": "weekly_email" if _came_from(request) == "weekly_email" else None,
                                "pulled": pulled or None})
             threading.Thread(target=_track, args=("app_viewed", seen, official.current()), daemon=True).start()
             if str(seen.get("from") or "").startswith("push_"):
@@ -2383,23 +2392,31 @@ async def sign_in_handoff(request: Request) -> Response:
     code = str(asked.get("code") or "")
     source = str(asked.get("source") or "")
     source = source if _FROM.fullmatch(source) else None
+    # Nov 16: which link of the weekly email, and that it came from it.
+    link = str(asked.get("link") or "")
+    came = drop_empty({"source": source, "link": link if _FROM.fullmatch(link) else None,
+                       "utm_source": "weekly_email" if source == "weekly_email" else None})
     subject, result = store.redeem_handoff(code) if code else (None, "invalid")
     if result == "success" and store.get_user(subject) is None:
         result = "invalid"  # the account has gone since the link was made
     # Nov 15: what became of each magic link, against the person it was for.
     if asked.get("signed_in") and result == "success":
         # The app was signed in already: the link is spent, nothing changes.
-        _track("app_magic_link_opened", drop_empty({"result": "already_signed_in", "source": source}), subject)
+        _track("app_magic_link_opened", {"result": "already_signed_in", **came}, subject)
         return _json({"ok": True})
-    _track("app_magic_link_opened", drop_empty({"result": result, "source": source}),
-           subject if result != "invalid" else None)
+    _track("app_magic_link_opened", {"result": result, **came}, subject if result != "invalid" else None)
     if result != "success":
         _track("app_sign_in_failed", {"method": "magic_link", "reason": result})
-        said = {"expired": "That link from the chat has expired: they last 15 minutes.",
-                "used": "That link from the chat has already been used.",
-                "invalid": "That link from the chat doesn't work."}[result]
+        if source == "weekly_email":
+            # Email links are often opened hours later, after the code has gone.
+            said = ("That link from your email has expired: it signs you in for 15 minutes after the email is sent."
+                    if result in ("expired", "invalid") else "That link from your email has already been used.")
+        else:
+            said = {"expired": "That link from the chat has expired: they last 15 minutes.",
+                    "used": "That link from the chat has already been used.",
+                    "invalid": "That link from the chat doesn't work."}[result]
         return _json({"error": said, "result": result}, 401)
-    _track("app_signed_in", drop_empty({"method": "magic_link", "source": source}), subject)
+    _track("app_signed_in", {"method": "magic_link", **came}, subject)
     return _json(_tokens(subject))
 
 

@@ -150,6 +150,19 @@ CREATE TABLE IF NOT EXISTS watch_sends (
 );
 """
 
+# Every email sent through Resend, counted by UTC day and kind (Nov 16): the
+# free plan caps sends a day and a month, so the weekly email spends only
+# what's left once sign-in codes and alerts have their room. Kinds: "weekly",
+# "lifecycle" (first run, stuck connection), "code", "alert".
+EMAIL_SENDS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS email_sends (
+    day   TEXT NOT NULL,
+    kind  TEXT NOT NULL,
+    n     INTEGER NOT NULL,
+    PRIMARY KEY (day, kind)
+);
+"""
+
 # Everyone who has ever connected, one row a person, kept when they disconnect
 # (Nov 13), for the front page's count. Keyed like watch_sends. A trigger fills
 # it on every new users row, whichever sign-in made it.
@@ -306,6 +319,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(RACE_PROMPT_SCHEMA)
     conn.executescript(PUSH_SCHEMA)
     conn.executescript(WATCH_SCHEMA)
+    conn.executescript(EMAIL_SENDS_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -748,17 +762,44 @@ def weekly_recipients(joined_before: float | None = None) -> list[tuple[str, str
     return out
 
 
-def weekly_standing() -> dict[str, tuple[int, str, str]]:
-    """Per person (email_hash): (last used Daash, Monday of their last weekly email, of their last click).
+def weekly_standing() -> dict[str, tuple[int, str, str, int]]:
+    """Per person (email_hash): (last used Daash, Monday of their last weekly email, of their
+    last click, when they first connected).
 
-    What orders the weekly email when it can't go to everyone (Nov 9).
+    What orders the weekly email when it can't go to everyone (Nov 9, Nov 16).
     """
     with _connect() as conn:
         rows = conn.execute(
             "SELECT email_hash, MAX(COALESCE(last_seen_at, 0)), MAX(COALESCE(weekly_sent, '')), "
-            "MAX(COALESCE(weekly_clicked, '')) FROM users WHERE email_hash IS NOT NULL GROUP BY email_hash"
+            "MAX(COALESCE(weekly_clicked, '')), MIN(COALESCE(created_at, 0)) FROM users "
+            "WHERE email_hash IS NOT NULL GROUP BY email_hash"
         ).fetchall()
-    return {fp: (seen, sent, clicked) for fp, seen, sent, clicked in rows}
+    return {fp: (seen, sent, clicked, joined) for fp, seen, sent, clicked, joined in rows}
+
+
+def note_email_sent(kind: str, now: float | None = None) -> None:
+    """Count one email Resend took, against today (UTC) and its kind."""
+    day = time.strftime("%Y-%m-%d", time.gmtime(now or time.time()))
+    with _connect() as conn:
+        conn.execute("INSERT INTO email_sends (day, kind, n) VALUES (?, ?, 1) "
+                     "ON CONFLICT(day, kind) DO UPDATE SET n = n + 1", (day, kind))
+
+
+def emails_sent(day: str, kind: str | None = None) -> int:
+    """Emails counted on a UTC day (YYYY-MM-DD), or a month (YYYY-MM), of one kind or all."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(n), 0) FROM email_sends WHERE day LIKE ?" + (" AND kind = ?" if kind else ""),
+            (day + "%", kind) if kind else (day + "%",)).fetchone()
+    return int(row[0])
+
+
+def seed_email_count(day: str, kind: str, n: int) -> None:
+    """Start a day's count where nothing was counted yet (sends from before counting began)."""
+    if n <= 0:
+        return
+    with _connect() as conn:
+        conn.execute("INSERT OR IGNORE INTO email_sends (day, kind, n) VALUES (?, ?, ?)", (day, kind, n))
 
 
 def weekly_sent_count(monday: str) -> int:

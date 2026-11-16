@@ -2126,14 +2126,18 @@ async def main() -> int:
         check("enough people to test the cap with", len(people) >= 3, str(len(people)))
         clicker, idle = people[-1], people[0]
 
-        def weekly_again(cap: int, answers=None):
+        from datetime import datetime, timedelta, timezone
+
+        def weekly_again(room, answers=None, now=None):
             with store._connect() as _conn:
                 _conn.execute("UPDATE users SET weekly_sent = NULL")
             hosted._WEEKLY_NOTHING.clear()
+            hosted._WEEKLY_SKIPPED.clear()
             out: list[tuple] = []
             hosted._plan_answer = answers or (lambda token: plan_answer)
             try:
-                return hosted.weekly_email_once(monday, send=lambda *a: out.append(a), spacing=0, cap=cap), out
+                return hosted.weekly_email_once(monday, send=lambda *a: out.append(a), spacing=0, room=room,
+                                                now=now), out
             finally:
                 hosted._plan_answer = real_answer
 
@@ -2148,39 +2152,80 @@ async def main() -> int:
         click_code = await anyio_run(click, hosted.weekly_ask_url(base, clicker[2], "ChatGPT", "week", "2026-10-19")[len(base):])
         check("a click through from the email is remembered", click_code == 302
               and store.weekly_standing()[clicker[2]][2] == "2026-10-19", str(click_code))
+
+        # Nov 16: the week's email is spread over the weekdays within Resend's
+        # free plan (100 a day, 3,000 a month), 20 a day kept for sign-in codes.
+        # Who first: connected in the last two weeks, then the most active.
+        newcomer, busiest = people[1], people[-1]
+        with store._connect() as _conn:
+            _conn.execute("UPDATE users SET created_at = ?, last_seen_at = ?", (int(time.time() - 30 * 86400),
+                                                                                int(time.time() - 5 * 86400)))
+            _conn.execute("UPDATE users SET created_at = ? WHERE email_hash = ?", (int(time.time() - 10 * 86400), newcomer[2]))
+            _conn.execute("UPDATE users SET last_seen_at = ? WHERE email_hash = ?", (int(time.time() - 600), busiest[2]))
+        people = store.weekly_recipients(time.time() - 7 * 86400)
         before = len(SENT)
-        capped, capped_mail = weekly_again(1)
-        held = [e for e in SENT[before:] if e["event"] == "weekly_email_held"]
-        check("capped: one email, to the person who clicked last week's, everyone else held",
-              capped == {"sent": 1, "nothing_to_say": 0, "failed": 0, "held": len(people) - 1}
-              and [m[0] for m in capped_mail] == [clicker[1]]
-              and held and held[0]["properties"]["held"] == len(people) - 1
-              and held[0]["properties"]["by_tier"]["clicked"] == 0,
-              f"{capped} {[m[0] for m in capped_mail]} {held[:1]}")
+        capped, capped_mail = weekly_again(2)
+        skipped = [e for e in SENT[before:] if e["event"] == "weekly_email_skipped"]
         sent_events = [e for e in SENT[before:] if e["event"] == "weekly_email_sent"]
-        check("and the email says which tier it went to", sent_events and sent_events[0]["properties"]["tier"] == "clicked",
-              str(sent_events[:1]))
-        hosted._plan_answer = lambda token: plan_answer
+        check("room for two: the newcomer first, then whoever used Daash most recently",
+              capped["sent"] == 2 and [m[0] for m in capped_mail] == [newcomer[1], busiest[1]]
+              and [e["properties"]["priority"] for e in sent_events] == ["new", "active"],
+              f"{capped} {[m[0] for m in capped_mail]}")
+        check("everyone else is deferred, each logged once as weekly_email_skipped for the daily cap",
+              capped["held"] == len(people) - 2 and len(skipped) == len(people) - 2
+              and all(e["properties"]["reason"] == "daily_cap" and "email" not in e["properties"]
+                      and "account" not in e["properties"] for e in skipped)
+              and {e["distinct_id"] for e in skipped} == {analytics.distinct_id(p[2]) for p in people
+                                                         if p[2] not in (newcomer[2], busiest[2])},
+              f"{capped} {[e['properties'] for e in skipped[:2]]}")
+        asked: list[str] = []
+        hosted._plan_answer = lambda token: asked.append(token) or plan_answer
         try:
-            spent = hosted.weekly_email_once(monday, send=lambda *a: capped_mail.append(a), spacing=0, cap=1)
+            later = hosted.weekly_email_once(monday, send=lambda *a: capped_mail.append(a), spacing=0, room=0)
         finally:
             hosted._plan_answer = real_answer
-        check("once the cap is reached, later passes that Monday send nothing and read nobody",
-              spent == {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0} and len(capped_mail) == 1, str(spent))
-        no_plan = (lambda token: log_answer if token == idle[0] else plan_answer)
-        tiered, tiered_mail = weekly_again(len(people) - 1, no_plan)
-        check("someone with nothing planned waits behind everyone with a plan",
-              tiered["held"] == 1 and idle[1] not in [m[0] for m in tiered_mail] and len(tiered_mail) == len(people) - 1,
-              f"{tiered} {[m[0] for m in tiered_mail]}")
-        everyone, everyone_mail = weekly_again(len(people), no_plan)
-        check("and with room for all, everyone gets theirs, the plan nudge included",
-              everyone["held"] == 0 and len(everyone_mail) == len(people)
-              and any(m[0] == idle[1] and "build you a plan" in m[2] for m in everyone_mail), str(everyone))
-        check("tiers: a click first, then a plan and used Daash this week, a plan, nothing planned",
-              hosted.weekly_tier(True, 0, "2026-11-02", time.time()) == "clicked"
-              and hosted.weekly_tier(False, int(time.time() - 3600), "", time.time()) == "plan_active"
-              and hosted.weekly_tier(False, int(time.time() - 9 * 86400), "", time.time()) == "plan"
-              and hosted.weekly_tier(True, int(time.time()), "", time.time()) == "no_plan")
+        check("with no room left, a later pass sends nothing, reads nobody's week, and doesn't log the same people twice",
+              later["sent"] == 0 and not asked and len(capped_mail) == 2
+              and len([e for e in SENT[before:] if e["event"] == "weekly_email_skipped"]) == len(people) - 2, str(later))
+        hosted._plan_answer = lambda token: plan_answer
+        try:
+            hosted._WEEKLY_SKIPPED.clear()
+            nextday = hosted.weekly_email_once(monday + timedelta(days=1), send=lambda *a: capped_mail.append(a),
+                                               spacing=0, room=len(people))
+        finally:
+            hosted._plan_answer = real_answer
+        check("the next weekday, the rest get theirs, and nobody gets it twice",
+              nextday["sent"] == len(people) - 2 and len(capped_mail) == len(people)
+              and len({m[0] for m in capped_mail}) == len(people), f"{nextday}")
+
+        # The day's room: today's weekly allowance, what Resend's daily cap leaves
+        # after 20 for codes, and what the month's cap leaves after 20 a day to come.
+        with store._connect() as _conn:
+            _conn.execute("DELETE FROM email_sends")
+        noon = datetime(2026, 11, 16, 12, tzinfo=timezone.utc).timestamp()
+        fresh = hosted.weekly_room(noon)
+        for _ in range(70):
+            store.note_email_sent("code", noon)
+        after_codes = hosted.weekly_room(noon)
+        for _ in range(30):
+            store.note_email_sent("code", noon)
+        full = hosted.weekly_room(noon)
+        with store._connect() as _conn:
+            _conn.execute("DELETE FROM email_sends")
+            _conn.execute("INSERT INTO email_sends VALUES ('2026-11-03', 'weekly', 2650)")
+        month_end = hosted.weekly_room(noon)
+        with store._connect() as _conn:
+            _conn.execute("DELETE FROM email_sends")
+            _conn.execute("INSERT INTO email_sends VALUES ('2026-11-16', 'weekly', 78)")
+        two_left = hosted.weekly_room(noon)
+        with store._connect() as _conn:
+            _conn.execute("DELETE FROM email_sends")
+        check("room: 80 on a fresh day; 10 after 70 sign-in codes; none once codes fill the day; "
+              "the month's cap keeps 20 a day for the rest of the month; 2 once 78 weekly have gone",
+              (fresh, after_codes, full, month_end, two_left) == (80, 10, 0, 50, 2),
+              str((fresh, after_codes, full, month_end, two_left)))
+        check("the weekly email goes on weekdays only, by default",
+              hosted.WEEKLY_DAYS == (0, 1, 2, 3, 4), str(hosted.WEEKLY_DAYS))
         re_token = store.save_user(session_mod.mask_email(clicker[1]), '{"di_token": "z"}',
                                    email_hash=clicker[2], email=clicker[1])
         with store._connect() as _conn:
@@ -2297,6 +2342,83 @@ async def main() -> int:
               code == 302 and location == weekly.ask_link("Claude", "plan"), f"{code} {location}")
         code, location, _b = await anyio_run(with_agent, hosted.weekly_ask_url(base, other, "ChatGPT", "week", "2026-11-02")[len(base):], iphone)
         check("and ChatGPT on a phone is unchanged", code == 302 and location.startswith("https://chatgpt.com/?q="), f"{code} {location}")
+
+        # Nov 16: the weekly email leads into the Daash app. The button opens the
+        # week, each day opens that day, the chat is a smaller link under it,
+        # and every link says it came from the weekly email and which link it was.
+        other_token = store.tokens_for(other)[-1]
+        subject16, text16, page16 = hosted.weekly_message(base, other_token, other, said, "2026-10-26")
+        links16 = [u.replace("&amp;", "&") for u in re.findall(r'href="([^"]+)"', page16)]
+        app_links = [u for u in links16 if "/email/open?" in u]
+        ask_links = [u for u in links16 if "/email/ask?" in u]
+        button16 = next((u for u in app_links if "link=primary_button" in u), "")
+        check("the button reads See or edit your week, and opens the app's week",
+              ">See or edit your week</a>" in page16 and button16
+              and "See or edit your week: " + button16 in text16, page16[-900:])
+        app_named = oauth.app_for_user(other_token)
+        check("the chat is a smaller link under it, named for their app, or 'your AI' when not known",
+              (f"Ask about your week in {app_named}" if app_named else "Ask about your week in your AI") in page16
+              and ask_links and "link=ai_link" in ask_links[0]
+              and ("a=choose" in ask_links[0]) == (app_named is None), f"{app_named} {ask_links[:1]}")
+        day_links = [u for u in app_links if "link=day_row" in u]
+        check("each day of the week opens that day: its session, or the week on a rest day",
+              len({re.search(r"&d=([\d-]+)", u).group(1) for u in day_links}) == 7
+              and any("v=session" in u for u in day_links) and any("v=session" not in u for u in day_links),
+              str(day_links[:3]))
+        check("every link into the app or a chat carries utm_source=weekly_email and which link it was, never an address",
+              all("utm_source=weekly_email" in u and re.search(r"link=(primary_button|ai_link|day_row)", u)
+                  for u in app_links + ask_links)
+              and "brandnew@example.com" not in "".join(links16), str(links16[:2]))
+        codes16 = {re.search(r"&c=([\w-]+)", u).group(1) for u in app_links}
+        check("one single-use sign-in code for the email, shared by its app links, none on the chat link",
+              len(codes16) == 1 and not any("&c=" in u for u in ask_links), str(codes16))
+        _ns, no_plan_text, no_plan_page = weekly.compose(said_log, "x", "Claude", into_app=lambda *a, **k: "https://x/open",
+                                                         ask=lambda a, k: "https://x/ask")
+        check("with nothing planned, the button builds a plan in the app and the chat asks for one",
+              ">Build a plan in the app</a>" in no_plan_page and "Ask for a plan in Claude" in no_plan_page, no_plan_page[-600:])
+        check("the plan and summary read as before", "Last week:" in page16 and "Your week:" in page16
+              and subject16 == weekly.compose(said, "x")[0], subject16)
+
+        before = len(SENT)
+        primary = button16[len(base):]
+        code, location = await anyio_run(no_follow, primary)
+        await asyncio.sleep(0.3)
+        opened16 = [e for e in SENT[before:] if e["event"] == "weekly_email_clicked"]
+        the_code = codes16.pop()
+        check("the button counts the click, then opens the app's week signed in with the code",
+              code == 302 and location.endswith(f"/app/#/plan?login={the_code}&week=2026-10-26&source=weekly_email&link=primary_button"),
+              f"{code} {location}")
+        check("weekly_email_clicked says which link and that it came from the weekly email, no address",
+              len(opened16) == 1 and opened16[0]["distinct_id"] == analytics.distinct_id(other)
+              and {k: opened16[0]["properties"].get(k) for k in ("link", "utm_source", "week")}
+              == {"link": "primary_button", "utm_source": "weekly_email", "week": "2026-10-26"}
+              and "brandnew" not in json.dumps(opened16), str(opened16))
+        session_day = next(u for u in day_links if "v=session" in u)
+        rest_day = next(u for u in day_links if "v=session" not in u)
+        _c, to_session = await anyio_run(no_follow, session_day[len(base):])
+        _c, to_rest = await anyio_run(no_follow, rest_day[len(base):])
+        sday = re.search(r"&d=([\d-]+)", session_day).group(1)
+        rday = re.search(r"&d=([\d-]+)", rest_day).group(1)
+        check("a day with a session opens that session; a rest day, the week with the day picked out",
+              to_session.endswith(f"/app/#/session/{sday}?login={the_code}&from=plan&source=weekly_email&link=day_row")
+              and to_rest.endswith(f"/app/#/plan?login={the_code}&week=2026-10-26&focus={rday}&source=weekly_email&link=day_row"),
+              f"{to_session} {to_rest}")
+        before = len(SENT)
+        _c, forged16 = await anyio_run(no_follow, primary.replace("&s=", "&s=0"))
+        _c, odd16 = await anyio_run(no_follow, primary.replace(f"&c={the_code}", "&c=<script>"))
+        await asyncio.sleep(0.3)
+        check("a link that isn't genuine opens the app uncounted and unsigned; a mangled code is dropped",
+              forged16.endswith("/app/") and "#" not in forged16 and "login=" not in odd16 and "<script>" not in odd16
+              and len([e for e in SENT[before:] if e["event"] == "weekly_email_clicked"]) == 1, f"{forged16} {odd16}")
+        before = len(SENT)
+        code, location, body = await anyio_run(with_agent, f"/email/ask?u={other}&s={store.unsubscribe_signature(other)}"
+                                               f"&a=choose&q=week&w=2026-10-26&link=ai_link&utm_source=weekly_email", mac)
+        await asyncio.sleep(0.3)
+        asked16 = [e for e in SENT[before:] if e["event"] == "weekly_email_clicked"]
+        check("'your AI' opens a page with both chats, and the click says ai_link from the weekly email",
+              code == 200 and "Ask in Claude" in body and "Ask in ChatGPT" in body and asked16
+              and asked16[0]["properties"].get("link") == "ai_link"
+              and asked16[0]["properties"].get("utm_source") == "weekly_email", f"{code} {asked16}")
 
         # A card answer carries the link the card reports back to once it has
         # drawn, so a card sent and never shown can be counted.

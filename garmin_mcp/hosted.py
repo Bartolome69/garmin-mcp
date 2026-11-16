@@ -1412,60 +1412,85 @@ def _plan_answer(user_token: str) -> Any:
 
 # How long someone has had Daash before the weekly email starts.
 WEEKLY_FIRST_WEEK_SECONDS = 7 * 86400
-# At most this many weekly emails a Monday. Resend allows 100 emails a day on
-# the current plan and sign-in codes and first-run emails come out of the same
-# allowance: on Nov 2 and 9 the weekly email alone was 175 and 202, so a code
-# asked for that day could go unsent. Set WEEKLY_EMAIL_CAP to change it.
+# Resend's free plan (Nov 16): 100 emails a day and 3,000 a month, sign-in
+# codes, alerts and first-run emails included. Codes are never held back; the
+# weekly email spends only what's left after EMAIL_RESERVE a day for them.
+EMAIL_DAILY_CAP = int(os.environ.get("RESEND_DAILY_CAP") or 100)
+EMAIL_MONTHLY_CAP = int(os.environ.get("RESEND_MONTHLY_CAP") or 3000)
+EMAIL_RESERVE = int(os.environ.get("EMAIL_RESERVE") or 20)
+# At most this many weekly emails a day, and on which days (Monday is 0): the
+# week's email is spread over the weekdays instead of all going on Monday (Nov
+# 16: 80 went that morning and 170 were held for the cap).
 WEEKLY_CAP = int(os.environ.get("WEEKLY_EMAIL_CAP") or 80)
-# Who the capped email goes to first, by tier (Nov 9): people who clicked one
-# before, then people with a plan who used Daash last week, people with a plan,
-# and last people with nothing planned. Plan holders clicked 12% on Nov 2,
-# those without 7%.
-WEEKLY_TIERS = ("clicked", "plan_active", "plan", "no_plan")
-WEEKLY_ACTIVE_SECONDS = 7 * 86400
+WEEKLY_DAYS = tuple(int(d) for d in (os.environ.get("WEEKLY_EMAIL_DAYS") or "0,1,2,3,4").split(",") if d.strip())
+# Who it goes to first (Nov 16): people who connected in the last two weeks,
+# then by how recently they used Daash.
+WEEKLY_NEW_SECONDS = 14 * 86400
 # People with nothing to say this week, read once per process, not every pass.
 _WEEKLY_NOTHING: dict[str, set[str]] = {}
+# Who has been told about today already (weekly_email_skipped once a person a day).
+_WEEKLY_SKIPPED: dict[str, set[str]] = {}
 
 
-def weekly_tier(no_plan: bool, last_seen: int, clicked: str, now: float) -> str:
-    """Which of WEEKLY_TIERS someone is in this Monday."""
-    if clicked:
-        return "clicked"
-    if no_plan:
-        return "no_plan"
-    return "plan_active" if last_seen and now - last_seen < WEEKLY_ACTIVE_SECONDS else "plan"
+def weekly_room(now: float | None = None) -> int:
+    """How many weekly emails can go now: today's weekly allowance, what the day's
+    cap leaves after the reserve, and what the month's cap leaves after a
+    reserve for every day still to come."""
+    now = now if now is not None else time.time()
+    today = datetime.fromtimestamp(now, timezone.utc).date()
+    day = today.isoformat()
+    days_left = ((today.replace(day=28) + timedelta(days=4)).replace(day=1) - today).days
+    return max(0, min(
+        WEEKLY_CAP - store.emails_sent(day, "weekly"),
+        EMAIL_DAILY_CAP - EMAIL_RESERVE - store.emails_sent(day),
+        EMAIL_MONTHLY_CAP - store.emails_sent(day[:7]) - EMAIL_RESERVE * days_left,
+    ))
+
+
+def weekly_priority(standing: tuple[int, str, str, int], now: float) -> tuple[int, int]:
+    """Sort key: connected in the last two weeks first, then the most recently active."""
+    last_seen, _sent, _clicked, joined = standing
+    return (0 if joined and now - joined < WEEKLY_NEW_SECONDS else 1, -(last_seen or 0))
 
 
 def weekly_email_once(today: date | None = None, send: Callable[..., None] | None = None,
                       spacing: float = WEEKLY_SPACING, now: float | None = None,
-                      cap: int | None = None) -> dict[str, int]:
-    """Send this week's email, up to the cap, to whoever it hasn't gone to. Returns counts.
+                      room: int | None = None) -> dict[str, int]:
+    """Send this week's email to whoever it hasn't gone to, within today's room. Returns counts.
 
     Only to people whose first week with Daash is done: someone who connected
     on Sunday night got "your week" the next morning (Nov 9), with no week
     behind it. They get it the Monday after their first seven days.
 
-    Everyone's week is read first, then the email goes by tier (WEEKLY_TIERS),
-    and within a tier to whoever has gone longest without one, until the cap.
-    The rest are held: no email this week, and first in their tier next week.
+    Nov 16: people go in priority order (weekly_priority), each one's week read
+    only when there's room to send it, so Garmin isn't asked for weeks that
+    won't go out. Whoever doesn't fit today is deferred to the next sending
+    day (weekly_email_skipped, reason daily_cap); the week's sends stop when
+    Resend's room for the day runs out, leaving EMAIL_RESERVE for sign-in codes.
     """
     today = today or datetime.now(ZoneInfo("Europe/London")).date()
     now = now if now is not None else time.time()
-    cap = WEEKLY_CAP if cap is None else cap
     monday = (today - timedelta(days=today.weekday())).isoformat()
     send = send or support_mail.send_weekly
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
     counts = {"sent": 0, "nothing_to_say": 0, "failed": 0, "held": 0}
-    room = cap - store.weekly_sent_count(monday)
-    if room <= 0:
-        return counts
+    room = weekly_room(now) if room is None else room
     standing = store.weekly_standing()
     nothing = _WEEKLY_NOTHING.setdefault(monday, set())
-    ready = []
+    told = _WEEKLY_SKIPPED.setdefault(today.isoformat(), set())
+    waiting = []
     for user_token, email, fingerprint in store.weekly_recipients(now - WEEKLY_FIRST_WEEK_SECONDS):
-        last_seen, last_sent, clicked = standing.get(fingerprint, (0, "", ""))
-        if last_sent >= monday or fingerprint in nothing:
+        mine = standing.get(fingerprint, (0, "", "", 0))
+        if mine[1] >= monday or fingerprint in nothing:
             continue
+        waiting.append((weekly_priority(mine, now), user_token, email, fingerprint))
+    waiting.sort(key=lambda w: w[0])
+    deferred: list[tuple[tuple[int, int], str]] = []
+    failures = 0
+    for at, (rank, user_token, email, fingerprint) in enumerate(waiting):
+        if counts["sent"] >= room or failures >= 3:
+            deferred = [(r, f) for r, _t, _e, f in waiting[at:]]
+            break
         try:
             said = weekly.summary(_plan_answer(user_token), today)
         except Exception as exc:  # noqa: BLE001 - one person's Garmin never stops the rest
@@ -1476,49 +1501,79 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
             nothing.add(fingerprint)
             counts["nothing_to_say"] += 1
             continue
-        tier = weekly_tier(bool(said.get("no_plan")), last_seen, clicked, now)
-        ready.append((WEEKLY_TIERS.index(tier), last_sent, -last_seen, tier, user_token, email, fingerprint, said))
-    ready.sort(key=lambda r: r[:3])
-    counts["held"] = max(0, len(ready) - room)
-    for _rank, _sent, _seen, tier, user_token, email, fingerprint, said in ready[:room]:
         if not store.claim_weekly(fingerprint, monday):
             continue
-        link = unsubscribe_url(base, fingerprint)
-        ask = ((lambda app, kind, f=fingerprint: weekly_ask_url(base, f, app, kind, monday))
-               if base else weekly.ask_link)
+        subject, text, page_html = weekly_message(base, user_token, fingerprint, said, monday)
         try:
-            crewed = crews.in_crew(crews.member_key(user_token, fingerprint))
-        except Exception:  # noqa: BLE001 - no line rather than no email
-            crewed = True
-        subject, text, page_html = weekly.compose(said, link, oauth.app_for_user(user_token), ask, in_crew=crewed)
-        try:
-            send(email, subject, text, page_html, link)
+            send(email, subject, text, page_html, unsubscribe_url(base, fingerprint))
             counts["sent"] += 1
+            failures = 0
             analytics.capture("weekly_email_sent", fingerprint, {
                 "key_sessions": len(said.get("key_sessions") or []), "no_plan": bool(said.get("no_plan")),
-                "crew_line": not crewed, "tier": tier,
-                "$process_person_profile": False})
+                "priority": "new" if rank[0] == 0 else "active", "week": monday,
+                "day": today.isoformat(), "$process_person_profile": False})
         except OSError:
             counts["failed"] += 1
+            failures += 1
         # Resend takes two requests a second.
         time.sleep(min(spacing, 1.0))
-    if counts["held"]:
+    counts["held"] = len(deferred)
+    last_day = today.weekday() == max(WEEKLY_DAYS or (0,))
+    for rank, fingerprint in deferred:
+        if fingerprint in told:
+            continue
+        told.add(fingerprint)
+        analytics.capture("weekly_email_skipped", fingerprint, {
+            "reason": "daily_cap", "week": monday, "day": today.isoformat(),
+            "priority": "new" if rank[0] == 0 else "active",
+            **({"carried_to_next_week": True} if last_day else {}), "$process_person_profile": False})
+    if deferred:
         analytics.capture("weekly_email_held", "daash-server", {
-            "week": monday, "held": counts["held"], "sent": counts["sent"], "cap": cap,
-            "by_tier": {t: sum(1 for r in ready[room:] if r[3] == t) for t in WEEKLY_TIERS},
-            "$process_person_profile": False})
+            "week": monday, "day": today.isoformat(), "held": len(deferred), "sent": counts["sent"],
+            "room": room, "$process_person_profile": False})
     return counts
 
 
+def weekly_message(base: str, user_token: str, fingerprint: str, said: dict[str, Any],
+                   monday: str) -> tuple[str, str, str]:
+    """(subject, text, html) for one person's weekly email, its links into the app and a chat.
+
+    The app links carry one single-use sign-in code, made now: a click in the
+    next 15 minutes opens the app signed in; a later one, its sign-in first.
+    """
+    unsubscribe = unsubscribe_url(base, fingerprint)
+    if base:
+        into_app, ask = weekly.email_links(base, fingerprint, store.unsubscribe_signature(fingerprint),
+                                           monday, store.new_handoff(user_token))
+    else:
+        into_app, ask = None, weekly.ask_link
+    try:
+        crewed = crews.in_crew(crews.member_key(user_token, fingerprint))
+    except Exception:  # noqa: BLE001 - no line rather than no email
+        crewed = True
+    return weekly.compose(said, unsubscribe, oauth.app_for_user(user_token), ask, in_crew=crewed,
+                          into_app=into_app)
+
+
 def _weekly_email_forever() -> None:
+    seeded = False
     while True:
         now = datetime.now(ZoneInfo("Europe/London"))
-        if now.weekday() == 0 and WEEKLY_HOURS[0] <= now.hour < WEEKLY_HOURS[1]:
+        if not seeded:
+            # Sends from before counting began (Nov 16): Monday's emails, so a
+            # deploy that day doesn't count the day as empty.
+            seeded = True
+            monday = (now.date() - timedelta(days=now.weekday())).isoformat()
+            with contextlib.suppress(Exception):
+                if now.weekday() == 0:
+                    store.seed_email_count(datetime.now(timezone.utc).date().isoformat(), "weekly",
+                                           store.weekly_sent_count(monday))
+        if now.weekday() in WEEKLY_DAYS and WEEKLY_HOURS[0] <= now.hour < WEEKLY_HOURS[1]:
             try:
                 counts = weekly_email_once(now.date())
                 if any(counts.values()):
                     log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, "
-                             "%(failed)d failed, %(held)d held for the cap", counts)
+                             "%(failed)d failed, %(held)d deferred for the day's cap", counts)
             except Exception:  # noqa: BLE001
                 log.exception("Weekly email pass failed")
         time.sleep(WEEKLY_EVERY)
@@ -1570,7 +1625,7 @@ def first_run_email(garmin_user_id: str, activities: list[dict], send: Callable[
         newest, unsubscribe, oauth.app_for_user(link.user_token), ask,
         history=history_url(base, garmin_user_id) if base else None)
     try:
-        (send or support_mail.send_weekly)(email, subject, text, page_html, unsubscribe)
+        (send or functools.partial(support_mail.send_weekly, kind="lifecycle"))(email, subject, text, page_html, unsubscribe)
     except OSError:
         return False
     analytics.capture("first_run_email_sent", fingerprint, {
@@ -3090,7 +3145,7 @@ def stuck_connection_email(user_token: str, approved_at: float, app: str | None,
     unsubscribe = unsubscribe_url(base, fingerprint)
     subject, text, page_html = weekly.compose_stuck(app, unsubscribe)
     try:
-        (send or support_mail.send_weekly)(email, subject, text, page_html, unsubscribe)
+        (send or functools.partial(support_mail.send_weekly, kind="lifecycle"))(email, subject, text, page_html, unsubscribe)
     except OSError:
         return False
     analytics.capture("stuck_connection_email_sent", fingerprint, {"app": app, "device": device,
@@ -3316,6 +3371,40 @@ def weekly_ask_url(base: str, email_hash: str, app: str, kind: str, monday: str)
             f"&a={app.lower()}&q={kind}&w={monday}")
 
 
+@mcp.custom_route("/email/open", methods=["GET"])
+async def email_open(request: Request) -> Response:
+    """The weekly email's way into the Daash app (Nov 16): count the click, then open the app.
+
+    The week (or the day's session) in the app, with the email's single-use
+    sign-in code if it carried one: in its first 15 minutes it signs the app
+    in; after that the app asks to sign in and then opens the same place. A
+    link that isn't genuine opens the app's front screen, uncounted.
+    """
+    query = request.query_params
+    fingerprint, signature = query.get("u", ""), query.get("s", "")
+    week, day = query.get("w", ""), query.get("d", "")
+    link = query.get("link") if query.get("link") in weekly.LINKS else "primary_button"
+    base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
+    if not (fingerprint and hmac.compare_digest(signature, store.unsubscribe_signature(fingerprint))):
+        return RedirectResponse(f"{base}/app/", status_code=302)
+    dated = re.compile(r"\d{4}-\d{2}-\d{2}")
+    week = week if dated.fullmatch(week) else ""
+    day = day if dated.fullmatch(day) else ""
+    if week:
+        store.mark_weekly_clicked(fingerprint, week)
+    analytics.capture("weekly_email_clicked", fingerprint, drop_empty({
+        "link": link, "utm_source": "weekly_email", "week": week or None, "day": day or None,
+        "device": _device(request).get("device"), "$process_person_profile": False}))
+    code = query.get("c", "")
+    login = f"login={code}&" if re.fullmatch(r"[\w-]{16,64}", code) else ""
+    tail = f"source=weekly_email&link={link}"
+    if day and query.get("v") == "session":
+        target = f"#/session/{day}?{login}from=plan&{tail}"
+    else:
+        target = (f"#/plan?{login}" + (f"week={week}&" if week else "") + (f"focus={day}&" if day else "") + tail)
+    return RedirectResponse(f"{base}/app/{target}", status_code=302)
+
+
 @mcp.custom_route("/email/ask", methods=["GET"])
 async def email_ask(request: Request) -> Response:
     """Count a click on the Monday email's link, then open the chat it asks in.
@@ -3324,6 +3413,7 @@ async def email_ask(request: Request) -> Response:
     email. A link that isn't genuine still opens the chat, uncounted.
     """
     query = request.query_params
+    choose = query.get("a", "") == "choose"
     app = ASK_APPS.get(query.get("a", ""), "Claude")
     kind = query.get("q", "")
     kind = kind if kind in weekly.QUESTIONS else "week"
@@ -3333,9 +3423,20 @@ async def email_ask(request: Request) -> Response:
     if fingerprint and hmac.compare_digest(signature, store.unsubscribe_signature(fingerprint)):
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week):
             store.mark_weekly_clicked(fingerprint, week)
-        analytics.capture("weekly_email_clicked", fingerprint, {
-            "app": app, "question": kind, "week": week if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week) else None,
-            "device": device, "$process_person_profile": False})
+        analytics.capture("weekly_email_clicked", fingerprint, drop_empty({
+            "app": None if choose else app, "question": kind,
+            "week": week if re.fullmatch(r"\d{4}-\d{2}-\d{2}", week) else None, "device": device,
+            # Nov 16: which link, and that it came from the weekly email.
+            "link": query.get("link") if query.get("link") in weekly.LINKS else None,
+            "utm_source": "weekly_email" if query.get("utm_source") == "weekly_email" else None,
+            "$process_person_profile": False}))
+    if choose:
+        # Not known which app they use: both, a tap each.
+        return page("Ask about your week", f"""
+            <h1>Ask about your week</h1>
+            <p>Daash answers in the app you connected it to.</p>
+            <a class=button href="{html.escape(weekly.ask_link("Claude", kind))}">Ask in Claude</a>
+            <a class=button href="{html.escape(weekly.ask_link("ChatGPT", kind))}">Ask in ChatGPT</a>""", noindex=True)
     if app == "Claude" and device in ("phone", "tablet"):
         return _claude_on_phone(kind)
     return RedirectResponse(weekly.ask_link(app, kind), status_code=302)

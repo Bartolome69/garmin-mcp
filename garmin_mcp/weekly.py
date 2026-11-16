@@ -208,7 +208,7 @@ def summary(answer: Any, today: date) -> dict[str, Any] | None:
                           "km": _km(x["planned_km"]) if x.get("planned_km")
                           and f"{_km(x['planned_km'])} km" not in _name(x) else None}
                          for x in ahead if x.get("date") == day.isoformat()]
-                schedule.append({"day": DAY_NAMES[offset][:3], "items": items})
+                schedule.append({"day": DAY_NAMES[offset][:3], "date": day.isoformat(), "items": items})
 
     if not last_line and not planned_week:
         return None
@@ -250,6 +250,37 @@ CREW_LINE = "Run with friends? Start a Daash crew and see who's running when, an
 CREW_PAGE = "https://daash.run/crews?utm_source=weekly-email&utm_medium=email&utm_campaign=crews"
 
 
+# Nov 16: the email leads into the Daash app. Every link carries where it came
+# from (utm_source) and which link it was, for weekly_email_clicked and the
+# app's own events.
+LINKS = ("primary_button", "ai_link", "day_row")
+UTM = "utm_source=weekly_email&utm_medium=email"
+BUTTON = "See or edit your week"
+# Someone with nothing planned has no week to see or edit: the app's Plan tab
+# offers to build one.
+BUTTON_NO_PLAN = "Build a plan in the app"
+
+
+def email_links(base: str, fingerprint: str, signature: str, week: str,
+                code: str | None = None) -> tuple[Callable[..., str], Callable[[str, str], str]]:
+    """(into the app, into a chat): the email's links, each by way of Daash so the click is counted.
+
+    `code` is a single-use sign-in code made when the email is sent: a click in
+    its first 15 minutes opens the app signed in, a later one at sign-in, which
+    then goes where the link was going.
+    """
+    who = f"u={fingerprint}&s={signature}&w={week}"
+
+    def into_app(link: str, day: str | None = None, session: bool = False) -> str:
+        return (f"{base}/email/open?{who}&link={link}" + (f"&d={day}" if day else "")
+                + ("&v=session" if session else "") + (f"&c={code}" if code else "") + f"&{UTM}")
+
+    def into_chat(app: str, kind: str) -> str:
+        return f"{base}/email/ask?{who}&a={app.lower()}&q={kind}&link=ai_link&{UTM}"
+
+    return into_app, into_chat
+
+
 def ask_link(app: str, kind: str) -> str:
     """The chat link itself: a new chat in that app with the question typed."""
     return ASK_LINKS[app] + quote(f"Ask Daash: {QUESTIONS[kind]}")
@@ -263,12 +294,15 @@ def credit_line(device: Any = None) -> str:
 
 
 def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
-            ask: Callable[[str, str], str] = ask_link, in_crew: bool = True) -> tuple[str, str, str]:
+            ask: Callable[[str, str], str] = ask_link, in_crew: bool = True,
+            into_app: Callable[..., str] | None = None) -> tuple[str, str, str]:
     """(subject, plain text, html) for one person's Monday email.
 
     `ask` makes each app's link from the app and the kind of question, so the
     sender can route it through a page that counts the click. Someone in no
-    crew gets a line asking them to start one.
+    crew gets a line asking them to start one. With `into_app` (Nov 16), the
+    main button opens the week in the Daash app, each day of the week opens
+    that day, and asking in Claude or ChatGPT is a smaller link under it.
     """
     keys = s.get("key_sessions") or []
     block = s.get("block") or {}
@@ -307,7 +341,13 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
     if s.get("no_plan"):
         parts.append(f"Nothing planned this week. Ask Daash to build you a plan from your recent {s['sport']}, "
                      "and every session goes on your watch.")
-    parts.append(f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items()))
+    named = app if app in ASK_LINKS else "your AI"
+    ask_words = f"Ask for a plan in {named}" if s.get("no_plan") else f"Ask about your week in {named}"
+    if into_app:
+        parts.append(f"{BUTTON_NO_PLAN if s.get('no_plan') else BUTTON}: {into_app('primary_button')}\n"
+                     f"{ask_words}: {ask(app if app in ASK_LINKS else 'choose', kind)}")
+    else:
+        parts.append(f"Ask Daash: {question}\n" + "\n".join(f"{a}: {u}" for a, u in chosen.items()))
     crew_links = {} if in_crew else {a: ask(a, "crew") for a in chosen}
     if crew_links:
         parts.append(CREW_LINE + "\n" + "\n".join(f"{a}: {u}" for a, u in crew_links.items())
@@ -335,8 +375,15 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
                                    for i in d["items"])
             else:
                 cell = "<span style=\"color:#9AA1AD\">Rest</span>"
-            rows += (f"<tr><td style=\"padding:7px 10px 7px 0;color:#5B6270;vertical-align:top;width:44px\">{e(d['day'])}</td>"
-                     f"<td style=\"padding:7px 0;vertical-align:top\">{cell}</td></tr>")
+            if into_app and d.get("date"):
+                # Each day opens that day in the app: its session, or the week on a rest day.
+                href = e(into_app("day_row", d["date"], session=bool(d["items"])))
+                link = f"<a href=\"{href}\" style=\"color:inherit;text-decoration:none;display:block\">"
+                rows += (f"<tr><td style=\"padding:7px 10px 7px 0;color:#5B6270;vertical-align:top;width:44px\">{link}{e(d['day'])}</a></td>"
+                         f"<td style=\"padding:7px 0;vertical-align:top\">{link}{cell}</a></td></tr>")
+            else:
+                rows += (f"<tr><td style=\"padding:7px 10px 7px 0;color:#5B6270;vertical-align:top;width:44px\">{e(d['day'])}</td>"
+                         f"<td style=\"padding:7px 0;vertical-align:top\">{cell}</td></tr>")
         total = s.get("this_week") or {}
         body += ("<p style=\"margin:0 0 6px\">Your week:</p>"
                  "<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;margin:0 0 6px;"
@@ -350,7 +397,14 @@ def compose(s: dict[str, Any], unsubscribe: str, app: str | None = None,
         body += (f"<p style=\"margin:0 0 16px\">Nothing planned this week. Ask Daash to build you a plan from your "
                  f"recent {e(s['sport'])}, and every session goes on your watch.</p>")
     label = "Ask Daash to build a plan" if s.get("no_plan") else "Ask Daash about your week"
-    if len(chosen) == 1:
+    if into_app:
+        # The app first, as the button; the chat under it, smaller.
+        body += (f"<p style=\"margin:8px 0 0\"><a href=\"{e(into_app('primary_button'))}\" style=\"display:inline-block;"
+                 f"background:#E0312A;color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:10px\">"
+                 f"{BUTTON_NO_PLAN if s.get('no_plan') else BUTTON}</a></p>"
+                 f"<p style=\"margin:10px 0 0;font-size:14px\"><a href=\"{e(ask(app if app in ASK_LINKS else 'choose', kind))}\" "
+                 f"style=\"color:#5B6270\">{e(ask_words)}</a></p>")
+    elif len(chosen) == 1:
         (only, url), = chosen.items()
         body += (f"<p style=\"margin:8px 0 0\"><a href=\"{e(url)}\" style=\"display:inline-block;background:#E0312A;"
                  f"color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:10px\">{label} in {e(only)}</a></p>")
