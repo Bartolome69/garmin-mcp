@@ -185,22 +185,32 @@ def _pause_left() -> int:
 # refusal that follows looks like any other refusal; within this window it is
 # read as that pause. Telling that person "it is not your password" (Oct 13)
 # sent them straight back to try the same password again.
-_WRONG_PASSWORD: dict[str, float] = {}
+# Nov 16: how many in a row, too, for the reset link's second-time button and
+# its count (password_reset_link_clicked's failure_count).
+_WRONG_PASSWORD: dict[str, tuple[float, int]] = {}
 WRONG_PASSWORD_WINDOW = 30 * 60
 
 
-def _note_wrong_password(email: str) -> None:
+def _note_wrong_password(email: str) -> int:
+    """Note a wrong password for this email; how many there have been in the window."""
     now = time.time()
-    _WRONG_PASSWORD[store.email_fingerprint(email)] = now
+    key = store.email_fingerprint(email)
+    count = _wrong_password_count(email) + 1
+    _WRONG_PASSWORD[key] = (now, count)
     if len(_WRONG_PASSWORD) > 5000:
-        for key, at in list(_WRONG_PASSWORD.items()):
+        for k, (at, _n) in list(_WRONG_PASSWORD.items()):
             if at < now - WRONG_PASSWORD_WINDOW:
-                _WRONG_PASSWORD.pop(key, None)
+                _WRONG_PASSWORD.pop(k, None)
+    return count
+
+
+def _wrong_password_count(email: str) -> int:
+    held = _WRONG_PASSWORD.get(store.email_fingerprint(email)) if email else None
+    return held[1] if held and held[0] > time.time() - WRONG_PASSWORD_WINDOW else 0
 
 
 def _recent_wrong_password(email: str) -> bool:
-    at = _WRONG_PASSWORD.get(store.email_fingerprint(email)) if email else None
-    return at is not None and at > time.time() - WRONG_PASSWORD_WINDOW
+    return _wrong_password_count(email) > 0
 
 
 # Where the person came from, as the website remembered it: a cookie set on
@@ -2043,6 +2053,7 @@ code, .url { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .note { font-size:0.9rem }
 .hint { margin:6px 0 0 }
 .forgot { margin:8px 0 0; text-align:right } .social { margin:14px 0 0 }
+.reset-cta { display:block; margin:0 } .err .reset-cta a.button { margin-top:12px }
 .foot { text-align:center; margin-top:18px; font-size:0.85rem }
 a { color:var(--ink); text-decoration:underline; text-decoration-color:var(--line);
   text-underline-offset:3px }
@@ -2083,14 +2094,29 @@ _PASSWORD_SCRIPT = """<script>
       caps = document.getElementById("caps-hint"), flow = document.querySelector("input[name=flow]");
   // Which of the form's helpers get used (Nov 14): the word only, and the
   // request it belongs to, so it can be told which app the person came from.
-  function tap(what) {
+  function tap(what, a) {
     try {
-      navigator.sendBeacon("/connect/tap", new URLSearchParams({what: what, flow: flow ? flow.value : ""}));
+      var said = {what: what, flow: flow ? flow.value : ""};
+      if (a && a.getAttribute("data-placement")) {
+        said.placement = a.getAttribute("data-placement");
+        said.failures = a.getAttribute("data-failures") || "0";
+      }
+      navigator.sendBeacon("/connect/tap", new URLSearchParams(said));
     } catch (e) {}
   }
   document.querySelectorAll("a[data-tap]").forEach(function (a) {
-    a.addEventListener("click", function () { tap(a.getAttribute("data-tap")); });
+    a.addEventListener("click", function () { tap(a.getAttribute("data-tap"), a); });
   });
+  // Nov 16: an in-app browser can open Garmin's reset in this same view, and
+  // coming back can reload the form. The email is kept for this tab (never
+  // the password) and put back if the box is empty.
+  var email = document.getElementById("email");
+  if (email) {
+    try {
+      if (!email.value && sessionStorage.getItem("daash-garmin-email")) email.value = sessionStorage.getItem("daash-garmin-email");
+      email.addEventListener("input", function () { sessionStorage.setItem("daash-garmin-email", email.value); });
+    } catch (e) {}
+  }
   if (!input || !eye) return;
   function shown(on) {
     input.type = on ? "text" : "password";
@@ -2398,9 +2424,16 @@ SOCIAL_SIGNIN_TEXT = ("Signed in to Garmin with Apple or Google? Set a Garmin pa
                       "Garmin Connect first, then come back.")
 
 
-def _reset_link(text: str = "Forgot your Garmin password?") -> str:
-    return (f'<a href="{html.escape(GARMIN_RESET_URL, quote=True)}" target=_blank rel=noopener '
-            f'data-tap=reset>{text}</a>')
+# Where a reset link sits, as password_reset_link_clicked records it (Nov 16).
+RESET_PLACEMENTS = ("under_field", "after_failure", "locked")
+
+
+def _reset_link(text: str = "Forgot your Garmin password?", placement: str = "under_field",
+                failures: int = 0, button: bool = False) -> str:
+    """Garmin's reset, in a new tab: the form here, and what's typed in it, stay put."""
+    return (f'<a href="{html.escape(GARMIN_RESET_URL, quote=True)}" target=_blank rel=noopener'
+            f'{" class=button" if button else ""} data-tap=reset data-placement={placement} '
+            f'data-failures={int(failures)}>{text}</a>')
 
 
 _INVITE_FIELD = """
@@ -2434,6 +2467,17 @@ async def connect_tap(request: Request) -> Response:
             _TAPS_BY_ADDRESS.clear()
         analytics.capture("sign_in_tap", None, _with_source(request, {
             "what": what, **_signin_context(None, flow), "website_visitor": bool(_visitor(request))}))
+        if what == "reset":
+            # Nov 16: the reset link by where it sat and how many wrong tries
+            # came before it. Words and a number only: no address, nothing typed.
+            placement = str(form.get("placement", ""))
+            try:
+                failures = max(0, min(int(str(form.get("failures", "0"))), 20))
+            except ValueError:
+                failures = 0
+            analytics.capture("password_reset_link_clicked", None, _with_source(request, {
+                "placement": placement if placement in RESET_PLACEMENTS else "under_field",
+                "failure_count": failures, **_signin_context(None, flow)}))
     return Response(status_code=204)
 
 
@@ -2536,7 +2580,8 @@ def _garmin_intro(flow: str, usual: bool = True) -> Response:
     )
 
 
-def _password_form(flow: str, *, email: str = "", notice: str = "", status: int = 200) -> Response:
+def _password_form(flow: str, *, email: str = "", notice: str = "", status: int = 200,
+                   failures: int = 0) -> Response:
     """The sign-in form. After a wrong password it comes back with what went
     wrong above it and the email still filled in, so trying again is retyping
     the password and nothing else (Nov 14)."""
@@ -2562,7 +2607,7 @@ def _password_form(flow: str, *, email: str = "", notice: str = "", status: int 
                     aria-pressed=false aria-label="Show password">{_EYE}</button>
           </div>
           <p class="note hint" id=caps-hint role=status hidden>Caps Lock is on.</p>
-          <p class="note forgot">{_reset_link()}</p>
+          <p class="note forgot">{_reset_link(failures=failures)}</p>
           <button>Connect</button>
           {f'<p class="note social">{SOCIAL_SIGNIN_TEXT}</p>' if SOCIAL_SIGNIN_NOTE else ""}
           <p class=fine>Occasional Daash emails, easy to stop.</p>
@@ -2665,6 +2710,7 @@ def _log_signin_failure(exc: BaseException, reason: str) -> None:
 def _signin_error(
     exc: BaseException, flow: str = "", *, paused: bool = True, tries: int = 1,
     account_paused: bool = False, email: str = "", inline: bool = False, wrong_before: bool = False,
+    failures: int = 0,
 ) -> str:
     """Explain a failed sign-in in terms that make sense on a web page.
 
@@ -2687,17 +2733,18 @@ def _signin_error(
         # pausing their account, not anything about where Daash connects from.
         # Oct 25: someone met this a minute after a wrong password and didn't
         # come back. Whose lock it is, how long, and three steps, in order.
+        # Nov 16: the reset link first, as a button: resetting is the way
+        # out that doesn't depend on remembering the password.
         return (
-            "<div class=err><strong>Garmin has locked sign-ins to your account for "
-            "about 30 minutes.</strong> It&rsquo;s Garmin&rsquo;s own safety lock after a "
-            "wrong password, not Daash, and trying again now restarts the wait.</div>"
+            "<div class=err><strong>Garmin has temporarily locked sign-ins to your account.</strong> "
+            "It&rsquo;s Garmin&rsquo;s own safety lock after wrong passwords, not Daash, and trying "
+            "again now restarts the wait. Reset your Garmin password, or wait about 30 minutes "
+            "before trying again.</div>"
             + typed
+            + f'<p class=reset-cta>{_reset_link("Reset your Garmin password", "locked", failures, button=True)}</p>'
             + "<ol class=steps>"
-            "<li>Check your password by signing in at "
-            '<a href="https://connect.garmin.com/" target=_blank rel=noopener>connect.garmin.com</a>. '
-            "Forgotten it? Reset it there with &ldquo;Forgot password&rdquo;.</li>"
-            "<li>Wait about 30 minutes from your last try.</li>"
-            "<li>Come back and sign in here with the password that worked.</li>"
+            "<li>Reset your password on Garmin&rsquo;s page, or wait about 30 minutes from your last try.</li>"
+            "<li>Come back and sign in here with your Garmin Connect password.</li>"
             "</ol>"
             + _garmin_instead(flow, "paused")
             + _try_again(flow)
@@ -2710,9 +2757,9 @@ def _signin_error(
     if reason == "rate_limited":
         if not paused:
             return (
-                "<div class=err><strong>Garmin is asking for a pause, sorry.</strong> "
+                "<div class=err><strong>Garmin is limiting sign-ins for a few minutes.</strong> "
                 f"It is not your password. Garmin limits how many sign-ins it takes{tried}. "
-                "Please try again in fifteen minutes.</div>"
+                "Please try again shortly.</div>"
                 + _garmin_instead(flow)
                 + _try_again(flow)
             )
@@ -2748,18 +2795,23 @@ def _signin_error(
         # The form comes back underneath (`inline`), email filled in. Garmin's
         # lock follows a few wrong tries, so the second wrong one says so
         # plainly before the third.
+        # Nov 16: most wrong tries are the email's password, not Garmin's.
+        # The reset is in the message; from the second wrong try it's a button,
+        # with Garmin's lock named before it happens (Nov 15: 23 of 96 people
+        # had a wrong password, 4 were then locked).
+        again = failures >= 2 or (wrong_before and failures < 1)
         warning = (
-            "Garmin has now turned down more than one try. Another wrong one can make Garmin "
-            "lock sign-ins for about 30 minutes, so check your password at "
-            '<a href="https://connect.garmin.com/" target=_blank rel=noopener data-tap=check_on_garmin>connect.garmin.com</a> '
-            "first, or reset it there with &ldquo;Forgot password&rdquo;."
-            if wrong_before else
-            "Check your password by signing in at "
-            '<a href="https://connect.garmin.com/" target=_blank rel=noopener data-tap=check_on_garmin>connect.garmin.com</a>, '
-            "then try again here. Forgotten it? Reset it there with &ldquo;Forgot password&rdquo;."
+            "It&rsquo;s your Garmin Connect password (the one for the Garmin app), not your email "
+            f"password. {_reset_link('Reset it here', 'after_failure', failures)}."
         )
+        if again:
+            warning += (
+                " Garmin locks accounts after several wrong tries. If you&rsquo;re not sure, "
+                "reset it rather than guessing."
+                f'<span class=reset-cta>{_reset_link("Reset your Garmin password", "after_failure", failures, button=True)}</span>'
+            )
         return (
-            "<div class=err><strong>Garmin didn&rsquo;t accept that email and password.</strong> "
+            "<div class=err><strong>That password didn&rsquo;t work.</strong> "
             f"{warning}</div>"
             + ("" if inline else typed)
             + _garmin_instead(flow, "password")
@@ -3842,8 +3894,9 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
         reason = _failure_reason(exc)
         account_paused = reason == "account_locked" or (
             wrong_before and reason in ("blocked_by_garmin", "rate_limited"))
+        failures = _wrong_password_count(email)
         if reason == "bad_credentials":
-            _note_wrong_password(email)
+            failures = _note_wrong_password(email)
         elif account_paused and reason != "account_locked":
             reason = "account_paused"
         paused = not egress and not account_paused
@@ -3855,13 +3908,15 @@ async def _connect_attempt(request: Request, form: Any, email: str, password: st
                 **({"wrong_before": True} if wrong_before else {}))
         if reason == "bad_credentials":
             # The form again, under what went wrong, with the email kept.
-            return _password_form(flow, email=email, status=400, notice=_signin_error(
+            return _password_form(flow, email=email, status=400, failures=failures, notice=_signin_error(
                 exc, flow, paused=paused, tries=tries, email=email, inline=True,
-                wrong_before=wrong_before))
+                wrong_before=wrong_before, failures=failures))
         return page(
             "Sign in to Garmin",
             _signin_error(exc, flow, paused=paused, tries=tries,
-                          account_paused=account_paused, email=email),
+                          account_paused=account_paused, email=email, failures=failures)
+            # The lock page's reset button is counted too (Nov 16).
+            + _PASSWORD_SCRIPT,
             400,
         )
 

@@ -768,35 +768,40 @@ async def main() -> int:
         # each wants a different response from the person reading it.
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
-        check("a wrong password is called a wrong password",
-              code == 400 and "didn&rsquo;t accept that email and password" in body, f"status {code}")
+        check("a wrong password is called a wrong password, and it's the Garmin Connect password",
+              code == 400 and "That password didn&rsquo;t work." in body
+              and "your Garmin Connect password (the one for the Garmin app), not your email password" in body,
+              f"status {code}")
         check("a wrong password brings the form back with the email as typed, to fix a slip or retype the password",
               f'value="{WRONG_PASSWORD_EMAIL}"' in body and "name=password" in body
-              and body.index("didn&rsquo;t accept") < body.index("name=password"))
+              and body.index("didn&rsquo;t work") < body.index("name=password"))
         wrong = [e for e in SENT if e["event"] == "sign_in_failed"
                  and e["properties"].get("account") == hosted.mask_email(WRONG_PASSWORD_EMAIL)]
         check("a failed sign-in reports what failed, by type, never by message",
               wrong and wrong[-1]["properties"].get("error_type") == "GarminConnectAuthenticationError"
               and "Possible causes" not in json.dumps(wrong[-1]),
               str(wrong[-1]["properties"] if wrong else None))
-        check("a first wrong password says how to check it, without the lock warning",
-              "Forgot password" in body and "more than one try" not in body)
+        check("a first wrong password links the reset in the message, counted as after_failure, no button or lock warning",
+              ">Reset it here</a>" in body and "data-placement=after_failure data-failures=1" in body
+              and "class=button data-tap=reset" not in body and "Garmin locks accounts" not in body, body[:200])
         check("a failed sign-in carries the category the setup report groups by, and the device",
               wrong[-1]["properties"].get("category") == "wrong_credentials"
               and wrong[-1]["properties"].get("device") == "computer"
               and wrong[-1]["properties"].get("login_route") == "password", str(wrong[-1]["properties"]))
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
-        check("a second wrong password warns that Garmin's lock comes next",
-              code == 400 and "more than one try" in body and "30 minutes" in body, f"status {code}")
+        check("a second wrong password makes the reset a button and says Garmin locks accounts",
+              code == 400 and "Garmin locks accounts after several wrong tries. If you&rsquo;re not sure, reset it rather than guessing." in body
+              and "class=button data-tap=reset data-placement=after_failure data-failures=2" in body, f"status {code}")
         # Nov 14: Garmin's lock page came back as a wrong password, which sent
         # the person to try another password and keep the lock going.
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, LOCKED_TITLE_EMAIL)
         locked = [e for e in SENT if e["event"] == "sign_in_failed"
                   and e["properties"].get("account") == hosted.mask_email(LOCKED_TITLE_EMAIL)]
-        check("Garmin's lock page reads as the lock, not as a wrong password",
-              code == 400 and "locked sign-ins to your account" in body and "didn&rsquo;t accept" not in body
+        check("Garmin's lock page reads as the lock, not as a wrong password, with the reset as a button",
+              code == 400 and "temporarily locked sign-ins to your account" in body and "didn&rsquo;t work" not in body
+              and "data-placement=locked" in body and "wait about 30 minutes" in body
               and locked and locked[-1]["properties"].get("reason") == "account_locked"
               and locked[-1]["properties"].get("category") == "account_locked",
               f"status {code} {locked[-1]['properties'] if locked else None}")
@@ -806,9 +811,12 @@ async def main() -> int:
         # Nov 14: the sign-in form's helpers. "Forgot your Garmin password?"
         # opens Garmin in a new tab so this one, and the request, stay put.
         code, body = await anyio_run(fetch, "/connect")
-        check("the form links Garmin's password page in a new tab, tracked",
-              "Forgot your Garmin password?" in body and 'target=_blank rel=noopener data-tap=reset' in body
+        check("the form links Garmin's password page in a new tab, tracked as under_field",
+              "Forgot your Garmin password?" in body and 'target=_blank rel=noopener data-tap=reset data-placement=under_field data-failures=0' in body
               and hosted.GARMIN_RESET_URL in body and "/connect/tap" in body, body[:120])
+        check("the email is kept for the tab if Garmin's page replaces this one, and never the password",
+              'sessionStorage.setItem("daash-garmin-email"' in body and "sessionStorage.setItem(\"daash-garmin-password" not in body
+              and body.count("sessionStorage.setItem") == 1)
         check("the Apple or Google line stays off until Garmin's handling is confirmed",
               "Apple or Google" not in body)
         before = len(SENT)
@@ -820,6 +828,20 @@ async def main() -> int:
               status == 204 and [e["properties"]["what"] for e in taps] == ["reset", "show_password"]
               and all(e["distinct_id"] == "anonymous" and "account" not in e["properties"] for e in taps),
               str([e["properties"] for e in taps]))
+        # Nov 16: password_reset_link_clicked, by where the link sat and how
+        # many wrong tries came before; anything odd is read safely.
+        before = len(SENT)
+        await anyio_run(post, "/connect/tap", {"what": "reset", "flow": "", "placement": "after_failure", "failures": "2"})
+        await anyio_run(post, "/connect/tap", {"what": "reset", "flow": "", "placement": "locked", "failures": "3"})
+        await anyio_run(post, "/connect/tap", {"what": "reset", "flow": "", "placement": "<b>", "failures": "lots",
+                                               "email": "someone@example.com", "password": "secret"})
+        time.sleep(0.3)
+        resets = [e["properties"] for e in SENT[before:] if e["event"] == "password_reset_link_clicked"]
+        check("password_reset_link_clicked says where and after how many failures, never who or what was typed",
+              [(r["placement"], r["failure_count"]) for r in resets] == [("after_failure", 2), ("locked", 3), ("under_field", 0)]
+              and not any(k in r for r in resets for k in ("email", "password", "account"))
+              and "someone@example.com" not in json.dumps(resets) and "secret" not in json.dumps(resets),
+              str(resets))
 
         # A visitor from daash.run: the website's PostHog id rides in on a
         # parent-domain cookie and is joined to the person at sign-in.
@@ -931,14 +953,15 @@ async def main() -> int:
             EGRESS.clear()
             code, body = await anyio_run(signin, RATE_LIMITED_EMAIL)
             check("a rate limit through the proxy says when to retry, and pauses nobody",
-                  code == 400 and "fifteen minutes" in body and "paused" not in body
+                  code == 400 and "limiting sign-ins for a few minutes" in body and "try again shortly" in body
+                  and "paused" not in body
                   and hosted._pause_left() == 0 and len(EGRESS) == hosted.SIGNIN_TRIES, f"status {code}")
 
             EGRESS.clear()
             code, body = await anyio_run(signin, WRONG_PASSWORD_EMAIL)
             check("a wrong password is not retried", code == 400 and len(EGRESS) == 1, str(len(EGRESS)))
-            check("a wrong password says how to check or reset it",
-                  "Forgot password" in body and "connect.garmin.com" in body)
+            check("a wrong password links Garmin's reset",
+                  "Reset it here" in body and hosted.GARMIN_RESET_URL in body)
 
             # After wrong passwords Garmin pauses the account, and its refusal
             # must read as that: not "it is not your password", not a retry
@@ -951,8 +974,9 @@ async def main() -> int:
             reasons = [e["properties"].get("reason") for e in SENT[sent_before:]
                        if e["event"] == "sign_in_failed"]
             check("a refusal right after a wrong password reads as the account paused",
-                  code == 400 and "locked sign-ins to your account for about 30 minutes" in body
-                  and "Garmin&rsquo;s own safety lock" in body and body.count("<li>") >= 3
+                  code == 400 and "temporarily locked sign-ins to your account" in body
+                  and "wait about 30 minutes" in body and "data-placement=locked" in body
+                  and "Garmin&rsquo;s own safety lock" in body and body.count("<li>") >= 2
                   and "not your password" not in body.lower(), f"status {code}")
             check("a paused account is not retried from other addresses, and pauses nobody",
                   len(LOCKED_TRIES) == 2 and hosted._pause_left() == 0, str(LOCKED_TRIES))
