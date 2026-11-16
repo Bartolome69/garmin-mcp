@@ -46,7 +46,7 @@ from .formatting import (
     parse_date,
     rounded,
 )
-from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, training_plan
+from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, tracing, training_plan
 from . import session as session_mod
 from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
@@ -1453,6 +1453,7 @@ def tool_errors(fn):
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
         inside, depth = hooks.enter()
+        traced = None
         try:
             if inside:
                 # Called by another tool, not the chat: its answer, unreported.
@@ -1463,6 +1464,7 @@ def tool_errors(fn):
             except hooks.Paused as paused:
                 # Turned away before reaching Garmin: not run, so not reported.
                 return {"error": str(paused)}
+            traced = tracing.start(fn.__name__)
             result = await answer(*args, **kwargs)
             if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
                 try:
@@ -1480,6 +1482,8 @@ def tool_errors(fn):
                 await anyio.sleep(settle - took)
             return hooks.after_tool(fn.__name__, result, took)
         finally:
+            if traced is not None:
+                tracing.finish(traced)
             hooks.leave(depth)
 
     async def answer(*args, **kwargs):
@@ -4449,7 +4453,7 @@ def _chunked(fetch: Callable[[Any, str, str], Any], start: date_cls, end: date_c
 
     def run(c: Any) -> list[Any]:
         with ThreadPoolExecutor(max_workers=min(READS_AT_ONCE, len(spans) or 1)) as pool:
-            pieces = list(pool.map(lambda span: fetch(c, *span), spans))
+            pieces = list(pool.map(tracing.carried(lambda span: fetch(c, *span)), spans))
         rows: list[Any] = []
         for got in pieces:
             if isinstance(got, dict):

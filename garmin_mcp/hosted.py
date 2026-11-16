@@ -40,7 +40,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, weekly
+from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, tracing, weekly
 from . import app as app_routes
 from . import server as server_mod
 from .formatting import drop_empty
@@ -1162,6 +1162,11 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             "hours_since_connect": hours_since_connect(user),
             "seconds": round(seconds, 2) if seconds is not None else None,
         }))
+        # The same call as a trace in AI observability, for a share of calls
+        # and every slow or failed one: where its time went at Garmin.
+        tracing.report(person, ok=not error, error_kind=kind, seconds=seconds, app=client,
+                       properties=drop_empty({"client": client, "login_route": login_route(alone),
+                                              "held": held or None}))
         sessions = 0 if error else _sessions_sent(name, result)
         first = bool(sessions) and sent_to_watch(user_token, user, _WATCH_SOURCE[name], sessions, alone)
         offer = (result.get("situation") or {}) if name == "get_plan" and isinstance(result, dict) else {}

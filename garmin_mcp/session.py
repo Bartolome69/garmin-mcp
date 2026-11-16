@@ -18,6 +18,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable
 
+from . import tracing
+
 log = logging.getLogger(__name__)
 
 # Remembered answers per session. Small payloads; past this many the memory is
@@ -147,11 +149,13 @@ def build_client(
         ) from exc
 
     env_email, env_password = credentials()
-    return Garmin(
+    client = Garmin(
         email=email or env_email or None,
         password=password or env_password or None,
         prompt_mfa=prompt_mfa,
     )
+    tracing.watch(client)
+    return client
 
 
 def login_error(exc: BaseException, *, had_cache: bool = False) -> GarminError:

@@ -77,6 +77,11 @@ jobs:
       - name: OAuth
         run: python tests/oauth_test.py
 
+      # Tool calls as traces for PostHog's AI observability: what is sent,
+      # what never is, and which calls are chosen.
+      - name: Tracing
+        run: python tests/tracing_test.py
+
       # Covers the tools themselves rather than the transport — including the
       # confirmation gate on delete_workout, which is now the most consequential
       # code path here: it is the only one that destroys anything.

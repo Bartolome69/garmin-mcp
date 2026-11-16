@@ -188,15 +188,39 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
     """
     if not KEY:
         return
-    friend = bool(subject) and subject in _friends()
     who = distinct_id(subject)
+    payload = _payload(event, subject, who, properties)
+    link = _identify(who, visitor_id(visitor), email) if subject else None
+    threading.Thread(target=_post_all, args=([link, payload] if link else [payload],), daemon=True).start()
+
+
+def capture_many(subject: str | None, events: list[tuple[str, dict[str, Any], float | None]]) -> None:
+    """Record several events for one person, in order, from one thread.
+
+    Each is (event, properties, when) with `when` a Unix time or None for now,
+    kept to the millisecond: a trace's spans are drawn against each other.
+    """
+    if not KEY or not events:
+        return
+    who = distinct_id(subject)
+    payloads = [_payload(event, subject, who, properties, when) for event, properties, when in events]
+    threading.Thread(target=_post_all, args=(payloads,), daemon=True).start()
+
+
+def _payload(event: str, subject: str | None, who: str, properties: dict[str, Any] | None,
+             when: float | None = None) -> dict[str, Any]:
+    friend = bool(subject) and subject in _friends()
     if who in internal_ids():
         properties = {**(properties or {}), "internal": True}
-    payload = {
+    if when is None:
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    else:
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(when)) + f".{int(when % 1 * 1000):03d}Z"
+    return {
         "api_key": KEY,
         "event": event,
         "distinct_id": who,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "timestamp": stamp,
         "properties": {
             **_scrub(properties or {}),
             # No person is built up from these; the id only lets uniq() work.
@@ -207,8 +231,6 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
             "$lib": "garmin-mcp-hosted",
         },
     }
-    link = _identify(who, visitor_id(visitor), email) if subject else None
-    threading.Thread(target=_post_all, args=([link, payload] if link else [payload],), daemon=True).start()
 
 
 # Feature flags, asked of PostHog for one person and remembered an hour, so a

@@ -36,7 +36,7 @@ from typing import Any, Callable
 
 from cryptography.fernet import InvalidToken
 
-from . import analytics, official_data, official_fit, store
+from . import analytics, official_data, official_fit, store, tracing
 
 log = logging.getLogger(__name__)
 
@@ -350,13 +350,17 @@ def _call(access_token: str, method: str, path: str, body: Any = None) -> Any:
         headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json",
                  "Accept": "application/json", "User-Agent": "daash-official"},
     )
+    started = time.monotonic()
     try:
         raw = _send(request)
     except urllib.error.URLError as exc:
+        status = exc.code if isinstance(exc, urllib.error.HTTPError) else None
+        tracing.note_request(method, path, status, time.monotonic() - started, failed=True)
         if isinstance(exc, urllib.error.HTTPError):
             raise _refused(exc, path) from None
         log.warning("official %s %s failed: %s", method, path, type(exc.reason).__name__)
         raise OfficialError("Daash couldn't reach Garmin. Try again in a minute.") from None
+    tracing.note_request(method, path, None, time.monotonic() - started, failed=False)
     return json.loads(raw) if raw else {}
 
 
