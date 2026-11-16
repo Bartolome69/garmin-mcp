@@ -1083,6 +1083,78 @@ def _sessions_sent(name: str, result: Any) -> int:
 
 _WATCH_SOURCE = {"schedule_workout": "chat_schedule", "create_workout": "chat_create", "create_plan": "chat_plan"}
 
+# A failed call's kind, from a fixed list (Nov 16): which features fail and
+# how, without the message, which can name a workout, a shoe or a date.
+# Checked in order; the first that matches wins.
+_ERROR_CATEGORIES = (
+    ("not_found", re.compile(r"NotFound|^No (workout|plan|activity)\b|doesn't list", re.I)),
+    ("rate_limited", re.compile(r"\b429\b|rate-limit|limiting how often|too many", re.I)),
+    ("needs_reconnect", re.compile(r"connect again|reconnect|sign in again|no longer accepts|has expired"
+                                   r"|two-step|MFA|Not signed in|Not connected to Garmin", re.I)),
+    ("garmin_unreachable", re.compile(r"reach Garmin|network problem|timed out|timeout", re.I)),
+    ("not_available", re.compile(r"Not available on this connection|doesn't allow this|hasn't given Daash"
+                                 r"|isn't set up|only on the hosted server", re.I)),
+    ("no_data", re.compile(r"returned no|returned nothing|Nothing is scheduled|Nothing to say", re.I)),
+    ("conflict", re.compile(r"already (on the calendar|in Garmin)|More than one", re.I)),
+    ("unexpected", re.compile(r"Garmin request failed \(|accepted the request but returned no", re.I)),
+    ("invalid_input", re.compile(r"must be|Could not read|needs|outside|can't|not both|Give |Say which"
+                                 r"|Unknown|is required|only applies|missing|Nothing to change|confirm"
+                                 r"|Use |should be|Times are|A date|positive", re.I)),
+)
+
+
+def error_category(error: Any) -> str | None:
+    """A failed call's category, never its words: None when the call worked."""
+    if not error:
+        return None
+    text = error if isinstance(error, str) else str(error)
+    for name, pattern in _ERROR_CATEGORIES:
+        if pattern.search(text):
+            return name
+    return "other"
+
+
+# Garmin's sport keys, as the four groups usage is read by.
+_SPORT_GROUPS = {"running": "run", "trail_running": "run", "treadmill_running": "run", "track_running": "run",
+                 "cycling": "bike", "road_biking": "bike", "mountain_biking": "bike", "indoor_cycling": "bike",
+                 "virtual_ride": "bike", "gravel_cycling": "bike",
+                 "swimming": "swim", "lap_swimming": "swim", "open_water_swimming": "swim", "pool_swimming": "swim"}
+
+
+def sport_group(key: Any) -> str:
+    """run, bike, swim or other; unknown when Daash couldn't tell without asking Garmin again."""
+    if not isinstance(key, str) or not key:
+        return "unknown"
+    key = key.strip().lower()
+    return _SPORT_GROUPS.get(key) or ("run" if "run" in key else "bike" if ("cycl" in key or "bik" in key)
+                                      else "swim" if "swim" in key else "other")
+
+
+def client_slug(client: str | None) -> str:
+    """The chat app as a lowercase word: claude, chatgpt, gemini, grok, other..."""
+    slug = re.sub(r"[^a-z0-9]+", "_", (client or "").strip().lower()).strip("_")
+    return slug or "unknown"
+
+
+# Writes the weekly counts off the request: a slow or locked database must
+# never hold up an answer. Tests set it False to count in place.
+USAGE_IN_BACKGROUND = True
+
+
+def count_usage(person: str, tool_calls: int = 0, watch_sends: int = 0) -> None:
+    """Add to this person's weekly counts (store.usage_weeks); logs and carries on if it fails."""
+
+    def write() -> None:
+        try:
+            store.count_usage(person, tool_calls=tool_calls, watch_sends=watch_sends)
+        except Exception:  # noqa: BLE001 - a count must never fail or slow a tool
+            log.warning("usage count not written", exc_info=True)
+
+    if USAGE_IN_BACKGROUND:
+        threading.Thread(target=write, daemon=True).start()
+    else:
+        write()
+
 
 def login_route(alone: bool) -> str:
     """How Daash reads this account: Garmin's official API alone, or a Garmin Connect sign-in."""
@@ -1095,19 +1167,29 @@ def hours_since_connect(user: store.User | None, now: float | None = None) -> fl
     return round(((now or time.time()) - user.created_at) / 3600, 1)
 
 
-def sent_to_watch(user_token: str, user: store.User | None, source: str, sessions: int, alone: bool) -> bool:
+def sent_to_watch(user_token: str, user: store.User | None, source: str, sessions: int, alone: bool,
+                  *, tool: str | None = None, client: str | None = None, sports: list[Any] | None = None) -> bool:
     """workout_sent_to_watch: the activation event, sent only when a write succeeded (Nov 13).
 
+    From a chat's tool call, `sports` holds one entry per workout put on the
+    watch, and each is its own event with the tool, its sport and the chat
+    app (Nov 16). The app's own edits send one event for the lot, as before.
     True when this was the person's first ever, as the store keeps it.
     """
     if sessions <= 0 or user is None:
         return False
     person = user.email_hash or user_token
     first = store.mark_sent_to_watch(person)
-    analytics.capture("workout_sent_to_watch", person, drop_empty({
-        "source": source, "sessions": sessions, "login_route": login_route(alone),
-        "hours_since_connect": hours_since_connect(user), "first_ever": first,
-    }))
+    common = {"source": source, "login_route": login_route(alone), "hours_since_connect": hours_since_connect(user)}
+    if sports is None:
+        analytics.capture("workout_sent_to_watch", person, drop_empty({
+            **common, "sessions": sessions, "first_ever": first}))
+    else:
+        for i, sport in enumerate(sports):
+            analytics.capture("workout_sent_to_watch", person, drop_empty({
+                **common, "sessions": 1, "tool": tool, "sport": sport_group(sport), "client": client_slug(client),
+                "first_ever": first if i == 0 else False}))
+    count_usage(person, watch_sends=sessions)
     return bool(first)
 
 
@@ -1157,7 +1239,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
                 if error else None)
         seconds = hooks.seconds()
         analytics.capture("tool_called", person, drop_empty({
-            "tool": name, "ok": not error, "error_kind": kind, "held": held or None,
+            "tool": name, "ok": not error, "success": not error, "error_kind": kind,
+            "error_category": error_category(error), "held": held or None,
             "login_route": login_route(alone), "client": client, "ai_client": client,
             "hours_since_connect": hours_since_connect(user),
             "seconds": round(seconds, 2) if seconds is not None else None,
@@ -1167,8 +1250,16 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         tracing.report(person, ok=not error, error_kind=kind, seconds=seconds, app=client,
                        properties=drop_empty({"client": client, "login_route": login_route(alone),
                                               "held": held or None}))
-        sessions = 0 if error else _sessions_sent(name, result)
-        first = bool(sessions) and sent_to_watch(user_token, user, _WATCH_SOURCE[name], sessions, alone)
+        count_usage(person, tool_calls=1)
+        # Every workout this call put on the watch, failed or not: a plan that
+        # stopped part way still sent the sessions before it. Outside a tool
+        # call (a hook run on its own), what the answer says it sent.
+        sends = server_mod.on_watch()
+        if sends is None:
+            sends = [{"sport": None}] * (0 if error else _sessions_sent(name, result))
+        first = bool(sends) and sent_to_watch(
+            user_token, user, _WATCH_SOURCE.get(name, f"chat_{name}"), len(sends), alone,
+            tool=name, client=client, sports=[s.get("sport") for s in sends])
         offer = (result.get("situation") or {}) if name == "get_plan" and isinstance(result, dict) else {}
         if offer.get("offer"):
             analytics.capture("offer_made", person, drop_empty({
@@ -3758,6 +3849,8 @@ async def forget_person(token: str, via: str = "disconnect_page") -> bool:
         store.forget_race_prompts(crews.member_key(token, gone.email_hash))
         # And the phones it sent notifications to.
         store.forget_push(token, gone.email_hash)
+        # And their weekly counts of calls and watch sends.
+        store.forget_usage(token, gone.email_hash)
         # And every sign-in to it: Claude, ChatGPT and the app alike.
         store.delete_tokens_for_subject(token)
         analytics.disconnected(gone.email_hash or token, via, route, "everything", gone.created_at)

@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import sys
+import sqlite3
 import threading
 import contextlib
 import time
@@ -46,6 +47,11 @@ from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
 
 import garmin_mcp.hosted as hosted  # noqa: E402
 from garmin_mcp import analytics, hooks  # noqa: E402
+
+
+def server_mod_not_on_official() -> str:
+    from garmin_mcp import server
+    return server.NOT_ON_OFFICIAL
 from garmin_mcp import server as garmin_server  # noqa: E402
 
 # Every event the server would have sent to PostHog, kept for inspection.
@@ -1686,9 +1692,98 @@ async def main() -> int:
         hook("schedule_workout", {"workout_id": 1, "scheduled_for": "2026-11-14", "schedule_id": 9})
         hook("create_plan", {"weeks": [], "created": {"sessions_created": 12, "weeks": 4}})
         sends = [e for e in SENT[before:] if e["event"] == "workout_sent_to_watch"]
-        check("a workout that reaches the watch is workout_sent_to_watch, first_ever only the first time",
+        check("each workout that reaches the watch is its own workout_sent_to_watch, first_ever only the first time",
               [(e["properties"]["source"], e["properties"]["sessions"], e["properties"].get("first_ever")) for e in sends]
-              == [("chat_schedule", 1, True), ("chat_plan", 12, False)], str([e["properties"] for e in sends]))
+              == [("chat_schedule", 1, True)] + [("chat_plan", 1, False)] * 12, str([e["properties"] for e in sends])[:300])
+
+        # Nov 16: usage tracking, end to end through the MCP server as a test
+        # user. Every call is tool_called with success and, when it failed, a
+        # category from a fixed list; each workout put on the watch is one
+        # workout_sent_to_watch with its tool, sport and chat app; and the
+        # person's week counts both in usage_weeks.
+        tester = store.save_user("t***@example.com", json.dumps({"di_token": "tester-token"}),
+                                 email_hash=store.email_fingerprint("tester1116@example.com"),
+                                 email="tester1116@example.com")
+        person = store.email_fingerprint("tester1116@example.com")
+        hosted.USAGE_IN_BACKGROUND = False
+        try:
+            before = len(SENT)
+            read = await call(tester, "get_activities", {})
+            saved = await call(tester, "create_workout", {
+                "name": "Steady 40", "sport": "running",
+                "steps": [{"type": "interval", "duration_seconds": 2400}]})
+            looked = await call(tester, "get_workout", {"workout_id": saved.get("workout_id")})
+            placed = await call(tester, "schedule_workout", {"workout_id": saved.get("workout_id"), "date": "+2"})
+            ride = await call(tester, "create_workout", {
+                "name": "Spin 30", "sport": "cycling", "date": "+3",
+                "steps": [{"type": "interval", "duration_seconds": 1800}]})
+            bad = await call(tester, "schedule_workout", {"workout_id": "abc", "date": "+1"})
+            for _ in range(60):
+                calls = [e for e in SENT[before:] if e["event"] == "tool_called"]
+                if len(calls) >= 6:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            hosted.USAGE_IN_BACKGROUND = True
+        check("the test user's calls all answered as expected",
+              "error" not in read and saved.get("workout_id") and "error" not in looked
+              and placed.get("scheduled_for") and (ride.get("scheduled") or {}).get("scheduled_for")
+              and "error" in bad, str([read, saved, placed, ride, bad])[:300])
+        calls = [e["properties"] for e in SENT[before:] if e["event"] == "tool_called"]
+        check("every call is tool_called with its tool and success",
+              [(c["tool"], c["success"]) for c in calls]
+              == [("get_activities", True), ("create_workout", True), ("get_workout", True),
+                  ("schedule_workout", True), ("create_workout", True), ("schedule_workout", False)],
+              str([(c.get("tool"), c.get("success")) for c in calls]))
+        check("a failed call says success: false with a category, never the message",
+              calls[-1].get("error_category") == "invalid_input" and calls[-1].get("ok") is False
+              and "abc" not in json.dumps(calls[-1]) and all("error_category" not in c for c in calls[:-1]),
+              str(calls[-1]))
+        sends = [e["properties"] for e in SENT[before:] if e["event"] == "workout_sent_to_watch"]
+        check("each workout on the watch is one event, with its tool, sport and chat app",
+              [(s["tool"], s["sport"], s["client"], s["sessions"]) for s in sends]
+              == [("schedule_workout", "run", "connector_url", 1), ("create_workout", "bike", "connector_url", 1)],
+              str(sends)[:300])
+        check("a workout saved but not scheduled sends nothing to the watch",
+              not [s for s in sends if s.get("source") == "chat_create" and s.get("sport") == "run"])
+        check("the person's week counts every call and every send",
+              store.usage_week(person, store.week_start()) == (6, 2), str(store.usage_week(person, store.week_start())))
+        check("no email address on any of it",
+              "tester1116@" not in json.dumps(SENT[before:]), json.dumps(SENT[before:])[:200])
+        real_count = store.count_usage
+        store.count_usage = lambda *a, **k: (_ for _ in ()).throw(sqlite3.OperationalError("database is locked"))
+        hosted.USAGE_IN_BACKGROUND = False
+        try:
+            still = await call(tester, "get_activities", {})
+        finally:
+            store.count_usage = real_count
+            hosted.USAGE_IN_BACKGROUND = True
+        check("a count that can't be written doesn't stop the answer", "error" not in still, str(still)[:160])
+        said = {
+            "No workout 123 in this Garmin account.": "not_found",
+            "Could not reach Garmin Connect. This looks like a network problem rather than a sign-in one "
+            "(GarminConnectNotFoundError). Try again shortly.": "not_found",
+            "Garmin is limiting how often Daash can ask. Try again in a while.": "rate_limited",
+            "Garmin no longer accepts this connection. Connect again.": "needs_reconnect",
+            "Daash couldn't reach Garmin. Try again in a minute.": "garmin_unreachable",
+            server_mod_not_on_official(): "not_available",
+            "Garmin returned no fitness data.": "no_data",
+            "Plan code MAR is already on the calendar between 2026-11-17 and 2027-04-26.": "conflict",
+            "Garmin request failed (KeyError: 'x'). If this persists, check connection status.": "unexpected",
+            "Heart-rate target 300 is outside 60-230 bpm.": "invalid_input",
+            "The email didn't send. Try again in a minute.": "other",
+        }
+        got = {text: hosted.error_category(text) for text in said}
+        check("errors fall into a fixed set of categories", got == said,
+              str({t[:40]: c for t, c in got.items() if c != said[t]}))
+        await hosted.forget_person(tester)
+        check("disconnecting deletes the person's weekly counts",
+              store.usage_week(person, store.week_start()) == (0, 0), str(store.usage_week(person, store.week_start())))
+        store.count_usage(person, tool_calls=1)
+        check("and a count that lands after the disconnect doesn't bring them back",
+              store.usage_week(person, store.week_start()) == (0, 0), str(store.usage_week(person, store.week_start())))
+        check("weeks start on Monday, UTC",
+              store.week_start(1763337600) == "2025-11-17" and store.week_start(1763337599) == "2025-11-10")
         # Nov 15: the first workout ever on the watch brings one line about the
         # app, with a link signed in and on that week; never a second time,
         # never for an account on the official API alone.

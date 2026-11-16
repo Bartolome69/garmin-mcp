@@ -1443,6 +1443,41 @@ async def _last_device() -> str | None:
         ((last or {}).get("lastUsedDeviceName") if isinstance(last, dict) else None)
 
 
+# Each workout put on the Garmin calendar, so on the watch, during the tool
+# call in progress (Nov 16): its id and sport where known, for the hosted
+# server to count one send per workout. Set by tool_errors for calls from the
+# chat; None anywhere else.
+_ON_WATCH: ContextVar["list[dict[str, Any]] | None"] = ContextVar("garmin_on_watch", default=None)
+
+
+def on_watch() -> "list[dict[str, Any]] | None":
+    """The workouts this tool call put on the watch so far, or None outside a call."""
+    sends = _ON_WATCH.get()
+    return None if sends is None else list(sends)
+
+
+def _sport_key(workout: Any) -> str | None:
+    """Garmin's sport key for a workout as Garmin or Daash describes it."""
+    if not isinstance(workout, dict):
+        return None
+    sport = workout.get("sportType")
+    key = sport.get("sportTypeKey") if isinstance(sport, dict) else None
+    return key if isinstance(key, str) and key else None
+
+
+def _note_on_watch(workout_id: Any, sport: str | None) -> None:
+    sends = _ON_WATCH.get()
+    if sends is not None:
+        sends.append({"workout_id": workout_id, "sport": sport})
+
+
+def _name_sport(workout_id: Any, sport: str | None) -> None:
+    """Fill in the sport of a send noted without one, once the caller knows it."""
+    for sent in _ON_WATCH.get() or []:
+        if sent["workout_id"] == workout_id and not sent["sport"]:
+            sent["sport"] = sport
+
+
 def tool_errors(fn):
     """Return a clear error payload instead of letting an exception escape.
 
@@ -1453,7 +1488,7 @@ def tool_errors(fn):
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
         inside, depth = hooks.enter()
-        traced = None
+        traced = sends = None
         try:
             if inside:
                 # Called by another tool, not the chat: its answer, unreported.
@@ -1465,6 +1500,7 @@ def tool_errors(fn):
                 # Turned away before reaching Garmin: not run, so not reported.
                 return {"error": str(paused)}
             traced = tracing.start(fn.__name__)
+            sends = _ON_WATCH.set([])
             result = await answer(*args, **kwargs)
             if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
                 try:
@@ -1484,6 +1520,8 @@ def tool_errors(fn):
         finally:
             if traced is not None:
                 tracing.finish(traced)
+            if sends is not None:
+                _ON_WATCH.reset(sends)
             hooks.leave(depth)
 
     async def answer(*args, **kwargs):
@@ -2837,6 +2875,7 @@ async def create_workout(
     # Saved and scheduled in one go (Nov 13): a first session on the watch is
     # one confirmation, not two calls the chat has to string together.
     scheduled = await schedule_workout(workout_id, date)
+    _name_sport(workout_id, (payload.get("sportType") or {}).get("sportTypeKey") or str(sport).lower())
     if isinstance(scheduled, dict) and "error" in scheduled:
         return {**made, "schedule_error": scheduled["error"],
                 "next_step": "The workout is saved but not on the calendar: say so, and offer schedule_workout."}
@@ -3072,6 +3111,10 @@ async def schedule_workout(workout_id: int | str, date: str) -> dict[str, Any]:
 
     day = parse_date(date)
     result = await _call(lambda c: c.schedule_workout(workout_id, day)) or {}
+    # Its sport from Garmin's answer, or a read of it already in hand: never
+    # another request just to count it.
+    _note_on_watch(workout_id, _sport_key(result.get("workout") if isinstance(result, dict) else None)
+                   or _sport_key(session.peek(("workout", workout_id))))
     return {
         "workout_id": workout_id,
         "scheduled_for": day,
@@ -3552,6 +3595,7 @@ async def create_plan(
                 "created": created,
                 "not_created": len(prepared) - len(created),
             }
+        _note_on_watch(workout_id, _sport_key(payload))
         created.append(
             drop_empty(
                 {

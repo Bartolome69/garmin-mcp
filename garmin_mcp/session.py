@@ -396,6 +396,11 @@ class GarminSession:
         """Drop everything remembered, after anything that writes to Garmin."""
         self._memo.clear()
 
+    def peek(self, key: Any) -> Any:
+        """What's remembered under key, however old, or None: never a read."""
+        hit = self._memo.get(key)
+        return hit[1] if hit is not None else None
+
     def remember(self, key: Any, value: Any) -> None:
         """Keep an answer already in hand, such as a workout just written, so
         the next read of it doesn't go back to Garmin for the same thing."""
@@ -493,6 +498,9 @@ class _ActiveSession:
 
     def forget(self) -> None:
         self._target().forget()
+
+    def peek(self, key: Any) -> Any:
+        return self._target().peek(key)
 
     def remember(self, key: Any, value: Any) -> None:
         self._target().remember(key, value)

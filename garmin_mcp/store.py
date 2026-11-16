@@ -17,6 +17,7 @@ import os
 import secrets
 import sqlite3
 import time
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
@@ -160,6 +161,20 @@ CREATE TABLE IF NOT EXISTS email_sends (
     kind  TEXT NOT NULL,
     n     INTEGER NOT NULL,
     PRIMARY KEY (day, kind)
+);
+"""
+
+# Migration "usage_weeks" (Nov 16): each person's tool calls and workouts sent
+# to the watch, per ISO week starting Monday (UTC), for seeing which features
+# people come back to. Keyed like watch_sends: the email fingerprint where
+# there is one, else the user token. Counts only, nothing about what was asked.
+USAGE_WEEKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS usage_weeks (
+    person        TEXT NOT NULL,
+    week_start    TEXT NOT NULL,
+    tool_calls    INTEGER NOT NULL DEFAULT 0,
+    watch_sends   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (person, week_start)
 );
 """
 
@@ -320,6 +335,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(PUSH_SCHEMA)
     conn.executescript(WATCH_SCHEMA)
     conn.executescript(EMAIL_SENDS_SCHEMA)
+    conn.executescript(USAGE_WEEKS_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -1652,6 +1668,43 @@ def mark_sent_to_watch(person: str, now: int | None = None) -> bool:
         cur = conn.execute("INSERT OR IGNORE INTO watch_sends (person, first_at) VALUES (?, ?)",
                            (person, int(now or time.time())))
     return cur.rowcount == 1
+
+
+def week_start(now: float | None = None) -> str:
+    """The Monday (UTC) of the ISO week holding `now`, as YYYY-MM-DD."""
+    day = datetime.fromtimestamp(now or time.time(), tz=timezone.utc).date()
+    return (day - timedelta(days=day.weekday())).isoformat()
+
+
+def count_usage(person: str, tool_calls: int = 0, watch_sends: int = 0, now: float | None = None) -> None:
+    """Add to this person's counts for the current week, in one statement.
+
+    Only while they still have a connection: a count landing just after a
+    disconnect must not bring back a row the disconnect deleted.
+    """
+    if not person or (tool_calls <= 0 and watch_sends <= 0):
+        return
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO usage_weeks (person, week_start, tool_calls, watch_sends) "
+            "SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE email_hash = ? OR user_token = ?) "
+            "ON CONFLICT(person, week_start) DO UPDATE SET tool_calls = tool_calls + excluded.tool_calls, "
+            "watch_sends = watch_sends + excluded.watch_sends",
+            (person, week_start(now), max(tool_calls, 0), max(watch_sends, 0), person, person))
+
+
+def usage_week(person: str, week: str) -> tuple[int, int]:
+    """(tool calls, watch sends) for one person in the week starting `week`."""
+    with _connect() as conn:
+        row = conn.execute("SELECT tool_calls, watch_sends FROM usage_weeks WHERE person = ? AND week_start = ?",
+                           (person, week)).fetchone()
+    return (int(row[0]), int(row[1])) if row else (0, 0)
+
+
+def forget_usage(user_token: str, email_hash: str | None) -> None:
+    """Disconnect deletes their weekly counts too."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM usage_weeks WHERE person IN (?, ?)", (user_token, email_hash or user_token))
 
 
 def has_sent_to_watch(person: str) -> bool:
