@@ -178,6 +178,18 @@ CREATE TABLE IF NOT EXISTS usage_weeks (
 );
 """
 
+# Who has been told the weekly email waits for another day (Nov 17), so
+# weekly_email_skipped goes once a person a day even when the server restarts
+# in between (the in-memory note was lost on each restart: Nov 17's deploy
+# logged everyone held three times). Rows older than two weeks are dropped.
+WEEKLY_SKIPS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS weekly_skips (
+    day     TEXT NOT NULL,
+    person  TEXT NOT NULL,
+    PRIMARY KEY (day, person)
+);
+"""
+
 # Everyone who has ever connected, one row a person, kept when they disconnect
 # (Nov 13), for the front page's count. Keyed like watch_sends. A trigger fills
 # it on every new users row, whichever sign-in made it.
@@ -336,6 +348,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(WATCH_SCHEMA)
     conn.executescript(EMAIL_SENDS_SCHEMA)
     conn.executescript(USAGE_WEEKS_SCHEMA)
+    conn.executescript(WEEKLY_SKIPS_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -1701,10 +1714,27 @@ def usage_week(person: str, week: str) -> tuple[int, int]:
     return (int(row[0]), int(row[1])) if row else (0, 0)
 
 
+def note_weekly_skips(day: str, people: list[str]) -> set[str]:
+    """Note that these people were told their weekly email waits, on `day`
+    (YYYY-MM-DD); the ones not already noted that day, so told only once."""
+    fresh: set[str] = set()
+    if not people:
+        return fresh
+    oldest = (datetime.fromisoformat(day) - timedelta(days=14)).date().isoformat()
+    with _connect() as conn:
+        conn.execute("DELETE FROM weekly_skips WHERE day < ?", (oldest,))
+        for person in people:
+            if conn.execute("INSERT OR IGNORE INTO weekly_skips (day, person) VALUES (?, ?)",
+                            (day, person)).rowcount == 1:
+                fresh.add(person)
+    return fresh
+
+
 def forget_usage(user_token: str, email_hash: str | None) -> None:
     """Disconnect deletes their weekly counts too."""
     with _connect() as conn:
         conn.execute("DELETE FROM usage_weeks WHERE person IN (?, ?)", (user_token, email_hash or user_token))
+        conn.execute("DELETE FROM weekly_skips WHERE person IN (?, ?)", (user_token, email_hash or user_token))
 
 
 def has_sent_to_watch(person: str) -> bool:

@@ -2226,6 +2226,7 @@ async def main() -> int:
         def weekly_again(room, answers=None, now=None):
             with store._connect() as _conn:
                 _conn.execute("UPDATE users SET weekly_sent = NULL")
+                _conn.execute("DELETE FROM weekly_skips")
             hosted._WEEKLY_NOTHING.clear()
             hosted._WEEKLY_SKIPPED.clear()
             out: list[tuple] = []
@@ -2282,6 +2283,14 @@ async def main() -> int:
         check("with no room left, a later pass sends nothing, reads nobody's week, and doesn't log the same people twice",
               later["sent"] == 0 and not asked and len(capped_mail) == 2
               and len([e for e in SENT[before:] if e["event"] == "weekly_email_skipped"]) == len(people) - 2, str(later))
+        # Nov 17: a restart the same morning (a deploy) forgot who had been told,
+        # and logged everyone held again. The note is kept in the store now.
+        hosted._WEEKLY_SKIPPED.clear()
+        restarted = hosted.weekly_email_once(monday, send=lambda *a: capped_mail.append(a), spacing=0, room=0)
+        check("after a restart the same day, nobody held is logged again",
+              restarted["held"] == len(people) - 2
+              and len([e for e in SENT[before:] if e["event"] == "weekly_email_skipped"]) == len(people) - 2,
+              str(restarted))
         hosted._plan_answer = lambda token: plan_answer
         try:
             hosted._WEEKLY_SKIPPED.clear()
@@ -2467,6 +2476,23 @@ async def main() -> int:
         codes16 = {re.search(r"&c=([\w-]+)", u).group(1) for u in app_links}
         check("one single-use sign-in code for the email, shared by its app links, none on the chat link",
               len(codes16) == 1 and not any("&c=" in u for u in ask_links), str(codes16))
+        # Nov 17: the code works until midnight in London on the day it's sent,
+        # not 15 minutes: two of the first three clicks came after it had gone.
+        with store._connect() as _conn:
+            expires16 = _conn.execute("SELECT expires_at FROM app_handoffs WHERE code_hash = ?",
+                                      (store.token_hash(next(iter(codes16))),)).fetchone()[0]
+        check("the email's sign-in link lasts until midnight in London, at least an hour",
+              abs(expires16 - (time.time() + hosted.weekly_link_lifetime())) < 30 and expires16 - time.time() >= 3600,
+              f"{(expires16 - time.time()) / 3600:.1f} h")
+        from zoneinfo import ZoneInfo as _Zone
+        at_7 = datetime(2026, 11, 17, 7, 8, tzinfo=_Zone("Europe/London")).timestamp()
+        at_2330 = datetime(2026, 11, 17, 23, 30, tzinfo=_Zone("Europe/London")).timestamp()
+        clocks_change = datetime(2026, 3, 29, 7, 0, tzinfo=_Zone("Europe/London")).timestamp()
+        check("sent at 7:08 it works almost 17 hours; at 23:30, an hour; on the day the clocks change, to midnight",
+              round(hosted.weekly_link_lifetime(at_7) / 60) == 16 * 60 + 52
+              and hosted.weekly_link_lifetime(at_2330) == 3600
+              and hosted.weekly_link_lifetime(clocks_change) == 17 * 3600,
+              str([hosted.weekly_link_lifetime(t) for t in (at_7, at_2330, clocks_change)]))
         _ns, no_plan_text, no_plan_page = weekly.compose(said_log, "x", "Claude", into_app=lambda *a, **k: "https://x/open",
                                                          ask=lambda a, k: "https://x/ask")
         check("with nothing planned, the button builds a plan in the app and the chat asks for one",

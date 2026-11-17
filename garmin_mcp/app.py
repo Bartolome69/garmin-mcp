@@ -2409,7 +2409,7 @@ async def sign_in_handoff(request: Request) -> Response:
         _track("app_sign_in_failed", {"method": "magic_link", "reason": result})
         if source == "weekly_email":
             # Email links are often opened hours later, after the code has gone.
-            said = ("That link from your email has expired: it signs you in for 15 minutes after the email is sent."
+            said = ("That link from your email has expired: it signs you in until midnight (UK time) on the day it's sent."
                     if result in ("expired", "invalid") else "That link from your email has already been used.")
         else:
             said = {"expired": "That link from the chat has expired: they last 15 minutes.",

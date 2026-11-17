@@ -265,9 +265,9 @@ def email_links(base: str, fingerprint: str, signature: str, week: str,
                 code: str | None = None) -> tuple[Callable[..., str], Callable[[str, str], str]]:
     """(into the app, into a chat): the email's links, each by way of Daash so the click is counted.
 
-    `code` is a single-use sign-in code made when the email is sent: a click in
-    its first 15 minutes opens the app signed in, a later one at sign-in, which
-    then goes where the link was going.
+    `code` is a single-use sign-in code made when the email is sent: a click
+    before midnight (UK time) that day opens the app signed in, a later one at
+    sign-in, which then goes where the link was going.
     """
     who = f"u={fingerprint}&s={signature}&w={week}"
 

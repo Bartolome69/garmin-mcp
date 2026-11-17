@@ -1615,10 +1615,16 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
         time.sleep(min(spacing, 1.0))
     counts["held"] = len(deferred)
     last_day = today.weekday() == max(WEEKLY_DAYS or (0,))
-    for rank, fingerprint in deferred:
-        if fingerprint in told:
-            continue
+    unseen = [(rank, fingerprint) for rank, fingerprint in deferred if fingerprint not in told]
+    try:
+        fresh = store.note_weekly_skips(today.isoformat(), [fingerprint for _rank, fingerprint in unseen])
+    except Exception:  # noqa: BLE001 - a missed note means a repeated event, never a missed email
+        log.warning("weekly email: skips not noted", exc_info=True)
+        fresh = {fingerprint for _rank, fingerprint in unseen}
+    for rank, fingerprint in unseen:
         told.add(fingerprint)
+        if fingerprint not in fresh:
+            continue
         analytics.capture("weekly_email_skipped", fingerprint, {
             "reason": "daily_cap", "week": monday, "day": today.isoformat(),
             "priority": "new" if rank[0] == 0 else "active",
@@ -1630,17 +1636,26 @@ def weekly_email_once(today: date | None = None, send: Callable[..., None] | Non
     return counts
 
 
+def weekly_link_lifetime(now: float | None = None) -> int:
+    """Seconds from now to midnight in London: how long a weekly email's
+    sign-in link works. An hour at least, should one go out just before."""
+    here = datetime.fromtimestamp(now if now is not None else time.time(), ZoneInfo("Europe/London"))
+    midnight = datetime.combine(here.date() + timedelta(days=1), datetime.min.time(), ZoneInfo("Europe/London"))
+    return max(3600, int((midnight - here).total_seconds()))
+
+
 def weekly_message(base: str, user_token: str, fingerprint: str, said: dict[str, Any],
                    monday: str) -> tuple[str, str, str]:
     """(subject, text, html) for one person's weekly email, its links into the app and a chat.
 
-    The app links carry one single-use sign-in code, made now: a click in the
-    next 15 minutes opens the app signed in; a later one, its sign-in first.
+    The app links carry one single-use sign-in code, made now: a click before
+    midnight (UK time) that day opens the app signed in; a later one, its
+    sign-in first (Nov 17: at 15 minutes, 2 of the first 3 clicks came too late).
     """
     unsubscribe = unsubscribe_url(base, fingerprint)
     if base:
         into_app, ask = weekly.email_links(base, fingerprint, store.unsubscribe_signature(fingerprint),
-                                           monday, store.new_handoff(user_token))
+                                           monday, store.new_handoff(user_token, weekly_link_lifetime()))
     else:
         into_app, ask = None, weekly.ask_link
     try:
@@ -3472,8 +3487,9 @@ async def email_open(request: Request) -> Response:
     """The weekly email's way into the Daash app (Nov 16): count the click, then open the app.
 
     The week (or the day's session) in the app, with the email's single-use
-    sign-in code if it carried one: in its first 15 minutes it signs the app
-    in; after that the app asks to sign in and then opens the same place. A
+    sign-in code if it carried one: until midnight (UK time) on the day it was
+    sent it signs the app in; after that the app asks to sign in and then
+    opens the same place. A
     link that isn't genuine opens the app's front screen, uncounted.
     """
     query = request.query_params
