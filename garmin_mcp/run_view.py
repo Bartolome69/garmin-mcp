@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .analysis import PACE_GRACE_S, _RESTING, _stride_steps, _weighted_hr, pace
+from .formatting import HR_CAP_FLOOR, hr_text
 
 WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve")
 
@@ -181,7 +182,7 @@ def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str,
         out["missing_strides"] = planned_strides - len(strides)
     if target:
         out["band"] = {"kind": "hr", "lo": round(target["lo"]), "hi": round(target["hi"]),
-                       "text": f"{target['lo']:.0f}–{target['hi']:.0f}"}
+                       "text": hr_text(target["lo"], target["hi"]).removesuffix(" bpm")}
         out["caption"] = _hr_caption(_within(kms, _main_hr_span(pairs)), target, len(strides), planned_strides)
     return out
 
@@ -235,6 +236,9 @@ def _hr_caption(kms, target, strides_run: int, strides_planned: int) -> str | No
     over = [km for km, h in hrs if h > hi + 1]
     if over:
         line = f"Heart rate went over {hi:.0f} in km {_list(over)}."
+    elif target["lo"] <= HR_CAP_FLOOR:
+        # A cap alone has no floor to climb into (Nov 17).
+        line = f"Heart rate stayed under {hi:.0f} the whole way."
     else:
         start = next((i for i in range(len(hrs)) if all(h >= target["lo"] - 1 for _, h in hrs[i:])), None)
         if start == 0:

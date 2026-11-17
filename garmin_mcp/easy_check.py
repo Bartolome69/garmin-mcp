@@ -85,12 +85,15 @@ def check(planned: Mapping[str, Any] | None, laps: Sequence[Mapping[str, Any]] |
     target = str(planned.get("tg") or "")
 
     bpm = re.fullmatch(r"\s*(\d{2,3})\s*[-–]\s*(\d{2,3})\s*bpm\s*", target)
-    if bpm and rows and all(b is not None for _s, _m, b in rows):
-        low, top = sorted((int(bpm.group(1)), int(bpm.group(2))))
+    # Nov 17: a cap alone reads "up to 140 bpm".
+    cap = re.fullmatch(r"\s*up to\s*(\d{2,3})\s*bpm\s*", target)
+    if (bpm or cap) and rows and all(b is not None for _s, _m, b in rows):
+        low, top = sorted((int(bpm.group(1)), int(bpm.group(2)))) if bpm else (0, int(cap.group(1)))
         over = [b > top + HR_SLACK for _s, _m, b in rows]
         share = sum(s for (s, _m, _b), o in zip(rows, over) if o) / total
+        said = f"its {low}–{top} bpm target" if bpm else f"its {top} bpm cap"
         return _result("too_hard" if share >= TOO_HARD_SHARE else "easy",
-                       f"its {low}–{top} bpm target", share, f"above {top} bpm", _from_km(rows, over))
+                       said, share, f"above {top} bpm", _from_km(rows, over))
 
     window = pace_range(target)
     if window and rows:

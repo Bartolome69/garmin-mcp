@@ -98,6 +98,17 @@ check("no lines that restate the table", not e.get("insights"), str(e.get("insig
 check("compared on the run, strides left out", e.get("figures", {}).get("km") == 8.9 and e["figures"].get("hr") == 126
       and not e["figures"].get("reps") and e["figures"].get("steady", {}).get("km") == 8.9, str(e.get("figures")))
 
+print("A cap alone (Nov 17): written as 60-140, read as up to 140")
+CAP = {"targetType": {"workoutTargetTypeKey": "heart.rate.zone"}, "targetValueOne": 60, "targetValueTwo": 140}
+EASY_CAP = {"workoutSegments": [{"workoutSteps": [
+    step(1, "interval", "distance", 9500, CAP),
+    {"type": "RepeatGroupDTO", "stepOrder": 2, "numberOfIterations": 6, "workoutSteps": [
+        step(1, "interval", "time", 20), step(2, "recovery", "lap.button")]}]}]}
+capped = (analysis.analyse(EASY_CAP, {"lapDTOs": EASY_LAPS}, "easy", story=True).get("chart") or {})
+check("the band reads up to 140, not 60-140", capped.get("band", {}).get("text") == "up to 140", str(capped.get("band")))
+check("and the caption says it stayed under, with no floor to climb into",
+      capped.get("caption") == "Heart rate stayed under 140 the whole way. All six strides done.", capped.get("caption"))
+
 print("Nothing made up")
 plain = analysis.analyse(None, THRESHOLD_LAPS, "threshold", story=True)
 check("a hard session whose laps aren't matched to a workout gets no lines", not plain.get("insights"), str(plain.get("insights")))

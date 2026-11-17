@@ -23,6 +23,7 @@ TARGET_HEART_RATE_ZONE = 4
 TARGET_PACE_ZONE = 6
 
 from . import swimming
+from .formatting import HR_CAP_FLOOR
 
 # Sport name -> (workout model, default pace seconds per km used for estimates)
 SPORTS: dict[str, tuple[type, float]] = {
@@ -129,18 +130,45 @@ def _pace_target(pace: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
     return target, (speeds[0], speeds[1]), described
 
 
+# A heart-rate cap alone (Nov 17): Garmin's steps only hold a range, so a
+# cap of 140 goes to Garmin as HR_CAP_FLOOR-140 and the watch only alerts
+# above 140. Read back, formatting.hr_text calls it "up to 140 bpm".
+_HR_CAP = re.compile(r"\s*(?:<=|≤|<|max(?:imum)?|up\s+to|under|cap)\s*(\d{2,3})\s*(?:bpm)?\s*", re.I)
+
+
+def _hr_cap(hr: Any) -> float | None:
+    """The cap in {"max": 140} or "<=140" / "up to 140", or None if hr isn't a cap."""
+    if isinstance(hr, Mapping) and set(hr) == {"max"}:
+        try:
+            return float(hr["max"])
+        except (TypeError, ValueError):
+            raise WorkoutError(f"Heart-rate cap {hr!r} should be a number of bpm, e.g. {{\"max\": 140}}.") from None
+    if isinstance(hr, str):
+        match = _HR_CAP.fullmatch(hr)
+        return float(match.group(1)) if match else None
+    return None
+
+
 def _hr_target(hr: Any) -> tuple[dict[str, Any], tuple[float, float], str]:
-    if not isinstance(hr, (list, tuple)) or len(hr) != 2:
-        raise WorkoutError("A heart-rate target needs two values, e.g. [150, 165].")
-    low, high = sorted(float(v) for v in hr)
-    if not 60 <= low <= 230 or not 60 <= high <= 230:
-        raise WorkoutError(f"Heart-rate target {hr!r} is outside 60-230 bpm.")
+    cap = _hr_cap(hr)
+    if cap is not None:
+        if not HR_CAP_FLOOR + 20 <= cap <= 230:
+            raise WorkoutError(f"Heart-rate cap {hr!r} is outside {HR_CAP_FLOOR + 20}-230 bpm.")
+        low, high = float(HR_CAP_FLOOR), cap
+    else:
+        if not isinstance(hr, (list, tuple)) or len(hr) != 2:
+            raise WorkoutError("A heart-rate target needs two values, e.g. [150, 165], or a cap alone, "
+                               "e.g. {\"max\": 140}.")
+        low, high = sorted(float(v) for v in hr)
+        if not 60 <= low <= 230 or not 60 <= high <= 230:
+            raise WorkoutError(f"Heart-rate target {hr!r} is outside 60-230 bpm.")
     target = {
         "workoutTargetTypeId": TARGET_HEART_RATE_ZONE,
         "workoutTargetTypeKey": "heart.rate.zone",
         "displayOrder": 4,
     }
-    return target, (low, high), f" @ {low:.0f}-{high:.0f} bpm"
+    shown = f"up to {high:.0f} bpm" if low <= HR_CAP_FLOOR else f"{low:.0f}-{high:.0f} bpm"
+    return target, (low, high), f" @ {shown}"
 
 
 def _is_percent(value: Any) -> bool:

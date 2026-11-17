@@ -23,7 +23,7 @@ from datetime import date, timedelta
 from typing import Any, Iterable, Mapping, Sequence
 
 from .cycling import is_ride
-from .formatting import DateError, drop_empty, duration, pace_per_km, parse_date
+from .formatting import DateError, drop_empty, duration, hr_text, pace_per_km, parse_date
 from .plan import DEFAULT_MPS, category, monday_of, planned_distance_m
 from .progress import Actual, Planned, looks_easy, match
 from .workouts import WorkoutError, build_strength_workout, build_workout, format_pace
@@ -315,8 +315,7 @@ def _target(step: Mapping[str, Any]) -> str | None:
         quick, slow = sorted((1000.0 / float(one), 1000.0 / float(two)))
         return f"{format_pace(quick)[:-3]}\u2013{format_pace(slow)}"
     if key == "heart.rate.zone" and one and two:
-        low, high = sorted((float(one), float(two)))
-        return f"{low:.0f}\u2013{high:.0f} bpm"
+        return hr_text(one, two)
     if key == "heart.rate.zone" and step.get("zoneNumber"):
         return f"HR zone {step['zoneNumber']}"
     if key == "power.zone" and one and two:

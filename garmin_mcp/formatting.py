@@ -85,6 +85,18 @@ def minutes(seconds: float | None) -> float | None:
     return None if seconds is None else round(float(seconds) / 60.0, 1)
 
 
+# A heart-rate cap alone (Nov 17): Garmin's workout steps only hold a range,
+# so a cap of 140 is written as 60-140 (the watch then alerts only above
+# 140), and any range starting at or below this floor reads as the cap.
+HR_CAP_FLOOR = 60
+
+
+def hr_text(low: float, high: float) -> str:
+    """A heart-rate target as a runner reads it: "120–145 bpm", or "up to 140 bpm" for a cap."""
+    low, high = sorted((float(low), float(high)))
+    return f"up to {high:.0f} bpm" if low <= HR_CAP_FLOOR else f"{low:.0f}\u2013{high:.0f} bpm"
+
+
 def drop_empty(data: Mapping[str, Any]) -> dict[str, Any]:
     """Strip keys whose value is None so responses stay compact.
 

@@ -153,6 +153,27 @@ def check_power_targets(check) -> None:
             return str(exc)
         return ""
 
+    # Nov 17: a heart-rate cap alone, for easy runs. Garmin's steps hold a
+    # range, so the cap goes as 60-140 and the watch alerts only above 140.
+    from garmin_mcp import training_plan
+    from garmin_mcp.formatting import hr_text
+    for given in ({"max": 140}, "<=140", "≤140", "up to 140", "max 140 bpm"):
+        capped, summary_text, _ = build_workout("cap", "running", [
+            {"type": "interval", "distance_meters": 8000, "hr": given}])
+        cap_step = capped.to_dict()["workoutSegments"][0]["workoutSteps"][0]
+        check(f"a cap alone, {given!r}, goes to Garmin as 60-140 and is said as up to 140",
+              (cap_step.get("targetValueOne"), cap_step.get("targetValueTwo")) == (60.0, 140.0)
+              and "up to 140 bpm" in summary_text and "60" not in summary_text, f"{cap_step} {summary_text}")
+    check("read back from Garmin, 60-140 is up to 140; 120-145 stays a range",
+          training_plan._target({"targetType": {"workoutTargetTypeKey": "heart.rate.zone"},
+                                 "targetValueOne": 60, "targetValueTwo": 140}) == "up to 140 bpm"
+          and training_plan._target({"targetType": {"workoutTargetTypeKey": "heart.rate.zone"},
+                                     "targetValueOne": 120, "targetValueTwo": 145}) == "120\u2013145 bpm"
+          and hr_text(55, 150) == "up to 150 bpm")
+    check("a cap too low, or not a number, is refused; one number alone still is",
+          "80-230" in refused([{"type": "interval", "duration_seconds": 60, "hr": {"max": 70}}])
+          and "number of bpm" in refused([{"type": "interval", "duration_seconds": 60, "hr": {"max": "easy"}}])
+          and "cap alone" in refused([{"type": "interval", "duration_seconds": 60, "hr": 140}]))
     check("a percentage without an FTP in Garmin is refused, asking for watts",
           "Give watts" in refused([{"type": "interval", "duration_seconds": 60, "power": "95%"}]))
     check("power and heart rate on one step is refused",

@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from . import stream
-from .formatting import drop_empty
+from .formatting import drop_empty, hr_text
 
 # Within this many seconds per km of a pace range still counts as on it: the
 # watch's own pace alert is coarser than that.
@@ -263,7 +263,7 @@ def _target_text(target: Mapping[str, Any] | None) -> str | None:
         return None
     if target["kind"] == "pace":
         return f"{pace(target['lo'])}–{pace(target['hi'])}"
-    return f"{target['lo']:.0f}–{target['hi']:.0f} bpm"
+    return hr_text(target["lo"], target["hi"])
 
 
 _LABELS = {"warmup": "Warm up", "cooldown": "Cool down", "interval": "Run"}

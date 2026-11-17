@@ -52,6 +52,15 @@ def main() -> int:
     check("strides don't count: laps under 90 seconds are left out",
           ec.check({**EASY, "n": "8 km easy + strides"}, strides)["verdict"] == "easy")
 
+    capped = {**EASY, "tg": "up to 140 bpm"}
+    found = ec.check(capped, laps(NOV_8))
+    check("a cap alone (Nov 17): under 140 the whole way is easy, against its cap",
+          found and found["verdict"] == "easy" and found["against"] == "its 140 bpm cap", str(found))
+    found = ec.check(capped, laps(late))
+    check("and over it from km 10 is too hard, the same as against a range",
+          found["verdict"] == "too_hard" and found["from_km"] == 10
+          and found["detail"] == "44% of it ran above 140 bpm, from km 10 on", str(found))
+
     print("\nagainst a pace target")
     paced = {"n": "10 km easy", "ty": "easy", "tg": "5:20–5:50 /km"}
     found = ec.check(paced, laps([0] * 10, pace=290))

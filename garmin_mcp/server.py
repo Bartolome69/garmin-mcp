@@ -503,10 +503,10 @@ OFFICIAL_DESCRIPTIONS = {
         "  name: Shown in Garmin Connect and on the watch.\n"
         "  steps: Ordered steps, each with \"type\" (warmup, interval, recovery, rest, cooldown "
         "or repeat) and exactly one of \"duration_seconds\", \"distance_meters\" or "
-        "\"until_lap\": true (the step ends on the lap button). A repeat is "
+        "\"until_lap\": true (ends on the lap button). A repeat is "
         "{\"type\": \"repeat\", \"times\": 5, \"steps\": [...]} and can't contain another repeat. "
         "Optional target on a step: \"pace\" (min/km, \"4:05\" or [\"4:00\", \"4:10\"]), \"hr\" "
-        "(bpm [150, 165], or a Garmin zone such as \"z2\" or \"z3-z4\") or \"power\" (watts, 250 "
+        "(bpm [150, 165]; a cap {\"max\": 140}, best for easy runs; or a zone, \"z2\" or \"z3-z4\") or \"power\" (watts, 250 "
         "or [240, 260]; a share of the FTP set in Garmin, \"95%\" or [\"88%\", \"94%\"]; or a "
         "power zone, \"z3\"). A pace target narrower than 5 s/km either side is widened to that, "
         "and a single power value becomes a range 5% either side. Example, 15 min warm-up, "
@@ -2804,11 +2804,10 @@ async def create_workout(
         steps: Ordered steps, each with "type" (warmup, interval, recovery,
             rest, cooldown or repeat) and exactly one of "duration_seconds",
             "distance_meters" or "until_lap": true (ends on the lap button: a
-            walk recovery between strides, a warm-up by feel, a rep to a
-            landmark). A repeat is {"type": "repeat", "times": 5, "steps": [...]}
+            walk recovery, a warm-up by feel, a rep to a landmark). A repeat is {"type": "repeat", "times": 5, "steps": [...]}
             and can't contain another repeat.
             Optional target: "pace" ("4:05" or ["4:00", "4:10"], min/km), "hr"
-            ([150, 165] bpm, or their Garmin zone: "z2", "z3-z4") or "power"
+            ([150, 165] bpm, a cap {"max": 140}, or their Garmin zone: "z2") or "power"
             (watts, 250 or [240, 260]; a share of the FTP set in Garmin, "95%"
             or ["88%", "94%"]; or a power zone, "z3").
             By default only the work reps carry a target (pace for a run);
@@ -2818,7 +2817,7 @@ async def create_workout(
             narrower than 5 s/km either side ("4:00" becomes 3:55-4:05;
             tighter is widened around its middle): about 5 either side for
             reps, 10 for tempo and threshold, 15-20 for steady and long runs,
-            or heart rate for easy running.
+            or a heart-rate cap for easy running.
             A ride uses power on the work steps when the rider has a power
             meter or smart trainer (power shows on rides in get_activities)
             and an FTP (get_fitness): sweet spot 88-94%, threshold 95-105%, VO2
