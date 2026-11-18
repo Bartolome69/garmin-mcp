@@ -1785,11 +1785,21 @@ def report_oauth_health(now: float | None = None) -> int | None:
     day = time.strftime("%Y-%m-%d", time.gmtime(now))
     if _OAUTH_HEALTH_DAY.get("day") == day:
         return None
+    try:
+        cut = store.cut_off_accounts(now)
+        # Noted before anything is sent: if noting fails, nothing goes, rather
+        # than the same people going again at every restart.
+        store.note_cut_off([p["subject"] for p in cut], now)
+    except Exception as exc:
+        # Nov 18: twice in a row the report sent nothing and said nothing. Now
+        # the kind of failure goes to PostHog (an exception's name and SQLite's
+        # message, nothing about anyone), and the day isn't marked done, so
+        # the next pass of the loop, six hours on, tries again.
+        analytics.capture("oauth_health", "daash-server", {
+            "error": type(exc).__name__, "error_detail": str(exc)[:120], "day": day,
+            "$process_person_profile": False})
+        raise
     _OAUTH_HEALTH_DAY["day"] = day
-    cut = store.cut_off_accounts(now)
-    # Noted before anything is sent: if noting fails, nothing goes, rather
-    # than the same people going again at every restart.
-    store.note_cut_off([p["subject"] for p in cut], now)
     for person in cut:
         if person["noted_at"]:
             continue

@@ -853,6 +853,27 @@ async def main() -> int:
         check("someone already reported isn't reported again the next day",
               not [e for e in EVENTS[before:] if e[0] == "connection_cut_off"
                    and e[1] == store.email_fingerprint("lapsed1118@example.com")], str(EVENTS[before:]))
+        # A failing report says what failed and tries again on the next pass.
+        hosted._OAUTH_HEALTH_DAY.clear()
+        real_note, before = store.note_cut_off, len(EVENTS)
+        def locked(*a, **k):
+            raise __import__("sqlite3").OperationalError("database is locked")
+        store.note_cut_off = locked
+        try:
+            with recording():
+                try:
+                    hosted.report_oauth_health()
+                    raised = False
+                except Exception:
+                    raised = True
+        finally:
+            store.note_cut_off = real_note
+        failed = [e for e in EVENTS[before:] if e[0] == "oauth_health"]
+        check("a report that fails says why, sends no one, and isn't marked done for the day",
+              raised and len(failed) == 1 and failed[0][2].get("error") == "OperationalError"
+              and failed[0][2].get("error_detail") == "database is locked"
+              and not [e for e in EVENTS[before:] if e[0] == "connection_cut_off"]
+              and "day" not in hosted._OAUTH_HEALTH_DAY, str(EVENTS[before:]))
         never_used = store.save_user("n***@example.com", json.dumps({"di_token": "never"}),
                                      email_hash=store.email_fingerprint("neverused1118@example.com"))
         check("someone who signed in but never used Daash isn't counted as cut off",
