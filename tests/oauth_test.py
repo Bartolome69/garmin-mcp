@@ -874,6 +874,29 @@ async def main() -> int:
               and failed[0][2].get("error_detail") == "database is locked"
               and not [e for e in EVENTS[before:] if e[0] == "connection_cut_off"]
               and "day" not in hosted._OAUTH_HEALTH_DAY, str(EVENTS[before:]))
+        # A write waits for another one to finish rather than failing after
+        # SQLite's 5 seconds (Nov 18: "database is locked" at every restart).
+        import sqlite3 as _sqlite3, threading as _threading
+        holding = _threading.Event()
+        def hold_the_database():
+            other = _sqlite3.connect(DB, isolation_level=None)
+            other.execute("BEGIN IMMEDIATE")
+            holding.set()
+            time.sleep(6)
+            other.execute("COMMIT")
+            other.close()
+        holder = _threading.Thread(target=hold_the_database)
+        holder.start()
+        holding.wait(5)
+        started = time.time()
+        try:
+            store.note_cut_off([], time.time())
+            waited_ok = True
+        except _sqlite3.OperationalError:
+            waited_ok = False
+        holder.join()
+        check("a write waits out another that holds the database for 6 seconds",
+              waited_ok and time.time() - started >= 5, f"waited {time.time() - started:.1f}s")
         never_used = store.save_user("n***@example.com", json.dumps({"di_token": "never"}),
                                      email_hash=store.email_fingerprint("neverused1118@example.com"))
         check("someone who signed in but never used Daash isn't counted as cut off",

@@ -365,9 +365,17 @@ def _cipher() -> Fernet:
         ) from exc
 
 
+# How long a write waits for another one to finish before giving up. SQLite's
+# own default is 5 seconds; on Nov 18 that wasn't enough while the server
+# started (several jobs write at once then), and "database is locked" lost
+# the cut-off report and the weekly email's note of who had been told, at
+# every restart.
+BUSY_WAIT = 30
+
+
 def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=BUSY_WAIT)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     conn.executescript(OAUTH_SCHEMA)
