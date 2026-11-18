@@ -69,7 +69,7 @@ REFRESH_TTL = 60 * 60 * 24 * 365
 # the second exchange fails and Claude reports the connection as expired,
 # which only signing in again fixes. Two minutes covers that and keeps a
 # stolen token worth no more than it was.
-REFRESH_REUSE_GRACE = 120
+REFRESH_REUSE_GRACE = store.ROTATION_GRACE
 
 # Authorization requests waiting for someone to finish signing in. In memory on
 # purpose: a restart just means starting the sign-in again, and nothing here
@@ -505,18 +505,19 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
     # -- tokens -----------------------------------------------------------
 
     def _issue(
-        self, *, client_id: str, subject: str, scopes: list[str], resource: str | None
+        self, *, client_id: str, subject: str, scopes: list[str], resource: str | None,
+        parent_hash: str | None = None,
     ) -> OAuthToken:
         access = secrets.token_urlsafe(32)
         refresh = secrets.token_urlsafe(32)
         now = int(time.time())
         store.save_oauth_token(
             access, kind="access", client_id=client_id, subject=subject,
-            scopes=" ".join(scopes), resource=resource, expires_at=now + ACCESS_TTL,
+            scopes=" ".join(scopes), resource=resource, expires_at=now + ACCESS_TTL, parent_hash=parent_hash,
         )
         store.save_oauth_token(
             refresh, kind="refresh", client_id=client_id, subject=subject,
-            scopes=" ".join(scopes), resource=resource, expires_at=now + REFRESH_TTL,
+            scopes=" ".join(scopes), resource=resource, expires_at=now + REFRESH_TTL, parent_hash=parent_hash,
         )
         return OAuthToken(
             access_token=access,
@@ -549,7 +550,7 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         seen = store.peek_oauth_token(refresh_token, "refresh")
         row = store.load_oauth_token(refresh_token, "refresh")
         if not row or row["client_id"] != client.client_id:
-            _refresh_refused(seen, client.client_id)
+            _refresh_refused(seen, client.client_id, None if seen else store.retired_token(refresh_token))
             return None
         return RefreshToken(
             token=refresh_token,
@@ -566,15 +567,22 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        # One use, give or take a moment: the old refresh token stops working
-        # REFRESH_REUSE_GRACE after the exchange, so a duplicate request from
-        # Claude still lands but a stolen one is soon worth nothing.
-        store.expire_oauth_token_by(refresh_token.token, int(time.time()) + REFRESH_REUSE_GRACE)
+        # The old refresh token keeps working until the app uses what this
+        # renewal gives it (store.load_oauth_token retires it then, after
+        # REFRESH_REUSE_GRACE). Nov 18: it used to stop two minutes after the
+        # exchange whether or not the reply arrived, so a reply lost to a
+        # restart or a dropped connection cut the person off for good, and
+        # they had to connect again (15 refused renewals in five days).
+        # Pairs minted from it before and never used are left to expire: one
+        # may yet be the pair the app kept, if this request was a stray
+        # duplicate.
+        parent = store.token_hash(refresh_token.token)
         return self._issue(
             client_id=client.client_id,
             subject=refresh_token.subject or "",
             scopes=scopes or refresh_token.scopes,
             resource=_issued_for(refresh_token.resource),
+            parent_hash=parent,
         )
 
     def issue_for_app(self, subject: str) -> OAuthToken:
@@ -599,27 +607,33 @@ class GarminOAuthProvider(OAuthAuthorizationServerProvider):
         store.delete_oauth_token(token.token)
 
 
-def _refresh_refused(seen: dict | None, client_id: str) -> None:
+def _refresh_refused(seen: dict | None, client_id: str, gone: dict | None = None) -> None:
     """Report a refused refresh: to Claude it is a connection that has expired.
 
     Nothing else shows it. The person sees "connection expired" in Claude and
     the server only answered 400, so this is how a broken link gets noticed
-    before someone has to message about it.
+    before someone has to message about it. A token deleted already is
+    explained by store.oauth_retired (Nov 18: all fifteen refusals of the
+    week before said "unknown", with no one's name on them): retired_rotated,
+    retired_disconnected, retired_garmin_lapsed, retired_account_gone,
+    retired_revoked or retired_expired; never_seen when Daash has no record.
     """
-    if not seen:
-        reason = "unknown"
+    if gone:
+        reason = f"retired_{gone['reason']}"
+    elif not seen:
+        reason = "never_seen"
     elif seen["client_id"] != client_id:
         reason = "other_client"
     elif seen["expires_at"] is not None and seen["expires_at"] < (seen["created_at"] or 0) + REFRESH_TTL - 60:
         reason = "reused_after_rotation"
     else:
         reason = "expired"
-    user = store.get_user(seen["subject"]) if seen and seen.get("subject") else None
-    props: dict[str, Any] = {"reason": reason}
+    subject = (seen or gone or {}).get("subject")
+    user = store.get_user(subject) if subject else None
+    props: dict[str, Any] = {"reason": reason, "client": app_for_client(client_id)}
+    if gone:
+        props["hours_since_retired"] = round((time.time() - gone["retired_at"]) / 3600, 1)
     if user:
         props["account"] = user.email_masked
-    analytics.capture(
-        "connection_refresh_refused",
-        (user.email_hash or user.user_token) if user else None,
-        props,
-    )
+    person = (user.email_hash or user.user_token) if user else (gone or {}).get("person")
+    analytics.capture("connection_refresh_refused", person, props)

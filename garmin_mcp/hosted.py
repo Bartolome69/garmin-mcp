@@ -780,7 +780,7 @@ def _lapsed_in_use(user_token: str) -> None:
     """
     report_lapsed(user_token, source="in_use")
     if OAUTH_ENABLED:
-        store.delete_tokens_for_subject(user_token)
+        store.delete_tokens_for_subject(user_token, reason="garmin_lapsed")
 
 
 # What's new, said once to each person in their next chat. Raise NEWS_VERSION
@@ -1768,10 +1768,29 @@ def report_official_users() -> dict[str, int] | None:
     return counts
 
 
+_OAUTH_HEALTH_DAY: dict[str, str] = {}
+
+
+def report_oauth_health(now: float | None = None) -> int | None:
+    """oauth_health, once a day (Nov 18): how many people are still connected
+    but have lost every app sign-in in the last two weeks, so would have to
+    connect again. Should be close to nothing once renewals can't strand anyone."""
+    day = time.strftime("%Y-%m-%d", time.gmtime(now or time.time()))
+    if _OAUTH_HEALTH_DAY.get("day") == day:
+        return None
+    _OAUTH_HEALTH_DAY["day"] = day
+    cut_off = store.cut_off_people(now)
+    analytics.capture("oauth_health", "daash-server", {"cut_off_14d": cut_off, "day": day,
+                                                       "$process_person_profile": False})
+    return cut_off
+
+
 def _keep_alive_forever() -> None:
     while True:
         with contextlib.suppress(Exception):
             store.sweep_expired_oauth()
+        with contextlib.suppress(Exception):
+            report_oauth_health()
         # Crew runs on days that have passed, gone even if nobody looks.
         with contextlib.suppress(Exception):
             crews.purge_past()
@@ -3868,7 +3887,7 @@ async def forget_person(token: str, via: str = "disconnect_page") -> bool:
         # And their weekly counts of calls and watch sends.
         store.forget_usage(token, gone.email_hash)
         # And every sign-in to it: Claude, ChatGPT and the app alike.
-        store.delete_tokens_for_subject(token)
+        store.delete_tokens_for_subject(token, reason="disconnected")
         analytics.disconnected(gone.email_hash or token, via, route, "everything", gone.created_at)
     return removed
 
@@ -4917,7 +4936,7 @@ class SessionBinding:
         if user is None:
             # The Garmin session behind this token is gone — disconnected, or
             # signed in again. The token outlived what it pointed at.
-            store.delete_tokens_for_subject(user_token)
+            store.delete_tokens_for_subject(user_token, reason="account_gone")
             _SESSIONS.pop(user_token, None)
             if OAUTH_ENABLED:
                 # With its token now gone the SDK answers 401 invalid_token,

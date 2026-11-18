@@ -74,6 +74,13 @@ MIGRATIONS = (
     # Nov 15: a spent magic link is kept a day, marked, so a second tap reads
     # as "used" rather than "invalid".
     "ALTER TABLE app_handoffs ADD COLUMN used_at INTEGER",
+    # Nov 18: a renewal no longer strands an app whose reply was lost. Each
+    # token pair names the refresh token it was minted from (parent_hash); the
+    # parent stays valid until the pair is first used (used_at), then retires.
+    "ALTER TABLE oauth_tokens ADD COLUMN parent_hash TEXT",
+    "ALTER TABLE oauth_tokens ADD COLUMN used_at INTEGER",
+    "ALTER TABLE oauth_tokens ADD COLUMN retired TEXT",
+    "CREATE INDEX IF NOT EXISTS oauth_tokens_parent ON oauth_tokens (parent_hash)",
 )
 
 # Bart's friends using Daash, named from a chat (garmin_official's friends
@@ -177,6 +184,22 @@ CREATE TABLE IF NOT EXISTS usage_weeks (
     PRIMARY KEY (person, week_start)
 );
 """
+
+# Every refresh token deleted, and why (Nov 18): a refused renewal said only
+# "refresh token does not exist", with no one's name on it. Hashes only, as in
+# oauth_tokens, kept 30 days (every hourly renewal leaves one).
+OAUTH_RETIRED_SCHEMA = """
+CREATE TABLE IF NOT EXISTS oauth_retired (
+    token_hash  TEXT PRIMARY KEY,
+    client_id   TEXT,
+    subject     TEXT,
+    person      TEXT,
+    reason      TEXT NOT NULL,
+    retired_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS oauth_retired_at ON oauth_retired (retired_at);
+"""
+RETIRED_KEPT = 30 * 86400
 
 # Who has been told the weekly email waits for another day (Nov 17), so
 # weekly_email_skipped goes once a person a day even when the server restarts
@@ -349,6 +372,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(EMAIL_SENDS_SCHEMA)
     conn.executescript(USAGE_WEEKS_SCHEMA)
     conn.executescript(WEEKLY_SKIPS_SCHEMA)
+    conn.executescript(OAUTH_RETIRED_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -1024,32 +1048,51 @@ def save_oauth_token(
     scopes: str,
     resource: str | None,
     expires_at: int | None,
+    parent_hash: str | None = None,
 ) -> None:
     with _connect() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO oauth_tokens "
-            "(token_hash, kind, client_id, subject, scopes, resource, expires_at, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(token_hash, kind, client_id, subject, scopes, resource, expires_at, created_at, parent_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 token_hash(token), kind, client_id, subject, scopes,
-                resource, expires_at, int(time.time()),
+                resource, expires_at, int(time.time()), parent_hash,
             ),
         )
 
 
+# How long a refresh token keeps working once the pair minted from it has
+# been used: long enough for a duplicate request sent at the same moment.
+ROTATION_GRACE = 120
+
+
 def load_oauth_token(token: str, kind: str) -> dict | None:
-    """Return a token's row, or None if unknown or expired."""
+    """Return a token's row, or None if unknown or expired.
+
+    The first time a token minted by a renewal is used, the app has shown it
+    got that renewal's reply, so the refresh token it replaced retires (after
+    ROTATION_GRACE). Until then the old one still works: a reply lost to a
+    restart or a dropped connection can't strand the app (Nov 18).
+    """
+    hashed = token_hash(token)
     with _connect() as conn:
         row = conn.execute(
-            "SELECT client_id, subject, scopes, resource, expires_at FROM oauth_tokens "
+            "SELECT client_id, subject, scopes, resource, expires_at, parent_hash, used_at FROM oauth_tokens "
             "WHERE token_hash = ? AND kind = ?",
-            (token_hash(token), kind),
+            (hashed, kind),
         ).fetchone()
+        if row and row[6] is None and (row[4] is None or row[4] >= time.time()):
+            now = int(time.time())
+            first = conn.execute("UPDATE oauth_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL",
+                                 (now, hashed)).rowcount == 1
+            if first and row[5]:
+                _retire_hash(conn, row[5], now + ROTATION_GRACE, "rotated")
     if not row:
         return None
-    client_id, subject, scopes, resource, expires_at = row
+    client_id, subject, scopes, resource, expires_at = row[:5]
     if expires_at is not None and expires_at < time.time():
-        delete_oauth_token(token)
+        delete_oauth_token(token, reason=None)
         return None
     return {
         "client_id": client_id,
@@ -1136,16 +1179,6 @@ def peek_oauth_token(token: str, kind: str) -> dict | None:
     return {"client_id": client_id, "subject": subject, "expires_at": expires_at, "created_at": created_at}
 
 
-def expire_oauth_token_by(token: str, at: int) -> None:
-    """Bring a token's expiry forward to `at`, never push it back."""
-    with _connect() as conn:
-        conn.execute(
-            "UPDATE oauth_tokens SET expires_at = ? "
-            "WHERE token_hash = ? AND (expires_at IS NULL OR expires_at > ?)",
-            (at, token_hash(token), at),
-        )
-
-
 def sweep_expired_oauth() -> int:
     """Delete expired tokens and codes. They are refused already; this is space.
 
@@ -1155,29 +1188,87 @@ def sweep_expired_oauth() -> int:
     """
     now = int(time.time())
     with _connect() as conn:
+        _remember_retired(conn, "t.expires_at IS NOT NULL AND t.expires_at < ?", (now,), None)
         removed = conn.execute(
             "DELETE FROM oauth_tokens WHERE expires_at IS NOT NULL AND expires_at < ?", (now,)
         ).rowcount
         conn.execute("DELETE FROM oauth_codes WHERE expires_at < ?", (now,))
+        conn.execute("DELETE FROM oauth_retired WHERE retired_at < ?", (now - RETIRED_KEPT,))
     return removed
 
 
-def delete_oauth_token(token: str) -> None:
+def _retire_hash(conn: sqlite3.Connection, hashed: str, at: int, reason: str) -> None:
+    """Bring a token's expiry forward to `at` (never back), noting why."""
+    conn.execute(
+        "UPDATE oauth_tokens SET expires_at = ?, retired = COALESCE(retired, ?) "
+        "WHERE token_hash = ? AND (expires_at IS NULL OR expires_at > ?)",
+        (at, reason, hashed, at),
+    )
+
+
+def _remember_retired(conn: sqlite3.Connection, where: str, args: tuple, reason: str | None) -> None:
+    """Note the refresh tokens about to be deleted, and why, before they go.
+
+    `reason` None keeps what the row says (rotated), else "expired". On a
+    disconnect, nobody is named: Disconnect keeps nothing about the person.
+    """
+    named = reason != "disconnected"
+    conn.execute(
+        "INSERT OR REPLACE INTO oauth_retired (token_hash, client_id, subject, person, reason, retired_at) "
+        f"SELECT t.token_hash, t.client_id, {'t.subject' if named else 'NULL'}, {'u.email_hash' if named else 'NULL'}, "
+        f"COALESCE(?, t.retired, 'expired'), ? FROM oauth_tokens t LEFT JOIN users u ON u.user_token = t.subject "
+        f"WHERE t.kind = 'refresh' AND {where}",
+        (reason, int(time.time()), *args),
+    )
+
+
+def retired_token(token: str) -> dict | None:
+    """Why a refresh token that no longer exists was deleted, and whose it was, if known."""
     with _connect() as conn:
+        row = conn.execute(
+            "SELECT client_id, subject, person, reason, retired_at FROM oauth_retired WHERE token_hash = ?",
+            (token_hash(token),),
+        ).fetchone()
+    if not row:
+        return None
+    return dict(zip(("client_id", "subject", "person", "reason", "retired_at"), row))
+
+
+def delete_oauth_token(token: str, reason: str | None = "revoked") -> None:
+    with _connect() as conn:
+        _remember_retired(conn, "t.token_hash = ?", (token_hash(token),), reason)
         conn.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(token),))
 
 
-def delete_tokens_for_subject(subject: str) -> int:
+def delete_tokens_for_subject(subject: str, reason: str = "revoked") -> int:
     """Revoke everything issued to one person.
 
     Disconnecting, or signing in again, has to take the access tokens with it.
     Otherwise deleting the Garmin session would leave live bearer tokens whose
     subject no longer resolves — working credentials pointing at nothing.
+    `reason` is kept for each refresh token: disconnected, garmin_lapsed or
+    account_gone.
     """
     with _connect() as conn:
+        _remember_retired(conn, "t.subject = ?", (subject,), reason)
         return conn.execute(
             "DELETE FROM oauth_tokens WHERE subject = ?", (subject,)
         ).rowcount
+
+
+def cut_off_people(now: float | None = None, within: int = 14 * 86400) -> int:
+    """Accounts still here whose every app sign-in has gone in the last `within`
+    seconds, with nothing live left: connected, then cut off. They have to
+    connect again, and most won't know to."""
+    now = int(now or time.time())
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT r.subject) FROM oauth_retired r JOIN users u ON u.user_token = r.subject "
+            "WHERE r.retired_at >= ? AND r.reason != 'rotated' AND NOT EXISTS (SELECT 1 FROM oauth_tokens t "
+            "WHERE t.subject = r.subject AND t.kind = 'refresh' AND (t.expires_at IS NULL OR t.expires_at > ?))",
+            (now - within, now),
+        ).fetchone()
+    return int(row[0] or 0)
 
 
 # --------------------------------------------------------------------------
@@ -1731,8 +1822,10 @@ def note_weekly_skips(day: str, people: list[str]) -> set[str]:
 
 
 def forget_usage(user_token: str, email_hash: str | None) -> None:
-    """Disconnect deletes their weekly counts too."""
+    """Disconnect deletes their weekly counts too, and their name on old sign-in records."""
     with _connect() as conn:
+        conn.execute("UPDATE oauth_retired SET subject = NULL, person = NULL WHERE subject = ? OR person = ?",
+                     (user_token, email_hash or user_token))
         conn.execute("DELETE FROM usage_weeks WHERE person IN (?, ?)", (user_token, email_hash or user_token))
         conn.execute("DELETE FROM weekly_skips WHERE person IN (?, ?)", (user_token, email_hash or user_token))
 

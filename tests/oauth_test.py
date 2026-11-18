@@ -43,7 +43,24 @@ os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
 from tests.fake_garmin import PROFILE, FakeGarmin  # noqa: E402
 
 import garmin_mcp.hosted as hosted  # noqa: E402
-from garmin_mcp import store  # noqa: E402
+from garmin_mcp import analytics, store  # noqa: E402
+
+# Events with the person they're for, recorded by the checks that need the
+# person too (main() records the rest without it).
+EVENTS: list[tuple] = []
+
+
+class recording:
+    """analytics.capture into EVENTS, for the length of a with block."""
+
+    def __enter__(self):
+        self.saved = analytics.capture
+        analytics.capture = lambda event, subject=None, properties=None, **kw: EVENTS.append(
+            (event, subject, properties or {}))
+        return EVENTS
+
+    def __exit__(self, *exc):
+        analytics.capture = self.saved
 
 
 class _Garth:
@@ -469,27 +486,59 @@ async def main() -> int:
               bool(refreshed.get("access_token")), f"status {code} {body[:120]}")
         # Claude can send the same refresh twice, from two requests that both
         # found the access token expired. The second must not end the session.
-        code, body, _ = await run(lambda: http("POST", "/token", {
-            "grant_type": "refresh_token", "refresh_token": refresh,
-            "client_id": client_id,
-        }))
+        def renew(token: str):
+            return run(lambda: http("POST", "/token", {
+                "grant_type": "refresh_token", "refresh_token": token, "client_id": client_id}))
+
+        code, body, _ = await renew(refresh)
         check("a duplicate refresh moments later still works",
               code == 200 and bool(json.loads(body).get("access_token")), f"status {code} {body[:120]}")
+        hashed = lambda token: hashlib.sha256(token.encode()).hexdigest()  # noqa: E731
+
+        def row(token: str):
+            with __import__("sqlite3").connect(DB) as conn:
+                return conn.execute("SELECT expires_at, retired FROM oauth_tokens WHERE token_hash = ?",
+                                    (hashed(token),)).fetchone()
+
+        # Nov 18: the old refresh token keeps working until the app uses what
+        # the renewal gave it. It used to stop two minutes after the exchange,
+        # reply or no reply, and a reply lost to a restart cut someone off.
+        check("an exchanged refresh token keeps working until the new tokens are used",
+              row(refresh) is not None and row(refresh)[0] > time.time() + 86400, str(row(refresh)))
+        lost = [refreshed["refresh_token"], json.loads(body)["refresh_token"]]
         with __import__("sqlite3").connect(DB) as conn:
-            remaining = conn.execute(
-                "SELECT expires_at FROM oauth_tokens WHERE token_hash = ?",
-                (hashlib.sha256(refresh.encode()).hexdigest(),),
-            ).fetchone()
-        check("an exchanged refresh token expires within minutes, not a month",
-              remaining is not None and remaining[0] <= time.time() + 180, str(remaining))
+            conn.execute("UPDATE oauth_tokens SET created_at = created_at - 600 WHERE parent_hash = ?",
+                         (hashed(refresh),))
+        code, body, _ = await renew(refresh)
+        check("a renewal whose reply never arrived doesn't cut anyone off: the old token renews again",
+              code == 200, f"status {code} {body[:120]}")
+        refreshed = json.loads(body) if code == 200 else {}
+        check("and the earlier pairs are left to expire, in case one is what the app kept",
+              all(row(t) is not None for t in lost), str([row(t) for t in lost]))
+        store.load_oauth_token(refreshed.get("access_token", ""), "access")
+        check("once the app uses its new access token, the old refresh token retires within minutes",
+              row(refresh) is not None and row(refresh)[0] <= time.time() + 180 and row(refresh)[1] == "rotated",
+              str(row(refresh)))
+        code, _, _ = await renew(refresh)
+        check("a duplicate sent at the same moment still lands, inside the grace", code == 200, f"status {code}")
         with __import__("sqlite3").connect(DB) as conn:
             conn.execute("UPDATE oauth_tokens SET expires_at = ? WHERE token_hash = ?",
-                         (int(time.time()) - 1, hashlib.sha256(refresh.encode()).hexdigest()))
-        code, _, _ = await run(lambda: http("POST", "/token", {
-            "grant_type": "refresh_token", "refresh_token": refresh,
-            "client_id": client_id,
-        }))
-        check("the used refresh token is dead once the grace has passed", code != 200, f"status {code}")
+                         (int(time.time()) - 1, hashed(refresh)))
+        before = len(EVENTS)
+        with recording():
+            code, _, _ = await renew(refresh)
+            check("the replaced refresh token is dead once the grace has passed", code != 200, f"status {code}")
+            code, _, _ = await renew(refresh)
+        refusals = [e for e in EVENTS[before:] if e[0] == "connection_refresh_refused"]
+        subject_now = (store.load_oauth_token(refreshed.get("access_token", ""), "access") or {}).get("subject")
+        owner = store.get_user(subject_now) if subject_now else None
+        check("a refusal says why, and whose, even after the token is deleted",
+              [r[2].get("reason") for r in refusals] == ["reused_after_rotation", "retired_rotated"]
+              and all(r[1] and owner and r[1] == owner.email_hash for r in refusals)
+              and refusals[-1][2].get("client") and "hours_since_retired" in refusals[-1][2],
+              str(refusals))
+        check("and the renewed tokens still work", store.load_oauth_token(refreshed.get("refresh_token", ""),
+                                                                         "refresh") is not None)
 
         # -- 9. the token actually gates the MCP endpoint ----------------
         # The point of all of the above: /mcp is one public path, and who is
@@ -752,6 +801,46 @@ async def main() -> int:
             ).fetchall())
         check("expired tokens are swept", removed >= 1 and "stale" not in left, str(removed))
         check("a live token survives the sweep", left.get("live") == 1)
+
+        # Nov 18: each way a person's sign-ins are taken away is kept, so a
+        # refused renewal names the cause, and the daily count shows people
+        # cut off who are still here.
+        from types import SimpleNamespace
+        lapsed = store.save_user("l***@example.com", json.dumps({"di_token": "lapsed"}),
+                                 email_hash=store.email_fingerprint("lapsed1118@example.com"))
+        app_tokens = hosted.OAUTH_PROVIDER.issue_for_app(lapsed)
+        cut_before = store.cut_off_people()
+        store.delete_tokens_for_subject(lapsed, reason="garmin_lapsed")
+        before = len(EVENTS)
+        with recording():
+            refused = await hosted.OAUTH_PROVIDER.load_refresh_token(
+                SimpleNamespace(client_id=__import__("garmin_mcp.oauth", fromlist=["x"]).APP_CLIENT_ID),
+                app_tokens.refresh_token)
+        said = [e for e in EVENTS[before:] if e[0] == "connection_refresh_refused"]
+        check("a renewal after Garmin's session lapsed is refused, saying so, with the person",
+              refused is None and said and said[0][2].get("reason") == "retired_garmin_lapsed"
+              and said[0][1] == store.email_fingerprint("lapsed1118@example.com"), str(said))
+        check("they count as cut off, still here with no sign-in left", store.cut_off_people() == cut_before + 1,
+              f"{cut_before} -> {store.cut_off_people()}")
+        hosted._OAUTH_HEALTH_DAY.clear()
+        before = len(EVENTS)
+        with recording():
+            health_count = hosted.report_oauth_health()
+            again = hosted.report_oauth_health()
+        health = [e for e in EVENTS[before:] if e[0] == "oauth_health"]
+        check("oauth_health reports the count once a day", health_count == store.cut_off_people() and again is None
+              and len(health) == 1 and health[0][2].get("cut_off_14d") == health_count, str(health))
+        await hosted.forget_person(lapsed)
+        with __import__("sqlite3").connect(DB) as conn:
+            named = conn.execute("SELECT COUNT(*) FROM oauth_retired WHERE subject = ? OR person = ?",
+                                 (lapsed, store.email_fingerprint("lapsed1118@example.com"))).fetchone()[0]
+        check("disconnecting leaves no record naming them, only that a sign-in ended and why",
+              named == 0 and store.retired_token(app_tokens.refresh_token) is not None
+              and store.retired_token(app_tokens.refresh_token)["person"] is None, str(named))
+        with recording():
+            unseen = await hosted.OAUTH_PROVIDER.load_refresh_token(SimpleNamespace(client_id="c"), "made-up")
+        check("a token Daash never saw is never_seen", unseen is None and EVENTS[-1][2].get("reason") == "never_seen",
+              str(EVENTS[-1]))
 
     finally:
         server.should_exit = True
