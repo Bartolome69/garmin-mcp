@@ -3562,7 +3562,7 @@ async def create_plan(
     checked = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
 
     calendar = await _plan_calendar(first, last)
-    existing_plans = existing
+    choice = existing  # the user's answer about runs from elsewhere; the name is reused below
     existing = training_plan.plans_in(calendar)
     if code in existing and not plan_resume.get():
         return {
@@ -3583,7 +3583,7 @@ async def create_plan(
     # app, single workouts. Nov 18: a plan went on top of someone's old one
     # and their assistant then cleared 30-odd doubled days one at a time.
     doubled = _doubled_runs(calendar, sessions, code)
-    if doubled and existing_plans not in ("replace", "keep"):
+    if doubled and choice not in ("replace", "keep"):
         return {
             "error": (
                 f"{len(doubled)} of this plan's run days have another run already on the calendar "
@@ -3594,7 +3594,7 @@ async def create_plan(
             "already_scheduled": doubled[:60],
         }
     cleared: list[dict[str, Any]] = []
-    if doubled and existing_plans == "replace":
+    if doubled and choice == "replace":
         for item in doubled:
             try:
                 await _call(lambda c, s=item["schedule_id"]: c.unschedule_workout(s))
