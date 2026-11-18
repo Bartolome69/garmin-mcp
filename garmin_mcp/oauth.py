@@ -126,7 +126,7 @@ def app_callback() -> str | None:
 # The companion app's client id. Registration hands out random ids, so no
 # one else can register this one: a sign-in for it, sent to the app's own
 # callback, is Daash signing in to Daash and needs no consent screen.
-APP_CLIENT_ID = "daash-app"
+APP_CLIENT_ID = store.APP_CLIENT_ID
 
 
 def ensure_app_client() -> None:

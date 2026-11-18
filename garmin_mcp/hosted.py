@@ -1787,6 +1787,9 @@ def report_oauth_health(now: float | None = None) -> int | None:
         return None
     _OAUTH_HEALTH_DAY["day"] = day
     cut = store.cut_off_accounts(now)
+    # Noted before anything is sent: if noting fails, nothing goes, rather
+    # than the same people going again at every restart.
+    store.note_cut_off([p["subject"] for p in cut], now)
     for person in cut:
         if person["noted_at"]:
             continue
@@ -1795,7 +1798,6 @@ def report_oauth_health(now: float | None = None) -> int | None:
             "client": oauth.app_for_client(person["client_id"]) if person["client_id"] else None,
             "days_since_used": round((now - person["last_seen_at"]) / 86400, 1) if person["last_seen_at"] else None,
         }))
-    store.note_cut_off([p["subject"] for p in cut], now)
     analytics.capture("oauth_health", "daash-server", {"cut_off_30d": len(cut), "newly_cut_off": sum(
         1 for p in cut if not p["noted_at"]), "day": day, "$process_person_profile": False})
     return len(cut)
@@ -1805,8 +1807,10 @@ def _keep_alive_forever() -> None:
     while True:
         with contextlib.suppress(Exception):
             store.sweep_expired_oauth()
-        with contextlib.suppress(Exception):
+        try:
             report_oauth_health()
+        except Exception:  # noqa: BLE001 - the loop must go on; the log says why
+            log.exception("oauth health report failed")
         # Crew runs on days that have passed, gone even if nobody looks.
         with contextlib.suppress(Exception):
             crews.purge_past()
