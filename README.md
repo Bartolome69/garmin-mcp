@@ -1,25 +1,29 @@
-# garmin-mcp
+# Daash: free hosted Garmin MCP for Claude and ChatGPT
 
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/bartolome69/garmin-mcp)
 
-Ask Claude about your Garmin data, then have it write the session onto your watch.
+Daash (https://daash.run) is a free, open-source hosted Garmin Connect
+[MCP](https://modelcontextprotocol.io) connector for Claude and ChatGPT.
+Nothing to install. It works on the web and in the phone apps. The connector
+URL is https://mcp.garmin.daash.run/mcp.
 
-An [MCP](https://modelcontextprotocol.io) server for your own Garmin Connect
-account. It reads your runs, splits, heart-rate zones and daily health metrics —
-and, unlike the read-only Garmin integrations out there, it can build a
-structured workout and schedule it, so the answer to "what should I run on
-Thursday?" ends up on your wrist instead of in a chat log.
+1. Add a custom connector in Claude, or a custom MCP server or app with OAuth in ChatGPT.
+2. Paste `https://mcp.garmin.daash.run/mcp`.
+3. Sign in to Garmin when asked.
 
-**Run it yourself** and it is a local subprocess on your machine: no hosting, no
-server holding your credentials, no network exposure. That is the rest of this
-README, and it takes a Mac and a Terminal window.
+A free Claude account is enough: Settings → Connectors → Add custom connector.
+ChatGPT needs a paid plan (Plus, Pro, Business, Enterprise or Edu) and
+developer mode. On the web, open Settings → Apps, or Settings → Connectors →
+Advanced, and switch developer mode on. On a work or team account, an
+administrator has to turn that on. ChatGPT's free plan cannot add connectors.
 
-**Or don't run anything.** [Daash's hosted Garmin MCP server](https://daash.run/garmin-mcp-server)
-is the same tools behind OAuth 2.1 — paste one address into Claude or ChatGPT,
-sign in to Garmin once, and it works on your phone as well as your laptop with
-nothing installed. The trade is that a server holds your Garmin session,
-encrypted; [the privacy policy](https://garmin.daash.run/privacy/) sets out
-exactly what is kept and what is not.
+It reads your activities, sleep, HRV and recovery, and it builds structured
+workouts and training plans that go onto your Garmin calendar and sync to
+your watch.
+
+The hosted server holds your Garmin session, encrypted.
+[The privacy policy](https://garmin.daash.run/privacy/) sets out what is kept.
+Not affiliated with Garmin.
 
 ```
 You:    My last three runs are all at the same effort. Give me something harder
@@ -37,7 +41,13 @@ Claude: [reads your activities and splits, then proposes]
         Create this and put it on Thursday?
 ```
 
-## Install
+## Optional: run it on your own machine
+
+This is the local alternative to the hosted connector above. It runs as a
+subprocess on your computer, with your Garmin session staying on that machine.
+It needs macOS and a Terminal window, and only a client that can start a local
+process can use it. ChatGPT can't run this local stdio install. For ChatGPT,
+use the hosted URL at the top of this page: https://mcp.garmin.daash.run/mcp.
 
 macOS 10.15 (Catalina) or newer, with [Claude Desktop](https://claude.ai/download) already
 installed:
@@ -207,18 +217,18 @@ The HTTP transport, as Claude drives it: discovery, client registration,
 Google sign-in (stubbed), consent, token exchange and rotation, and tool calls
 with the token.
 
-## Other MCP clients, and ChatGPT
+## Other MCP clients
 
-Nothing here is Claude-specific: it speaks MCP over stdio, so any client that
-launches a local server will run it — Claude Code, Cursor, VS Code, Zed,
-Windsurf. Copy `.mcp.json.example`, fill in absolute paths, point the client at
-`python -m garmin_mcp`.
+Nothing in the local install is Claude-specific: it speaks MCP over stdio, so
+any client that launches a local server will run it — Claude Code, Cursor,
+VS Code, Zed, Windsurf. Copy `.mcp.json.example`, fill in absolute paths,
+point the client at `python -m garmin_mcp`.
 
-**ChatGPT can't run this.** Its connectors take a public HTTPS URL over SSE,
-because ChatGPT executes on OpenAI's servers and cannot start a process on your
-machine — there's no local-server option to enable. Serving it to ChatGPT would
-mean hosting it publicly and holding users' Garmin credentials, which is exactly
-what this project avoids.
+**ChatGPT can't run this local stdio install.** Its connectors take a public
+HTTPS URL, because ChatGPT executes on OpenAI's servers and cannot start a
+process on your machine. ChatGPT users should use the hosted connector:
+https://mcp.garmin.daash.run/mcp. A paid ChatGPT plan and developer mode are
+required; see the top of this page.
 
 ## Caveats
 
