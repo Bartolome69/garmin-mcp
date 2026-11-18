@@ -612,7 +612,9 @@ OFFICIAL_DESCRIPTIONS = {
         "  method: The methodology in a few words, shown under the name, e.g. \"80/20\".\n"
         "  milestones: Up to 4 points on the way to the goal, drawn as a timeline: "
         "{\"label\": \"Half check\", \"date\": \"2026-11-29\", \"target\": \"1:22\"}, date and "
-        "target optional."
+        "target optional.\n"
+        "  existing: If told runs are already on those days, ask the user: \"replace\" "
+        "unschedules them, \"keep\" leaves both."
     ),
     "get_plan": (
         "The user's training plan week by week, drawn as an interactive plan card: each session "
@@ -3470,6 +3472,22 @@ def _running_clash(existing: dict[str, list[dict[str, Any]]], sessions: Any,
     return None
 
 
+def _doubled_runs(calendar: list[dict[str, Any]], sessions: Any, code: str) -> list[dict[str, Any]]:
+    """Runs already on the calendar, on days the new plan has a run, that aren't this plan's own."""
+    run_days = {str(s.get("date") or "")[:10] for s in sessions or []
+                if isinstance(s, dict) and not s.get("exercises") and _is_run_sport(s.get("sport"))}
+    doubled = []
+    for item in calendar:
+        day = str(item.get("date") or "")[:10]
+        title = item.get("title") or item.get("workoutName") or ""
+        schedule_id = first_present(item, "id", "workoutScheduleId")
+        if (day in run_days and schedule_id and _is_run_sport(item.get("sportTypeKey"))
+                and training_plan.label_of(title) != code):
+            doubled.append({"date": day, "name": training_plan.strip_tag(title).strip() or "Workout",
+                            "schedule_id": schedule_id})
+    return sorted(doubled, key=lambda i: i["date"])
+
+
 # The app's plan builder watches a plan go onto the calendar session by session,
 # and after Garmin turns one away part way, sends the rest under the same code.
 plan_progress: ContextVar["Callable[[list[dict[str, Any]], int], None] | None"] = ContextVar(
@@ -3488,20 +3506,19 @@ async def create_plan(
     name: str | None = None,
     method: str | None = None,
     milestones: list[dict[str, Any]] | None = None,
+    existing: str = "",
 ) -> dict[str, Any]:
     """Create a whole training block at once: every session built and put on its date.
 
-    You design the plan, from the user's goal, current fitness (get_fitness),
-    readiness, history and a methodology; this builds each session as a
-    structured workout and schedules it, so the whole block is on the watch
-    in one go. Show the user the plan and get their agreement first: it
-    writes to their real calendar. It answers with the new block drawn as a
-    card, the same as get_plan, so no other call is needed to show it.
+    You design the plan from the user's goal, fitness (get_fitness),
+    readiness, history and a methodology; this builds and schedules every
+    session, so the block is on the watch in one go. Get the user's
+    agreement first: it writes to their calendar. It answers with the block
+    as a card, as get_plan does, so no other call is needed.
 
-    Each workout is named with a short plan code after a middle dot,
-    "Threshold 5x1k · HM", which is how get_plan finds the block; nothing is
-    stored outside Garmin. Every session is checked before anything is
-    created, so a mistake in session 40 leaves no half plan behind.
+    Each workout ends in a plan code after a middle dot, "Threshold 5x1k ·
+    HM", which is how get_plan finds the block. Every session is checked
+    first, so a mistake in session 40 leaves no half plan.
 
     Args:
         goal: What the block is for, e.g. "Half marathon, 1:40, 15 November".
@@ -3527,6 +3544,8 @@ async def create_plan(
             timeline: {"label": "Half check", "date": "2026-11-29", "target":
             "1:22"}, date and target optional, and "tier": goal, key, tune or
             other. The goal race is usually last.
+        existing: If told runs are already on those days, ask the user:
+            "replace" unschedules them, "keep" leaves both.
     """
     today = date_cls.today()
     sessions = [
@@ -3542,7 +3561,9 @@ async def create_plan(
     # written whatever they say.
     checked = await _plan_checks(prepared, goal, method, milestones, today) if preview.enabled() else None
 
-    existing = training_plan.plans_in(await _plan_calendar(first, last))
+    calendar = await _plan_calendar(first, last)
+    existing_plans = existing
+    existing = training_plan.plans_in(calendar)
     if code in existing and not plan_resume.get():
         return {
             "error": (
@@ -3558,6 +3579,33 @@ async def create_plan(
     clash = _running_clash(existing, sessions, first, last) if existing else None
     if clash:
         return {"error": clash}
+    # Runs from anywhere else on the plan's run days: Garmin Coach, another
+    # app, single workouts. Nov 18: a plan went on top of someone's old one
+    # and their assistant then cleared 30-odd doubled days one at a time.
+    doubled = _doubled_runs(calendar, sessions, code)
+    if doubled and existing_plans not in ("replace", "keep"):
+        return {
+            "error": (
+                f"{len(doubled)} of this plan's run days have another run already on the calendar "
+                f"(first {doubled[0]['date']}, {doubled[0]['name']}). Both would go to the watch. "
+                "Ask the user whether to take those off the calendar first (existing=\"replace\": "
+                "they stay in their workout library) or keep both (existing=\"keep\")."
+            ),
+            "already_scheduled": doubled[:60],
+        }
+    cleared: list[dict[str, Any]] = []
+    if doubled and existing_plans == "replace":
+        for item in doubled:
+            try:
+                await _call(lambda c, s=item["schedule_id"]: c.unschedule_workout(s))
+            except GarminError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                return {"error": (f"Stopped taking runs off the calendar at {item['date']} "
+                                  f"({type(exc).__name__}: {exc}). Nothing of the new plan was written."),
+                        "taken_off": cleared}
+            cleared.append({"date": item["date"], "name": item["name"]})
+        session.forget()
 
     created: list[dict[str, Any]] = []
     written: dict[Any, dict[str, Any]] = {}
@@ -3620,6 +3668,7 @@ async def create_plan(
         "weeks": weeks,
         "sessions_created": len(created),
         "first_sessions": created[:7],
+        **({"taken_off": cleared} if cleared else {}),
         "next_step": (
             f"Every session is on the Garmin calendar. Call get_plan with label {code} to show the user "
             f"the new block as a card, and end with: \"{ON_WATCH}\""
@@ -3655,6 +3704,7 @@ async def create_plan(
                 "sessions_created": len(created),
                 "weeks": weeks,
                 "first_sessions": created[:7],
+                **({"taken_off": cleared} if cleared else {}),
             },
             "next_step": (
                 "Every session is on the Garmin calendar. The user sees the new block as a card above: "

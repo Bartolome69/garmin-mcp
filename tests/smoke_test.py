@@ -1912,6 +1912,40 @@ async def main() -> int:
                   and _srv_plans._running_clash({"OLD": [{"date": day(-20), "sportTypeKey": "running"}]},
                                                 block, day(2), day(9)) is None)
 
+            # Nov 18: a plan went on top of someone's runs from elsewhere (not
+            # a Daash plan), doubling their days, and their assistant cleared
+            # them one at a time. Now create_plan asks first.
+            stray = payload(await sess.call_tool("create_workout", {
+                "name": "Club run", "steps": easy, "date": day(120)}))
+            ten_k = [{"date": day(120), "name": "Easy 6k", "steps": easy},
+                     {"date": day(122), "name": "Easy 6k", "steps": easy}]
+            asked = payload(await sess.call_tool("create_plan", {
+                "goal": "10k", "label": "TK", "sessions": ten_k}))
+            check("a plan over runs from elsewhere asks first, naming them, and writes nothing",
+                  "error" in asked and "already on the calendar" in asked["error"]
+                  and [(i["date"], i["name"]) for i in asked.get("already_scheduled", [])] == [(day(120), "Club run")]
+                  and "existing" in asked["error"], str(asked)[:300])
+            replaced = payload(await sess.call_tool("create_plan", {
+                "goal": "10k", "label": "TK", "sessions": ten_k, "existing": "replace"}))
+            taken = (replaced.get("created") or replaced).get("taken_off")
+            check("replace takes those runs off the calendar (unscheduled, not deleted), then writes the plan",
+                  "error" not in replaced and taken == [{"date": day(120), "name": "Club run"}],
+                  f"{replaced.get('error')} {replaced.get('created')}")
+            payload(await sess.call_tool("create_workout", {"name": "Parkrun", "steps": easy, "date": day(150)}))
+            kept = payload(await sess.call_tool("create_plan", {
+                "goal": "5k", "label": "FK", "sessions": [
+                    {"date": day(150), "name": "Easy 5k", "steps": easy},
+                    {"date": day(152), "name": "Easy 5k", "steps": easy}], "existing": "keep"}))
+            check("keep writes the plan and leaves the other runs where they are",
+                  "error" not in kept and not (kept.get("created") or kept).get("taken_off"), str(kept)[:300])
+            check("a run on a day the plan rests isn't in the way",
+                  _srv_plans._doubled_runs([{"id": 1, "date": day(121), "title": "Club run",
+                                             "sportTypeKey": "running"}], ten_k, "TK") == [])
+            # Leave the calendar as the checks below expect it.
+            for code in ("TK", "FK"):
+                await sess.call_tool("remove_plan", {"label": code, "confirm": code})
+            await sess.call_tool("unschedule_workout", {"date": day(150)})
+
             got = payload(await sess.call_tool("get_plan", {"label": "HM"}))
             print("   ", json.dumps(got, indent=2)[:700])
             check("get_plan finds the plan by its code",
@@ -2041,8 +2075,10 @@ async def main() -> int:
             # What the redesigned card draws comes worked out in the answer, so
             # the model reads the same numbers: races with tiers, this week's
             # done, to go and projected, each session's state, optional ones.
+            # Earlier checks left single runs today and tomorrow; this one is
+            # about the card, so it keeps them (create_plan asks, Nov 18).
             rt = payload(await sess.call_tool("create_plan", {
-                "goal": "Half, 1:25", "label": "RT", "name": "Race test",
+                "goal": "Half, 1:25", "label": "RT", "name": "Race test", "existing": "keep",
                 "milestones": [{"label": "Parkrun", "date": day(7)}, {"label": "Big Half", "date": day(14), "tier": "key"},
                                {"label": "Goal half", "date": day(21), "target": "1:25"}],
                 "sessions": [{"date": day(0), "name": "Easy 8k", "steps": easy},

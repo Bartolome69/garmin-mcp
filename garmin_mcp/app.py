@@ -2788,7 +2788,9 @@ async def _send(who: str, args: dict[str, Any], resume: bool) -> None:
     progress_token = server_mod.plan_progress.set(progress)
     resume_token = server_mod.plan_resume.set(resume)
     try:
-        result = await server_mod.create_plan(**args)
+        # The builder already takes off the Daash plan it replaces; runs from
+        # elsewhere stay as before (Nov 18), until it can ask about them.
+        result = await server_mod.create_plan(**{"existing": "keep", **args})
     except Exception as exc:  # noqa: BLE001 - shown as Garmin's answer, never a crash
         log.warning("plan builder send failed", exc_info=True)
         result = {"error": f"{type(exc).__name__}: {exc}"}
