@@ -201,6 +201,15 @@ CREATE INDEX IF NOT EXISTS oauth_retired_at ON oauth_retired (retired_at);
 """
 RETIRED_KEPT = 30 * 86400
 
+# Who has been reported as cut off (Nov 18), so each is reported once; a
+# person who connects again is taken off, to be reported again if it recurs.
+CUT_OFF_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cut_off_noted (
+    subject   TEXT PRIMARY KEY,
+    noted_at  INTEGER NOT NULL
+);
+"""
+
 # Who has been told the weekly email waits for another day (Nov 17), so
 # weekly_email_skipped goes once a person a day even when the server restarts
 # in between (the in-memory note was lost on each restart: Nov 17's deploy
@@ -373,6 +382,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(USAGE_WEEKS_SCHEMA)
     conn.executescript(WEEKLY_SKIPS_SCHEMA)
     conn.executescript(OAUTH_RETIRED_SCHEMA)
+    conn.executescript(CUT_OFF_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -1256,19 +1266,50 @@ def delete_tokens_for_subject(subject: str, reason: str = "revoked") -> int:
         ).rowcount
 
 
-def cut_off_people(now: float | None = None, within: int = 14 * 86400) -> int:
-    """Accounts still here whose every app sign-in has gone in the last `within`
-    seconds, with nothing live left: connected, then cut off. They have to
-    connect again, and most won't know to."""
+def cut_off_accounts(now: float | None = None, within: int = 30 * 86400) -> list[dict[str, Any]]:
+    """People who used Daash in the last `within` seconds and now have no
+    working sign-in in any app: connected, used it, then cut off. They have
+    to connect again, and most won't know to.
+
+    Every connection is through an app now (no one has used a connector URL
+    in the month to Nov 18), so a recent user with no live refresh token is
+    someone cut off, whatever did it. Why, where it's known: the last reason
+    Daash noted for one of their sign-ins going; "before_tracking" when it
+    went before Nov 18.
+    """
     now = int(now or time.time())
     with _connect() as conn:
-        row = conn.execute(
-            "SELECT COUNT(DISTINCT r.subject) FROM oauth_retired r JOIN users u ON u.user_token = r.subject "
-            "WHERE r.retired_at >= ? AND r.reason != 'rotated' AND NOT EXISTS (SELECT 1 FROM oauth_tokens t "
-            "WHERE t.subject = r.subject AND t.kind = 'refresh' AND (t.expires_at IS NULL OR t.expires_at > ?))",
+        rows = conn.execute(
+            "SELECT u.user_token, u.email_hash, u.email_masked, u.last_seen_at, "
+            "(SELECT r.reason FROM oauth_retired r WHERE r.subject = u.user_token AND r.reason != 'rotated' "
+            " ORDER BY r.retired_at DESC LIMIT 1), "
+            "(SELECT r.client_id FROM oauth_retired r WHERE r.subject = u.user_token "
+            " ORDER BY r.retired_at DESC LIMIT 1), "
+            "(SELECT n.noted_at FROM cut_off_noted n WHERE n.subject = u.user_token) "
+            "FROM users u WHERE u.last_seen_at >= ? AND NOT EXISTS (SELECT 1 FROM oauth_tokens t "
+            "WHERE t.subject = u.user_token AND t.kind = 'refresh' AND (t.expires_at IS NULL OR t.expires_at > ?))",
             (now - within, now),
-        ).fetchone()
-    return int(row[0] or 0)
+        ).fetchall()
+    return [{"subject": r[0], "email_hash": r[1], "account": r[2], "last_seen_at": r[3],
+             "reason": r[4] or ("rotated" if r[5] else "before_tracking"), "client_id": r[5], "noted_at": r[6]}
+            for r in rows]
+
+
+def note_cut_off(subjects: list[str], now: float | None = None) -> None:
+    """Mark these people as reported, and take off anyone noted who has a working sign-in again."""
+    now = int(now or time.time())
+    with _connect() as conn:
+        conn.executemany("INSERT OR IGNORE INTO cut_off_noted (subject, noted_at) VALUES (?, ?)",
+                         [(s, now) for s in subjects])
+        conn.execute(
+            "DELETE FROM cut_off_noted WHERE subject NOT IN (SELECT user_token FROM users) OR EXISTS ("
+            "SELECT 1 FROM oauth_tokens t WHERE t.subject = cut_off_noted.subject AND t.kind = 'refresh' "
+            "AND (t.expires_at IS NULL OR t.expires_at > ?))", (now,))
+
+
+def cut_off_people(now: float | None = None, within: int = 30 * 86400) -> int:
+    """How many people are cut off now (cut_off_accounts)."""
+    return len(cut_off_accounts(now, within))
 
 
 # --------------------------------------------------------------------------

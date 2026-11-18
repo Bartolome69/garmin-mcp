@@ -1772,17 +1772,33 @@ _OAUTH_HEALTH_DAY: dict[str, str] = {}
 
 
 def report_oauth_health(now: float | None = None) -> int | None:
-    """oauth_health, once a day (Nov 18): how many people are still connected
-    but have lost every app sign-in in the last two weeks, so would have to
-    connect again. Should be close to nothing once renewals can't strand anyone."""
-    day = time.strftime("%Y-%m-%d", time.gmtime(now or time.time()))
+    """Who has been cut off, once a day (Nov 18).
+
+    connection_cut_off once for each person who used Daash in the last 30
+    days and has no working sign-in in any app left: under their usual
+    PostHog id, so their profile (where their email is kept) says who, with
+    why where it's known and when they last used it. Never the address on the
+    event. oauth_health with the count. Should be close to nothing once
+    renewals can't strand anyone.
+    """
+    now = now or time.time()
+    day = time.strftime("%Y-%m-%d", time.gmtime(now))
     if _OAUTH_HEALTH_DAY.get("day") == day:
         return None
     _OAUTH_HEALTH_DAY["day"] = day
-    cut_off = store.cut_off_people(now)
-    analytics.capture("oauth_health", "daash-server", {"cut_off_14d": cut_off, "day": day,
-                                                       "$process_person_profile": False})
-    return cut_off
+    cut = store.cut_off_accounts(now)
+    for person in cut:
+        if person["noted_at"]:
+            continue
+        analytics.capture("connection_cut_off", person["email_hash"] or person["subject"], drop_empty({
+            "reason": person["reason"], "account": person["account"],
+            "client": oauth.app_for_client(person["client_id"]) if person["client_id"] else None,
+            "days_since_used": round((now - person["last_seen_at"]) / 86400, 1) if person["last_seen_at"] else None,
+        }))
+    store.note_cut_off([p["subject"] for p in cut], now)
+    analytics.capture("oauth_health", "daash-server", {"cut_off_30d": len(cut), "newly_cut_off": sum(
+        1 for p in cut if not p["noted_at"]), "day": day, "$process_person_profile": False})
+    return len(cut)
 
 
 def _keep_alive_forever() -> None:
@@ -3394,7 +3410,10 @@ def _finish(
     # on a second account, silently disconnected the first. The fresh Garmin
     # session replaces the stored one; every app's tokens keep pointing at it.
     # A lost URL is not a risk in this mode: there is no URL to lose.
-    keep = previous[-1] if (OAUTH_ENABLED and flow and previous) else None
+    # Nov 18: a sign-in not started from an app (the form reached directly)
+    # still minted a new identity, and so cut off every app the person had
+    # connected (two people in the fortnight before). It keeps theirs now.
+    keep = previous[-1] if (OAUTH_ENABLED and previous) else None
     user_token = store.save_user(
         masked, blob, user_token=keep, email_hash=fingerprint, email=email
     )

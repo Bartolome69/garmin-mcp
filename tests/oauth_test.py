@@ -684,6 +684,15 @@ async def main() -> int:
               [p.get("reconnect") for e, p in reported if e == "connector_connected"
                and p.get("account") == hosted.mask_email("oauth@example.com")][-2:] == [False, True],
               str([p.get("reconnect") for e, p in reported if e == "connector_connected"]))
+        # Nov 18: the sign-in form reached directly, not from an app, used to
+        # mint a new identity and so cut off every app already connected.
+        await run(lambda: http("POST", "/connect", {"email": "oauth@example.com", "password": "pw"}))
+        hosted._ATTEMPTS.clear()
+        head = {"accept": accept, "Authorization": f"Bearer {fresh}"}
+        status, body, _ = await run(lambda: http("POST", "/mcp", probe, headers=head, as_json=True))
+        check("signing in directly keeps the identity, and the apps already connected keep working",
+              store.tokens_for(store.email_fingerprint("oauth@example.com")) == [first_subject] and status == 200,
+              f"{store.tokens_for(store.email_fingerprint('oauth@example.com'))} {status} {body[:90]}")
         answers = [p for e, p in reported if e == "consent_answered"]
         check("each answer on the Allow page is recorded, with which app and route",
               answers and answers[-1].get("decision") == "allow" and answers[-1].get("login_route") == "password"
@@ -809,6 +818,7 @@ async def main() -> int:
         lapsed = store.save_user("l***@example.com", json.dumps({"di_token": "lapsed"}),
                                  email_hash=store.email_fingerprint("lapsed1118@example.com"))
         app_tokens = hosted.OAUTH_PROVIDER.issue_for_app(lapsed)
+        store.touch_user(lapsed)
         cut_before = store.cut_off_people()
         store.delete_tokens_for_subject(lapsed, reason="garmin_lapsed")
         before = len(EVENTS)
@@ -829,7 +839,30 @@ async def main() -> int:
             again = hosted.report_oauth_health()
         health = [e for e in EVENTS[before:] if e[0] == "oauth_health"]
         check("oauth_health reports the count once a day", health_count == store.cut_off_people() and again is None
-              and len(health) == 1 and health[0][2].get("cut_off_14d") == health_count, str(health))
+              and len(health) == 1 and health[0][2].get("cut_off_30d") == health_count, str(health))
+        cut = [e for e in EVENTS[before:] if e[0] == "connection_cut_off"
+               and e[1] == store.email_fingerprint("lapsed1118@example.com")]
+        check("each person cut off is reported under their own id, with why, and no address",
+              len(cut) == 1 and cut[0][2].get("reason") == "garmin_lapsed" and cut[0][2].get("account") == "l***@example.com"
+              and cut[0][2].get("days_since_used") is not None and "@example.com" not in json.dumps(cut[0][2]).replace(
+                  "l***@example.com", ""), str(cut))
+        hosted._OAUTH_HEALTH_DAY.clear()
+        before = len(EVENTS)
+        with recording():
+            hosted.report_oauth_health(time.time() + 86400)
+        check("someone already reported isn't reported again the next day",
+              not [e for e in EVENTS[before:] if e[0] == "connection_cut_off"
+                   and e[1] == store.email_fingerprint("lapsed1118@example.com")], str(EVENTS[before:]))
+        never_used = store.save_user("n***@example.com", json.dumps({"di_token": "never"}),
+                                     email_hash=store.email_fingerprint("neverused1118@example.com"))
+        check("someone who signed in but never used Daash isn't counted as cut off",
+              never_used not in [p["subject"] for p in store.cut_off_accounts()])
+        hosted.OAUTH_PROVIDER.issue_for_app(lapsed)
+        store.note_cut_off([])
+        with __import__("sqlite3").connect(DB) as conn:
+            still_noted = conn.execute("SELECT COUNT(*) FROM cut_off_noted WHERE subject = ?", (lapsed,)).fetchone()[0]
+        check("connecting again takes them off the list, to be reported again if it recurs",
+              still_noted == 0 and lapsed not in [p["subject"] for p in store.cut_off_accounts()], str(still_noted))
         await hosted.forget_person(lapsed)
         with __import__("sqlite3").connect(DB) as conn:
             named = conn.execute("SELECT COUNT(*) FROM oauth_retired WHERE subject = ? OR person = ?",
