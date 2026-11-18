@@ -15,10 +15,13 @@ server holding your credentials, no network exposure. That is the rest of this
 README, and it takes a Mac and a Terminal window.
 
 **Or don't run anything.** [Daash's hosted Garmin MCP server](https://daash.run/garmin-mcp-server)
-is the same tools behind OAuth 2.1 — paste one address into Claude or ChatGPT,
-sign in to Garmin once, and it works on your phone as well as your laptop with
-nothing installed. The trade is that a server holds your Garmin session,
-encrypted; [the privacy policy](https://garmin.daash.run/privacy/) sets out
+is the same tools behind OAuth 2.1 — paste one address into Claude or ChatGPT
+and sign in once. The usual sign-in is Daash’s own page, where you type your
+Garmin email and password and they are sent to Garmin. When the other route is
+offered, you sign in on Garmin’s own page and Daash never sees the password.
+It then works on your phone as well as your laptop with
+nothing installed. The trade is that a server holds the Garmin session tokens,
+encrypted, and not your password; [the privacy policy](https://garmin.daash.run/privacy/) sets out
 exactly what is kept and what is not.
 
 ```
