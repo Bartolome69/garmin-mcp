@@ -187,15 +187,16 @@
     <a class="back" href="https://daash.run/how-it-works">&lsaquo;&nbsp;How it works</a>
     <h1>What this does with your data</h1>
     <p class="lede">
-      You are about to give a stranger&rsquo;s website your Garmin login. That
-      deserves a straight answer rather than four pages of legal throat-clearing,
-      so here is the whole of it.
+      There are two ways to connect, and they are not the same page. The usual
+      way asks for your Garmin email and password on Daash&rsquo;s own page.
+      The other sends you to Garmin&rsquo;s own sign-in page, and Daash never
+      sees the password. Here is what each one keeps, and how to delete it.
     </p>
-    <p class="stamp">Last updated 15 November 2026</p>
+    <p class="stamp">Last updated 18 November 2026</p>
 
     <dl class="facts">
       <div><dt>Password</dt><dd>Never stored, anywhere</dd></div>
-      <div><dt>Kept</dt><dd>One encrypted Garmin token</dd></div>
+      <div><dt>Kept</dt><dd>Encrypted session tokens</dd></div>
       <div><dt>Sold or shared</dt><dd>Never, to anyone</dd></div>
       <div><dt>AI</dt><dd>Only the assistant you choose. Never used to train AI. <a href="#ai">How</a></dd></div>
     </dl>
@@ -205,23 +206,33 @@
     <h2>Your Garmin password</h2>
     <div class="stack">
       <p class="small">
-        When you sign in, your email and password are passed straight to Garmin
-        to be exchanged for an access token. The password is never written to
-        disk, never logged, and is dropped from memory the moment Garmin accepts
-        it. It is not kept in any form: not encrypted, not hashed, not at
-        all. Nobody can recover it later, including me.
+        The usual way: you type your Garmin email and password on Daash&rsquo;s
+        page at
+        <a href="https://mcp.garmin.daash.run/connect">mcp.garmin.daash.run/connect</a>.
+        That page is this server, not Garmin&rsquo;s. Daash receives the email
+        and password and passes them to Garmin, which exchanges them for a
+        session: an access token and a refresh token. The password is never
+        written to disk, never logged, and is dropped from memory as soon as
+        Garmin accepts it. If Garmin asks for a two-step code, the password is
+        cleared before that wait. The code is sent to Garmin with the request
+        and is not stored. The password is not kept in any form: not encrypted,
+        not hashed, not at all. Nobody can recover it later, including me.
       </p>
       <p class="small">
-        Garmin turns away sign-ins from data-centre addresses, so the sign-in
-        step goes out through a residential relay in the UK run by IPRoyal. The
-        connection is encrypted between this server and Garmin before it
-        reaches the relay, the same way your browser encrypts a connection to
-        your bank: the relay can see that something is going to Garmin, but not
-        your email, your password or anything Garmin sends back.
+        On that password sign-in, Garmin turns away attempts from data-centre
+        addresses, so the sign-in step goes out through a residential relay in
+        the UK run by IPRoyal. The connection is encrypted between this server
+        and Garmin before it reaches the relay, the same way your browser
+        encrypts a connection to your bank: the relay can see that something is
+        going to Garmin, but not your email, your password or anything Garmin
+        sends back. A sign-in on Garmin&rsquo;s own page does not use this
+        relay. Your browser talks to Garmin directly, and the password never
+        reaches Daash.
       </p>
       <p class="small">
-        If you would rather not type it here at all, that is a reasonable
-        instinct. <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">Run the whole thing on your own machine</a>
+        If you would rather not type a Garmin password on Daash&rsquo;s page at
+        all, that is a reasonable instinct.
+        <a href="https://github.com/Bartolome69/garmin-mcp#install" target="_blank" rel="noopener">Run the whole thing on your own machine</a>
         and your Garmin session never leaves it.
       </p>
     </div>
@@ -238,11 +249,12 @@
     </div>
     <ul class="plain" style="margin-top:16px">
       <li>
-        <span><strong>The access token Garmin issued you</strong>, encrypted at
-        rest. This is the part that does the work: it is what lets the
-        connector read your training without asking you to sign in again.
-        If you go a week without using it, the server renews this token itself,
-        reading nothing, so a long break does not end your connection.</span>
+        <span><strong>The Garmin session</strong>, encrypted at rest: the access
+        token and the refresh token Garmin issued, and not the password. This
+        is the part that does the work. It lets the connector read your
+        training without asking you to sign in again. If you go a week without
+        using it, the server renews the session itself, reading nothing, so a
+        long break does not end your connection.</span>
       </li>
       <li>
         <span><strong>Your email address</strong>, so we can get in touch if
@@ -287,16 +299,16 @@
     </ul>
     <div class="stack">
       <p class="small">
-        Nothing from Garmin is stored: no activities, no heart rate, no sleep, no
-        location. (The one thing you can choose to change that is joining a
-        Daash crew, below.) Each question fetches from Garmin fresh and the answer is gone
-        when the request ends. The one exception is speed: your scheduled
-        workouts and workout list are held in memory for up to ten minutes, so
-        a chat about your plan doesn&rsquo;t refetch them every turn, and are
-        dropped whenever a change is made through Daash. Nothing is written to
-        disk. There
-        is no copy of your training history on this server to leak, subpoena or
-        lose.
+        Nothing from Garmin is stored for a password connection: no activities,
+        no heart rate, no sleep, no location. Each question fetches from Garmin
+        fresh and the answer is gone when the request ends. The one exception
+        is speed: your scheduled workouts and workout list are held in memory
+        for up to ten minutes, so a chat about your plan doesn&rsquo;t refetch
+        them every turn, and are dropped whenever a change is made through
+        Daash. Nothing of that is written to disk, so there is no copy of that
+        training history on this server to leak, subpoena or lose. A connection
+        made on Garmin&rsquo;s own page does keep summaries, described below.
+        Joining a Daash crew keeps the days and distances described below.
       </p>
       <p class="small">
         Your IP address is held in memory for a few minutes so that repeated
@@ -399,8 +411,9 @@
         reaches it until you choose Allow there. Claude also asks before Daash
         first reads or changes anything, unless you tell it not to. You can
         withdraw your consent at any time: remove Daash from your
-        assistant&rsquo;s connectors, or choose Disconnect on the sign-in page,
-        which also deletes everything Daash keeps.
+        assistant&rsquo;s connectors, or delete the account in the Daash app
+        (Getting rid of it, below), which deletes the account and the Garmin
+        session.
       </p>
       <p class="small">
         <strong>Nowhere else.</strong> Daash&rsquo;s own features, such as the
@@ -466,7 +479,8 @@
       <p class="small">
         Daash can also connect through Garmin&rsquo;s official developer
         programme. That way, you approve Daash on Garmin&rsquo;s own sign-in
-        page instead of typing your password here, and you are asked first
+        page (connect.garmin.com) instead of typing your password on
+        Daash&rsquo;s connect page, and you are asked first
         whether Daash may use your data with your assistant. Garmin currently
         limits how many accounts can connect its official way, so for now most
         new accounts connect as this page describes above.
@@ -504,8 +518,12 @@
         Connect&rsquo;s activities list exports, Daash keeps each one&rsquo;s
         type, title, date, distance, time, heart rate, calories and climb the
         same way, encrypted, so every chat can see your training from before
-        you connected; the file itself isn&rsquo;t kept. Disconnecting here, or removing Daash in Garmin Connect, deletes
-        all of it, and Daash tells Garmin you have gone.
+        you connected; the file itself isn&rsquo;t kept. Deleting your Daash
+        account deletes all of it, and Daash tells Garmin the link is gone.
+        Removing Daash in Garmin Connect deletes the official link and the
+        summaries, workouts and schedules Daash kept. It does not delete the
+        account row. That is the app, or an email to
+        <a href="mailto:support@daash.run">support@daash.run</a>.
       </p>
     </div>
   </section>
@@ -652,7 +670,8 @@
         crew can remove them too.
       </p>
       <p class="small">
-        Leaving the crew deletes all of it at once, from the page too. So does Disconnect. When the
+        Leaving the crew deletes all of it at once, from the page too. So does
+        deleting your Daash account. When the
         last member leaves, the crew itself is deleted.
       </p>
     </div>
@@ -662,25 +681,65 @@
     <h2>Getting rid of it</h2>
     <div class="stack">
       <p class="small">
-        Open the sign-in page and choose <strong>Disconnect</strong>. That deletes
-        your row outright (token, email, fingerprint, timestamps, markers,
-        weekly counts),
-        your place in any crew with everything it kept, and the address of any
-        phone it sent notifications to, and the connection stops working immediately. Nothing is retained
-        afterwards, so there is no backlog to request a copy of or ask to be
-        forgotten from.
+        Delete the account in the Daash app. Open
+        <a href="https://mcp.garmin.daash.run/app/#/you">mcp.garmin.daash.run/app/#/you</a>.
+        If you are not already signed in, enter the email the account is under
+        and the 6-digit code Daash sends. You do not need Claude or ChatGPT
+        for this, and that path does not ask for your Garmin password. On You,
+        choose <strong>Delete account</strong> and type <strong>delete</strong>.
+        That deletes your row (the encrypted Garmin session, your email, the
+        fingerprint on that row, timestamps, markers and weekly counts), the
+        sign-in tokens held for Claude, ChatGPT and the app, your place in any
+        crew with everything it kept, and the address of any phone it sent
+        notifications to. If the account was connected on Garmin&rsquo;s own
+        page, it also deletes that link and the summaries, workouts and
+        schedules Daash kept, and tells Garmin the link is gone. The connection
+        stops working immediately.
       </p>
       <p class="small">
-        Signing in again has the same effect on whatever came before it: the old
-        session is destroyed as the new one is created. If you ever think a
-        connection has ended up somewhere it shouldn&rsquo;t, signing in once more
-        takes it back.
+        Two leftovers, and neither can read your Garmin account or be turned
+        back into your address. A one-way fingerprint and the date you first
+        connected stay, so a count of people who have used Daash remains true
+        after they leave. If a workout reached your watch, the date of that
+        first send stays too.
       </p>
       <p class="small">
-        Removing the connector in Claude or ChatGPT is worth doing too, but it
-        only removes it at their end. The Disconnect button is what deletes the
-        stored session here. Nothing changes on Garmin&rsquo;s side either way.
+        Signing in again replaces the stored Garmin session with a new one. It
+        does not delete the account, and apps you already connected stay
+        connected to it.
       </p>
+      <p class="small">
+        Removing the connector only removes it at their end. In Claude that is
+        <a href="https://claude.ai/settings/connectors">Settings &rarr; Connectors</a>.
+        In ChatGPT it is
+        <a href="https://chatgpt.com/#settings/Connectors">Settings &rarr; Apps &amp; Connectors</a>.
+        Worth doing, and it does not delete what is stored here.
+      </p>
+      <p class="small">
+        If you cannot open the app, the connection can still be cut off. Deleting
+        the stored row is then an email.
+      </p>
+      <ul class="plain" style="margin-top:4px">
+        <li>
+          <span><strong>Password connection.</strong> Change your Garmin password
+          at <a href="https://connect.garmin.com/signin/" target="_blank" rel="noopener">Garmin&rsquo;s own sign-in</a>,
+          or sign out of Garmin&rsquo;s sessions from your Garmin account.
+          Garmin then refuses the session Daash stored. That is what happens
+          after a password change or when Garmin ends a session itself. The
+          tokens and your email stay here until the account is deleted.</span>
+        </li>
+        <li>
+          <span><strong>Connection made on Garmin&rsquo;s page.</strong> Remove
+          Daash in Garmin Connect&rsquo;s connected apps. Garmin tells Daash,
+          and Daash deletes the official link and the training data it kept
+          for that link. The account row stays until you delete it.</span>
+        </li>
+        <li>
+          <span><strong>Delete it for me.</strong> Email
+          <a href="mailto:support@daash.run">support@daash.run</a> from the
+          address you signed in with and ask for the account to be deleted.</span>
+        </li>
+      </ul>
       <p class="small">
         To see what is held about you, get a copy of it, or correct it, email
         <a href="mailto:support@daash.run">support@daash.run</a> from the
@@ -700,7 +759,8 @@
         to, or ask Daash to restrict, how it is used. Email
         <a href="mailto:support@daash.run">support@daash.run</a> from the
         address you connected with, and it is done within one month.
-        Disconnect, above, deletes everything at once without asking anyone.
+        Delete account, above, removes the account at once. The same email
+        does it for you if you cannot open the app.
       </p>
       <p class="small">
         If you are unhappy with how your data is handled, you can complain to

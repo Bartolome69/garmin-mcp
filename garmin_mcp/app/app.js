@@ -2291,7 +2291,7 @@ function signInView(message, step = "start", email = "") {
     <p class="why">See today's session, check how a run went, and move or ease a session. The changes reach your watch and the chat.</p>`}
     ${note}${homeScreen() ? `<div class="card pad meta" style="line-height:1.5">On your home screen, Daash keeps its own sign-in, apart from your browser's. Sign in once here and it stays signed in.</div>` : ""}
     ${building ? `<button class="pill red tall" id="garmin">Sign in with Garmin Connect™</button>
-    <p class="small">Connects your Garmin account, so the plan can go on your calendar. You can add Claude or ChatGPT later.</p>
+    <p class="small">Connects your Garmin account, so the plan can go on your calendar. The next page is either Daash’s, where you type your Garmin email and password and they are sent to Garmin, or Garmin’s own sign-in page, where Daash never sees the password. You can add Claude or ChatGPT later.</p>
     <div class="or"><span>Already use Daash?</span></div>` : ""}
     <form id="email-form" class="stack"><label class="field-label" for="email">${building ? "Your email" : "Already use Daash? Your email"}</label>
       <input id="email" class="field" type="email" autocomplete="email" value="${esc(email)}" required>
@@ -2299,7 +2299,7 @@ function signInView(message, step = "start", email = "") {
     <p class="small">The email your Daash account is under, usually your Garmin one. Your plan, crew and settings are waiting.</p>
     ${building ? "" : `<div class="or"><span>New to Daash?</span></div>
     <button class="pill tall" id="garmin">Sign in with Garmin Connect™</button>
-    <p class="small">Connects your Garmin account. You can add Claude or ChatGPT later.</p>`}${foot}</div>`;
+    <p class="small">Connects your Garmin account. The next page is either Daash’s, where you type your Garmin email and password and they are sent to Garmin, or Garmin’s own sign-in page, where Daash never sees the password. You can add Claude or ChatGPT later.</p>`}${foot}</div>`;
   $("email-form").onsubmit = async (e) => {
     e.preventDefault();
     const address = $("email").value.trim();
