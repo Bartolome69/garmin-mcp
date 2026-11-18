@@ -4,7 +4,7 @@
 # depends on it — the import name is garmin_mcp either way.
 name = "garmin-mcp"
 version = "0.1.0"
-description = "MCP server for Garmin Connect: read your training, write workouts onto your watch"
+description = "Free hosted Garmin MCP for Claude and ChatGPT. Paste https://mcp.garmin.daash.run/mcp, sign in to Garmin, and workouts sync to your watch."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
