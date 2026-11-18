@@ -2479,13 +2479,15 @@ async def index(request: Request) -> Response:
             f"""
             <h1>Connect Garmin to Claude</h1>
             <p>Add this address in Claude &rarr; Settings &rarr; Connectors &rarr;
-            Add custom connector. Claude will bring you back here to sign in to
-            Garmin, once.</p>
+            Add custom connector. Claude will bring you back to Daash to sign in,
+            once.</p>
             <div class=url>{base_url(request)}/mcp</div>
-            <p class=note style="margin-top:16px">Your Garmin password goes
-            straight to Garmin, is never written to disk, and is dropped from
-            memory as soon as it has been exchanged. Only the access token Garmin
-            issues is kept, encrypted.</p>
+            <p class=note style="margin-top:16px">The usual page is Daash&rsquo;s.
+            You type your Garmin email and password there. They are sent to
+            Garmin, and the password is dropped: never written to disk, never
+            kept. What is stored is Garmin&rsquo;s access token and refresh
+            token, encrypted. When Garmin&rsquo;s own page is offered instead,
+            you approve Daash there and Daash never sees the password.</p>
             <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
             target=_blank rel=noopener>Privacy</a></p>
             """,
@@ -2497,9 +2499,10 @@ async def index(request: Request) -> Response:
         <p>Sign in once and you'll get a private link to paste into Claude's
         connector settings. No install, and it works on the web and mobile apps
         as well as the desktop one.</p>
-        <p class=note>Your Garmin password goes straight to Garmin, is never
-        written to disk, and is dropped from memory as soon as it has been
-        exchanged. Only the access token Garmin issues is kept, encrypted.</p>
+        <p class=note>You type your Garmin email and password on Daash&rsquo;s
+        page. They are sent to Garmin, and the password is dropped: never
+        written to disk, never kept. What is stored is Garmin&rsquo;s access
+        token and refresh token, encrypted.</p>
         <form method=get action=/connect><button>Get started</button></form>
         <p class=note style="margin-top:20px"><a href="{PRIVACY_URL}"
         target=_blank rel=noopener>Privacy</a></p>
@@ -2530,12 +2533,13 @@ async def friends_page(request: Request) -> Response:
           <li><strong>Claude:</strong> Settings &rarr; Connectors &rarr; Add custom connector.</li>
           <li><strong>ChatGPT:</strong> Settings &rarr; Apps, and add it as a custom app
           (turn on developer mode in the advanced settings if you don&rsquo;t see that).</li>
-          <li>It brings you back here to sign in to Garmin, once. Use the same Garmin
-          email you always do.</li>
+          <li>It brings you back to Daash&rsquo;s page to type your Garmin email and
+          password, once. Use the same Garmin email you always do. That page is
+          Daash&rsquo;s, not Garmin&rsquo;s.</li>
         </ol>
         <p class=note>Already added Daash another way? Add this as a new connector and
         remove the old one. Signing in with the same Garmin email keeps your account.</p>
-        <p class=note>Your Garmin password goes straight to Garmin and is never stored.
+        <p class=note>Your Garmin password is typed on Daash&rsquo;s page, sent to Garmin, and never stored.
         <a href="{PRIVACY_URL}" target=_blank rel=noopener>What is stored</a></p>
         """,
         noindex=True,
@@ -2803,11 +2807,11 @@ def _password_form(flow: str, *, email: str = "", notice: str = "", status: int 
     value = f' value="{html.escape(email.strip(), quote=True)}"' if email.strip() else ""
     focus = " autofocus" if email.strip() else ""
     return page(
-        "Sign in to Garmin",
+        "Sign in on Daash",
         f"""
         {notice}
-        <h1>Sign in to Garmin Connect™</h1>
-        <p class=secure>{_LOCK}<span>These go straight to Garmin. Your password is never stored.</span></p>
+        <h1>Sign in on Daash</h1>
+        <p class=secure>{_LOCK}<span>This page is Daash&rsquo;s, not Garmin&rsquo;s. Your Garmin email and password are sent from here to Garmin, then the password is dropped. It is never stored.</span></p>
         <form method=post action=/connect data-wait="Connecting to Garmin&hellip;">
           <input type=hidden name=flow value="{flow}">
           {_INVITE_FIELD if INVITE_CODE else ""}
