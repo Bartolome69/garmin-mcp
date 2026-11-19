@@ -88,6 +88,10 @@
   .row-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .h2 { font-size: 15.5px; font-weight: 600; }
   .note { font-size: 12.5px; color: var(--muted); }
+  .caught { position: absolute; top: 54px; right: 16px; z-index: 2; max-width: 260px; padding: 8px 12px; border-radius: 10px;
+    background: var(--text); color: var(--card); font-size: 12.5px; line-height: 1.35; pointer-events: none;
+    opacity: 0; transition: opacity 0.2s; }
+  .caught.on { opacity: 1; }
   .prog { display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; background: transparent; }
   .prog i { display: block; height: 100%; }
   .prog .p-done { background: var(--text); }
@@ -334,7 +338,7 @@
     }
     switch (data.method) {
       case "ui/notifications/tool-input": D.step("input"); break;
-      case "ui/notifications/tool-result": D.step("result"); D.gotResult = true; onResult(data.params); break;
+      case "ui/notifications/tool-result": D.step("result"); D.gotResult = true; catchUp(data.params); onResult(data.params); break;
       case "ui/notifications/host-context-changed": applyContext(data.params || {}); break;
       case "ui/notifications/tool-cancelled": D.step("cancelled"); fail("The plan could not be loaded."); D.done(); break;
       case "ui/resource-teardown": case "ping":
@@ -1799,6 +1803,48 @@
     opened.then(function () { said(whole ? "Your plan opens in the browser to share or save." : "Your week opens in the browser as an image."); })
       .catch(function () { said("This chat app didn\u2019t open the link."); })
       .then(function () { btn.disabled = false; });
+  }
+
+  // ---------------------------------------------------------------- catching up
+  // Nov 19: the model read the plan, so this card was drawn, then moved
+  // sessions, and the card kept the week as it was. A card drawn from a
+  // fresh answer looks once more a little later, quietly, and redraws only
+  // if a session changed. One drawn from an old chat stays as it was. The
+  // look is marked as the card's own, so it isn't counted as the model's.
+  var CATCH_UP_MS = window.__DAASH_CATCH_UP_MS__ || 15000, caughtUp = false;
+  function sessionsKey(p) {
+    try {
+      return JSON.stringify((p && p.weeks || []).map(function (w) {
+        return (w.sessions || []).map(function (x) { return [x.date, x.name, x.status, x.schedule_id, x.workout_id]; });
+      }));
+    } catch (e) { return ""; }
+  }
+  function note(msg) {
+    var head = document.querySelector(".head"); if (!head) return;
+    var box = head.querySelector(".caught") || head.appendChild(el("div", { class: "caught", role: "status" }));
+    box.textContent = msg;
+    requestAnimationFrame(function () { box.classList.add("on"); });
+    clearTimeout(note.t); note.t = setTimeout(function () { box.classList.remove("on"); }, 4000);
+  }
+  // Called before the card draws the answer: drawing fills in the plan's
+  // rows, and what the server sends next is compared with what it sent.
+  function catchUp(result) {
+    if (caughtUp || !host) return;
+    var plan = planOf(result);
+    if (!plan || !Array.isArray(plan.weeks) || !plan.as_of || Date.now() / 1000 - plan.as_of > 120) return;
+    caughtUp = true;
+    var before = sessionsKey(plan);
+    setTimeout(function () {
+      request("tools/call", { name: "get_plan", arguments: plan.label ? { label: plan.label } : {},
+        _meta: { "daash/refresh": "auto" } })
+        .then(function (r) {
+          var fresh = planOf(r);
+          if (!fresh || fresh.error || !Array.isArray(fresh.weeks) || sessionsKey(fresh) === before) return;
+          onResult(r);
+          note("Updated with the changes just made.");
+        })
+        .catch(function () {});
+    }, CATCH_UP_MS);
   }
 
   function refresh(event) {

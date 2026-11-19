@@ -86,16 +86,17 @@ const SESSION = {
 
 // The chat around the card: answers its handshake, sends it a tool result,
 // answers the tools it calls, and keeps any link it asks to open.
-function host(result, src = "card.html") {
+function host(result, src = "card.html", refreshed = null) {
   return `<!doctype html><body><iframe id=f style="width:420px;height:1100px;border:0"></iframe><script>
-const f = document.getElementById("f"); window.opened = null; window.asked = [];
+const f = document.getElementById("f"); window.opened = null; window.asked = []; window.calls = [];
 window.addEventListener("message", (e) => {
   const m = e.data; if (!m || !m.method) return;
   const reply = (r) => f.contentWindow.postMessage({ jsonrpc: "2.0", id: m.id, result: r }, "*");
   if (m.method === "ui/initialize") reply({ hostInfo: { name: "test" }, hostCapabilities: { openLinks: {} }, hostContext: { theme: "light", displayMode: "inline" } });
   if (m.method === "ui/notifications/initialized") f.contentWindow.postMessage({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: ${JSON.stringify(result)}, content: [] } }, "*");
+  if (m.method === "tools/call") window.calls.push(m.params);
   if (m.method === "tools/call") reply({ structuredContent: m.params.name === "get_activity_details" ? ${JSON.stringify(DETAILS)}
-    : m.params.name === "get_plan" ? { ...${JSON.stringify(PLAN)}, _card: "https://daash.test/card/seen?u=f&v=view2&s=sig" } : { error: "not in this test" } });
+    : m.params.name === "get_plan" ? (${JSON.stringify(refreshed)} || { ...${JSON.stringify(PLAN)}, _card: "https://daash.test/card/seen?u=f&v=view2&s=sig" }) : { error: "not in this test" } });
   if (m.method === "ui/open-link") { window.opened = m.params.url; reply({}); }
   if (m.method === "ui/message") { window.asked.push((m.params.content[0] || m.params.content).text); reply({}); }
 });
@@ -132,7 +133,51 @@ function decode(url) {
     return { page, card: page.frames()[1] };
   }
 
+  // Nov 19: a card drawn from a fresh answer looks once more a moment later
+  // (15 s in a chat, 0.3 s here) and redraws if a session changed, so a move
+  // made after it was drawn shows; an old chat's card doesn't ask at all.
+  let caseNo = 0;
+  async function catchingUp(result, refreshed) {
+    // Each case its own file: the browser keeps a page it has loaded.
+    const name = `catch-${++caseNo}`;
+    fs.writeFileSync(path.join(dir, name + ".html"), host(result, name + "-card.html", refreshed));
+    fs.writeFileSync(path.join(dir, name + "-card.html"), CARD.replace("<script>",
+      OPENED + "<script>window.__DAASH_CATCH_UP_MS__ = 300;</script>\n<script>"));
+    const page = await browser.newPage({ viewport: { width: 420, height: 1100 } });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await listen(page);
+    await page.goto("file://" + path.join(dir, name + ".html"));
+    await page.waitForTimeout(3000);
+    const card = page.frames()[1];
+    // The drawn card and its toast only: the page's own script holds the words too.
+    const out = { text: await card.evaluate(() => ((document.getElementById("app") || {}).textContent || "")
+        + " TOAST:" + ((document.querySelector(".head .note, .head .caught") || {}).textContent || "")),
+      calls: await page.evaluate(() => window.calls.filter((c) => c._meta && c._meta["daash/refresh"] === "auto")) };
+    await page.close();
+    return out;
+  }
+
   try {
+    const now = Math.floor(Date.now() / 1000);
+    const moved = JSON.parse(JSON.stringify(PLAN));
+    moved.weeks[0].sessions.push({ date: md(6), day: "Sun", name: "HM pace 3x3k", type: "threshold", sport: "run", status: "ahead", planned_km: 15.7, workout_id: 9, schedule_id: 99 });
+    console.log("a card catching up with a change made after it was drawn");
+    let up = await catchingUp({ ...PLAN, as_of: now }, { ...moved, as_of: now + 15 });
+    check("a fresh card looks again once, marked as its own look",
+      up.calls.length === 1 && up.calls[0].name === "get_plan", JSON.stringify(up.calls));
+    check("and redraws with the change, saying so",
+      /15\.7/.test(up.text) && /Updated with the changes just made/.test(up.text), up.text.replace(/\s+/g, " ").slice(0, 300));
+    up = await catchingUp({ ...PLAN, as_of: now }, { ...PLAN, as_of: now + 15 });
+    check("with nothing changed it stays as it was, without a word",
+      up.calls.length === 1 && !/Updated with the changes/.test(up.text) && /sub-T/.test(up.text) && !/15\.7/.test(up.text),
+      up.text.replace(/\s+/g, " ").slice(0, 200));
+    up = await catchingUp({ ...PLAN, as_of: now - 3600 }, { ...moved, as_of: now });
+    check("a card from an old chat doesn't look again", up.calls.length === 0 && !/15\.7/.test(up.text),
+      JSON.stringify(up.calls));
+    up = await catchingUp({ ...PLAN }, { ...moved, as_of: now });
+    check("nor does one whose answer carries no time", up.calls.length === 0, JSON.stringify(up.calls));
+    pings.length = 0;
+
     console.log("a progress answer");
     let { page, card } = await open({ ...PROGRESS, _card: SEEN });
     let text = await card.evaluate(() => document.body.innerText);

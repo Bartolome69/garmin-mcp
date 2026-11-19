@@ -958,6 +958,12 @@ def _within_call_limit(user_token: str, user: store.User | None = None, now: flo
     _CALLS[user_token] = recent
 
 
+def _card_refresh() -> bool:
+    """Whether the call being answered is the plan card looking again on its
+    own (Nov 19), not the model: not counted as a call or timed as a plan."""
+    return server_mod.call_meta(server_mod.AUTO_REFRESH) == "auto"
+
+
 def _before_tool_for(user_token: str, alone: bool = False, user: store.User | None = None) -> hooks.Before:
     """The start hook for one person's request: hold to the call cap, note a get_plan,
     pace the reads sent with one.
@@ -970,7 +976,7 @@ def _before_tool_for(user_token: str, alone: bool = False, user: store.User | No
         _within_call_limit(user_token, user)
         now = time.monotonic()
         _STARTED.set(now)
-        if name == "get_plan":
+        if name == "get_plan" and not _card_refresh():
             if len(_PLAN_CALLS) > 20000:
                 _PLAN_CALLS.clear()
             _PLAN_CALLS[user_token] = (now, None)
@@ -1238,8 +1244,10 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         kind = (("unexpected" if isinstance(error, str) and _UNEXPECTED.match(error) else "expected")
                 if error else None)
         seconds = hooks.seconds()
+        auto = _card_refresh()
         analytics.capture("tool_called", person, drop_empty({
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
+            "card_refresh": auto or None,
             "error_category": error_category(error), "held": held or None,
             "login_route": login_route(alone), "client": client, "ai_client": client,
             "hours_since_connect": hours_since_connect(user),
@@ -1250,7 +1258,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         tracing.report(person, ok=not error, error_kind=kind, seconds=seconds, app=client,
                        properties=drop_empty({"client": client, "login_route": login_route(alone),
                                               "held": held or None}))
-        count_usage(person, tool_calls=1)
+        if not auto:
+            count_usage(person, tool_calls=1)
         # Every workout this call put on the watch, failed or not: a plan that
         # stopped part way still sent the sessions before it. Outside a tool
         # call (a hook run on its own), what the answer says it sent.
@@ -1260,7 +1269,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         first = bool(sends) and sent_to_watch(
             user_token, user, _WATCH_SOURCE.get(name, f"chat_{name}"), len(sends), alone,
             tool=name, client=client, sports=[s.get("sport") for s in sends])
-        offer = (result.get("situation") or {}) if name == "get_plan" and isinstance(result, dict) else {}
+        offer = (result.get("situation") or {}) if name == "get_plan" and isinstance(result, dict) and not auto else {}
         if offer.get("offer"):
             analytics.capture("offer_made", person, drop_empty({
                 "stage": offer.get("stage"), "offer_kind": offer.get("offer_kind"),
@@ -1268,7 +1277,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         return first
 
     def after(name: str, result: Any) -> Any:
-        if name == "get_plan" and user_token in _PLAN_CALLS:
+        if name == "get_plan" and user_token in _PLAN_CALLS and not _card_refresh():
             _PLAN_CALLS[user_token] = (_PLAN_CALLS[user_token][0], time.monotonic())
         held = (
             not alone and name in WITH_PLAN_HELD and isinstance(result, dict) and "error" not in result

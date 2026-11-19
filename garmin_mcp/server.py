@@ -102,7 +102,10 @@ _INSTRUCTIONS = (
     "about the user's own training, and answer a question about one day or "
     "one person (\"is anyone running Sunday\") from the crew card already in "
     "the chat, in a line, calling get_crew again only if it isn't there or a "
-    "day has passed. One card per answer, at most. Dates are YYYY-MM-DD and "
+    "day has passed. To move, swap or ease sessions, make the changes first "
+    "(unschedule_workout and schedule_workout take a date; get_session gives a day's "
+    "ids), then call get_plan once, last, so the card shows the week as it now stands. "
+    "One card per answer, at most. Dates are YYYY-MM-DD and "
     "also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
     "'error' key, show it to the user rather than retrying blindly. Answers "
@@ -145,8 +148,10 @@ _OFFICIAL_INSTRUCTIONS = (
     "asked, say so in a sentence and answer from the activities and sleep. For workout targets use paces, "
     "heart rate in bpm or watts, not zones or a share of FTP. A Daash crew "
     "(friends who see each other's easy and long runs) has its own card, "
-    "get_crew: call it only when the user asks about the crew as a whole. One "
-    "card per answer, at most. Dates are YYYY-MM-DD and also accept 'today', "
+    "get_crew: call it only when the user asks about the crew as a whole. To move, "
+    "swap or ease sessions, make the changes first (unschedule_workout and "
+    "schedule_workout take a date), then call get_plan once, last, so the card shows "
+    "the week as it now stands. One card per answer, at most. Dates are YYYY-MM-DD and also accept 'today', "
     "'yesterday', or a signed day offset such as '-7'. If a tool returns an "
     "'error' key, show it to the user rather than retrying blindly. Answers "
     "carry credit, Garmin's required attribution: name it once when you show their "
@@ -184,6 +189,29 @@ def reset_cards(token) -> None:
 # Daash is listed under in the app directories. Tools not yet through their
 # review stay off that address, so the directories see what they reviewed.
 _LISTED: ContextVar[bool] = ContextVar("daash_listed_address", default=False)
+# The _meta the caller sent with the tool call being answered (Nov 19): the
+# plan card marks the refresh it makes on its own, so it isn't counted or
+# timed as the model asking for the plan.
+_CALL_META: ContextVar[dict[str, Any]] = ContextVar("daash_call_meta", default={})
+AUTO_REFRESH = "daash/refresh"
+
+
+def call_meta(key: str) -> Any:
+    """A value from the _meta of the tool call being answered, or None."""
+    return (_CALL_META.get() or {}).get(key)
+
+
+def _meta_of(context: Any) -> dict[str, Any]:
+    try:
+        meta = context.request_context.meta if context is not None else None
+    except Exception:  # noqa: BLE001 - no context is no meta
+        return {}
+    if meta is None:
+        return {}
+    if isinstance(meta, dict):
+        return dict(meta)
+    return {**(getattr(meta, "model_extra", None) or {}), **{
+        k: v for k, v in (getattr(meta, "__dict__", None) or {}).items() if not k.startswith("_")}}
 _NOT_ON_LISTED = {"get_session"}
 
 
@@ -233,12 +261,21 @@ class _Server(MCPServer):
         return await super().list_resources()
 
     async def call_tool(self, name, arguments, context=None):
-        if context is not None:
-            result = await super().call_tool(name, arguments, context)
-        else:  # mcp 1.x hands over no context; it keeps the request's itself
-            result = await super().call_tool(name, arguments)
+        if context is None:  # mcp 1.x hands over no context; it keeps the request's itself
             get_context = getattr(self, "get_context", None)
-            context = get_context() if get_context else None
+            try:
+                context = get_context() if get_context else None
+            except Exception:  # noqa: BLE001 - outside a request there is none
+                context = None
+            call = lambda: super(_Server, self).call_tool(name, arguments)
+        else:
+            call = lambda: super(_Server, self).call_tool(name, arguments, context)
+        meta_token = _CALL_META.set(_meta_of(context))
+        try:
+            result = await call()
+        finally:
+            _CALL_META.reset(meta_token)
+        result = _stamped(result)
         try:
             await _refresh_tool_list(context, _listing())
         except Exception:  # noqa: BLE001 - the hint is extra; the answer must still arrive
@@ -271,7 +308,7 @@ def model_copy(result: Any) -> Any:
     """A plan-shaped answer without what only the card draws; anything else as it is."""
     if not isinstance(result, dict) or not isinstance(result.get("weeks"), list):
         return result
-    slim = dict(result)
+    slim = {k: v for k, v in result.items() if k != "as_of"}
     slim["weeks"] = [
         {**week, **{key: _slim_rows(week[key]) for key in ("sessions", "extra") if key in week}}
         if isinstance(week, dict) else week
@@ -280,6 +317,19 @@ def model_copy(result: Any) -> Any:
     if isinstance(result.get("next_session"), dict):
         slim["next_session"] = {k: v for k, v in result["next_session"].items() if k not in _CARD_ONLY}
     return slim
+
+
+def _stamped(result: Any) -> Any:
+    """A plan card's answer with the time it was read, for the card alone (Nov 19):
+    a card drawn from a fresh answer looks again a few seconds later, so a
+    change made right after it was drawn shows; one from an old chat doesn't."""
+    structured = getattr(result, "structured_content", None)
+    if not isinstance(structured, dict) or not isinstance(structured.get("weeks"), list):
+        return result
+    try:
+        return result.model_copy(update={"structured_content": {**structured, "as_of": int(time.time())}})
+    except Exception:  # noqa: BLE001 - the stamp is extra
+        return result
 
 
 def _for_model(result: Any) -> Any:
@@ -3089,7 +3139,8 @@ ON_WATCH_NOTE = f'Tell the user, in these words: "{ON_WATCH}"'
 AFTER_MOVE = (
     "Once every change the user asked for is made, call get_plan on its own "
     "so they see the week as it now stands: once, after the last change, "
-    "not after each one."
+    "not after each one. Say which sessions you changed; anything else you "
+    "suggest isn't on their watch unless you change it too."
 )
 
 

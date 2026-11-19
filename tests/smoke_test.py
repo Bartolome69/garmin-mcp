@@ -2708,8 +2708,10 @@ async def main() -> int:
             check("get_plan hands the view structured content, and the model the same less the card's detail",
                   isinstance(structured, dict)
                   and without_card_only(structured.get("weeks")) == [w.get("sessions", []) for w in slim.get("weeks") or []]
-                  and {k: v for k, v in structured.items() if k not in ("weeks", "next_session")}
-                  == {k: v for k, v in slim.items() if k not in ("weeks", "next_session")},
+                  and {k: v for k, v in structured.items() if k not in ("weeks", "next_session", "as_of")}
+                  == {k: v for k, v in slim.items() if k not in ("weeks", "next_session")}
+                  # When it was read is for the card alone (Nov 19).
+                  and isinstance(structured.get("as_of"), int) and "as_of" not in slim,
                   str(structured)[:120])
             if "error" not in (structured or {}):
                 check("the model is told the card is on screen, first, in text and data alike",

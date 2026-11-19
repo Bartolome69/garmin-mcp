@@ -297,11 +297,14 @@ async def main() -> int:
 
     base = "http://127.0.0.1:8931"
 
-    async def call(user_token: str, tool: str, args: dict | None = None):
+    async def call(user_token: str, tool: str, args: dict | None = None, meta: dict | None = None,
+                   card: bool = False):
         async with streamable_http_client(f"{base}/u/{user_token}/mcp") as (r, w):
             async with ClientSession(r, w) as sess:
                 await sess.initialize()
-                result = await sess.call_tool(tool, args or {})
+                result = await sess.call_tool(tool, args or {}, meta=meta)
+                if card:  # what the card reads, not the model's copy
+                    return getattr(result, "structured_content", None) or getattr(result, "structuredContent", None)
                 if getattr(result, "structuredContent", None):
                     return result.structuredContent
                 return json.loads(result.content[0].text)
@@ -1750,6 +1753,31 @@ async def main() -> int:
               store.usage_week(person, store.week_start()) == (6, 2), str(store.usage_week(person, store.week_start())))
         check("no email address on any of it",
               "tester1116@" not in json.dumps(SENT[before:]), json.dumps(SENT[before:])[:200])
+        # Nov 19: the plan card looks again on its own a few seconds after it's
+        # drawn, so a change made right after shows. Its look is marked in the
+        # call's _meta: counted apart from the model's calls, not in the week's
+        # usage, and not taken as the model asking for the plan.
+        hosted.USAGE_IN_BACKGROUND = False
+        try:
+            before = len(SENT)
+            asked = await call(tester, "get_plan", {}, card=True)
+            clock = hosted._PLAN_CALLS.get(tester)
+            looked = await call(tester, "get_plan", {}, meta={"daash/refresh": "auto"})
+            for _ in range(60):
+                plans = [e["properties"] for e in SENT[before:] if e["event"] == "tool_called"]
+                if len(plans) >= 2:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            hosted.USAGE_IN_BACKGROUND = True
+        check("a plan answer carries when it was read, for the card, and the model's copy doesn't",
+              isinstance(asked.get("as_of"), int) and abs(asked["as_of"] - time.time()) < 60
+              and "as_of" not in garmin_server.model_copy({"weeks": [], "as_of": 1}), str(asked.get("as_of")))
+        check("the card's own look is marked as such and isn't counted as a call this week",
+              [p.get("card_refresh") for p in plans] == [None, True]
+              and store.usage_week(person, store.week_start()) == (7, 2)
+              and hosted._PLAN_CALLS.get(tester) == clock and "error" not in looked,
+              f"{[p.get('card_refresh') for p in plans]} {store.usage_week(person, store.week_start())}")
         real_count = store.count_usage
         store.count_usage = lambda *a, **k: (_ for _ in ()).throw(sqlite3.OperationalError("database is locked"))
         hosted.USAGE_IN_BACKGROUND = False
