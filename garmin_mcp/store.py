@@ -1289,45 +1289,32 @@ def cut_off_accounts(now: float | None = None, within: int = 30 * 86400) -> list
     Daash noted for one of their sign-ins going; "before_tracking" when it
     went before Nov 18.
 
-    Also cut off, as "renewal_lost": someone whose every live sign-in in a
-    chat app was issued well after they last used Daash and never used
-    since. That is a renewal whose reply their app never got: before Nov 18
-    their old sign-in was retired anyway, and their app was left with
-    nothing, while Daash still held the new pair for a year. last_seen_at
-    is written at most hourly, hence the two hours' slack; a pair under a
-    day old may still be picked up, so isn't judged yet. The Daash app's own
-    sign-ins don't count either way: a weekly email link keeps one live.
+    A renewal whose reply never reached the app isn't guessed at (Nov 19).
+    It was counted, from 18 Nov, as every live chat-app sign-in having been
+    issued after the person last used Daash and never used since; but
+    ChatGPT renews in the background, unasked, so people who were fine were
+    counted too, and three of them used Daash again the next morning
+    without reconnecting. Since Nov 18 a lost reply can't strand anyone (the
+    old sign-in works until the new one is used), and a refused renewal
+    names the person (connection_refresh_refused), so nothing needs the
+    guess.
     """
     now = int(now or time.time())
-    live = "t.subject = u.user_token AND t.kind = 'refresh' AND (t.expires_at IS NULL OR t.expires_at > :now)"
-    chat = f"{live} AND t.client_id != :app"
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM (SELECT u.user_token, u.email_hash, u.email_masked, u.last_seen_at, "
+            "SELECT u.user_token, u.email_hash, u.email_masked, u.last_seen_at, "
             "(SELECT r.reason FROM oauth_retired r WHERE r.subject = u.user_token AND r.reason != 'rotated' "
-            " ORDER BY r.retired_at DESC LIMIT 1) AS reason, "
+            " ORDER BY r.retired_at DESC LIMIT 1), "
             "(SELECT r.client_id FROM oauth_retired r WHERE r.subject = u.user_token "
-            " ORDER BY r.retired_at DESC LIMIT 1) AS gone_client, "
-            "(SELECT n.noted_at FROM cut_off_noted n WHERE n.subject = u.user_token) AS noted_at, "
-            f"EXISTS (SELECT 1 FROM oauth_tokens t WHERE {live}) AS any_live, "
-            f"(SELECT COUNT(*) FROM oauth_tokens t WHERE {chat}) AS chat_live, "
-            f"(SELECT COUNT(*) FROM oauth_tokens t WHERE {chat} AND (t.created_at <= u.last_seen_at + :slack "
-            " OR t.created_at > :now - :settle)) AS chat_working, "
-            f"(SELECT t.client_id FROM oauth_tokens t WHERE {chat} ORDER BY t.created_at DESC LIMIT 1) AS stranded_client "
-            "FROM users u WHERE u.last_seen_at >= :since) "
-            "WHERE NOT any_live OR (chat_live > 0 AND chat_working = 0)",
-            {"now": now, "since": now - within, "app": APP_CLIENT_ID, "slack": 2 * 3600, "settle": 86400},
+            " ORDER BY r.retired_at DESC LIMIT 1), "
+            "(SELECT n.noted_at FROM cut_off_noted n WHERE n.subject = u.user_token) "
+            "FROM users u WHERE u.last_seen_at >= ? AND NOT EXISTS (SELECT 1 FROM oauth_tokens t "
+            "WHERE t.subject = u.user_token AND t.kind = 'refresh' AND (t.expires_at IS NULL OR t.expires_at > ?))",
+            (now - within, now),
         ).fetchall()
-    found = []
-    for (subject, email_hash, account, last_seen, reason, gone_client, noted_at,
-         any_live, _chat_live, _working, stranded_client) in rows:
-        if any_live:
-            reason, client = "renewal_lost", stranded_client
-        else:
-            reason, client = reason or ("rotated" if gone_client else "before_tracking"), gone_client
-        found.append({"subject": subject, "email_hash": email_hash, "account": account, "last_seen_at": last_seen,
-                      "reason": reason, "client_id": client, "noted_at": noted_at})
-    return found
+    return [{"subject": r[0], "email_hash": r[1], "account": r[2], "last_seen_at": r[3],
+             "reason": r[4] or ("rotated" if r[5] else "before_tracking"), "client_id": r[5], "noted_at": r[6]}
+            for r in rows]
 
 
 def note_cut_off(subjects: list[str], now: float | None = None) -> None:

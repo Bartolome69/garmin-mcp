@@ -907,30 +907,28 @@ async def main() -> int:
             still_noted = conn.execute("SELECT COUNT(*) FROM cut_off_noted WHERE subject = ?", (lapsed,)).fetchone()[0]
         check("connecting again takes them off the list, to be reported again if it recurs",
               still_noted == 0 and lapsed not in [p["subject"] for p in store.cut_off_accounts()], str(still_noted))
-        # A renewal whose reply never arrived, before Nov 18: Daash holds a
-        # live pair the app never got, issued after they last used it.
+        # Nov 19: a sign-in issued after someone last used Daash and never used
+        # since isn't taken as a lost renewal: ChatGPT renews in the
+        # background, unasked, and three people counted so were fine.
         def stranded_case(name: str, issued_hours_after_use: float, issued_hours_ago: float) -> str:
             who = store.save_user(f"{name[0]}***@example.com", json.dumps({"di_token": name}),
                                   email_hash=store.email_fingerprint(f"{name}@example.com"))
-            hosted.OAUTH_PROVIDER.issue_for_app(who)  # a weekly email link's sign-in mustn't hide it
             now = int(time.time())
             issued = now - int(issued_hours_ago * 3600)
             with __import__("sqlite3").connect(DB) as conn:
                 conn.execute("UPDATE users SET last_seen_at = ? WHERE user_token = ?",
                              (issued - int(issued_hours_after_use * 3600), who))
                 conn.execute("INSERT INTO oauth_tokens (token_hash, kind, client_id, subject, scopes, resource, "
-                             "expires_at, created_at) VALUES (?, 'refresh', 'claude-client', ?, '', NULL, ?, ?)",
+                             "expires_at, created_at) VALUES (?, 'refresh', 'chatgpt-client', ?, '', NULL, ?, ?)",
                              (f"stranded-{name}", who, now + 86400 * 300, issued))
             return who
         lost = stranded_case("renewallost1118", issued_hours_after_use=9, issued_hours_ago=40)
         working = stranded_case("stillworks1118", issued_hours_after_use=-1, issued_hours_ago=40)
         too_soon = stranded_case("toosoon1118", issued_hours_after_use=9, issued_hours_ago=5)
         found = {p["subject"]: p for p in store.cut_off_accounts()}
-        check("a renewal whose reply was lost counts as cut off, naming the app, though the Daash app is live",
-              lost in found and found[lost]["reason"] == "renewal_lost" and found[lost]["client_id"] == "claude-client",
-              str(found.get(lost)))
-        check("someone whose app used its latest sign-in isn't cut off", working not in found)
-        check("a sign-in under a day old isn't judged yet", too_soon not in found)
+        check("a live sign-in renewed in the background, never used since, isn't counted as cut off",
+              lost not in found and working not in found and too_soon not in found,
+              str([found.get(w, {}).get("reason") for w in (lost, working, too_soon)]))
         for who in (lost, working, too_soon):
             store.delete_user(who)
         await hosted.forget_person(lapsed)
