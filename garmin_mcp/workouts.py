@@ -703,10 +703,10 @@ def resolve_exercise(name: str) -> dict[str, str]:
         near = _closest(name)
         raise WorkoutError(
             f"Garmin's exercise catalogue has nothing called {name!r}. "
-            + (f"Closest names: {', '.join(near)}. " if near else "")
-            + "Use one of those names exactly if it is the same movement, or call "
-            "find_exercises to search. If Garmin has no such movement, pick a "
-            "substitute or put it in the description."
+            + (f"Closest names: {', '.join(near)}. Use one of those names exactly "
+               "if it is the same movement, or call find_exercises to search. "
+               if near else "Call find_exercises to search. ")
+            + "If Garmin has no such movement, pick a substitute or put it in the description."
         )
     # Several matches, but one is exactly what was asked for.
     for entry in hits:

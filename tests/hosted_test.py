@@ -1802,6 +1802,7 @@ async def main() -> int:
             "Garmin's exercise catalogue has nothing called 'Pallof Press'. Closest names: Leg Press. "
             "Use one of those names exactly if it is the same movement, or call find_exercises to search. "
             "If Garmin has no such movement, pick a substitute or put it in the description.": "invalid_input",
+            "Garmin's exercise catalogue has nothing called 'zzqx'. Call find_exercises to search.": "invalid_input",
             "The email didn't send. Try again in a minute.": "other",
         }
         got = {text: hosted.error_category(text) for text in said}

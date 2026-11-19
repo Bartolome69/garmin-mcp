@@ -1105,7 +1105,7 @@ _ERROR_CATEGORIES = (
     ("unexpected", re.compile(r"Garmin request failed \(|accepted the request but returned no", re.I)),
     ("invalid_input", re.compile(r"must be|Could not read|needs|outside|can't|not both|Give |Say which"
                                  r"|Unknown|is required|only applies|missing|Nothing to change|confirm"
-                                 r"|Use |should be|Times are|A date|positive", re.I)),
+                                 r"|Use |should be|Times are|A date|positive|nothing called", re.I)),
 )
 
 
