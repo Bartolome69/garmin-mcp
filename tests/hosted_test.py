@@ -1799,6 +1799,9 @@ async def main() -> int:
             "Plan code MAR is already on the calendar between 2026-11-17 and 2027-04-26.": "conflict",
             "Garmin request failed (KeyError: 'x'). If this persists, check connection status.": "unexpected",
             "Heart-rate target 300 is outside 60-230 bpm.": "invalid_input",
+            "Garmin's exercise catalogue has nothing called 'Pallof Press'. Closest names: Leg Press. "
+            "Use one of those names exactly if it is the same movement, or call find_exercises to search. "
+            "If Garmin has no such movement, pick a substitute or put it in the description.": "invalid_input",
             "The email didn't send. Try again in a minute.": "other",
         }
         got = {text: hosted.error_category(text) for text in said}

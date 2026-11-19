@@ -2471,6 +2471,32 @@ async def main() -> int:
                   "error" in vague and "matches several" in str(vague),
                   str(vague)[:140])
 
+            # Nov 19: about 1 in 15 strength workouts failed first time on the
+            # names runners use. Plurals and a few everyday names now resolve.
+            everyday = payload(await sess.call_tool("create_strength_workout", {
+                "name": "Runner strength",
+                "exercises": [{"exercise": "Glute Bridges"}, {"exercise": "Calf Raises"},
+                              {"exercise": "Lunges"}, {"exercise": "Wall Sit"}, {"exercise": "Push-ups"}],
+            }))
+            summary = everyday.get("summary", "")
+            check("plurals and everyday names find Garmin's own names",
+                  all(n in summary for n in ("Hip Raise", "x10 Calf Raise,", "x10 Lunge,",
+                                             "Body-weight Wall Squat", "x10 Push-up,")),
+                  summary[:240])
+            check("'Calf Raises' is the plain movement, not the banded one",
+                  "Banded" not in summary, summary[:240])
+            near = payload(await sess.call_tool("create_strength_workout", {
+                "name": "Nope",
+                "exercises": [{"exercise": "Copenhagen Plank"}],
+            }))
+            check("a movement Garmin doesn't have is refused with the closest names",
+                  "Closest names: Plank" in near.get("error", "") and "substitute" in near.get("error", ""),
+                  str(near)[:200])
+            abs_hits = payload(await sess.call_tool("find_exercises", {"query": "abs"}))
+            check("search matches whole words before parts of words",
+                  not any("Cable" in m["name"] for m in abs_hits.get("matches", [])),
+                  str([m["name"] for m in abs_hits.get("matches", [])][:6]))
+
             print("\nentry points ignore the current directory (regression)")
             check_entrypoints_ignore_cwd(check)
 

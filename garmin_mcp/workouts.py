@@ -605,26 +605,82 @@ def _normalise(term: str) -> str:
     """Fold the spelling differences people actually type.
 
     The catalogue search is a plain substring match, so "pull up" finds nothing
-    while "pull-up" finds twenty-one. Nobody should have to know that.
+    while "pull-up" finds twenty-one. Nobody should have to know that. Plurals
+    fold too: the catalogue says "Lunge" and people say "lunges", and without
+    this "calf raises" matched only "Banded Calf Raises", a different movement.
     """
-    return " ".join(str(term).replace("-", " ").replace("_", " ").lower().split())
+    words = str(term).replace("-", " ").replace("_", " ").lower().split()
+    return " ".join(_singular(word) for word in words)
+
+
+def _singular(word: str) -> str:
+    # "press" and "swiss" keep their s; "lunges" and "push-ups" lose it.
+    if len(word) > 2 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+# What runners call a movement where Garmin's catalogue calls the same movement
+# something else. Only the same movement: a near miss is the wrong exercise on
+# someone's watch, and those stay a question. Keys are as _normalise leaves them.
+EVERYDAY_NAMES = {
+    "glute bridge": "Hip Raise",
+    "single leg glute bridge": "Single-leg Hip Raise",
+    "wall sit": "Body-weight Wall Squat",
+    "clamshell": "Banded Clam Shells",
+    "clam shell": "Banded Clam Shells",
+    "bird dog": "Opposite Arm and Leg Balance",
+    "single leg calf raise": "Single-leg Standing Calf Raise",
+    "lat pulldown": "Lat Pull-down",
+}
+
+# Words too common to say two names are alike.
+_FILLER = {"with", "and", "on", "the", "a", "of", "to", "in"}
+
+
+def _everyday(term: str) -> dict[str, str] | None:
+    from garminconnect import exercises as catalogue
+
+    garmin_name = EVERYDAY_NAMES.get(_normalise(term))
+    return catalogue.resolve(garmin_name) if garmin_name else None
 
 
 def find_exercises(term: str, limit: int = 25) -> list[dict[str, str]]:
-    """Search Garmin's exercise catalogue, tolerant of hyphens and spacing."""
+    """Search Garmin's exercise catalogue, tolerant of hyphens, spacing and plurals."""
     from garminconnect import exercises as catalogue
 
     wanted = _normalise(term)
     if not wanted:
         return []
+    # Whole words first, so "abs" finds "X Abs" and not "Cable Crunch"; part
+    # words only when that finds nothing, so "plyo" still finds something.
     hits = [
+        entry for entry in catalogue.EXERCISES
+        if f" {wanted} " in f" {_normalise(entry['name'])} "
+    ] or [
         entry for entry in catalogue.EXERCISES
         if wanted in _normalise(entry["name"])
     ]
     # Prefer the plainest name: an exact match, then the shortest, so "bench
     # press" offers "Bench Press" before "Close-grip Barbell Bench Press".
     hits.sort(key=lambda e: (_normalise(e["name"]) != wanted, len(e["name"])))
+    everyday = _everyday(term)
+    if everyday:
+        hits = [everyday, *(e for e in hits if e["name"] != everyday["name"])]
     return hits[:limit]
+
+
+def _closest(term: str, limit: int = 5) -> list[str]:
+    """Catalogue names sharing the most words with what was asked for."""
+    from garminconnect import exercises as catalogue
+
+    wanted = set(_normalise(term).split()) - _FILLER
+    scored = []
+    for entry in catalogue.EXERCISES:
+        shared = len(wanted & set(_normalise(entry["name"]).split()))
+        if shared:
+            scored.append((-shared, len(entry["name"]), entry["name"]))
+    return [name for _, _, name in sorted(scored)[:limit]]
 
 
 def resolve_exercise(name: str) -> dict[str, str]:
@@ -636,7 +692,7 @@ def resolve_exercise(name: str) -> dict[str, str]:
     """
     from garminconnect import exercises as catalogue
 
-    exact = catalogue.resolve(str(name).strip())
+    exact = catalogue.resolve(str(name).strip()) or _everyday(name)
     if exact:
         return exact
 
@@ -644,9 +700,13 @@ def resolve_exercise(name: str) -> dict[str, str]:
     if len(hits) == 1:
         return hits[0]
     if not hits:
+        near = _closest(name)
         raise WorkoutError(
-            f"No exercise in Garmin's catalogue matches {name!r}. "
-            "Call find_exercises to search it."
+            f"Garmin's exercise catalogue has nothing called {name!r}. "
+            + (f"Closest names: {', '.join(near)}. " if near else "")
+            + "Use one of those names exactly if it is the same movement, or call "
+            "find_exercises to search. If Garmin has no such movement, pick a "
+            "substitute or put it in the description."
         )
     # Several matches, but one is exactly what was asked for.
     for entry in hits:
