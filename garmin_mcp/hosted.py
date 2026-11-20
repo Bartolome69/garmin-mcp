@@ -1120,6 +1120,27 @@ def error_category(error: Any) -> str | None:
     return "other"
 
 
+# Which of create_strength_workout's checks turned a call down (Nov 20), read
+# from our own fixed wording, so the event never carries what was typed.
+_STRENGTH_CHECKS = (
+    ("no_match", re.compile(r"has nothing called")),
+    ("several_versions", re.compile(r"matches several exercises")),
+    ("numbers", re.compile(r"must be numbers|must be at least 1|weight_kg must be")),
+    ("format", re.compile(r"should be an object|is missing an 'exercise'|needs at least one exercise")),
+)
+
+
+def strength_check(error: Any) -> str | None:
+    """The check a failed strength workout hit; None when it worked."""
+    if not error:
+        return None
+    text = error if isinstance(error, str) else str(error)
+    for name, pattern in _STRENGTH_CHECKS:
+        if pattern.search(text):
+            return name
+    return "other"
+
+
 # Garmin's sport keys, as the four groups usage is read by.
 _SPORT_GROUPS = {"running": "run", "trail_running": "run", "treadmill_running": "run", "track_running": "run",
                  "cycling": "bike", "road_biking": "bike", "mountain_biking": "bike", "indoor_cycling": "bike",
@@ -1249,6 +1270,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
             "card_refresh": auto or None,
             "error_category": error_category(error), "held": held or None,
+            "error_check": strength_check(error) if name == "create_strength_workout" else None,
             "login_route": login_route(alone), "client": client, "ai_client": client,
             "hours_since_connect": hours_since_connect(user),
             "seconds": round(seconds, 2) if seconds is not None else None,

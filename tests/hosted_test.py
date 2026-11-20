@@ -1808,6 +1808,46 @@ async def main() -> int:
         got = {text: hosted.error_category(text) for text in said}
         check("errors fall into a fixed set of categories", got == said,
               str({t[:40]: c for t, c in got.items() if c != said[t]}))
+        # Nov 20: a failed strength workout says which check turned it down,
+        # read from our own wording, so what was typed never reaches the event.
+        hosted.USAGE_IN_BACKGROUND = False
+        try:
+            before = len(SENT)
+            unknown = await call(tester, "create_strength_workout", {
+                "name": "Gym", "exercises": [{"exercise": "Zorbly Press Thing"}]})
+            heavy = await call(tester, "create_strength_workout", {
+                "name": "Gym", "exercises": [{"exercise": "Goblet Squat", "weight_kg": "twenty"}]})
+            for _ in range(60):
+                strength = [e["properties"] for e in SENT[before:] if e["event"] == "tool_called"]
+                if len(strength) >= 2:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            hosted.USAGE_IN_BACKGROUND = True
+        check("a weight that isn't a number is refused in words, not as a crash",
+              "weight_kg must be a number" in heavy.get("error", ""), str(heavy)[:160])
+        check("a failed strength workout says which check stopped it, never what was typed",
+              [c.get("error_check") for c in strength] == ["no_match", "numbers"]
+              and [c.get("error_category") for c in strength] == ["invalid_input", "invalid_input"]
+              and "Zorbly" not in json.dumps(strength) and "twenty" not in json.dumps(strength)
+              and "error" in unknown, str(strength)[:300])
+        check("only strength workouts carry the check",
+              all("error_check" not in c for c in calls), str(calls[-1])[:160])
+        checks = {
+            "Garmin's exercise catalogue has nothing called 'x'. Call find_exercises to search.": "no_match",
+            "'press' matches several exercises: Leg Press, Bench Press. Use one of those names exactly.":
+                "several_versions",
+            "Exercise 1 (Squat): sets, reps and rest_seconds must be numbers.": "numbers",
+            "Exercise 2 (Squat): sets and reps must be at least 1.": "numbers",
+            "Exercise 1 (Squat): weight_kg must be a number of kilograms, e.g. 20.": "numbers",
+            "Exercise 1 should be an object, not str.": "format",
+            "Exercise 3 is missing an 'exercise' name.": "format",
+            "A strength workout needs at least one exercise.": "format",
+            "Garmin accepted the request but returned no workout id.": "other",
+        }
+        got = {text: hosted.strength_check(text) for text in checks}
+        check("each strength check has its own label", got == checks and hosted.strength_check(None) is None,
+              str({t[:30]: c for t, c in got.items() if c != checks[t]}))
         await hosted.forget_person(tester)
         check("disconnecting deletes the person's weekly counts",
               store.usage_week(person, store.week_start()) == (0, 0), str(store.usage_week(person, store.week_start())))

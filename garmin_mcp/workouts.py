@@ -758,7 +758,12 @@ def build_strength_workout(
             )
 
         weight = raw.get("weight_kg")
-        weight_kg = float(weight) if weight not in (None, "") else None
+        try:
+            weight_kg = float(weight) if weight not in (None, "") else None
+        except (TypeError, ValueError) as exc:
+            raise WorkoutError(
+                f"Exercise {position} ({entry['name']}): weight_kg must be a number of kilograms, e.g. 20."
+            ) from exc
 
         steps.append(
             gw.create_strength_set(
