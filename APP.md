@@ -25,15 +25,19 @@ other reads next, and the watch gets it at its next sync.
 | Easier | a copy of the workout for that day only, each rep a third shorter, same pace, swapped in with `unschedule` and `schedule` | the easier session on that day, every other week unchanged |
 | Undo easier | the original workout scheduled back, the copy deleted | the original session |
 | Send again | `unschedule` then `schedule` on the same day | unchanged plan |
-| Not feeling 100% | lighter today (a hard session: reps about 5% slower, or an easy run of two-thirds the distance; otherwise Easier), swap with a later day this week, rest today, or 2, 3 or 5 days off; each is the writes above, by the rules in `garmin_mcp/feeling.py` | the week as changed; one Undo puts it back |
+| Not feeling 100% | for the session being viewed (today or later, never a past one): a lighter run (same pace, a fifth shorter), an easier pace (15–20 s/km slower, heart rate capped at the top of zone 2), make it easy (a hard session becomes an easy run of the same time), swap with a later day this week, skip this run, or 2, 3 or 5 days off; each is the writes above, by the rules in `garmin_mcp/feeling.py`, and answers what reached the watch | the week as changed; one Undo puts it back |
 | Mark done | not built: Garmin decides done from a recorded run | |
 
-Not feeling 100% keeps the plan checker's rules: no two hard days in a row,
+Not feeling 100% is worded for the session being looked at ("Sunday's 12 km
+becomes 9.6 km"), not the calendar's today. It keeps the plan checker's rules: no two hard days in a row,
 nothing hard in the two days after a race, the long run never next to a hard
 day, races never moved, nothing moved out of its week. It is offered for
-today's and tomorrow's sessions, stands out on a day Garmin reads readiness as
-low, and never changes anything until a choice is confirmed. Its words say
-what changes, never why someone should rest: nothing in it is medical.
+today's session and later ones, never a past one, stands out on a day Garmin
+reads readiness as low, and never changes anything until a choice is
+confirmed. Days off that reach into an A race's taper or race week carry a
+gentle note to ask the assistant, and stay allowed. Its words are
+for a busy, tired or flat day and say what changes: nothing in it is about
+injury or medical.
 
 Why a copy for Easier: `create_plan` schedules one workout on every date it
 repeats, so editing it in place would make every week easier. The copy keeps
@@ -53,11 +57,16 @@ only knows the API below.
     `/app/api/plan?week=`, `/app/api/crew`, `/app/api/you`:
     JSON shaped for the screens, built from the tool functions.
   - `POST /app/api/session/{date}/move|easier|undo|resend`: the edits above.
-  - `GET /app/api/not100/{date}`: what each Not feeling 100% choice would do,
-    said before anything changes. `POST` the same path with `choice`
-    (lighter, swap, rest, days_off) and `level` or `days` to make it; the
-    answer carries the steps that undo it, which `POST /app/api/not100-undo`
-    takes back, so nothing is kept on the server.
+  - `GET /app/api/not100/{date}`: what each Not feeling 100% choice would do to
+    that day's session, said before anything changes, plus a "Talk it through"
+    link that opens Claude or ChatGPT with the week filled in (the app calls no
+    model). `POST` the same path with `choice` (original, lighter, pace, easy,
+    swap, skip, days_off) and `days` to make it; the answer says what reached
+    the watch (`watch`, `watch_said`) and carries the steps that undo it, which
+    `POST /app/api/not100-undo` takes back, so nothing is kept on the server.
+    If Garmin refuses a step, the change is put back and the answer is a 502
+    with `watch_failed`, which the app shows as "Couldn't update your watch"
+    with Retry.
   - `POST /app/api/you/times`: your usual run times, as the crew uses them.
   - `POST /app/api/you/delete`: delete the account, the same as `/disconnect`.
 - `garmin_mcp/analysis.py`: planned against run for one session, worked out

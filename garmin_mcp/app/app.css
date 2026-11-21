@@ -439,6 +439,23 @@ div.n100-choice { cursor: default; }
 .n100-spans .pill { height: 36px; padding: 0 14px; font-size: 14px; }
 .n100-spans .pill[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); font-weight: 600; }
 .n100-foot { display: grid; grid-template-columns: 1fr 1.6fr; gap: 8px; }
+/* Nov 21 (2): the session screen's row reads Move, Not feeling 100%, Ask; the sheet's details */
+.actions3.two { grid-template-columns: 1fr 1.3fr; }
+.actions3:not(.two) { grid-template-columns: auto minmax(0, 1fr) auto; }
+.actions3:not(.two) .pill { padding: 0 12px; font-size: 14.5px; }
+/* On a narrow phone the middle label takes two lines rather than push Ask past the edge. */
+.n100-pill { line-height: 1.15; text-align: center; white-space: normal; min-width: 0; }
+.n100-detail { display: flex; flex-direction: column; gap: 4px; }
+.n100-off-list { list-style: none; margin: 2px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.n100-off-list li { display: flex; gap: 10px; }
+.n100-off-list li > span:first-child { width: 32px; color: var(--muted); flex-shrink: 0; }
+.n100-off-list .grow-text { flex: 1; min-width: 0; text-decoration: line-through; text-decoration-color: var(--muted); }
+.n100-note { font-size: 13.5px; line-height: 1.4; padding: 8px 10px; border-radius: 10px; background: var(--amber-soft); border: 1px solid var(--amber-soft-line); color: var(--ink); }
+.n100-ask { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--hairline);
+  color: var(--ink); text-decoration: none; }
+.n100-ask:hover { border-color: var(--button); color: var(--ink); }
+.watch-line { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); }
+.plan-row.gone { opacity: 0.85; }
 .days-grid .pill { padding: 0 6px; flex-direction: column; gap: 0; height: 56px; font-size: 13px; }
 .days-grid .pill b { font-size: 15px; }
 

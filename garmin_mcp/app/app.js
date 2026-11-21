@@ -195,7 +195,11 @@ async function api(path, options = {}, retry = true) {
     throw new SignedOut();
   }
   const body = await res.json().catch(() => ({ error: "Daash didn't answer. Try again in a moment." }));
-  if (!res.ok || body.error) throw new Error(body.error || "Something went wrong.");
+  if (!res.ok || body.error) {
+    const err = new Error(body.error || "Something went wrong.");
+    err.body = body;  // what else the answer said, as Not feeling 100%'s watch_failed (Nov 21)
+    throw err;
+  }
   // A change on Garmin: what the screens showed of the plan is out of date.
   // (A read sent as a POST, like the plan builder's answers, changes nothing.)
   if (options.method === "POST" && !options.read) { epoch++; inflight.clear(); cache.clear(); }
@@ -806,7 +810,7 @@ function previewView(d, from, panel = false) {
     parts.push(`<div class="card ready-card ${r.low ? "amber" : ""}"><div class="ready-top"><span class="stack-tight" style="gap:0;align-items:center"><span class="ready-score">${esc(r.score)}</span><span class="src">from Garmin</span></span>
       <span class="grow"><span class="strong">${esc(r.head)}</span><span class="meta" style="line-height:1.4">${esc(r.sub)}${r.low && d.easier && !d.easier.applied && !d.not_100 ? ` Consider Easier: ${esc(d.easier.preview)} at the same pace.` : ""}</span></span></div>
       ${r.low && d.easier && d.easier.applied ? `<button class="pill amber" data-act="undo" data-day="${d.date}" data-sid="${d.schedule_id || ""}">Back to the original</button>`
-        : r.low && d.not_100 ? `<button class="pill amber" data-not100="${d.date}" data-sid="${d.schedule_id || ""}" data-from="session" data-prominent="1">Not feeling 100%?</button>`
+        : r.low && d.not_100 ? ""
         : r.low && d.easier ? `<button class="pill amber" data-act="easier" data-day="${d.date}" data-sid="${d.schedule_id || ""}">Make it easier</button>` : ""}</div>`);
   } else if (r) {
     parts.push(`<div class="card pad meta">${esc(r.head)}</div>`);
@@ -815,11 +819,11 @@ function previewView(d, from, panel = false) {
     <div class="grow" style="gap:1px"><span class="strong">${esc(d.watch.head)}</span><span class="meta" style="${d.watch.changed ? "color:var(--amber)" : ""}">${esc(d.watch.sub)}</span></div>
     <button class="pill" data-act="resend" data-day="${d.date}" data-sid="${d.schedule_id || ""}" style="flex-shrink:0;padding:0 14px">Send again</button></div>`);
   parts.push(editHint());
-  parts.push(`<div class="actions3"><button class="pill tall" data-act="move" data-day="${d.date}" data-sid="${d.schedule_id || ""}" data-name="${esc(d.name)}">Move</button>
-    ${d.easier ? `<button class="pill tall" data-act="${d.easier.applied ? "undo" : "easier"}" data-day="${d.date}" data-sid="${d.schedule_id || ""}">${esc(d.easier.label)}</button>` : `<button class="pill tall" disabled title="Nothing to shorten">Easier</button>`}
+  // Nov 21: Move, Not feeling 100%, Ask. Easier lives in the sheet now, with the other ways to lighten a session.
+  parts.push(`<div class="actions3 ${d.not_100 ? "" : "two"}"><button class="pill tall" data-act="move" data-day="${d.date}" data-sid="${d.schedule_id || ""}" data-name="${esc(d.name)}">Move</button>
+    ${d.not_100 ? notButton(d, "session", r) : ""}
     ${ask.html}</div>
     <span class="footnote">Ask ${esc(ask.name)} opens ${esc(ask.name)} with this session filled in.</span>`);
-  if (d.not_100 && !(r && r.low)) parts.push(notButton(d, "session", r));
   if (d.also) {
     parts.push(`<div class="also"><span class="meta">Also this day:</span>${d.also.map((a) => `<a class="pill" href="#/session/${d.date}?sid=${a.schedule_id}&from=${from || "today"}"><span class="c-${esc(a.colour)}">●</span>${esc(a.name)}</a>`).join("")}</div>`);
   }
@@ -1110,7 +1114,7 @@ function wire(root) {
     b.onclick = () => act(b.dataset.act, b.dataset.day, b.dataset.sid, b);
   });
   root.querySelectorAll("[data-not100]").forEach((b) => {
-    b.onclick = () => notSheet(b.dataset.not100, b.dataset.sid, b.dataset.from, b.dataset.prominent === "1");
+    b.onclick = () => { store.set(EDIT_HINT, "used"); notSheet(b.dataset.not100, b.dataset.sid, b.dataset.from, b.dataset.prominent === "1"); };
   });
 }
 
@@ -1120,7 +1124,7 @@ function editHint() {
   if (desktop() || store.get(EDIT_HINT)) return "";
   shownOnce("edit_hint_shown");
   return `<div class="card pad stack-tight" id="edit-hint" style="gap:8px"><span class="strong">Plans change. Yours can too.</span>
-    <span class="meta" style="font-size:13.5px;line-height:1.45"><b>Move</b> it to another day or make it <b>Easier</b>. Your watch updates.</span>
+    <span class="meta" style="font-size:13.5px;line-height:1.45"><b>Move</b> it to another day, or tap <b>Not feeling 100%</b> for a lighter or easier version. Your watch updates.</span>
     <div class="pills"><button class="pill" data-hint="done">Got it</button></div></div>`;
 }
 
@@ -1146,8 +1150,9 @@ async function act(action, day, sid, button) {
 }
 
 // -- Not feeling 100% (Nov 21) ----------------------------------------------------
-// One question on a day someone isn't up to the session. Each choice says what
-// it will do before anything changes; one Undo puts the whole week back.
+// One question about the session being looked at, worded for its own day. Each
+// choice says what it will do before anything changes; the change goes to
+// Garmin, which sends it to the watch, and one Undo puts the whole week back.
 
 function notButton(d, from, readiness) {
   const prominent = !!(d.not_100 && d.not_100.prominent);
@@ -1155,17 +1160,11 @@ function notButton(d, from, readiness) {
   if (from === "today") {
     return prominent
       ? `<button type="button" class="not100 strong-line" ${attrs}><span class="grow"><span class="strong">Not feeling 100%?</span>
-          <span class="meta">${esc(readiness && readiness.head ? `${readiness.head}.` : "")} Lighter, swap, rest or a few days off.</span></span>${ICON.right(18, "currentColor")}</button>`
+          <span class="meta">${esc(readiness && readiness.head ? `${readiness.head}.` : "")} Lighter, easier, swap or skip.</span></span>${ICON.right(18, "currentColor")}</button>`
       : `<button type="button" class="not100" ${attrs}>Not feeling 100%?</button>`;
   }
-  return `<button type="button" class="row-button" ${attrs}><span class="grow"><span class="strong">Not feeling 100%?</span>
-    <span class="meta">Lighter, swap with a later day, rest, or a few days off.</span></span>${ICON.right(18, "var(--muted)")}</button>`;
-}
-
-function notChoice(o, extra = {}) {
-  const level = extra.level || "";
-  return `<button type="button" class="n100-choice" data-choice="${esc(o.choice)}" data-level="${esc(level)}" aria-pressed="false">
-    <span class="strong">${esc(extra.label || o.label)}</span><span class="meta">${esc(extra.said || o.said || "")}</span></button>`;
+  // The session screen: the middle of its button row, amber on a low-readiness day.
+  return `<button type="button" class="pill tall n100-pill ${prominent ? "amber" : ""}" ${attrs}>Not feeling 100%</button>`;
 }
 
 function notOptions(n) {
@@ -1173,18 +1172,55 @@ function notOptions(n) {
     if (o.unavailable) {
       return `<div class="n100-group"><span class="n100-off"><span class="strong">${esc(o.label)}</span><span class="meta">${esc(o.unavailable)}</span></span></div>`;
     }
-    if (o.levels) {
-      return `<div class="n100-group"><span class="section-title">${esc(o.label)}</span>${o.levels.map((l) => notChoice(o, l)).join("")}</div>`;
-    }
     if (o.spans) {
       // A group, not a button: its 2, 3 and 5 days are the buttons.
       return `<div class="n100-group"><div class="n100-choice" data-choice="days_off" role="group" aria-labelledby="n100-off-label">
         <span class="strong" id="n100-off-label">${esc(o.label)}</span>
         <span class="n100-spans">${o.spans.map((s) => `<button type="button" class="pill" data-days="${s.days}" aria-pressed="false">${esc(s.label)}</button>`).join("")}</span>
-        <span class="meta" data-span-said>Pick how many days to see what comes off.</span></div></div>`;
+        <span class="n100-detail" data-span-said><span class="meta">Pick how many days to see what comes off.</span></span></div></div>`;
     }
-    return `<div class="n100-group">${notChoice(o)}</div>`;
+    if (o.ask) {
+      // A chat with the week filled in: the app only builds the link, it asks no model itself.
+      const href = o.assistant === "ChatGPT" ? o.ask.chatgpt : o.ask.claude;
+      return `<a class="n100-ask" href="${esc(href)}" target="_blank" rel="noopener" data-ask-to="${esc(o.assistant || "Claude")}">
+        <span class="strong">${esc(o.label)} ↗</span><span class="meta">Opens a chat with this week and your next race filled in.</span></a>`;
+    }
+    return `<div class="n100-group"><button type="button" class="n100-choice" data-choice="${esc(o.choice)}" aria-pressed="false">
+      <span class="strong">${esc(o.label)}</span><span class="meta">${esc(o.said || "")}</span></button></div>`;
   }).join("");
+}
+
+// What a few days off takes off, the new weekly totals and the first run back, as soon as the days are picked.
+function spanDetail(s) {
+  const off = (s.off || []).map((x) => `<li><span>${esc(x.day)}</span><span class="grow-text">${esc(x.name)}</span><span>${x.km ? `${esc(x.km)} km` : ""}</span></li>`).join("");
+  const totals = (s.totals || []).map((t) => `<span class="meta">${esc(t.label)}: ${esc(t.from)} km → <strong>${esc(t.to)} km</strong></span>`).join("");
+  return `${off ? `<ul class="n100-off-list" aria-label="Comes off">${off}</ul>` : `<span class="meta">${esc(s.said)}</span>`}
+    ${totals}${s.back ? `<span class="meta">${esc(s.back)}</span>` : ""}${(s.stays || []).map((x) => `<span class="meta">${esc(x)}</span>`).join("")}
+    ${s.note ? `<span class="n100-note">${esc(s.note)}</span>` : ""}`;
+}
+
+// What the last change did to the watch, kept on the phone so the week view can say so beside each row.
+const WATCH_KEY = "daash.watch";
+const WATCH_KEEP_MS = 24 * 3600 * 1000;
+function watchChanges() {
+  try {
+    const kept = JSON.parse(store.get(WATCH_KEY) || "[]");
+    return kept.filter((w) => Date.now() - w.at < WATCH_KEEP_MS);
+  } catch { return []; }
+}
+function noteWatch(rows) {
+  const now = Date.now();
+  const kept = watchChanges().filter((w) => !rows.some((r) => r.date === w.date && r.name === w.name));
+  store.set(WATCH_KEY, JSON.stringify([...kept, ...rows.map((r) => ({ ...r, at: now }))]));
+}
+function forgetWatch(rows) {
+  store.set(WATCH_KEY, JSON.stringify(watchChanges().filter((w) => !rows.some((r) => r.date === w.date))));
+}
+function watchFor(date, name) {
+  return watchChanges().find((w) => w.date === date && w.name === name && w.status === "updated");
+}
+function removedOn(date) {
+  return watchChanges().filter((w) => w.date === date && w.status === "removed");
 }
 
 function notSheet(day, sid, from, prominent) {
@@ -1210,6 +1246,8 @@ function notSheet(day, sid, from, prominent) {
         <div class="n100-list">${notOptions(n)}</div>
         <div class="n100-foot"><button type="button" class="pill" data-close>Cancel</button><button type="button" class="pill light" id="n100-go" disabled>Change my week</button></div>`;
       box.querySelector("[data-close]").onclick = close;
+      const ask = box.querySelector(".n100-ask");
+      if (ask) ask.addEventListener("click", () => track("ask_chosen", { where: "not_100", to: ask.dataset.askTo }));
       const go = box.querySelector("#n100-go");
       let picked = null;
       const pick = (row, days) => {
@@ -1220,40 +1258,48 @@ function notSheet(day, sid, from, prominent) {
         box.querySelectorAll(".n100-spans [data-days]").forEach((x) => x.setAttribute("aria-pressed", String(!!days && x.dataset.days === days)));
         if (days) {
           row.dataset.days = days;
-          const s = spans.find((x) => String(x.days) === days) || {};
-          row.querySelector("[data-span-said]").textContent = s.said || "";
+          row.querySelector("[data-span-said]").innerHTML = spanDetail(spans.find((x) => String(x.days) === days) || {});
         }
         picked = row;
         go.disabled = false;
       };
       box.querySelectorAll("button.n100-choice").forEach((b) => { b.onclick = () => pick(b); });
       box.querySelectorAll(".n100-spans [data-days]").forEach((p) => { p.onclick = () => pick(p.closest(".n100-choice"), p.dataset.days); });
-      go.onclick = async () => {
-        if (!picked) return;
+      go.onclick = () => {
+        if (!picked || (picked.dataset.choice === "days_off" && !picked.dataset.days)) return;
+        const body = { choice: picked.dataset.choice, schedule_id: sid ? Number(sid) : null };
+        if (picked.dataset.days) body.days = Number(picked.dataset.days);
         box.querySelectorAll("button").forEach((x) => { x.disabled = true; });
         go.textContent = "Changing…";
-        const body = { choice: picked.dataset.choice, schedule_id: sid ? Number(sid) : null };
-        if (picked.dataset.level) body.level = picked.dataset.level;
-        if (picked.dataset.days) body.days = Number(picked.dataset.days);
-        try {
-          const r = await api(`not100/${day}`, { method: "POST", body: JSON.stringify(body) });
-          close();
-          toast(r.message, r.undo && r.undo.length ? { label: "Undo", run: () => notUndo(r.undo) } : null);
-          refreshUnderPanel();
-          route(true);
-        } catch (e) {
-          close();
-          if (e instanceof SignedOut) return route();
-          toast(e.message);
-        }
+        notApply(day, body, close);
       };
     });
 }
 
-async function notUndo(steps) {
+// Make the change. On the watch's word: "Updated on your watch" only once Garmin
+// has it; if it didn't take, nothing changed and Retry sends it again.
+async function notApply(day, body, close) {
+  try {
+    const r = await api(`not100/${day}`, { method: "POST", body: JSON.stringify(body) });
+    if (close) close();
+    noteWatch(r.watch || []);
+    toast(`${r.message} ${r.watch_said}`, r.undo && r.undo.length ? { label: "Undo", run: () => notUndo(r.undo, r.watch || []) } : null);
+    refreshUnderPanel();
+    route(true);
+  } catch (e) {
+    if (close) close();
+    if (e instanceof SignedOut) return route();
+    if (e.body && e.body.watch_failed) return toast("Couldn't update your watch.", { label: "Retry", run: () => notApply(day, { ...body, retry: true }) });
+    toast(e.message);
+  }
+}
+
+async function notUndo(steps, rows) {
   try {
     const r = await api("not100-undo", { method: "POST", body: JSON.stringify({ undo: steps }) });
-    toast(r.message);
+    forgetWatch(rows);
+    noteWatch(rows.filter((w) => w.status === "removed").map((w) => ({ ...w, status: "updated" })));
+    toast(`${r.message} ${r.watch_said || ""}`.trim());
     refreshUnderPanel();
     route(true);
   } catch (e) {
@@ -1322,7 +1368,7 @@ function planDetail(r) {
   const bits = [plannedLen, r.target || ""].filter(Boolean);
   return `${bits.length ? `<span class="meta plan-line">${esc(bits.join(" · "))}</span>` : ""}
     ${r.state === "skipped" && r.meta ? `<span class="meta">${esc(r.meta)}</span>` : ""}
-    ${r.watch ? `<span class="on-watch">${ICON.watch(13)}On your watch</span>` : ""}`;
+    ${r.watch ? `<span class="on-watch">${ICON.watch(13)}${r.watch_changed ? "Updated on your watch · Arrives at next sync" : "On your watch"}</span>` : ""}`;
 }
 
 function planRow(r, day, first, week) {
@@ -1337,7 +1383,7 @@ function planRow(r, day, first, week) {
     <span class="day ${first ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span>${day.today && first ? `<span class="today-tag">Today</span>` : ""}</span>
     <span class="body"><span class="type c-${esc(r.colour)}">${mark}${esc(r.type_label)}${r.optional ? `<span class="opt">Optional</span>` : ""}</span>
       <span class="name ${r.state === "done" || r.state === "extra" || r.outcome === "missed" ? "dim" : ""}">${esc(r.name)}</span>
-      ${planDetail(r)}
+      ${planDetail({ ...r, watch: r.watch || !!(r.state !== "done" && watchFor(day.date, r.name)), watch_changed: r.state !== "done" && !!watchFor(day.date, r.name) })}
       ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
     <span class="grip" aria-hidden="true">${r.movable ? ICON.grip() : ""}</span></a>`;
 }
@@ -1348,9 +1394,17 @@ function dragHint(w) {
   return !store.get(DRAGGED) && w.days.some((day) => day.sessions.some((r) => r.movable));
 }
 
+// A session taken off by Not feeling 100% stays in its day for a while, struck through, saying it left the watch.
+function goneRows(day, first) {
+  return removedOn(day.date).filter((g) => !day.sessions.some((r) => r.name === g.name)).map((g, i) => `<div class="plan-row gone ${first && i === 0 ? "" : "same-day"}" data-date="${day.date}">
+    <span class="day ${first && i === 0 ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span></span>
+    <span class="body"><span class="name dim"><s>${esc(g.name)}</s></span><span class="on-watch">${ICON.watch(13)}Removed from your watch</span></span><span></span></div>`).join("");
+}
+
 function weekRows(w) {
   return w.days.map((day) => day.sessions.length
-    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date)).join("")
+    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date)).join("") + goneRows(day, false)
+    : removedOn(day.date).length ? goneRows(day, true)
     : `<div class="plan-row rest ${day.today ? "is-today" : ""}" data-date="${day.date}"><span class="day"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span>${day.today ? `<span class="today-tag">Today</span>` : ""}</span>
         <span class="body"><span class="name rest-name">Rest day</span>${day.today && w.rest_note ? `<span class="meta rest-note">${esc(w.rest_note)}</span>` : ""}</span><span></span></div>`).join("");
 }

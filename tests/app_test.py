@@ -90,10 +90,22 @@ def plain(text: str) -> bool:
 
 
 def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
-    """Nov 21: Not feeling 100%. Each choice says what it will do, does it, and one Undo puts the week back."""
+    """Nov 21: Not feeling 100%, worded for the session being looked at. Each choice says what it
+    will do, does it on Garmin (so the watch), says what reached the watch, and one Undo puts the week back."""
     from datetime import date as d_, timedelta as td_
+    from urllib.parse import unquote
     norm = lambda n: str(n).replace("\u00d7", "x")
     week_days = [(d_.fromisoformat(day) + td_(days=i)).isoformat() for i in range(7)]
+    sunday, yesterday = week_days[6], (d_.fromisoformat(day) - td_(days=1)).isoformat()
+    medical = re.compile(r"\b(ill|illness|sick|injur\w*|pain|doctor|medical|recover\w*|rest up)\b", re.I)
+
+    def words_of(sheet):
+        out = [sheet.get("title", ""), sheet.get("sub", "")]
+        for o in sheet.get("options") or []:
+            out += [o.get("label", ""), o.get("said") or o.get("unavailable") or ""]
+            for s in o.get("spans") or []:
+                out += [s.get("said", ""), s.get("back") or "", s.get("note") or ""] + list(s.get("stays") or [])
+        return [w for w in out if w]
 
     check("Today's next session offers Not feeling 100%",
           (today.get("next") or {}).get("not_100") is not None, str((today.get("next") or {}).get("not_100")))
@@ -101,31 +113,87 @@ def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
     check("and so does its session screen", shown.get("not_100") is not None, str(shown.get("not_100")))
     check("not standing out on a day readiness isn't low", not (shown.get("not_100") or {}).get("prominent"))
 
+    # -- today's session -------------------------------------------------------
     sheet = client.get(f"/app/api/not100/{day}?from=session", headers=auth)
-    check("the sheet answers", sheet.status_code == 200, sheet.text[:200])
+    check("the sheet answers for today's session", sheet.status_code == 200, sheet.text[:200])
     sheet = sheet.json()
     by = {o["choice"]: o for o in sheet.get("options") or []}
-    check("it offers lighter, swap, rest and a few days off", list(by) == ["lighter", "swap", "rest", "days_off"], str(list(by)))
-    levels = {l["level"]: l for l in (by.get("lighter") or {}).get("levels") or []}
-    check("a hard session asks less intensity or no intensity", set(levels) == {"less", "none"}, str(levels))
-    check("less intensity says the reps' new pace and the old",
-          re.search(r"reps at 4:11\u20134:21/km instead of 3:59\u20134:09/km", levels.get("less", {}).get("said", "")),
-          levels.get("less", {}).get("said"))
-    check("no intensity says an easy run of about two-thirds, at the plan's easy pace",
-          re.search(r"An easy \d+(\.5)? km instead, at 5:15\u20135:40/km", levels.get("none", {}).get("said", "")),
-          levels.get("none", {}).get("said"))
-    check("swap names the day and the easy run coming back",
-          "Tomorrow's easy run 8 km comes to today" in (by.get("swap") or {}).get("said", ""), str(by.get("swap")))
-    check("rest says how much lighter the week is", re.search(r"This week is [\d.]+ km lighter", by["rest"]["said"]),
-          by["rest"]["said"])
+    check("a hard session offers a lighter run, an easier pace, make it easy, swap, skip, days off and a chat",
+          list(by) == ["lighter", "pace", "easy", "swap", "skip", "days_off", "ask"], str(list(by)))
+    check("Lighter run keeps the pace and takes a fifth off the distance",
+          by["lighter"]["label"] == "Lighter run"
+          and re.fullmatch(r"Today's 13\.8 km becomes 11(\.\d)? km, at the same pace\.", by["lighter"].get("said", "")),
+          by["lighter"].get("said"))
+    check("Easier pace keeps the distance and slows the reps 15 to 20 s/km",
+          "Today's 13.8 km stays 13.8 km at 4:14\u20134:29/km instead of 3:59\u20134:09/km" in by["pace"].get("said", ""),
+          by["pace"].get("said"))
+    check("Make it easy turns the hard session into an easy run of the same time",
+          re.fullmatch(r"Today's 3 \u00d7 3 km becomes an easy \d+ min run at 5:15\u20135:40/km\.", by["easy"].get("said", "")),
+          by["easy"].get("said"))
+    check("Swap names the later day by its weekday and the easy run coming back",
+          by["swap"]["label"] == "Swap with Tuesday"
+          and by["swap"].get("said") == "Tuesday's easy run 8 km comes to today, and the 3 \u00d7 3 km moves to Tuesday.",
+          str(by["swap"]))
+    check("Skip this run says the week's new total",
+          by["skip"]["label"] == "Skip this run"
+          and re.fullmatch(r"Today's 13\.8 km comes off\. This week: \d+ km \u2192 \d+ km\.", by["skip"].get("said", "")),
+          by["skip"].get("said"))
     spans = {s["days"]: s for s in by["days_off"]["spans"]}
-    check("a few days off is 2, 3 or 5 days, each said", sorted(spans) == [2, 3, 5]
-          and "easier version" in spans[3]["said"], str(spans))
-    words = [sheet["title"], sheet["sub"]] + [o.get("said") or o.get("unavailable") or "" for o in sheet["options"]] \
-        + [l["said"] for l in levels.values()] + [s["said"] for s in spans.values()]
+    three = spans.get(3) or {}
+    check("a few days off lists what comes off, each with its day",
+          [(x["day"], norm(x["name"])) for x in three.get("off") or []]
+          == [("Mon", "3 x 3 km"), ("Tue", "Easy run 8 km"), ("Wed", "Full body (runner)"), ("Wed", "Easy run 6 km")]
+          or [x["day"] for x in three.get("off") or []] == ["Mon", "Tue", "Wed", "Wed"], str(three.get("off")))
+    check("and the week's new total and the first run back",
+          (three.get("totals") or [{}])[0].get("label") == "This week"
+          and three["totals"][0]["to"] < three["totals"][0]["from"]
+          and three.get("back") == "Thursday's easy run 8 km becomes a lighter run.", str(three)[:300])
+    ask = by["ask"]
+    said = unquote(ask["ask"]["claude"].split("?q=")[1])
+    check("Talk it through opens a chat with the week and the next race, and nothing more",
+          ask["label"] == "Talk it through with Claude" and said.startswith("I'm not feeling 100% today. Here's my week: Mon 3 \u00d7 3 km (planned)")
+          and "(done)" not in said.split("Mon")[0] and "priority" in said and said.endswith("Can you adjust my plan?")
+          and "@" not in said, said[:300])
+    words = words_of(sheet)
     check("every line follows the copy rules, and none is medical",
-          all(plain(w) for w in words) and not any(re.search(r"\b(ill|sick|injur|doctor|recover)", w, re.I) for w in words),
-          str([w for w in words if not plain(w)]))
+          all(plain(w) for w in words) and not any(medical.search(w) for w in words),
+          str([w for w in words if not plain(w) or medical.search(w)]))
+
+    # An A race 13 days out: days off now fall in its taper, so each says so gently and is still allowed.
+    real_goal = app_routes._goal_race
+    app_routes._goal_race = lambda plan: {"name": "Valencia Marathon", "tier": "goal",
+                                          "date": (d_.fromisoformat(day) + td_(days=13)).isoformat()}
+    try:
+        tapered = client.get(f"/app/api/not100/{day}", headers=auth).json()
+    finally:
+        app_routes._goal_race = real_goal
+    taper_spans = next(o for o in tapered["options"] if o["choice"] == "days_off")["spans"]
+    check("days off in an A race's taper carry a gentle note, and stay allowed",
+          all(s.get("note") == "This touches your Valencia Marathon taper; consider asking Claude." and s.get("off")
+              for s in taper_spans), str([s.get("note") for s in taper_spans]))
+    check("without one, there's no note", not any(s.get("note") for s in spans.values()))
+
+    # -- a later session: worded for its own day ----------------------------------
+    later = client.get(f"/app/api/not100/{sunday}?from=session", headers=auth)
+    check("the sheet answers for a later session", later.status_code == 200, later.text[:200])
+    later = {o["choice"]: o for o in later.json().get("options") or []}
+    check("its lines name that session's day, never today",
+          later["lighter"].get("said", "").startswith("Sunday's ") and later["skip"].get("said", "").startswith("Sunday's ")
+          and later["pace"].get("said", "").startswith("Sunday's ")
+          and not any(re.search(r"\b(today|tomorrow)\b", o.get("said") or "", re.I) for o in later.values()),
+          str({k: v.get("said") for k, v in later.items()}))
+    check("a long run on Sunday has no later day to swap with", "unavailable" in later.get("swap", {}), str(later.get("swap")))
+    check("and isn't offered Make it easy, which is for hard sessions", "easy" not in later)
+    future = client.get(f"/app/api/session/{sunday}", headers=auth).json()
+    check("a later session's screen offers the sheet", future.get("not_100") is not None, str(future.get("not_100")))
+
+    # -- a past session: no sheet ---------------------------------------------------
+    past = client.get(f"/app/api/session/{yesterday}", headers=auth).json()
+    check("a past session's screen doesn't offer the sheet", "not_100" not in past, str(past.get("not_100")))
+    gone = client.get(f"/app/api/not100/{yesterday}", headers=auth)
+    check("and the sheet refuses a past session", gone.status_code == 409, gone.text[:120])
+    check("a missed session in the past isn't offered either",
+          app_routes.not_100_offer(yesterday, "easy", "missed", d_.fromisoformat(day), None) is None)
 
     def apply(**body):
         r = client.post(f"/app/api/not100/{day}", headers=auth, json=body)
@@ -133,13 +201,12 @@ def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
 
     def undo(result):
         r = client.post("/app/api/not100-undo", headers=auth, json={"undo": result.get("undo")})
-        return r.status_code == 200
+        return r.status_code == 200 and r.json().get("watch_said") == app_routes.WATCH_UPDATED
 
     def week_now():  # a day's sessions in any order: Undo puts them back, not in Garmin's order
         return {d: sorted(norm(n) for n in claude_reads(d)) for d in week_days}
 
     week_before = week_now()
-
     first_hard = int(shown["workout_id"])
 
     def rep_paces(workout):
@@ -147,54 +214,97 @@ def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
                 for s in ([s0] + (s0.get("workoutSteps") or [])) for k in ("targetValueOne", "targetValueTwo")
                 if s.get(k) and (s.get("targetType") or {}).get("workoutTargetTypeKey") == "pace.zone"]
 
-    before_paces = rep_paces(DEMO.get_workout_by_id(first_hard))
-    code, less = apply(choice="lighter", level="less")
-    check("less intensity answers", code == 200 and plain(less.get("message", "")), str(less)[:200])
+    before_paces = sorted(rep_paces(DEMO.get_workout_by_id(first_hard)))
+
+    code, light = apply(choice="lighter")
+    check("Lighter run answers, and says it's on the watch",
+          code == 200 and light.get("watch_said") == "Updated on your watch. Arrives at next sync."
+          and light.get("watch") == [{"date": day, "name": light["watch"][0]["name"], "status": "updated"}]
+          and plain(light.get("message", "")), str(light)[:240])
+    check("Claude reads the shorter session, its name in step",
+          any(re.match(r"3 x 2\.4 km", norm(n)) for n in claude_reads(day)), str(claude_reads(day)))
+    check("Undo puts it back", undo(light) and week_now() == week_before, str(week_now()))
+
+    # A session already changed offers its original back, first, and the other changes wait for it.
+    code, light = apply(choice="lighter")
+    changed = {o["choice"]: o for o in client.get(f"/app/api/not100/{day}", headers=auth).json().get("options") or []}
+    check("a changed session offers Back to the original first, and the others wait",
+          list(changed)[0] == "original" and changed["original"].get("said") == "Today's 3 × 3 km goes back as it was."
+          and all("unavailable" in changed[c] for c in ("lighter", "pace", "easy")), str(changed)[:300])
+    code, back = apply(choice="original")
+    check("Back to the original puts it back, updated on the watch",
+          code == 200 and week_now() == week_before and back.get("watch_said") == app_routes.WATCH_UPDATED, str(back)[:200])
+
+    SENT_BEFORE = len(SENT)
+    code, pace = apply(choice="pace")
     eased = DEMO.get_workout_by_id(max(DEMO.uploaded))
-    after_paces = rep_paces(eased)
-    check("its reps are 5% slower, and only its reps",
+    after_paces = sorted(rep_paces(eased))
+    check("Easier pace answers", code == 200, str(pace)[:200])
+    check("each pace target is 15 to 20 s/km slower, the distance the same",
           before_paces and len(after_paces) == len(before_paces)
-          and all(abs(a - b * 1.05) < 1 for a, b in zip(after_paces, before_paces)),
+          and all(15 - 1 <= a - b <= 20 + 1 for a, b in zip(after_paces, before_paces)),
           f"{[round(p) for p in before_paces]} -> {[round(p) for p in after_paces]}")
-    hr = lambda w: [(s.get("targetValueOne"), s.get("targetValueTwo")) for g in w["workoutSegments"] for s in g["workoutSteps"]
-                    if (s.get("targetType") or {}).get("workoutTargetTypeKey") == "heart.rate.zone"]
-    check("the warm-up and cool-down keep their heart rate", hr(eased) == hr(DEMO.get_workout_by_id(first_hard)))
-    check("Claude reads the same session on the same day", [norm(n) for n in claude_reads(day)] == [norm(n) for n in original])
-    edit = [e["properties"] for e in posted("app_edit") if e["properties"].get("action") == "not_100"]
-    check("it's counted with the choice and level, never a pace",
-          edit and edit[-1].get("choice") == "lighter" and edit[-1].get("level") == "less" and edit[-1].get("ok") is True
+    check("the session keeps its name on the same day", [norm(n) for n in claude_reads(day)] == [norm(n) for n in original])
+    edit = [e["properties"] for e in SENT[SENT_BEFORE:] if e["event"] == "app_edit"]
+    check("it's counted with the choice, never a pace",
+          edit and edit[-1].get("choice") == "pace" and edit[-1].get("ok") is True
           and not re.search(r"\d:\d\d", json.dumps(edit[-1])), str(edit[-1:]))
-    check("Undo puts it back", undo(less) and week_now() == week_before, str(week_now()))
+    check("Undo puts it back", undo(pace) and week_now() == week_before)
     check("and the eased copy is gone from the library", eased.get("workoutId") not in DEMO.uploaded)
 
-    code, none = apply(choice="lighter", level="none")
-    check("no intensity answers", code == 200, str(none)[:200])
-    check("Claude reads an easy run in its place", any(re.match(r"Easy run \d+(\.5)? km", n) for n in claude_reads(day)),
-          str(claude_reads(day)))
-    check("Undo puts the hard session back", undo(none) and week_now() == week_before, str(week_now()))
+    code, easy = apply(choice="easy")
+    check("Make it easy answers", code == 200, str(easy)[:200])
+    check("Claude reads an easy run of the same time in its place",
+          any(re.match(r"Easy run \d+ min", n) for n in claude_reads(day)), str(claude_reads(day)))
+    check("Undo puts the hard session back", undo(easy) and week_now() == week_before, str(week_now()))
 
     code, swap = apply(choice="swap")
     tue = week_days[1]
-    check("swap answers", code == 200, str(swap)[:200])
+    check("swap answers, both sessions updated on the watch",
+          code == 200 and sorted(w["date"] for w in swap.get("watch") or []) == sorted([day, tue])
+          and all(w["status"] == "updated" for w in swap["watch"]), str(swap)[:240])
     check("the hard session is on the later day, the easy run today",
           [norm(n) for n in claude_reads(tue)] == [norm(n) for n in original] and "Easy run 8 km" in claude_reads(day),
           f"{claude_reads(day)} / {claude_reads(tue)}")
     check("Undo swaps them back", undo(swap) and week_now() == week_before, str(week_now()))
 
-    code, rest = apply(choice="rest")
-    check("rest takes today's session off", code == 200 and claude_reads(day) == [], str(claude_reads(day)))
-    check("Undo puts it back", undo(rest) and week_now() == week_before)
+    code, skip = apply(choice="skip")
+    check("Skip this run takes it off, removed from the watch",
+          code == 200 and claude_reads(day) == [] and skip.get("watch_said") == "Removed from your watch."
+          and [w["status"] for w in skip.get("watch") or []] == ["removed"], str(skip)[:200])
+    check("Undo puts it back", undo(skip) and week_now() == week_before)
 
     code, off = apply(choice="days_off", days=3)
     check("three days off take off what's in them",
           code == 200 and all(claude_reads(d) == [] for d in week_days[:3]), str([claude_reads(d) for d in week_days[:3]]))
-    back = DEMO.get_workout_by_id(int(client.get(f"/app/api/session/{week_days[3]}", headers=auth).json()["workout_id"]))
-    check("and the first run back is the easier version",
-          "Made easier in Daash" in str(back.get("description")), str(claude_reads(week_days[3])))
+    check("and the first run back is a lighter run",
+          any(re.match(r"Easy run 6\.4 km", n) for n in claude_reads(week_days[3])), str(claude_reads(week_days[3])))
+    check("the watch hears of each: removed, and the one updated",
+          sorted(w["status"] for w in off.get("watch") or []) == ["removed"] * 4 + ["updated"]
+          and off.get("watch_said") == app_routes.WATCH_UPDATED, str(off.get("watch")))
     check("one Undo puts the whole week back", undo(off) and week_now() == week_before, str(week_now()))
 
-    code, odd = apply(choice="lighter", level="loud")
-    check("a choice it doesn't know changes nothing", code == 409 and week_now() == week_before, str(odd))
+    # Garmin refuses a write: the watch isn't said to have it, nothing changed, and trying again works.
+    real = DEMO.schedule_workout
+    DEMO.schedule_workout = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("Garmin said no"))
+    try:
+        r = client.post(f"/app/api/not100/{day}", headers=auth, json={"choice": "swap"})
+    finally:
+        DEMO.schedule_workout = real
+    failed = r.json()
+    check("a change Garmin refuses says the watch wasn't updated, so the app can offer Retry",
+          r.status_code == 502 and failed.get("error") == "Couldn't update your watch." and failed.get("watch_failed") is True
+          and "watch_said" not in failed, r.text[:200])
+    check("and leaves the week as it was", week_now() == week_before, str(week_now()))
+    code, again = apply(choice="swap", retry=True)
+    check("Retry then goes through", code == 200 and again.get("watch_said") == app_routes.WATCH_UPDATED, str(again)[:200])
+    retried = [e["properties"] for e in SENT if e["event"] == "app_edit" and e["properties"].get("choice") == "swap"]
+    check("the failure and the retry are both counted",
+          any(e.get("watch_failed") for e in retried) and any(e.get("retry") and e.get("ok") for e in retried), str(retried[-2:]))
+    check("Undo after the retry puts the week back", undo(again) and week_now() == week_before)
+
+    code, odd = apply(choice="loud")
+    check("a choice it doesn't know changes nothing", code == 400 and week_now() == week_before, str(odd))
     bad = client.post("/app/api/not100-undo", headers=auth, json={"undo": [{"put": {"workout_id": "x", "date": "no"}}]})
     check("an undo that isn't one is refused", bad.status_code == 400)
     mine = int(client.get(f"/app/api/session/{week_days[1]}", headers=auth).json()["workout_id"])
@@ -204,7 +314,7 @@ def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
 
 
 def feeling_rule_checks() -> None:
-    """Nov 21: the week's rules for Not feeling 100%, on made-up weeks: which later day a session can swap with."""
+    """Nov 21: the week's rules for Not feeling 100%, on made-up weeks, and its session changes."""
     from garmin_mcp import feeling
 
     mon = date(2026, 11, 16)
@@ -249,31 +359,65 @@ def feeling_rule_checks() -> None:
     off, back, races = feeling.days_off(week("threshold", "easy", "race", "easy", "easy", "", ""), mon, 3)
     check("days off take off what's in them, never a race",
           [s["type"] for s in off] == ["threshold", "easy"] and [r["type"] for r in races] == ["race"])
-    check("and the first run after them comes back easier", back and back["date"] == (mon + timedelta(days=3)).isoformat())
-    check("no intensity is two-thirds to the half km, never under 3 km",
-          feeling.easy_km(9.4) == 6.5 and feeling.easy_km(3) == 3.0 and feeling.easy_km(None) is None)
+    check("and the first run after them comes back lighter", back and back["date"] == (mon + timedelta(days=3)).isoformat())
 
-    def step(target, **values):
-        return {"stepType": {"stepTypeKey": "interval"}, "targetType": {"workoutTargetTypeKey": target}, **values}
+    check("a session's day is today, else its weekday, never tomorrow",
+          feeling.days(mon, mon) == "Today's" and feeling.days(mon + timedelta(days=1), mon) == "Tuesday's"
+          and feeling.day_word(mon + timedelta(days=6), mon) == "Sunday")
 
-    hr = {"workoutId": 5, "workoutName": "6 x 800m", "workoutSegments": [{"workoutSteps": [
-        {"stepType": {"stepTypeKey": "warmup"}, "targetType": {"workoutTargetTypeKey": "heart.rate.zone"},
-         "targetValueOne": 120, "targetValueTwo": 140},
-        {"type": "RepeatGroupDTO", "numberOfIterations": 6, "workoutSteps": [step("heart.rate.zone", targetValueOne=165, targetValueTwo=175)]}]}]}
-    made, before, after = feeling.less_intense(hr, "Made easier in Daash from workout")
-    steps = made["workoutSegments"][0]["workoutSteps"]
-    check("less intensity takes 5 bpm off the reps' heart rate, not the warm-up's",
-          (steps[1]["workoutSteps"][0]["targetValueOne"], steps[1]["workoutSteps"][0]["targetValueTwo"]) == (160, 170)
-          and (steps[0]["targetValueOne"], steps[0]["targetValueTwo"]) == (120, 140) and after == "160\u2013170 bpm", f"{before} -> {after}")
-    check("and carries the line Undo looks for", "Made easier in Daash from workout 5." in made["description"])
-    zone = {"workoutId": 6, "workoutSegments": [{"workoutSteps": [step("heart.rate.zone", zoneNumber=4)]}]}
-    check("a heart rate zone goes down one", feeling.less_intense(zone, "m")[0]["workoutSegments"][0]["workoutSteps"][0]["zoneNumber"] == 3)
-    bare = {"workoutId": 7, "workoutSegments": [{"workoutSteps": [{"stepType": {"stepTypeKey": "interval"},
-                                                                  "targetType": {"workoutTargetTypeKey": "no.target"}}]}]}
-    check("a session with nothing to ease offers no intensity only", feeling.less_intense(bare, "m") is None)
-    easy = feeling.no_intensity({"workoutId": 8, "workoutName": "3 x 3 km · MAR"}, 6.5, ["5:15", "5:40"], "Made easier in Daash from workout")
-    check("no intensity's easy run keeps its plan's code, so the plan still counts it",
-          easy["workoutName"].startswith("Easy run 6.5 km") and training_plan.label_of(easy["workoutName"]) == "MAR"
+    marathon = {"name": "Valencia Marathon", "date": "2026-12-06", "tier": "goal"}
+    check("days off in the three weeks before a marathon touch its taper",
+          feeling.taper_touched(marathon, date(2026, 11, 17), date(2026, 11, 19)) == "taper")
+    check("days off in its race week touch race week",
+          feeling.taper_touched(marathon, date(2026, 11, 30), date(2026, 12, 1)) == "race week")
+    check("days off before the taper, or a B race's, touch nothing",
+          feeling.taper_touched(marathon, date(2026, 11, 9), date(2026, 11, 13)) is None
+          and feeling.taper_touched(dict(marathon, tier="key"), date(2026, 11, 17), date(2026, 11, 19)) is None)
+    check("a 10k's taper is its race week alone",
+          feeling.taper_touched({"name": "Brighton 10k", "date": "2026-11-22", "tier": "goal"}, mon - timedelta(days=3), mon - timedelta(days=1)) is None)
+
+    said = feeling.talk_it_through(
+        [{"date": "2026-11-16", "name": "3 x 3 km", "status": "missed", "type": "threshold"},
+         {"date": "2026-11-15", "name": "Long run 16 km", "status": "done_late", "type": "long"},
+         {"date": "2026-11-18", "name": "Easy run 6 km", "status": "ahead", "type": "easy"}], marathon, lambda n: n)
+    check("the chat's message says each session's state and the next race with its priority",
+          said == "I'm not feeling 100% today. Here's my week: Sun Long run 16 km (done); Mon 3 x 3 km (missed); "
+                  "Wed Easy run 6 km (planned), next race Valencia Marathon, 6 Dec 2026, priority A. Can you adjust my plan?", said)
+
+    def run(meters, pace=None, hr=None, kind="interval"):
+        step = {"stepType": {"stepTypeKey": kind}, "endCondition": {"conditionTypeKey": "distance"}, "endConditionValue": meters,
+                "targetType": {"workoutTargetTypeKey": "pace.zone" if pace else "heart.rate.zone" if hr else "no.target"}}
+        if pace:
+            step["targetValueOne"], step["targetValueTwo"] = 1000 / pace[1], 1000 / pace[0]
+        if hr:
+            step["targetValueOne"], step["targetValueTwo"] = hr
+        return step
+
+    long = {"workoutId": 9, "workoutName": "Long run 12 km · MAR", "workoutSegments": [{"workoutSteps": [run(12000, pace=(330, 360))]}]}
+    made = feeling.lighter_run(long, "Made easier in Daash from workout")
+    check("Lighter run takes 12 km to 9.6 km at the same pace, its name and plan code in step",
+          made["workoutSegments"][0]["workoutSteps"][0]["endConditionValue"] == 9600
+          and made["workoutName"].startswith("Long run 9.6 km") and training_plan.label_of(made["workoutName"]) == "MAR"
+          and made["workoutSegments"][0]["workoutSteps"][0]["targetValueOne"] == long["workoutSegments"][0]["workoutSteps"][0]["targetValueOne"]
+          and "Made easier in Daash from workout 9." in made["description"], str(made.get("workoutName")))
+    copy, before, after, cap = feeling.easier_pace(long, "m", 147)
+    check("Easier pace slows 5:30–6:00/km to 5:45–6:20/km", before == "5:30\u20136:00/km" and after == "5:45\u20136:20/km",
+          f"{before} -> {after}")
+    by_hr = {"workoutId": 10, "workoutSegments": [{"workoutSteps": [run(2000, hr=(120, 140), kind="warmup"), run(8000, hr=(150, 165)),
+                                                                   run(1000, kind="cooldown")]}]}
+    copy, before, after, cap = feeling.easier_pace(by_hr, "m", 147)
+    steps = copy["workoutSegments"][0]["workoutSteps"]
+    check("and caps heart rate at the top of the easy zone, adding the cap where a step had no target",
+          (steps[1]["targetValueOne"], steps[1]["targetValueTwo"]) == (60, 147) and (steps[0]["targetValueTwo"]) == 140
+          and (steps[2]["targetValueOne"], steps[2]["targetValueTwo"]) == (60, 147) and cap == 147, str(steps))
+    check("with no heart rate zones from Garmin, a session paced by heart rate has nothing to ease",
+          feeling.easier_pace(by_hr, "m", None) is None)
+    check("the top of the easy zone is zone 2's top", feeling.easy_hr_top({"zones": [{"zone": 1, "bpm": [119, 132]},
+                                                                                       {"zone": 2, "bpm": [133, 147]}]}) == 147)
+    easy = feeling.make_it_easy({"workoutId": 8, "workoutName": "3 x 3 km · MAR"}, 63, ["5:15", "5:40"], "Made easier in Daash from workout")
+    check("Make it easy is an easy run of the same time, keeping the plan's code",
+          easy["workoutName"].startswith("Easy run 63 min") and training_plan.label_of(easy["workoutName"]) == "MAR"
+          and easy["workoutSegments"][0]["workoutSteps"][0]["endConditionValue"] == 3780
           and "Made easier in Daash from workout 8." in easy["description"], str(easy.get("workoutName")))
 
 
