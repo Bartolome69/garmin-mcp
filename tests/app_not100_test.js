@@ -48,6 +48,14 @@ const WEEK = { week: { title: "Week 4", range: "23–29 Nov", current: true, sta
   ...[26, 27, 28, 29].map((n) => ({ date: `2026-11-${n}`, dow: "X", n, sessions: [] }))] },
   block: null, assistant: "Claude", ask: { claude: "https://claude.ai/new?q=x" } };
 
+const WEEK_BEFORE = { ...WEEK, week: { ...WEEK.week, days: WEEK.week.days.map((d) => d.date === TODAY
+  ? { ...d, sessions: [{ name: "3 × 3 km", type_label: "Quality", colour: "hard", state: "next", schedule_id: 7, watch: true }] } : d) } };
+const TODAY_SCREEN = { today: TODAY, kicker: "MON 23 NOV", headline: "This week", assistant: "Claude",
+  next: { date: TODAY, kicker: "NEXT · TODAY", name: "3 × 3 km", type: "threshold", type_label: "Quality", colour: "hard",
+    stats: [], segments: [], on_watch: true, schedule_id: 7, easier: { applied: false, label: "Easier", preview: "3 × 2 km" },
+    not_100: { prominent: false } },
+  ask: { claude: "https://claude.ai/new?q=x", chatgpt: "https://chatgpt.com/?q=x", claude_app: "claude://claude.ai/new?q=x" } };
+
 async function open(browser, hash, answers) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
   await ctx.addInitScript(() => { localStorage.setItem("daash.access", "x"); localStorage.setItem("daash.refresh", "y"); });
@@ -92,6 +100,19 @@ async function open(browser, hash, answers) {
     check("no page threw an error", p.errors.length === 0, p.errors.join("; "));
     await p.ctx.close();
 
+    console.log("Today's card");
+    p = await open(browser, "/today", (key) => key === "GET today" ? { json: TODAY_SCREEN }
+      : key.startsWith(`GET not100/${TODAY}`) ? { json: SHEET } : null);
+    const pills = await p.page.$$eval(".next-pills > *", (xs) => xs.map((x) => x.textContent.trim()));
+    check("Today's card has Not feeling 100% where Easier was, and no Easier",
+      pills.includes("Not feeling 100%") && !pills.some((t) => /^Easier|Undo easier/.test(t)) && !(await p.page.$('.next-pills [data-act="easier"]')),
+      JSON.stringify(pills));
+    await p.page.click(".next-pills .n100-pill");
+    await p.page.waitForSelector(".n100-choice");
+    check("and it opens the same sheet", (await p.page.textContent("#sheet-title")) === "Not feeling 100%?");
+    check("no page threw an error", p.errors.length === 0, p.errors.join("; "));
+    await p.ctx.close();
+
     console.log("a past session");
     p = await open(browser, "/session/2026-11-20?from=plan", (key) =>
       key === "GET session/2026-11-20" ? { json: session("2026-11-20", { status: "missed", missed: true }) } : null);
@@ -111,7 +132,7 @@ async function open(browser, hash, answers) {
               watch: [{ date: "2026-11-23", name: "3 × 3 km", status: "removed" }, { date: "2026-11-24", name: "Easy run 6.4 km", status: "updated" }],
               undo: [{ put: { workout_id: 70, date: TODAY } }], sessions: 2 } };
       }
-      if (key === "GET plan") return { json: WEEK };
+      if (key === "GET plan") return { json: posts.filter((x) => x.key === `POST not100/${TODAY}`).length >= 2 ? WEEK : WEEK_BEFORE };
       return null;
     });
     await p.page.click(".n100-pill");
@@ -132,11 +153,26 @@ async function open(browser, hash, answers) {
       (await p.page.textContent("#toast")).startsWith("Couldn't update your watch.") && (await p.page.textContent(".toast-action")) === "Retry",
       await p.page.textContent("#toast"));
     check("and nothing is marked as on the watch", (await p.page.evaluate(() => localStorage.getItem("daash.watch"))) === null);
-    await p.page.click(".toast-action");
-    await p.page.waitForTimeout(600);
+    // A reload: it still says the change didn't go through, on the session and in the week.
+    await p.page.reload();
+    await p.page.waitForSelector(".n100-failed", { timeout: 5000 }).catch(() => {});
+    const kept = (await p.page.$(".n100-failed")) ? (await p.page.textContent(".n100-failed")).replace(/\s+/g, " ") : "";
+    check("after a reload the session still says Couldn't update your watch, with Retry",
+      /Couldn't update your watch/.test(kept) && /A few days off didn't reach Garmin, so nothing changed yet/.test(kept) && (await p.page.$("[data-retry]")) !== null, kept);
+    await p.page.evaluate(() => { location.hash = "#/plan"; });
+    await p.page.waitForSelector(".plan-row");
+    await p.page.waitForTimeout(400);
+    const before = await p.page.$$eval(".plan-row", (xs) => xs.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
+    check("and its row in the week says so too", before.some((t) => /3 × 3 km.*Couldn't update your watch/.test(t)), JSON.stringify(before));
+    await p.page.evaluate((t) => { location.hash = `#/session/${t}?from=today`; }, TODAY);
+    await p.page.waitForSelector("[data-retry]");
+    await p.page.click("[data-retry]");
+    await p.page.waitForTimeout(700);
     const sent = p.posts.filter((x) => x.key === `POST not100/${TODAY}`);
     check("Retry sends the same change again, marked as a retry",
       sent.length === 2 && sent[1].body.choice === "days_off" && sent[1].body.days === 2 && sent[1].body.retry === true, JSON.stringify(sent));
+    check("once through, the Couldn't update note is gone, here and after a reload",
+      !(await p.page.$(".n100-failed")) && (await p.page.evaluate(() => localStorage.getItem("daash.watchFailed"))) === "[]");
     check("then says it's on the watch, with Undo", /2 sessions off for 2 days\. Updated on your watch\. Arrives at next sync\./.test(await p.page.textContent("#toast"))
       && (await p.page.textContent(".toast-action")) === "Undo", await p.page.textContent("#toast"));
     await p.page.evaluate(() => { location.hash = "#/plan"; });

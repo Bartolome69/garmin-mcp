@@ -124,6 +124,8 @@ def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
           by["lighter"]["label"] == "Lighter run"
           and re.fullmatch(r"Today's 13\.8 km becomes 11(\.\d)? km, at the same pace\.", by["lighter"].get("said", "")),
           by["lighter"].get("said"))
+    check("Easier pace says under its name what it does", by["pace"].get("sub") == "Slows your pace targets by 15\u201320 s/km",
+          str(by["pace"].get("sub")))
     check("Easier pace keeps the distance and slows the reps 15 to 20 s/km",
           "Today's 13.8 km stays 13.8 km at 4:14\u20134:29/km instead of 3:59\u20134:09/km" in by["pace"].get("said", ""),
           by["pace"].get("said"))
@@ -216,6 +218,7 @@ def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
 
     before_paces = sorted(rep_paces(DEMO.get_workout_by_id(first_hard)))
 
+    planned_before = client.get("/app/api/plan", headers=auth).json()["week"].get("planned")
     code, light = apply(choice="lighter")
     check("Lighter run answers, and says it's on the watch",
           code == 200 and light.get("watch_said") == "Updated on your watch. Arrives at next sync."
@@ -223,6 +226,19 @@ def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
           and plain(light.get("message", "")), str(light)[:240])
     check("Claude reads the shorter session, its name in step",
           any(re.match(r"3 x 2\.4 km", norm(n)) for n in claude_reads(day)), str(claude_reads(day)))
+    lighter_screen = client.get(f"/app/api/session/{day}", headers=auth).json()
+    check("its total distance and time drop on the session screen",
+          lighter_screen.get("km") and lighter_screen["km"] < shown["km"] and abs(lighter_screen["km"] - shown["km"] * 0.8) < 0.3
+          and lighter_screen.get("minutes") and lighter_screen["minutes"] < shown["minutes"],
+          f"{shown.get('km')} km {shown.get('minutes')} min -> {lighter_screen.get('km')} km {lighter_screen.get('minutes')} min")
+    planned_after = client.get("/app/api/plan", headers=auth).json()["week"].get("planned")
+    check("and the week's planned total drops with it", planned_before and planned_after and planned_after < planned_before,
+          f"{planned_before} -> {planned_after}")
+    copy = DEMO.get_workout_by_id(int(lighter_screen["workout_id"]))
+    check("and Garmin's own time and distance for it, which its app and the watch show, are the shorter ones",
+          copy.get("estimatedDurationInSecs") and abs(copy["estimatedDurationInSecs"] / 60 - lighter_screen["minutes"]) <= 1
+          and copy.get("estimatedDistanceInMeters") and abs(copy["estimatedDistanceInMeters"] / 1000 - lighter_screen["km"]) < 0.15,
+          f"{copy.get('estimatedDurationInSecs')} s, {copy.get('estimatedDistanceInMeters')} m")
     check("Undo puts it back", undo(light) and week_now() == week_before, str(week_now()))
 
     # A session already changed offers its original back, first, and the other changes wait for it.

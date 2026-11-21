@@ -103,6 +103,23 @@ def _copy(workout: Mapping[str, Any], mark: str) -> dict[str, Any]:
     return made
 
 
+def _estimates(made: dict[str, Any], original: Mapping[str, Any], share: float | None = None) -> None:
+    """Garmin's own time and distance for the copy, which Garmin Connect and the watch show.
+
+    Worked out from the copy's steps where they say (a run or ride), else the
+    original's scaled by the share, so a lighter run reads shorter everywhere.
+    """
+    totals = training_plan.session_totals(made)
+    if totals and totals.get("minutes"):
+        made["estimatedDurationInSecs"] = int(totals["minutes"] * 60)
+        if totals.get("km"):
+            made["estimatedDistanceInMeters"] = round(totals["km"] * 1000)
+        return
+    for key in ("estimatedDurationInSecs", "estimatedDistanceInMeters"):
+        if original.get(key) and share:
+            made[key] = round(float(original[key]) * share)
+
+
 def lighter_run(workout: Mapping[str, Any] | None, mark: str) -> dict[str, Any] | None:
     """The same session at the same pace, every part a fifth shorter (12 km becomes 9.6 km).
 
@@ -128,6 +145,7 @@ def lighter_run(workout: Mapping[str, Any] | None, mark: str) -> dict[str, Any] 
     bare = re.sub(r"(\d+(?:\.\d+)?)(\s*km)\b", lambda m: f"{round(float(m.group(1)) * LIGHTER_SHARE, 1):g}{m.group(2)}",
                   training_plan.strip_tag(name))
     made["workoutName"] = training_plan.tagged(bare, code) if code else bare
+    _estimates(made, workout, LIGHTER_SHARE)
     return made
 
 
@@ -185,6 +203,7 @@ def easier_pace(workout: Mapping[str, Any] | None, mark: str,
             capped = hr_top
     if before is None and capped is None:
         return None
+    _estimates(made, workout)
     return made, before, after, capped
 
 

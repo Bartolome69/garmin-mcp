@@ -420,11 +420,7 @@ nav.tabs a[aria-current="page"] .ti { background: var(--button); }
 /* Not feeling 100% (Nov 21): a quiet line on Today, amber on a low-readiness day; the sheet's choices */
 .toast { display: flex; align-items: center; gap: 12px; }
 .toast-action { all: unset; cursor: pointer; margin-left: auto; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; flex-shrink: 0; padding: 4px 2px; }
-.not100 { all: unset; box-sizing: border-box; cursor: pointer; align-self: flex-start; font-size: 14px; font-weight: 600; text-decoration: underline;
-  text-underline-offset: 3px; color: inherit; padding: 6px 0 2px; }
-.not100:focus-visible, .n100-choice:focus-visible, .n100-spans .pill:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-.not100.strong-line { align-self: stretch; display: flex; align-items: center; gap: 10px; text-decoration: none; padding: 12px 14px; border-radius: var(--radius);
-  background: var(--amber-soft); border: 1px solid var(--amber-soft-line); color: var(--ink); }
+.n100-choice:focus-visible, .n100-spans .pill:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .n100-list { display: flex; flex-direction: column; gap: 12px; max-height: 62vh; overflow: auto; margin: 0 -2px; padding: 2px; }
 .n100-group { display: flex; flex-direction: column; gap: 8px; }
 .n100-choice { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--radius);
@@ -456,6 +452,13 @@ div.n100-choice { cursor: default; }
 .n100-ask:hover { border-color: var(--button); color: var(--ink); }
 .watch-line { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); }
 .plan-row.gone { opacity: 0.85; }
+.n100-sub { font-size: 13px; font-weight: 600; color: var(--muted); }
+/* A change Garmin refused, kept until it goes through: amber, with Retry. */
+.n100-failed { display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; border-radius: var(--radius);
+  background: var(--amber-soft); border: 1px solid var(--amber-soft-line); color: var(--ink); }
+.n100-failed .pills { display: flex; gap: 8px; }
+.n100-failed .pill { height: 38px; }
+.on-watch.failed { color: var(--hard); }
 .days-grid .pill { padding: 0 6px; flex-direction: column; gap: 0; height: 56px; font-size: 13px; }
 .days-grid .pill b { font-size: 15px; }
 

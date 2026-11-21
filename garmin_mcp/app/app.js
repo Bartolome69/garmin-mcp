@@ -567,9 +567,9 @@ function todayParts(d) {
       <div class="stats3">${(n.stats || []).map((s) => `<div class="stack-tight" style="gap:1px"><span class="stat-v">${esc(s.v)}${s.u ? `<span class="stat-u"> ${esc(s.u)}</span>` : ""}</span><span class="stat-l">${esc(s.l)}</span></div>`).join("")}</div>
       ${shapeBar(n.segments)}
       <div class="pills next-pills"><a class="pill light" href="${open}">See the session</a>
-        ${n.easier ? `<button class="pill" data-act="${n.easier.applied ? "undo" : "easier"}" data-day="${n.date}" data-sid="${n.schedule_id || ""}">${esc(n.easier.applied ? "Undo easier" : "Easier")}</button>` : ""}
+        ${n.not_100 ? notButton(n, "today") : ""}
         <button class="pill" data-act="move" data-day="${n.date}" data-sid="${n.schedule_id || ""}" data-name="${esc(n.name)}">Move</button></div>
-      ${n.not_100 ? notButton(n, "today", d.readiness) : ""}
+      ${failedLine(n.date)}
     </section>`;
   } else if (!d.empty) {
     p.next = `<div class="card pad stack-tight"><span class="strong">Nothing else planned</span><span class="meta">The plan on your Garmin calendar has no more sessions.</span></div>`;
@@ -815,13 +815,15 @@ function previewView(d, from, panel = false) {
   } else if (r) {
     parts.push(`<div class="card pad meta">${esc(r.head)}</div>`);
   }
+  const failed = failedLine(d.date);
+  if (failed) parts.push(failed);
   parts.push(`<div class="card watch-row"><span class="watch-icon">${ICON.watch()}</span>
     <div class="grow" style="gap:1px"><span class="strong">${esc(d.watch.head)}</span><span class="meta" style="${d.watch.changed ? "color:var(--amber)" : ""}">${esc(d.watch.sub)}</span></div>
     <button class="pill" data-act="resend" data-day="${d.date}" data-sid="${d.schedule_id || ""}" style="flex-shrink:0;padding:0 14px">Send again</button></div>`);
   parts.push(editHint());
   // Nov 21: Move, Not feeling 100%, Ask. Easier lives in the sheet now, with the other ways to lighten a session.
   parts.push(`<div class="actions3 ${d.not_100 ? "" : "two"}"><button class="pill tall" data-act="move" data-day="${d.date}" data-sid="${d.schedule_id || ""}" data-name="${esc(d.name)}">Move</button>
-    ${d.not_100 ? notButton(d, "session", r) : ""}
+    ${d.not_100 ? notButton(d, "session") : ""}
     ${ask.html}</div>
     <span class="footnote">Ask ${esc(ask.name)} opens ${esc(ask.name)} with this session filled in.</span>`);
   if (d.also) {
@@ -1113,6 +1115,12 @@ function wire(root) {
   root.querySelectorAll("[data-act]").forEach((b) => {
     b.onclick = () => act(b.dataset.act, b.dataset.day, b.dataset.sid, b);
   });
+  root.querySelectorAll("[data-retry]").forEach((b) => {
+    b.onclick = () => { const f = failedOn(b.dataset.retry); if (f) { b.disabled = true; notApply(f.day, f.body, null, f); } };
+  });
+  root.querySelectorAll("[data-dismiss]").forEach((b) => {
+    b.onclick = () => { clearFailed(b.dataset.dismiss); route(true); };
+  });
   root.querySelectorAll("[data-not100]").forEach((b) => {
     b.onclick = () => { store.set(EDIT_HINT, "used"); notSheet(b.dataset.not100, b.dataset.sid, b.dataset.from, b.dataset.prominent === "1"); };
   });
@@ -1154,17 +1162,10 @@ async function act(action, day, sid, button) {
 // choice says what it will do before anything changes; the change goes to
 // Garmin, which sends it to the watch, and one Undo puts the whole week back.
 
-function notButton(d, from, readiness) {
+// The same pill on Today's card (where Easier was) and in the middle of the session screen's row; amber on a low-readiness day.
+function notButton(d, from) {
   const prominent = !!(d.not_100 && d.not_100.prominent);
-  const attrs = `data-not100="${d.date}" data-sid="${d.schedule_id || ""}" data-from="${from}" data-prominent="${prominent ? 1 : ""}"`;
-  if (from === "today") {
-    return prominent
-      ? `<button type="button" class="not100 strong-line" ${attrs}><span class="grow"><span class="strong">Not feeling 100%?</span>
-          <span class="meta">${esc(readiness && readiness.head ? `${readiness.head}.` : "")} Lighter, easier, swap or skip.</span></span>${ICON.right(18, "currentColor")}</button>`
-      : `<button type="button" class="not100" ${attrs}>Not feeling 100%?</button>`;
-  }
-  // The session screen: the middle of its button row, amber on a low-readiness day.
-  return `<button type="button" class="pill tall n100-pill ${prominent ? "amber" : ""}" ${attrs}>Not feeling 100%</button>`;
+  return `<button type="button" class="pill ${from === "session" ? "tall" : ""} n100-pill ${prominent ? "amber" : ""}" data-not100="${d.date}" data-sid="${d.schedule_id || ""}" data-from="${from}" data-prominent="${prominent ? 1 : ""}">Not feeling 100%</button>`;
 }
 
 function notOptions(n) {
@@ -1186,7 +1187,7 @@ function notOptions(n) {
         <span class="strong">${esc(o.label)} ↗</span><span class="meta">Opens a chat with this week and your next race filled in.</span></a>`;
     }
     return `<div class="n100-group"><button type="button" class="n100-choice" data-choice="${esc(o.choice)}" aria-pressed="false">
-      <span class="strong">${esc(o.label)}</span><span class="meta">${esc(o.said || "")}</span></button></div>`;
+      <span class="strong">${esc(o.label)}</span>${o.sub ? `<span class="n100-sub">${esc(o.sub)}</span>` : ""}<span class="meta">${esc(o.said || "")}</span></button></div>`;
   }).join("");
 }
 
@@ -1221,6 +1222,31 @@ function watchFor(date, name) {
 }
 function removedOn(date) {
   return watchChanges().filter((w) => w.date === date && w.status === "removed");
+}
+
+// A change Garmin refused: nothing changed, and the screens keep saying so (after a reload too) until it goes through.
+const FAILED_KEY = "daash.watchFailed";
+function failedChanges() {
+  try {
+    return JSON.parse(store.get(FAILED_KEY) || "[]").filter((f) => Date.now() - f.at < WATCH_KEEP_MS);
+  } catch { return []; }
+}
+function noteFailed(day, body, what) {
+  store.set(FAILED_KEY, JSON.stringify([...failedChanges().filter((f) => f.day !== day),
+    { day, body, name: what.name || "", label: what.label || "", at: Date.now() }]));
+}
+function clearFailed(day) {
+  store.set(FAILED_KEY, JSON.stringify(failedChanges().filter((f) => f.day !== day)));
+}
+function failedOn(day) {
+  return failedChanges().find((f) => f.day === day);
+}
+// Today's card and a session's screen: what didn't go through, with Retry.
+function failedLine(day) {
+  const f = failedOn(day);
+  return f ? `<div class="n100-failed" role="status"><span class="grow"><span class="strong">Couldn't update your watch</span>
+      <span class="meta">${esc(f.label || "Your change")} didn't reach Garmin, so nothing changed yet.</span></span>
+      <span class="pills"><button type="button" class="pill" data-retry="${esc(day)}">Retry</button><button type="button" class="pill" data-dismiss="${esc(day)}">Dismiss</button></span></div>` : "";
 }
 
 function notSheet(day, sid, from, prominent) {
@@ -1271,17 +1297,18 @@ function notSheet(day, sid, from, prominent) {
         if (picked.dataset.days) body.days = Number(picked.dataset.days);
         box.querySelectorAll("button").forEach((x) => { x.disabled = true; });
         go.textContent = "Changing…";
-        notApply(day, body, close);
+        notApply(day, body, close, { name: n.name, label: (picked.querySelector(".strong") || {}).textContent || "" });
       };
     });
 }
 
 // Make the change. On the watch's word: "Updated on your watch" only once Garmin
 // has it; if it didn't take, nothing changed and Retry sends it again.
-async function notApply(day, body, close) {
+async function notApply(day, body, close, what = {}) {
   try {
     const r = await api(`not100/${day}`, { method: "POST", body: JSON.stringify(body) });
     if (close) close();
+    clearFailed(day);
     noteWatch(r.watch || []);
     toast(`${r.message} ${r.watch_said}`, r.undo && r.undo.length ? { label: "Undo", run: () => notUndo(r.undo, r.watch || []) } : null);
     refreshUnderPanel();
@@ -1289,7 +1316,12 @@ async function notApply(day, body, close) {
   } catch (e) {
     if (close) close();
     if (e instanceof SignedOut) return route();
-    if (e.body && e.body.watch_failed) return toast("Couldn't update your watch.", { label: "Retry", run: () => notApply(day, { ...body, retry: true }) });
+    if (e.body && e.body.watch_failed) {
+      // Kept on the phone, so it still says so after a reload until a retry goes through or it's dismissed.
+      noteFailed(day, { ...body, retry: true }, what);
+      route(true);
+      return toast("Couldn't update your watch.", { label: "Retry", run: () => notApply(day, { ...body, retry: true }, null, what) });
+    }
     toast(e.message);
   }
 }
@@ -1368,7 +1400,8 @@ function planDetail(r) {
   const bits = [plannedLen, r.target || ""].filter(Boolean);
   return `${bits.length ? `<span class="meta plan-line">${esc(bits.join(" · "))}</span>` : ""}
     ${r.state === "skipped" && r.meta ? `<span class="meta">${esc(r.meta)}</span>` : ""}
-    ${r.watch ? `<span class="on-watch">${ICON.watch(13)}${r.watch_changed ? "Updated on your watch · Arrives at next sync" : "On your watch"}</span>` : ""}`;
+    ${r.watch_failed ? `<span class="on-watch failed">${ICON.watch(13)}Couldn't update your watch · open to retry</span>`
+      : r.watch ? `<span class="on-watch">${ICON.watch(13)}${r.watch_changed ? "Updated on your watch · Arrives at next sync" : "On your watch"}</span>` : ""}`;
 }
 
 function planRow(r, day, first, week) {
@@ -1383,7 +1416,8 @@ function planRow(r, day, first, week) {
     <span class="day ${first ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span>${day.today && first ? `<span class="today-tag">Today</span>` : ""}</span>
     <span class="body"><span class="type c-${esc(r.colour)}">${mark}${esc(r.type_label)}${r.optional ? `<span class="opt">Optional</span>` : ""}</span>
       <span class="name ${r.state === "done" || r.state === "extra" || r.outcome === "missed" ? "dim" : ""}">${esc(r.name)}</span>
-      ${planDetail({ ...r, watch: r.watch || !!(r.state !== "done" && watchFor(day.date, r.name)), watch_changed: r.state !== "done" && !!watchFor(day.date, r.name) })}
+      ${planDetail({ ...r, watch: r.watch || !!(r.state !== "done" && watchFor(day.date, r.name)), watch_changed: r.state !== "done" && !!watchFor(day.date, r.name),
+        watch_failed: r.state !== "done" && !!failedOn(day.date) && failedOn(day.date).name === r.name })}
       ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
     <span class="grip" aria-hidden="true">${r.movable ? ICON.grip() : ""}</span></a>`;
 }

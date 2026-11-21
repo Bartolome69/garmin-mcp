@@ -2120,7 +2120,8 @@ async def not_100_options(day: str, schedule_id: int | None = None) -> dict[str,
                 said += f" at {after} instead of {before}"
             if cap:
                 said += f", heart rate capped at {cap:.0f} bpm" if before else f", with heart rate capped at {cap:.0f} bpm"
-            options.append({"choice": "pace", "label": "Easier pace", "said": said + "."})
+            options.append({"choice": "pace", "label": "Easier pace", "sub": "Slows your pace targets by 15\u201320 s/km",
+                            "said": said + "."})
     elif copied and kind != "strength":
         options.append({"choice": "pace", "label": "Easier pace", "unavailable": changed})
 
