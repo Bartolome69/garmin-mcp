@@ -56,12 +56,19 @@ const ICON = {
 const FACE = ["var(--long)", "var(--easy)", "var(--hard)", "var(--strength)"];
 
 let toastTimer;
-function toast(message) {
+// An action (Nov 21: Undo after Not feeling 100%) keeps the toast up long enough to reach it.
+function toast(message, action) {
   const el = $("toast");
   el.textContent = message;
+  if (action) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "toast-action"; b.textContent = action.label;
+    b.onclick = () => { el.hidden = true; clearTimeout(toastTimer); action.run(); };
+    el.appendChild(b);
+  }
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
+  toastTimer = setTimeout(() => { el.hidden = true; }, action ? 10000 : 2800);
 }
 
 function isoToday() {
@@ -558,6 +565,7 @@ function todayParts(d) {
       <div class="pills next-pills"><a class="pill light" href="${open}">See the session</a>
         ${n.easier ? `<button class="pill" data-act="${n.easier.applied ? "undo" : "easier"}" data-day="${n.date}" data-sid="${n.schedule_id || ""}">${esc(n.easier.applied ? "Undo easier" : "Easier")}</button>` : ""}
         <button class="pill" data-act="move" data-day="${n.date}" data-sid="${n.schedule_id || ""}" data-name="${esc(n.name)}">Move</button></div>
+      ${n.not_100 ? notButton(n, "today", d.readiness) : ""}
     </section>`;
   } else if (!d.empty) {
     p.next = `<div class="card pad stack-tight"><span class="strong">Nothing else planned</span><span class="meta">The plan on your Garmin calendar has no more sessions.</span></div>`;
@@ -796,8 +804,10 @@ function previewView(d, from, panel = false) {
   }
   if (r && r.score !== null && r.score !== undefined) {
     parts.push(`<div class="card ready-card ${r.low ? "amber" : ""}"><div class="ready-top"><span class="stack-tight" style="gap:0;align-items:center"><span class="ready-score">${esc(r.score)}</span><span class="src">from Garmin</span></span>
-      <span class="grow"><span class="strong">${esc(r.head)}</span><span class="meta" style="line-height:1.4">${esc(r.sub)}${r.low && d.easier && !d.easier.applied ? ` Consider Easier: ${esc(d.easier.preview)} at the same pace.` : ""}</span></span></div>
-      ${r.low && d.easier ? `<button class="pill amber" data-act="${d.easier.applied ? "undo" : "easier"}" data-day="${d.date}" data-sid="${d.schedule_id || ""}">${d.easier.applied ? "Back to the original" : "Make it easier"}</button>` : ""}</div>`);
+      <span class="grow"><span class="strong">${esc(r.head)}</span><span class="meta" style="line-height:1.4">${esc(r.sub)}${r.low && d.easier && !d.easier.applied && !d.not_100 ? ` Consider Easier: ${esc(d.easier.preview)} at the same pace.` : ""}</span></span></div>
+      ${r.low && d.easier && d.easier.applied ? `<button class="pill amber" data-act="undo" data-day="${d.date}" data-sid="${d.schedule_id || ""}">Back to the original</button>`
+        : r.low && d.not_100 ? `<button class="pill amber" data-not100="${d.date}" data-sid="${d.schedule_id || ""}" data-from="session" data-prominent="1">Not feeling 100%?</button>`
+        : r.low && d.easier ? `<button class="pill amber" data-act="easier" data-day="${d.date}" data-sid="${d.schedule_id || ""}">Make it easier</button>` : ""}</div>`);
   } else if (r) {
     parts.push(`<div class="card pad meta">${esc(r.head)}</div>`);
   }
@@ -809,6 +819,7 @@ function previewView(d, from, panel = false) {
     ${d.easier ? `<button class="pill tall" data-act="${d.easier.applied ? "undo" : "easier"}" data-day="${d.date}" data-sid="${d.schedule_id || ""}">${esc(d.easier.label)}</button>` : `<button class="pill tall" disabled title="Nothing to shorten">Easier</button>`}
     ${ask.html}</div>
     <span class="footnote">Ask ${esc(ask.name)} opens ${esc(ask.name)} with this session filled in.</span>`);
+  if (d.not_100 && !(r && r.low)) parts.push(notButton(d, "session", r));
   if (d.also) {
     parts.push(`<div class="also"><span class="meta">Also this day:</span>${d.also.map((a) => `<a class="pill" href="#/session/${d.date}?sid=${a.schedule_id}&from=${from || "today"}"><span class="c-${esc(a.colour)}">●</span>${esc(a.name)}</a>`).join("")}</div>`);
   }
@@ -1098,6 +1109,9 @@ function wire(root) {
   root.querySelectorAll("[data-act]").forEach((b) => {
     b.onclick = () => act(b.dataset.act, b.dataset.day, b.dataset.sid, b);
   });
+  root.querySelectorAll("[data-not100]").forEach((b) => {
+    b.onclick = () => notSheet(b.dataset.not100, b.dataset.sid, b.dataset.from, b.dataset.prominent === "1");
+  });
 }
 
 // Plans change: once, above Move and Easier, say what they do. Gone once
@@ -1128,6 +1142,123 @@ async function act(action, day, sid, button) {
     if (e instanceof SignedOut) return route();
     toast(e.message);
     button.disabled = false;
+  }
+}
+
+// -- Not feeling 100% (Nov 21) ----------------------------------------------------
+// One question on a day someone isn't up to the session. Each choice says what
+// it will do before anything changes; one Undo puts the whole week back.
+
+function notButton(d, from, readiness) {
+  const prominent = !!(d.not_100 && d.not_100.prominent);
+  const attrs = `data-not100="${d.date}" data-sid="${d.schedule_id || ""}" data-from="${from}" data-prominent="${prominent ? 1 : ""}"`;
+  if (from === "today") {
+    return prominent
+      ? `<button type="button" class="not100 strong-line" ${attrs}><span class="grow"><span class="strong">Not feeling 100%?</span>
+          <span class="meta">${esc(readiness && readiness.head ? `${readiness.head}.` : "")} Lighter, swap, rest or a few days off.</span></span>${ICON.right(18, "currentColor")}</button>`
+      : `<button type="button" class="not100" ${attrs}>Not feeling 100%?</button>`;
+  }
+  return `<button type="button" class="row-button" ${attrs}><span class="grow"><span class="strong">Not feeling 100%?</span>
+    <span class="meta">Lighter, swap with a later day, rest, or a few days off.</span></span>${ICON.right(18, "var(--muted)")}</button>`;
+}
+
+function notChoice(o, extra = {}) {
+  const level = extra.level || "";
+  return `<button type="button" class="n100-choice" data-choice="${esc(o.choice)}" data-level="${esc(level)}" aria-pressed="false">
+    <span class="strong">${esc(extra.label || o.label)}</span><span class="meta">${esc(extra.said || o.said || "")}</span></button>`;
+}
+
+function notOptions(n) {
+  return n.options.map((o) => {
+    if (o.unavailable) {
+      return `<div class="n100-group"><span class="n100-off"><span class="strong">${esc(o.label)}</span><span class="meta">${esc(o.unavailable)}</span></span></div>`;
+    }
+    if (o.levels) {
+      return `<div class="n100-group"><span class="section-title">${esc(o.label)}</span>${o.levels.map((l) => notChoice(o, l)).join("")}</div>`;
+    }
+    if (o.spans) {
+      // A group, not a button: its 2, 3 and 5 days are the buttons.
+      return `<div class="n100-group"><div class="n100-choice" data-choice="days_off" role="group" aria-labelledby="n100-off-label">
+        <span class="strong" id="n100-off-label">${esc(o.label)}</span>
+        <span class="n100-spans">${o.spans.map((s) => `<button type="button" class="pill" data-days="${s.days}" aria-pressed="false">${esc(s.label)}</button>`).join("")}</span>
+        <span class="meta" data-span-said>Pick how many days to see what comes off.</span></div></div>`;
+    }
+    return `<div class="n100-group">${notChoice(o)}</div>`;
+  }).join("");
+}
+
+function notSheet(day, sid, from, prominent) {
+  const q = new URLSearchParams({ from: from || "session" });
+  if (sid) q.set("schedule_id", sid);
+  if (prominent) q.set("prominent", "1");
+  sheet(`<div class="stack" id="n100"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Not feeling 100%?</span>
+      <span class="meta">Working out what each choice would do…</span></div>`,
+    async (holder, close) => {
+      const box = holder.querySelector("#n100");
+      let n;
+      try {
+        n = await api(`not100/${day}?${q}`);
+      } catch (e) {
+        if (e instanceof SignedOut) { close(); return route(); }
+        box.innerHTML = `<span class="strong" id="sheet-title">That didn't load.</span><span class="meta">${esc(e.message)}</span><button type="button" class="pill" data-close>Close</button>`;
+        box.querySelector("[data-close]").onclick = close;
+        return;
+      }
+      const spans = (n.options.find((o) => o.spans) || {}).spans || [];
+      box.innerHTML = `<div class="stack-tight"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">${esc(n.title)}</span>
+          <span class="meta">${esc(n.name)} · ${esc(n.sub)}</span></div>
+        <div class="n100-list">${notOptions(n)}</div>
+        <div class="n100-foot"><button type="button" class="pill" data-close>Cancel</button><button type="button" class="pill light" id="n100-go" disabled>Change my week</button></div>`;
+      box.querySelector("[data-close]").onclick = close;
+      const go = box.querySelector("#n100-go");
+      let picked = null;
+      const pick = (row, days) => {
+        box.querySelectorAll(".n100-choice").forEach((x) => {
+          x.classList.toggle("picked", x === row);
+          if (x.tagName === "BUTTON") x.setAttribute("aria-pressed", String(x === row));
+        });
+        box.querySelectorAll(".n100-spans [data-days]").forEach((x) => x.setAttribute("aria-pressed", String(!!days && x.dataset.days === days)));
+        if (days) {
+          row.dataset.days = days;
+          const s = spans.find((x) => String(x.days) === days) || {};
+          row.querySelector("[data-span-said]").textContent = s.said || "";
+        }
+        picked = row;
+        go.disabled = false;
+      };
+      box.querySelectorAll("button.n100-choice").forEach((b) => { b.onclick = () => pick(b); });
+      box.querySelectorAll(".n100-spans [data-days]").forEach((p) => { p.onclick = () => pick(p.closest(".n100-choice"), p.dataset.days); });
+      go.onclick = async () => {
+        if (!picked) return;
+        box.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+        go.textContent = "Changing…";
+        const body = { choice: picked.dataset.choice, schedule_id: sid ? Number(sid) : null };
+        if (picked.dataset.level) body.level = picked.dataset.level;
+        if (picked.dataset.days) body.days = Number(picked.dataset.days);
+        try {
+          const r = await api(`not100/${day}`, { method: "POST", body: JSON.stringify(body) });
+          close();
+          toast(r.message, r.undo && r.undo.length ? { label: "Undo", run: () => notUndo(r.undo) } : null);
+          refreshUnderPanel();
+          route(true);
+        } catch (e) {
+          close();
+          if (e instanceof SignedOut) return route();
+          toast(e.message);
+        }
+      };
+    });
+}
+
+async function notUndo(steps) {
+  try {
+    const r = await api("not100-undo", { method: "POST", body: JSON.stringify({ undo: steps }) });
+    toast(r.message);
+    refreshUnderPanel();
+    route(true);
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    toast(e.message);
   }
 }
 

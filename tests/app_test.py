@@ -60,7 +60,7 @@ DEMO = DemoGarmin()
 session_mod.build_client = lambda **_: DEMO
 
 import garmin_mcp.hosted as hosted  # noqa: E402
-from garmin_mcp import analysis, analytics, crews, oauth, server, store  # noqa: E402
+from garmin_mcp import analysis, analytics, crews, oauth, server, store, training_plan  # noqa: E402
 
 SENT: list[dict] = []
 analytics._post = SENT.append
@@ -87,6 +87,194 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 def plain(text: str) -> bool:
     """The copy rules: no exclamation marks, no em dashes, no congratulations."""
     return "!" not in text and "—" not in text and not re.search(r"congrat|well done|great job", text, re.I)
+
+
+def not_100_checks(client, auth, day, claude_reads, original, today) -> None:
+    """Nov 21: Not feeling 100%. Each choice says what it will do, does it, and one Undo puts the week back."""
+    from datetime import date as d_, timedelta as td_
+    norm = lambda n: str(n).replace("\u00d7", "x")
+    week_days = [(d_.fromisoformat(day) + td_(days=i)).isoformat() for i in range(7)]
+
+    check("Today's next session offers Not feeling 100%",
+          (today.get("next") or {}).get("not_100") is not None, str((today.get("next") or {}).get("not_100")))
+    shown = client.get(f"/app/api/session/{day}", headers=auth).json()
+    check("and so does its session screen", shown.get("not_100") is not None, str(shown.get("not_100")))
+    check("not standing out on a day readiness isn't low", not (shown.get("not_100") or {}).get("prominent"))
+
+    sheet = client.get(f"/app/api/not100/{day}?from=session", headers=auth)
+    check("the sheet answers", sheet.status_code == 200, sheet.text[:200])
+    sheet = sheet.json()
+    by = {o["choice"]: o for o in sheet.get("options") or []}
+    check("it offers lighter, swap, rest and a few days off", list(by) == ["lighter", "swap", "rest", "days_off"], str(list(by)))
+    levels = {l["level"]: l for l in (by.get("lighter") or {}).get("levels") or []}
+    check("a hard session asks less intensity or no intensity", set(levels) == {"less", "none"}, str(levels))
+    check("less intensity says the reps' new pace and the old",
+          re.search(r"reps at 4:11\u20134:21/km instead of 3:59\u20134:09/km", levels.get("less", {}).get("said", "")),
+          levels.get("less", {}).get("said"))
+    check("no intensity says an easy run of about two-thirds, at the plan's easy pace",
+          re.search(r"An easy \d+(\.5)? km instead, at 5:15\u20135:40/km", levels.get("none", {}).get("said", "")),
+          levels.get("none", {}).get("said"))
+    check("swap names the day and the easy run coming back",
+          "Tomorrow's easy run 8 km comes to today" in (by.get("swap") or {}).get("said", ""), str(by.get("swap")))
+    check("rest says how much lighter the week is", re.search(r"This week is [\d.]+ km lighter", by["rest"]["said"]),
+          by["rest"]["said"])
+    spans = {s["days"]: s for s in by["days_off"]["spans"]}
+    check("a few days off is 2, 3 or 5 days, each said", sorted(spans) == [2, 3, 5]
+          and "easier version" in spans[3]["said"], str(spans))
+    words = [sheet["title"], sheet["sub"]] + [o.get("said") or o.get("unavailable") or "" for o in sheet["options"]] \
+        + [l["said"] for l in levels.values()] + [s["said"] for s in spans.values()]
+    check("every line follows the copy rules, and none is medical",
+          all(plain(w) for w in words) and not any(re.search(r"\b(ill|sick|injur|doctor|recover)", w, re.I) for w in words),
+          str([w for w in words if not plain(w)]))
+
+    def apply(**body):
+        r = client.post(f"/app/api/not100/{day}", headers=auth, json=body)
+        return r.status_code, r.json()
+
+    def undo(result):
+        r = client.post("/app/api/not100-undo", headers=auth, json={"undo": result.get("undo")})
+        return r.status_code == 200
+
+    def week_now():  # a day's sessions in any order: Undo puts them back, not in Garmin's order
+        return {d: sorted(norm(n) for n in claude_reads(d)) for d in week_days}
+
+    week_before = week_now()
+
+    first_hard = int(shown["workout_id"])
+
+    def rep_paces(workout):
+        return [1000 / s[k] for g in workout["workoutSegments"] for s0 in g["workoutSteps"]
+                for s in ([s0] + (s0.get("workoutSteps") or [])) for k in ("targetValueOne", "targetValueTwo")
+                if s.get(k) and (s.get("targetType") or {}).get("workoutTargetTypeKey") == "pace.zone"]
+
+    before_paces = rep_paces(DEMO.get_workout_by_id(first_hard))
+    code, less = apply(choice="lighter", level="less")
+    check("less intensity answers", code == 200 and plain(less.get("message", "")), str(less)[:200])
+    eased = DEMO.get_workout_by_id(max(DEMO.uploaded))
+    after_paces = rep_paces(eased)
+    check("its reps are 5% slower, and only its reps",
+          before_paces and len(after_paces) == len(before_paces)
+          and all(abs(a - b * 1.05) < 1 for a, b in zip(after_paces, before_paces)),
+          f"{[round(p) for p in before_paces]} -> {[round(p) for p in after_paces]}")
+    hr = lambda w: [(s.get("targetValueOne"), s.get("targetValueTwo")) for g in w["workoutSegments"] for s in g["workoutSteps"]
+                    if (s.get("targetType") or {}).get("workoutTargetTypeKey") == "heart.rate.zone"]
+    check("the warm-up and cool-down keep their heart rate", hr(eased) == hr(DEMO.get_workout_by_id(first_hard)))
+    check("Claude reads the same session on the same day", [norm(n) for n in claude_reads(day)] == [norm(n) for n in original])
+    edit = [e["properties"] for e in posted("app_edit") if e["properties"].get("action") == "not_100"]
+    check("it's counted with the choice and level, never a pace",
+          edit and edit[-1].get("choice") == "lighter" and edit[-1].get("level") == "less" and edit[-1].get("ok") is True
+          and not re.search(r"\d:\d\d", json.dumps(edit[-1])), str(edit[-1:]))
+    check("Undo puts it back", undo(less) and week_now() == week_before, str(week_now()))
+    check("and the eased copy is gone from the library", eased.get("workoutId") not in DEMO.uploaded)
+
+    code, none = apply(choice="lighter", level="none")
+    check("no intensity answers", code == 200, str(none)[:200])
+    check("Claude reads an easy run in its place", any(re.match(r"Easy run \d+(\.5)? km", n) for n in claude_reads(day)),
+          str(claude_reads(day)))
+    check("Undo puts the hard session back", undo(none) and week_now() == week_before, str(week_now()))
+
+    code, swap = apply(choice="swap")
+    tue = week_days[1]
+    check("swap answers", code == 200, str(swap)[:200])
+    check("the hard session is on the later day, the easy run today",
+          [norm(n) for n in claude_reads(tue)] == [norm(n) for n in original] and "Easy run 8 km" in claude_reads(day),
+          f"{claude_reads(day)} / {claude_reads(tue)}")
+    check("Undo swaps them back", undo(swap) and week_now() == week_before, str(week_now()))
+
+    code, rest = apply(choice="rest")
+    check("rest takes today's session off", code == 200 and claude_reads(day) == [], str(claude_reads(day)))
+    check("Undo puts it back", undo(rest) and week_now() == week_before)
+
+    code, off = apply(choice="days_off", days=3)
+    check("three days off take off what's in them",
+          code == 200 and all(claude_reads(d) == [] for d in week_days[:3]), str([claude_reads(d) for d in week_days[:3]]))
+    back = DEMO.get_workout_by_id(int(client.get(f"/app/api/session/{week_days[3]}", headers=auth).json()["workout_id"]))
+    check("and the first run back is the easier version",
+          "Made easier in Daash" in str(back.get("description")), str(claude_reads(week_days[3])))
+    check("one Undo puts the whole week back", undo(off) and week_now() == week_before, str(week_now()))
+
+    code, odd = apply(choice="lighter", level="loud")
+    check("a choice it doesn't know changes nothing", code == 409 and week_now() == week_before, str(odd))
+    bad = client.post("/app/api/not100-undo", headers=auth, json={"undo": [{"put": {"workout_id": "x", "date": "no"}}]})
+    check("an undo that isn't one is refused", bad.status_code == 400)
+    mine = int(client.get(f"/app/api/session/{week_days[1]}", headers=auth).json()["workout_id"])
+    client.post("/app/api/not100-undo", headers=auth, json={"undo": [{"delete": mine}]})
+    check("and Undo never deletes a workout Daash didn't copy", mine in DEMO.uploaded)
+    check("the week is as it started", week_now() == week_before, str(week_now()))
+
+
+def feeling_rule_checks() -> None:
+    """Nov 21: the week's rules for Not feeling 100%, on made-up weeks: which later day a session can swap with."""
+    from garmin_mcp import feeling
+
+    mon = date(2026, 11, 16)
+
+    def week(*days):
+        out = []
+        for i, kinds in enumerate(days):
+            for k in kinds.split("+") if kinds else []:
+                out.append({"date": (mon + timedelta(days=i)).isoformat(), "type": k, "kind": "run" if k != "strength" else "strength",
+                            "status": "ahead", "name": k})
+        return out
+
+    def swap(sessions, i=0):
+        chosen = next(s for s in sessions if s["date"] == (mon + timedelta(days=i)).isoformat() and s["type"] != "strength")
+        found = feeling.swap_day(sessions, chosen)
+        return None if not found else ((found[0] - mon).days, (found[1] or {}).get("type"))
+
+    check("a hard day swaps with the first easy day that keeps hard days apart",
+          swap(week("threshold", "easy", "easy", "intervals", "easy", "", "long")) == (1, "easy"))
+    check("never into the day before another hard session",
+          swap(week("threshold", "easy", "intervals", "easy", "easy", "", "long")) == (4, "easy"),
+          str(swap(week("threshold", "easy", "intervals", "easy", "easy", "", "long"))))
+    check("never next to the long run", swap(week("threshold", "easy", "easy", "easy", "", "easy", "long")) == (1, "easy"))
+    check("the long run never lands next to a hard session",
+          swap(week("", "", "", "long", "easy", "threshold", ""), 3) is None,
+          str(swap(week("", "", "", "long", "easy", "threshold", ""), 3)))
+    check("a day with nothing on it is used when no easy day works",
+          swap(week("threshold", "", "easy", "intervals", "", "", "")) == (1, None),
+          str(swap(week("threshold", "", "easy", "intervals", "", "", ""))))
+    check("a day's strength session stays put; the easy run beside it swaps",
+          swap(week("threshold", "easy+strength", "", "", "", "", "")) == (1, "easy"))
+    check("nothing hard in the two days after a race",
+          swap(week("race", "", "threshold", "easy", "easy", "", ""), 2) == (3, "easy")
+          and swap(week("", "race", "threshold", "", "", "", ""), 2) == (4, None),
+          f"{swap(week('race', '', 'threshold', 'easy', 'easy', '', ''), 2)} {swap(week('', 'race', 'threshold', '', '', '', ''), 2)}")
+    check("never past Sunday: a Sunday session has no later day", swap(week("", "", "", "", "", "", "long"), 6) is None)
+    check("an easy run isn't swapped", swap(week("easy", "easy", "", "", "", "", "")) is None)
+    done = week("threshold", "easy", "", "", "", "", "")
+    done[1]["status"] = "done"
+    check("a day already run is never one", swap(done) != (1, "easy"), str(swap(done)))
+
+    off, back, races = feeling.days_off(week("threshold", "easy", "race", "easy", "easy", "", ""), mon, 3)
+    check("days off take off what's in them, never a race",
+          [s["type"] for s in off] == ["threshold", "easy"] and [r["type"] for r in races] == ["race"])
+    check("and the first run after them comes back easier", back and back["date"] == (mon + timedelta(days=3)).isoformat())
+    check("no intensity is two-thirds to the half km, never under 3 km",
+          feeling.easy_km(9.4) == 6.5 and feeling.easy_km(3) == 3.0 and feeling.easy_km(None) is None)
+
+    def step(target, **values):
+        return {"stepType": {"stepTypeKey": "interval"}, "targetType": {"workoutTargetTypeKey": target}, **values}
+
+    hr = {"workoutId": 5, "workoutName": "6 x 800m", "workoutSegments": [{"workoutSteps": [
+        {"stepType": {"stepTypeKey": "warmup"}, "targetType": {"workoutTargetTypeKey": "heart.rate.zone"},
+         "targetValueOne": 120, "targetValueTwo": 140},
+        {"type": "RepeatGroupDTO", "numberOfIterations": 6, "workoutSteps": [step("heart.rate.zone", targetValueOne=165, targetValueTwo=175)]}]}]}
+    made, before, after = feeling.less_intense(hr, "Made easier in Daash from workout")
+    steps = made["workoutSegments"][0]["workoutSteps"]
+    check("less intensity takes 5 bpm off the reps' heart rate, not the warm-up's",
+          (steps[1]["workoutSteps"][0]["targetValueOne"], steps[1]["workoutSteps"][0]["targetValueTwo"]) == (160, 170)
+          and (steps[0]["targetValueOne"], steps[0]["targetValueTwo"]) == (120, 140) and after == "160\u2013170 bpm", f"{before} -> {after}")
+    check("and carries the line Undo looks for", "Made easier in Daash from workout 5." in made["description"])
+    zone = {"workoutId": 6, "workoutSegments": [{"workoutSteps": [step("heart.rate.zone", zoneNumber=4)]}]}
+    check("a heart rate zone goes down one", feeling.less_intense(zone, "m")[0]["workoutSegments"][0]["workoutSteps"][0]["zoneNumber"] == 3)
+    bare = {"workoutId": 7, "workoutSegments": [{"workoutSteps": [{"stepType": {"stepTypeKey": "interval"},
+                                                                  "targetType": {"workoutTargetTypeKey": "no.target"}}]}]}
+    check("a session with nothing to ease offers no intensity only", feeling.less_intense(bare, "m") is None)
+    easy = feeling.no_intensity({"workoutId": 8, "workoutName": "3 x 3 km · MAR"}, 6.5, ["5:15", "5:40"], "Made easier in Daash from workout")
+    check("no intensity's easy run keeps its plan's code, so the plan still counts it",
+          easy["workoutName"].startswith("Easy run 6.5 km") and training_plan.label_of(easy["workoutName"]) == "MAR"
+          and "Made easier in Daash from workout 8." in easy["description"], str(easy.get("workoutName")))
 
 
 def analysis_checks() -> None:
@@ -289,6 +477,8 @@ def api_checks() -> None:
     r = client.post(f"/app/api/session/{day}/undo", headers=auth, json={})
     check("undo answers", r.status_code == 200, r.text[:200])
     check("Claude reads the original again", claude_reads(day) == original, str(claude_reads(day)))
+
+    not_100_checks(client, auth, day, claude_reads, original, today)
 
     later = (__import__("datetime").date.fromisoformat(day) + __import__("datetime").timedelta(days=4)).isoformat()
     r = client.post(f"/app/api/session/{day}/move", headers=auth, json={"to": later})
@@ -1231,6 +1421,7 @@ def strides_checks() -> None:
 
 def main() -> int:
     extra_checks()
+    feeling_rule_checks()
     verdict_checks()
     analysis_checks()
     strides_checks()

@@ -30,7 +30,7 @@ from urllib.parse import quote
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
-from . import analysis, crews, cycling, easy_check, plan_builder, plan_checks, preview, run_view, store, training_plan
+from . import analysis, crews, cycling, easy_check, feeling, plan_builder, plan_checks, preview, run_view, store, training_plan
 from . import plan as plan_mod
 from . import server as server_mod
 from . import share as share_mod
@@ -543,6 +543,7 @@ async def today_payload() -> dict[str, Any]:
             "segments": _segments(nxt.get("shape"), nxt.get("type")), "on_watch": True,
             "schedule_id": nxt.get("schedule_id"),
             "easier": _easier_state(workout),
+            "not_100": not_100_offer(nxt["date"], nxt.get("type"), nxt.get("status"), today, ready),
         }
     try:
         crew_week = _crew_week(today)
@@ -655,6 +656,7 @@ async def session_payload(day: str, schedule_id: int | None = None) -> dict[str,
                   else "Scheduled. Arrives at its next sync.",
                   "changed": bool((easier_state or {}).get("applied"))},
         "easier": easier_state,
+        "not_100": not_100_offer(day, kind, status, today, ready),
         "workout_id": chosen.get("workout_id"), "schedule_id": chosen.get("schedule_id"),
         "also": [{"name": _display(s.get("name")), "schedule_id": s.get("schedule_id"), **_type(s.get("type"))}
                  for s in on_day if s is not chosen] or None,
@@ -1968,7 +1970,260 @@ async def resend(day: str, schedule_id: int | None = None) -> dict[str, Any]:
             "message": "Sent. On your watch at its next sync."}
 
 
-# -- routes --------------------------------------------------------------------
+# -- not feeling 100% (Nov 21) ---------------------------------------------------
+# One question on a day someone isn't up to the session: lighter today, swap
+# with a later day, rest today, or a few days off. The rules are feeling.py's;
+# here they're read against the calendar and written to Garmin. Every change
+# answers with the steps that undo it, so Undo needs nothing kept here.
+
+def not_100_offer(day: str, kind: str | None, status: str | None, today: date,
+                  ready: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """Whether a session's screen offers Not feeling 100%: today's or tomorrow's, not done, not a race.
+
+    Prominent on a day Garmin reads readiness as low; it never changes anything by itself.
+    """
+    d = _day_of(day)
+    if not d or kind == "race" or str(status or "").startswith("done") or not today <= d <= today + timedelta(days=1):
+        return None
+    return {"prominent": bool(ready and ready.get("low"))}
+
+
+async def _feeling_parts(day: str, schedule_id: int | None):
+    plan, chosen, _, workout, error = await _session_parts(day, schedule_id)
+    if error:
+        raise EditError(error)
+    if not chosen or not chosen.get("schedule_id"):
+        raise EditError(f"Nothing is planned on {day}.")
+    if str(chosen.get("status") or "").startswith("done"):
+        raise EditError("That session is already done.")
+    if chosen.get("type") == "race":
+        raise EditError("Races stay where they are.")
+    d = date.fromisoformat(day)
+    if d < date.today():
+        raise EditError("That day has passed.")
+    totals = training_plan.session_totals(workout, training_plan.easy_speed(plan)) if workout else None
+    return plan, chosen, workout, d, (totals or {}).get("km")
+
+
+async def _easy_pace(plan: Mapping[str, Any], d: date) -> list[str] | None:
+    """The plan's easy pace this week: an easy run's own target, else the runner's usual easy pace."""
+    monday = d - timedelta(days=d.weekday())
+    easy = next((s for s in _sessions(plan) if s.get("type") == "easy" and s.get("kind", "run") == "run"
+                 and (sd := _day_of(s.get("date"))) and monday <= sd <= monday + timedelta(days=6)
+                 and s.get("workout_id")), None)
+    workout = None
+    if easy:
+        try:
+            workout = await _workout(easy["workout_id"])
+        except Exception:  # noqa: BLE001 - the runner's own easy pace stands in
+            workout = None
+    return feeling.easy_target(workout, training_plan.easy_speed(plan))
+
+
+def _the(name: str) -> str:
+    return name if re.match(r"^(easy|long|recovery)\b", name, re.I) is None else name[:1].lower() + name[1:]
+
+
+async def not_100_options(day: str, schedule_id: int | None = None) -> dict[str, Any]:
+    """What each choice would do, said before anything changes."""
+    today = date.today()
+    plan, chosen, workout, d, km = await _feeling_parts(day, schedule_id)
+    kind = chosen.get("type")
+    name = _display(chosen.get("name"))
+    sessions = _sessions(plan)
+    already = bool(workout and EASIER_RE.search(str(workout.get("description") or "")))
+    options: list[dict[str, Any]] = []
+
+    if already:
+        options.append({"choice": "lighter", "label": "Lighter today",
+                        "unavailable": "It's already the lighter version. Undo easier puts the original back."})
+    elif kind in feeling.QUALITY:
+        levels = []
+        less = feeling.less_intense(workout, EASIER_MARK)
+        if less:
+            levels.append({"level": "less", "label": "Less intensity",
+                           "said": f"The same session, reps at {less[2]} instead of {less[1]}."})
+        easy = feeling.easy_km(km)
+        if easy:
+            pace = await _easy_pace(plan, d)
+            levels.append({"level": "none", "label": "No intensity",
+                           "said": f"An easy {easy:g} km instead"
+                                   + (f", at {pace[0]}\u2013{pace[1]}/km." if pace else ", at an easy pace.")})
+        if levels:
+            options.append({"choice": "lighter", "label": "Lighter today", "levels": levels})
+    else:
+        state = _easier_state(workout)
+        if state and not state.get("applied"):
+            options.append({"choice": "lighter", "label": "Lighter today",
+                            "said": f"{state['preview']}, at the same pace."})
+
+    if kind in feeling.QUALITY | {"long"}:
+        found = feeling.swap_day(sessions, chosen)
+        if found:
+            to, back = found
+            options.append({"choice": "swap", "label": f"Swap with {feeling.when(to, today)}",
+                            "said": (f"{_capital(feeling.when(to, today))}'s {_the(_display(back.get('name')))} comes to "
+                                     f"{feeling.when(d, today)}, and the {name} moves to {feeling.when(to, today)}."
+                                     if back else f"The {name} moves to {feeling.when(to, today)}, and "
+                                     f"{feeling.when(d, today)} is a rest day.")})
+        else:
+            options.append({"choice": "swap", "label": "Swap with a later day",
+                            "unavailable": "No later day this week keeps hard days apart."})
+
+    options.append({"choice": "rest", "label": f"Rest {feeling.when(d, today)}",
+                    "said": f"The {name} comes off" + (f". This week is {km:g} km lighter." if km else ".")})
+
+    spans = []
+    for n in feeling.DAYS_OFF:
+        off, back, races = feeling.days_off(sessions, d, n)
+        bits = [f"{len(off)} session{'s' if len(off) != 1 else ''} come{'s' if len(off) == 1 else ''} off"]
+        if back:
+            bits.append(f"{_capital(feeling.when(_day_of(back['date']), today))}'s {_the(_display(back.get('name')))} "
+                        "is the easier version")
+        if races:
+            bits.append(" and ".join(f"the {_display(r.get('name'))}" for r in races) + " stays")
+        spans.append({"days": n, "label": f"{n} days", "said": _sentence(". ".join(bits))})
+    options.append({"choice": "days_off", "label": "A few days off", "spans": spans})
+
+    return {"date": day, "name": name, "schedule_id": chosen.get("schedule_id"), **_type(kind),
+            "title": "Not feeling 100%?", "sub": "Pick what fits. Nothing changes until you do.",
+            "options": options}
+
+
+async def _replace(chosen: Mapping[str, Any], made: Mapping[str, Any], day: str) -> dict[str, Any]:
+    """Upload a changed copy and put it in the original's place. Returns the step that undoes it."""
+    uploaded = await server_mod._call(lambda c: c.upload_workout(dict(made))) or {}
+    new_id = uploaded.get("workoutId") or uploaded.get("id")
+    if not new_id:
+        raise EditError("Garmin returned no workout id.")
+    await server_mod._call(lambda c: c.unschedule_workout(int(chosen["schedule_id"])))
+    placed = await server_mod._call(lambda c: c.schedule_workout(int(new_id), day)) or {}
+    return {"remove": placed.get("workoutScheduleId") or placed.get("id"),
+            "put": {"workout_id": int(chosen["workout_id"]), "date": day}, "delete": int(new_id)}
+
+
+async def _move_to(s: Mapping[str, Any], to: str) -> dict[str, Any]:
+    await server_mod._call(lambda c: c.unschedule_workout(int(s["schedule_id"])))
+    placed = await server_mod._call(lambda c: c.schedule_workout(int(s["workout_id"]), to)) or {}
+    return {"remove": placed.get("workoutScheduleId") or placed.get("id"),
+            "put": {"workout_id": int(s["workout_id"]), "date": str(s["date"])}}
+
+
+async def _take_off(s: Mapping[str, Any]) -> dict[str, Any]:
+    await server_mod._call(lambda c: c.unschedule_workout(int(s["schedule_id"])))
+    return {"put": {"workout_id": int(s["workout_id"]), "date": str(s["date"])}}
+
+
+async def run_undo(steps: list[Mapping[str, Any]]) -> int:
+    """Put a Not feeling 100% change back: each step takes a session off, puts one back, or deletes a copy.
+
+    A copy is deleted only when it carries the line Daash wrote on it, so a
+    step can't remove a workout someone made themselves.
+    """
+    done = 0
+    for step in steps:
+        if step.get("remove"):
+            await server_mod._call(lambda c: c.unschedule_workout(int(step["remove"])))
+        put = step.get("put") or {}
+        if put.get("workout_id") and put.get("date"):
+            await server_mod._call(lambda c: c.schedule_workout(int(put["workout_id"]), str(put["date"])))
+            done += 1
+        if step.get("delete"):
+            copy = await server_mod._call(lambda c: c.get_workout_by_id(int(step["delete"]))) or {}
+            if EASIER_RE.search(str(copy.get("description") or "")):
+                try:
+                    await server_mod._call(lambda c: c.delete_workout(int(step["delete"])))
+                except Exception:  # noqa: BLE001 - a copy left in the library is untidy, not wrong
+                    log.warning("couldn't delete the copy %s", step["delete"])
+    server_mod.session.forget()
+    return done
+
+
+async def not_100_apply(day: str, schedule_id: int | None, choice: str, level: str | None = None,
+                        days: int | None = None) -> dict[str, Any]:
+    """Make the change chosen, then say what changed. Half a change is put back if Garmin refuses a step."""
+    today = date.today()
+    plan, chosen, workout, d, km = await _feeling_parts(day, schedule_id)
+    kind = chosen.get("type")
+    name = _display(chosen.get("name"))
+    sessions = _sessions(plan)
+    undo: list[dict[str, Any]] = []
+    already = bool(workout and EASIER_RE.search(str(workout.get("description") or "")))
+    try:
+        if choice == "lighter":
+            if already:
+                raise EditError("It's already the lighter version.")
+            if kind in feeling.QUALITY:
+                if level == "less":
+                    less = feeling.less_intense(workout, EASIER_MARK)
+                    if not less:
+                        raise EditError("This session has no pace or heart rate to ease.")
+                    undo.append(await _replace(chosen, less[0], day))
+                    message = f"The {name} is now reps at {less[2]}."
+                elif level == "none":
+                    easy = feeling.easy_km(km)
+                    made = feeling.no_intensity(workout, easy, await _easy_pace(plan, d), EASIER_MARK)
+                    if not made:
+                        raise EditError("This session's distance couldn't be read.")
+                    undo.append(await _replace(chosen, made, day))
+                    message = f"{_capital(feeling.when(d, today))} is now an easy {easy:g} km instead of the {name}."
+                else:
+                    raise EditError("Pick less intensity or no intensity.")
+            else:
+                made = await make_easier(day, chosen.get("schedule_id"))
+                undo.append({"remove": made.get("schedule_id"),
+                             "put": {"workout_id": int(chosen["workout_id"]), "date": day},
+                             "delete": int(made["workout_id"])})
+                message = made["message"].replace(" Ready to sync.", "")
+        elif choice == "swap":
+            found = feeling.swap_day(sessions, chosen)
+            if not found:
+                raise EditError("No later day this week keeps hard days apart.")
+            to, back = found
+            undo.append(await _move_to(chosen, to.isoformat()))
+            if back is not None:
+                undo.append(await _move_to(back, day))
+            message = (f"The {name} moved to {feeling.when(to, today)}, and "
+                       + (f"{feeling.when(to, today)}'s {_the(_display(back.get('name')))} is {feeling.when(d, today)}."
+                          if back is not None else f"{feeling.when(d, today)} is a rest day."))
+        elif choice == "rest":
+            undo.append(await _take_off(chosen))
+            message = f"The {name} is off." + (f" This week is {km:g} km lighter." if km else "")
+        elif choice == "days_off":
+            if days not in feeling.DAYS_OFF:
+                raise EditError("Pick 2, 3 or 5 days.")
+            off, back, races = feeling.days_off(sessions, d, days)
+            for s in off:
+                undo.append(await _take_off(s))
+            server_mod.session.forget()
+            bits = [f"{len(off)} session{'s' if len(off) != 1 else ''} off for {days} days"]
+            if back:
+                try:
+                    made = await make_easier(str(back["date"]), back.get("schedule_id"))
+                    undo.append({"remove": made.get("schedule_id"),
+                                 "put": {"workout_id": int(back["workout_id"]), "date": str(back["date"])},
+                                 "delete": int(made["workout_id"])})
+                    bits.append(f"{_capital(feeling.when(_day_of(back['date']), today))}'s "
+                                f"{_the(_display(back.get('name')))} is the easier version")
+                except EditError:
+                    pass  # already easier, or nothing to shorten: the first run back stays as it is
+            if races:
+                bits.append(" and ".join(f"the {_display(r.get('name'))}" for r in races) + " stays")
+            message = _sentence(". ".join(bits))
+        else:
+            raise EditError("Unknown choice.")
+    except Exception:
+        # Half a change is worse than none: put back what was done, then say what went wrong.
+        if undo:
+            try:
+                await run_undo(list(reversed(undo)))
+            except Exception:  # noqa: BLE001 - the error below is the one to show
+                log.exception("not feeling 100%: couldn't put back a half-made change")
+        raise
+    finally:
+        server_mod.session.forget()
+    return {"message": f"{message} The watch follows at its next sync.", "undo": list(reversed(undo)),
+            "sessions": sum(1 for u in undo if u.get("remove") or u.get("put"))}
 
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -2056,7 +2311,7 @@ def _safe(handler):
             _track("app_failed", {"screen": screen, "layout": _layout(request)})
             return _json({"error": "Daash couldn't load this just now. Try again in a moment."}, 500)
         # A screen fetched ahead of a tap (the app warms the other tabs) isn't one opened.
-        polled = request.url.path.endswith(("/build/send", "/race-prompt"))
+        polled = request.url.path.endswith(("/build/send", "/race-prompt")) or "/not100/" in request.url.path
         if request.method == "GET" and request.headers.get("x-daash-ahead") != "1" and not polled:
             # How long the screen waited for Daash, and on its own thread: the
             # account lookups are reads a screen shouldn't wait for.
@@ -2342,6 +2597,99 @@ async def api_edit(request: Request) -> Response:
         # Each of these writes the session to the calendar again, so to the watch.
         _watch_sent(f"app_{action}", 1)
     return _json(result)
+
+
+@mcp.custom_route(API_PREFIX + "not100/{day}", methods=["GET"])
+@_safe
+async def api_not_100(request: Request) -> Response:
+    """What each Not feeling 100% choice would do to this week, before anything changes."""
+    day = _day(request)
+    if not day:
+        return _json({"error": "A date like 2026-11-03."}, 400)
+    # Opened, from which screen and whether it stood out on a low-readiness day: a sheet, not a screen view.
+    _track("app_not_100_opened", drop_empty({
+        "from": request.query_params.get("from") if request.query_params.get("from") in ("today", "session") else None,
+        "prominent": request.query_params.get("prominent") == "1" or None,
+        "layout": _layout(request), "home_screen": _home(request)}))
+    try:
+        return _json(await not_100_options(day, _schedule_id(request)))
+    except EditError as exc:
+        return _json({"error": str(exc)}, 409)
+
+
+@mcp.custom_route(API_PREFIX + "not100/{day}", methods=["POST"])
+@_safe
+async def api_not_100_apply(request: Request) -> Response:
+    day = _day(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    choice = str(body.get("choice") or "")
+    level = str(body.get("level") or "") or None
+    try:
+        days = int(body["days"]) if body.get("days") is not None else None
+    except (TypeError, ValueError):
+        days = None
+    if not day or choice not in ("lighter", "swap", "rest", "days_off"):
+        return _json({"error": "Unknown choice."}, 400)
+    said = drop_empty({"action": "not_100", "via": "button", "choice": choice,
+                       "level": level if choice == "lighter" and level in ("less", "none") else None,
+                       "days": days if choice == "days_off" else None,
+                       "layout": _layout(request), "home_screen": _home(request)})
+    try:
+        result = await not_100_apply(day, _schedule_id(request, body), choice, level, days)
+    except EditError as exc:
+        _track("app_edit", {**said, "ok": False})
+        return _json({"error": str(exc)}, 409)
+    _track("app_edit", {**said, "ok": True})
+    if result.get("sessions"):
+        _watch_sent("app_not_100", result["sessions"])
+    return _json(result)
+
+
+def _undo_steps(raw: Any) -> list[dict[str, Any]] | None:
+    """The steps a change answered with, checked: ids are numbers, dates are dates, nothing else."""
+    if not isinstance(raw, list) or not raw or len(raw) > 30:
+        return None
+    steps = []
+    for step in raw:
+        if not isinstance(step, Mapping):
+            return None
+        clean: dict[str, Any] = {}
+        try:
+            for key in ("remove", "delete"):
+                if step.get(key) is not None:
+                    clean[key] = int(step[key])
+            put = step.get("put")
+            if put is not None:
+                if not isinstance(put, Mapping) or not _DAY_RE.match(str(put.get("date") or "")):
+                    return None
+                clean["put"] = {"workout_id": int(put["workout_id"]), "date": str(put["date"])}
+        except (KeyError, TypeError, ValueError):
+            return None
+        if clean:
+            steps.append(clean)
+    return steps or None
+
+
+@mcp.custom_route(API_PREFIX + "not100-undo", methods=["POST"])
+@_safe
+async def api_not_100_undo(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    steps = _undo_steps((body or {}).get("undo") if isinstance(body, dict) else None)
+    if not steps:
+        return _json({"error": "Nothing to undo."}, 400)
+    put_back = await run_undo(steps)
+    _track("app_edit", drop_empty({"action": "not_100_undo", "via": "button", "ok": True, "layout": _layout(request),
+                                   "home_screen": _home(request)}))
+    if put_back:
+        _watch_sent("app_not_100_undo", put_back)
+    return _json({"message": "Back as it was. The watch follows at its next sync."})
 
 
 def _watch_sent(source: str, sessions: int, user_token: str | None = None) -> None:

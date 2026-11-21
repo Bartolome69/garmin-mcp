@@ -25,7 +25,15 @@ other reads next, and the watch gets it at its next sync.
 | Easier | a copy of the workout for that day only, each rep a third shorter, same pace, swapped in with `unschedule` and `schedule` | the easier session on that day, every other week unchanged |
 | Undo easier | the original workout scheduled back, the copy deleted | the original session |
 | Send again | `unschedule` then `schedule` on the same day | unchanged plan |
+| Not feeling 100% | lighter today (a hard session: reps about 5% slower, or an easy run of two-thirds the distance; otherwise Easier), swap with a later day this week, rest today, or 2, 3 or 5 days off; each is the writes above, by the rules in `garmin_mcp/feeling.py` | the week as changed; one Undo puts it back |
 | Mark done | not built: Garmin decides done from a recorded run | |
+
+Not feeling 100% keeps the plan checker's rules: no two hard days in a row,
+nothing hard in the two days after a race, the long run never next to a hard
+day, races never moved, nothing moved out of its week. It is offered for
+today's and tomorrow's sessions, stands out on a day Garmin reads readiness as
+low, and never changes anything until a choice is confirmed. Its words say
+what changes, never why someone should rest: nothing in it is medical.
 
 Why a copy for Easier: `create_plan` schedules one workout on every date it
 repeats, so editing it in place would make every week easier. The copy keeps
@@ -45,6 +53,11 @@ only knows the API below.
     `/app/api/plan?week=`, `/app/api/crew`, `/app/api/you`:
     JSON shaped for the screens, built from the tool functions.
   - `POST /app/api/session/{date}/move|easier|undo|resend`: the edits above.
+  - `GET /app/api/not100/{date}`: what each Not feeling 100% choice would do,
+    said before anything changes. `POST` the same path with `choice`
+    (lighter, swap, rest, days_off) and `level` or `days` to make it; the
+    answer carries the steps that undo it, which `POST /app/api/not100-undo`
+    takes back, so nothing is kept on the server.
   - `POST /app/api/you/times`: your usual run times, as the crew uses them.
   - `POST /app/api/you/delete`: delete the account, the same as `/disconnect`.
 - `garmin_mcp/analysis.py`: planned against run for one session, worked out

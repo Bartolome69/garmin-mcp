@@ -417,6 +417,28 @@ nav.tabs a[aria-current="page"] .ti { background: var(--button); }
 .sheet { width: 100%; max-width: 560px; background: var(--surface); border-top: 1px solid var(--hairline); border-radius: var(--radius) var(--radius) 0 0;
   padding: 16px 16px calc(20px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px; }
 .days-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+/* Not feeling 100% (Nov 21): a quiet line on Today, amber on a low-readiness day; the sheet's choices */
+.toast { display: flex; align-items: center; gap: 12px; }
+.toast-action { all: unset; cursor: pointer; margin-left: auto; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; flex-shrink: 0; padding: 4px 2px; }
+.not100 { all: unset; box-sizing: border-box; cursor: pointer; align-self: flex-start; font-size: 14px; font-weight: 600; text-decoration: underline;
+  text-underline-offset: 3px; color: inherit; padding: 6px 0 2px; }
+.not100:focus-visible, .n100-choice:focus-visible, .n100-spans .pill:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.not100.strong-line { align-self: stretch; display: flex; align-items: center; gap: 10px; text-decoration: none; padding: 12px 14px; border-radius: var(--radius);
+  background: var(--amber-soft); border: 1px solid var(--amber-soft-line); color: var(--ink); }
+.n100-list { display: flex; flex-direction: column; gap: 12px; max-height: 62vh; overflow: auto; margin: 0 -2px; padding: 2px; }
+.n100-group { display: flex; flex-direction: column; gap: 8px; }
+.n100-choice { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--radius);
+  border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); }
+.n100-choice .meta { line-height: 1.4; }
+.n100-choice:hover { border-color: var(--button); }
+.n100-choice.picked { border: 2px solid var(--ink); padding: 11px 13px; }
+div.n100-choice { cursor: default; }
+.n100-off { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--radius); border: 1px dashed var(--hairline); color: var(--muted); }
+.n100-off .strong { color: var(--muted); }
+.n100-spans { display: flex; gap: 8px; margin: 4px 0 2px; }
+.n100-spans .pill { height: 36px; padding: 0 14px; font-size: 14px; }
+.n100-spans .pill[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); font-weight: 600; }
+.n100-foot { display: grid; grid-template-columns: 1fr 1.6fr; gap: 8px; }
 .days-grid .pill { padding: 0 6px; flex-direction: column; gap: 0; height: 56px; font-size: 13px; }
 .days-grid .pill b { font-size: 15px; }
 
