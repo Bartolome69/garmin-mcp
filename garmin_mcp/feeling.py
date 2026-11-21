@@ -1,9 +1,10 @@
 """Not feeling 100% (Nov 21): what each choice would do to the week, by fixed rules.
 
-The app's sheet offers, for the session being looked at: a lighter run, an
-easier pace, making a hard session easy, a swap with a later day, skipping
-it, or a few days off. This module holds the rules and the session changes;
-app.py reads Garmin, applies them and answers the screens. There is no model
+The app's sheet offers, for the session being looked at, three or four
+choices by its kind: a hard session can be made easy, made lighter, swapped
+with a later day or skipped; an easy run made lighter, moved or skipped. A few
+days off sit apart, as a quieter link: a bigger decision than today's run.
+This module holds the rules and the session changes; app.py reads Garmin, applies them and answers the screens. There is no model
 here and nothing medical: it says what changes, for a busy, tired or flat
 day, never why someone should rest.
 
@@ -20,19 +21,16 @@ from datetime import date, timedelta
 from typing import Any, Iterable, Mapping
 
 from . import plan_checks, training_plan
-from .formatting import HR_CAP_FLOOR
-from .workouts import TARGET_HEART_RATE_ZONE, build_workout, format_pace
+from .workouts import build_workout, format_pace
 
 # A hard session, for the rules: the plan checker's quality types and races.
 HARD = {"threshold", "sub", "intervals", "race"}
 # What "Make it easy" is offered for: intervals and tempo (threshold) sessions.
 QUALITY = {"threshold", "sub", "intervals"}
+# An easy run, for the choices it's offered and where Swap moves it.
+EASY = {"easy", "recovery"}
 # Lighter run: the same session at the same pace, a fifth shorter.
 LIGHTER_SHARE = 0.8
-# Easier pace: the pace range 15 to 20 s/km slower (its quick end 15, its
-# slow end 20), and heart rate capped at the top of the easy zone (zone 2).
-PACE_SLOWER = (15, 20)
-EASY_ZONE = 2
 # Around a plan's easy pace when the plan's own easy runs have no target to copy.
 EASY_WINDOW_SECONDS = 15
 DAYS_OFF = (2, 3, 5)
@@ -69,12 +67,6 @@ def _target(step: Mapping[str, Any]) -> str:
 
 def _cond(step: Mapping[str, Any]) -> str:
     return str((step.get("endCondition") or {}).get("conditionTypeKey") or "").lower()
-
-
-def pace_range(fast_s: float, slow_s: float) -> str:
-    """Seconds per km as the app writes a range: 4:00–4:06/km."""
-    fast, slow = sorted((fast_s, slow_s))
-    return f"{format_pace(fast)[:-3]}\u2013{format_pace(slow)}"
 
 
 def _paces(step: Mapping[str, Any]) -> tuple[float, float] | None:
@@ -147,64 +139,6 @@ def lighter_run(workout: Mapping[str, Any] | None, mark: str) -> dict[str, Any] 
     made["workoutName"] = training_plan.tagged(bare, code) if code else bare
     _estimates(made, workout, LIGHTER_SHARE)
     return made
-
-
-def easy_hr_top(zones: Mapping[str, Any] | None) -> float | None:
-    """The top of the easy zone (zone 2) in bpm, from Garmin's heart rate zones."""
-    for z in (zones or {}).get("zones") or []:
-        if z.get("zone") == EASY_ZONE and isinstance(z.get("bpm"), (list, tuple)) and len(z["bpm"]) == 2:
-            return float(z["bpm"][1])
-    return None
-
-
-def easier_pace(workout: Mapping[str, Any] | None, mark: str,
-                hr_top: float | None) -> tuple[dict[str, Any], str | None, str | None, float | None] | None:
-    """The same distance at an easier pace: pace ranges 15–20 s/km slower, heart rate capped at the easy zone's top.
-
-    Garmin keeps one target per step, so a step paced by pace gets the slower
-    pace, a step paced by heart rate gets the cap, and a run or warm-up with
-    no target gets the cap as its target. Recoveries and rests keep theirs.
-    Returns the copy, the first paced step's range before and after, and the
-    cap when one was set; None when nothing could be eased.
-    """
-    if not workout:
-        return None
-    made = _copy(workout, mark)
-    before = after = None
-    capped = None
-    for step in _flat(_steps(made)):
-        if _kind(step) in ("recovery", "rest"):
-            continue
-        paces = _paces(step)
-        if paces:
-            fast, slow = paces[0] + PACE_SLOWER[0], paces[1] + PACE_SLOWER[1]
-            step["targetValueOne"], step["targetValueTwo"] = round(1000 / slow, 4), round(1000 / fast, 4)
-            if before is None:
-                before, after = pace_range(*paces), pace_range(fast, slow)
-            continue
-        if not hr_top:
-            continue
-        if _target(step) == "heart.rate.zone" and step.get("zoneNumber") and not step.get("targetValueOne"):
-            if int(step["zoneNumber"]) > EASY_ZONE:
-                step["zoneNumber"] = EASY_ZONE
-                capped = hr_top
-            continue
-        if _target(step) == "heart.rate.zone":
-            one, two = float(step.get("targetValueOne") or 0), float(step.get("targetValueTwo") or 0)
-            if two > hr_top:
-                step["targetValueTwo"] = hr_top
-                step["targetValueOne"] = one if one < hr_top - 5 else HR_CAP_FLOOR
-                capped = hr_top
-            continue
-        if _target(step) in ("", "no.target") and _cond(step) in ("distance", "time") and _kind(step) in ("interval", "warmup", "cooldown", "other"):
-            step["targetType"] = {"workoutTargetTypeId": TARGET_HEART_RATE_ZONE,
-                                  "workoutTargetTypeKey": "heart.rate.zone", "displayOrder": 4}
-            step["targetValueOne"], step["targetValueTwo"] = float(HR_CAP_FLOOR), hr_top
-            capped = hr_top
-    if before is None and capped is None:
-        return None
-    _estimates(made, workout)
-    return made, before, after, capped
 
 
 def easy_target(easy_workout: Mapping[str, Any] | None, easy_mps: float | None) -> list[str] | None:
@@ -294,14 +228,16 @@ def _open(s: Mapping[str, Any]) -> bool:
 
 
 def swap_day(sessions: list[Mapping[str, Any]], chosen: Mapping[str, Any]) -> tuple[date, Mapping[str, Any] | None] | None:
-    """The later day this week a hard session or long run can swap with, and the session coming back, or None.
+    """The later day this week a session can swap with, and the session coming back, or None.
 
-    A day with an easy run is swapped with first (the easy run comes to
-    today); then a day with nothing on it. A day with its own hard session,
-    long run or race is never one, and the swap must keep the rules.
+    A hard session or long run swaps first with a day holding an easy run
+    (the easy run comes to its day), then a day with nothing on it. An easy
+    run moves to a later day with nothing on it. A day with its own hard
+    session, long run or race is never one, and the swap must keep the rules.
     """
     day = _d(chosen.get("date"))
-    if not day or chosen.get("type") not in (QUALITY | {"long"}):
+    easy = chosen.get("type") in EASY
+    if not day or chosen.get("type") not in (QUALITY | {"long"} | EASY):
         return None
     on: dict[date, list[Mapping[str, Any]]] = {}
     for s in sessions:
@@ -320,7 +256,8 @@ def swap_day(sessions: list[Mapping[str, Any]], chosen: Mapping[str, Any]) -> tu
             easy_days.append((step, min(runs, key=training_plan._rank)))
         else:  # nothing on it, or strength or a swim, which stay put
             empty_days.append((step, None))
-    for d, back in easy_days + empty_days:
+    # An easy run swapped with another easy run changes nothing: it moves to a free day instead.
+    for d, back in (empty_days if easy else easy_days + empty_days):
         moved = [dict(s, date=d.isoformat()) if s is chosen else
                  dict(s, date=day.isoformat()) if back is not None and s is back else s for s in sessions]
         if not _breaks_rules(_types_by_day(moved), (day, d)):

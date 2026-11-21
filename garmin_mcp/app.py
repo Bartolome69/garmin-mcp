@@ -2029,17 +2029,6 @@ async def _easy_pace(plan: Mapping[str, Any], d: date) -> list[str] | None:
     return feeling.easy_target(workout, training_plan.easy_speed(plan))
 
 
-async def _easy_hr_top() -> float | None:
-    """The top of the person's easy heart rate zone, from Garmin; None where Garmin doesn't say."""
-    from . import zones
-
-    try:
-        raw = await server_mod._call(lambda c: c.get_heart_rate_zones())
-    except Exception:  # noqa: BLE001 - an easier pace still slows the pace without it
-        return None
-    return feeling.easy_hr_top(zones.heart_rate(raw, "running"))
-
-
 def _the(name: str) -> str:
     return name if re.match(r"^(easy|long|recovery)\b", name, re.I) is None else name[:1].lower() + name[1:]
 
@@ -2099,63 +2088,58 @@ async def not_100_options(day: str, schedule_id: int | None = None) -> dict[str,
         options.append({"choice": "original", "label": "Back to the original",
                         "said": f"{whose} {_display((original or {}).get('workoutName') or 'session')} goes back as it was."})
 
+    # Three or four choices, each a different size of change, by the kind of session (Nov 21):
+    # a hard one: Make it easy, Lighter run, Swap, Skip; an easy run or anything else: Lighter run, Swap, Skip.
+    choices: dict[str, dict[str, Any]] = {}
+
+    # Make it easy: a hard session becomes an easy run of the same time.
+    if kind in feeling.QUALITY:
+        if copied:
+            choices["easy"] = {"choice": "easy", "label": "Make it easy", "unavailable": changed}
+        elif minutes:
+            pace = await _easy_pace(plan, d)
+            choices["easy"] = {"choice": "easy", "label": "Make it easy",
+                               "said": f"{whose} {name} becomes an easy {minutes} min run"
+                                       + (f" at {pace[0]}\u2013{pace[1]}/km." if pace else ", at an easy pace.")}
+
     # Lighter run: the same pace, a fifth shorter.
     lighter = None if copied else feeling.lighter_run(workout, EASIER_MARK)
     if copied and kind != "strength":
-        options.append({"choice": "lighter", "label": "Lighter run", "unavailable": changed})
+        choices["lighter"] = {"choice": "lighter", "label": "Lighter run", "unavailable": changed}
     elif lighter:
         after = training_plan.session_totals(lighter, training_plan.easy_speed(plan)) or {}
         said = (f"{whose} {km:g} km becomes {after['km']:g} km, at the same pace." if km and after.get("km")
                 else f"{whose} {minutes} min becomes {after['minutes']} min, at the same pace."
                 if minutes and after.get("minutes") else f"{whose} {_the(name)} is a fifth shorter, at the same pace.")
-        options.append({"choice": "lighter", "label": "Lighter run", "said": said})
+        choices["lighter"] = {"choice": "lighter", "label": "Lighter run", "said": said}
 
-    # Easier pace: the same distance, slower, heart rate capped at the easy zone's top.
-    if not copied and kind != "strength":
-        eased = feeling.easier_pace(workout, EASIER_MARK, await _easy_hr_top())
-        if eased:
-            _, before, after, cap = eased
-            said = f"{whose} {km:g} km stays {km:g} km" if km else f"{whose} {_the(name)} keeps its distance"
-            if before:
-                said += f" at {after} instead of {before}"
-            if cap:
-                said += f", heart rate capped at {cap:.0f} bpm" if before else f", with heart rate capped at {cap:.0f} bpm"
-            options.append({"choice": "pace", "label": "Easier pace", "sub": "Slows your pace targets by 15\u201320 s/km",
-                            "said": said + "."})
-    elif copied and kind != "strength":
-        options.append({"choice": "pace", "label": "Easier pace", "unavailable": changed})
-
-    # Make it easy: a hard session becomes an easy run of the same time.
-    if kind in feeling.QUALITY:
-        if copied:
-            options.append({"choice": "easy", "label": "Make it easy", "unavailable": changed})
-        elif minutes:
-            pace = await _easy_pace(plan, d)
-            options.append({"choice": "easy", "label": "Make it easy",
-                            "said": f"{whose} {name} becomes an easy {minutes} min run"
-                                    + (f" at {pace[0]}–{pace[1]}/km." if pace else ", at an easy pace.")})
-
-    # Swap with a later day of the same week.
-    if kind in feeling.QUALITY | {"long"}:
+    # Swap with a later day of the same week: a hard session or long run with an easy day,
+    # an easy run onto a free day.
+    if kind in feeling.QUALITY | {"long"} | feeling.EASY:
         found = feeling.swap_day(sessions, chosen)
         if found:
             to, back = found
-            options.append({"choice": "swap", "label": f"Swap with {feeling.day_word(to, today)}",
-                            "said": (f"{feeling.days(to, today)} {_the(_display(back.get('name')))} comes to "
-                                     f"{feeling.day_word(d, today)}, and the {name} moves to {feeling.day_word(to, today)}."
-                                     if back else f"The {name} moves to {feeling.day_word(to, today)}, and "
-                                     f"{feeling.day_word(d, today)} becomes a rest day.")})
+            choices["swap"] = {"choice": "swap", "label": f"Swap with {feeling.day_word(to, today)}",
+                               "said": (f"{feeling.days(to, today)} {_the(_display(back.get('name')))} comes to "
+                                        f"{feeling.day_word(d, today)}, and the {_the(name)} moves to {feeling.day_word(to, today)}."
+                                        if back else f"The {_the(name)} moves to {feeling.day_word(to, today)}, and "
+                                        f"{feeling.day_word(d, today)} becomes a rest day.")}
         else:
-            options.append({"choice": "swap", "label": "Swap with a later day",
-                            "unavailable": "No later day this week keeps hard days apart."})
+            choices["swap"] = {"choice": "swap", "label": "Swap with a later day",
+                               "unavailable": "No free day later this week." if kind in feeling.EASY
+                               else "No later day this week keeps hard days apart."}
 
     # Skip this run: it comes off, and the week's total drops by its distance.
     week = _totals_after(plan, [dict(chosen, planned_km=km or chosen.get("planned_km"))])
-    options.append({"choice": "skip", "label": "Skip this run",
-                    "said": f"{whose} {_what(chosen, km)} comes off."
-                            + (f" {week[0]['label']}: {week[0]['from']} km → {week[0]['to']} km." if week and km else "")})
+    choices["skip"] = {"choice": "skip", "label": "Skip this run",
+                       "said": f"{whose} {_what(chosen, km)} comes off."
+                               + (f" {week[0]['label']}: {week[0]['from']} km \u2192 {week[0]['to']} km." if week and km else "")}
 
-    # A few days off: what comes off, each week's new total, the first run back lighter.
+    order = ("easy", "lighter", "swap", "skip") if kind in feeling.QUALITY else ("lighter", "swap", "skip")
+    options += [choices[c] for c in order if c in choices]
+
+    # A few days off: a bigger decision than today's run, so the app shows it apart, as a quieter
+    # link. Each span says what comes off, each week's new total, and the first run back lighter.
     race = _race_said(plan)
     # The taper note is about the A race, the one the plan builds to, wherever the next race is.
     goal = _goal_race(plan)
@@ -2286,7 +2270,7 @@ async def not_100_apply(day: str, schedule_id: int | None, choice: str, days: in
     undo: list[dict[str, Any]] = []
     watch: list[dict[str, Any]] = []
     copied = EASIER_RE.search(str((workout or {}).get("description") or ""))
-    if copied and choice in ("lighter", "pace", "easy"):
+    if copied and choice in ("lighter", "easy"):
         raise EditError("Already changed. Back to the original first.")
     try:
         if choice == "original":
@@ -2307,14 +2291,6 @@ async def not_100_apply(day: str, schedule_id: int | None, choice: str, days: in
             watch.append(_watch_row(chosen, "updated", _display(made["workoutName"])))
             message = (f"{whose} {km:g} km is now {after['km']:g} km." if km and after.get("km")
                        else f"{whose} {_the(name)} is now a fifth shorter.")
-        elif choice == "pace":
-            eased = feeling.easier_pace(workout, EASIER_MARK, await _easy_hr_top())
-            if not eased:
-                raise EditError("This session has no pace or heart rate to ease.")
-            undo.append(await _replace(chosen, eased[0], day))
-            watch.append(_watch_row(chosen, "updated"))
-            message = (f"{whose} {_what(chosen, km)} is now at {eased[2]}." if eased[1]
-                       else f"{whose} {_what(chosen, km)} now caps heart rate at {eased[3]:.0f} bpm.")
         elif choice == "easy":
             if kind not in feeling.QUALITY:
                 raise EditError("Only a hard session can be made easy.")
@@ -2327,14 +2303,15 @@ async def not_100_apply(day: str, schedule_id: int | None, choice: str, days: in
         elif choice == "swap":
             found = feeling.swap_day(sessions, chosen)
             if not found:
-                raise EditError("No later day this week keeps hard days apart.")
+                raise EditError("No free day later this week." if kind in feeling.EASY
+                                else "No later day this week keeps hard days apart.")
             to, back = found
             undo.append(await _move_to(chosen, to.isoformat()))
             watch.append(_watch_row(chosen, "updated", on=to.isoformat()))
             if back is not None:
                 undo.append(await _move_to(back, day))
                 watch.append(_watch_row(back, "updated", on=day))
-            message = (f"The {name} moved to {feeling.day_word(to, today)}, and "
+            message = (f"The {_the(name)} moved to {feeling.day_word(to, today)}, and "
                        + (f"the {_the(_display(back.get('name')))} is "
                           f"{'today' if d == today else 'on ' + feeling.day_word(d, today)}."
                           if back is not None else f"{feeling.day_word(d, today)} is a rest day."))
@@ -2811,7 +2788,7 @@ async def api_not_100_apply(request: Request) -> Response:
     return _json(result)
 
 
-NOT_100_CHOICES = ("original", "lighter", "pace", "easy", "swap", "skip", "days_off")
+NOT_100_CHOICES = ("original", "lighter", "easy", "swap", "skip", "days_off")
 
 
 def _undo_steps(raw: Any) -> list[dict[str, Any]] | None:

@@ -1169,16 +1169,12 @@ function notButton(d, from) {
 }
 
 function notOptions(n) {
-  return n.options.map((o) => {
+  // Today's choices first. A few days off is a bigger decision than today's run (Nov 21, 3), so it
+  // sits last, behind a quiet "Need a few days off?" link that opens its 2, 3 and 5 days.
+  const off = n.options.find((o) => o.spans && !o.unavailable);
+  const rows = n.options.filter((o) => o !== off).map((o) => {
     if (o.unavailable) {
       return `<div class="n100-group"><span class="n100-off"><span class="strong">${esc(o.label)}</span><span class="meta">${esc(o.unavailable)}</span></span></div>`;
-    }
-    if (o.spans) {
-      // A group, not a button: its 2, 3 and 5 days are the buttons.
-      return `<div class="n100-group"><div class="n100-choice" data-choice="days_off" role="group" aria-labelledby="n100-off-label">
-        <span class="strong" id="n100-off-label">${esc(o.label)}</span>
-        <span class="n100-spans">${o.spans.map((s) => `<button type="button" class="pill" data-days="${s.days}" aria-pressed="false">${esc(s.label)}</button>`).join("")}</span>
-        <span class="n100-detail" data-span-said><span class="meta">Pick how many days to see what comes off.</span></span></div></div>`;
     }
     if (o.ask) {
       // A chat with the week filled in: the app only builds the link, it asks no model itself.
@@ -1187,8 +1183,17 @@ function notOptions(n) {
         <span class="strong">${esc(o.label)} ↗</span><span class="meta">Opens a chat with this week and your next race filled in.</span></a>`;
     }
     return `<div class="n100-group"><button type="button" class="n100-choice" data-choice="${esc(o.choice)}" aria-pressed="false">
-      <span class="strong">${esc(o.label)}</span>${o.sub ? `<span class="n100-sub">${esc(o.sub)}</span>` : ""}<span class="meta">${esc(o.said || "")}</span></button></div>`;
-  }).join("");
+      <span class="strong">${esc(o.label)}</span><span class="meta">${esc(o.said || "")}</span></button></div>`;
+  });
+  if (off) {
+    // A group, not a button: its 2, 3 and 5 days are the buttons.
+    rows.push(`<button type="button" class="n100-more" aria-expanded="false" aria-controls="n100-days-off">Need a few days off?</button>
+      <div class="n100-group" id="n100-days-off" hidden><div class="n100-choice" data-choice="days_off" role="group" aria-labelledby="n100-off-label">
+        <span class="strong" id="n100-off-label">${esc(off.label)}</span>
+        <span class="n100-spans">${off.spans.map((s) => `<button type="button" class="pill" data-days="${s.days}" aria-pressed="false">${esc(s.label)}</button>`).join("")}</span>
+        <span class="n100-detail" data-span-said><span class="meta">Pick how many days to see what comes off.</span></span></div></div>`);
+  }
+  return rows.join("");
 }
 
 // What a few days off takes off, the new weekly totals and the first run back, as soon as the days are picked.
@@ -1291,6 +1296,17 @@ function notSheet(day, sid, from, prominent) {
       };
       box.querySelectorAll("button.n100-choice").forEach((b) => { b.onclick = () => pick(b); });
       box.querySelectorAll(".n100-spans [data-days]").forEach((p) => { p.onclick = () => pick(p.closest(".n100-choice"), p.dataset.days); });
+      const more = box.querySelector(".n100-more");
+      if (more) {
+        more.onclick = () => {
+          const group = box.querySelector("#n100-days-off");
+          group.hidden = false;
+          more.setAttribute("aria-expanded", "true");
+          more.hidden = true;
+          group.scrollIntoView({ block: "nearest" });
+          group.querySelector("[data-days]").focus();
+        };
+      }
       go.onclick = () => {
         if (!picked || (picked.dataset.choice === "days_off" && !picked.dataset.days)) return;
         const body = { choice: picked.dataset.choice, schedule_id: sid ? Number(sid) : null };

@@ -25,7 +25,7 @@ other reads next, and the watch gets it at its next sync.
 | Easier | a copy of the workout for that day only, each rep a third shorter, same pace, swapped in with `unschedule` and `schedule` | the easier session on that day, every other week unchanged |
 | Undo easier | the original workout scheduled back, the copy deleted | the original session |
 | Send again | `unschedule` then `schedule` on the same day | unchanged plan |
-| Not feeling 100% | for the session being viewed (today or later, never a past one): a lighter run (same pace, a fifth shorter), an easier pace (15–20 s/km slower, heart rate capped at the top of zone 2), make it easy (a hard session becomes an easy run of the same time), swap with a later day this week, skip this run, or 2, 3 or 5 days off; each is the writes above, by the rules in `garmin_mcp/feeling.py`, and answers what reached the watch | the week as changed; one Undo puts it back |
+| Not feeling 100% | for the session being viewed (today or later, never a past one), three or four choices by its kind: a hard session offers make it easy (an easy run of the same time), a lighter run (same pace, a fifth shorter), swap with a later day this week, or skip this run; an easy or long run offers the last three (an easy run swaps onto a free day). A quieter "Need a few days off?" link under them opens 2, 3 or 5 days off; each is the writes above, by the rules in `garmin_mcp/feeling.py`, and answers what reached the watch | the week as changed; one Undo puts it back |
 | Mark done | not built: Garmin decides done from a recorded run | |
 
 Not feeling 100% is worded for the session being looked at ("Sunday's 12 km
@@ -60,8 +60,8 @@ only knows the API below.
   - `GET /app/api/not100/{date}`: what each Not feeling 100% choice would do to
     that day's session, said before anything changes, plus a "Talk it through"
     link that opens Claude or ChatGPT with the week filled in (the app calls no
-    model). `POST` the same path with `choice` (original, lighter, pace, easy,
-    swap, skip, days_off) and `days` to make it; the answer says what reached
+    model). `POST` the same path with `choice` (original, lighter, easy, swap,
+    skip, days_off) and `days` to make it; the answer says what reached
     the watch (`watch`, `watch_said`) and carries the steps that undo it, which
     `POST /app/api/not100-undo` takes back, so nothing is kept on the server.
     If Garmin refuses a step, the change is put back and the answer is a 502

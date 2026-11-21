@@ -139,6 +139,13 @@ async function open(browser, hash, answers) {
     await p.page.waitForSelector(".n100-choice");
     const go = await p.page.$("#n100-go");
     check("Change my week waits for a choice", await go.isDisabled());
+    check("a few days off waits behind a quiet link at the bottom, after the chat",
+      !(await p.page.isVisible(".n100-spans")) && (await p.page.textContent(".n100-more")) === "Need a few days off?"
+      && await p.page.evaluate(() => [...document.querySelector(".n100-list").children].slice(-2)[0].classList.contains("n100-more")));
+    await p.page.click(".n100-more");
+    check("the link opens the 2, 3 and 5 days in its place",
+      await p.page.isVisible(".n100-spans") && !(await p.page.isVisible(".n100-more"))
+      && (await p.page.getAttribute(".n100-more", "aria-expanded")) === "true");
     await p.page.click('.n100-spans [data-days="2"]');
     const detail = await p.page.textContent("[data-span-said]");
     check("picking 2 days lists what comes off and the week's new total right away",
