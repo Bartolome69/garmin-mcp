@@ -54,6 +54,9 @@ const TODAY_SCREEN = { today: TODAY, kicker: "MON 23 NOV", headline: "This week"
   next: { date: TODAY, kicker: "NEXT · TODAY", name: "3 × 3 km", type: "threshold", type_label: "Quality", colour: "hard",
     stats: [], segments: [], on_watch: true, schedule_id: 7, easier: { applied: false, label: "Easier", preview: "3 × 2 km" },
     not_100: { prominent: false } },
+  readiness: { score: 25, low: true, head: "Readiness is low today", sub: "Short night.", source: "From Garmin", tiles: [
+    { l: "Readiness", v: "25", note: "Take it easier", low: true }, { l: "Sleep", v: "6:59", note: "Score 44", low: true },
+    { l: "Resting HR", v: "42", note: "HRV in range" }] },
   ask: { claude: "https://claude.ai/new?q=x", chatgpt: "https://chatgpt.com/?q=x", claude_app: "claude://claude.ai/new?q=x" } };
 
 async function open(browser, hash, answers) {
@@ -107,6 +110,14 @@ async function open(browser, hash, answers) {
     check("Today's card has Not feeling 100% where Easier was, and no Easier",
       pills.includes("Not feeling 100%") && !pills.some((t) => /^Easier|Undo easier/.test(t)) && !(await p.page.$('.next-pills [data-act="easier"]')),
       JSON.stringify(pills));
+    const ready = await p.page.$eval("section[aria-label='Readiness']", (sec) => ({
+      head: [...sec.querySelector(".section-head").children].map((c) => c.textContent.trim()).join(" · "),
+      tiles: [...sec.querySelectorAll(".trio > div")].map((t) => [...t.children].map((c) => c.textContent.trim())),
+      garmin: (sec.textContent.match(/from Garmin/g) || []).length }));
+    check("Readiness says where it's from once, in its header, and each tile is its label, number and one line",
+      ready.head === "Readiness · from Garmin" && ready.garmin === 1
+      && JSON.stringify(ready.tiles) === JSON.stringify([["Readiness", "25", "Take it easier"], ["Sleep", "6:59", "Score 44"], ["Resting HR", "42", "HRV in range"]]),
+      JSON.stringify(ready));
     await p.page.click(".next-pills .n100-pill");
     await p.page.waitForSelector(".n100-choice");
     check("and it opens the same sheet", (await p.page.textContent("#sheet-title")) === "Not feeling 100%?");

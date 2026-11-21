@@ -591,8 +591,9 @@ function todayParts(d) {
       <a class="pill" href="#/crew" style="flex-shrink:0;padding:0 14px">Run together</a></div>`;
   }
   p.ready = d.readiness
-    ? `<section class="stack" aria-label="Readiness"><div class="section-head"><span class="section-title">Readiness</span></div>
-      <div class="card trio">${d.readiness.tiles.map((t) => `<div><span class="l">${esc(t.l)}</span><span class="v-row"><span class="v">${esc(t.v)}</span><span class="src">from Garmin</span></span><span class="n ${t.low ? "warn" : ""}">${esc(t.note)}</span></div>`).join("")}</div></section>`
+    // The source once, in the header (Nov 21); each tile is its label, its number and one line.
+    ? `<section class="stack" aria-label="Readiness"><div class="section-head"><span class="section-title">Readiness</span><span class="src ready-src">from Garmin</span></div>
+      <div class="card trio">${d.readiness.tiles.map((t) => `<div><span class="l">${esc(t.l)}</span><span class="v">${esc(t.v)}</span><span class="n ${t.low ? "warn" : ""}">${esc(t.note)}</span></div>`).join("")}</div></section>`
     : `<section class="stack"><span class="section-title">Readiness</span><div class="card pad meta">Readiness needs a night of sleep data. Wear the watch overnight and it shows here.</div></section>`;
   if (d.week) {
     const w = d.week;
