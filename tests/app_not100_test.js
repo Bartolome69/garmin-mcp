@@ -92,12 +92,17 @@ async function open(browser, hash, answers) {
   try {
     console.log("the session screen's buttons");
     let p = await open(browser, `/session/${TODAY}?from=today`, (key) =>
-      key === `GET session/${TODAY}` ? { json: session(TODAY, { not_100: { prominent: false } }) } : null);
+      key === `GET session/${TODAY}` ? { json: session(TODAY, { not_100: { prominent: false },
+        readiness: { score: 25, low: true, head: "Readiness is low today", sub: "Short night." } }) } : null);
     const row = await p.page.$$eval(".actions3 > *", (xs) => xs.map((x) => x.textContent.trim()));
     check("the row reads Move, Not feeling 100%, Ask Claude", row.length === 3 && row[0] === "Move" && row[1] === "Not feeling 100%"
       && row[2].startsWith("Ask Claude"), JSON.stringify(row));
     check("with no standalone Easier button", !(await p.page.$('.actions3 [data-act="easier"]')));
     check("and no separate Not feeling 100% card below it", (await p.page.$$("#screen [data-not100]")).length === 1);
+    const card = await p.page.$eval(".ready-card", (c) => ({ head: [...c.querySelector(".ready-head").children].map((x) => x.textContent.trim()),
+      under: c.querySelector(".ready-top").textContent, garmin: (c.textContent.match(/from Garmin/g) || []).length }));
+    check("its readiness card says from Garmin once, in its header, not under the score",
+      JSON.stringify(card.head) === JSON.stringify(["Readiness", "from Garmin"]) && card.garmin === 1 && !/from Garmin/.test(card.under), JSON.stringify(card));
     const right = await p.page.$eval(".actions3", (x) => x.getBoundingClientRect().right);
     check("the row fits inside the screen's margin", right <= 390 - 16 + 0.5, String(right));
     check("no page threw an error", p.errors.length === 0, p.errors.join("; "));

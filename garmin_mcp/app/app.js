@@ -808,7 +808,9 @@ function previewView(d, from, panel = false) {
     parts.push(`<section class="stack"><span class="section-title">${esc(d.structure_title)}</span><div class="card steps">${d.steps.map(stepRow).join("")}</div></section>`);
   }
   if (r && r.score !== null && r.score !== undefined) {
-    parts.push(`<div class="card ready-card ${r.low ? "amber" : ""}"><div class="ready-top"><span class="stack-tight" style="gap:0;align-items:center"><span class="ready-score">${esc(r.score)}</span><span class="src">from Garmin</span></span>
+    // The source once, in the card's header (Nov 22), not under the score.
+    parts.push(`<div class="card ready-card ${r.low ? "amber" : ""}"><div class="ready-head"><span class="ready-label">Readiness</span><span class="src ready-src">from Garmin</span></div>
+      <div class="ready-top"><span class="ready-score">${esc(r.score)}</span>
       <span class="grow"><span class="strong">${esc(r.head)}</span><span class="meta" style="line-height:1.4">${esc(r.sub)}${r.low && d.easier && !d.easier.applied && !d.not_100 ? ` Consider Easier: ${esc(d.easier.preview)} at the same pace.` : ""}</span></span></div>
       ${r.low && d.easier && d.easier.applied ? `<button class="pill amber" data-act="undo" data-day="${d.date}" data-sid="${d.schedule_id || ""}">Back to the original</button>`
         : r.low && d.not_100 ? ""

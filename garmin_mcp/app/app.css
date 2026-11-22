@@ -201,6 +201,8 @@ main { flex: 1; padding: calc(28px + env(safe-area-inset-top)) 16px 120px; displ
 .step.head .right { color: var(--muted); }
 .ready-card { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .ready-top { display: flex; align-items: center; gap: 12px; }
+.ready-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: -2px; }
+.ready-label { font-size: 12px; color: var(--muted); font-weight: 600; }
 .ready-score { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; min-width: 40px; }
 .watch-row { padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
 .watch-icon { width: 36px; height: 36px; border-radius: 999px; background: var(--sunken); color: var(--muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
