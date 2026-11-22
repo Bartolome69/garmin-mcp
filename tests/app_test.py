@@ -796,6 +796,30 @@ def api_checks() -> None:
     check("and says nothing the table already shows", not run.get("insights")
           and "figures" not in run, str(run.get("insights"))[:160])
 
+    # Nov 22: a run that went on past its plan leads with what was run. A session of
+    # reps keeps its name ("3 x 3 km" says more), with the plan line under it.
+    real_analyse = app_routes.analysis.analyse
+
+    def longer(*a, **k):
+        out = real_analyse(*a, **k)
+        out["extra"] = {"planned_km": 12.0, "ran_km": 14.2, "extra_km": 2.2}
+        return out
+
+    app_routes.analysis.analyse = longer
+    try:
+        reps_run = client.get(f"/app/api/run/{done['activityId']}", headers=auth).json()
+        easy_done = next((a for a in DEMO.demo_activities.values() if re.match(r"Easy run", a.get("activityName") or "")), None)
+        easy_run = client.get(f"/app/api/run/{easy_done['activityId']}", headers=auth).json() if easy_done else {}
+    finally:
+        app_routes.analysis.analyse = real_analyse
+    check("a session of reps run longer keeps its name, with the plan line under it",
+          reps_run.get("name") == run.get("name") and reps_run.get("planned_line") == "Planned 12 km \u00b7 ran 2.2 km extra"
+          and "extra" not in reps_run, str({k: reps_run.get(k) for k in ("name", "planned_line")}))
+    check("an easy run run longer is titled by what was run",
+          easy_run.get("name") == "14.2 km easy" and bool(easy_run.get("planned_line")),
+          str({k: easy_run.get(k) for k in ("name", "planned_line", "type", "error")}))
+    check("a run that kept to its plan has no plan line", "planned_line" not in run)
+
     # Each read asked for once, and none of the chat's extras (Nov 3: the run
     # screen made about eleven calls, mostly one after another).
     asked: list[tuple[str, tuple]] = []

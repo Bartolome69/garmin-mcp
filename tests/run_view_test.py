@@ -179,6 +179,56 @@ check("reps against reps, both figures said",
 check("reps aren't compared with a whole run", run_view.last_time({"reps": 3, "km": 9, "p": 243, "hr": 161},
                                                                   {"km": 10, "p": 300, "hr": 130}, "x", None, "1 Nov") is None)
 
+# -- Nov 22: a 12 km easy run taken on to 14.2 km, Bart's of that day, 15 km laps --------------
+print("a run longer than its plan")
+EASY12 = {"workoutSegments": [{"workoutSteps": [step(1, "interval", "distance", 12000, HR)]}]}
+KM_S = [305, 310, 311, 316, 314, 306, 303, 303, 286, 302, 292, 291, 286, 264, 45]
+KM_HR = [120, 126, 133, 136, 136, 134, 138, 135, 143, 144, 144, 147, 144, 149, 159]
+ON = {"lapDTOs": [lap(1000 if i < 14 else 160, sec, hr, "interval") for i, (sec, hr) in enumerate(zip(KM_S, KM_HR))]}
+r = analysis.analyse(EASY12, ON, "easy", None, story=True)
+rows = r.get("planned_and_run") or []
+check("the 12 km step takes its own 12 km laps, not the 2.2 km run after it",
+      [x["label"] for x in rows] == ["Run", "Ran on"] and rows[0]["hr"] == 136 and rows[0]["pace"] == "5:03"
+      and rows[1]["note"] == "2.2 km after the workout", str(rows))
+check("the extra is said from the rounded figures, so they add up",
+      r.get("extra") == {"planned_km": 12.0, "ran_km": 14.2, "extra_km": 2.2}, str(r.get("extra")))
+check("the verdict leads with it, then how the planned part kept to its target",
+      r["verdict"] == "Ran 2.2 km longer than planned. Heart rate on target until km 12.", r["verdict"])
+check("what was planned under the numbers the plan set: distance and heart rate, not time or pace",
+      [x.get("plan") for x in r["stats"]] == ["12 planned", None, None, "120\u2013145 planned"], str(r["stats"]))
+c = r.get("chart") or {}
+check("the chart marks where the plan ended, after the 12th km bar, and ends at 14.2",
+      c.get("plan_ends") == 12 and c.get("total_km") == 14.2, str({k: v for k, v in c.items() if k != "parts"}))
+check("and its heart rate line is about the planned 12 km only", c.get("caption") == "Heart rate went over 145 in km 12.", str(c.get("caption")))
+
+near = {"lapDTOs": [lap(1000, 305, 130, "interval") for _ in range(12)] + [lap(300, 90, 132, "interval")]}
+r = analysis.analyse(EASY12, near, "easy", None, story=True)
+check("300 m past the plan isn't extra: no line, no marker, the old verdict",
+      not r.get("extra") and "plan_ends" not in (r.get("chart") or {}) and not r["verdict"].startswith("Ran "), r["verdict"])
+check("but its axis still ends at the whole distance", (r.get("chart") or {}).get("total_km") == 12.3)
+check("what was planned shows under the numbers on every run with a plan", r["stats"][0].get("plan") == "12 planned")
+
+flat = {"lapDTOs": [lap(1000, 300, 150, "interval") for _ in range(14)]}
+r = analysis.analyse(EASY12, flat, "easy", None, story=True)
+check("over the target from the first km says so, not 'until km 1'",
+      r["verdict"] == "Ran 2 km longer than planned. Heart rate over the target from the start.", r["verdict"])
+calm = {"lapDTOs": [lap(1000, 300, 130, "interval") for _ in range(14)]}
+r = analysis.analyse(EASY12, calm, "easy", None, story=True)
+check("on target the whole plan says so", r["verdict"] == "Ran 2 km longer than planned. Heart rate on target for the planned 12 km.", r["verdict"])
+
+untargeted = {"workoutSegments": [{"workoutSteps": [step(1, "interval", "distance", 12000)]}]}
+r = analysis.analyse(untargeted, calm, "easy", None, story=True)
+check("a plan with no target gives the averages instead",
+      r["verdict"] == "Ran 2 km longer than planned. Averaged 5:00 /km at 130 bpm." and r["stats"][3].get("plan") is None, r["verdict"])
+
+r = analysis.analyse(None, ON, "easy", None, story=True)
+check("a run with no workout has no plan to compare: no extra, nothing planned under the numbers",
+      not r.get("extra") and not any(x.get("plan") for x in r["stats"]), str(r["stats"]))
+
+r = analysis.analyse(THRESHOLD, THRESHOLD_LAPS, "sub", None, story=True)
+check("a session with a lap-button step has no planned distance to compare against", not r.get("extra"))
+check("its reps' pace target shows under their pace", r["stats"][2].get("plan") == "3:58\u20134:08 planned", str(r["stats"]))
+
 print()
 if FAILED:
     print(f"{len(FAILED)} failed: " + "; ".join(FAILED))

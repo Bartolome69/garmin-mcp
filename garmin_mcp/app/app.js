@@ -863,9 +863,10 @@ function analysisView(d, from, panel = false) {
   const ask = askLink(d, `Ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"} about it`);
   if (panel) return analysisPanel(d, ask);
   const parts = [`<a class="back" href="${backHref(from)}">${ICON.left()}${back}</a>`,
-    `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1>${credit(d)}</header>`,
+    // Nov 22: a run past its plan leads with what was run; the plan in a muted line under it.
+    `<header class="stack-8"><span class="kicker">${esc(d.kicker)}</span><h1 class="title-xl">${esc(d.name)}</h1>${d.planned_line ? `<span class="meta planned-line">${esc(d.planned_line)}</span>` : ""}${credit(d)}</header>`,
     `<p class="verdict">${esc(d.verdict)}</p>`,
-    `<div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>`];
+    statsRow(d.stats)];
   const chart = runChart(d.chart, d.colour);
   if (chart && !d.planned_and_run) parts.push(`<section class="stack"><span class="section-title">${esc(d.chart_title || "Km by km")}</span>${chart}</section>`);
   if (d.planned_and_run) {
@@ -893,6 +894,12 @@ function analysisView(d, from, panel = false) {
   }
   parts.push(`<div class="actions2">${d.share_url ? `<a class="pill tall" href="${esc(d.share_url)}" target="_blank" rel="noopener">${ICON.share()}Share this ${d.ride ? "ride" : "run"}</a>` : `<span></span>`}${ask.html}</div>`);
   return parts.join("");
+}
+
+// The run's numbers, each with what was planned in small grey under it where the plan set one (Nov 22).
+function statsRow(stats) {
+  const planned = stats.some((s) => s.plan);
+  return `<div class="stats4">${stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span>${planned ? `<span class="plan">${esc(s.plan || "")}</span>` : ""}</div>`).join("")}</div>`;
 }
 
 // After a run (Nov 11): the session as planned with what was run inside it,
@@ -960,9 +967,14 @@ function runChart(c, colour) {
     const lo = quick - 20, hi = slow + 30;
     const top = 26, bot = 110;
     const yKm = (p) => bot - (hi - p) / (hi - lo) * (bot - top);
+    // Nov 22: a run past its plan. The bars after the plan's last km are the extra, tinted apart.
+    const ends = c.plan_ends && c.plan_ends < kms.length ? c.plan_ends : 0;
+    const past = (i) => ends && i >= ends;
+    // The session's own colour, faded, outlined in it: the same run, past what was asked.
+    const extraFill = `color-mix(in srgb, ${tone("km")} 32%, transparent)`;
     kms.forEach((k, i) => {
       const x = i * (kmW + 3), y = yKm(k.p);
-      body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${kmW.toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="3" fill="${tone("km")}"/>`;
+      body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${kmW.toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="3" fill="${past(i) ? extraFill : tone("km")}" ${past(i) ? `stroke="${tone("km")}" stroke-width="1"` : ""}/>`;
       // A ride's bars are its speed (Nov 15); a run's its pace.
       const shown = c.unit === "kmh" ? (3600 / k.p).toFixed(1) : clockOf(k.p);
       if (kmW >= 24) body += `<text class="v" x="${(x + kmW / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" style="font-size:11px">${shown}</text>`;
@@ -990,7 +1002,7 @@ function runChart(c, colour) {
         const end = yHr(k.hr) - (named(k, i) ? 17 : 3);
         if (end > bot + 4) body += `<line class="guide" x1="${midOf(i).toFixed(1)}" y1="${(bot + 3).toFixed(1)}" x2="${midOf(i).toFixed(1)}" y2="${end.toFixed(1)}" stroke="var(--hairline)" stroke-width="1" stroke-dasharray="2 3"/>`;
       });
-      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${roomKm.toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
+      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${(ends ? ends * (kmW + 3) - 3 : roomKm).toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
       const pts = kms.map((k, i) => k.hr ? `${midOf(i).toFixed(1)},${yHr(k.hr).toFixed(1)}` : "").filter(Boolean).join(" ");
       body += `<polyline points="${pts}" fill="none" stroke="var(--ink-2)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
       kms.forEach((k, i) => {
@@ -998,9 +1010,16 @@ function runChart(c, colour) {
       });
       labelY = hBot + 16;
       height = labelY + 4;
-      key = `<span><i style="background:${tone("km")}"></i>${esc(c.bar_label || "Km pace")}</span>${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--ink-2);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
+      key = `<span><i style="background:${tone("km")}"></i>${esc(c.bar_label || "Km pace")}</span>${ends ? `<span><i style="background:${extraFill};border:1px solid ${tone("km")}"></i>Past the plan</span>` : ""}${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--ink-2);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
     }
-    body += `<text x="0" y="${labelY}">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="${labelY}" text-anchor="end">Km ${esc(kms[kms.length - 1].label)}</text>`;
+    // The axis runs from the first km to the whole distance (Nov 22: it ended at the last part km, "Km 0.2").
+    body += `<text x="0" y="${labelY}">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="${labelY}" text-anchor="end">Km ${esc(c.total_km != null ? String(c.total_km) : kms[kms.length - 1].label)}</text>`;
+    if (ends) {
+      // A dashed line where the plan ended, through the bars and the heart rate under them.
+      const lx = ends * (kmW + 3) - 1.5;
+      body += `<line x1="${lx.toFixed(1)}" y1="6" x2="${lx.toFixed(1)}" y2="${(labelY - 12).toFixed(1)}" stroke="var(--ink-2)" stroke-width="1.2" stroke-dasharray="4 3"/>`
+        + `<text x="${(lx - 4).toFixed(1)}" y="14" text-anchor="end" style="fill:var(--ink-2)">Plan ends</text>`;
+    }
     if (strides.length) body += `<text x="${(sx + strideW / 2).toFixed(1)}" y="${labelY}" text-anchor="middle">${strides.length} strides</text>`;
     body = `<svg viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(c.caption || (c.unit === "kmh" ? "Each lap's speed and heart rate" : "Each km's pace and heart rate"))}">${body}</svg>`;
   }
@@ -1035,9 +1054,9 @@ function analysisPanel(d, ask) {
         <span class="meta ${c.miss === "high" ? "soft" : ""}" style="font-size:12px">${c.hr ? `${esc(c.hr)} bpm` : ""}</span></span></div>`).join("");
   const splits = (d.splits || []).map((s) => `<div class="psplit"><span class="meta">${esc(s.rest ? "Jogs" : s.km)}</span>
       <span style="font-weight:600;white-space:nowrap">${esc(s.rest ? s.pace.replace(" for ", " · ") : s.partial ? `${s.time} (${s.pace})` : s.pace)}</span><span class="meta" style="text-align:right">${esc(s.hr || "–")}</span></div>`).join("");
-  return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>${credit(d)}
+  return `<h2 class="title-xl" style="font-size:32px">${esc(d.name)}</h2>${d.planned_line ? `<span class="meta planned-line">${esc(d.planned_line)}</span>` : ""}${credit(d)}
     <p class="verdict" style="font-size:19px">${esc(d.verdict)}</p>
-    <div class="stats4">${d.stats.map((s) => `<div class="stack-tight" style="gap:2px;min-width:0"><span class="v">${esc(s.v)}</span><span class="l">${esc(s.l)}</span></div>`).join("")}</div>
+    ${statsRow(d.stats)}
     ${runChart(d.chart, d.colour)}
     ${insightsView(d.insights)}
     <div class="panel-two">${rows ? `<section class="stack-8"><span class="strong">Planned and run</span><div class="card table">${rows}</div></section>` : ""}

@@ -160,8 +160,37 @@ def _within(kms, span: tuple[Any, float, float] | None):
 
 # -- B: the chart -----------------------------------------------------------------
 
+def on_target_until(split_rows: Sequence[Mapping[str, Any]], target: Mapping[str, Any], plan_km: float) -> str | None:
+    """Nov 22: how the planned part of a run that went on past it kept to its target, km by km.
+
+    Heart rate counts as off above the target (under it on an easy day is fine), pace outside it.
+    """
+    what = "Heart rate" if target["kind"] == "hr" else "Pace"
+    done, seen = 0.0, 0
+    for k in _km_rows(split_rows):
+        try:
+            length = min(1.0, float(k["km"]))
+        except (TypeError, ValueError):
+            length = 1.0
+        if done + length > plan_km + 0.05:
+            break
+        done += length
+        if target["kind"] == "hr":
+            if not k.get("hr"):
+                continue
+            off = k["hr"] > target["hi"] + 1
+        else:
+            off = not _on(target, k["p"])
+        if off:
+            if not seen:
+                return f"{what} {'over' if target['kind'] == 'hr' else 'outside'} the target from the start."
+            return f"{what} on target until km {k['km']}."
+        seen += 1
+    return f"{what} on target for the planned {plan_km:g} km." if seen else None
+
+
 def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str, Any]],
-          split_rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+          split_rows: Sequence[Mapping[str, Any]], plan_km: float | None = None) -> dict[str, Any] | None:
     """What the chart draws: the session step by step with its reps against their
     target ("steps"), or the run km by km with heart rate against an easy
     session's target ("km"). None when there's nothing to draw."""
@@ -178,6 +207,25 @@ def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str,
     parts += [{"k": "stride", "s": round(l["seconds"]), "p": round(_secs(l)), "hr": round(l["hr"]) if l.get("hr") else None}
               for l in strides if _secs(l)]
     out: dict[str, Any] = {"mode": "km", "parts": parts}
+    # The axis ends at the run's whole distance (Nov 22: it said "Km 0.2", its last part km).
+    total = sum(l.get("metres") or 0 for l in laps) / 1000
+    if total:
+        out["total_km"] = round(total, 1)
+    # A run that went on past its plan: where the plan ended, as a count of km bars.
+    if plan_km:
+        done, ends = 0.0, 0
+        for k in kms:
+            try:
+                length = min(1.0, float(k["km"]))
+            except (TypeError, ValueError):
+                length = 1.0
+            if done + length > plan_km + 0.05:
+                break
+            done += length
+            ends += 1
+        if 0 < ends < len(kms):
+            out["plan_ends"] = ends
+            out["plan_km"] = plan_km
     if planned_strides > len(strides):
         out["missing_strides"] = planned_strides - len(strides)
     if target:

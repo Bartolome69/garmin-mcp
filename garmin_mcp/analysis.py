@@ -186,7 +186,9 @@ def _paired(steps: list[dict[str, Any]], laps: list[dict[str, Any]]
         # shorter one that ended it are the step, joined.
         if lap is not None and _long(step) and _auto(lap):
             j = i + 1
-            while j < len(laps) and _auto(laps[j]) and _fits(step, laps[j]):
+            # Nov 22: up to the step's own length. A 12 km easy run run on to
+            # 14.2 km took every km lap, and read the whole run as the 12 km.
+            while j < len(laps) and _auto(laps[j]) and _fits(step, laps[j]) and not _reached(step, laps[i:j]):
                 j += 1
             if j < len(laps) and _fits(step, laps[j]) and _nearer(step, laps[i:j], laps[j]):
                 j += 1
@@ -203,6 +205,15 @@ def _auto(lap: Mapping[str, Any]) -> bool:
 
 def _long(step: Mapping[str, Any]) -> bool:
     return (step.get("metres") or 0) >= LONG_STEP_METRES or (step.get("seconds") or 0) >= LONG_STEP_SECONDS
+
+
+def _reached(step: Mapping[str, Any], have: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether a long step's km laps so far already make the length it was planned to be."""
+    if step.get("metres"):
+        return sum(l["metres"] for l in have) >= step["metres"] * 0.99
+    if step.get("seconds"):
+        return sum(l["seconds"] for l in have) >= step["seconds"] - 15
+    return False
 
 
 def _nearer(step: Mapping[str, Any], have: Sequence[Mapping[str, Any]], last: Mapping[str, Any]) -> bool:
@@ -477,6 +488,72 @@ def splits(laps: Sequence[Mapping[str, Any]], columns: Mapping[str, Any] | None 
     return out
 
 
+# Nov 22: a run that went on past its plan by this much, and by this share of
+# it, leads with what was run: its title, its verdict and the chart say so.
+EXTRA_MIN_METRES = 500.0
+EXTRA_MIN_SHARE = 0.05
+
+
+def _planned_metres(steps: Sequence[Mapping[str, Any]]) -> float | None:
+    """The session's planned distance, when every step of it is set by distance."""
+    if not steps or any(not s.get("metres") for s in steps):
+        return None
+    return sum(s["metres"] for s in steps)
+
+
+def _planned_seconds(steps: Sequence[Mapping[str, Any]]) -> float | None:
+    """Its planned time, when every step is set by time."""
+    if not steps or any(not s.get("seconds") for s in steps):
+        return None
+    return sum(s["seconds"] for s in steps)
+
+
+def _one_target(steps: Sequence[Mapping[str, Any]], reps: bool) -> dict[str, Any] | None:
+    """The one target the running steps share (the reps' when reps), or None when they differ."""
+    pick = [s for s in steps if (bool(s.get("rep")) if reps else s["kind"] in ("interval", "warmup", "cooldown") and not s.get("rep"))]
+    targets = [s["target"] for s in pick if s.get("target")]
+    if not targets:
+        return None
+    t = targets[0]
+    same = all(o["kind"] == t["kind"] and abs(o["lo"] - t["lo"]) < 1 and abs(o["hi"] - t["hi"]) < 1 for o in targets)
+    return t if same else None
+
+
+def _target_short(t: Mapping[str, Any]) -> str:
+    """A target as the stats row writes it under the number: 5:15–5:40, or 120–145."""
+    if t["kind"] == "pace":
+        return f"{pace(t['lo'])}\u2013{pace(t['hi'])}"
+    return hr_text(t["lo"], t["hi"]).removesuffix(" bpm")
+
+
+def _extra(planned_m: float | None, total_m: float) -> dict[str, float] | None:
+    """How far past its planned distance a run went, when it's far enough to lead with."""
+    if not planned_m or total_m - planned_m < max(EXTRA_MIN_METRES, planned_m * EXTRA_MIN_SHARE):
+        return None
+    ran, planned = round(total_m / 1000, 1), round(planned_m / 1000, 1)
+    # From the rounded figures, so the screen's sums add up: 14.2 - 12 = 2.2.
+    return {"planned_km": planned, "ran_km": ran, "extra_km": round(ran - planned, 1)}
+
+
+def _extra_verdict(extra: Mapping[str, float], verdict: str, rows: list[dict[str, Any]], laps: list[dict[str, Any]],
+                   split_rows: list[dict[str, Any]], target: Mapping[str, Any] | None) -> str:
+    """A run longer than planned: that first, then how the planned part went."""
+    first = f"Ran {extra['extra_km']:g} km longer than planned."
+    if any(r.get("rep") for r in rows):
+        return f"{first} {verdict}"
+    from .run_view import on_target_until
+
+    until = on_target_until(split_rows, target, extra["planned_km"]) if target else None
+    if until:
+        return f"{first} {until}"
+    total_m, total_s = sum(l["metres"] for l in laps), sum(l["seconds"] for l in laps)
+    hr = _weighted_hr(laps)
+    avg = f"Averaged {pace(total_s / total_m * 1000)} /km" if total_m else None
+    if avg and hr:
+        avg += f" at {round(hr)} bpm"
+    return f"{first} {avg}." if avg else first
+
+
 def _verdict(rows: list[dict[str, Any]], laps: list[dict[str, Any]], kind: str | None,
              split_rows: list[dict[str, Any]]) -> str:
     """One or two plain sentences on how the run went against its targets."""
@@ -594,6 +671,10 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
             lap["stride"] = True
     split_rows = splits(laps, stream.parse_stream(recording) if recording else None)
     reps = [r["_lap"] for r in rows if r.get("rep") and r.get("_lap")]
+    steps = planned_steps(workout) if workout else []
+    planned_m = _planned_metres(steps)
+    planned_s = _planned_seconds(steps)
+    extra = _extra(planned_m, total_m) if paired else None
     if len(reps) >= 2:
         rep_m = sum(l["metres"] for l in reps)
         rep_s = sum(l["seconds"] for l in reps)
@@ -606,14 +687,25 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
         stats = [{"v": f"{total_m / 1000:.1f}", "l": "km"}, {"v": clock(total_s), "l": "time"},
                  {"v": pace(total_s / total_m * 1000) if total_m else "–", "l": "/km avg"},
                  {"v": str(round(hr)) if hr else "–", "l": "bpm avg"}]
+    # Nov 22: what was planned, in small grey under each number, where the plan set it.
+    aim = _one_target(steps, reps=len(reps) >= 2)
+    plan_lines = [f"{planned_m / 1000:g} planned" if planned_m else None,
+                  f"{clock(planned_s)} planned" if planned_s else None,
+                  f"{_target_short(aim)} planned" if aim and aim["kind"] == "pace" else None,
+                  f"{_target_short(aim)} planned" if aim and aim["kind"] == "hr" else None]
+    for stat, line in zip(stats, plan_lines):
+        if line:
+            stat["plan"] = line
     verdict = _verdict(rows, laps, kind, split_rows)
+    if extra:
+        verdict = _extra_verdict(extra, verdict, rows, laps, split_rows, _one_target(steps, reps=False))
     short = _short(rows, total_m, total_s)
     told: dict[str, Any] = {}
     if story:
         from . import run_view
 
         pairs, after = paired if paired else ([], [])
-        told = {"chart": run_view.chart(pairs, after, laps, split_rows),
+        told = {"chart": run_view.chart(pairs, after, laps, split_rows, plan_km=(extra or {}).get("planned_km")),
                 "insights": run_view.insights(pairs, laps, split_rows, kind) or None,
                 "figures": run_view.figures(pairs, laps)}
     # The quicker stretch of a run without reps (a long run's half-marathon-pace
@@ -631,6 +723,7 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
         "short": short,
         "stats": stats,
         "planned_and_run": rows or None,
+        "extra": extra,
         "matched": bool(paired) or None,
         "splits": split_rows or None,
         "km": round(total_m / 1000, 1),

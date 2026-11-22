@@ -666,6 +666,11 @@ async def session_payload(day: str, schedule_id: int | None = None) -> dict[str,
     })
 
 
+# A run longer than planned is titled by what was run, in the session's own word (Nov 22).
+# Sessions built on reps keep their name: "3 x 3 km" says more than its distance.
+RAN_ON_TITLE = {"easy": "easy", "recovery": "recovery run", "long": "long run"}
+
+
 async def run_payload(activity_id: int) -> dict[str, Any]:
     # Four reads at once, each asked for once (Nov 3: the chat's whole
     # get_activity_details, then the same laps and recording again, then the
@@ -736,6 +741,14 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     t = _type(kind)
     _row_colours(result.get("planned_and_run") or [], t["colour"])
     name = _display((row or {}).get("name") or summary.get("name") or "Run")
+    # Nov 22: a run that went on past its plan leads with what was run, the plan under it.
+    extra = result.pop("extra", None)
+    planned_line = None
+    if extra:
+        word = RAN_ON_TITLE.get(kind or "")
+        if word and not any(r.get("rep") for r in result.get("planned_and_run") or []):
+            name = f"{extra['ran_km']:g} km {word}"
+        planned_line = f"Planned {extra['planned_km']:g} km \u00b7 ran {extra['extra_km']:g} km extra"
     kicker = (f"{_short_date(started.date()).upper()} · {started.strftime('%H:%M')}" if started else "") + f" · {t['type_label'].upper()}"
     effect = None
     if row:
@@ -759,7 +772,7 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     share = (details.get("share_image") or {}).get("url")
     return drop_empty({
         "activity_id": activity_id, "date": (row or {}).get("date"), "kicker": kicker.strip(" ·"),
-        "name": name, **t, **{k: v for k, v in result.items() if k != "short"},
+        "name": name, "planned_line": planned_line, **t, **{k: v for k, v in result.items() if k != "short"},
         "effect": effect, "share_url": share,
         # The run's own watch, for Garmin's credit by its title (Nov 10).
         "credit": share_mod.attribution(device),
