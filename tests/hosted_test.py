@@ -1848,6 +1848,24 @@ async def main() -> int:
         got = {text: hosted.strength_check(text) for text in checks}
         check("each strength check has its own label", got == checks and hosted.strength_check(None) is None,
               str({t[:30]: c for t, c in got.items() if c != checks[t]}))
+        # Nov 23: the sports people look back at, on tool_called, by group alone.
+        seen = hosted.activity_sports("get_activities", {"activities": [
+            {"type": "running", "name": "Tower Hamlets Running"}, {"type": "trail_running"}, {"type": "road_biking"},
+            {"type": "lap_swimming"}, {"type": "strength_training"}, {"type": "yoga"}, {"type": None}]})
+        check("get_activities counts each sport group in its answer",
+              seen == {"sports": ["bike", "other", "run", "strength", "swim", "unknown"],
+                       "sport_counts": {"run": 2, "bike": 1, "swim": 1, "strength": 1, "other": 1, "unknown": 1}}, str(seen))
+        check("get_activity_details names its one sport",
+              hosted.activity_sports("get_activity_details", {"summary": {"type": "indoor_cycling"}}) == {"sport": "bike", "sports": ["bike"]})
+        check("nothing for a failed read, an empty list or another tool",
+              hosted.activity_sports("get_activities", {"error": "x"}) == {} and hosted.activity_sports("get_activities", {"activities": []}) == {}
+              and hosted.activity_sports("get_plan", {"activities": [{"type": "running"}]}) == {})
+        before = len(SENT)
+        hook("get_activities", {"activities": [{"type": "running", "name": "Morning Run", "location": "Hackney"}, {"type": "cycling"}]})
+        called = [e["properties"] for e in SENT[before:] if e["event"] == "tool_called"]
+        check("tool_called carries them, and never a name or place",
+              called and called[-1].get("sports") == ["bike", "run"] and called[-1].get("sport_counts") == {"run": 1, "bike": 1}
+              and "Hackney" not in json.dumps(called[-1]) and "Morning Run" not in json.dumps(called[-1]), str(called[-1:]))
         await hosted.forget_person(tester)
         check("disconnecting deletes the person's weekly counts",
               store.usage_week(person, store.week_start()) == (0, 0), str(store.usage_week(person, store.week_start())))

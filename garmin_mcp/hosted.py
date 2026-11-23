@@ -1145,7 +1145,9 @@ def strength_check(error: Any) -> str | None:
 _SPORT_GROUPS = {"running": "run", "trail_running": "run", "treadmill_running": "run", "track_running": "run",
                  "cycling": "bike", "road_biking": "bike", "mountain_biking": "bike", "indoor_cycling": "bike",
                  "virtual_ride": "bike", "gravel_cycling": "bike",
-                 "swimming": "swim", "lap_swimming": "swim", "open_water_swimming": "swim", "pool_swimming": "swim"}
+                 "swimming": "swim", "lap_swimming": "swim", "open_water_swimming": "swim", "pool_swimming": "swim",
+                 # Nov 23: strength apart from "other", where most of it was.
+                 "strength_training": "strength", "strength": "strength"}
 
 
 def sport_group(key: Any) -> str:
@@ -1155,6 +1157,26 @@ def sport_group(key: Any) -> str:
     key = key.strip().lower()
     return _SPORT_GROUPS.get(key) or ("run" if "run" in key else "bike" if ("cycl" in key or "bik" in key)
                                       else "swim" if "swim" in key else "other")
+
+
+def activity_sports(name: str, result: Any) -> dict[str, Any]:
+    """Nov 23: the sports in an answer about past activities, by group, for
+    tool_called: get_activities' list as the groups in it ("sports") and how
+    many of each ("sport_counts"); get_activity_details' one as "sport" too.
+    The group words only: no names, places or figures."""
+    if not isinstance(result, dict) or result.get("error"):
+        return {}
+    if name == "get_activities":
+        counts: dict[str, int] = {}
+        for a in result.get("activities") or []:
+            if isinstance(a, dict):
+                group = sport_group(a.get("type"))
+                counts[group] = counts.get(group, 0) + 1
+        return {"sports": sorted(counts), "sport_counts": counts} if counts else {}
+    if name == "get_activity_details":
+        group = sport_group((result.get("summary") or {}).get("type"))
+        return {"sport": group, "sports": [group]}
+    return {}
 
 
 def client_slug(client: str | None) -> str:
@@ -1291,6 +1313,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             "card_refresh": auto or None,
             "error_category": error_category(error), "held": held or None,
             "error_check": strength_check(error) if name == "create_strength_workout" else None,
+            **activity_sports(name, result),
             "login_route": login_route(alone), "client": client, "ai_client": client,
             "hours_since_connect": hours_since_connect(user),
             "seconds": round(seconds, 2) if seconds is not None else None,
