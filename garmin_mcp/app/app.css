@@ -889,3 +889,18 @@ html, body { overscroll-behavior-y: contain; }
 .ph-swatch.b1 { background: var(--swatch-1); }
 .ph-row.now .strong { color: var(--ink); }
 .ph-line { font-size: 13.5px; line-height: 1.45; }
+
+/* Nov 23: Get your plan. Two equal choices, then the chat way's three steps. */
+.gp-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.gp-options { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 720px) { .gp-options { grid-template-columns: 1fr 1fr; } }
+.gp-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px; min-height: 92px; }
+.gp-later { text-decoration: underline; text-underline-offset: 3px; font-size: 14px; }
+.pc-input { height: 48px; border-radius: 12px; border: 1px solid var(--button); background: var(--surface); color: var(--ink);
+  padding: 0 14px; font: inherit; font-size: 16px; width: 100%; box-sizing: border-box; }
+.pc-km { align-self: flex-start; gap: 10px; font-size: 17px; }
+.pc-km span { min-width: 130px; }
+.pc-foot { margin-top: 20px; display: flex; }
+.pc-foot .pill { flex: 1; }
+.pc-foot .pill:disabled { opacity: 0.45; cursor: not-allowed; }
+#pc-open.waiting { opacity: 0.55; pointer-events: none; }

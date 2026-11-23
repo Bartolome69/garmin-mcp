@@ -487,7 +487,8 @@ function askSheet(link) {
 // Registered after the ask_clicked count above, so that still counts the tap.
 document.addEventListener("click", (e) => {
   const link = e.target.closest && e.target.closest("a[href]");
-  if (!link || link.closest(".sheet") || !ASK_LINK.test(link.href) || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
+  // data-direct: a link that must start a new chat, with its message (Get your plan's hand-off).
+  if (!link || link.closest(".sheet") || link.dataset.direct !== undefined || !ASK_LINK.test(link.href) || e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return;
   e.preventDefault();
   e.stopPropagation();
   askSheet(link);
@@ -574,7 +575,10 @@ function todayParts(d) {
   } else if (!d.empty) {
     p.next = `<div class="card pad stack-tight"><span class="strong">Nothing else planned</span><span class="meta">The plan on your Garmin calendar has no more sessions.</span></div>`;
   }
-  if (d.empty && d.build) {
+  if (d.empty && d.get_plan) {
+    // Nov 23: no plan in the next two weeks: the two ways to one, side by side.
+    p.next = getPlanView(d, "today");
+  } else if (d.empty && d.build) {
     // The builder makes a plan here, with no chat; the assistant stays a way to do it too.
     const ask = askLink(d, `Or ask ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
     p.next = `<div class="card pad stack"><span class="strong">No sessions on your Garmin calendar yet.</span>
@@ -718,6 +722,7 @@ async function showToday(quiet = false) {
     }
     base = "today";
     wire($("screen"));
+    if (d.empty && d.get_plan) wireGetPlan($("screen"), d, "today");
     racePrompt();
     warm();
   }, (e) => failed(e.message, showToday), quiet || base === "today");
@@ -1658,6 +1663,13 @@ async function showPlan(view, params, quiet = false) {
   return show(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`, (d) => {
     const seg = (id, label) => `<a href="#/plan${id === "block" ? "/block" : ""}" class="${view === id ? "on" : ""}" ${view === id ? 'aria-current="page"' : ""}>${label}</a>`;
     const head = `<header class="stack" style="gap:12px"><span class="stack-tight"><h1 class="headline">Plan</h1>${credit(d)}</span><nav class="segmented" aria-label="Plan view">${seg("week", "Week")}${seg("block", "Block")}</nav></header>`;
+    if (d.empty && d.get_plan) {
+      $("screen").innerHTML = `<header class="stack-tight" style="padding-top:4px"><span class="kicker">Plan</span><h1 class="headline">No plan yet</h1></header>
+        ${resumeRow()}${getPlanView(d, "plan")}`;
+      wireResume();
+      wireGetPlan($("screen"), d, "plan");
+      return;
+    }
     if (d.empty) {
       const ask = askLink(d, `Build a plan with ${d.assistant === "ChatGPT" ? "ChatGPT" : "Claude"}`);
       if (d.build) {
@@ -2583,14 +2595,14 @@ async function handOff() {
   // from=plan: those stay. Nov 9: stripping them too sent Back from a session
   // opened in Plan to Today. Nov 15: links from outside say where they were
   // given as source= (card, ai_mention, weekly_email); from= still works.
-  const from = location.hash.match(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))([a-z_]{1,24})/);
+  const from = location.hash.match(/[?&](?:source|from)=(?!(?:today|plan|choice_today|choice_plan)(?:&|$))([a-z_]{1,24})/);
   const m = location.hash.match(/[?&]login=([\w-]+)/);
   const linked = location.hash.match(/[?&]link=([a-z_]{1,24})/);
   if (!m && !from && !linked) return null;
   if (from) cameFrom = openedFrom = from[1];
   if (linked) cameLink = linked[1];
   const clean = location.hash.replace(/[?&]login=[\w-]+/g, "").replace(/[?&]link=[a-z_]+/g, "")
-    .replace(/[?&](?:source|from)=(?!(?:today|plan)(?:&|$))[\w-]+/g, "").replace(/^([^?&]*)&/, "$1?").replace(/\?$/, "");
+    .replace(/[?&](?:source|from)=(?!(?:today|plan|choice_today|choice_plan)(?:&|$))[\w-]+/g, "").replace(/^([^?&]*)&/, "$1?").replace(/\?$/, "");
   // The screen the link was opening stays in the address, so signing in by
   // hand after a spent or expired link still lands on it.
   history.replaceState(null, "", `/app/${clean || "#/today"}`);
@@ -2608,6 +2620,173 @@ async function handOff() {
   } catch (err) {
     return `${err.message} Sign in once here and the app remembers you, then it opens where the link was going.`;
   }
+}
+
+// -- Get your plan (Nov 23) -------------------------------------------------------
+// Nothing planned in the next two weeks: two ways to a plan, side by side, in
+// an order drawn once per person on the server so neither always sits first.
+// The chat way asks three things here, then opens Claude or ChatGPT with the
+// answers written out; the app only builds that link, it asks no model itself.
+const PLAN_OPTIONS = {
+  chat: { t: "Build it with Claude or ChatGPT", d: "Best plans. Uses your Garmin history." },
+  app: { t: "Quick plan in the app", d: "No AI chat needed." },
+};
+// Counted once per screen per open, not on every redraw.
+const choiceSeen = new Set();
+
+function getPlanView(d, screen) {
+  const g = d.get_plan;
+  const order = g.first === "app" ? ["app", "chat"] : ["chat", "app"];
+  const shown = g.build ? order : ["chat"];
+  const later = g.later ? `<a class="meta gp-later" href="#/plan?week=${esc(g.later.week)}">Your Garmin calendar has sessions from ${esc(g.later.said)}. See them</a>` : "";
+  return `<section class="stack gp" aria-labelledby="gp-title" data-first="${esc(g.first)}">
+    <div class="stack-tight" style="gap:4px"><h2 class="gp-title" id="gp-title">Get your plan</h2>
+      <span class="meta">Nothing's planned for the next two weeks. Pick a way to make a plan: it goes on your Garmin calendar and your watch.</span></div>
+    <div class="gp-options">${shown.map((o, i) => `<button type="button" class="b-opt gp-opt" data-plan-option="${o}" data-position="${i + 1}">
+      <span class="stack-tight" style="gap:4px;min-width:0"><span class="b-opt-t">${esc(PLAN_OPTIONS[o].t)}</span><span class="b-opt-d">${esc(PLAN_OPTIONS[o].d)}</span></span>
+      ${ICON.right(20, "var(--ink-2)")}</button>`).join("")}</div>${later}</section>`;
+}
+
+function wireGetPlan(root, d, screen) {
+  const box = root.querySelector(".gp");
+  if (!box) return;
+  if (!choiceSeen.has(screen)) {
+    choiceSeen.add(screen);
+    track("plan_choice_shown", { first: d.get_plan.first, screen });
+  }
+  if (d.get_plan.assistant && !store.get(PLAN_ASSISTANT)) PC.assistantDefault = d.get_plan.assistant;
+  box.querySelectorAll("[data-plan-option]").forEach((b) => {
+    b.onclick = () => {
+      const option = b.dataset.planOption, position = Number(b.dataset.position);
+      api("plan-choice", { method: "POST", body: JSON.stringify({ option, position, screen }) }).catch(() => {});
+      location.hash = option === "app" ? `#/build?from=choice_${screen}` : `#/plan-chat?from=${screen}`;
+    };
+  });
+}
+
+// The three steps' answers, kept for this open so Back loses nothing.
+const PLAN_ASSISTANT = "daash.plan_assistant";
+const PC = { step: 1, a: { race: null, date: "", other: "", km: null, days: [], long_day: null }, filled: null, touched: {}, link: null,
+  from: "today", assistantDefault: null, asked: 0 };
+const PC_RACES = [["5k", "5K"], ["10k", "10K"], ["half", "Half"], ["marathon", "Marathon"], ["other", "Other race"], ["none", "No race"]];
+
+const pcAssistant = () => store.get(PLAN_ASSISTANT) || (PC.assistantDefault === "ChatGPT" ? "chatgpt" : "claude");
+const pcValid = (step) => step === 1 ? (PC.a.race === "none" || (!!PC.a.race && !!PC.a.date && (PC.a.race !== "other" || PC.a.other.trim())))
+  : step === 2 ? PC.a.km !== null && PC.a.km >= 0 : PC.a.days.length > 0;
+
+async function showPlanChat(params) {
+  tabs(params.get("from") === "plan" ? "plan" : "today");
+  PC.from = params.get("from") === "plan" ? "plan" : "today";
+  document.body.dataset.screen = "plan-chat";
+  drawPlanChat();
+  if (!PC.filled) {
+    try {
+      PC.filled = await api("plan-choice/form");
+    } catch (err) {
+      if (err instanceof SignedOut) return route();
+      PC.filled = {};
+    }
+    const f = PC.filled || {};
+    // Garmin's answers fill only what hasn't been touched.
+    if (f.race && !PC.touched.race) Object.assign(PC.a, { race: f.race.race, date: f.race.date, other: f.race.race === "other" ? (f.race.name || "") : "" });
+    if (typeof f.km === "number" && !PC.touched.km) PC.a.km = f.km;
+    if (Array.isArray(f.days) && f.days.length && !PC.touched.days) PC.a.days = [...f.days].sort();
+    if (typeof f.long_day === "number" && !PC.touched.long_day && PC.a.days.includes(f.long_day)) PC.a.long_day = f.long_day;
+    if (document.body.dataset.screen === "plan-chat") drawPlanChat(true);
+  }
+}
+
+function drawPlanChat(quiet) {
+  const a = PC.a, step = PC.step;
+  const today = new Date().toISOString().slice(0, 10);
+  const body = step === 1 ? `<header class="b-head"><h1>What are you training for?</h1><span>Pick a race and its date, or none.</span></header>
+      <div class="b-chips" role="radiogroup" aria-label="Race">${PC_RACES.map(([k, l]) => `<button type="button" class="b-chip ${a.race === k ? "on" : ""}" role="radio" aria-checked="${a.race === k}" data-pc-race="${k}">${l}</button>`).join("")}</div>
+      ${a.race && a.race !== "none" ? `${a.race === "other" ? `<label class="stack-8"><span class="strong">Which race?</span><input class="pc-input" id="pc-other" maxlength="60" value="${esc(a.other)}" placeholder="e.g. Trail 30k"></label>` : ""}
+        <label class="stack-8"><span class="strong">Race date</span><input class="pc-input" id="pc-date" type="date" min="${today}" value="${esc(a.date)}"></label>` : ""}`
+    : step === 2 ? `<header class="b-head"><h1>How far do you run in a week now?</h1><span>${PC.filled && typeof PC.filled.km === "number" ? "From your Garmin: your average over the last 4 weeks. Change it if it's off." : "A usual week lately."}</span></header>
+      <div class="b-stepper pc-km"><button type="button" aria-label="Less" data-pc-km="-5">−</button><span aria-live="polite"><strong>${a.km ?? "–"}</strong> km a week</span><button type="button" aria-label="More" data-pc-km="5">+</button></div>`
+    : `<header class="b-head"><h1>When can you run?</h1><span>Tap the days you can run, then your long-run day.</span></header>
+      <div class="b-chips pc-days" role="group" aria-label="Days you can run">${DOW.map((l, i) => `<button type="button" class="b-chip ${a.days.includes(i) ? "on" : ""}" aria-pressed="${a.days.includes(i)}" data-pc-day="${i}">${l}</button>`).join("")}</div>
+      ${a.days.length ? `<div class="stack-8"><span class="strong">Long run on</span><div class="b-chips" role="radiogroup" aria-label="Long-run day">${a.days.map((i) => `<button type="button" class="b-chip ${a.long_day === i ? "on" : ""}" role="radio" aria-checked="${a.long_day === i}" data-pc-long="${i}">${DOW[i]}</button>`).join("")}</div></div>` : ""}
+      ${pcValid(3) ? handoffBlock() : ""}`;
+  const head = `<div class="b-progress"><button type="button" class="b-back" aria-label="Back" data-pc="back">${ICON.left()}</button>
+      <div class="b-steps" role="progressbar" aria-valuemin="1" aria-valuemax="3" aria-valuenow="${step}" aria-label="Step ${step} of 3">${[1, 2, 3].map((k) => `<span class="${k <= step ? "on" : ""}"></span>`).join("")}</div>
+      <span class="mono-label">${step} of 3</span></div>`;
+  const foot = step < 3 ? `<div class="pc-foot"><button type="button" class="pill tall light" data-pc="next" ${pcValid(step) ? "" : "disabled"}>Next</button></div>` : "";
+  $("screen").innerHTML = `<div class="b-wrap"><div class="b-main">${head}<div class="b-body stack">${body}</div>${foot}</div></div>`;
+  if (!quiet && PC.shownStep !== step) {
+    PC.shownStep = step;
+    track("plan_form_step", { step, screen: PC.from, ...(step === 2 && PC.filled && typeof PC.filled.km === "number" ? { prefilled: true } : {}) });
+    const h = document.querySelector(".b-head h1");
+    if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  }
+  wirePlanChat();
+  if (step === 3 && pcValid(3)) pcLink();
+}
+
+function handoffBlock() {
+  const to = pcAssistant(), name = to === "chatgpt" ? "ChatGPT" : "Claude";
+  const href = PC.link ? PC.link[to] : "";
+  return `<div class="card pad stack pc-handoff"><span class="strong">Open it in</span>
+    <div class="b-chips" role="radiogroup" aria-label="Assistant">${[["claude", "Claude"], ["chatgpt", "ChatGPT"]].map(([k, l]) => `<button type="button" class="b-chip ${to === k ? "on" : ""}" role="radio" aria-checked="${to === k}" data-pc-to="${k}">${l}</button>`).join("")}</div>
+    <span class="meta" style="line-height:1.45">${esc(name)} opens with your answers written out. It reads your Garmin history through Daash, builds the plan and sends the first week to your watch.</span>
+    <a class="pill red tall ${href ? "" : "waiting"}" id="pc-open" data-direct ${href ? `href="${esc(href)}" target="_blank" rel="noopener"` : 'aria-disabled="true"'}${to === "claude" && PC.link?.claude_app ? ` data-app="${esc(PC.link.claude_app)}"` : ""}>Open ${esc(name)}${ICON.out()}</a></div>`;
+}
+
+// The link is made as the answers change, so the tap opens it at once: a
+// window opened after waiting on the network is blocked on a phone.
+async function pcLink() {
+  const n = ++PC.asked;
+  const body = { race: PC.a.race, date: PC.a.date, other: PC.a.other, km: PC.a.km, days: PC.a.days, long_day: PC.a.long_day };
+  try {
+    const link = await api("plan-choice/link", { method: "POST", body: JSON.stringify(body) });
+    if (n !== PC.asked) return;
+    PC.link = link;
+    const old = $("pc-open");
+    if (old) { const box = old.closest(".pc-handoff"); box.outerHTML = handoffBlock(); wirePlanChat(); }
+  } catch (err) {
+    if (err instanceof SignedOut) route();
+  }
+}
+
+function wirePlanChat() {
+  const root = $("screen");
+  const redraw = () => { PC.link = PC.link && PC.step === 3 ? PC.link : null; drawPlanChat(true); };
+  root.querySelectorAll("[data-pc-race]").forEach((b) => { b.onclick = () => { PC.touched.race = true; PC.a.race = b.dataset.pcRace; drawPlanChat(true); }; });
+  const date = $("pc-date");
+  if (date) date.onchange = () => { PC.touched.race = true; PC.a.date = date.value; drawPlanChat(true); };
+  const other = $("pc-other");
+  if (other) other.oninput = () => { PC.touched.race = true; PC.a.other = other.value; const nx = root.querySelector('[data-pc="next"]'); if (nx) nx.disabled = !pcValid(1); };
+  root.querySelectorAll("[data-pc-km]").forEach((b) => { b.onclick = () => { PC.touched.km = true; PC.a.km = Math.max(0, Math.min(300, (PC.a.km ?? 0) + Number(b.dataset.pcKm))); drawPlanChat(true); }; });
+  root.querySelectorAll("[data-pc-day]").forEach((b) => {
+    b.onclick = () => {
+      PC.touched.days = true;
+      const i = Number(b.dataset.pcDay);
+      PC.a.days = PC.a.days.includes(i) ? PC.a.days.filter((x) => x !== i) : [...PC.a.days, i].sort();
+      if (!PC.a.days.includes(PC.a.long_day)) PC.a.long_day = PC.a.days.includes(6) ? 6 : PC.a.days.at(-1) ?? null;
+      redraw();
+    };
+  });
+  root.querySelectorAll("[data-pc-long]").forEach((b) => { b.onclick = () => { PC.touched.long_day = true; PC.a.long_day = Number(b.dataset.pcLong); redraw(); }; });
+  root.querySelectorAll("[data-pc-to]").forEach((b) => { b.onclick = () => { store.set(PLAN_ASSISTANT, b.dataset.pcTo); const box = b.closest(".pc-handoff"); box.outerHTML = handoffBlock(); wirePlanChat(); }; });
+  const open = $("pc-open");
+  if (open) open.addEventListener("click", (e) => {
+    if (!open.getAttribute("href")) { e.preventDefault(); return; }
+    track("plan_handoff_opened", { assistant: pcAssistant(), screen: PC.from, race: PC.a.race || undefined });
+  });
+  root.querySelectorAll("[data-pc]").forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.pc === "back") {
+        if (PC.step === 1) { location.hash = PC.from === "plan" ? "#/plan" : "#/today"; return; }
+        PC.step -= 1;
+      } else if (pcValid(PC.step)) {
+        PC.step += 1;
+        if (PC.step === 3 && PC.a.long_day === null && PC.a.days.length) PC.a.long_day = PC.a.days.includes(6) ? 6 : PC.a.days.at(-1);
+      }
+      drawPlanChat();
+      window.scrollTo(0, 0);
+    };
+  });
 }
 
 // -- Build a plan: six steps, a preview, then onto the watch (preview accounts) ---
@@ -3308,6 +3487,7 @@ async function route(stay) {
   if (screen === "crew") return showCrew(params);
   if (screen === "you") return showYou();
   if (screen === "build") return showBuild(arg, params);
+  if (screen === "plan-chat") return showPlanChat(params);
   return showToday();
 }
 

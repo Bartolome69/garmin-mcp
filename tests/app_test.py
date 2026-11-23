@@ -1429,7 +1429,9 @@ def build_checks() -> None:
             check("Remove this plan takes every session from today off", gone.get("removed", 0) > 0 and not ahead, f"{gone} {len(ahead)}")
             check("and the runs already done stay", any(x["date"] < _d.today().isoformat() for x in DEMO.scheduled))
             plan = client.get("/app/api/plan", headers=auth).json()
-            check("then Plan offers a new plan instead", (plan.get("next_block") or {}).get("none") is True and not plan.get("manage"), str(plan.get("next_block")))
+            # Nov 23: with nothing in the next two weeks, Plan is the Get your plan offer.
+            check("then Plan offers a new plan instead", plan.get("empty") and (plan.get("get_plan") or {}).get("first") in ("chat", "app")
+                  and not plan.get("manage"), str(plan)[:200])
             fresh_start = client.get("/app/api/build", headers=auth).json()
             check("which starts next Monday, not after the old race", fresh_start.get("starts") == monday.isoformat(), str(fresh_start.get("starts")))
 
@@ -1612,6 +1614,180 @@ def strides_checks() -> None:
           not analysis._stride_steps([(s, None) for s in analysis.planned_steps(long_reps)]))
 
 
+def get_plan_checks() -> None:
+    """Nov 23: Get your plan. The no-plan check, the 50/50 order kept per person,
+    the three steps' link, the events with their properties, and the 7-day check."""
+    from datetime import date as d_, timedelta as td_
+    from urllib.parse import unquote
+
+    today = d_.today()
+    on = lambda n: (today + td_(days=n)).isoformat()  # noqa: E731
+
+    def plan_with(*sessions):
+        return {"source": "plan", "weeks": [{"sessions": [dict(s) for s in sessions]}]}
+
+    # -- the no-plan check: nothing of any sport planned today through 13 days out
+    nap = app_routes.no_active_plan
+    check("no plan: recent runs alone, or nothing at all", nap({"source": "log", "weeks": []}, today)
+          and nap({"source": "none"}, today) and nap({"source": "waiting"}, today) and nap({"source": "plan", "weeks": []}, today))
+    check("a session tomorrow, or 13 days out, is a plan",
+          not nap(plan_with({"date": on(1), "status": "ahead", "type": "easy"}), today)
+          and not nap(plan_with({"date": on(13), "status": "ahead", "type": "long"}), today))
+    check("today's session counts, of any sport", not nap(plan_with({"date": on(0), "status": "today", "type": "strength"}), today))
+    check("14 days out and beyond isn't: nothing in the next two weeks is no plan",
+          nap(plan_with({"date": on(14), "status": "ahead", "type": "easy"}), today))
+    check("done and missed sessions aren't a plan ahead",
+          nap(plan_with({"date": on(-2), "status": "done", "type": "easy"}), today)
+          and nap(plan_with({"date": on(-1), "status": "missed", "type": "easy"}), today))
+
+    # -- the chat way's message, from the three steps
+    race_day = today + td_(days=7 * 16 + (6 - today.weekday()))
+    said = app_routes.plan_chat_prompt({"race": "half", "date": race_day.isoformat(), "km": 32.4, "days": [6, 0, 2, 4],
+                                        "long_day": 6}, today)
+    check("the message has the race, its date and weeks away, the weekly km, the days and the long run, and the ask",
+          said.startswith("Use Daash to build me a training plan. My goal: a half marathon on Sunday ")
+          and f"{race_day.day} " in said and "weeks away" in said
+          and "I run about 32 km a week now." in said
+          and "I can run on Monday, Wednesday, Friday and Sunday, with my long run on Sunday." in said
+          and said.endswith("Then build the plan and send the first week to my watch."), said)
+    check("no race says so", "My goal: to get fitter, with no race in mind." in app_routes.plan_chat_prompt({"race": "none"}, today))
+    odd = app_routes.plan_chat_prompt({"race": "other", "other": "Trail 30k <script>", "km": 9999, "days": ["x", 9, 1],
+                                       "long_day": 3}, today)
+    check("odd answers are cleaned: no markup, no impossible km, no unknown days, no long day off the days",
+          "<" not in odd and "Trail 30k script" in odd and "km a week" not in odd and "I can run on Tuesday." in odd, odd)
+
+    # -- the order: drawn once per person, 50/50, then kept
+    first = store.plan_choice_first("fp-order-a", "tok-a", draw=lambda: 0.2)
+    again = store.plan_choice_first("fp-order-a", "tok-a", draw=lambda: 0.9)
+    other = store.plan_choice_first("fp-order-b", "tok-b", draw=lambda: 0.7)
+    check("a draw under a half shows the chat way first, over it the app's", first == "chat" and other == "app")
+    check("and it's kept: the same person always sees the same order", again == "chat")
+    drawn = [store.plan_choice_first(f"fp-many-{i}", f"tok-{i}") for i in range(2000)]
+    check("over many people it's about half and half", 900 <= drawn.count("chat") <= 1100, str(drawn.count("chat")))
+
+    # -- the screens, the pick and the events, against an account with no plan ahead
+    email = "planless@example.test"
+    user_token = store.save_user(session_mod.mask_email(email), '{"di_token": "x"}',
+                                 email_hash=store.email_fingerprint(email), email=email)
+    token = secrets.token_urlsafe(32)
+    store.save_oauth_token(token, kind="access", client_id="test", subject=user_token, scopes="",
+                           resource=None, expires_at=int(time.time()) + 3600)
+    client = TestClient(hosted.build_app(), base_url="http://localhost")
+    auth = {"Authorization": f"Bearer {token}"}
+    me = analytics.distinct_id(store.email_fingerprint(email))
+    real_get_plan = app_routes.server_mod.get_plan
+    later_plan = plan_with({"date": on(20), "status": "ahead", "type": "easy", "name": "Easy run 8 km"})
+
+    async def later():
+        return later_plan
+
+    app_routes.server_mod.get_plan = later
+    os.environ[app_routes.BUILDER_ENV] = "1"  # on for everyone in production since 11 Nov
+    try:
+        today_d = client.get("/app/api/today", headers=auth).json()
+        plan_d = client.get("/app/api/plan", headers=auth).json()
+        asked_week = client.get(f"/app/api/plan?week={on(20)}", headers=auth).json()
+    finally:
+        app_routes.server_mod.get_plan = real_get_plan
+    g = today_d.get("get_plan") or {}
+    check("Today with nothing in the next two weeks offers Get your plan, in this person's order",
+          today_d.get("empty") and g.get("first") in ("chat", "app") and g.get("build") is True, str(today_d)[:300])
+    check("and says when the plan further out starts, with its week",
+          (g.get("later") or {}).get("date") == on(20)
+          and g.get("later", {}).get("week") == (today + td_(days=20) - td_(days=(today + td_(days=20)).weekday())).isoformat(), str(g))
+    check("Plan offers it too, the same order", plan_d.get("empty") and (plan_d.get("get_plan") or {}).get("first") == g.get("first"))
+    check("asking for a later week shows that week, not the offer", not asked_week.get("empty") and "get_plan" not in asked_week,
+          str(asked_week)[:200])
+    has = client.get("/app/api/today", headers=auth).json()
+    os.environ.pop(app_routes.BUILDER_ENV, None)
+    check("with sessions in the next two weeks, Today is the plan as before", not has.get("empty") and "get_plan" not in has,
+          str({k: has.get(k) for k in ("empty", "get_plan", "error")}))
+
+    before = len(SENT)
+    shown = client.post("/app/api/event", headers=auth, json={"name": "plan_choice_shown", "properties": {"first": g.get("first"), "screen": "today"}})
+    bad_shown = client.post("/app/api/event", headers=auth, json={"name": "plan_choice_shown", "properties": {"first": "maybe"}})
+    pick = client.post("/app/api/plan-choice", headers=auth, json={"option": "chat", "position": 2, "screen": "plan"})
+    bad_pick = client.post("/app/api/plan-choice", headers=auth, json={"option": "chat", "position": 3})
+    steps = [client.post("/app/api/event", headers=auth, json={"name": "plan_form_step", "properties": {"step": n, "screen": "plan", **({"prefilled": True} if n == 2 else {})}})
+             for n in (1, 2, 3)]
+    bad_step = client.post("/app/api/event", headers=auth, json={"name": "plan_form_step", "properties": {"step": 4}})
+    link = client.post("/app/api/plan-choice/link", headers=auth, json={"race": "10k", "date": on(60), "km": 25, "days": [1, 3, 5], "long_day": 5}).json()
+    opened = client.post("/app/api/event", headers=auth, json={"name": "plan_handoff_opened", "properties": {"assistant": "chatgpt", "screen": "plan", "race": "10k"}})
+    bad_open = client.post("/app/api/event", headers=auth, json={"name": "plan_handoff_opened", "properties": {"assistant": "gemini"}})
+    check("the events take only known words and steps, and refuse the rest",
+          all(r.status_code == 200 for r in (shown, pick, opened, *steps))
+          and all(r.status_code == 400 for r in (bad_shown, bad_pick, bad_step, bad_open)),
+          str([r.status_code for r in (shown, pick, opened, *steps, bad_shown, bad_pick, bad_step, bad_open)]))
+    time.sleep(0.3)
+    got = {}
+    for e in SENT[before:]:
+        if e["distinct_id"] == me and e["event"].startswith("plan_"):
+            got.setdefault(e["event"], []).append({k: v for k, v in e["properties"].items() if not k.startswith("$") and k not in ("account", "layout")})
+    check("plan_choice_shown says which came first and where",
+          got.get("plan_choice_shown") == [{"first": g.get("first"), "screen": "today"}], str(got.get("plan_choice_shown")))
+    check("plan_choice_picked says which option and its position",
+          got.get("plan_choice_picked") == [{"option": "chat", "position": 2, "screen": "plan"}], str(got.get("plan_choice_picked")))
+    check("plan_form_step says each step, and that step 2 came filled in from Garmin",
+          got.get("plan_form_step") == [{"step": 1, "screen": "plan"}, {"step": 2, "screen": "plan", "prefilled": True}, {"step": 3, "screen": "plan"}],
+          str(got.get("plan_form_step")))
+    check("plan_handoff_opened says which assistant",
+          got.get("plan_handoff_opened") == [{"assistant": "chatgpt", "screen": "plan", "race": "10k"}], str(got.get("plan_handoff_opened")))
+    check("the link is the message, for Claude and ChatGPT both, built here with no model asked",
+          link.get("prompt", "").startswith("Use Daash to build me a training plan. My goal: a 10K on ")
+          and unquote(link.get("chatgpt", "").split("?q=")[1]) == link["prompt"]
+          and unquote(link.get("claude", "").split("?q=")[1]) == link["prompt"] and link.get("claude_app", "").startswith("claude://"), str(link)[:200])
+    form = client.get("/app/api/plan-choice/form", headers=auth)
+    check("the steps are filled in from Garmin where it can", form.status_code == 200 and isinstance(form.json().get("km"), (int, float))
+          and isinstance(form.json().get("days"), list), form.text[:200])
+
+    # -- a week on: plan_active_7d, read in the background
+    person = store.email_fingerprint(email)
+    with store._connect() as conn:
+        conn.execute("UPDATE plan_choices SET picked_at = picked_at - 8 * 86400 WHERE person = ?", (person,))
+    gone = store.save_user("g***@example.test", "{}", email_hash="fp-gone-1123", email="gone1123@example.test")
+    store.plan_choice_first("fp-gone-1123", gone, draw=lambda: 0.9)
+    store.record_plan_pick("fp-gone-1123", gone, "app", 1, now=int(time.time()) - 9 * 86400)
+    with store._connect() as conn:
+        conn.execute("DELETE FROM users WHERE user_token = ?", (gone,))
+    fresh = store.save_user("f***@example.test", "{}", email_hash="fp-fresh-1123", email="fresh1123@example.test")
+    store.record_plan_pick("fp-fresh-1123", fresh, "app", 1)
+    flaky = store.save_user("k***@example.test", "{}", email_hash="fp-flaky-1123", email="flaky1123@example.test")
+    store.record_plan_pick("fp-flaky-1123", flaky, "chat", 1, now=int(time.time()) - 8 * 86400)
+    reads = []
+
+    def read(token_):
+        reads.append(token_)
+        if token_ == flaky:
+            raise RuntimeError("Garmin busy")
+        return plan_with({"date": on(-3), "status": "done", "type": "easy"}, {"date": on(4), "status": "ahead", "type": "long"})
+
+    before = len(SENT)
+    n = hosted.plan_checks_once(read=read, spacing=0)
+    time.sleep(0.3)
+    weekly = {e["distinct_id"]: e["properties"] for e in SENT[before:] if e["event"] == "plan_active_7d"}
+    mine = weekly.get(me) or {}
+    check("a week on, the person who picked the chat way still has a plan: active, with the option and position",
+          mine.get("active") is True and mine.get("option") == "chat" and mine.get("position") == 2
+          and mine.get("done_7d") == 1 and mine.get("ahead_14d") == 1 and mine.get("days_since_pick") == 8, str(mine))
+    gone_said = weekly.get(analytics.distinct_id("fp-gone-1123")) or {}
+    check("someone who disconnected counts as not active, still with their option",
+          gone_said.get("active") is False and gone_said.get("option") == "app" and gone_said.get("disconnected") is True, str(gone_said))
+    check("a pick under a week old waits", analytics.distinct_id("fp-fresh-1123") not in weekly and fresh not in reads)
+    check("one Garmin won't answer is tried again next time, not counted",
+          analytics.distinct_id("fp-flaky-1123") not in weekly and flaky in reads and n == 2, f"{n} {list(weekly)}")
+    again_n = hosted.plan_checks_once(read=read, spacing=0)
+    check("each person is checked once", again_n == 0 and store.record_plan_pick(person, user_token, "app", 1) is False)
+    quiet = plan_with({"date": on(-20), "status": "done", "type": "easy"})
+    store.record_plan_pick("fp-quiet-1123", fresh, "app", 2, now=int(time.time()) - 8 * 86400)
+    before = len(SENT)
+    hosted.plan_checks_once(read=lambda t: quiet if t == fresh else (_ for _ in ()).throw(RuntimeError("busy")), spacing=0)
+    time.sleep(0.3)
+    q = next((e["properties"] for e in SENT[before:] if e["event"] == "plan_active_7d"
+              and e["distinct_id"] == analytics.distinct_id("fp-quiet-1123")), {})
+    check("nothing done this week and nothing ahead is not active, sent as active false",
+          q.get("active") is False and q.get("done_7d") == 0 and q.get("ahead_14d") == 0, str(q))
+
+
 def main() -> int:
     extra_checks()
     feeling_rule_checks()
@@ -1621,6 +1797,7 @@ def main() -> int:
     easier_checks()
     api_checks()
     assistant_checks()
+    get_plan_checks()
     build_checks()
     race_prompt_checks()
     print()

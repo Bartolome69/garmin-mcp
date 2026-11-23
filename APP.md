@@ -150,6 +150,19 @@ rules and what isn't built yet are in docs/plan-engine-spec.md.
 - **Ask Claude / Ask ChatGPT** open `claude.ai/new?q=` or `chatgpt.com/?q=`
   with a prompt naming the session (date, name, workout id) or the run
   (activity id), and asking it to use Daash. The answer happens in the chat.
+- **Get your plan** (Nov 23): with nothing planned (any sport) from today
+  through the next 13 days, Today and Plan show two equal choices: "Build it
+  with Claude or ChatGPT" (three steps here: race and date, weekly km from
+  Garmin, days and long-run day; then a link that opens the assistant with the
+  answers written out, `plan_chat_prompt`) and "Quick plan in the app" (the
+  builder, `from=choice_today|choice_plan`). Which comes first is drawn once
+  per person, 50/50, and kept (`store.plan_choice_first`). The app asks no
+  model anything: it builds the link. Events: `plan_choice_shown` (first,
+  screen), `plan_choice_picked` (option, position), `plan_form_step` (step),
+  `plan_handoff_opened` (assistant), `app_plan_built` (from), and
+  `plan_active_7d` (option, position, active, done_7d, ahead_14d), sent by a
+  background check a week after the pick that reads the plan the way the
+  weekly email does (`hosted.plan_checks_once`).
 - **The app card** (Nov 23): when a workout reaches someone's watch, the
   tool's answer carries `app_card` (its text, a signed-in link to that week,
   a button label) for the assistant to show: on the first push for that

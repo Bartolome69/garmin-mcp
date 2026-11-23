@@ -1580,6 +1580,72 @@ def _plan_answer(user_token: str) -> Any:
         reset_session(token)
 
 
+# ------------------------------------------------- Get your plan, a week on
+# Nov 23: a week after someone picks a way to a plan on the app's Get your plan
+# screen, whether they still have one: plan sessions done in the last 7 days or
+# planned in the next 14. Read in the background, the way the weekly email
+# reads a plan, so people who never come back are counted too.
+PLAN_CHECK_EVERY = 3600
+PLAN_CHECK_SPACING = 5.0
+# A check Garmin keeps failing is given up this long after it was due.
+PLAN_CHECK_GIVE_UP = 3 * 86400
+
+
+def plan_checks_once(now: float | None = None, read: Callable[[str], Any] | None = None,
+                     today: date | None = None, spacing: float = PLAN_CHECK_SPACING) -> int:
+    """One pass of the 7-day checks: plan_active_7d for each pick a week old. Returns how many were sent."""
+    from . import app as app_routes
+
+    now = now or time.time()
+    today = today or date.today()
+    read = read or _plan_answer
+    sent = 0
+    for person, user_token, option, position, picked_at in store.due_plan_checks(int(now)):
+        said: dict[str, Any] = {"option": option, "position": position,
+                                "days_since_pick": int((now - picked_at) // 86400)}
+        if store.get_user(user_token) is None:
+            said.update(active=False, disconnected=True)
+        else:
+            try:
+                plan = read(user_token)
+            except Exception:  # noqa: BLE001 - tried again next pass
+                plan = {"error": "read failed"}
+            if not isinstance(plan, dict) or plan.get("error"):
+                if now - picked_at < store.PLAN_CHECK_AFTER + PLAN_CHECK_GIVE_UP:
+                    continue
+                said.update(active=None, unknown=True)
+            else:
+                # Recent runs with no plan behind them aren't plan sessions.
+                sessions = [] if plan.get("source") in ("log", "none", "waiting") else app_routes._sessions(plan)
+                week_ago, ahead_to = today - timedelta(days=7), today + timedelta(days=13)
+
+                def on(s: Mapping[str, Any], lo: date, hi: date) -> bool:
+                    try:
+                        return lo <= date.fromisoformat(str(s.get("date"))[:10]) <= hi
+                    except ValueError:
+                        return False
+
+                done = sum(1 for s in sessions if str(s.get("status") or "").startswith("done") and on(s, week_ago, today))
+                ahead = sum(1 for s in sessions if s.get("status") in ("today", "ahead") and on(s, today, ahead_to))
+                said.update(active=bool(done or ahead), done_7d=done, ahead_14d=ahead)
+        # active is kept when False: that's half the answer.
+        analytics.capture("plan_active_7d", person, {**drop_empty(said), "active": said.get("active")})
+        store.mark_plan_checked(person, int(now))
+        sent += 1
+        if spacing:
+            time.sleep(spacing)
+    return sent
+
+
+def _plan_checks_forever() -> None:
+    while True:
+        try:
+            plan_checks_once()
+        except Exception:  # noqa: BLE001
+            log.exception("Get your plan 7-day check failed")
+        time.sleep(PLAN_CHECK_EVERY)
+
+
 # How long someone has had Daash before the weekly email starts.
 WEEKLY_FIRST_WEEK_SECONDS = 7 * 86400
 # Resend's free plan (Nov 16): 100 emails a day and 3,000 a month, sign-in
@@ -5233,6 +5299,7 @@ def main() -> None:
     threading.Thread(target=_notify_forever, name="notifications", daemon=True).start()
     signup_guard.on_pause = _signups_paused
     threading.Thread(target=_guard_forever, name="signup-guard", daemon=True).start()
+    threading.Thread(target=_plan_checks_forever, name="plan-checks", daemon=True).start()
     if WEEKLY_EMAIL and support_mail.can_send():
         threading.Thread(target=_weekly_email_forever, name="weekly-email", daemon=True).start()
         official.on_activities = _activities_arrived

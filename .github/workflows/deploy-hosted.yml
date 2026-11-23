@@ -149,6 +149,7 @@ jobs:
           node tests/app_ask_test.js
           node tests/app_not100_test.js
           node tests/app_run_extra_test.js
+          node tests/app_getplan_test.js
 
   # The real Garmin checks on the new code, run while the tests run: neither
   # needs the other, and together they were half of every deploy's wait.

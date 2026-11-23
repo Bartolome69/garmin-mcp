@@ -309,6 +309,87 @@ def _next(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
     return None
 
 
+# -- Get your plan (Nov 23) ------------------------------------------------------
+# Someone with nothing planned in the next two weeks is offered two ways to a
+# plan, side by side: a few questions here that open Claude or ChatGPT with
+# them filled in (the app only builds the link), or the app's own builder.
+# Which one comes first is drawn once per person, 50/50.
+NO_PLAN_DAYS = 14
+
+
+def no_active_plan(plan: Mapping[str, Any], today: date) -> bool:
+    """No planned session, of any sport, from today through the next 13 days."""
+    if not isinstance(plan, Mapping) or plan.get("source") in ("log", "none", "waiting"):
+        return True
+    last = today + timedelta(days=NO_PLAN_DAYS - 1)
+    return not any(s.get("status") in ("today", "ahead") and s.get("date")
+                   and today <= date.fromisoformat(str(s["date"])[:10]) <= last for s in _sessions(plan))
+
+
+def _later_session(plan: Mapping[str, Any], today: date) -> dict[str, str] | None:
+    """The first session further ahead than that, so the screen can say when the plan starts."""
+    if not isinstance(plan, Mapping) or plan.get("source") in ("log", "none", "waiting"):
+        return None
+    ahead = sorted(str(s["date"])[:10] for s in _sessions(plan)
+                   if s.get("status") in ("today", "ahead") and s.get("date") and str(s["date"])[:10] >= today.isoformat())
+    if not ahead:
+        return None
+    day = date.fromisoformat(ahead[0])
+    return {"date": ahead[0], "said": _short_date(day), "week": (day - timedelta(days=day.weekday())).isoformat()}
+
+
+def _get_plan_block(plan: Mapping[str, Any], today: date) -> dict[str, Any] | None:
+    """What the Get your plan screen needs: which choice is first for this person, and the assistant they use."""
+    from . import official
+
+    user_token = official.current()
+    user = store.get_user(user_token) if user_token else None
+    if user is None:
+        return None
+    first = store.plan_choice_first(user.email_hash or user_token, user_token)
+    return drop_empty({"first": first, "assistant": assistant(), "later": _later_session(plan, today),
+                       "build": builder_on() or None})
+
+
+RACE_WORDS = {"5k": "a 5K", "10k": "a 10K", "half": "a half marathon", "marathon": "a marathon"}
+DAY_WORDS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def plan_chat_prompt(answers: Mapping[str, Any], today: date) -> str:
+    """The message that opens Claude or ChatGPT, from the three steps' answers.
+
+    Only what was answered goes in; nothing from Garmin beyond the weekly
+    distance they confirmed. The assistant reads the rest through Daash.
+    """
+    race = str(answers.get("race") or "")
+    when = str(answers.get("date") or "")[:10]
+    goal = "to get fitter, with no race in mind"
+    if race in RACE_WORDS:
+        goal = RACE_WORDS[race]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", when):
+            day = date.fromisoformat(when)
+            weeks = (day - today).days // 7
+            goal += f" on {DAY_WORDS[day.weekday()]} {day.day} {MONTHS[day.month - 1]} {day.year}" + (
+                f" ({weeks} weeks away)" if weeks > 0 else "")
+    elif race == "other" and answers.get("other"):
+        goal = "a race: " + re.sub(r"[^\w ,.'-]", "", str(answers["other"]))[:60]
+    lines = [f"Use Daash to build me a training plan. My goal: {goal}."]
+    km = answers.get("km")
+    if isinstance(km, (int, float)) and 0 <= km <= 300:
+        lines.append(f"I run about {round(km)} km a week now.")
+    days = sorted({int(d) for d in answers.get("days") or [] if str(d).isdigit() and 0 <= int(d) <= 6})
+    if days:
+        said = [DAY_WORDS[d] for d in days]
+        line = "I can run on " + (", ".join(said[:-1]) + " and " + said[-1] if len(said) > 1 else said[0])
+        long_day = answers.get("long_day")
+        if isinstance(long_day, int) and long_day in days:
+            line += f", with my long run on {DAY_WORDS[long_day]}"
+        lines.append(line + ".")
+    lines.append("Look at my Garmin history first for my paces and recent training. "
+                 "Then build the plan and send the first week to my watch.")
+    return " ".join(lines)
+
+
 def _headline(plan: Mapping[str, Any], today: date) -> tuple[str, str]:
     current = plan.get("current_plan") or {}
     kicker = _short_date(today).upper()
@@ -519,10 +600,12 @@ async def today_payload() -> dict[str, Any]:
         return {"error": str(plan) if isinstance(plan, Exception) else _error(plan)}
     ready = None if isinstance(readiness, Exception) else _readiness(readiness)
     await asyncio.to_thread(_keep_crew_current, plan, today)
-    if plan.get("source") == "log":
-        return {"today": today.isoformat(), "kicker": _short_date(today).upper(), "headline": "No plan on the calendar",
-                "empty": True, "readiness": ready, "build": builder_on() or None,
-                "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")}
+    # Nov 23: nothing planned in the next two weeks is no plan, whatever sits further out.
+    if no_active_plan(plan, today):
+        return drop_empty({"today": today.isoformat(), "kicker": _short_date(today).upper(), "headline": "No plan on the calendar",
+                           "empty": True, "readiness": ready, "build": builder_on() or None, "assistant": assistant(),
+                           "get_plan": _get_plan_block(plan, today),
+                           "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")})
     kicker, headline = _headline(plan, today)
     nxt = _next(plan, today)
     card = None
@@ -1504,8 +1587,10 @@ async def plan_payload(week_of: str | None = None) -> dict[str, Any]:
     starting = plan.get("source") in ("none", "waiting") if isinstance(plan, dict) else False
     if _error(plan) and not starting:
         return {"error": _error(plan)}
-    if plan.get("source") == "log" or starting:
+    # Nov 23: nothing in the next two weeks is no plan too, unless a later week was asked for.
+    if plan.get("source") == "log" or starting or (not week_of and no_active_plan(plan, today)):
         return drop_empty({"empty": True, "build": builder_on() or None, "fresh": starting or None, "assistant": assistant(),
+                           "get_plan": _get_plan_block(plan, today),
                            "ask": _ask_links("Use Daash to build me a training plan. Ask me my goal and race date first.")})
     anchor = _day_of(week_of) or today
     monday = anchor - timedelta(days=anchor.weekday())
@@ -2396,7 +2481,9 @@ APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "s
               # Nov 13: a week opened from its bar on the Block view.
               "block_week_opened",
               # Nov 15: how long an open took to its first screen.
-              "ready"}
+              "ready",
+              # Nov 23: the Get your plan screen.
+              "plan_choice_shown", "plan_form_step", "plan_handoff_opened"}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you", "build"}
 
@@ -2624,6 +2711,26 @@ async def api_event(request: Request) -> Response:
             return _json({"error": "Unknown screen."}, 400)
         _track("app_viewed", drop_empty({"screen": screen, "layout": _layout(request), "home_screen": _home(request),
                                          "ok": said.get("ok") is not False, "preloaded": True}))
+        return _json({"ok": True})
+    if name in ("plan_choice_shown", "plan_form_step", "plan_handoff_opened"):
+        # Nov 23: known words and small numbers only.
+        screen = said.get("screen") if said.get("screen") in ("today", "plan") else None
+        if name == "plan_choice_shown":
+            first = said.get("first")
+            if first not in store.PLAN_CHOICES:
+                return _json({"error": "Unknown order."}, 400)
+            _track("plan_choice_shown", drop_empty({"first": first, "screen": screen, "layout": _layout(request)}))
+        elif name == "plan_form_step":
+            step = said.get("step")
+            if step not in (1, 2, 3):
+                return _json({"error": "Unknown step."}, 400)
+            _track("plan_form_step", drop_empty({"step": step, "screen": screen, "prefilled": said.get("prefilled") is True or None}))
+        else:
+            to = said.get("assistant")
+            if to not in ("claude", "chatgpt"):
+                return _json({"error": "Unknown assistant."}, 400)
+            _track("plan_handoff_opened", drop_empty({"assistant": to, "screen": screen,
+                                                      "race": said.get("race") if said.get("race") in (*RACE_WORDS, "other", "none") else None}))
         return _json({"ok": True})
     if name == "ready":
         # Numbers and a few known words only: what the wait was, and why.
@@ -3383,7 +3490,9 @@ async def build_send(body: Any) -> dict[str, Any]:
 
 
 # Where the builder was opened from, as the page says it: anything else is "other".
-BUILD_FROM = {"today", "plan", "next_block", "nothing_ahead", "change", "resume", "race", "direct"}
+BUILD_FROM = {"today", "plan", "next_block", "nothing_ahead", "change", "resume", "race", "direct",
+              # Nov 23: from the Get your plan screen.
+              "choice_today", "choice_plan"}
 
 
 def _from(said: Any) -> str | None:
@@ -3432,6 +3541,60 @@ async def build_send_status() -> dict[str, Any]:
         raise BuildUnavailable()
     job = _SENDS.get(official.current() or "local")
     return _send_status(job) if job else {"state": "none"}
+
+
+@mcp.custom_route(API_PREFIX + "plan-choice", methods=["POST"])
+@_safe
+async def api_plan_choice(request: Request) -> Response:
+    """Nov 23: which way to a plan someone picked, and where it sat on the screen."""
+    from . import official
+
+    try:
+        body = await request.json() or {}
+    except ValueError:
+        body = {}
+    option, position = body.get("option"), body.get("position")
+    if option not in store.PLAN_CHOICES or position not in (1, 2):
+        return _json({"error": "Unknown choice."}, 400)
+    screen = body.get("screen") if body.get("screen") in ("today", "plan") else None
+    user_token = official.current()
+    user = store.get_user(user_token) if user_token else None
+    if user is None:
+        return _json({"error": "Not signed in."}, 401)
+    store.record_plan_pick(user.email_hash or user_token, user_token, option, position)
+    _track("plan_choice_picked", drop_empty({"option": option, "position": position, "screen": screen}))
+    return _json({"ok": True})
+
+
+@mcp.custom_route(API_PREFIX + "plan-choice/form", methods=["GET"])
+@_safe
+async def api_plan_choice_form(request: Request) -> Response:
+    """What Garmin can fill in on the three steps: weekly km, usual days, long-run day, a race on the calendar."""
+    try:
+        inputs, _ = await _build_inputs(date.today())
+    except Exception:  # noqa: BLE001 - the steps work blank
+        log.debug("plan-choice prefill failed", exc_info=True)
+        return _json({})
+    race = next((r for r in inputs.get("races") or [] if r.get("tier") == "A"), None)
+    word = {5: "5k", 10: "10k", 21: "half", 42: "marathon"}.get(round(float((race or {}).get("km") or 0))) if race else None
+    return _json(drop_empty({
+        "km": inputs.get("avg_km") if not inputs.get("none") else None,
+        "days": inputs.get("usual_days") or None,
+        "long_day": inputs.get("long_day"),
+        "race": {"race": word or "other", "date": str(race["date"])[:10], "name": race.get("name")} if race else None,
+    }))
+
+
+@mcp.custom_route(API_PREFIX + "plan-choice/link", methods=["POST"])
+@_safe
+async def api_plan_choice_link(request: Request) -> Response:
+    """The chat link from the three steps' answers. Builds a link only: the app asks no model anything."""
+    try:
+        body = await request.json() or {}
+    except ValueError:
+        body = {}
+    prompt = plan_chat_prompt(body, date.today())
+    return _json({"prompt": prompt, **_ask_links(prompt)})
 
 
 @mcp.custom_route(API_PREFIX + "build", methods=["GET"])

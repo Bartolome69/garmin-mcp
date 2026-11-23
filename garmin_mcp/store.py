@@ -169,6 +169,24 @@ CREATE TABLE IF NOT EXISTS app_push_offers (
 );
 """
 
+# Nov 23: "Get your plan", for someone with no plan. Which of its two choices
+# each person sees first (drawn once, 50/50, so position doesn't bias the
+# result), the one they picked and where it was, and when the 7-day check on
+# whether they still have a plan ran. Keyed like watch_sends; the user token
+# is kept to read their plan for that check.
+PLAN_CHOICE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS plan_choices (
+    person        TEXT PRIMARY KEY,
+    user_token    TEXT NOT NULL,
+    first         TEXT NOT NULL,
+    assigned_at   INTEGER NOT NULL,
+    option        TEXT,
+    position      INTEGER,
+    picked_at     INTEGER,
+    measured_at   INTEGER
+);
+"""
+
 # Every email sent through Resend, counted by UTC day and kind (Nov 16): the
 # free plan caps sends a day and a month, so the weekly email spends only
 # what's left once sign-in codes and alerts have their room. Kinds: "weekly",
@@ -398,6 +416,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(PUSH_SCHEMA)
     conn.executescript(WATCH_SCHEMA)
     conn.executescript(APP_PUSH_SCHEMA)
+    conn.executescript(PLAN_CHOICE_SCHEMA)
     conn.executescript(EMAIL_SENDS_SCHEMA)
     conn.executescript(USAGE_WEEKS_SCHEMA)
     conn.executescript(WEEKLY_SKIPS_SCHEMA)
@@ -1880,6 +1899,53 @@ def claim_app_push(person: str, opened_since: Callable[[int], bool], now: int | 
         claimed = conn.execute("UPDATE app_push_offers SET reminded_at = ? WHERE person = ? AND reminded_at IS NULL",
                                (now, person)).rowcount
     return "reminder" if claimed else None
+
+
+PLAN_CHOICES = ("chat", "app")
+
+
+def plan_choice_first(person: str, user_token: str, draw: Callable[[], float] | None = None,
+                      now: int | None = None) -> str:
+    """Which "Get your plan" choice this person sees first: drawn once, 50/50, then kept."""
+    import random
+
+    first = PLAN_CHOICES[0] if (draw or random.random)() < 0.5 else PLAN_CHOICES[1]
+    with _connect() as conn:
+        conn.execute("INSERT OR IGNORE INTO plan_choices (person, user_token, first, assigned_at) VALUES (?, ?, ?, ?)",
+                     (person, user_token, first, int(now or time.time())))
+        row = conn.execute("SELECT first FROM plan_choices WHERE person = ?", (person,)).fetchone()
+    return row[0]
+
+
+def record_plan_pick(person: str, user_token: str, option: str, position: int, now: int | None = None) -> bool:
+    """Note the choice someone picked, for the 7-day check. The latest pick
+    counts until that check has run; after it, nothing changes. True if noted."""
+    now = int(now or time.time())
+    with _connect() as conn:
+        conn.execute("INSERT OR IGNORE INTO plan_choices (person, user_token, first, assigned_at) VALUES (?, ?, ?, ?)",
+                     (person, user_token, option if position == 1 else next(c for c in PLAN_CHOICES if c != option), now))
+        return conn.execute(
+            "UPDATE plan_choices SET option = ?, position = ?, picked_at = ?, user_token = ? "
+            "WHERE person = ? AND measured_at IS NULL", (option, position, now, user_token, person)).rowcount > 0
+
+
+# The check on whether someone still has a plan runs this long after their pick.
+PLAN_CHECK_AFTER = 7 * 24 * 3600
+
+
+def due_plan_checks(now: int | None = None, limit: int = 20) -> list[tuple[str, str, str, int, int]]:
+    """(person, user_token, option, position, picked_at) for picks a week old or more, not yet checked."""
+    now = int(now or time.time())
+    with _connect() as conn:
+        return [tuple(r) for r in conn.execute(
+            "SELECT person, user_token, option, position, picked_at FROM plan_choices "
+            "WHERE picked_at IS NOT NULL AND measured_at IS NULL AND picked_at <= ? ORDER BY picked_at LIMIT ?",
+            (now - PLAN_CHECK_AFTER, limit)).fetchall()]
+
+
+def mark_plan_checked(person: str, now: int | None = None) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE plan_choices SET measured_at = ? WHERE person = ?", (int(now or time.time()), person))
 
 
 def mark_sent_to_watch(person: str, now: int | None = None) -> bool:
