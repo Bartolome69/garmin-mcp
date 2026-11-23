@@ -2899,6 +2899,9 @@ async def sign_in_handoff(request: Request) -> Response:
     link = str(asked.get("link") or "")
     came = drop_empty({"source": source, "link": link if _FROM.fullmatch(link) else None,
                        "utm_source": "weekly_email" if source == "weekly_email" else None})
+    # Nov 23: a link given in a chat (its card, or the app card on a workout push)
+    # is a deep link; one in an email is a magic link.
+    method = "magic_link" if source == "weekly_email" else "deep_link"
     subject, result = store.redeem_handoff(code) if code else (None, "invalid")
     if result == "success" and store.get_user(subject) is None:
         result = "invalid"  # the account has gone since the link was made
@@ -2909,7 +2912,7 @@ async def sign_in_handoff(request: Request) -> Response:
         return _json({"ok": True})
     _track("app_magic_link_opened", {"result": result, **came}, subject if result != "invalid" else None)
     if result != "success":
-        _track("app_sign_in_failed", {"method": "magic_link", "reason": result})
+        _track("app_sign_in_failed", {"method": method, "reason": result})
         if source == "weekly_email":
             # Email links are often opened hours later, after the code has gone.
             said = ("That link from your email has expired: it signs you in until midnight (UK time) on the day it's sent."
@@ -2919,7 +2922,7 @@ async def sign_in_handoff(request: Request) -> Response:
                     "used": "That link from the chat has already been used.",
                     "invalid": "That link from the chat doesn't work."}[result]
         return _json({"error": said, "result": result}, 401)
-    _track("app_signed_in", {"method": "magic_link", **came}, subject)
+    _track("app_signed_in", {"method": method, **came}, subject)
     return _json(_tokens(subject))
 
 

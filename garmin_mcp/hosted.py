@@ -1229,19 +1229,39 @@ def _sent_day(name: str, result: Any) -> str | None:
     return day[:10] if isinstance(day, str) and len(day) >= 10 else None
 
 
-def _with_first_watch_mention(name: str, result: dict, person: str) -> dict:
-    """After someone's first workout ever reaches their watch (Nov 15): the
-    app's link, signed in and on that week with the workout picked out, and a
-    note asking the assistant to mention it in one line. Once per person: the
-    store's watch_sends row is what makes a send the first."""
+# Nov 23: the Daash app, offered on a workout push. Shown as written.
+APP_CARD_TEXT = ("Your workout's on your watch. See your week in the Daash app: move sessions, tap "
+                 "'Not feeling 100%' on tired days, and see planned vs actual after each run.")
+
+
+def _app_opened_since(user_token: str, user: store.User) -> Any:
+    """Whether this person has opened the app since a time: any of their sign-ins
+    made or renewed an app session then, however they first signed it in."""
+    from . import oauth
+
+    subjects = {user_token, *(store.tokens_for(user.email_hash) if user.email_hash else [])}
+    return lambda since: any(store.used_client_since(s, oauth.APP_CLIENT_ID, since) for s in subjects)
+
+
+def _with_app_card(name: str, result: dict, user_token: str, user: store.User, person: str) -> dict:
+    """After a workout reaches the watch (Nov 23): the app's card, for the
+    assistant to show. The first push (anyone never offered it, whenever that
+    is), and once more on a push 7 or more days later if they still haven't
+    opened the app; never again after that. The link opens the app signed in,
+    on the week the workout's in with it picked out."""
     if not server_mod.app_link_available():
         return result
+    reason = store.claim_app_push(person, _app_opened_since(user_token, user))
+    if not reason:
+        return result
     day = _sent_day(name, result)
-    link = server_mod.app_link("plan", "ai_mention", week=server_mod.monday_of(day) if day else None, focus=day)
+    link = server_mod.app_link("plan", reason, week=server_mod.monday_of(day) if day else None, focus=day)
     if not link:
         return result
-    analytics.capture("app_link_offered", person, {"trigger": "first_watch_send", "tool": name})
-    return {**result, "app": {**(result.get("app") or {}), "url": link, "note": server_mod.first_watch_note(link)}}
+    analytics.capture("app_link_offered", person, {"reason": reason, "tool": name})
+    return {**result,
+            "app_card": {"text": APP_CARD_TEXT, "url": link, "button": "Open the Daash app"},
+            "app": {**(result.get("app") or {}), "url": link, "note": server_mod.app_card_note()}}
 
 
 # The apps that show only what the model writes (Nov 13): no cards for them.
@@ -1288,15 +1308,15 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         sends = server_mod.on_watch()
         if sends is None:
             sends = [{"sport": None}] * (0 if error else _sessions_sent(name, result))
-        first = bool(sends) and sent_to_watch(
-            user_token, user, _WATCH_SOURCE.get(name, f"chat_{name}"), len(sends), alone,
-            tool=name, client=client, sports=[s.get("sport") for s in sends])
+        if sends:
+            sent_to_watch(user_token, user, _WATCH_SOURCE.get(name, f"chat_{name}"), len(sends), alone,
+                          tool=name, client=client, sports=[s.get("sport") for s in sends])
         offer = (result.get("situation") or {}) if name == "get_plan" and isinstance(result, dict) and not auto else {}
         if offer.get("offer"):
             analytics.capture("offer_made", person, drop_empty({
                 "stage": offer.get("stage"), "offer_kind": offer.get("offer_kind"),
                 "login_route": login_route(alone), "hours_since_connect": hours_since_connect(user)}))
-        return first
+        return len(sends)
 
     def after(name: str, result: Any) -> Any:
         if name == "get_plan" and user_token in _PLAN_CALLS and not _card_refresh():
@@ -1305,7 +1325,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             not alone and name in WITH_PLAN_HELD and isinstance(result, dict) and "error" not in result
             and _sent_with_plan(user_token, name)
         )
-        first_send = _report_call(name, result, held)
+        sent = _report_call(name, result, held)
         if held:
             analytics.capture(
                 "tool_held",
@@ -1359,8 +1379,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         # reads of it, which pass no hook: a code made for each screen is waste.
         if name in ("get_plan", "create_plan") and isinstance(result, dict) and "error" not in result:
             result = _with_app_link(name, result, user_token, user)
-        if first_send and isinstance(result, dict) and "error" not in result:
-            result = _with_first_watch_mention(name, result, person)
+        if sent and isinstance(result, dict) and "error" not in result:
+            result = _with_app_card(name, result, user_token, user, person)
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -1439,7 +1459,7 @@ def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -
         analytics.capture(
             "app_link_offered",
             user.email_hash or user_token,
-            {"tool": name, "account": user.email_masked},
+            {"tool": name, "account": user.email_masked, "reason": "weekly_chat"},
         )
     # The card's own button gets its own code, marked as the card's, opening on
     # the week the card shows: the card adds which week (and which run) it's on.
@@ -5075,6 +5095,12 @@ def build_app() -> Any:
         store.record_people()
     except Exception:  # noqa: BLE001 - a count must never stop the server starting
         log.exception("recording people for the count failed")
+    try:
+        noted = store.note_earlier_app_offers()
+        if noted:
+            log.info("counted %d people offered the app by the first-send mention", noted)
+    except Exception:  # noqa: BLE001 - must never stop the server starting
+        log.exception("noting earlier app offers failed")
     try:
         repaired = store.repair_password_on_official()
         if repaired:

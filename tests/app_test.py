@@ -978,9 +978,33 @@ def api_checks() -> None:
     check("the first screen opened from the email says which link and utm_source",
           viewed and viewed[-1].get("link") == "day_row" and viewed[-1].get("utm_source") == "weekly_email"
           and "email" not in viewed[-1], str(viewed[-1:]))
-    check("and the sign-in is app_signed_in, method magic_link, with its source",
-          any(e["properties"].get("method") == "magic_link" and e["properties"].get("source") == "card"
+    check("a link given in a chat signs in as app_signed_in, method deep_link, with its source",
+          any(e["properties"].get("method") == "deep_link" and e["properties"].get("source") == "card"
               for e in posted("app_signed_in")), str(posted("app_signed_in")))
+    # Nov 23: the link on the app card after a workout push. 15 minutes, once,
+    # then the app's own sign-in (email code or Garmin), on the screen it was opening.
+    import time as _time
+    real_time = _time.time
+    t0 = real_time()
+    in_time, too_late = store.new_handoff(user_token), store.new_handoff(user_token)
+    try:
+        _time.time = lambda: t0 + 14 * 60 + 50
+        at_14 = client.post("/app/api/sign-in/handoff", json={"code": in_time, "source": "first_push"})
+        _time.time = lambda: t0 + 15 * 60 + 10
+        at_15 = client.post("/app/api/sign-in/handoff", json={"code": too_late, "source": "first_push"})
+    finally:
+        _time.time = real_time
+    check("the app card's link signs in within its 15 minutes", at_14.status_code == 200 and at_14.json().get("access_token"),
+          at_14.text[:120])
+    check("and not after them: it says the chat link expired, for the app to fall back to its own sign-in",
+          at_15.status_code == 401 and at_15.json().get("result") == "expired" and "15 minutes" in at_15.json().get("error", ""),
+          at_15.text[:160])
+    twice = client.post("/app/api/sign-in/handoff", json={"code": in_time, "source": "first_push"})
+    check("tapped again, it's used: no second sign-in from it",
+          twice.status_code == 401 and twice.json().get("result") == "used" and "access_token" not in twice.json(), twice.text[:120])
+    check("its sign-in counted as deep_link from the card on a push",
+          any(e["properties"].get("method") == "deep_link" and e["properties"].get("source") == "first_push"
+              for e in posted("app_signed_in")))
     refreshed = client.post("/token", data={"grant_type": "refresh_token", "refresh_token": handed.get("refresh_token", ""),
                                              "client_id": "daash-app"})
     check("the app's sign-in refreshes like any other", refreshed.status_code == 200 and refreshed.json().get("access_token"),
@@ -1003,9 +1027,11 @@ def api_checks() -> None:
           store.load_oauth_token(r.json().get("access_token", ""), "access")["subject"] == user_token)
     check("a code works once", client.post("/app/api/sign-in/verify", json={"email": email, "code": code}).status_code == 401)
     methods = {e["properties"].get("method") for e in posted("app_signed_in")}
-    check("signing in is recorded, by how", methods >= {"magic_link", "email"}, str(methods))
+    check("signing in is recorded, by how: deep link (a chat), magic link (an email), email code",
+          methods >= {"deep_link", "magic_link", "email"}, str(methods))
     failed = {(e["properties"].get("method"), e["properties"].get("reason")) for e in posted("app_sign_in_failed")}
-    check("and failed sign-ins, with why", ("email", "wrong code") in failed and ("magic_link", "used") in failed and ("magic_link", "expired") in failed,
+    check("and failed sign-ins, with why", ("email", "wrong code") in failed and ("deep_link", "used") in failed and ("deep_link", "expired") in failed
+          and ("magic_link", "expired") in failed,
           str(failed))
 
     # Signing in with Garmin from the app: Daash's own client goes straight back, no consent page.

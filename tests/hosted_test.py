@@ -1875,20 +1875,101 @@ async def main() -> int:
             finally:
                 garmin_server.official.reset(bound)
             said = (first_send.get("app") or {})
-            url = said.get("url", "")
+            card = first_send.get("app_card") or {}
+            url = card.get("url", "")
             offered = [e for e in SENT[before:] if e["event"] == "app_link_offered"]
-            check("the first workout ever on the watch brings the app's link, signed in, on that week with it picked out",
-                  "login=" in url and "week=2026-11-09" in url and "focus=2026-11-14" in url and url.endswith("source=ai_mention")
-                  and url in said.get("note", "") and "It's on your watch. Your whole week is in the Daash app" in said.get("note", ""),
-                  str(said))
+            # Nov 23: an app card, for the assistant to show as written.
+            check("the first workout on the watch brings the app card, its link signed in, on that week with it picked out",
+                  card.get("text") == hosted.APP_CARD_TEXT and card.get("button") == "Open the Daash app"
+                  and "login=" in url and "week=2026-11-09" in url and "focus=2026-11-14" in url and url.endswith("source=first_push")
+                  and said.get("url") == url and "app_card" in said.get("note", ""), str(first_send))
+            check("its words are Bart's",
+                  hosted.APP_CARD_TEXT == "Your workout's on your watch. See your week in the Daash app: move sessions, tap "
+                  "'Not feeling 100%' on tired days, and see planned vs actual after each run.")
             check("and app_link_offered says why, once",
-                  [(e["properties"].get("trigger"), e["properties"].get("tool")) for e in offered]
-                  == [("first_watch_send", "create_workout")], str(offered))
-            check("the second send doesn't mention it again", "app" not in again_send, str(again_send.get("app")))
+                  [(e["properties"].get("reason"), e["properties"].get("tool")) for e in offered]
+                  == [("first_push", "create_workout")], str(offered))
+            check("the second push doesn't show it again", "app_card" not in again_send and "app" not in again_send, str(again_send))
+            code = url.split("login=")[1].split("&")[0]
+            check("the card's link signs in the person it was for", store.take_handoff(code) == sender)
+
+            import secrets
+
+            from garmin_mcp import oauth as oauth_mod
+
+            def opens_app(token: str) -> None:  # an app session made, as signing in from the link does
+                store.save_oauth_token(secrets.token_urlsafe(16), kind="access", client_id=oauth_mod.APP_CLIENT_ID,
+                                       subject=token, scopes="garmin", resource=None, expires_at=None)
+
+            # A week on, never having opened the app: once more, then never again.
+            def week_later(person: str, days: int = 8) -> None:
+                with store._connect() as conn:
+                    conn.execute("UPDATE app_push_offers SET first_at = first_at - ? WHERE person = ?", (days * 86400, person))
+
+            def push(token: str, day: str = "2026-11-20") -> dict:
+                hook_for = hosted._after_tool_for(token, store.get_user(token), False, "Claude")
+                tok = garmin_server.official.use(token)
+                try:
+                    return hook_for("schedule_workout", {"workout_id": 9, "scheduled_for": day, "schedule_id": 3})
+                finally:
+                    garmin_server.official.reset(tok)
+
+            before = len(SENT)
+            check("six days on, still nothing", "app_card" not in (week_later("fp-sender-1115", 6) or push(sender)))
+            week_later("fp-sender-1115", 2)
+            reminded = push(sender)
+            third = push(sender)
+            week_later("fp-sender-1115", 30)
+            fourth = push(sender)
+            offered = [e["properties"].get("reason") for e in SENT[before:] if e["event"] == "app_link_offered"]
+            check("seven days on without opening the app, the card comes once more, as a reminder",
+                  (reminded.get("app_card") or {}).get("text") == hosted.APP_CARD_TEXT
+                  and (reminded.get("app_card") or {}).get("url", "").endswith("source=reminder"), str(reminded))
+            check("and never again after that", "app_card" not in third and "app_card" not in fourth)
+            check("app_link_offered says it was the reminder", offered == ["reminder"], str(offered))
+
+            opener = store.save_user("p***@example.com", "{}", email_hash="fp-opener-1123", email="opener1123@example.com")
+            first = push(opener)
+            opens_app(opener)  # they open the app from it
+            week_later("fp-opener-1123")
+            check("someone who opened the app gets the card once and no reminder",
+                  "app_card" in first and "app_card" not in push(opener))
+
+            again = store.save_user("q***@example.com", "{}", email_hash="fp-twoway-1123", email="twoway1123@example.com")
+            push(again)
+            # They sign in to Daash afresh, which makes a new account row: still the same person.
+            again = store.save_user("q***@example.com", "{}", email_hash="fp-twoway-1123", email="twoway1123@example.com")
+            check("signing in again doesn't bring the first card back", "app_card" not in push(again))
+            opens_app(again)
+            week_later("fp-twoway-1123")
+            check("and opening the app from the new sign-in counts as opened", "app_card" not in push(again))
+
+            # Someone whose first push came before any of this: never offered, so the next push offers it.
+            veteran = store.save_user("v***@example.com", "{}", email_hash="fp-veteran-1101", email="vet1101@example.com")
+            store.mark_sent_to_watch("fp-veteran-1101", now=store.FIRST_MENTION_LIVE - 10 * 86400)
+            mentioned = store.save_user("m***@example.com", "{}", email_hash="fp-mentioned-1117", email="men1117@example.com")
+            store.mark_sent_to_watch("fp-mentioned-1117", now=store.FIRST_MENTION_LIVE + 2 * 86400)
+            with store._connect() as conn:
+                conn.execute("DELETE FROM repairs WHERE name = 'app_push_offers_from_mentions'")
+            noted = store.note_earlier_app_offers()
+            check("people offered the app by the old first-send mention are counted as offered; earlier ones aren't",
+                  noted >= 1 and store.note_earlier_app_offers() == 0, str(noted))
+            before = len(SENT)
+            vet_push = push(veteran)
+            men_push = push(mentioned)
+            check("someone never offered it gets it on their next push, as a first push",
+                  (vet_push.get("app_card") or {}).get("url", "").endswith("source=first_push"), str(vet_push))
+            check("someone the old mention offered it to waits for the reminder", "app_card" not in men_push)
+            check("each offer counted once with its reason",
+                  [e["properties"].get("reason") for e in SENT[before:] if e["event"] == "app_link_offered"] == ["first_push"])
+            failed_push = hosted._after_tool_for(veteran, store.get_user(veteran), False)("schedule_workout",
+                                                                                        {"error": "Garmin said no"})
+            check("a push that failed brings nothing", "app_card" not in failed_push)
             lone = store.save_user("l***@example.com", "{}", email_hash="fp-lone-1115", email="lone1115@example.com")
             lone_send = hosted._after_tool_for(lone, store.get_user(lone), True)("schedule_workout",
                                                                                  {"workout_id": 7, "scheduled_for": "2026-11-18"})
-            check("an account on the official API alone gets no mention", "app" not in lone_send, str(lone_send))
+            check("an account on the official API alone gets no card", "app" not in lone_send and "app_card" not in lone_send,
+                  str(lone_send))
         finally:
             os.environ.pop("GARMIN_MCP_BASE_URL", None)
         hosted._FIRST_DAY_SAID.clear()

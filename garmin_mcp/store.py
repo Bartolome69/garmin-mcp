@@ -158,6 +158,17 @@ CREATE TABLE IF NOT EXISTS watch_sends (
 );
 """
 
+# The Daash app offered on a workout push (Nov 23): the first push, and once
+# more a week or more later for someone who hasn't opened the app. Keyed like
+# watch_sends, so it's once per person, however many sign-ins they've had.
+APP_PUSH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS app_push_offers (
+    person        TEXT PRIMARY KEY,
+    first_at      INTEGER NOT NULL,
+    reminded_at   INTEGER
+);
+"""
+
 # Every email sent through Resend, counted by UTC day and kind (Nov 16): the
 # free plan caps sends a day and a month, so the weekly email spends only
 # what's left once sign-in codes and alerts have their room. Kinds: "weekly",
@@ -386,6 +397,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(RACE_PROMPT_SCHEMA)
     conn.executescript(PUSH_SCHEMA)
     conn.executescript(WATCH_SCHEMA)
+    conn.executescript(APP_PUSH_SCHEMA)
     conn.executescript(EMAIL_SENDS_SCHEMA)
     conn.executescript(USAGE_WEEKS_SCHEMA)
     conn.executescript(WEEKLY_SKIPS_SCHEMA)
@@ -1825,6 +1837,49 @@ def secret_setting(name: str, make: Callable[[], bytes]) -> bytes:
         conn.execute("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)", (name, _cipher().encrypt(value)))
         row = conn.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
     return _cipher().decrypt(row[0])
+
+
+# The app comes up again on a push this long after it first did, if it hasn't been opened since.
+APP_REMIND_AFTER = 7 * 24 * 3600
+# When the one-off app mention after a first watch send went live (15 Nov, 13:15
+# UTC): whoever's first send came after it has been offered the app already.
+FIRST_MENTION_LIVE = 1794748500
+
+
+def note_earlier_app_offers() -> int:
+    """Once: count the people offered the app by the first-send mention as offered. Returns how many."""
+    with _connect() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS repairs (name TEXT PRIMARY KEY, done_at INTEGER)")
+        if not conn.execute("INSERT OR IGNORE INTO repairs VALUES ('app_push_offers_from_mentions', ?)",
+                            (int(time.time()),)).rowcount:
+            return 0
+        return conn.execute("INSERT OR IGNORE INTO app_push_offers (person, first_at) "
+                            "SELECT person, first_at FROM watch_sends WHERE first_at >= ?",
+                            (FIRST_MENTION_LIVE,)).rowcount
+
+
+def claim_app_push(person: str, opened_since: Callable[[int], bool], now: int | None = None) -> str | None:
+    """Whether this workout push brings up the Daash app, and why.
+
+    "first_push" the first time for this person; "reminder" once, on a push at
+    least APP_REMIND_AFTER later, when ``opened_since(first_at)`` says they
+    haven't opened the app since; otherwise None. Each is claimed in a single
+    statement, so two pushes at the same moment can't both bring it up.
+    """
+    if not person:
+        return None
+    now = int(time.time()) if now is None else now
+    with _connect() as conn:
+        if conn.execute("INSERT OR IGNORE INTO app_push_offers (person, first_at) VALUES (?, ?)",
+                        (person, now)).rowcount:
+            return "first_push"
+        row = conn.execute("SELECT first_at, reminded_at FROM app_push_offers WHERE person = ?", (person,)).fetchone()
+    if not row or row[1] is not None or now - row[0] < APP_REMIND_AFTER or opened_since(row[0]):
+        return None
+    with _connect() as conn:
+        claimed = conn.execute("UPDATE app_push_offers SET reminded_at = ? WHERE person = ? AND reminded_at IS NULL",
+                               (now, person)).rowcount
+    return "reminder" if claimed else None
 
 
 def mark_sent_to_watch(person: str, now: int | None = None) -> bool:

@@ -2781,15 +2781,13 @@ def app_link(route: str, source: str | None = None, week: str | None = None,
     return f"{base}/app/#/{route}" + (f"?{'&'.join(query)}" if query else "")
 
 
-def first_watch_note(url: str) -> str:
-    """For the assistant, after someone's first workout ever reaches their watch
-    (Nov 15): one line pointing at the app, this once."""
+def app_card_note() -> str:
+    """For the assistant, when a workout push brings the app up (Nov 23): show the card."""
     return (
-        "This is the first workout they've sent to their watch. After confirming it, add one line, "
-        f"in these words or close to them: \"It's on your watch. Your whole week is in the Daash app "
-        f"if you want to see it on a calendar or drag things around: {url}\" Give that link as it is, "
-        "and no other address for the app: it opens the app signed in, once, within 15 minutes. "
-        "Mention it this once; don't bring it up again unless they ask."
+        "After confirming the workout is on their watch, show them app_card: its text as written, then its "
+        "link as it is, as a button or link labelled with app_card.button. Give no other address for the app: "
+        "this link opens it signed in, once, within 15 minutes. Show it this once; don't bring the app up "
+        "again unless they ask."
     )
 
 

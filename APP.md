@@ -81,9 +81,13 @@ only knows the API below.
 There is one Daash account per person, and every door signs in to it. Three
 ways in, the first two without Garmin:
 
-1. **Open in Daash from a chat card.** The session card's link carries a
-   single-use code (30 minutes, stored as a hash). Tapping it opens the app
-   already signed in as the person who was talking to Claude: nothing to type.
+1. **A link from a chat.** The plan and session cards' Open in Daash, and the
+   app card after a workout push, carry a single-use code (15 minutes, stored
+   as a hash). Tapping it opens the app already signed in as the person who was
+   talking to the assistant: nothing to type, no email. A used or expired code
+   falls back to the sign-in below, on the screen the link was opening.
+   Counted as `app_signed_in` with `method=deep_link` (`magic_link` for a link
+   in the weekly email, `email` for the code below).
 2. **An email code.** "Already use Daash? Your email" sends a 6-digit code to
    the address the account is under, using the same codes, limits and mail as
    the sign-up step (`store.new_email_code`, `support_mail.send_code`). The
@@ -146,6 +150,14 @@ rules and what isn't built yet are in docs/plan-engine-spec.md.
 - **Ask Claude / Ask ChatGPT** open `claude.ai/new?q=` or `chatgpt.com/?q=`
   with a prompt naming the session (date, name, workout id) or the run
   (activity id), and asking it to use Daash. The answer happens in the chat.
+- **The app card** (Nov 23): when a workout reaches someone's watch, the
+  tool's answer carries `app_card` (its text, a signed-in link to that week,
+  a button label) for the assistant to show: on the first push for that
+  person, and once more on a push 7 or more days later if they still haven't
+  opened the app; never after that (`store.claim_app_push`). Someone never
+  offered it gets it on their next push. Counted as `app_link_offered` with
+  `reason` `first_push` or `reminder`. Not for an account on the official
+  API alone, whose answers carry nothing past Garmin's data.
 - **Open in Daash**: `get_session` answers carry `app_url`, the matching screen
   with a single-use sign-in code (`/app/#/session/2026-11-03?login=…`), and
   the session card shows an Open in Daash link. Preview accounts only, until
