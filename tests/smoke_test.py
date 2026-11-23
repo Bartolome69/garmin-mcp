@@ -2492,6 +2492,21 @@ async def main() -> int:
             check("a movement Garmin doesn't have is refused with the closest names",
                   "Closest names: Plank" in near.get("error", "") and "substitute" in near.get("error", ""),
                   str(near)[:200])
+            # Nov 23: the spellings that still missed: run together, "-es" plurals, an apostrophe.
+            spelt = payload(await sess.call_tool("create_strength_workout", {
+                "name": "Spellings",
+                "exercises": [{"exercise": "pushups"}, {"exercise": "pullups"}, {"exercise": "crunches"},
+                              {"exercise": "farmers walk"}, {"exercise": "farmer carry"}],
+            }))
+            summary = spelt.get("summary", "")
+            check("joined spellings, -es plurals and a missing apostrophe find Garmin's names",
+                  all(n in summary for n in ("x10 Push-up,", "x10 Pull-up,", "x10 Crunch,", "Farmer's Walk", "Farmer's Carry")),
+                  str(spelt)[:240])
+            equipment = payload(await sess.call_tool("create_strength_workout", {
+                "name": "Equipment", "exercises": [{"exercise": "reverse lunge"}]}))
+            check("with no plain version, the equipment is still asked, never picked",
+                  "matches several" in equipment.get("error", "") and "Dumbbell Reverse Lunge" in equipment.get("error", ""),
+                  str(equipment)[:200])
             abs_hits = payload(await sess.call_tool("find_exercises", {"query": "abs"}))
             check("search matches whole words before parts of words",
                   not any("Cable" in m["name"] for m in abs_hits.get("matches", [])),

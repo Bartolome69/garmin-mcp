@@ -609,12 +609,23 @@ def _normalise(term: str) -> str:
     fold too: the catalogue says "Lunge" and people say "lunges", and without
     this "calf raises" matched only "Banded Calf Raises", a different movement.
     """
-    words = str(term).replace("-", " ").replace("_", " ").lower().split()
+    # Nov 23: an apostrophe goes ("farmer's" and "farmers" are one word), and
+    # the joined spellings split ("pushups" is "push ups").
+    text = str(term).replace("-", " ").replace("_", " ").replace("'", "").replace("\u2019", "").lower()
+    words = [part for word in text.split() for part in _JOINED.get(word, word).split()]
     return " ".join(_singular(word) for word in words)
 
 
+# How people run these together, where Garmin hyphenates them.
+_JOINED = {f"{a}{b}{s}": f"{a} {b}{s}" for a, b in (("push", "up"), ("pull", "up"), ("chin", "up"), ("sit", "up"),
+                                                     ("step", "up"), ("pike", "up")) for s in ("", "s")}
+
+
 def _singular(word: str) -> str:
-    # "press" and "swiss" keep their s; "lunges" and "push-ups" lose it.
+    # "press" and "swiss" keep their s; "lunges" and "push-ups" lose it; Nov 23:
+    # "crunches" loses its es (it read "crunche", and missed "Crunch").
+    if len(word) > 4 and word.endswith(("ches", "shes", "xes", "sses")):
+        return word[:-2]
     if len(word) > 2 and word.endswith("s") and not word.endswith("ss"):
         return word[:-1]
     return word
