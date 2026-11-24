@@ -780,6 +780,12 @@ def claim_notice(kind: str, key: str) -> bool:
         ).rowcount > 0
 
 
+def has_notice(kind: str, key: str) -> bool:
+    """Whether this one-time notice has already been claimed."""
+    with _connect() as conn:
+        return conn.execute("SELECT 1 FROM notices WHERE kind = ? AND key = ? LIMIT 1", (kind, key)).fetchone() is not None
+
+
 def history_signature(garmin_user_id: str) -> str:
     """What makes a link to add someone's past runs genuine: only this server can sign one."""
     key = os.environ.get("GARMIN_MCP_SECRET", "").encode()

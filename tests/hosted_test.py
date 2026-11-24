@@ -1691,6 +1691,14 @@ async def main() -> int:
         check("the first day's first two answers end with the offer, the third doesn't",
               first.get("first_day") == hosted.FIRST_DAY_NOTE and second.get("first_day") and "first_day" not in third
               and "first_day" not in refused, str([("first_day" in x) for x in (first, second, third)]))
+        hinted = store.save_user("h***@example.com", "{}", email_hash="fp-hinted-1124", email="hinted1124@example.com")
+        store.claim_news(hinted, hosted.NEWS_VERSION)
+        hinted_hook = hosted._after_tool_for(hinted, store.get_user(hinted), False, "Claude")
+        opening = hinted_hook("get_activities", {"activities": []})
+        later = [hinted_hook(n, {"x": {}}) for n in ("get_readiness", "get_sleep_data")]
+        check("someone who had the first-workout offer doesn't also get the first-day offer",
+              "first_workout" in opening and not any("first_day" in x for x in later),
+              str(["first_workout" in opening] + [("first_day" in x) for x in later]))
         before = len(SENT)
         hook("schedule_workout", {"workout_id": 1, "scheduled_for": "2026-11-14", "schedule_id": 9})
         hook("create_plan", {"weeks": [], "created": {"sessions_created": 12, "weeks": 4}})
@@ -1968,7 +1976,8 @@ async def main() -> int:
             veteran = store.save_user("v***@example.com", "{}", email_hash="fp-veteran-1101", email="vet1101@example.com")
             store.mark_sent_to_watch("fp-veteran-1101", now=store.FIRST_MENTION_LIVE - 10 * 86400)
             mentioned = store.save_user("m***@example.com", "{}", email_hash="fp-mentioned-1117", email="men1117@example.com")
-            store.mark_sent_to_watch("fp-mentioned-1117", now=store.FIRST_MENTION_LIVE + 2 * 86400)
+            # A day ago (after the mention went live), so the 7-day reminder isn't due yet whenever this runs.
+            store.mark_sent_to_watch("fp-mentioned-1117", now=max(store.FIRST_MENTION_LIVE + 60, int(time.time()) - 86400))
             with store._connect() as conn:
                 conn.execute("DELETE FROM repairs WHERE name = 'app_push_offers_from_mentions'")
             noted = store.note_earlier_app_offers()

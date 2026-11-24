@@ -865,6 +865,9 @@ def _first_day_due(user_token: str, user: store.User, name: str, result: Any) ->
         return False
     if store.has_sent_to_watch(user.email_hash or user_token):
         return False
+    # Nov 24: not for someone who already had the first-workout offer; one nudge is enough.
+    if store.has_notice("first_workout_hint", user.email_hash or user_token):
+        return False
     today = time.strftime("%Y-%m-%d", time.gmtime())
     day, said = _FIRST_DAY_SAID.get(user_token, (today, 0))
     said = said if day == today else 0
