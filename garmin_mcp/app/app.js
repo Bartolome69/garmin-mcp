@@ -964,9 +964,11 @@ function runChart(c, colour) {
     key = band ? `<span><i style="border:1px dashed var(--button)"></i>Planned</span><span><i style="background:var(--band-${colour === "hard" ? "hard" : "easy"})"></i>Target ${esc(band.text)}</span><span><i style="background:${tone("work")}"></i>Your rep</span>`
       : `<span><i style="background:${tone("work")}"></i>Repeats</span><span><i style="background:var(--rec)"></i>Easy and recoveries</span>`;
   } else {
-    const kms = parts.filter((p) => p.k === "km"), strides = parts.filter((p) => p.k === "stride");
-    const strideW = strides.length ? Math.min(72, strides.length * 12) : 0;
-    const roomKm = W - (strideW ? strideW + 10 : 0);
+    const kms = parts.filter((p) => p.k === "km");
+    // Nov 24: strides are drawn over the km bars where they happened (at: the
+    // km they fell at), not in a block of their own after the run.
+    const strides = parts.filter((p) => p.k === "stride" && p.at != null && p.p);
+    const roomKm = W;
     const kmW = (roomKm - 3 * (kms.length - 1)) / kms.length;
     const quick = Math.min(...kms.map((k) => k.p)), slow = Math.max(...kms.map((k) => k.p));
     const lo = quick - 20, hi = slow + 30;
@@ -977,19 +979,39 @@ function runChart(c, colour) {
     const past = (i) => ends && i >= ends;
     // The session's own colour, faded, outlined in it: the same run, past what was asked.
     const extraFill = `color-mix(in srgb, ${tone("km")} 32%, transparent)`;
+    // Where a point in the run sits along the bars: each bar is one km row,
+    // the last one however long it was.
+    const lengths = kms.map((k) => Math.min(1, parseFloat(k.label) || 1));
+    const barAt = (km) => {
+      let done = 0;
+      for (let i = 0; i < kms.length; i++) {
+        if (km <= done + lengths[i] || i === kms.length - 1) return [i, i * (kmW + 3) + Math.min(1, Math.max(0, (km - done) / lengths[i])) * kmW];
+        done += lengths[i];
+      }
+      return [kms.length - 1, roomKm];
+    };
+    // Each stride a short tick in the strides' colour on top of the bar it
+    // happened in: where a stride was, not its pace on another scale. That
+    // bar's pace label goes above the ticks, so nothing overlaps.
+    const TICK = 9;
+    const spikeTop = {};
+    let spikes = "";
+    strides.forEach((p) => {
+      const [i, at] = barAt(p.at);
+      const barTop = yKm(kms[i].p);
+      const y = barTop - TICK;
+      spikeTop[i] = Math.min(spikeTop[i] ?? y, y);
+      const x = Math.min(roomKm - 3, Math.max(0, at - 1.5));
+      spikes += `<rect class="stride-spike" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="3" height="${(TICK + 3).toFixed(1)}" rx="1.5" fill="${tone("stride")}"/>`;
+    });
     kms.forEach((k, i) => {
       const x = i * (kmW + 3), y = yKm(k.p);
       body += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${kmW.toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="3" fill="${past(i) ? extraFill : tone("km")}" ${past(i) ? `stroke="${tone("km")}" stroke-width="1"` : ""}/>`;
       // A ride's bars are its speed (Nov 15); a run's its pace.
       const shown = c.unit === "kmh" ? (3600 / k.p).toFixed(1) : clockOf(k.p);
-      if (kmW >= 24) body += `<text class="v" x="${(x + kmW / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" style="font-size:11px">${shown}</text>`;
+      if (kmW >= 24) body += `<text class="v" x="${(x + kmW / 2).toFixed(1)}" y="${((spikeTop[i] ?? y) - 5).toFixed(1)}" text-anchor="middle" style="font-size:11px">${shown}</text>`;
     });
-    const sx = roomKm + 10;
-    strides.forEach((p, j) => {
-      const sw = strideW / strides.length, x = sx + j * sw;
-      const y = 18 + Math.max(0, p.p - 170) / 150 * 80;
-      body += `<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, sw - 4).toFixed(1)}" height="${(bot - y).toFixed(1)}" rx="1.5" fill="${tone("stride")}"/>`;
-    });
+    body += spikes;
     // Heart rate straight under the bars, each km's point under its own bar
     // with a faint guide down to it, and the km named once, under both (Nov 12).
     const hrs = kms.filter((k) => k.hr);
@@ -1007,7 +1029,8 @@ function runChart(c, colour) {
         const end = yHr(k.hr) - (named(k, i) ? 17 : 3);
         if (end > bot + 4) body += `<line class="guide" x1="${midOf(i).toFixed(1)}" y1="${(bot + 3).toFixed(1)}" x2="${midOf(i).toFixed(1)}" y2="${end.toFixed(1)}" stroke="var(--hairline)" stroke-width="1" stroke-dasharray="2 3"/>`;
       });
-      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${(ends ? ends * (kmW + 3) - 3 : roomKm).toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
+      // The easy range runs the whole width (Nov 24): it still applied after the plan ended.
+      if (band) body += `<rect x="0" y="${yHr(band.hi).toFixed(1)}" width="${roomKm.toFixed(1)}" height="${(yHr(band.lo) - yHr(band.hi)).toFixed(1)}" rx="4" fill="var(--band-easy)" stroke="var(--band-easy-line)" stroke-width="0.8"/>`;
       const pts = kms.map((k, i) => k.hr ? `${midOf(i).toFixed(1)},${yHr(k.hr).toFixed(1)}` : "").filter(Boolean).join(" ");
       body += `<polyline points="${pts}" fill="none" stroke="var(--ink-2)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
       kms.forEach((k, i) => {
@@ -1015,7 +1038,8 @@ function runChart(c, colour) {
       });
       labelY = hBot + 16;
       height = labelY + 4;
-      key = `<span><i style="background:${tone("km")}"></i>${esc(c.bar_label || "Km pace")}</span>${ends ? `<span><i style="background:${extraFill};border:1px solid ${tone("km")}"></i>Past the plan</span>` : ""}${strides.length ? `<span><i style="background:var(--hard)"></i>Stride</span>` : ""}<span><i style="background:var(--ink-2);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
+      // Nov 24: no key for the bars past the plan: the dashed "Plan ends" says it.
+      key = `<span><i style="background:${tone("km")}"></i>${esc(c.bar_label || "Km pace")}</span>${strides.length ? `<span><i style="background:var(--hard);width:3px"></i>${esc(c.strides || `${strides.length} \u00d7 strides`)}</span>` : ""}<span><i style="background:var(--ink-2);height:2px"></i>Heart rate</span>${band ? `<span><i style="background:var(--band-easy)"></i>Target ${esc(band.text)}</span>` : ""}`;
     }
     // The axis runs from the first km to the whole distance (Nov 22: it ended at the last part km, "Km 0.2").
     body += `<text x="0" y="${labelY}">Km ${esc(kms[0].label)}</text><text x="${(roomKm).toFixed(1)}" y="${labelY}" text-anchor="end">Km ${esc(c.total_km != null ? String(c.total_km) : kms[kms.length - 1].label)}</text>`;
@@ -1025,7 +1049,6 @@ function runChart(c, colour) {
       body += `<line x1="${lx.toFixed(1)}" y1="6" x2="${lx.toFixed(1)}" y2="${(labelY - 12).toFixed(1)}" stroke="var(--ink-2)" stroke-width="1.2" stroke-dasharray="4 3"/>`
         + `<text x="${(lx - 4).toFixed(1)}" y="14" text-anchor="end" style="fill:var(--ink-2)">Plan ends</text>`;
     }
-    if (strides.length) body += `<text x="${(sx + strideW / 2).toFixed(1)}" y="${labelY}" text-anchor="middle">${strides.length} strides</text>`;
     body = `<svg viewBox="0 0 ${W} ${height}" role="img" aria-label="${esc(c.caption || (c.unit === "kmh" ? "Each lap's speed and heart rate" : "Each km's pace and heart rate"))}">${body}</svg>`;
   }
   return `<div class="card run-chart">${body}${key ? `<div class="chart-key">${key}</div>` : ""}${c.caption ? `<span class="chart-caption">${esc(c.caption)}</span>` : ""}</div>`;

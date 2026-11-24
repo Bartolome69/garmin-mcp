@@ -16,3 +16,4 @@ tests/signup-test.sqlite3*
 
 # Left behind by an earlier local run of the plan tooling.
 plan-config.json
+.shots/

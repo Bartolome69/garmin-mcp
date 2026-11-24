@@ -2393,7 +2393,13 @@ def _run_card(activity_id: Any, planned: dict[str, Any] | None, workout: dict[st
     verdict = None
     try:
         from . import analysis
-        verdict = analysis.analyse(workout, laps, (planned or {}).get("ty"), recording).get("verdict")
+        result = analysis.analyse(workout, laps, (planned or {}).get("ty"), recording)
+        verdict = result.get("verdict")
+        # Nov 24: the app's header says how far past the plan a run went, and its
+        # verdict is about effort; the card has no such header, so it says both.
+        extra = result.get("extra")
+        if verdict and extra and not verdict.startswith("Ran "):
+            verdict = f"Ran {extra['extra_km']:g} km longer than planned. {verdict}"
     except Exception:  # noqa: BLE001 - the card draws without its verdict
         log.debug("run verdict failed", exc_info=True)
     week = (planned or {}).get("w") or [None, None]

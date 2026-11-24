@@ -244,6 +244,45 @@ def _stride_steps(pairs: Sequence[tuple[dict[str, Any], dict[str, Any] | None]])
     return reps if all(short(s, l) for s, l in pairs if s.get("rep")) else []
 
 
+# Nov 24: strides found from the laps themselves, however they were lapped:
+# as a workout's steps or by pressing the lap button. A lap is a stride when
+# it's short (10 to 40 s, or under 200 m) and clearly quicker than the run.
+FOUND_STRIDE_S = (10, 40)
+FOUND_STRIDE_M = (30, 200)
+FOUND_STRIDE_QUICKER = 0.85
+
+
+def found_strides(laps: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Each stride-like lap with where it fell in the run: at_km is its middle."""
+    total_m = sum(l["metres"] for l in laps)
+    total_s = sum(l["seconds"] for l in laps)
+    if not total_m or not total_s:
+        return []
+    usual = total_s / total_m * 1000
+    out: list[dict[str, Any]] = []
+    walked = 0.0
+    for lap in laps:
+        m, t = lap["metres"], lap["seconds"]
+        p = t / m * 1000 if m else None
+        short = FOUND_STRIDE_S[0] <= t <= FOUND_STRIDE_S[1] or FOUND_STRIDE_M[0] <= m < FOUND_STRIDE_M[1]
+        quick = p is not None and m >= FOUND_STRIDE_M[0] and p <= usual * FOUND_STRIDE_QUICKER
+        # A lap the workout's stride step took counts however quick it was, but
+        # never a long one: a missed step can pair a whole km with a stride.
+        if p and short and (lap.get("stride") or quick):
+            out.append(drop_empty({"at_km": round((walked + m / 2) / 1000, 3), "p": round(p), "s": round(t),
+                                   "hr": round(lap["hr"]) if lap.get("hr") else None}))
+        walked += m
+    return out
+
+
+def whole_km(laps: Sequence[Mapping[str, Any]], recording: Any = None) -> list[dict[str, Any]]:
+    """Km splits over the whole run, strides and recoveries in their place: the
+    chart's bars, with the strides drawn over them where they happened."""
+    flat = [{**l, "mark": "active", "stride": False} for l in laps]
+    return [r for r in splits(flat, stream.parse_stream(recording) if recording else None)
+            if not r.get("strides") and not r.get("rest")]
+
+
 def _weighted_hr(laps: Sequence[Mapping[str, Any]]) -> float | None:
     timed = [(l["hr"], l["seconds"]) for l in laps if l.get("hr") and l.get("seconds")]
     total = sum(t for _, t in timed)
@@ -491,6 +530,8 @@ def splits(laps: Sequence[Mapping[str, Any]], columns: Mapping[str, Any] | None 
 # Nov 22: a run that went on past its plan by this much, and by this share of
 # it, leads with what was run: its title, its verdict and the chart say so.
 EXTRA_MIN_METRES = 500.0
+# Run types judged on their effort against an easy heart-rate range (Nov 24).
+EFFORT_KINDS = ("easy", "recovery", "long")
 EXTRA_MIN_SHARE = 0.05
 
 
@@ -723,23 +764,39 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
                  {"v": str(round(hr)) if hr else "–", "l": "bpm avg"}]
     # Nov 22: what was planned, in small grey under each number, where the plan set it.
     aim = _one_target(steps, reps=len(reps) >= 2)
-    plan_lines = [f"{'~' if about else ''}{round(planned_m / 1000, 1):g} planned" if planned_m else None,
+    # Nov 24: the planned distance is said once, in the header ("Planned about
+    # 7.9 km · ran 2.5 km extra"), not again under the km; an easy run's range
+    # reads as its easy range.
+    aim_word = "easy range" if kind in EFFORT_KINDS and len(reps) < 2 else "planned"
+    plan_lines = [None,
                   f"{clock(planned_s)} planned" if planned_s else None,
-                  f"{_target_short(aim)} planned" if aim and aim["kind"] == "pace" else None,
-                  f"{_target_short(aim)} planned" if aim and aim["kind"] == "hr" else None]
+                  f"{_target_short(aim)} {aim_word}" if aim and aim["kind"] == "pace" else None,
+                  f"{_target_short(aim)} {aim_word}" if aim and aim["kind"] == "hr" else None]
     for stat, line in zip(stats, plan_lines):
         if line:
             stat["plan"] = line
     verdict = _verdict(rows, laps, kind, split_rows)
     if extra:
         verdict = _extra_verdict(extra, verdict, rows, laps, split_rows, _one_target(steps, reps=False))
+    # Nov 24: an easy run with a heart-rate range is judged on its effort the
+    # whole way, never on its distance: the screen's header says that.
+    from .run_view import effort_verdict
+
+    whole = whole_km(laps, recording) if len(reps) < 2 else []
+    easy_aim = _one_target(steps, reps=False) if steps else None
+    effort = effort_verdict(whole, easy_aim) if kind in EFFORT_KINDS and len(reps) < 2 else None
+    if effort:
+        verdict = effort
     short = _short(rows, total_m, total_s)
     told: dict[str, Any] = {}
     if story:
         from . import run_view
 
         pairs, after = paired if paired else ([], [])
-        told = {"chart": run_view.chart(pairs, after, laps, split_rows, plan_km=(extra or {}).get("planned_km")),
+        planned_strides = len(_stride_steps([(st, None) for st in steps])) if steps else 0
+        told = {"chart": run_view.chart(pairs, after, laps, split_rows, plan_km=(extra or {}).get("planned_km"),
+                                        whole=whole, strides=found_strides(laps) if len(reps) < 2 else [],
+                                        planned_strides=planned_strides, aim=easy_aim),
                 "insights": run_view.insights(pairs, laps, split_rows, kind) or None,
                 "figures": run_view.figures(pairs, laps)}
     # The quicker stretch of a run without reps (a long run's half-marathon-pace

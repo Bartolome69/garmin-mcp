@@ -1597,8 +1597,8 @@ def strides_checks() -> None:
     check("nothing is left over as run on after the workout", not any(r["label"] == "Ran on" for r in rows), str(rows))
     check("the numbers at the top are the whole run's, not the strides'",
           [s["l"] for s in result["stats"]] == ["km", "time", "/km avg", "bpm avg"] and result["stats"][2]["v"] == "4:57", str(result["stats"]))
-    check("the verdict is about the easy run first, then the strides in a few words",
-          result["verdict"] == "On target. Easy 8.9 km at 4:58, heart rate 126. Six strides, fastest 3:16.", result["verdict"])
+    check("the verdict is the effort across the whole run (Nov 24); the strides are drawn on the chart",
+          result["verdict"] == "Stayed easy all the way. HR 111\u2060\u2013\u2060137, never above your 120\u2060\u2013\u2060145 easy range.", result["verdict"])
     split_labels = [s["km"] for s in result["splits"]]
     stride_split = next((s for s in result["splits"] if s.get("strides")), {})
     check("the splits: the km, then the strides as one row, then the jogs",
@@ -1620,10 +1620,10 @@ def strides_checks() -> None:
     ran_on = analysis.analyse(short_plan, {"lapDTOs": today_laps}, "easy", story=True)
     check("strides with lap-button recoveries: the planned distance is the estimate, 7.9 km",
           ran_on.get("extra") == {"planned_km": 7.9, "ran_km": 10.4, "extra_km": 2.5, "about": True}, str(ran_on.get("extra")))
-    check("and it shows under the km, marked as an estimate",
-          ran_on["stats"][0].get("plan") == "~7.9 planned", str(ran_on["stats"][0]))
-    check("the verdict leads with the extra distance, laps that never lined up or not",
-          ran_on["verdict"] == "Ran 2.5 km longer than planned. Heart rate on target for the planned 7.9 km.", ran_on["verdict"])
+    check("said once, in the header: not again under the km (Nov 24)",
+          ran_on["stats"][0].get("plan") is None, str(ran_on["stats"][0]))
+    check("the verdict is the effort, laps that never lined up or not: the header says the extra",
+          ran_on["verdict"] == "Stayed easy all the way. HR 110\u2060\u2013\u2060132, never above your 120\u2060\u2013\u2060145 easy range.", ran_on["verdict"])
     check("the plan ends after km 8, the nearest km to 7.9",
           (ran_on.get("chart") or {}).get("plan_ends") == 8, str({k: (ran_on.get("chart") or {}).get(k) for k in ("plan_ends", "plan_km")}))
     timed = copy_.deepcopy(short_plan)

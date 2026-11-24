@@ -25,10 +25,10 @@ const HRS = [120, 126, 133, 136, 136, 134, 138, 135, 143, 144, 144, 147, 144, 14
 const RUN = {
   activity_id: 25163176203, date: TODAY, kicker: "SUN 22 NOV · 12:34 · EASY", name: "14.2 km easy",
   planned_line: "Planned 12 km · ran 2.2 km extra", type: "easy", type_label: "Easy", colour: "easy",
-  verdict: "Ran 2.2 km longer than planned. Heart rate on target until km 12.",
-  stats: [{ v: "14.2", l: "km", plan: "12 planned" }, { v: "1:10:34", l: "time" }, { v: "4:59", l: "/km avg" },
-    { v: "138", l: "bpm avg", plan: "120–145 planned" }],
-  chart: { mode: "km", total_km: 14.2, plan_ends: 12, plan_km: 12, caption: "Heart rate went over 145 in km 12.",
+  verdict: "Effort went above easy from km 12: heart rate over 145 for about 14% of the run.",
+  stats: [{ v: "14.2", l: "km" }, { v: "1:10:34", l: "time" }, { v: "4:59", l: "/km avg" },
+    { v: "138", l: "bpm avg", plan: "120–145 easy range" }],
+  chart: { mode: "km", total_km: 14.2, plan_ends: 12, plan_km: 12,
     band: { kind: "hr", lo: 120, hi: 145, text: "120–145" },
     parts: SECS.map((s, i) => ({ k: "km", s, p: i === 14 ? 281 : s, hr: HRS[i], label: i === 14 ? "0.2" : String(i + 1) })) },
   planned_and_run: [{ label: "Run", kind: "interval", note: "12 km", target: "120–145 bpm", pace: "5:03", hr: 136, colour: "easy" },
@@ -74,11 +74,11 @@ async function open(browser, hash, answers, look = {}) {
     await p.page.waitForSelector(".run-chart svg");
     check("the title is what was run", (await p.page.textContent("h1")) === "14.2 km easy");
     check("with the plan in a muted line under it", (await p.page.textContent(".planned-line")) === "Planned 12 km · ran 2.2 km extra");
-    check("the verdict leads with the extra and how the planned part went",
-      (await p.page.textContent(".verdict")) === "Ran 2.2 km longer than planned. Heart rate on target until km 12.");
+    check("the verdict is the effort, not the extra again (Nov 24)",
+      (await p.page.textContent(".verdict")) === "Effort went above easy from km 12: heart rate over 145 for about 14% of the run.");
     const stats = await p.page.$$eval(".stats4 > div", (xs) => xs.map((x) => [...x.children].map((c) => c.textContent)));
-    check("each number has what was planned in small grey under it, where the plan set one",
-      JSON.stringify(stats) === JSON.stringify([["14.2", "km", "12 planned"], ["1:10:34", "time", ""], ["4:59", "/km avg", ""], ["138", "bpm avg", "120–145 planned"]]), JSON.stringify(stats));
+    check("the planned distance is said once, in the header; heart rate shows its easy range",
+      JSON.stringify(stats) === JSON.stringify([["14.2", "km", ""], ["1:10:34", "time", ""], ["4:59", "/km avg", ""], ["138", "bpm avg", "120–145 easy range"]]), JSON.stringify(stats));
     const chart = await p.page.$eval(".run-chart svg", (svg) => {
       const bars = [...svg.querySelectorAll("rect")].filter((r) => r.getAttribute("rx") === "3");
       const dash = [...svg.querySelectorAll("line")].find((l) => l.getAttribute("stroke-dasharray") === "4 3");
@@ -92,10 +92,11 @@ async function open(browser, hash, answers, look = {}) {
       chart.line !== null && chart.line > chart.bar12End && chart.line < chart.bar13 && chart.texts.includes("Plan ends"), JSON.stringify(chart));
     check("the bars after it are tinted apart, the ones before it aren't",
       JSON.stringify(chart.tinted) === JSON.stringify([...Array(12).fill(false), true, true, true]), JSON.stringify(chart.tinted));
-    check("the heart rate target band stops where the plan does", chart.bandEnd !== null && chart.bandEnd <= chart.line + 2, JSON.stringify(chart));
+    check("the heart rate target band runs the whole width: the range still applied after the plan (Nov 24)",
+      chart.bandEnd !== null && chart.bandEnd > chart.line + 50, JSON.stringify(chart));
     check("the axis ends at the run's whole distance, not its last part km",
       chart.texts.includes("Km 14.2") && !chart.texts.includes("Km 0.2"), JSON.stringify(chart.texts));
-    check("the key names the tinted bars", (await p.page.textContent(".chart-key")).includes("Past the plan"));
+    check("no key for the tinted bars: the dashed Plan ends says it (Nov 24)", !(await p.page.textContent(".chart-key")).includes("Past the plan"));
     check("no page threw an error", p.errors.length === 0, p.errors.join("; "));
     if (shot) {
       await p.ctx.close();

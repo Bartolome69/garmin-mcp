@@ -24,7 +24,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from urllib.parse import quote
 
 from starlette.requests import Request
@@ -754,6 +754,23 @@ async def session_payload(day: str, schedule_id: int | None = None) -> dict[str,
 RAN_ON_TITLE = {"easy": "easy", "recovery": "recovery run", "long": "long run"}
 
 
+def run_header(name: str, kind: str | None, extra: Mapping[str, Any] | None,
+               rows: Sequence[Mapping[str, Any]] | None) -> tuple[str, str | None]:
+    """The run screen's title and the muted line under it.
+
+    Nov 22: a run that went on past its plan leads with what was run, the plan
+    under it; that line is the one place the planned distance is said (Nov 24).
+    """
+    if not extra:
+        return name, None
+    word = RAN_ON_TITLE.get(kind or "")
+    if word and not any(r.get("rep") for r in rows or []):
+        # Nov 24: "8km easy + strides" run to 10.4 reads "10.4 km easy + strides".
+        name = f"{extra['ran_km']:g} km {word}" + (" + strides" if "stride" in name.lower() else "")
+    return name, (f"Planned {'about ' if extra.get('about') else ''}{extra['planned_km']:g} km"
+                  f" \u00b7 ran {extra['extra_km']:g} km extra")
+
+
 async def run_payload(activity_id: int) -> dict[str, Any]:
     # Four reads at once, each asked for once (Nov 3: the chat's whole
     # get_activity_details, then the same laps and recording again, then the
@@ -823,17 +840,8 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
         started = datetime.fromisoformat(start_text.replace(" ", "T").split(".")[0])
     t = _type(kind)
     _row_colours(result.get("planned_and_run") or [], t["colour"])
-    name = _display((row or {}).get("name") or summary.get("name") or "Run")
-    # Nov 22: a run that went on past its plan leads with what was run, the plan under it.
-    extra = result.pop("extra", None)
-    planned_line = None
-    if extra:
-        word = RAN_ON_TITLE.get(kind or "")
-        if word and not any(r.get("rep") for r in result.get("planned_and_run") or []):
-            # Nov 24: "8km easy + strides" run to 10.4 reads "10.4 km easy + strides".
-            name = f"{extra['ran_km']:g} km {word}" + (" + strides" if "stride" in name.lower() else "")
-        planned_line = (f"Planned {'about ' if extra.get('about') else ''}{extra['planned_km']:g} km"
-                        f" \u00b7 ran {extra['extra_km']:g} km extra")
+    name, planned_line = run_header(_display((row or {}).get("name") or summary.get("name") or "Run"),
+                                    kind, result.pop("extra", None), result.get("planned_and_run"))
     kicker = (f"{_short_date(started.date()).upper()} · {started.strftime('%H:%M')}" if started else "") + f" · {t['type_label'].upper()}"
     effect = None
     if row:

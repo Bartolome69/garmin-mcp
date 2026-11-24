@@ -1,0 +1,892 @@
+{
+ "a": {
+  "activity_id": 9097,
+  "date": "2026-11-24",
+  "kicker": "TUE 24 NOV · 06:33 · EASY",
+  "name": "10.4 km easy + strides",
+  "planned_line": "Planned about 7.9 km · ran 2.5 km extra",
+  "type": "easy",
+  "type_label": "Easy",
+  "colour": "easy",
+  "credit": "Garmin Forerunner 965",
+  "assistant": "Claude",
+  "ask": {
+   "claude": "https://claude.ai/new?q=x",
+   "chatgpt": "https://chatgpt.com/?q=x"
+  },
+  "verdict": "Stayed easy all the way. HR 110⁠–⁠132, never above your 120⁠–⁠145 easy range.",
+  "short": "10.4 km at 5:10 /km",
+  "stats": [
+   {
+    "v": "10.4",
+    "l": "km"
+   },
+   {
+    "v": "53:46",
+    "l": "time"
+   },
+   {
+    "v": "5:10",
+    "l": "/km avg"
+   },
+   {
+    "v": "123",
+    "l": "bpm avg",
+    "plan": "120–145 easy range"
+   }
+  ],
+  "splits": [
+   {
+    "km": "1",
+    "time": "5:19",
+    "seconds": 319,
+    "pace": "5:19",
+    "hr": 110
+   },
+   {
+    "km": "2",
+    "time": "5:13",
+    "seconds": 313,
+    "pace": "5:13",
+    "hr": 118
+   },
+   {
+    "km": "3",
+    "time": "5:09",
+    "seconds": 309,
+    "pace": "5:09",
+    "hr": 120
+   },
+   {
+    "km": "4",
+    "time": "5:09",
+    "seconds": 309,
+    "pace": "5:09",
+    "hr": 122
+   },
+   {
+    "km": "5",
+    "time": "5:04",
+    "seconds": 304,
+    "pace": "5:04",
+    "hr": 125
+   },
+   {
+    "km": "6",
+    "time": "5:04",
+    "seconds": 304,
+    "pace": "5:04",
+    "hr": 122
+   },
+   {
+    "km": "7",
+    "time": "4:59",
+    "seconds": 299,
+    "pace": "4:59",
+    "hr": 127
+   },
+   {
+    "km": "8",
+    "time": "5:03",
+    "seconds": 303,
+    "pace": "5:03",
+    "hr": 127
+   },
+   {
+    "km": "9",
+    "time": "5:05",
+    "seconds": 305,
+    "pace": "5:05",
+    "hr": 130
+   },
+   {
+    "km": "10",
+    "time": "5:19",
+    "seconds": 319,
+    "pace": "5:19",
+    "hr": 130
+   },
+   {
+    "km": "0.4",
+    "time": "2:22",
+    "seconds": 142,
+    "pace": "5:38",
+    "hr": 132,
+    "partial": true
+   }
+  ],
+  "km": 10.4,
+  "seconds": 3226,
+  "chart": {
+   "mode": "km",
+   "parts": [
+    {
+     "k": "km",
+     "s": 319,
+     "p": 319,
+     "hr": 110,
+     "label": "1"
+    },
+    {
+     "k": "km",
+     "s": 313,
+     "p": 313,
+     "hr": 118,
+     "label": "2"
+    },
+    {
+     "k": "km",
+     "s": 309,
+     "p": 309,
+     "hr": 120,
+     "label": "3"
+    },
+    {
+     "k": "km",
+     "s": 309,
+     "p": 309,
+     "hr": 122,
+     "label": "4"
+    },
+    {
+     "k": "km",
+     "s": 304,
+     "p": 304,
+     "hr": 125,
+     "label": "5"
+    },
+    {
+     "k": "km",
+     "s": 304,
+     "p": 304,
+     "hr": 122,
+     "label": "6"
+    },
+    {
+     "k": "km",
+     "s": 299,
+     "p": 299,
+     "hr": 127,
+     "label": "7"
+    },
+    {
+     "k": "km",
+     "s": 303,
+     "p": 303,
+     "hr": 127,
+     "label": "8"
+    },
+    {
+     "k": "km",
+     "s": 305,
+     "p": 305,
+     "hr": 130,
+     "label": "9"
+    },
+    {
+     "k": "km",
+     "s": 319,
+     "p": 319,
+     "hr": 130,
+     "label": "10"
+    },
+    {
+     "k": "km",
+     "s": 142,
+     "p": 338,
+     "hr": 132,
+     "label": "0.4"
+    },
+    {
+     "k": "stride",
+     "at": 9.18,
+     "s": 18,
+     "p": 225,
+     "hr": 117
+    },
+    {
+     "k": "stride",
+     "at": 9.41,
+     "s": 22,
+     "p": 220,
+     "hr": 130
+    },
+    {
+     "k": "stride",
+     "at": 9.6,
+     "s": 23,
+     "p": 230,
+     "hr": 138
+    },
+    {
+     "k": "stride",
+     "at": 10.055,
+     "s": 24,
+     "p": 218,
+     "hr": 132
+    },
+    {
+     "k": "stride",
+     "at": 10.21,
+     "s": 20,
+     "p": 200,
+     "hr": 124
+    },
+    {
+     "k": "stride",
+     "at": 10.36,
+     "s": 27,
+     "p": 225,
+     "hr": 122
+    }
+   ],
+   "strides": "6 × strides",
+   "total_km": 10.4,
+   "plan_ends": 8,
+   "plan_km": 7.9,
+   "band": {
+    "kind": "hr",
+    "lo": 120,
+    "hi": 145,
+    "text": "120–145"
+   }
+  }
+ },
+ "b": {
+  "activity_id": 9098,
+  "date": "2026-11-24",
+  "kicker": "WED 11 NOV · 07:02 · EASY",
+  "name": "10km easy + strides",
+  "planned_line": null,
+  "type": "easy",
+  "type_label": "Easy",
+  "colour": "easy",
+  "credit": "Garmin Forerunner 965",
+  "assistant": "Claude",
+  "ask": {
+   "claude": "https://claude.ai/new?q=x",
+   "chatgpt": "https://chatgpt.com/?q=x"
+  },
+  "verdict": "Stayed easy all the way. HR 111⁠–⁠137, never above your 120⁠–⁠145 easy range.",
+  "short": "10.2 km at 4:57 /km",
+  "stats": [
+   {
+    "v": "10.2",
+    "l": "km"
+   },
+   {
+    "v": "50:23",
+    "l": "time"
+   },
+   {
+    "v": "4:57",
+    "l": "/km avg"
+   },
+   {
+    "v": "128",
+    "l": "bpm avg",
+    "plan": "120–145 easy range"
+   }
+  ],
+  "planned_and_run": [
+   {
+    "label": "Run",
+    "kind": "interval",
+    "note": "9.5 km",
+    "target": "120–145 bpm",
+    "pace": "4:58",
+    "hr": 126
+   },
+   {
+    "label": "Strides",
+    "kind": "strides",
+    "note": "6 × 20 s · 3:16–4:24",
+    "pace": "3:36",
+    "hr": 134,
+    "spark": [
+     197,
+     220,
+     221,
+     196,
+     264,
+     213
+    ]
+   }
+  ],
+  "matched": true,
+  "splits": [
+   {
+    "km": "1",
+    "time": "5:20",
+    "seconds": 320,
+    "pace": "5:20",
+    "hr": 111
+   },
+   {
+    "km": "2",
+    "time": "5:03",
+    "seconds": 303,
+    "pace": "5:03",
+    "hr": 121
+   },
+   {
+    "km": "3",
+    "time": "4:53",
+    "seconds": 293,
+    "pace": "4:53",
+    "hr": 124
+   },
+   {
+    "km": "4",
+    "time": "4:56",
+    "seconds": 296,
+    "pace": "4:56",
+    "hr": 129
+   },
+   {
+    "km": "5",
+    "time": "4:55",
+    "seconds": 295,
+    "pace": "4:55",
+    "hr": 127
+   },
+   {
+    "km": "6",
+    "time": "4:54",
+    "seconds": 294,
+    "pace": "4:54",
+    "hr": 132
+   },
+   {
+    "km": "7",
+    "time": "4:52",
+    "seconds": 292,
+    "pace": "4:52",
+    "hr": 133
+   },
+   {
+    "km": "8",
+    "time": "4:53",
+    "seconds": 293,
+    "pace": "4:53",
+    "hr": 132
+   },
+   {
+    "km": "0.9",
+    "time": "4:37",
+    "seconds": 277,
+    "pace": "4:58",
+    "hr": 130,
+    "partial": true
+   },
+   {
+    "km": "Strides",
+    "time": "2:00",
+    "seconds": 120,
+    "pace": "3:36 (6 × 20 s)",
+    "fastest": "3:16",
+    "hr": 134,
+    "strides": true
+   },
+   {
+    "km": "Recoveries",
+    "time": "4:00",
+    "seconds": 240,
+    "pace": "4:00 for 0.7 km",
+    "hr": 138,
+    "rest": true
+   }
+  ],
+  "km": 10.2,
+  "seconds": 3023,
+  "chart": {
+   "mode": "km",
+   "parts": [
+    {
+     "k": "km",
+     "s": 320,
+     "p": 320,
+     "hr": 111,
+     "label": "1"
+    },
+    {
+     "k": "km",
+     "s": 303,
+     "p": 303,
+     "hr": 121,
+     "label": "2"
+    },
+    {
+     "k": "km",
+     "s": 293,
+     "p": 293,
+     "hr": 124,
+     "label": "3"
+    },
+    {
+     "k": "km",
+     "s": 296,
+     "p": 296,
+     "hr": 129,
+     "label": "4"
+    },
+    {
+     "k": "km",
+     "s": 295,
+     "p": 295,
+     "hr": 127,
+     "label": "5"
+    },
+    {
+     "k": "km",
+     "s": 294,
+     "p": 294,
+     "hr": 132,
+     "label": "6"
+    },
+    {
+     "k": "km",
+     "s": 292,
+     "p": 292,
+     "hr": 133,
+     "label": "7"
+    },
+    {
+     "k": "km",
+     "s": 293,
+     "p": 293,
+     "hr": 132,
+     "label": "8"
+    },
+    {
+     "k": "km",
+     "s": 291,
+     "p": 291,
+     "hr": 131,
+     "label": "9"
+    },
+    {
+     "k": "km",
+     "s": 294,
+     "p": 294,
+     "hr": 137,
+     "label": "10"
+    },
+    {
+     "k": "km",
+     "s": 52,
+     "p": 267,
+     "hr": 134,
+     "label": "0.2"
+    },
+    {
+     "k": "stride",
+     "at": 8.981,
+     "s": 20,
+     "p": 197,
+     "hr": 141
+    },
+    {
+     "k": "stride",
+     "at": 9.267,
+     "s": 20,
+     "p": 220,
+     "hr": 133
+    },
+    {
+     "k": "stride",
+     "at": 9.488,
+     "s": 20,
+     "p": 221,
+     "hr": 129
+    },
+    {
+     "k": "stride",
+     "at": 9.704,
+     "s": 20,
+     "p": 196,
+     "hr": 134
+    },
+    {
+     "k": "stride",
+     "at": 9.943,
+     "s": 20,
+     "p": 264,
+     "hr": 135
+    },
+    {
+     "k": "stride",
+     "at": 10.148,
+     "s": 20,
+     "p": 213,
+     "hr": 133
+    }
+   ],
+   "strides": "6 × strides",
+   "total_km": 10.2,
+   "band": {
+    "kind": "hr",
+    "lo": 120,
+    "hi": 145,
+    "text": "120–145"
+   }
+  }
+ },
+ "c": {
+  "activity_id": 9099,
+  "date": "2026-11-24",
+  "kicker": "SAT 21 NOV · 08:10 · RUN",
+  "name": "Tower Hamlets Running",
+  "planned_line": null,
+  "type": "run",
+  "type_label": "Run",
+  "colour": "easy",
+  "credit": "Garmin Forerunner 965",
+  "assistant": "Claude",
+  "ask": {
+   "claude": "https://claude.ai/new?q=x",
+   "chatgpt": "https://chatgpt.com/?q=x"
+  },
+  "verdict": "7.4 km at 5:20 /km, heart rate averaging 128.",
+  "short": "7.4 km at 5:20 /km",
+  "stats": [
+   {
+    "v": "7.4",
+    "l": "km"
+   },
+   {
+    "v": "39:31",
+    "l": "time"
+   },
+   {
+    "v": "5:20",
+    "l": "/km avg"
+   },
+   {
+    "v": "128",
+    "l": "bpm avg"
+   }
+  ],
+  "splits": [
+   {
+    "km": "1",
+    "time": "5:30",
+    "seconds": 330,
+    "pace": "5:30",
+    "hr": 118
+   },
+   {
+    "km": "2",
+    "time": "5:22",
+    "seconds": 322,
+    "pace": "5:22",
+    "hr": 124
+   },
+   {
+    "km": "3",
+    "time": "5:18",
+    "seconds": 318,
+    "pace": "5:18",
+    "hr": 127
+   },
+   {
+    "km": "4",
+    "time": "5:20",
+    "seconds": 320,
+    "pace": "5:20",
+    "hr": 129
+   },
+   {
+    "km": "5",
+    "time": "5:16",
+    "seconds": 316,
+    "pace": "5:16",
+    "hr": 131
+   },
+   {
+    "km": "6",
+    "time": "5:19",
+    "seconds": 319,
+    "pace": "5:19",
+    "hr": 130
+   },
+   {
+    "km": "7",
+    "time": "5:14",
+    "seconds": 314,
+    "pace": "5:14",
+    "hr": 134
+   },
+   {
+    "km": "0.4",
+    "time": "2:12",
+    "seconds": 132,
+    "pace": "5:14",
+    "hr": 133,
+    "partial": true
+   }
+  ],
+  "km": 7.4,
+  "seconds": 2371,
+  "chart": {
+   "mode": "km",
+   "parts": [
+    {
+     "k": "km",
+     "s": 330,
+     "p": 330,
+     "hr": 118,
+     "label": "1"
+    },
+    {
+     "k": "km",
+     "s": 322,
+     "p": 322,
+     "hr": 124,
+     "label": "2"
+    },
+    {
+     "k": "km",
+     "s": 318,
+     "p": 318,
+     "hr": 127,
+     "label": "3"
+    },
+    {
+     "k": "km",
+     "s": 320,
+     "p": 320,
+     "hr": 129,
+     "label": "4"
+    },
+    {
+     "k": "km",
+     "s": 316,
+     "p": 316,
+     "hr": 131,
+     "label": "5"
+    },
+    {
+     "k": "km",
+     "s": 319,
+     "p": 319,
+     "hr": 130,
+     "label": "6"
+    },
+    {
+     "k": "km",
+     "s": 314,
+     "p": 314,
+     "hr": 134,
+     "label": "7"
+    },
+    {
+     "k": "km",
+     "s": 132,
+     "p": 314,
+     "hr": 133,
+     "label": "0.4"
+    }
+   ],
+   "total_km": 7.4
+  }
+ },
+ "d": {
+  "activity_id": 9100,
+  "date": "2026-11-24",
+  "kicker": "THU 19 NOV · 18:20 · EASY",
+  "name": "12km easy",
+  "planned_line": null,
+  "type": "easy",
+  "type_label": "Easy",
+  "colour": "easy",
+  "credit": "Garmin Forerunner 965",
+  "assistant": "Claude",
+  "ask": {
+   "claude": "https://claude.ai/new?q=x",
+   "chatgpt": "https://chatgpt.com/?q=x"
+  },
+  "verdict": "Easy effort held all the way. HR 121⁠–⁠138, inside your easy range.",
+  "short": "9.1 km at 5:03 /km",
+  "stats": [
+   {
+    "v": "9.1",
+    "l": "km"
+   },
+   {
+    "v": "46:00",
+    "l": "time"
+   },
+   {
+    "v": "5:03",
+    "l": "/km avg"
+   },
+   {
+    "v": "133",
+    "l": "bpm avg",
+    "plan": "120–145 easy range"
+   }
+  ],
+  "planned_and_run": [
+   {
+    "label": "Run",
+    "kind": "interval",
+    "note": "12 km",
+    "target": "120–145 bpm",
+    "pace": "5:03",
+    "hr": 133
+   }
+  ],
+  "matched": true,
+  "splits": [
+   {
+    "km": "1",
+    "time": "5:12",
+    "seconds": 312,
+    "pace": "5:12",
+    "hr": 121
+   },
+   {
+    "km": "2",
+    "time": "5:05",
+    "seconds": 305,
+    "pace": "5:05",
+    "hr": 128
+   },
+   {
+    "km": "3",
+    "time": "5:03",
+    "seconds": 303,
+    "pace": "5:03",
+    "hr": 131
+   },
+   {
+    "km": "4",
+    "time": "5:01",
+    "seconds": 301,
+    "pace": "5:01",
+    "hr": 133
+   },
+   {
+    "km": "5",
+    "time": "5:04",
+    "seconds": 304,
+    "pace": "5:04",
+    "hr": 134
+   },
+   {
+    "km": "6",
+    "time": "5:02",
+    "seconds": 302,
+    "pace": "5:02",
+    "hr": 135
+   },
+   {
+    "km": "7",
+    "time": "5:00",
+    "seconds": 300,
+    "pace": "5:00",
+    "hr": 136
+   },
+   {
+    "km": "8",
+    "time": "4:59",
+    "seconds": 299,
+    "pace": "4:59",
+    "hr": 138
+   },
+   {
+    "km": "9",
+    "time": "5:03",
+    "seconds": 303,
+    "pace": "5:03",
+    "hr": 137
+   },
+   {
+    "km": "0.1",
+    "time": "0:31",
+    "seconds": 31,
+    "pace": "5:10",
+    "hr": 136,
+    "partial": true
+   }
+  ],
+  "km": 9.1,
+  "seconds": 2760,
+  "chart": {
+   "mode": "km",
+   "parts": [
+    {
+     "k": "km",
+     "s": 312,
+     "p": 312,
+     "hr": 121,
+     "label": "1"
+    },
+    {
+     "k": "km",
+     "s": 305,
+     "p": 305,
+     "hr": 128,
+     "label": "2"
+    },
+    {
+     "k": "km",
+     "s": 303,
+     "p": 303,
+     "hr": 131,
+     "label": "3"
+    },
+    {
+     "k": "km",
+     "s": 301,
+     "p": 301,
+     "hr": 133,
+     "label": "4"
+    },
+    {
+     "k": "km",
+     "s": 304,
+     "p": 304,
+     "hr": 134,
+     "label": "5"
+    },
+    {
+     "k": "km",
+     "s": 302,
+     "p": 302,
+     "hr": 135,
+     "label": "6"
+    },
+    {
+     "k": "km",
+     "s": 300,
+     "p": 300,
+     "hr": 136,
+     "label": "7"
+    },
+    {
+     "k": "km",
+     "s": 299,
+     "p": 299,
+     "hr": 138,
+     "label": "8"
+    },
+    {
+     "k": "km",
+     "s": 303,
+     "p": 303,
+     "hr": 137,
+     "label": "9"
+    }
+   ],
+   "total_km": 9.1,
+   "band": {
+    "kind": "hr",
+    "lo": 120,
+    "hi": 145,
+    "text": "120–145"
+   }
+  }
+ }
+}

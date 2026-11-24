@@ -141,25 +141,6 @@ def _main_hr_span(pairs) -> tuple[dict[str, Any], float, float] | None:
     return target, start / 1000, (start + (lap.get("metres") or 0)) / 1000
 
 
-def _within(kms, span: tuple[Any, float, float] | None):
-    """The km rows inside the step's stretch, by where each km's middle falls."""
-    if not span:
-        return kms
-    _, start, end = span
-    out, done = [], 0.0
-    for k in kms:
-        try:
-            length = min(1.0, float(k["km"]))
-        except (TypeError, ValueError):
-            length = 1.0
-        if start - 0.05 <= done + length / 2 <= end + 0.05:
-            out.append(k)
-        done += length
-    return out
-
-
-# -- B: the chart -----------------------------------------------------------------
-
 def on_target_until(split_rows: Sequence[Mapping[str, Any]], target: Mapping[str, Any], plan_km: float) -> str | None:
     """Nov 22: how the planned part of a run that went on past it kept to its target, km by km.
 
@@ -189,24 +170,40 @@ def on_target_until(split_rows: Sequence[Mapping[str, Any]], target: Mapping[str
     return f"{what} on target for the planned {plan_km:g} km." if seen else None
 
 
+# Nov 24: a single quick lap is a finishing kick, not strides: strides are
+# drawn from two found, or from one when the plan had them.
+MIN_FOUND_STRIDES = 2
+
+
 def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str, Any]],
-          split_rows: Sequence[Mapping[str, Any]], plan_km: float | None = None) -> dict[str, Any] | None:
+          split_rows: Sequence[Mapping[str, Any]], plan_km: float | None = None,
+          whole: Sequence[Mapping[str, Any]] | None = None, strides: Sequence[Mapping[str, Any]] = (),
+          planned_strides: int = 0, aim: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
     """What the chart draws: the session step by step with its reps against their
     target ("steps"), or the run km by km with heart rate against an easy
-    session's target ("km"). None when there's nothing to draw."""
+    session's target ("km"). None when there's nothing to draw.
+
+    Nov 24: the km bars cover the whole run (whole, strides and recoveries in
+    their place) and the strides are drawn over them where they happened, found
+    from the laps whether a workout lapped them or the runner did."""
     work = _work(pairs) if pairs else []
     if len(work) >= 2:
         return _steps_chart(pairs, after, work)
-    kms = _km_rows(split_rows)
+    kms = _km_rows(whole if whole else split_rows)
     if len(kms) < 2:
         return None
-    strides = [l for l in laps if l.get("stride")]
-    target = _main_hr_target(pairs)
+    # The easy range: from the step the laps lined up with, else from the plan itself.
+    target = (_main_hr_target(pairs) if pairs else None) or (aim if (aim or {}).get("kind") == "hr" else None)
     parts = [{"k": "km", "s": round(k["s"]), "p": round(k["p"]), "hr": k["hr"], "label": k["km"]} for k in kms]
-    planned_strides = len(_stride_steps(pairs)) if pairs else 0
-    parts += [{"k": "stride", "s": round(l["seconds"]), "p": round(_secs(l)), "hr": round(l["hr"]) if l.get("hr") else None}
-              for l in strides if _secs(l)]
+    if not planned_strides and pairs:
+        planned_strides = len(_stride_steps(pairs))
+    shown = list(strides) if len(strides) >= (1 if planned_strides else MIN_FOUND_STRIDES) else []
+    parts += [{"k": "stride", "at": s["at_km"], "s": s["s"], "p": s["p"], "hr": s.get("hr")} for s in shown]
     out: dict[str, Any] = {"mode": "km", "parts": parts}
+    if shown:
+        out["strides"] = f"{len(shown)} \u00d7 strides"
+    elif planned_strides:
+        out["caption"] = "Strides not detected \u2013 lap the watch for each one next time."
     # The axis ends at the run's whole distance (Nov 22: it said "Km 0.2", its last part km).
     total = sum(l.get("metres") or 0 for l in laps) / 1000
     if total:
@@ -228,13 +225,46 @@ def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str,
         if 0 < ends < len(kms):
             out["plan_ends"] = ends
             out["plan_km"] = plan_km
-    if planned_strides > len(strides):
-        out["missing_strides"] = planned_strides - len(strides)
     if target:
         out["band"] = {"kind": "hr", "lo": round(target["lo"]), "hi": round(target["hi"]),
                        "text": hr_text(target["lo"], target["hi"]).removesuffix(" bpm")}
-        out["caption"] = _hr_caption(_within(kms, _main_hr_span(pairs)), target, len(strides), planned_strides)
     return out
+
+
+# Nov 24: an easy run is judged on its effort the whole way. Under its range is
+# fine on an easy day; over it is said only when it's more than this share.
+EFFORT_OVER_SHARE = 0.10
+
+
+def effort_verdict(whole: Sequence[Mapping[str, Any]], target: Mapping[str, Any] | None) -> str | None:
+    """One line on the effort across the whole run against an easy heart-rate
+    range. Effort, never anything medical. None without a range or heart rate."""
+    if not target or target.get("kind") != "hr":
+        return None
+    kms = [k for k in _km_rows(whole) if k.get("hr")]
+    if len(kms) < 2:
+        return None
+    lo, hi = round(target["lo"]), round(target["hi"])
+    hrs = [k["hr"] for k in kms]
+    low, top = min(hrs), max(hrs)
+    secs = sum(k["s"] for k in kms) or 1
+    over = [k for k in kms if k["hr"] > hi + 1]
+    share = sum(k["s"] for k in over) / secs
+    cap = lo <= HR_CAP_FLOOR
+    if share > EFFORT_OVER_SHARE:
+        if share >= 0.95:
+            return f"Effort ran above easy the whole way: heart rate over {hi} from the start."
+        start = "the start" if over[0] is kms[0] else f"km {over[0]['km']}"
+        return f"Effort went above easy from {start}: heart rate over {hi} for about {round(share * 100)}% of the run."
+    # Word joiners keep "121–138" on one line where the verdict wraps.
+    dash = "\u2060\u2013\u2060"
+    span = f"HR {low}" if low == top else f"HR {low}{dash}{top}"
+    briefly = f", only briefly over {hi}" if over else ""
+    if cap:
+        return f"Stayed easy all the way. {span}{briefly or f', under your {hi} cap'}."
+    if low < lo - 1:
+        return f"Stayed easy all the way. {span}{briefly or f', never above your {lo}{dash}{hi} easy range'}."
+    return f"Easy effort held all the way. {span}{briefly or ', inside your easy range'}."
 
 
 def _steps_chart(pairs, after, work) -> dict[str, Any]:
@@ -276,30 +306,6 @@ def _steps_chart(pairs, after, work) -> dict[str, Any]:
                 f"{_word(inside).capitalize()} of {_word(n)} reps inside the target")
         out["caption"] = f"{lead}: {_list(paces)}."
     return out
-
-
-def _hr_caption(kms, target, strides_run: int, strides_planned: int) -> str | None:
-    hrs = [(k["km"], k["hr"]) for k in kms if k.get("hr")]
-    if not hrs:
-        return None
-    hi = target["hi"]
-    over = [km for km, h in hrs if h > hi + 1]
-    if over:
-        line = f"Heart rate went over {hi:.0f} in km {_list(over)}."
-    elif target["lo"] <= HR_CAP_FLOOR:
-        # A cap alone has no floor to climb into (Nov 17).
-        line = f"Heart rate stayed under {hi:.0f} the whole way."
-    else:
-        start = next((i for i in range(len(hrs)) if all(h >= target["lo"] - 1 for _, h in hrs[i:])), None)
-        if start == 0:
-            line = "Heart rate in the target the whole way."
-        elif start is not None:
-            line = f"Heart rate in the target from km {hrs[start][0]} on."
-        else:
-            line = f"Heart rate stayed under {hi:.0f} the whole way."
-    if strides_planned and strides_run >= strides_planned:
-        line += f" All {_word(strides_planned)} strides done."
-    return line
 
 
 # -- C: what it shows -------------------------------------------------------------

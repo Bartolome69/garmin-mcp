@@ -88,12 +88,16 @@ print("An easy run with strides: km by km, heart rate against its target")
 e = analysis.analyse(EASY, {"lapDTOs": EASY_LAPS}, "easy", story=True)
 c = e.get("chart") or {}
 kms = [p for p in c.get("parts", []) if p["k"] == "km"]
-check("km by km, then the six strides", c.get("mode") == "km" and len(kms) == 9
-      and len([p for p in c["parts"] if p["k"] == "stride"]) == 6, str(c.get("mode")))
-check("the last part-km keeps its own pace (0.93 km at 4:58)", kms[-1]["p"] == 298, str(kms[-1]))
+strides_drawn = [p for p in c.get("parts", []) if p["k"] == "stride"]
+check("km by km over the whole run (Nov 24), the six strides drawn over it", c.get("mode") == "km" and len(kms) == 11
+      and len(strides_drawn) == 6 and c.get("strides") == "6 \u00d7 strides", str(c.get("mode")))
+check("each stride where it happened: after the 8.9 km easy part, in order",
+      all(8.9 < p["at"] <= 10.2 for p in strides_drawn) and [p["at"] for p in strides_drawn] == sorted(p["at"] for p in strides_drawn),
+      str([p["at"] for p in strides_drawn]))
 check("the heart-rate target is the band", c.get("band", {}).get("text") == "120–145")
-check("caption: in the target from km 2, all strides done",
-      c.get("caption") == "Heart rate in the target from km 2 on. All six strides done.", c.get("caption"))
+check("the verdict is the effort across the whole run; under the range is fine on an easy day",
+      e["verdict"] == "Stayed easy all the way. HR 111\u2060\u2013\u2060137, never above your 120\u2060\u2013\u2060145 easy range." and not c.get("caption"),
+      e["verdict"])
 check("no lines that restate the table", not e.get("insights"), str(e.get("insights")))
 check("compared on the run, strides left out", e.get("figures", {}).get("km") == 8.9 and e["figures"].get("hr") == 126
       and not e["figures"].get("reps") and e["figures"].get("steady", {}).get("km") == 8.9, str(e.get("figures")))
@@ -104,10 +108,11 @@ EASY_CAP = {"workoutSegments": [{"workoutSteps": [
     step(1, "interval", "distance", 9500, CAP),
     {"type": "RepeatGroupDTO", "stepOrder": 2, "numberOfIterations": 6, "workoutSteps": [
         step(1, "interval", "time", 20), step(2, "recovery", "lap.button")]}]}]}
-capped = (analysis.analyse(EASY_CAP, {"lapDTOs": EASY_LAPS}, "easy", story=True).get("chart") or {})
+capped_run = analysis.analyse(EASY_CAP, {"lapDTOs": EASY_LAPS}, "easy", story=True)
+capped = capped_run.get("chart") or {}
 check("the band reads up to 140, not 60-140", capped.get("band", {}).get("text") == "up to 140", str(capped.get("band")))
-check("and the caption says it stayed under, with no floor to climb into",
-      capped.get("caption") == "Heart rate stayed under 140 the whole way. All six strides done.", capped.get("caption"))
+check("and the verdict says it stayed under, with no floor to climb into",
+      capped_run["verdict"] == "Stayed easy all the way. HR 111\u2060\u2013\u2060137, under your 140 cap.", capped_run["verdict"])
 
 print("Nothing made up")
 plain = analysis.analyse(None, THRESHOLD_LAPS, "threshold", story=True)
@@ -135,9 +140,8 @@ splits = [{"km": str(i + 1), "seconds": 295, "pace": "4:55", "hr": 138} for i in
          [{"km": str(17 + i), "seconds": 231, "pace": "3:51", "hr": 172} for i in range(3)] + \
          [{"km": "20", "seconds": 295, "pace": "4:55", "hr": 146}, {"km": "0.8", "partial": True, "seconds": 242, "pace": "5:02", "hr": 151}]
 pairs = analysis._paired(analysis.planned_steps(LONG), analysis._laps(LONG_LAPS))[0]
-c = run_view.chart(pairs, [], analysis._laps(LONG_LAPS), splits)
-check("its heart-rate caption judges only the 16 km set by heart rate",
-      c and c.get("caption") == "Heart rate in the target the whole way.", str(c and c.get("caption")))
+check("its planned half-marathon-pace finish is never called effort above easy",
+      not lr["verdict"].startswith(("Effort", "Stayed", "Easy effort")), lr["verdict"])
 
 print("Against the last one")
 line = run_view.last_time({"part": True, "km": 3.0, "p": 231, "hr": 173}, {"part": True, "km": 3.0, "p": 235, "hr": 175},
@@ -192,29 +196,30 @@ check("the 12 km step takes its own 12 km laps, not the 2.2 km run after it",
       and rows[1]["note"] == "2.2 km after the workout", str(rows))
 check("the extra is said from the rounded figures, so they add up",
       r.get("extra") == {"planned_km": 12.0, "ran_km": 14.2, "extra_km": 2.2}, str(r.get("extra")))
-check("the verdict leads with it, then how the planned part kept to its target",
-      r["verdict"] == "Ran 2.2 km longer than planned. Heart rate on target until km 12.", r["verdict"])
-check("what was planned under the numbers the plan set: distance and heart rate, not time or pace",
-      [x.get("plan") for x in r["stats"]] == ["12 planned", None, None, "120\u2013145 planned"], str(r["stats"]))
+check("the verdict is the effort, not the extra the header says (Nov 24): over 145 for more than a tenth",
+      r["verdict"] == "Effort went above easy from km 12: heart rate over 145 for about 14% of the run.", r["verdict"])
+check("under the numbers only the easy range, not the planned distance again",
+      [x.get("plan") for x in r["stats"]] == [None, None, None, "120\u2013145 easy range"], str(r["stats"]))
 c = r.get("chart") or {}
 check("the chart marks where the plan ended, after the 12th km bar, and ends at 14.2",
       c.get("plan_ends") == 12 and c.get("total_km") == 14.2, str({k: v for k, v in c.items() if k != "parts"}))
-check("and its heart rate line is about the planned 12 km only", c.get("caption") == "Heart rate went over 145 in km 12.", str(c.get("caption")))
+check("and no caption repeating the verdict", not c.get("caption"), str(c.get("caption")))
 
 near = {"lapDTOs": [lap(1000, 305, 130, "interval") for _ in range(12)] + [lap(300, 90, 132, "interval")]}
 r = analysis.analyse(EASY12, near, "easy", None, story=True)
 check("300 m past the plan isn't extra: no line, no marker, the old verdict",
       not r.get("extra") and "plan_ends" not in (r.get("chart") or {}) and not r["verdict"].startswith("Ran "), r["verdict"])
 check("but its axis still ends at the whole distance", (r.get("chart") or {}).get("total_km") == 12.3)
-check("what was planned shows under the numbers on every run with a plan", r["stats"][0].get("plan") == "12 planned")
+check("the planned distance isn't under the km on any run", r["stats"][0].get("plan") is None)
 
 flat = {"lapDTOs": [lap(1000, 300, 150, "interval") for _ in range(14)]}
 r = analysis.analyse(EASY12, flat, "easy", None, story=True)
-check("over the target from the first km says so, not 'until km 1'",
-      r["verdict"] == "Ran 2 km longer than planned. Heart rate over the target from the start.", r["verdict"])
+check("over the range the whole way says so plainly",
+      r["verdict"] == "Effort ran above easy the whole way: heart rate over 145 from the start.", r["verdict"])
 calm = {"lapDTOs": [lap(1000, 300, 130, "interval") for _ in range(14)]}
 r = analysis.analyse(EASY12, calm, "easy", None, story=True)
-check("on target the whole plan says so", r["verdict"] == "Ran 2 km longer than planned. Heart rate on target for the planned 12 km.", r["verdict"])
+check("inside the range the whole way says so, one figure when it never moved",
+      r["verdict"] == "Easy effort held all the way. HR 130, inside your easy range.", r["verdict"])
 
 untargeted = {"workoutSegments": [{"workoutSteps": [step(1, "interval", "distance", 12000)]}]}
 r = analysis.analyse(untargeted, calm, "easy", None, story=True)
@@ -228,6 +233,63 @@ check("a run with no workout has no plan to compare: no extra, nothing planned u
 r = analysis.analyse(THRESHOLD, THRESHOLD_LAPS, "sub", None, story=True)
 check("a session with a lap-button step has no planned distance to compare against", not r.get("extra"))
 check("its reps' pace target shows under their pace", r["stats"][2].get("plan") == "3:58\u20134:08 planned", str(r["stats"]))
+
+# -- Nov 24: strides found from the laps, the effort verdict, "planned" said once ------------
+print("Bart's run of 24 Nov: 8 km easy + strides, run to 10.4 km, the strides lapped by hand")
+PLAN_24 = {"workoutSegments": [{"workoutSteps": [
+    step(1, "interval", "distance", 7500, HR),
+    {"type": "RepeatGroupDTO", "stepOrder": 2, "numberOfIterations": 6, "workoutSteps": [
+        step(1, "interval", "time", 20), step(2, "recovery", "lap.button")]}]}]}
+LAPS_24 = {"lapDTOs": [lap(m, t, h, "interval") for m, t, h in (
+    (1000, 319, 110), (1000, 313, 118), (1000, 309, 120), (1000, 309, 122), (1000, 304, 125), (1000, 304, 122),
+    (1000, 299, 127), (1000, 303, 127), (1000, 305, 130), (140, 43, 117), (80, 18, 117), (140, 47, 133),
+    (100, 22, 130), (90, 33, 133), (100, 23, 138), (90, 33, 145), (10, 19, 138), (210, 52, 125), (40, 29, 130),
+    (110, 24, 132), (50, 38, 142), (100, 20, 124), (40, 33, 132), (120, 27, 122), (1, 1, 136))]}
+r = analysis.analyse(PLAN_24, LAPS_24, "easy", None, story=True)
+c = r.get("chart") or {}
+found = [p for p in c.get("parts", []) if p["k"] == "stride"]
+check("six strides found from the hand-pressed laps: short, and clearly quicker than the run",
+      len(found) == 6 and c.get("strides") == "6 \u00d7 strides", str([(p["at"], p["p"], p["s"]) for p in found]))
+check("each drawn where it happened, between km 9.1 and 10.4", all(9.1 < p["at"] < 10.4 for p in found), str([p["at"] for p in found]))
+check("the jogs between them aren't strides, nor a 52 s lap at 4:10", not any(p["s"] in (52, 33, 38, 29) for p in found))
+check("the extra is the whole run against the plan, strides and all", r.get("extra", {}).get("extra_km") == 2.5, str(r.get("extra")))
+check("the chart still marks the plan's end and runs to 10.4 km", c.get("plan_ends") == 8 and c.get("total_km") == 10.4,
+      str({k: v for k, v in c.items() if k != "parts"}))
+check("the verdict is about effort the whole way, not the distance",
+      r["verdict"] == "Stayed easy all the way. HR 110\u2060\u2013\u2060132, never above your 120\u2060\u2013\u2060145 easy range.", r["verdict"])
+check("under the numbers: no planned km, the heart rate as the easy range",
+      [x.get("plan") for x in r["stats"]] == [None, None, None, "120\u2013145 easy range"], str(r["stats"]))
+
+print("Over the range only briefly isn't flagged; one quick lap isn't strides")
+brief = {"lapDTOs": [lap(1000, 300, 130, "interval") for _ in range(10)] + [lap(1000, 290, 150, "interval")]}
+r = analysis.analyse(EASY12, brief, "easy", None, story=True)
+check("one km of eleven over 145 reads as easy, only briefly over",
+      r["verdict"] == "Easy effort held all the way. HR 130\u2060\u2013\u2060150, only briefly over 145.", r["verdict"])
+kick = {"lapDTOs": [lap(1000, 300, 130, "interval") for _ in range(8)] + [lap(150, 33, 150, "interval")]}
+r = analysis.analyse(None, kick, "easy", None, story=True)
+check("a finishing kick in its own lap, with no strides planned, isn't drawn as strides",
+      not any(p["k"] == "stride" for p in (r.get("chart") or {}).get("parts", [])))
+none = {"lapDTOs": [lap(1000, 300, 130, "interval") for _ in range(9)]}
+r = analysis.analyse(PLAN_24, none, "easy", None, story=True)
+check("strides planned but none found: a quiet note, not an error",
+      (r.get("chart") or {}).get("caption") == "Strides not detected \u2013 lap the watch for each one next time.",
+      str((r.get("chart") or {}).get("caption")))
+
+print("Shorter than planned, and no plan at all")
+short = {"lapDTOs": [lap(1000, 305, 132, "interval") for _ in range(9)] + [lap(100, 31, 133, "interval")]}
+r = analysis.analyse(EASY12, short, "easy", None, story=True)
+check("9.1 km of a planned 12: no extra, no plan line, the effort verdict",
+      not r.get("extra") and "plan_ends" not in (r.get("chart") or {})
+      and r["verdict"] == "Easy effort held all the way. HR 132, inside your easy range.", r["verdict"])
+r = analysis.analyse(None, ON, "easy", None, story=True)
+check("a run with no plan keeps its plain verdict: there's no range to judge it by",
+      not r["verdict"].startswith(("Effort", "Stayed", "Easy effort")) and not (r.get("chart") or {}).get("band"), r["verdict"])
+
+print("The browser test's four runs are what this code answers")
+import json  # noqa: E402
+import run_screens  # noqa: E402
+check("tests/fixtures/run_screens.json is up to date (python tests/run_screens.py rewrites it)",
+      json.loads(run_screens.FIXTURE.read_text()) == json.loads(json.dumps(run_screens.screens(), ensure_ascii=False)))
 
 print()
 if FAILED:
