@@ -14,6 +14,8 @@ comes back missing rather than wrong.
 
 from __future__ import annotations
 
+import functools
+
 from collections.abc import Mapping
 from typing import Any, Iterable
 
@@ -66,11 +68,16 @@ def series(raw: Any, keys: Iterable[str]) -> list[tuple[str, float]]:
     return sorted(found.items())
 
 
-def monthly(points: list[tuple[str, float]]) -> list[tuple[str, float]]:
-    """The last value in each month."""
+def period_of(day: str, quarterly: bool = False) -> str:
+    """"2026-05", or "2026-Q2" when a long look back goes by quarter."""
+    return f"{day[:4]}-Q{(int(day[5:7]) - 1) // 3 + 1}" if quarterly else day[:7]
+
+
+def monthly(points: list[tuple[str, float]], quarterly: bool = False) -> list[tuple[str, float]]:
+    """The last value in each month (or quarter)."""
     by_month: dict[str, float] = {}
     for day, value in sorted(points):
-        by_month[day[:7]] = value
+        by_month[period_of(day, quarterly)] = value
     return sorted(by_month.items())
 
 
@@ -82,7 +89,7 @@ def _direction(first: float, last: float, steady: float, *, higher_is_better: bo
     return "improving" if (change > 0) == higher_is_better else "declining"
 
 
-def _trend(
+def _trend_any(
     points: list[tuple[str, float]],
     show: Any,
     steady: float,
@@ -90,13 +97,15 @@ def _trend(
     higher_is_better: bool,
     relative: bool = False,
     change: Any = None,
+    quarterly: bool = False,
 ) -> dict[str, Any] | None:
-    months = monthly(points)
+    months = monthly(points, quarterly)
     if not months:
         return None
     first, last = months[0][1], months[-1][1]
+    unit = "quarter" if quarterly else "month"
     out: dict[str, Any] = {
-        "by_month": [{"month": m, "value": show(v)} for m, v in months],
+        f"by_{unit}": [{unit: m, "value": show(v)} for m, v in months],
         "now": show(last),
     }
     if len(months) > 1:
@@ -160,32 +169,33 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def weight_trend(raw: Any) -> dict[str, Any] | None:
-    """Weight by month: the average of that month's weigh-ins, since one day's reading wobbles."""
+def weight_trend(raw: Any, quarterly: bool = False) -> dict[str, Any] | None:
+    """Weight by month (or quarter): the average of its weigh-ins, since one day's reading wobbles."""
     rows = weigh_ins(raw)
     if not rows:
         return None
+    unit = "quarter" if quarterly else "month"
     months: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
-        months.setdefault(row["day"][:7], []).append(row)
+        months.setdefault(period_of(row["day"], quarterly), []).append(row)
     by_month = []
     for month, entries in sorted(months.items()):
         fat = [e["body_fat_pct"] for e in entries if e["body_fat_pct"] is not None]
         muscle = [e["muscle_kg"] for e in entries if e["muscle_kg"] is not None]
         by_month.append(drop_empty({
-            "month": month,
+            unit: month,
             "kg": rounded(_mean([e["kg"] for e in entries]), 1),
             "body_fat_pct": rounded(_mean(fat), 1),
             "muscle_kg": rounded(_mean(muscle), 1),
             "weigh_ins": len(entries),
         }))
     out: dict[str, Any] = {
-        "by_month": by_month,
+        f"by_{unit}": by_month,
         "latest": {"day": rows[-1]["day"], "kg": rounded(rows[-1]["kg"], 1)},
     }
     if len(by_month) > 1:
         first, last = by_month[0], by_month[-1]
-        out["since"] = first["month"]
+        out["since"] = first[unit]
         # Lighter isn't better or worse on its own, so no direction.
         out["change_kg"] = rounded(last["kg"] - first["kg"], 1)
         if "body_fat_pct" in first and "body_fat_pct" in last:
@@ -205,7 +215,10 @@ def shape(
     start: str,
     end: str,
     warnings: Iterable[str] = (),
+    quarterly: bool = False,
 ) -> dict[str, Any]:
+    """quarterly: a long look back, one value a quarter rather than a month."""
+    _trend = functools.partial(_trend_any, quarterly=quarterly)  # noqa: N806
     run_vo2 = cycling_vo2 = []
     if isinstance(vo2, list):
         run_vo2 = series([r.get("generic") for r in vo2 if isinstance(r, Mapping)],
@@ -218,7 +231,7 @@ def shape(
         t = _trend(series(race, (key,)), duration, STEADY["race"],
                    higher_is_better=False, relative=True, change=_signed_duration)
         if t:
-            t["pace_per_km_now"] = pace_per_km(RACE_METRES[name], monthly(series(race, (key,)))[-1][1])
+            t["pace_per_km_now"] = pace_per_km(RACE_METRES[name], monthly(series(race, (key,)), quarterly)[-1][1])
             races[name] = t
 
     lt = lactate if isinstance(lactate, Mapping) else {}
@@ -247,10 +260,13 @@ def shape(
                              STEADY["score"], higher_is_better=True, relative=True),
         "cycling_ftp_watts": _trend(series(ftp, ("functionalThresholdPower", "value")), score,
                                     STEADY["ftp"], higher_is_better=True, relative=True),
-        "weight": weight_trend(weight),
+        "weight": weight_trend(weight, quarterly),
         "how_to_read": (
-            "Each marker is Garmin's own estimate, one value per month (the last "
-            "of the month), with the change from the first month to now. "
+            ("Over this long a look back each marker is one value per quarter (the "
+             "last of the quarter, weight its average), with the change from the "
+             "first quarter to now. " if quarterly else
+             "Each marker is Garmin's own estimate, one value per month (the last "
+             "of the month), with the change from the first month to now. ") +
             "'steady' means the change is within the week-to-week wobble of the "
             "estimate. Race times and threshold pace improve by getting "
             "shorter. Markers only move when Garmin has qualifying runs or "

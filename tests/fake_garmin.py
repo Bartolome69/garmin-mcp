@@ -677,6 +677,9 @@ class FakeGarmin:
 
     def get_race_predictions(self, *args: Any, **kwargs: Any) -> Any:
         if args or kwargs:
+            # Garmin's race predictor refuses a range over a year.
+            if len(args) >= 2 and (date.fromisoformat(args[1]) - date.fromisoformat(args[0])).days > 366:
+                raise RuntimeError("400 Bad Request: race predictions over more than a year")
             return [dict(r) for r in RACE_HISTORY]
         return dict(RACE_PREDICTIONS)
 

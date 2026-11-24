@@ -4532,7 +4532,14 @@ async def get_fitness() -> dict[str, Any]:
 
 
 FITNESS_TREND_MONTHS = 6
-MAX_FITNESS_TREND_MONTHS = 12
+# Nov 24: as far back as Garmin has it. Ten years covers nearly every account.
+MAX_FITNESS_TREND_MONTHS = 120
+# Beyond this the markers come a value a quarter, so ten years stays readable.
+QUARTERLY_AFTER_MONTHS = 24
+# Garmin's race predictor refuses a range over a year; the other ranges are read the same way.
+YEAR_DAYS = 364
+# VO2 max beyond the last year: one 28-day read per sampled month, at most this many.
+MAX_VO2_READS = 40
 
 
 @mcp.tool()
@@ -4555,34 +4562,100 @@ async def get_fitness_trends(months: int = FITNESS_TREND_MONTHS) -> dict[str, An
     is enough; for whether recovery is keeping up, get_recovery_trends.
 
     Args:
-        months: Months to look back, including this one (1-12). Defaults to 6.
+        months: Months back, this one included (1-120, 120 = all). Defaults to 6.
     """
     months = max(1, min(int(months), MAX_FITNESS_TREND_MONTHS))
     end = parse_date("today")
     end_day = date_cls.fromisoformat(end)
-    # Garmin's race predictor refuses a range over a year.
-    start = (end_day - timedelta(days=months * 30)).isoformat()
-    month_starts = date_cls.fromisoformat(start)
+    start_day = end_day - timedelta(days=months * 30)
+    start = start_day.isoformat()
+    yearly = functools.partial(_by_year, start=start_day, end=end_day)
     (vo2, race, lactate, endurance, hill, ftp, weight), warnings = await _gather(
         [
-            ("vo2 max", _chunked(lambda c, lo, hi: c.get_max_metrics_range(lo, hi), month_starts, end_day)),
-            ("race predictions", lambda c: c.get_race_predictions(start, end, "monthly")),
-            ("lactate threshold", lambda c: c.get_lactate_threshold(
-                latest=False, start_date=start, end_date=end, aggregation="monthly")),
-            ("endurance score", lambda c: c.get_endurance_score(start, end)),
-            ("hill score", lambda c: c.get_hill_score(start, end)),
-            ("cycling ftp", lambda c: c.get_functional_threshold_power_range(
-                start, end, sport="CYCLING", aggregation="monthly")),
-            ("weight", lambda c: c.get_body_composition(start, end)),
+            ("vo2 max", _vo2_reads(start_day, end_day)),
+            ("race predictions", yearly(lambda c, lo, hi: c.get_race_predictions(lo, hi, "monthly"))),
+            ("lactate threshold", yearly(lambda c, lo, hi: c.get_lactate_threshold(
+                latest=False, start_date=lo, end_date=hi, aggregation="monthly"), merge=_merge_lactate)),
+            ("endurance score", yearly(lambda c, lo, hi: c.get_endurance_score(lo, hi))),
+            ("hill score", yearly(lambda c, lo, hi: c.get_hill_score(lo, hi))),
+            ("cycling ftp", yearly(lambda c, lo, hi: c.get_functional_threshold_power_range(
+                lo, hi, sport="CYCLING", aggregation="monthly"))),
+            ("weight", yearly(lambda c, lo, hi: c.get_body_composition(lo, hi), merge=_merge_weigh_ins)),
         ]
     )
     shaped = fitness_trends.shape(
         vo2=vo2, race=race, lactate=lactate, endurance=endurance, hill=hill, ftp=ftp, weight=weight,
-        start=start, end=end, warnings=warnings,
+        start=start, end=end, warnings=warnings, quarterly=months > QUARTERLY_AFTER_MONTHS,
     )
     if not set(shaped) - {"period", "how_to_read", "warnings"}:
         return {"error": "Garmin returned no fitness history for that period.", "warnings": warnings}
     return shaped
+
+
+def _by_year(fetch: Callable[[Any, str, str], Any], *, start: date_cls, end: date_cls,
+             merge: Callable[[list[Any]], Any] = list) -> Callable[[Any], Any]:
+    """One read of a long range as year-long pieces, newest first, one after
+    another so ten years is ten reads rather than a burst. A year or less is a
+    single read, answered as Garmin gave it. An older piece that fails is left
+    out; the newest failing fails the read."""
+    spans: list[tuple[str, str]] = []
+    hi = end
+    while hi >= start:
+        lo = max(start, hi - timedelta(days=YEAR_DAYS - 1))
+        spans.append((lo.isoformat(), hi.isoformat()))
+        hi = lo - timedelta(days=1)
+
+    def run(c: Any) -> Any:
+        if len(spans) == 1:
+            return fetch(c, *spans[0])
+        pieces: list[Any] = []
+        for i, span in enumerate(spans):
+            try:
+                pieces.append(fetch(c, *span))
+            except GarminError:
+                raise
+            except Exception:  # noqa: BLE001 - an older year Garmin can't answer
+                if i == 0:
+                    raise
+        return merge(pieces)
+
+    return run
+
+
+def _merge_lactate(pieces: list[Any]) -> dict[str, Any]:
+    """Lactate threshold's yearly pieces as one: its speed and heart-rate lists side by side."""
+    maps = [p for p in pieces if isinstance(p, Mapping)]
+    return {key: [p.get(key) for p in maps] for key in ("speed", "heart_rate")}
+
+
+def _merge_weigh_ins(pieces: list[Any]) -> dict[str, Any]:
+    """Body composition's yearly pieces as one weight list, each weigh-in once."""
+    seen: set[tuple[Any, Any]] = set()
+    rows: list[Any] = []
+    for p in pieces:
+        for row in (p.get("dateWeightList") or []) if isinstance(p, Mapping) else []:
+            key = (row.get("calendarDate") or row.get("date"), row.get("weight")) if isinstance(row, Mapping) else (id(row), None)
+            if key not in seen:
+                seen.add(key)
+                rows.append(row)
+    return {"dateWeightList": rows}
+
+
+def _vo2_reads(start: date_cls, end: date_cls) -> Callable[[Any], list[Any]]:
+    """VO2 max over the range. Garmin serves it 28 days at a time: the whole of
+    a year or less, and beyond that the last 28 days of sampled months (every
+    month, or every few for a long look back), since one value a month or a
+    quarter is what the answer shows."""
+    if (end - start).days <= 366:
+        return _chunked(lambda c, lo, hi: c.get_max_metrics_range(lo, hi), start, end)
+    month_ends: list[date_cls] = []
+    cursor = end
+    while cursor >= start:
+        month_ends.append(cursor)
+        cursor = cursor.replace(day=1) - timedelta(days=1)
+    step = max(1, -(-len(month_ends) // MAX_VO2_READS))
+    spans = [(max(start, e - timedelta(days=RANGE_CHUNK_DAYS - 1)).isoformat(), e.isoformat()) for e in month_ends[::step]]
+    return _spans_read(lambda c, lo, hi: c.get_max_metrics_range(lo, hi), spans)
 
 
 RECOVERY_WEEKS = 4
@@ -4600,7 +4673,11 @@ def _chunked(fetch: Callable[[Any, str, str], Any], start: date_cls, end: date_c
         hi = min(lo + timedelta(days=RANGE_CHUNK_DAYS - 1), end)
         spans.append((lo.isoformat(), hi.isoformat()))
         lo = hi + timedelta(days=1)
+    return _spans_read(fetch, spans)
 
+
+def _spans_read(fetch: Callable[[Any, str, str], Any], spans: list[tuple[str, str]]) -> Callable[[Any], list[Any]]:
+    """Read each (from, to) span side by side and put the rows together."""
     def run(c: Any) -> list[Any]:
         with ThreadPoolExecutor(max_workers=min(READS_AT_ONCE, len(spans) or 1)) as pool:
             pieces = list(pool.map(tracing.carried(lambda span: fetch(c, *span)), spans))

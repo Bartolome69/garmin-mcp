@@ -2395,10 +2395,25 @@ async def main() -> int:
                   ["latest"]["kg"] == 70.5)
             check("no weigh-ins gives no weight section",
                   _ft.weight_trend({"dateWeightList": []}) is None and _ft.weight_trend(None) is None)
-            short = payload(await sess.call_tool("get_fitness_trends", {"months": 99}))
-            check("a long look-back is capped at a year",
-                  short["period"]["from"] >= str(__import__("datetime").date.today().replace(
-                      year=__import__("datetime").date.today().year - 1)), str(short.get("period")))
+            # Nov 24: years back, not one. Garmin's race predictor refuses more
+            # than a year at once (the fake does too), so it's read a year at a time.
+            _today = __import__("datetime").date.today()
+            years = payload(await sess.call_tool("get_fitness_trends", {"months": 36}))
+            check("three years back reaches three years back",
+                  years["period"]["from"] <= str(_today.replace(year=_today.year - 2)), str(years.get("period")))
+            check("race predictions still come back over three years (read a year at a time)",
+                  years.get("race_predictions", {}).get("half_marathon", {}).get("now") == "1h 25m 00s",
+                  str(years.get("race_predictions"))[:200] + str(years.get("warnings")))
+            check("beyond two years each marker goes by quarter",
+                  "by_quarter" in years["vo2max"] and "by_month" not in years["vo2max"]
+                  and all(q["quarter"][4:6] == "-Q" for q in years["vo2max"]["by_quarter"]), str(years.get("vo2max"))[:200])
+            quarters_w = {q["quarter"]: q for q in years.get("weight", {}).get("by_quarter", [])}
+            check("weight by quarter averages its weigh-ins, each counted once across the yearly reads",
+                  quarters_w.get("2026-Q2", {}).get("weigh_ins") == 3, str(quarters_w))
+            check("the long read says it's quarterly", "per quarter" in years["how_to_read"])
+            whole = payload(await sess.call_tool("get_fitness_trends", {"months": 999}))
+            check("asking for everything looks back ten years",
+                  whole["period"]["from"] <= str(_today.replace(year=_today.year - 9)), str(whole.get("period")))
 
             print("\nprofile")
             prof = payload(await sess.call_tool("get_profile", {}))
