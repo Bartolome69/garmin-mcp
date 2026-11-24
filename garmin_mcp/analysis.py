@@ -501,6 +501,36 @@ def _planned_metres(steps: Sequence[Mapping[str, Any]]) -> float | None:
     return sum(s["metres"] for s in steps)
 
 
+# Nov 24: a session set mostly by distance, with a few steps set by time or the
+# lap button (8 km easy + strides: 7.5 km, then 6 x 20 s, each recovery to the
+# lap button), has a planned distance too, estimated as the plan card does. Only
+# when the steps set by distance make up this much of it, so a run set by time
+# never leads with a guess.
+ABOUT_MIN_SHARE = 0.85
+
+
+def _planned_metres_about(steps: Sequence[Mapping[str, Any]],
+                          workout: Mapping[str, Any] | None) -> tuple[float | None, bool]:
+    """The planned distance and whether it's an estimate: exact when every step is
+    set by distance, else the plan's estimate when distance sets most of it."""
+    exact = _planned_metres(steps)
+    if exact or not workout:
+        return exact, False
+    # A warm-up, cool-down or run to the lap button is the runner's to stretch:
+    # nothing to have gone past. Only recoveries between reps can be open.
+    if any(not s.get("metres") and not s.get("seconds") and s.get("kind") not in ("recovery", "rest") for s in steps):
+        return None, False
+    set_m = sum(s.get("metres") or 0 for s in steps)
+    if not set_m:
+        return None, False
+    from .plan import planned_distance_m
+
+    estimate = planned_distance_m(dict(workout))
+    if estimate < set_m or set_m / estimate < ABOUT_MIN_SHARE:
+        return None, False
+    return estimate, True
+
+
 def _planned_seconds(steps: Sequence[Mapping[str, Any]]) -> float | None:
     """Its planned time, when every step is set by time."""
     if not steps or any(not s.get("seconds") for s in steps):
@@ -526,13 +556,14 @@ def _target_short(t: Mapping[str, Any]) -> str:
     return hr_text(t["lo"], t["hi"]).removesuffix(" bpm")
 
 
-def _extra(planned_m: float | None, total_m: float) -> dict[str, float] | None:
+def _extra(planned_m: float | None, total_m: float, about: bool = False) -> dict[str, Any] | None:
     """How far past its planned distance a run went, when it's far enough to lead with."""
     if not planned_m or total_m - planned_m < max(EXTRA_MIN_METRES, planned_m * EXTRA_MIN_SHARE):
         return None
     ran, planned = round(total_m / 1000, 1), round(planned_m / 1000, 1)
     # From the rounded figures, so the screen's sums add up: 14.2 - 12 = 2.2.
-    return {"planned_km": planned, "ran_km": ran, "extra_km": round(ran - planned, 1)}
+    return drop_empty({"planned_km": planned, "ran_km": ran, "extra_km": round(ran - planned, 1),
+                       "about": about or None})
 
 
 def _extra_verdict(extra: Mapping[str, float], verdict: str, rows: list[dict[str, Any]], laps: list[dict[str, Any]],
@@ -672,9 +703,12 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
     split_rows = splits(laps, stream.parse_stream(recording) if recording else None)
     reps = [r["_lap"] for r in rows if r.get("rep") and r.get("_lap")]
     steps = planned_steps(workout) if workout else []
-    planned_m = _planned_metres(steps)
+    planned_m, about = _planned_metres_about(steps, workout)
     planned_s = _planned_seconds(steps)
-    extra = _extra(planned_m, total_m) if paired else None
+    # Nov 24: from the workout, not the lap pairing: a run whose watch never
+    # lapped at the end of the plan (laps every km to 9.1, then the strides) went
+    # on past it all the same.
+    extra = _extra(planned_m, total_m, about) if workout else None
     if len(reps) >= 2:
         rep_m = sum(l["metres"] for l in reps)
         rep_s = sum(l["seconds"] for l in reps)
@@ -689,7 +723,7 @@ def analyse(workout: Mapping[str, Any] | None, raw_laps: Any, kind: str | None =
                  {"v": str(round(hr)) if hr else "–", "l": "bpm avg"}]
     # Nov 22: what was planned, in small grey under each number, where the plan set it.
     aim = _one_target(steps, reps=len(reps) >= 2)
-    plan_lines = [f"{planned_m / 1000:g} planned" if planned_m else None,
+    plan_lines = [f"{'~' if about else ''}{round(planned_m / 1000, 1):g} planned" if planned_m else None,
                   f"{clock(planned_s)} planned" if planned_s else None,
                   f"{_target_short(aim)} planned" if aim and aim["kind"] == "pace" else None,
                   f"{_target_short(aim)} planned" if aim and aim["kind"] == "hr" else None]

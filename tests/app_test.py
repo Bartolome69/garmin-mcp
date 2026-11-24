@@ -1606,6 +1606,31 @@ def strides_checks() -> None:
           and stride_split.get("pace") == "3:36 (6 \u00d7 20 s)" and stride_split.get("fastest") == "3:16", str(result["splits"][8:]))
     total = sum(s["seconds"] for s in result["splits"])
     check("and they still add up to the run's time", total == result["seconds"], f"{total} != {result['seconds']}")
+    # Nov 24: 8 km easy + strides (7.5 km, then 6 x 20 s, each recovery to the lap
+    # button) run to 10.4 km, the watch lapping every km to 9.1 and then the strides
+    # as short laps, all unmarked. The plan's distance is the plan card's estimate.
+    today_laps = [{"distance": d, "duration": t, "averageHR": h, "intensityType": "INTERVAL"} for d, t, h in (
+        (1000, 319, 110), (1000, 313, 118), (1000, 309, 120), (1000, 309, 122), (1000, 304, 125), (1000, 304, 122),
+        (1000, 299, 127), (1000, 303, 127), (1000, 305, 130), (140, 43, 117), (80, 18, 117), (140, 47, 133),
+        (100, 22, 130), (90, 33, 133), (100, 23, 138), (90, 33, 145), (10, 19, 138), (210, 52, 125), (40, 29, 130),
+        (110, 24, 132), (50, 38, 142), (100, 20, 124), (40, 33, 132), (120, 27, 122), (1, 1, 136))]
+    import copy as copy_
+    short_plan = copy_.deepcopy(workout)
+    short_plan["workoutSegments"][0]["workoutSteps"][0]["endConditionValue"] = 7500
+    ran_on = analysis.analyse(short_plan, {"lapDTOs": today_laps}, "easy", story=True)
+    check("strides with lap-button recoveries: the planned distance is the estimate, 7.9 km",
+          ran_on.get("extra") == {"planned_km": 7.9, "ran_km": 10.4, "extra_km": 2.5, "about": True}, str(ran_on.get("extra")))
+    check("and it shows under the km, marked as an estimate",
+          ran_on["stats"][0].get("plan") == "~7.9 planned", str(ran_on["stats"][0]))
+    check("the verdict leads with the extra distance, laps that never lined up or not",
+          ran_on["verdict"] == "Ran 2.5 km longer than planned. Heart rate on target for the planned 7.9 km.", ran_on["verdict"])
+    check("the plan ends after km 8, the nearest km to 7.9",
+          (ran_on.get("chart") or {}).get("plan_ends") == 8, str({k: (ran_on.get("chart") or {}).get(k) for k in ("plan_ends", "plan_km")}))
+    timed = copy_.deepcopy(short_plan)
+    timed["workoutSegments"][0]["workoutSteps"][0]["endCondition"] = {"conditionTypeKey": "time"}
+    timed["workoutSegments"][0]["workoutSteps"][0]["endConditionValue"] = 2400
+    check("a run set by time never gets a guessed planned distance",
+          not analysis.analyse(timed, {"lapDTOs": today_laps}, "easy").get("extra"))
     # Reps long enough to be the session stay reps, row by row.
     import copy
     long_reps = copy.deepcopy(workout)

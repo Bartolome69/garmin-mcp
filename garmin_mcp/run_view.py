@@ -212,6 +212,8 @@ def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str,
     if total:
         out["total_km"] = round(total, 1)
     # A run that went on past its plan: where the plan ended, as a count of km bars.
+    # A bar counts as planned when most of it was (Nov 24: 7.9 km planned puts the
+    # line after km 8, not after 7 with the eighth km tinted as extra).
     if plan_km:
         done, ends = 0.0, 0
         for k in kms:
@@ -219,7 +221,7 @@ def chart(pairs, after: Sequence[Mapping[str, Any]], laps: Sequence[Mapping[str,
                 length = min(1.0, float(k["km"]))
             except (TypeError, ValueError):
                 length = 1.0
-            if done + length > plan_km + 0.05:
+            if done + length / 2 > plan_km + 0.05:
                 break
             done += length
             ends += 1

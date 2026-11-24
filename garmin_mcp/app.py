@@ -830,8 +830,10 @@ async def run_payload(activity_id: int) -> dict[str, Any]:
     if extra:
         word = RAN_ON_TITLE.get(kind or "")
         if word and not any(r.get("rep") for r in result.get("planned_and_run") or []):
-            name = f"{extra['ran_km']:g} km {word}"
-        planned_line = f"Planned {extra['planned_km']:g} km \u00b7 ran {extra['extra_km']:g} km extra"
+            # Nov 24: "8km easy + strides" run to 10.4 reads "10.4 km easy + strides".
+            name = f"{extra['ran_km']:g} km {word}" + (" + strides" if "stride" in name.lower() else "")
+        planned_line = (f"Planned {'about ' if extra.get('about') else ''}{extra['planned_km']:g} km"
+                        f" \u00b7 ran {extra['extra_km']:g} km extra")
     kicker = (f"{_short_date(started.date()).upper()} · {started.strftime('%H:%M')}" if started else "") + f" · {t['type_label'].upper()}"
     effect = None
     if row:
