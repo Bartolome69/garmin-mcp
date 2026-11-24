@@ -2547,9 +2547,10 @@ async def main() -> int:
             # pointer to this resource; the rest ignore it.
             plan_tool = next(t for t in tools.tools if t.name == "get_plan")
             view_uri = ((plan_tool.meta or {}).get("ui") or {}).get("resourceUri")
-            # Preview accounts get the redesigned card (plan2) until it's everyone's.
+            # Preview accounts get the regular card too: the redesign (plan2) is off
+            # unless GARMIN_MCP_PLAN2_CARD=1, since it stopped drawing in Claude.
             check("get_plan points at its view, versioned by its contents",
-                  re.fullmatch(r"ui://garmin/plan2/[0-9a-f]{10}", view_uri or "") is not None, str(plan_tool.meta))
+                  re.fullmatch(r"ui://garmin/plan/[0-9a-f]{10}", view_uri or "") is not None, str(plan_tool.meta))
             listed_views = await sess.list_resources()
             check("the view is listed as an app",
                   any(str(r.uri) == view_uri and field(r, "mime_type", "mimeType") == "text/html;profile=mcp-app"
@@ -2567,8 +2568,9 @@ async def main() -> int:
             # Garmin Connect's calendar is a link the person opens from the
             # failed state (through the host), never a request the card makes.
             check("the view's only addresses are the share page and Garmin Connect",
-                  set(re.findall(r"https?://[^\s\"'#]+", html)) - {"http://www.w3.org/2000/svg"}
-                  == {"https://garmin.daash.run/share/", "https://connect.garmin.com/modern/calendar"},
+                  "https://garmin.daash.run/share/" in html
+                  and set(re.findall(r"https?://[^\s\"'#]+", html)) - {"http://www.w3.org/2000/svg"}
+                  <= {"https://garmin.daash.run/share/", "https://connect.garmin.com/modern/calendar"},
                   str(set(re.findall(r"https?://[^\s\"'#]+", html))))
             share_page = (Path(__file__).resolve().parent.parent / "docs" / "share" / "index.html").read_text()
             check("the share page sends the week nowhere",

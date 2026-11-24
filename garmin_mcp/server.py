@@ -834,9 +834,11 @@ def _with_description(tool, *, preview_on: bool, alone: bool = False, cards: boo
             update[field] = _untitled(getattr(tool, field)) if cards else _plain_schema(_untitled(getattr(tool, field)))
     if tool.name in _TITLES:
         update["title"] = _TITLES[tool.name]
-    # Preview accounts see the redesigned plan card while it's being tried.
+    # Preview accounts see the redesigned plan card while it's being tried, only
+    # with GARMIN_MCP_PLAN2_CARD=1. Off since Nov 24: it had stopped drawing in
+    # Claude (last on Android 21 Nov), leaving a card that never loads.
     view = ((getattr(tool, "meta", None) or {}).get("ui") or {}).get("resourceUri")
-    if preview_on and not alone and view == PLAN_VIEW:
+    if preview_on and not alone and view == PLAN_VIEW and os.environ.get("GARMIN_MCP_PLAN2_CARD") == "1":
         update["meta"] = {**tool.meta, "ui": {**tool.meta["ui"], "resourceUri": PLAN2_VIEW}, "ui/resourceUri": PLAN2_VIEW}
     # The run card, where it's on; elsewhere runs answer in writing.
     if view == RUN_VIEW and (alone or not (preview_on or os.environ.get("GARMIN_MCP_RUN_CARD", "1") != "0")):
