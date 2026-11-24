@@ -23,6 +23,10 @@ primary_region = "lhr"
   destination = "/data"
 
 [[vm]]
-  memory = "1gb"
+  # 2 GB from 24 Nov: from 18 Nov the server froze for 10-40 minutes several
+  # times a day until it restarted, and 1 GB with a growing database was the
+  # likeliest cause. `flyctl deploy` applies this, so a resize by hand would
+  # be undone by the next deploy.
+  memory = "2gb"
   cpu_kind = "shared"
   cpus = 1
