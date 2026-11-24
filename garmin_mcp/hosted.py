@@ -5339,17 +5339,57 @@ def watchdog_step(answered: bool, misses: int) -> tuple[int, bool]:
     return misses, misses >= WATCHDOG_MISSES
 
 
+# Nov 24: Bart is emailed at every watchdog restart, straight away. If the
+# email can't go before the exit, the restart is noted in the database and the
+# next start sends it.
+WATCHDOG_NOTE = "watchdog_restart"
+
+
+def frozen_alert(at: float, misses: int, figures: Mapping[str, Any]) -> tuple[str, str]:
+    """The email about one watchdog restart: subject and text, nothing about anyone."""
+    when = datetime.fromtimestamp(at, ZoneInfo("Europe/London")).strftime("%a %d %b %H:%M")
+    mem = (f"\nMemory: the server was using {figures['rss_mb']} MB; {figures.get('machine_available_mb', '?')} MB "
+           f"of {figures.get('machine_total_mb', '?')} MB was free." if figures.get("rss_mb") else "")
+    return (f"Daash froze and restarted ({when})",
+            f"Daash stopped answering at about {when} (UK time): {misses} health checks in a row, "
+            f"{misses * WATCHDOG_EVERY} seconds, went unanswered. The watchdog restarted it; it is back "
+            f"in about a minute.\n{mem}\n\nWhat it was stuck on is in the server's log at that time "
+            "(run the \"Server error lines\" workflow), and server_frozen in PostHog has the figures.\n")
+
+
+def _send_noted_restart() -> None:
+    """On start: the email about a watchdog restart that couldn't go before the exit."""
+    try:
+        raw = store.get_setting(WATCHDOG_NOTE)
+        if not raw:
+            return
+        note = json.loads(raw)
+        subject, text = frozen_alert(note["at"], note["misses"], note.get("figures") or {})
+        if support_mail.send_alert(subject, text):
+            store.set_setting(WATCHDOG_NOTE, "")
+    except Exception:  # noqa: BLE001 - an alert never stops the server starting
+        log.exception("watchdog restart email failed")
+
+
 def _restart_frozen(misses: int, started: float) -> None:
     import faulthandler
 
     log.error("Watchdog: /health unanswered %d times in a row; restarting. Thread stacks follow.", misses)
     with contextlib.suppress(Exception):
         faulthandler.dump_traceback(all_threads=True)
+    at, figures = time.time(), {}
+    with contextlib.suppress(Exception):
+        figures = memory_figures()
     with contextlib.suppress(Exception):
         analytics.capture_now("server_frozen", "daash-server", {
             "misses": misses, "unanswered_s": misses * WATCHDOG_EVERY,
-            "uptime_min": round((time.time() - started) / 60), **memory_figures(),
+            "uptime_min": round((at - started) / 60), **figures,
             "$process_person_profile": False})
+    with contextlib.suppress(Exception):
+        store.set_setting(WATCHDOG_NOTE, json.dumps({"at": at, "misses": misses, "figures": figures}))
+    with contextlib.suppress(Exception):
+        if support_mail.send_alert(*frozen_alert(at, misses, figures)):
+            store.set_setting(WATCHDOG_NOTE, "")
     os._exit(WATCHDOG_EXIT_CODE)
 
 
@@ -5357,6 +5397,7 @@ def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable
                       restart: Callable[[int, float], None] = _restart_frozen,
                       clock: Callable[[], float] = time.time) -> None:
     started = clock()
+    _send_noted_restart()
     sleep(WATCHDOG_GRACE)
     misses, reported = 0, 0.0
     while True:

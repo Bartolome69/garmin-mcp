@@ -3604,6 +3604,26 @@ async def main() -> int:
     health = [e for e in sent if e[0] == "server_health"]
     check("server_health goes once a quarter-hour with the memory figures, from the server's own id",
           len(health) == 1 and health[0][1] == "daash-server" and "threads" in health[0][2], str(health))
+    # Nov 24: Bart is emailed at every watchdog restart; one that couldn't go
+    # before the exit goes from the next start, once.
+    subject, text = hosted.frozen_alert(1795000000, 4, {"rss_mb": 900, "machine_available_mb": 80, "machine_total_mb": 1971})
+    check("the restart email says when, for how long, and the memory",
+          subject.startswith("Daash froze and restarted (") and "80 seconds" in text and "900 MB" in text, text)
+    from garmin_mcp import support_mail as sm
+    real_alert = sm.send_alert
+    sent_alerts: list[str] = []
+    try:
+        store.set_setting(hosted.WATCHDOG_NOTE, json.dumps({"at": 1795000000, "misses": 4, "figures": {}}))
+        sm.send_alert = lambda subj, body: False
+        hosted._send_noted_restart()
+        check("a restart email that still can't go is kept for the next start", bool(store.get_setting(hosted.WATCHDOG_NOTE)))
+        sm.send_alert = lambda subj, body: sent_alerts.append(subj) or True
+        hosted._send_noted_restart()
+        hosted._send_noted_restart()
+        check("and goes from the next start, once", len(sent_alerts) == 1 and not store.get_setting(hosted.WATCHDOG_NOTE), str(sent_alerts))
+    finally:
+        sm.send_alert = real_alert
+        store.set_setting(hosted.WATCHDOG_NOTE, "")
     figures = hosted.memory_figures()
     check("memory figures are numbers and nothing else",
           all(isinstance(v, int) for v in figures.values()) and "threads" in figures, str(figures))
