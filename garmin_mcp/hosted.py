@@ -28,6 +28,7 @@ import re
 import secrets
 import threading
 import time
+import urllib.request
 from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -5287,6 +5288,94 @@ def refuse_wrong_key() -> None:
         )
 
 
+# ---------------------------------------------------------------- watchdog
+# Nov 24: from 18 Nov the server froze for 10 to 40 minutes at a time, several
+# times a day, until something restarted it (07:55-08:19 on 24 Nov, at the
+# morning peak). A thread outside the event loop asks the server's own /health
+# every WATCHDOG_EVERY seconds. After WATCHDOG_MISSES unanswered in a row it
+# writes every thread's stack to the log (what the server was stuck on), sends
+# server_frozen with the memory figures, and exits, so Fly starts it again in
+# about a minute. It also sends server_health every WATCHDOG_REPORT_EVERY with
+# the same figures, to say whether the machine needs more memory.
+WATCHDOG_EVERY = 20
+WATCHDOG_TIMEOUT = 10
+WATCHDOG_MISSES = 4
+# Starting takes about a minute (Uvicorn listening at 08:20:25 after 08:19:19).
+WATCHDOG_GRACE = 240
+WATCHDOG_REPORT_EVERY = 15 * 60
+WATCHDOG_EXIT_CODE = 70
+
+
+def memory_figures() -> dict[str, Any]:
+    """The process's memory and the machine's, in MB, from /proc; nothing about anyone."""
+    out: dict[str, Any] = {}
+    with contextlib.suppress(OSError, ValueError):
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith(("VmRSS:", "VmHWM:")):
+                out["rss_mb" if line.startswith("VmRSS") else "rss_peak_mb"] = round(int(line.split()[1]) / 1024)
+    with contextlib.suppress(OSError, ValueError):
+        info = {k.strip(): int(v.split()[0]) for k, v in (
+            line.split(":", 1) for line in Path("/proc/meminfo").read_text().splitlines() if ":" in line)}
+        out["machine_total_mb"] = round(info["MemTotal"] / 1024)
+        out["machine_available_mb"] = round(info["MemAvailable"] / 1024)
+        if info.get("SwapTotal"):
+            out["swap_used_mb"] = round((info["SwapTotal"] - info.get("SwapFree", 0)) / 1024)
+    out["threads"] = threading.active_count()
+    return out
+
+
+def _probe_health() -> bool:
+    url = f"http://127.0.0.1:{int(os.environ.get('PORT', '8000'))}/health"
+    try:
+        with urllib.request.urlopen(url, timeout=WATCHDOG_TIMEOUT) as response:
+            return response.status == 200
+    except Exception:  # noqa: BLE001 - any failure to answer is a miss
+        return False
+
+
+def watchdog_step(answered: bool, misses: int) -> tuple[int, bool]:
+    """The misses in a row after one probe, and whether it's time to restart."""
+    misses = 0 if answered else misses + 1
+    return misses, misses >= WATCHDOG_MISSES
+
+
+def _restart_frozen(misses: int, started: float) -> None:
+    import faulthandler
+
+    log.error("Watchdog: /health unanswered %d times in a row; restarting. Thread stacks follow.", misses)
+    with contextlib.suppress(Exception):
+        faulthandler.dump_traceback(all_threads=True)
+    with contextlib.suppress(Exception):
+        analytics.capture_now("server_frozen", "daash-server", {
+            "misses": misses, "unanswered_s": misses * WATCHDOG_EVERY,
+            "uptime_min": round((time.time() - started) / 60), **memory_figures(),
+            "$process_person_profile": False})
+    os._exit(WATCHDOG_EXIT_CODE)
+
+
+def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable[[float], None] = time.sleep,
+                      restart: Callable[[int, float], None] = _restart_frozen,
+                      clock: Callable[[], float] = time.time) -> None:
+    started = clock()
+    sleep(WATCHDOG_GRACE)
+    misses, reported = 0, 0.0
+    while True:
+        misses, frozen = watchdog_step(probe(), misses)
+        if frozen:
+            restart(misses, started)
+            return
+        if misses:
+            log.warning("Watchdog: /health unanswered (%d in a row)", misses)
+        now = clock()
+        if now - reported >= WATCHDOG_REPORT_EVERY:
+            reported = now
+            with contextlib.suppress(Exception):
+                analytics.capture("server_health", "daash-server", {
+                    "uptime_min": round((now - started) / 60), **memory_figures(),
+                    "$process_person_profile": False})
+        sleep(WATCHDOG_EVERY)
+
+
 def main() -> None:
     import uvicorn
 
@@ -5295,6 +5384,8 @@ def main() -> None:
         handler.addFilter(RedactUserTokens())
     refuse_wrong_key()
 
+    if os.environ.get("GARMIN_MCP_WATCHDOG", "on") != "off":
+        threading.Thread(target=_watchdog_forever, name="watchdog", daemon=True).start()
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
     threading.Thread(target=_notify_forever, name="notifications", daemon=True).start()
     signup_guard.on_pause = _signups_paused

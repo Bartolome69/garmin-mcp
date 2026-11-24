@@ -3556,6 +3556,80 @@ async def main() -> int:
         server.should_exit = True
         thread.join(timeout=10)
 
+    # Nov 24: the watchdog. It restarts the server after WATCHDOG_MISSES
+    # unanswered health checks in a row, never after fewer, and a check that
+    # comes back answered starts the count again.
+    print("\nWatchdog")
+    check("one miss doesn't restart", hosted.watchdog_step(False, 0) == (1, False))
+    check("an answer starts the count again", hosted.watchdog_step(True, 3) == (0, False))
+    check("the fourth miss in a row restarts",
+          hosted.watchdog_step(False, hosted.WATCHDOG_MISSES - 1) == (hosted.WATCHDOG_MISSES, True))
+
+    class Stop(Exception):
+        pass
+
+    def run_watchdog(answers: list[bool]) -> tuple[list[tuple[int, float]], list[float], list[tuple]]:
+        restarts: list[tuple[int, float]] = []
+        sleeps: list[float] = []
+        sent: list[tuple] = []
+        feed = iter(answers)
+        tick = [1000.0]
+
+        def probe() -> bool:
+            try:
+                return next(feed)
+            except StopIteration:
+                raise Stop from None
+
+        def sleep(s: float) -> None:
+            sleeps.append(s)
+            tick[0] += s
+
+        real = analytics.capture
+        analytics.capture = lambda event, *a, **k: sent.append((event, *a))
+        try:
+            hosted._watchdog_forever(probe=probe, sleep=sleep, restart=lambda m, st: restarts.append((m, st)),
+                                     clock=lambda: tick[0])
+        except Stop:
+            pass
+        finally:
+            analytics.capture = real
+        return restarts, sleeps, sent
+
+    restarts, sleeps, sent = run_watchdog([True, False, False, True, False, False, False])
+    check("a server that answers again in between is left alone", not restarts, str(restarts))
+    check("it waits for the server to start before the first check", sleeps[0] == hosted.WATCHDOG_GRACE, str(sleeps[:2]))
+    restarts, _, sent = run_watchdog([True, False, False, False, False, True])
+    check("four unanswered in a row restart it, once", restarts == [(hosted.WATCHDOG_MISSES, 1000.0)], str(restarts))
+    health = [e for e in sent if e[0] == "server_health"]
+    check("server_health goes once a quarter-hour with the memory figures, from the server's own id",
+          len(health) == 1 and health[0][1] == "daash-server" and "threads" in health[0][2], str(health))
+    figures = hosted.memory_figures()
+    check("memory figures are numbers and nothing else",
+          all(isinstance(v, int) for v in figures.values()) and "threads" in figures, str(figures))
+    try:
+        import http.server
+
+        class Slow(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                self.send_response(503)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Slow)
+        threading.Thread(target=srv.handle_request, daemon=True).start()
+        old_port = os.environ.get("PORT")
+        os.environ["PORT"] = str(srv.server_port)
+        check("a health check that fails counts as unanswered", hosted._probe_health() is False)
+    finally:
+        if old_port is None:
+            os.environ.pop("PORT", None)
+        else:
+            os.environ["PORT"] = old_port
+        srv.server_close()
+
     print()
     if failures:
         print(f"{len(failures)} failed: {', '.join(failures)}")

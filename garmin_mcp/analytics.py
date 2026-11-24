@@ -194,6 +194,14 @@ def capture(event: str, subject: str | None = None, properties: dict[str, Any] |
     threading.Thread(target=_post_all, args=([link, payload] if link else [payload],), daemon=True).start()
 
 
+def capture_now(event: str, subject: str | None = None, properties: dict[str, Any] | None = None) -> None:
+    """Record one event and wait for it to go: for a process about to exit
+    (the watchdog, Nov 24), where a thread of its own would die with it."""
+    if not KEY:
+        return
+    _post(_payload(event, subject, distinct_id(subject), properties))
+
+
 def capture_many(subject: str | None, events: list[tuple[str, dict[str, Any], float | None]]) -> None:
     """Record several events for one person, in order, from one thread.
 
