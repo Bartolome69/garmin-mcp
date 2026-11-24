@@ -1698,6 +1698,8 @@ async def main() -> int:
         check("each workout that reaches the watch is its own workout_sent_to_watch, first_ever only the first time",
               [(e["properties"]["source"], e["properties"]["sessions"], e["properties"].get("first_ever")) for e in sends]
               == [("chat_schedule", 1, True)] + [("chat_plan", 1, False)] * 12, str([e["properties"] for e in sends])[:300])
+        check("and is_first (Nov 24) is true on the person's first send only",
+              [e["properties"].get("is_first") for e in sends] == [True] + [False] * 12, str([e["properties"].get("is_first") for e in sends]))
 
         # Nov 16: usage tracking, end to end through the MCP server as a test
         # user. Every call is tool_called with success and, when it failed, a
@@ -2057,12 +2059,35 @@ async def main() -> int:
               "get_plan alone" in str(fresh_answer.get("welcome")) and "situation" in str(fresh_answer.get("welcome")),
               str(fresh_answer.get("welcome"))[:120])
         check("the welcome is for the model, not to be read out", "not to repeat" in hosted.WELCOME)
+        # Nov 24: the first answer also offers a first workout, with the three first asks.
+        first_workout = fresh_answer.get("first_workout") or {}
+        check("a first answer offers a first workout: a 30-minute easy run for tomorrow",
+              "30-minute easy run" in str(first_workout.get("note")) and "create_workout" in str(first_workout.get("note"))
+              and first_workout.get("suggestions") == [t for _, t in hosted.FIRST_PROMPTS], str(first_workout)[:160])
+        check("the success page shows the three first asks with copy buttons, the easy run first",
+              "Copy this" not in body and body.count("class=first-ask data-id") == 3
+              and body.index("easy_run_tomorrow") < body.index("recovery_spin"), body[-600:])
         hosted._ATTEMPTS.clear()
         code, body = await anyio_run(signin, "brandnew@example.com")
         again = re.search(r"/u/([A-Za-z0-9_-]{16,})/mcp", body)
         repeat = await call(again.group(1), "get_connection_status") if again else {}
         check("signing in again doesn't repeat the tip, or the welcome",
               bool(again) and "tip" not in repeat and "welcome" not in repeat)
+        check("nor the first-workout offer: once per person", "first_workout" not in repeat)
+        sent_before = store.claim_notice("first_workout_hint", "someone-who-sent")
+        store.mark_sent_to_watch("someone-who-sent-2")
+        check("never for someone who has already sent a workout",
+              not hosted._first_workout_due("someone-who-sent-2", "someone-who-sent-2") and sent_before)
+
+        # first_prompt_copied: a known ask from a known page only.
+        from starlette.testclient import TestClient as _TC
+        with _TC(hosted.build_app()) as tc:
+            before = len(SENT)
+            tc.post("/connect/first-prompt", data={"id": "recovery_spin", "surface": "connect_page"})
+            tc.post("/connect/first-prompt", data={"id": "made_up", "surface": "connect_page"})
+            copied = [e for e in SENT[before:] if e["event"] == "first_prompt_copied"]
+        check("first_prompt_copied carries the ask's id, and an unknown one isn't counted",
+              [e["properties"].get("prompt_id") for e in copied] == ["recovery_spin"], str(copied)[:200])
 
         # Where people sign up from: the country only, looked up on the server.
         from garmin_mcp import geo

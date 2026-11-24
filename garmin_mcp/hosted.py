@@ -876,6 +876,66 @@ def _first_day_due(user_token: str, user: store.User, name: str, result: Any) ->
     return True
 
 
+# Nov 24: the first workout. About 61% of new people connect and never send a
+# workout to their watch. Their first answer from Daash carries one offer of a
+# first workout (once per person, never after their first send), and the
+# /connect success screens show the same first asks with copy buttons.
+FIRST_PROMPTS = (
+    ("easy_run_tomorrow", "Send me a 30 minute easy run for tomorrow."),
+    ("recovery_spin", "Build me a 20 min recovery spin"),
+    ("plan_week", "Plan my week: 3 runs, one long"),
+)
+FIRST_WORKOUT_HINT = (
+    "For you, not to repeat: they have just connected and nothing has reached their watch yet. "
+    "After answering, offer their first workout in one line, in your own words: \"Want me to put a "
+    "30-minute easy run on your watch for tomorrow?\" (or a 20-minute recovery spin, or a week of three "
+    "runs with one long, if that fits what they said). On yes, create_workout with date 'tomorrow' sends "
+    "it in one call. Not if a session is already planned for tomorrow. Ask once; if they say no or ask "
+    "for something else, drop it."
+)
+
+
+def _first_workout_due(person: str, user_token: str) -> bool:
+    """Whether this answer carries the first-workout offer: once per person, before any send."""
+    if store.has_sent_to_watch(person) or (user_token != person and store.has_sent_to_watch(user_token)):
+        return False
+    return store.claim_notice("first_workout_hint", person)
+
+
+def _first_prompts_card(surface: str) -> str:
+    """The first asks, each with a copy button, for a page shown just after connecting."""
+    buttons = "".join(
+        f'<button type=button class=first-ask data-id="{pid}" data-text="{html.escape(text)}">'
+        f'<span class=ask-text>&ldquo;{html.escape(text)}&rdquo;</span><span class=ask-copy>Copy</span></button>'
+        for pid, text in FIRST_PROMPTS)
+    return f"""
+        <style>
+          .first-asks {{ margin: 14px 0 22px; display: flex; flex-direction: column; gap: 8px; }}
+          .first-ask {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;
+            text-align: left; margin: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #D9D7CF; background: #fff;
+            color: #1C1B18; font: inherit; font-size: 15px; cursor: pointer; }}
+          .first-ask:first-of-type {{ border-color: #E0312A; background: #FDF4F2; }}
+          .ask-copy {{ flex-shrink: 0; font-size: 13px; font-weight: 600; color: #C8261F; }}
+        </style>
+        <h2 style="font-size:17px;margin:26px 0 4px">Your first ask</h2>
+        <p class=note style="margin:0">Once Daash is in your chat, paste one of these to get a workout on your watch:</p>
+        <div class=first-asks>{buttons}</div>
+        <script>
+        document.querySelectorAll(".first-ask").forEach(function (b) {{
+          b.addEventListener("click", function () {{
+            try {{ navigator.clipboard.writeText(b.getAttribute("data-text")); }} catch (e) {{}}
+            var c = b.querySelector(".ask-copy"); c.textContent = "Copied";
+            setTimeout(function () {{ c.textContent = "Copy"; }}, 1600);
+            try {{ navigator.sendBeacon("/connect/first-prompt", new URLSearchParams({{id: b.getAttribute("data-id"), surface: "{surface}"}})); }} catch (e) {{}}
+          }});
+        }});
+        </script>"""
+
+
+def _first_prompts_shown(person: str | None, surface: str) -> None:
+    analytics.capture("first_prompt_shown", person, {"surface": surface, "prompt_ids": [pid for pid, _ in FIRST_PROMPTS]})
+
+
 WELCOME = (
     "For you, not to repeat: this person has only just connected Daash. Get to "
     "know where they are before anything else. For a question about their "
@@ -1233,12 +1293,12 @@ def sent_to_watch(user_token: str, user: store.User | None, source: str, session
     common = {"source": source, "login_route": login_route(alone), "hours_since_connect": hours_since_connect(user)}
     if sports is None:
         analytics.capture("workout_sent_to_watch", person, drop_empty({
-            **common, "sessions": sessions, "first_ever": first}))
+            **common, "sessions": sessions, "first_ever": first, "is_first": bool(first)}))
     else:
         for i, sport in enumerate(sports):
             analytics.capture("workout_sent_to_watch", person, drop_empty({
                 **common, "sessions": 1, "tool": tool, "sport": sport_group(sport), "client": client_slug(client),
-                "first_ever": first if i == 0 else False}))
+                "first_ever": first if i == 0 else False, "is_first": bool(first) and i == 0}))
     count_usage(person, watch_sends=sessions)
     return bool(first)
 
@@ -1425,7 +1485,14 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
                 user.email_hash or user_token,
                 {"tool": name, "account": user.email_masked},
             )
-            return {"tip": PERMISSION_TIP, "welcome": WELCOME, **result}
+            first = {}
+            if _first_workout_due(person, user_token):
+                first = {"first_workout": {"note": FIRST_WORKOUT_HINT, "suggestions": [t for _, t in FIRST_PROMPTS]}}
+                _first_prompts_shown(person, "chat")
+                analytics.capture("offer_made", person, drop_empty({
+                    "stage": "first_call", "offer_kind": "first_workout", "tool": name,
+                    "login_route": login_route(alone), "hours_since_connect": hours_since_connect(user)}))
+            return {"tip": PERMISSION_TIP, "welcome": WELCOME, **first, **result}
         if _first_day_due(user_token, user, name, result):
             analytics.capture("offer_made", person, drop_empty({
                 "stage": "first_day", "offer_kind": "tomorrow", "tool": name,
@@ -2841,6 +2908,24 @@ async def connect_tap(request: Request) -> Response:
     return Response(status_code=204)
 
 
+FIRST_PROMPT_SURFACES = ("connect_page", "official_page")
+
+
+@mcp.custom_route("/connect/first-prompt", methods=["POST"])
+async def connect_first_prompt(request: Request) -> Response:
+    """first_prompt_copied (Nov 24): which first ask was copied on a page shown
+    after connecting. The ask's id and the page only; a few a minute per address."""
+    form = await request.form()
+    pid, surface = str(form.get("id", "")), str(form.get("surface", ""))
+    now = time.time()
+    recent = [t for t in _TAPS_BY_ADDRESS.get(_client_address(request), []) if t > now - 600]
+    if pid in dict(FIRST_PROMPTS) and surface in FIRST_PROMPT_SURFACES and len(recent) < 30:
+        recent.append(now)
+        _TAPS_BY_ADDRESS[_client_address(request)] = recent
+        analytics.capture("first_prompt_copied", None, _with_source(request, {"prompt_id": pid, "surface": surface}))
+    return Response(status_code=204)
+
+
 @mcp.custom_route("/connect", methods=["GET"])
 async def connect_form(request: Request) -> Response:
     # Set when Claude sent them here from /authorize; it ties this sign-in back
@@ -3630,6 +3715,7 @@ def _finish(
         # Signed in, but not on Claude's behalf, so there is nothing to hand
         # back. The old page here showed a /u/<token>/ link, which this mode
         # does not serve: a dead end that looked like success.
+        _first_prompts_shown(fingerprint or user_token, "connect_page")
         return page(
             "Signed in to Garmin",
             f"""
@@ -3640,12 +3726,14 @@ def _finish(
             <p class=note style="margin-top:16px">Claude will send you back here.
             Sign in once more when it does; that is what ties the connector to
             your account. Nothing from this visit needs saving.</p>
+            {_first_prompts_card("connect_page")}
             <p class=note><a href="/disconnect?t={user_token}">Disconnect and delete
             my stored session</a></p>
             """,
         )
 
     url = f"{base_url(request)}/u/{user_token}/mcp"
+    _first_prompts_shown(fingerprint or user_token, "connect_page")
     return page(
         "Connected",
         f"""
@@ -3658,6 +3746,7 @@ def _finish(
         lose it, sign in again and you'll get a new one. Signing in again also
         stops the previous link working, so it is how you take back a link you
         have lost.</p>
+        {_first_prompts_card("connect_page")}
         <p class=note><a href="/disconnect?t={user_token}">Disconnect and delete
         my stored session</a></p>
         """,
@@ -4545,8 +4634,9 @@ async def official_callback(request: Request) -> Response:
         log.warning("official sign-in failed: %s %s", type(exc).__name__, exc if isinstance(exc, KeyError) else "")
         return page("Not connected", "<div class=err>Garmin couldn't be reached to finish connecting. "
                     "Ask Claude for a new link and try again.</div>")
+    _first_prompts_shown(None, "official_page")
     return page("Connected", "<h1>Connected to Garmin</h1><p>Daash is linked to Garmin's official API. "
-                "You can close this page and go back to your chat.</p>")
+                "You can close this page and go back to your chat.</p>" + _first_prompts_card("official_page"))
 
 
 @mcp.custom_route("/official/push/{key}", methods=["POST"])
