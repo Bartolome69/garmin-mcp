@@ -62,6 +62,9 @@ jobs:
               counts = (n("users"), n("official_links"), n("oauth_tokens"))
               rows = db.execute("SELECT token_blob FROM users ORDER BY created_at DESC LIMIT 50").fetchall()
               opened = sum(opens(b) for (b,) in rows)
+              every = db.execute("SELECT token_blob FROM users").fetchall()
+              print(f"{label}: the key opens {sum(opens(b) for (b,) in every)} of all {len(every)} stored Garmin "
+                    "sessions (any it can't are people who'd have to connect again)")
               links = db.execute("SELECT tokens_enc FROM official_links").fetchall()
               links_open = sum(opens(b) for (b,) in links)
               recent = db.execute("SELECT COUNT(*), SUM(created_at > strftime('%s','now') - 172800) FROM official_links "
