@@ -1,0 +1,102 @@
+name: CPU check
+
+# Read-only (Nov 25): does the shared CPU get throttled at the busy hours?
+# Reads Fly's own metrics for the app from Fly's Prometheus and prints, hour
+# by hour in London time over the last 7 days: CPU used, time throttled
+# (shared CPUs run on a baseline plus a burst balance; when the balance runs
+# out the machine is throttled to the baseline), steal (time the host gave to
+# other machines), and the burst balance left. Numbers only, nothing about
+# anyone. Changes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many days back"
+        default: "7"
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Read Fly's CPU metrics
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DAYS: ${{ inputs.days }}
+        run: |
+          org="$(flyctl status --app "$FLY_APP" --json | jq -r '.Organization.Slug // .organization.slug // empty')"
+          echo "org: ${org:-personal}"
+          ORG="${org:-personal}" python3 - <<'PY'
+          import json, os, time, urllib.parse, urllib.request
+          from collections import defaultdict
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          app, org = os.environ["FLY_APP"], os.environ["ORG"]
+          token = os.environ["FLY_API_TOKEN"].strip()
+          auth = token if token.startswith("FlyV1 ") else f"Bearer {token}"
+          days = int(os.environ.get("DAYS") or 7)
+          end = int(time.time()); start = end - days * 86400
+          base = f"https://api.fly.io/prometheus/{org}/api/v1/query_range"
+
+          def series(q):
+              url = base + "?" + urllib.parse.urlencode({"query": q, "start": start, "end": end, "step": 300})
+              req = urllib.request.Request(url, headers={"Authorization": auth})
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      data = json.load(r)
+              except urllib.error.HTTPError as e:
+                  print(f"query refused ({e.code}): {q}")
+                  return {}
+              out = {}
+              for s in data.get("data", {}).get("result", []):
+                  for t, v in s["values"]:
+                      out[int(t)] = out.get(int(t), 0.0) + float(v)
+              return out
+
+          a = f'app="{app}"'
+          used = series(f'sum(rate(fly_instance_cpu{{{a},mode!="idle"}}[5m]))')
+          steal = series(f'sum(rate(fly_instance_cpu{{{a},mode="steal"}}[5m]))')
+          throttle = series(f'sum(rate(fly_instance_cpu_throttle{{{a}}}[5m]))')
+          balance = series(f'avg(fly_instance_cpu_balance{{{a}}})')
+          baseline = series(f'avg(fly_instance_cpu_baseline{{{a}}})')
+          if not used:
+              print("No CPU series came back: the token may not be allowed to read metrics.")
+              raise SystemExit(1)
+
+          london = ZoneInfo("Europe/London")
+          by_hour = defaultdict(lambda: defaultdict(list))
+          for t, v in used.items():
+              h = datetime.fromtimestamp(t, london).hour
+              by_hour[h]["used"].append(v)
+              by_hour[h]["steal"].append(steal.get(t, 0.0))
+              by_hour[h]["throttle"].append(throttle.get(t, 0.0))
+              if t in balance:
+                  by_hour[h]["balance"].append(balance[t])
+
+          def pct(xs, q):
+              xs = sorted(xs)
+              return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else 0.0
+
+          print(f"Last {days} days, 5-minute samples, London time. CPU in cores (1.0 = one whole core).")
+          if baseline:
+              print(f"Baseline (what a shared CPU may use without spending balance): {max(baseline.values()):.3f} cores")
+          print(f"{'hour':>4} {'used p50':>9} {'used max':>9} {'throttled max':>14} {'steal max':>10} {'balance min':>12}")
+          for h in range(24):
+              d = by_hour.get(h)
+              if not d:
+                  continue
+              bal = f"{min(d['balance']):.0f}" if d["balance"] else "-"
+              print(f"{h:>4} {pct(d['used'], .5):>9.3f} {max(d['used']):>9.3f} {max(d['throttle']):>14.3f} "
+                    f"{max(d['steal']):>10.3f} {bal:>12}")
+          throttled = sum(1 for v in throttle.values() if v > 0.001)
+          print(f"\n5-minute periods with any throttling: {throttled} of {len(used)}")
+          peak = by_hour.get(7)
+          if peak:
+              print(f"07:00-08:00 London: CPU max {max(peak['used']):.3f} cores, throttled max {max(peak['throttle']):.3f}, "
+                    f"steal max {max(peak['steal']):.3f}")
+          PY
