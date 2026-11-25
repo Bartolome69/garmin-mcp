@@ -94,6 +94,11 @@ check("sent as server_heartbeat from daash-server, with no person profile",
 nxt = hosted.heartbeat_once()
 check("the next minute starts from zero", nxt["tool_calls_1m"] == 0 and nxt["p95_tool_ms_1m"] is None, str(nxt))
 
+print("\nbeating on the minute")
+check("from 12:00:30 the next beat is at 12:01:02", hosted.next_beat_in(1_800_000_030.0) == 32.0,
+      str(hosted.next_beat_in(1_800_000_030.0)))
+check("from 12:00:59 it's 12:01:02, so no clock minute is skipped", hosted.next_beat_in(1_800_000_059.0) == 3.0)
+
 print("\nCPU and throttling")
 hosted._CPU_LAST[0] = None
 first_read = hosted.cpu_minute("cpu  100 0 100 700 0 0 0 100 0 0")

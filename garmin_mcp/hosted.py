@@ -5693,9 +5693,17 @@ def heartbeat_once() -> dict[str, Any]:
     return props
 
 
+def next_beat_in(now: float | None = None) -> float:
+    """Seconds to a couple of seconds past the next minute. Beating on the
+    minute, not every 60 s from whenever, means each clock minute gets exactly
+    one beat, so uptime can be counted as minutes that had one."""
+    now = time.time() if now is None else now
+    return HEARTBEAT_EVERY - (now % HEARTBEAT_EVERY) + 2
+
+
 def _heartbeat_forever() -> None:
     while True:
-        time.sleep(HEARTBEAT_EVERY)
+        time.sleep(next_beat_in())
         try:
             heartbeat_once()
         except Exception:  # noqa: BLE001 - a missed beat shows as a gap, never a crash

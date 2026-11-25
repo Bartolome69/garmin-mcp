@@ -191,7 +191,7 @@ def heartbeat_once() -> dict[str, Any]:
 
 
 def _heartbeat_forever() -> None:
-    while not _stop.wait(HEARTBEAT_EVERY):
+    while not _stop.wait(HEARTBEAT_EVERY - (time.time() % HEARTBEAT_EVERY) + 4):
         try:
             heartbeat_once()
         except Exception:  # noqa: BLE001
