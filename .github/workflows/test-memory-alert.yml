@@ -1,0 +1,70 @@
+name: Send test memory alert
+
+# Sends the "Daash memory is high" email once, now, marked TEST, so Bart can
+# see it arrives (Nov 25). Runs on the hosted machine with the code that's
+# deployed there: the same email text (hosted.memory_alert) and the same
+# sender (support_mail.send_alert, to SUPPORT_FORWARD_TO) the watchdog uses
+# when the server passes MEMORY_WARN_MB. The memory figures are the server's
+# real ones at the time. Changes nothing on the server; prints no address.
+
+on:
+  workflow_dispatch:
+
+env:
+  FLY_APP: garmin-mcp-1b4387
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Send it from the server
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          cat > alert.py <<'PY'
+          import os, pwd, sys, time
+
+          # As the server's own user: sending counts the email in the database,
+          # and a file SQLite makes beside it owned by root would stop the
+          # server writing to it.
+          if os.geteuid() == 0:
+              app = pwd.getpwnam("app")
+              os.setgid(app.pw_gid)
+              os.setuid(app.pw_uid)
+          sys.path.insert(0, "/app")
+          from garmin_mcp import hosted, support_mail
+
+          def server_rss_mb():
+              """The server's memory, not this script's: the python running garmin_mcp.hosted."""
+              for pid in filter(str.isdigit, os.listdir("/proc")):
+                  try:
+                      cmd = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ")
+                      if b"garmin_mcp.hosted" not in cmd or b"litestream" in cmd or int(pid) == os.getpid():
+                          continue
+                      for line in open(f"/proc/{pid}/status"):
+                          if line.startswith("VmRSS:"):
+                              return round(int(line.split()[1]) / 1024)
+                  except OSError:
+                      continue
+              return None
+
+          figures = hosted.memory_figures()
+          figures["rss_mb"] = server_rss_mb()
+          subject, text = hosted.memory_alert(time.time(), figures, "an unknown number of")
+          subject = "TEST: " + subject
+          text = ("This is a test, sent by hand from the \"Send test memory alert\" workflow. Nothing is "
+                  f"wrong. The real email looks like this and comes only when the server passes "
+                  f"{hosted.MEMORY_WARN_MB} MB; the figures below are the real ones right now.\n\n" + text)
+          sent = support_mail.send_alert(subject, text)
+          print(f"Server memory {figures['rss_mb']} MB, {figures.get('machine_available_mb')} MB of "
+                f"{figures.get('machine_total_mb')} MB free. Email {'sent' if sent else 'NOT sent'}.")
+          sys.exit(0 if sent else 1)
+          PY
+          remote="/tmp/memory-alert-$GITHUB_RUN_ID.py"
+          flyctl ssh sftp shell --app "$FLY_APP" <<< "put alert.py $remote" >/dev/null
+          status=0
+          flyctl ssh console --app "$FLY_APP" -C "python3 $remote" || status=$?
+          flyctl ssh console --app "$FLY_APP" -C "rm -f $remote" || true
+          exit $status
