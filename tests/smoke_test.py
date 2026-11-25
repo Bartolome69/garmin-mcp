@@ -2415,6 +2415,23 @@ async def main() -> int:
             check("asking for everything looks back ten years",
                   whole["period"]["from"] <= str(_today.replace(year=_today.year - 9)), str(whole.get("period")))
 
+            # Nov 25: what the person wrote or rated after a session reaches Claude.
+            from garmin_mcp import server as _srv
+            rated = _srv._summarise_activity({"activityId": 1, "activityType": {"typeKey": "running"},
+                                              "distance": 10000, "duration": 3000,
+                                              "description": "  Legs heavy after 6 km, windy  ",
+                                              "directWorkoutFeel": 25, "directWorkoutRpe": 70})
+            check("a run carries its notes, how it felt and the effort out of 10",
+                  rated.get("notes") == "Legs heavy after 6 km, windy" and rated.get("felt") == "weak"
+                  and rated.get("perceived_effort_1_10") == 7, str(rated))
+            ride = _srv._summarise_activity({"activityType": {"typeKey": "road_biking"}, "distance": 30000,
+                                             "duration": 3600, "directWorkoutFeel": 100})
+            check("a ride carries how it felt too", ride.get("felt") == "very strong", str(ride))
+            plain = _srv._summarise_activity({"activityType": {"typeKey": "running"}, "distance": 5000,
+                                              "duration": 1500, "description": " ", "directWorkoutRpe": 0})
+            check("no notes or rating adds nothing",
+                  not {"notes", "felt", "perceived_effort_1_10"} & set(plain), str(plain))
+
             print("\nprofile")
             prof = payload(await sess.call_tool("get_profile", {}))
             print("   ", json.dumps(prof, indent=2)[:400])

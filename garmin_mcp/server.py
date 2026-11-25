@@ -1912,7 +1912,32 @@ def _inline_hr_zones(activity: dict[str, Any]) -> list[dict[str, Any]] | None:
     return hr_zones(raw)
 
 
+# Garmin's after-workout self-evaluation: how it felt, on its own five steps,
+# and perceived effort, stored as 10-100 for RPE 1-10.
+FEEL_LABELS = {0: "very weak", 25: "weak", 50: "normal", 75: "strong", 100: "very strong"}
+
+
+def _self_report(activity: dict[str, Any]) -> dict[str, Any]:
+    """What the person wrote or rated about the session: their notes, how it
+    felt and how hard it was (Nov 25: asked for, so Claude can read them)."""
+    notes = activity.get("description")
+    feel = activity.get("directWorkoutFeel")
+    rpe = activity.get("directWorkoutRpe")
+    return drop_empty({
+        "notes": notes.strip()[:2000] if isinstance(notes, str) and notes.strip() else None,
+        "felt": FEEL_LABELS.get(min(FEEL_LABELS, key=lambda k: abs(k - feel)))
+        if isinstance(feel, (int, float)) and not isinstance(feel, bool) else None,
+        "perceived_effort_1_10": int(round(rpe / 10)) if isinstance(rpe, (int, float))
+        and not isinstance(rpe, bool) and 10 <= rpe <= 100 else None,
+    })
+
+
 def _summarise_activity(activity: dict[str, Any]) -> dict[str, Any]:
+    """The activity's figures, with what the person noted or rated about it."""
+    return {**_summarise_figures(activity), **_self_report(activity)}
+
+
+def _summarise_figures(activity: dict[str, Any]) -> dict[str, Any]:
     distance = activity.get("distance")
     secs = first_present(activity, "duration", "elapsedDuration", "movingDuration")
     if cycling.is_ride((activity.get("activityType") or {}).get("typeKey")):
