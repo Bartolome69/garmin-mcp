@@ -46,7 +46,8 @@ address (`GARMIN_MCP_LOGIN_PROXY`) in the password manager saves a hunt.
 ## Setting up off-site backup (Litestream)
 
 Litestream is in the image and switched off until it has somewhere to write.
-To switch it on, once:
+The quickest way on is a Tigris bucket on Fly: `fly storage create -a garmin-mcp-1b4387 -n daash-backup`,
+and nothing else ([restore.md](restore.md) step 0). Or, with a bucket elsewhere, once:
 
 1. Create a private bucket on Cloudflare R2 (or Backblaze B2, or AWS S3), for
    example `daash-backup`.

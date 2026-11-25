@@ -29,7 +29,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           cat > drill.py <<'PY'
-          import os, pwd, shutil, sqlite3, subprocess
+          import os, pwd, shutil, sqlite3, subprocess, time
           from cryptography.fernet import Fernet, InvalidToken
 
           # As the server's own user: a file SQLite makes beside the live
@@ -44,6 +44,9 @@ jobs:
           key = Fernet(os.environ["GARMIN_MCP_SECRET"].strip().encode())
           run = os.environ.get("DRILL_RUN", "x")
           made = []
+
+          def mb(path):
+              return round(os.path.getsize(path) / 1e6, 1)
 
           def opens(blob):
               try:
@@ -74,19 +77,32 @@ jobs:
           try:
               copy = f"/tmp/drill-copy-{run}.db"
               made.append(copy)
+              began = time.monotonic()
               src, dst = sqlite3.connect(live), sqlite3.connect(copy)
               src.backup(dst)
               src.close(); dst.close()
+              print(f"Copy of the live database: {mb(copy)} MB, copied in {time.monotonic() - began:.1f} s")
               good, live_counts = look(copy, "Copy of the live database")
               failed |= not good
 
-              if os.environ.get("LITESTREAM_BUCKET") and shutil.which("litestream"):
+              env = dict(os.environ)
+              # A Tigris bucket from `fly storage create` names itself differently
+              # (scripts/start.sh does the same).
+              if not env.get("LITESTREAM_BUCKET") and env.get("BUCKET_NAME") and env.get("AWS_ENDPOINT_URL_S3"):
+                  env.update(LITESTREAM_BUCKET=env["BUCKET_NAME"], LITESTREAM_ENDPOINT=env["AWS_ENDPOINT_URL_S3"],
+                             LITESTREAM_ACCESS_KEY_ID=env.get("AWS_ACCESS_KEY_ID", ""),
+                             LITESTREAM_SECRET_ACCESS_KEY=env.get("AWS_SECRET_ACCESS_KEY", ""))
+              if env.get("LITESTREAM_BUCKET") and shutil.which("litestream"):
                   restored = f"/tmp/drill-litestream-{run}.db"
                   made.append(restored)
-                  env = {**os.environ, "LITESTREAM_REGION": os.environ.get("LITESTREAM_REGION") or "auto",
-                         "LITESTREAM_ENDPOINT": os.environ.get("LITESTREAM_ENDPOINT", ""), "GARMIN_MCP_DB": live}
+                  env.update(LITESTREAM_REGION=env.get("LITESTREAM_REGION") or "auto",
+                             LITESTREAM_ENDPOINT=env.get("LITESTREAM_ENDPOINT", ""), GARMIN_MCP_DB=live)
+                  began = time.monotonic()
                   done = subprocess.run(["litestream", "restore", "-config", "/app/litestream.yml", "-o", restored, live],
                                         env=env, capture_output=True, text=True, timeout=600)
+                  if done.returncode == 0:
+                      print(f"Restored from the off-site copy to a scratch path: {mb(restored)} MB "
+                            f"in {time.monotonic() - began:.1f} s")
                   if done.returncode != 0:
                       print("Off-site restore FAILED:", (done.stderr or done.stdout).strip().splitlines()[-1:])
                       failed = True

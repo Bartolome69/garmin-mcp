@@ -52,6 +52,15 @@ check("first it restores, but only onto an empty volume and only from a replica 
 check("then it replicates, with the server as its child",
       len(calls) == 2 and calls[1] == "litestream replicate -config /cfg.yml -exec python -m garmin_mcp.hosted", str(calls))
 
+print("\na Tigris bucket from `fly storage create`")
+calls = run({"BUCKET_NAME": "daash-backup", "AWS_ENDPOINT_URL_S3": "https://fly.storage.tigris.dev",
+             "AWS_ACCESS_KEY_ID": "id", "AWS_SECRET_ACCESS_KEY": "secret", "GARMIN_MCP_DB": "/data/db.sqlite3"})
+check("its secrets switch Litestream on with no LITESTREAM_* set",
+      len(calls) == 2 and calls[1].startswith("litestream replicate"), str(calls))
+calls = run({"BUCKET_NAME": "something-else"})
+check("a BUCKET_NAME alone, with no storage endpoint, doesn't",
+      calls == ["python -m garmin_mcp.hosted"], str(calls))
+
 print("\nthe database path")
 calls = run({"LITESTREAM_BUCKET": "daash-backup"})
 check("defaults to the volume's database when none is set",

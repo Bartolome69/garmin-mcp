@@ -13,6 +13,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 export GARMIN_MCP_DB="${GARMIN_MCP_DB:-/data/garmin-mcp.sqlite3}"
 CONFIG="${LITESTREAM_CONFIG:-/app/litestream.yml}"
+
+# A Tigris bucket made with `fly storage create -a <app>` sets its own secrets
+# (BUCKET_NAME, AWS_ENDPOINT_URL_S3, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY).
+# Use them when the LITESTREAM_* ones aren't set, so making the bucket is all
+# it takes.
+if [ -z "${LITESTREAM_BUCKET:-}" ] && [ -n "${BUCKET_NAME:-}" ] && [ -n "${AWS_ENDPOINT_URL_S3:-}" ]; then
+  export LITESTREAM_BUCKET="$BUCKET_NAME"
+  export LITESTREAM_ENDPOINT="$AWS_ENDPOINT_URL_S3"
+  export LITESTREAM_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
+  export LITESTREAM_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
+  export LITESTREAM_REGION="${LITESTREAM_REGION:-auto}"
+fi
 SERVER="python -m garmin_mcp.hosted"
 
 if [ -n "${LITESTREAM_BUCKET:-}" ]; then
