@@ -178,8 +178,14 @@ def heartbeat_once() -> dict[str, Any]:
     with _counts_lock:
         done, failed = _counts["done"], _counts["failed"]
         _counts["done"] = _counts["failed"] = 0
+    from . import hosted
+    rss = None
+    try:
+        rss = hosted.memory_figures().get("rss_mb")
+    except Exception:  # noqa: BLE001
+        pass
     props = {"jobs_done_1m": done, "jobs_failed_1m": failed, "jobs_queued": jobs.pending(),
-             "$process_person_profile": False}
+             "rss_mb": rss, "version": hosted.version(), "$process_person_profile": False}
     analytics.capture("worker_heartbeat", "daash-server", props)
     return props
 

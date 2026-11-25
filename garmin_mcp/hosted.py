@@ -41,7 +41,7 @@ from starlette.requests import Request
 from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
-from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, tracing, weekly
+from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, telemetry, tracing, weekly
 from . import app as app_routes
 from . import server as server_mod
 from .formatting import drop_empty
@@ -1382,6 +1382,12 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
                 if error else None)
         seconds = hooks.seconds()
         auto = _card_refresh()
+        # The minute's figures for server_heartbeat (telemetry.py).
+        telemetry.count("tool_calls")
+        if error:
+            telemetry.count("tool_errors")
+        if seconds is not None:
+            telemetry.observe("tool_ms", seconds * 1000)
         analytics.capture("tool_called", person, drop_empty({
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
             "card_refresh": auto or None,
@@ -5573,9 +5579,103 @@ def _restart_frozen(misses: int, started: float) -> None:
     with contextlib.suppress(Exception):
         store.set_setting(WATCHDOG_NOTE, json.dumps({"at": at, "misses": misses, "figures": figures}))
     with contextlib.suppress(Exception):
+        store.set_setting(LAST_EXIT, "watchdog")
+    with contextlib.suppress(Exception):
         if support_mail.send_alert(*frozen_alert(at, misses, figures)):
             store.set_setting(WATCHDOG_NOTE, "")
     os._exit(WATCHDOG_EXIT_CODE)
+
+
+# -- heartbeat and server_started (Nov 25) ----------------------------------
+# Every minute, from its own thread, the web process sends server_heartbeat to
+# PostHog: memory, sessions, the Garmin pool, the cache and the minute's tool
+# calls. A minute with no heartbeat is a minute the server was down, which is
+# how the System Health dashboard counts uptime. server_started says why each
+# start happened: a deploy (the version changed), a watchdog restart, a
+# restart after a clean stop, or a crash (the last process never said it
+# stopped: killed for memory, say).
+HEARTBEAT_EVERY = 60
+PROCESS_STARTED = time.time()
+LAST_EXIT = "last_exit"
+LAST_VERSION = "last_version"
+
+
+def version() -> str:
+    """The deployed commit: GARMIN_MCP_VERSION, set by the deploy workflow."""
+    return (os.environ.get("GARMIN_MCP_VERSION") or os.environ.get("FLY_IMAGE_REF") or "unknown").strip()[:64]
+
+
+def start_reason(last_exit: str | None, last_version: str | None, now_version: str) -> str:
+    if last_exit == "watchdog":
+        return "watchdog restart"
+    if last_version and now_version != "unknown" and last_version != now_version:
+        return "deploy"
+    if last_exit == "clean":
+        return "restart"
+    if last_exit is None and last_version is None:
+        return "first start"
+    return "crash"
+
+
+def note_start() -> dict[str, Any]:
+    """Work out why this start happened, record it, and send server_started."""
+    now_version = version()
+    last_exit = last_version = None
+    with contextlib.suppress(Exception):
+        last_exit = store.get_setting(LAST_EXIT) or None
+        last_version = store.get_setting(LAST_VERSION) or None
+    reason = start_reason(last_exit, last_version, now_version)
+    with contextlib.suppress(Exception):
+        store.set_setting(LAST_EXIT, "running")
+        store.set_setting(LAST_VERSION, now_version)
+    props = {"version": now_version, "reason": reason, "previous_version": last_version,
+             "$process_person_profile": False}
+    with contextlib.suppress(Exception):
+        analytics.capture("server_started", "daash-server", props)
+    log.info("Server started (%s), version %s", reason, now_version)
+    return props
+
+
+def note_clean_exit() -> None:
+    with contextlib.suppress(Exception):
+        store.set_setting(LAST_EXIT, "clean")
+
+
+def heartbeat_once() -> dict[str, Any]:
+    """One server_heartbeat: the last minute's figures (telemetry.take starts the next)."""
+    from .gate import gate
+    figures: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        figures = memory_figures()
+    minute = telemetry.take()
+    props = {
+        "rss_mb": figures.get("rss_mb"),
+        "active_sessions": len(_SESSIONS),
+        "pool_queue_depth": gate.queue_depth(),
+        "pool_busy_workers": gate.busy_workers(),
+        "cache_hits_1m": minute.get("cache_hits", 0),
+        "cache_misses_1m": minute.get("cache_misses", 0),
+        "garmin_calls_1m": minute.get("garmin_calls", 0),
+        "garmin_timeouts_1m": minute.get("garmin_timeouts", 0),
+        "garmin_429s_1m": minute.get("garmin_429s", 0),
+        "tool_calls_1m": minute.get("tool_calls", 0),
+        "tool_errors_1m": minute.get("tool_errors", 0),
+        "p95_tool_ms_1m": round(minute["p95_tool_ms"]) if minute.get("p95_tool_ms") is not None else None,
+        "version": version(),
+        "uptime_s": round(time.time() - PROCESS_STARTED),
+        "$process_person_profile": False,
+    }
+    analytics.capture("server_heartbeat", "daash-server", props)
+    return props
+
+
+def _heartbeat_forever() -> None:
+    while True:
+        time.sleep(HEARTBEAT_EVERY)
+        try:
+            heartbeat_once()
+        except Exception:  # noqa: BLE001 - a missed beat shows as a gap, never a crash
+            log.exception("heartbeat failed")
 
 
 def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable[[float], None] = time.sleep,
@@ -5620,6 +5720,9 @@ def main() -> None:
         handler.addFilter(RedactUserTokens())
     refuse_wrong_key()
 
+    note_start()
+    if analytics.enabled():
+        threading.Thread(target=_heartbeat_forever, name="heartbeat", daemon=True).start()
     if os.environ.get("GARMIN_MCP_WATCHDOG", "on") != "off":
         threading.Thread(target=_watchdog_forever, name="watchdog", daemon=True).start()
     if separate_worker():
@@ -5640,6 +5743,9 @@ def main() -> None:
         # log that records paths without logging everyone's key.
         access_log=False,
     )
+    # uvicorn returns after a graceful stop (a deploy, fly machine restart);
+    # a crash or the watchdog never gets here.
+    note_clean_exit()
 
 
 def separate_worker() -> bool:
