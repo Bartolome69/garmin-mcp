@@ -426,6 +426,15 @@ _PENDING_TTL = 600
 # One live session per person, reused across their requests so the token is not
 # re-read on every tool call.
 _SESSIONS: dict[str, GarminSession] = {}
+# Nov 25: a session holds a Garmin client and up to MEMO_LIMIT remembered
+# answers (a plan's workouts, calendar months), and none was ever let go: the
+# server grew by 1.6 GB in 15 hours and froze when memory ran out. A session
+# unused for this long is dropped; the next call makes a new one from the
+# stored token, which is a database read.
+SESSION_IDLE_S = 30 * 60
+SESSION_SWEEP_EVERY_S = 60
+_SESSION_USED: dict[str, float] = {}
+_SESSIONS_SWEPT: list[float] = [0.0]
 
 # When each person was last marked as seen. A conversation makes a burst of tool
 # calls; writing last_seen_at once an hour per person records the same fact
@@ -1565,7 +1574,28 @@ def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -
     })}
 
 
+def sweep_sessions(now: float | None = None) -> int:
+    """Drop the sessions nobody has used for SESSION_IDLE_S. Returns how many.
+
+    A call still running keeps its own reference, so dropping one here never
+    cuts it off; it only stops the session outliving its person's visit."""
+    now = time.monotonic() if now is None else now
+    _SESSIONS_SWEPT[0] = now
+    idle = [t for t, used in list(_SESSION_USED.items()) if now - used > SESSION_IDLE_S]
+    for token in idle:
+        _SESSION_USED.pop(token, None)
+        _SESSIONS.pop(token, None)
+    # Sessions made before this was tracked, or by a path that skipped it, go too.
+    for token in [t for t in list(_SESSIONS) if t not in _SESSION_USED]:
+        _SESSIONS.pop(token, None)
+    return len(idle)
+
+
 def session_for(user_token: str) -> GarminSession:
+    now = time.monotonic()
+    if now - _SESSIONS_SWEPT[0] > SESSION_SWEEP_EVERY_S:
+        sweep_sessions(now)
+    _SESSION_USED[user_token] = now
     existing = _SESSIONS.get(user_token)
     if existing is not None:
         return existing
@@ -5506,6 +5536,9 @@ def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable
             with contextlib.suppress(Exception):
                 analytics.capture("server_health", "daash-server", {
                     "uptime_min": round((now - started) / 60), **memory_figures(),
+                    # What memory goes on: live sessions and what they remember.
+                    "sessions": len(_SESSIONS),
+                    "remembered": sum(len(getattr(x, "_memo", ())) for x in list(_SESSIONS.values())),
                     "$process_person_profile": False})
         sleep(WATCHDOG_EVERY)
 

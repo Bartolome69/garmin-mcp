@@ -3276,7 +3276,11 @@ async def _build_inputs(today: date) -> tuple[dict[str, Any], plan_builder.Fitne
         inputs["plan_goal"] = _race_key(goal.get("name"), str(goal["date"])[:10])
     if running and running["labels"]:
         inputs["plan"] = running
-    _BUILD_INPUTS[who] = (time.time(), inputs, fit)
+    now = time.time()
+    # Kept a few minutes for the next step; anyone's older inputs go (Nov 25).
+    for key in [k for k, v in list(_BUILD_INPUTS.items()) if now - v[0] > _BUILD_KEPT_SECONDS]:
+        _BUILD_INPUTS.pop(key, None)
+    _BUILD_INPUTS[who] = (now, inputs, fit)
     return inputs, fit
 
 

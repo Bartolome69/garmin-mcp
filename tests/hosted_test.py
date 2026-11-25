@@ -3684,6 +3684,24 @@ async def main() -> int:
             os.environ["PORT"] = old_port
         srv.server_close()
 
+    # Nov 25: sessions were never let go and the server ran out of memory.
+    print("\nidle sessions")
+    hosted._SESSIONS.clear(); hosted._SESSION_USED.clear()
+    t0 = hosted.time.monotonic()
+    a = hosted.session_for("tok-busy")
+    b = hosted.session_for("tok-idle")
+    hosted._SESSION_USED["tok-idle"] = t0 - hosted.SESSION_IDLE_S - 5
+    dropped = hosted.sweep_sessions(t0)
+    check("a session unused for half an hour is let go, one in use is kept",
+          dropped == 1 and "tok-idle" not in hosted._SESSIONS and hosted._SESSIONS.get("tok-busy") is a,
+          str(list(hosted._SESSIONS)))
+    check("the next call for that person makes a fresh session",
+          hosted.session_for("tok-idle") is not b and "tok-idle" in hosted._SESSIONS)
+    hosted._SESSIONS["tok-untracked"] = b
+    hosted.sweep_sessions(t0)
+    check("a session nobody marked as used doesn't linger either", "tok-untracked" not in hosted._SESSIONS)
+    hosted._SESSIONS.clear(); hosted._SESSION_USED.clear()
+
     print()
     if failures:
         print(f"{len(failures)} failed: {', '.join(failures)}")
