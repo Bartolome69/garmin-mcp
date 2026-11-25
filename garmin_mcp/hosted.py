@@ -1170,6 +1170,7 @@ _ERROR_CATEGORIES = (
     ("rate_limited", re.compile(r"\b429\b|rate-limit|limiting how often|too many", re.I)),
     ("needs_reconnect", re.compile(r"connect again|reconnect|sign in again|no longer accepts|has expired"
                                    r"|two-step|MFA|Not signed in|Not connected to Garmin", re.I)),
+    ("garmin_slow", re.compile(r"Garmin is slow right now|very busy right now|still waiting on Garmin", re.I)),
     ("garmin_unreachable", re.compile(r"reach Garmin|network problem|timed out|timeout", re.I)),
     ("not_available", re.compile(r"Not available on this connection|doesn't allow this|hasn't given Daash"
                                  r"|isn't set up|only on the hosted server", re.I)),
@@ -1604,6 +1605,7 @@ def session_for(user_token: str) -> GarminSession:
         on_refresh=lambda blob: store.update_blob(user_token, blob),
         reconnect_hint=RECONNECT_HINT,
         on_lapsed=lambda: _lapsed_in_use(user_token),
+        owner=user_token,
     )
     _SESSIONS[user_token] = created
     return created
@@ -1633,6 +1635,7 @@ def keep_alive_once(spacing: float = KEEP_ALIVE_SPACING) -> dict[str, int]:
         session = GarminSession(
             tokenstore=lambda t=user_token: store.load_blob(t),
             on_refresh=lambda blob, t=user_token: store.update_blob(t, blob, in_use=False),
+            owner=user_token,
         )
         try:
             session.run(lambda c: c.get_user_profile())
@@ -1669,6 +1672,7 @@ def _plan_answer(user_token: str) -> Any:
     session = GarminSession(
         tokenstore=lambda t=user_token: store.load_blob(t),
         on_refresh=lambda blob, t=user_token: store.update_blob(t, blob, in_use=False),
+        owner=user_token,
     )
     token = use_session(session)
     official_token = official.use(user_token)
@@ -2104,6 +2108,7 @@ def _as_person(user_token: str, fn: Callable[..., Any], *args: Any) -> Any:
     session = GarminSession(
         tokenstore=lambda t=user_token: store.load_blob(t),
         on_refresh=lambda blob, t=user_token: store.update_blob(t, blob, in_use=False),
+        owner=user_token,
     )
     token = use_session(session)
     official_token = official.use(user_token)

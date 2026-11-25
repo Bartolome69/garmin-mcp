@@ -107,6 +107,7 @@ jobs:
           python tests/signup_guard_test.py
           python tests/push_test.py
           python tests/plan_checks_test.py
+          python tests/gate_test.py
 
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts
       # in the Training API's shape, against a stubbed Garmin.

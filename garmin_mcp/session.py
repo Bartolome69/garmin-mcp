@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import tracing
+from .gate import GateError, gate
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +214,7 @@ class GarminSession:
         on_refresh: Callable[[str], None] | None = None,
         reconnect_hint: str | None = None,
         on_lapsed: Callable[[], None] | None = None,
+        owner: str | None = None,
     ) -> None:
         """
         tokenstore: where the Garmin session comes from. None means the local
@@ -226,6 +228,7 @@ class GarminSession:
             session Garmin has refused is fixed by connecting again in Claude.
             This replaces the local-install advice in that one case.
         on_lapsed: called when Garmin has refused the stored session for good.
+        owner: whose session this is, for the per-person limits in gate.py.
         """
         self._lock = threading.RLock()
         self._memo: dict[Any, tuple[float, Any]] = {}
@@ -237,6 +240,7 @@ class GarminSession:
         self._saved_blob: str | None = None
         self._reconnect_hint = reconnect_hint
         self._on_lapsed = on_lapsed
+        self._owner = owner
 
     def _resolve_tokenstore(self) -> tuple[str | None, bool]:
         """Return (what to hand garminconnect, whether a session already existed)."""
@@ -315,7 +319,12 @@ class GarminSession:
         a tool's several reads can be in flight at once: garminconnect keeps a
         pool of connections and its own lock around renewing its token.
         """
-        result = self._call(fn)
+        try:
+            # The pool, time limit and per-person cap (gate.py) cover the
+            # whole call, sign-in renewal included.
+            result = gate.call(self._owner, lambda: self._call(fn))
+        except GateError as exc:
+            raise GarminError(str(exc)) from None
         with self._lock:
             self._save_if_renewed()
         return result

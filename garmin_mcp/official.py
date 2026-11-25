@@ -37,6 +37,7 @@ from typing import Any, Callable
 from cryptography.fernet import InvalidToken
 
 from . import analytics, official_data, official_fit, store, tracing
+from .gate import GateError, gate
 
 log = logging.getLogger(__name__)
 
@@ -374,7 +375,9 @@ def _refused(exc: urllib.error.HTTPError, path: str) -> OfficialError:
                     "Check Daash's permissions in Garmin Connect.",
                429: "Garmin is limiting how often Daash can ask. Try again in a while."}
     said = f"Garmin answered {exc.code}{f' ({reason})' if reason else ''}."
-    return OfficialError(reasons.get(exc.code, said))
+    error = OfficialError(reasons.get(exc.code, said))
+    error.status = exc.code  # gate.py backs off on a 429
+    return error
 
 
 def _access_token(user_token: str) -> tuple[str, store.OfficialLink]:
@@ -398,7 +401,11 @@ def _access_token(user_token: str) -> tuple[str, store.OfficialLink]:
 
 def call(user_token: str, method: str, path: str, body: Any = None) -> Any:
     token, _ = _access_token(user_token)
-    return _call(token, method, path, body)
+    # Through the same pool, time limit and per-person cap as Connect (gate.py).
+    try:
+        return gate.call(user_token, lambda: _call(token, method, path, body))
+    except GateError as exc:
+        raise OfficialError(str(exc)) from None
 
 
 def disconnect(user_token: str) -> bool:

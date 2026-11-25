@@ -16,6 +16,7 @@ import hashlib
 import logging
 import os
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from datetime import date as date_cls, datetime, timedelta, timezone
@@ -47,6 +48,7 @@ from .formatting import (
     rounded,
 )
 from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, tracing, training_plan
+from . import gate as gate_mod
 from . import session as session_mod
 from .session import GarminError, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
@@ -1542,7 +1544,7 @@ def tool_errors(fn):
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
         inside, depth = hooks.enter()
-        traced = sends = None
+        traced = sends = request = None
         try:
             if inside:
                 # Called by another tool, not the chat: its answer, unreported.
@@ -1555,6 +1557,8 @@ def tool_errors(fn):
                 return {"error": str(paused)}
             traced = tracing.start(fn.__name__)
             sends = _ON_WATCH.set([])
+            # The reads this tool makes count as one of the person's requests (gate.py).
+            request = gate_mod.REQUEST.set(uuid.uuid4().hex)
             result = await answer(*args, **kwargs)
             if fn.__name__ in CREDITED and isinstance(result, dict) and "error" not in result:
                 try:
@@ -1576,6 +1580,8 @@ def tool_errors(fn):
                 tracing.finish(traced)
             if sends is not None:
                 _ON_WATCH.reset(sends)
+            if request is not None:
+                gate_mod.REQUEST.reset(request)
             hooks.leave(depth)
 
     async def answer(*args, **kwargs):
