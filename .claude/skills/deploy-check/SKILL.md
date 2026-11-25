@@ -16,8 +16,30 @@ Work through every section. Say in the report which checks were skipped and why.
 
 - Deploy only when Bart's latest message says "deploy". A "deploy" covers what
   existed when he said it, not code written afterwards.
-- Deploy: `gh api -X POST repos/bartolome69/garmin-mcp/actions/workflows/deploy-hosted.yml/dispatches -f ref=main`,
+- Deploy: `gh api -X POST repos/bartolome69/garmin-mcp/actions/workflows/deploy-hosted.yml/dispatches -f ref=main`
+  (or the GitHub MCP `actions_run_trigger`, workflow `deploy-hosted.yml`, ref `main`),
   then watch the run until Test, Check sign-in and Deploy all succeed.
+- **Now or tonight** (Nov 25). Every deploy takes the one machine offline for
+  about 20 seconds, failing the calls in flight. When Bart says "deploy"
+  between 06:30 and 22:00 UK time, ask "now or tonight?" first, unless he
+  already said which. **Now** is for fixing something already broken for
+  people. **Tonight** means 22:30 UK: about a third of the traffic of the
+  16:00 and 19:00 peaks, and Bart is still likely to be up (01:00-03:00 is
+  quieter still, but nobody would see an alert).
+  - Run section 1 before scheduling, and push what's approved to `main`.
+    Note the commit Bart approved.
+  - Schedule a one-shot into this session with `send_later` at
+    `<date>T22:30:00[Europe/London]`, with the message naming that commit.
+    Keep anything written after the approval off `main` (on the session
+    branch) until the deploy has run: the workflow deploys whatever `main` is.
+  - At 22:30: if `main` has moved past the approved commit, deploy only if the
+    newer commits were approved too; otherwise don't, and tell Bart. Run the
+    deploy, watch it, then do section 2 straight away and again about 30
+    minutes later (a second `send_later`).
+  - Email Bart (Gmail, to himself) only if something went wrong; otherwise
+    a short note in the session is enough.
+  - Big changes that need people warned (a machine or database move) also get
+    a maintenance note on the Better Stack status page. Routine deploys don't.
 - Fetch and merge `origin/main` before pushing; other sessions merge PRs into it.
   Never force push. Push to `main` and to the session's branch.
 - Keep emails, distinct ids and secrets out of this repo: it is public.
@@ -156,3 +178,4 @@ in the list above.
 | 31 Oct | CSV upload refused Italian and French files, three tries each | 1.3 parsing: real samples, other languages; 3.1 countries |
 | 31 Oct | Claude's iPhone app didn't pick up 4 approvals through Garmin's page | 2 after deploy: connections against pickups (3.4) |
 | 11 Nov | Sign-ups reopened on Garmin's page for everyone after one re-approved test account; Garmin's cap was still on, and 16 people tried overnight and none connected | Garmin's page stays closed to new sign-ups (GARMIN_OFFICIAL_SIGNUPS=paused) until Garmin confirms in writing that the cap is lifted; then a small test group first, with completed sign-ups (3.4) checked within the hour and again the next morning, before everyone |
+| 15-25 Nov | Every person's Garmin session stayed in memory until a restart; the server ran out about 20 times, froze for 15-25 minutes each (44 at worst) and about 220 people hit one. Nobody knew for a week | Watch memory after any change that keeps something per person in memory (`server_health` in PostHog: `rss_mb`, `sessions`, `remembered` should stay flat over hours). The watchdog, the 1,200 MB email and Better Stack now say so within minutes |
