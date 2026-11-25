@@ -139,7 +139,8 @@ ttl = sqlite3.connect(os.environ["GARMIN_MCP_DB"]).execute(
 check("for 15 minutes, as it ends today", ttl == 15 * 60, str(ttl))
 c.get_activities(0, 10)
 c.get_activities(0, 10)
-check("the latest-N list too", len([x for x in g.calls if x[0] == "recent"]) == 1)
+check("the latest few by count are never cached: a run just synced must show",
+      len([x for x in g.calls if x[0] == "recent"]) == 2)
 
 print("\nwhat isn't cached")
 g.fail = True

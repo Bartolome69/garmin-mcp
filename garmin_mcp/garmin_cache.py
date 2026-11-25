@@ -11,7 +11,8 @@ table when it's fresh enough, and only goes to Garmin on a miss:
   the rest until it's two days old, then for good;
 - activity lists, sleep, HRV, readiness, body battery and the day's stats, by
   date: today's for 15 minutes, yesterday's for 6 hours, anything older for 7
-  days.
+  days. The latest few activities by count (get_activities) aren't kept: that
+  is how a newly synced run is noticed.
 
 "Today" is anyone's today: a date counts as today until it has ended
 everywhere (12:00 UTC the next day), so someone in California late in their
@@ -96,7 +97,7 @@ _RANGE = {
 # Kinds a write can change: dropped for the person after any write, and the
 # activity ones after update_activity.
 AFTER_WRITE = {"calendar", "plan"}
-AFTER_ACTIVITY_EDIT = {"activity", "activities", "activities_recent"}
+AFTER_ACTIVITY_EDIT = {"activity", "activities"}
 
 _local = threading.local()
 _schema_done: dict[str, bool] = {}
@@ -184,8 +185,9 @@ def _describe(method: str, args: tuple, kwargs: dict) -> tuple[str, str, date | 
         return _ONE_DAY[method], key, _day(flat[0]), False
     if method in _RANGE and len(flat) >= 2:
         return _RANGE[method], key, _day(flat[1]), False
-    if method == "get_activities":
-        return "activities_recent", key, None, False
+    # get_activities (the latest few, by count) isn't cached: run notifications
+    # look for a newly synced run with it every 3 minutes, and "how was my
+    # run" right after a sync must see it.
     return None
 
 
