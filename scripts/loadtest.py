@@ -249,11 +249,17 @@ def report(load: Load, samples: list[dict], minutes: float) -> None:
         buckets: dict[int, list] = {}
         for r in rows:
             buckets.setdefault(int((r[0] - t0) // 300), []).append(r)
+        mem: dict[int, list[dict]] = {}
+        for smp in samples:
+            mem.setdefault(int((smp["t"] - t0) // 300), []).append(smp)
         for b, rs in sorted(buckets.items()):
             ts = sorted(x[2] for x in rs)
             errs = sum(1 for x in rs if x[3])
+            web_b = [m.get("web_rss_mb") for m in mem.get(b, []) if m.get("web_rss_mb")]
+            wrk_b = [m.get("worker_rss_mb") for m in mem.get(b, []) if m.get("worker_rss_mb")]
+            memory = (f", web {max(web_b)} MB, worker {max(wrk_b) if wrk_b else '?'} MB" if web_b else "")
             print(f"  {b * 5:>3}-{b * 5 + 5:<3} min: {len(rs):>4} calls, p95 {ts[min(len(ts) - 1, int(.95 * len(ts)))]:.1f} s, "
-                  f"{errs} errors")
+                  f"{errs} errors{memory}")
 
 
 async def main() -> int:
