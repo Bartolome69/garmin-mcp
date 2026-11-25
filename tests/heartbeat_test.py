@@ -94,6 +94,14 @@ check("sent as server_heartbeat from daash-server, with no person profile",
 nxt = hosted.heartbeat_once()
 check("the next minute starts from zero", nxt["tool_calls_1m"] == 0 and nxt["p95_tool_ms_1m"] is None, str(nxt))
 
+print("\nCPU and throttling")
+hosted._CPU_LAST[0] = None
+first_read = hosted.cpu_minute("cpu  100 0 100 700 0 0 0 100 0 0")
+check("the first reading has nothing to compare with", first_read == (None, None))
+busy, steal = hosted.cpu_minute("cpu  200 0 200 1300 0 0 0 300 0 0")
+check("then the minute's busy and steal shares, in percent", busy == 20.0 and steal == 20.0, f"{busy} {steal}")
+check("in the heartbeat", "cpu_pct_1m" in nxt and "cpu_steal_pct_1m" in nxt)
+
 print("\nthe worker's heartbeat")
 worker._counts.update(done=4, failed=1)
 wb = worker.heartbeat_once()

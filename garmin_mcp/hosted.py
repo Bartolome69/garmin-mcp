@@ -5641,6 +5641,27 @@ def note_clean_exit() -> None:
         store.set_setting(LAST_EXIT, "clean")
 
 
+_CPU_LAST: list[tuple[int, int, int] | None] = [None]
+
+
+def cpu_minute(stat: str | None = None) -> tuple[float | None, float | None]:
+    """The machine's CPU busy share and steal share since the last call, in percent.
+
+    On Fly a shared CPU that has used up its burst balance is held to its
+    baseline, and inside the machine that shows as steal time."""
+    try:
+        fields = [int(x) for x in (stat or Path("/proc/stat").read_text()).splitlines()[0].split()[1:9]]
+    except (OSError, ValueError, IndexError):
+        return None, None
+    user, nice, system, idle, iowait, irq, softirq, steal = fields
+    now = (sum(fields), user + nice + system + irq + softirq, steal)
+    last, _CPU_LAST[0] = _CPU_LAST[0], now
+    if last is None or now[0] <= last[0]:
+        return None, None
+    span = now[0] - last[0]
+    return round(100 * (now[1] - last[1]) / span, 1), round(100 * (now[2] - last[2]) / span, 2)
+
+
 def heartbeat_once() -> dict[str, Any]:
     """One server_heartbeat: the last minute's figures (telemetry.take starts the next)."""
     from .gate import gate
@@ -5648,8 +5669,11 @@ def heartbeat_once() -> dict[str, Any]:
     with contextlib.suppress(Exception):
         figures = memory_figures()
     minute = telemetry.take()
+    cpu, steal = cpu_minute()
     props = {
         "rss_mb": figures.get("rss_mb"),
+        "cpu_pct_1m": cpu,
+        "cpu_steal_pct_1m": steal,
         "active_sessions": len(_SESSIONS),
         "pool_queue_depth": gate.queue_depth(),
         "pool_busy_workers": gate.busy_workers(),
