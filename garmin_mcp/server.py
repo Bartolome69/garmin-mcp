@@ -48,6 +48,7 @@ from .formatting import (
     rounded,
 )
 from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, tracing, training_plan
+from . import garmin_cache
 from . import gate as gate_mod
 from . import session as session_mod
 from .session import GarminError, mask_email, session
@@ -1591,6 +1592,8 @@ def tool_errors(fn):
                     return await fn(*args, **kwargs)
                 finally:
                     session.forget()
+                    with contextlib.suppress(Exception):
+                        garmin_cache.after_write(session_mod.current_session().owner, fn.__name__)
             return await fn(*args, **kwargs)
         except (GarminError, DateError, WorkoutError, training_plan.PlanError, crews.CrewError, ActivityError,
                 official.OfficialError) as exc:

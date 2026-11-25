@@ -830,11 +830,20 @@ def api_checks() -> None:
             asked.append((_name, a))
             return _real(*a, **k)
         setattr(DEMO, name, counted)
+    from garmin_mcp import garmin_cache
     try:
+        garmin_cache.clear()  # a cold read: nothing kept from the loads above
         again = client.get(f"/app/api/run/{done['activityId']}", headers=auth).json()
+        cold = list(asked)
+        asked.clear()
+        client.get(f"/app/api/run/{done['activityId']}", headers=auth)
+        warm = list(asked)
+        asked[:] = cold
     finally:
         for name in reads:
             delattr(DEMO, name)
+    check("opening the same run again asks Garmin for nothing: it's all in the cache (Nov 25)",
+          not [n for n, _ in warm if n != "get_activity_gear"], str(warm))
     names = sorted(n for n, _ in asked)
     check("the run screen asks Garmin for each thing once",
           names == ["get_activity", "get_activity_details", "get_activity_splits"], str(names))
@@ -1459,6 +1468,8 @@ def build_checks() -> None:
                 server_mod.get_plan = given
                 DEMO.get_activities_by_date = lambda start, end: []
                 app_routes._BUILD_INPUTS.clear()
+                from garmin_mcp import garmin_cache
+                garmin_cache.clear()  # Garmin's answer just changed under the test
                 fresh = client.get("/app/api/build", headers=auth).json()
                 check("with no runs from Garmin, step 1 asks for the numbers", fresh.get("none") is True and not fresh.get("avg_km"), str(fresh)[:200])
                 typed = {**answers, "avg_km": 20, "longest_km": 8, "level": "new"}

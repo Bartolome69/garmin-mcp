@@ -18,7 +18,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable
 
-from . import tracing
+from . import garmin_cache, tracing
 from .gate import GateError, gate
 
 log = logging.getLogger(__name__)
@@ -351,10 +351,19 @@ class GarminSession:
                 self._on_refresh(blob)
                 self._saved_blob = blob
 
+    @property
+    def owner(self) -> str | None:
+        return self._owner
+
+    def _view(self, client: Any) -> Any:
+        """The client a call sees: its reads answered from the SQLite cache
+        first (garmin_cache.py) when this is someone's hosted session."""
+        return garmin_cache.view(client, self._owner)
+
     def _call(self, fn: Callable[[Any], Any]) -> Any:
         client = self.client()
         try:
-            return fn(client)
+            return fn(self._view(client))
         except _auth_error_types() as exc:
             if _is_mfa(exc):
                 raise GarminMFARequired(MFA_MESSAGE) from exc
@@ -363,7 +372,7 @@ class GarminSession:
                 # on the same client rather than throwing the session away.
                 log.info("Call failed (%s); retrying", type(exc).__name__)
                 try:
-                    return fn(client)
+                    return fn(self._view(client))
                 except Exception as retry_exc:  # noqa: BLE001
                     raise GarminError(
                         "Could not reach Garmin Connect. This looks like a "
@@ -377,7 +386,7 @@ class GarminSession:
                 if self._client is client:
                     self.reset()
                 client = self.client()
-            return fn(client)
+            return fn(self._view(client))
 
     def remembered(self, key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
         """run(fn), keeping the answer for ttl seconds under key.

@@ -614,9 +614,12 @@ def tokens_for(email_hash: str) -> list[str]:
 def delete_user(user_token: str) -> bool:
     """Forget someone entirely. Their URL stops working immediately."""
     with _connect() as conn:
-        return conn.execute(
+        gone = conn.execute(
             "DELETE FROM users WHERE user_token = ?", (user_token,)
         ).rowcount > 0
+    from . import garmin_cache  # what Garmin said about them goes too
+    garmin_cache.forget(user_token)
+    return gone
 
 
 def load_blob(user_token: str) -> str | None:
