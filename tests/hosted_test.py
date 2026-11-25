@@ -3638,6 +3638,24 @@ async def main() -> int:
     health = [e for e in sent if e[0] == "server_health"]
     check("server_health goes once a quarter-hour with the memory figures, from the server's own id",
           len(health) == 1 and health[0][1] == "daash-server" and "threads" in health[0][2], str(health))
+    # Nov 25: memory above MEMORY_WARN_MB emails once, not every quarter-hour.
+    from garmin_mcp import support_mail as _sm
+    real_fig, real_send = hosted.memory_figures, _sm.send_alert
+    warned_mail: list[tuple[str, str]] = []
+    _sm.send_alert = lambda subject, text: warned_mail.append((subject, text)) or True
+    try:
+        hosted.memory_figures = lambda: {"rss_mb": 1500, "machine_available_mb": 300, "machine_total_mb": 1971}
+        run_watchdog([True] * 140)  # three quarter-hour reports
+        check("memory over the line emails once in six hours, with the figures",
+              len(warned_mail) == 1 and "1500 MB" in warned_mail[0][0] and "300 MB" in warned_mail[0][1],
+              str(warned_mail))
+        warned_mail.clear()
+        hosted.memory_figures = lambda: {"rss_mb": 400, "machine_available_mb": 1500, "machine_total_mb": 1971}
+        run_watchdog([True] * 140)
+        check("normal memory sends nothing", not warned_mail, str(warned_mail))
+    finally:
+        hosted.memory_figures, _sm.send_alert = real_fig, real_send
+
     # Nov 24: Bart is emailed at every watchdog restart; one that couldn't go
     # before the exit goes from the next start, once.
     subject, text = hosted.frozen_alert(1795000000, 4, {"rss_mb": 900, "machine_available_mb": 80, "machine_total_mb": 1971})

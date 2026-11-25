@@ -5480,6 +5480,24 @@ def frozen_alert(at: float, misses: int, figures: Mapping[str, Any]) -> tuple[st
             "(run the \"Server error lines\" workflow), and server_frozen in PostHog has the figures.\n")
 
 
+# Nov 25: memory climbed for 15 hours before the server froze and nobody knew.
+# Past this, the watchdog emails, at most once per MEMORY_WARN_EVERY.
+MEMORY_WARN_MB = 1200
+MEMORY_WARN_EVERY = 6 * 3600
+
+
+def memory_alert(at: float, figures: Mapping[str, Any], sessions: int) -> tuple[str, str]:
+    """The email about memory running high: subject and text, nothing about anyone."""
+    when = datetime.fromtimestamp(at, ZoneInfo("Europe/London")).strftime("%a %d %b %H:%M")
+    return (f"Daash memory is high: {figures.get('rss_mb')} MB ({when})",
+            f"At {when} (UK time) the server was using {figures.get('rss_mb')} MB, with "
+            f"{figures.get('machine_available_mb', '?')} MB of {figures.get('machine_total_mb', '?')} MB free "
+            f"and {sessions} live sessions. Normal is 200-500 MB. If it keeps climbing it will run out "
+            "and freeze; the watchdog would then restart it.\n\nThe Daash: System Health dashboard in "
+            "PostHog shows the trend. A deploy or a restart clears it for now; a steady climb means a leak "
+            "to find.\n")
+
+
 def _send_noted_restart() -> None:
     """On start: the email about a watchdog restart that couldn't go before the exit."""
     try:
@@ -5522,7 +5540,7 @@ def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable
     started = clock()
     _send_noted_restart()
     sleep(WATCHDOG_GRACE)
-    misses, reported = 0, 0.0
+    misses, reported, warned = 0, 0.0, float("-inf")
     while True:
         misses, frozen = watchdog_step(probe(), misses)
         if frozen:
@@ -5533,9 +5551,16 @@ def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable
         now = clock()
         if now - reported >= WATCHDOG_REPORT_EVERY:
             reported = now
+            figures: dict[str, Any] = {}
+            with contextlib.suppress(Exception):
+                figures = memory_figures()
+            if (figures.get("rss_mb") or 0) >= MEMORY_WARN_MB and now - warned >= MEMORY_WARN_EVERY:
+                with contextlib.suppress(Exception):
+                    if support_mail.send_alert(*memory_alert(now, figures, len(_SESSIONS))):
+                        warned = now
             with contextlib.suppress(Exception):
                 analytics.capture("server_health", "daash-server", {
-                    "uptime_min": round((now - started) / 60), **memory_figures(),
+                    "uptime_min": round((now - started) / 60), **figures,
                     # What memory goes on: live sessions and what they remember.
                     "sessions": len(_SESSIONS),
                     "remembered": sum(len(getattr(x, "_memo", ())) for x in list(_SESSIONS.values())),
