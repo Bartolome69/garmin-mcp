@@ -5743,6 +5743,8 @@ def main() -> None:
     for handler in logging.getLogger().handlers:
         handler.addFilter(RedactUserTokens())
     refuse_wrong_key()
+    from . import loadfake
+    loadfake.install_if_asked()  # load tests only; refuses in production
 
     note_start()
     if analytics.enabled():

@@ -204,6 +204,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     for handler in logging.getLogger().handlers:
         handler.addFilter(hosted.RedactUserTokens())
+    from . import loadfake
+    loadfake.install_if_asked()  # load tests only; refuses in production
     with_nice = os.environ.get("DAASH_WORKER_NICE", "10")
     try:
         os.nice(int(with_nice))  # background work gives way to people's requests
