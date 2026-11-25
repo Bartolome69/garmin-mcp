@@ -34,6 +34,7 @@ import threading
 import time
 import urllib.request
 from typing import Any
+from .bounded import BoundedDict
 
 log = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ def _scrub(value: Any, key: str = "") -> Any:
 # A website visitor's PostHog id, as posthog-js makes them: letters, digits
 # and dashes. Anything else is not linked.
 _VISITOR = re.compile(r"^[A-Za-z0-9-]{8,64}$")
-_LINKED: dict[tuple[str, str, str], float] = {}
+_LINKED: dict[tuple[str, str, str], float] = BoundedDict(20000)
 
 
 def visitor_id(value: str | None) -> str | None:
@@ -245,7 +246,7 @@ def _payload(event: str, subject: str | None, who: str, properties: dict[str, An
 # card doesn't wait on PostHog each time it's drawn (Nov 15: the card button's
 # wording, tested against "Open in Daash app"). Anything going wrong is the
 # control: the experiment never stands between someone and their card.
-_FLAGS: dict[tuple[str, str], tuple[float, str]] = {}
+_FLAGS: dict[tuple[str, str], tuple[float, str]] = BoundedDict(20000)
 FLAG_MEMORY = 3600
 FLAG_TIMEOUT = 1.5
 

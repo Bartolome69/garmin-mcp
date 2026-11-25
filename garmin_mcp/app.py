@@ -35,6 +35,7 @@ from . import plan as plan_mod
 from . import server as server_mod
 from . import share as share_mod
 from .formatting import drop_empty
+from .bounded import BoundedDict
 from .server import mcp
 
 log = logging.getLogger(__name__)
@@ -3118,8 +3119,8 @@ def builder_on() -> bool:
 # What Garmin knows is read once and kept a few minutes, so each step's answer
 # doesn't wait on Garmin again. Sends are kept while they run, by person.
 _BUILD_KEPT_SECONDS = 15 * 60
-_BUILD_INPUTS: dict[str, tuple[float, dict[str, Any], plan_builder.Fitness]] = {}
-_SENDS: dict[str, dict[str, Any]] = {}
+_BUILD_INPUTS: dict[str, tuple[float, dict[str, Any], plan_builder.Fitness]] = BoundedDict(5000)
+_SENDS: dict[str, dict[str, Any]] = BoundedDict(5000)
 LEVEL_LINES = {"new": "Most weeks, for a few months", "regular": "Most weeks, for over a year",
                "exp": "Most weeks, for years"}
 RACE_NAME_RE = re.compile(r"\brace\b|parkrun|\b5k\b|\b10k\b|half|marathon", re.IGNORECASE)

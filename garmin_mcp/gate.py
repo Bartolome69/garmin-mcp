@@ -181,7 +181,12 @@ class Gate:
                     telemetry.count("garmin_429s")
                     if attempt + 1 >= RATE_ATTEMPTS:
                         with self._cond:
-                            self._cooldown[owner] = self._clock() + self.cooldown_s
+                            now = self._clock()
+                            # Rests that have ended go as a new one starts, so
+                            # the map holds only people resting now.
+                            for who in [w for w, until in self._cooldown.items() if until <= now]:
+                                self._cooldown.pop(who, None)
+                            self._cooldown[owner] = now + self.cooldown_s
                         log.warning("Garmin rate-limited one account %d times; resting it %.0f s",
                                     RATE_ATTEMPTS, self.cooldown_s)
                         raise GarminRateLimited(_rate_message(self.cooldown_s)) from None

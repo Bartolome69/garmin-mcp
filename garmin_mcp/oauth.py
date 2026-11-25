@@ -43,6 +43,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from . import analytics, store
+from .bounded import BoundedDict
 
 # How long an issued code lives before the app collects it: seconds, in practice.
 CODE_TTL = 600
@@ -74,15 +75,15 @@ REFRESH_REUSE_GRACE = store.ROTATION_GRACE
 # Authorization requests waiting for someone to finish signing in. In memory on
 # purpose: a restart just means starting the sign-in again, and nothing here
 # outlives the attempt.
-_PENDING_AUTH: dict[str, dict[str, Any]] = {}
+_PENDING_AUTH: dict[str, dict[str, Any]] = BoundedDict(20000)
 
 # Sign-ins that succeeded and are waiting for the person to approve the client
 # on the consent page. Separate from _PENDING_AUTH because the Garmin session
 # already exists by this point; only the handover to the client is outstanding.
-_AWAITING_CONSENT: dict[str, dict[str, Any]] = {}
+_AWAITING_CONSENT: dict[str, dict[str, Any]] = BoundedDict(20000)
 
 # flow -> (app name, when): outlives the request itself; see FLOW_APP_TTL.
-_FLOW_APPS: dict[str, tuple[str, float]] = {}
+_FLOW_APPS: dict[str, tuple[str, float]] = BoundedDict(20000)
 
 # Where a code may be sent without comment. Anything else still works, because
 # refusing an unrecognised client would break ChatGPT and whatever comes next,
@@ -204,7 +205,7 @@ def expired(flow: str) -> bool:
     return bool(flow) and flow not in _PENDING_AUTH and flow in _FLOW_APPS
 
 
-_APP_FOR_CLIENT: dict[str, str] = {}
+_APP_FOR_CLIENT: dict[str, str] = BoundedDict(20000)
 
 
 def app_for_client(client_id: str) -> str:
@@ -318,7 +319,7 @@ def _own_resource() -> str | None:
 # When each account's app last collected its sign-in, by user token, since
 # this process started: the hosted server emails someone whose app approved on
 # Garmin's page but never collected it (Oct 31, Claude's iPhone app, 4 times).
-COLLECTED: dict[str, float] = {}
+COLLECTED: dict[str, float] = BoundedDict(20000)
 
 
 class GarminOAuthProvider(OAuthAuthorizationServerProvider):

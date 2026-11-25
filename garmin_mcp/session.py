@@ -14,6 +14,8 @@ import logging
 import os
 import threading
 import time
+import weakref
+from collections import OrderedDict
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable
@@ -23,9 +25,31 @@ from .gate import GateError, gate
 
 log = logging.getLogger(__name__)
 
-# Remembered answers per session. Small payloads; past this many the memory is
-# simply emptied rather than tracked entry by entry.
+# Remembered answers per session. Past this many the one remembered longest
+# ago goes (Nov 25: least recently written, not the whole lot at once).
 MEMO_LIMIT = 400
+
+# Every Garmin client still alive in this process, counted for the heartbeat
+# (garmin_clients_live): sessions dropped from memory should take theirs with
+# them, and a number that only climbs means something still holds them.
+_LIVE_CLIENTS: "weakref.WeakSet[Any]" = weakref.WeakSet()
+
+
+def live_clients() -> int:
+    return len(_LIVE_CLIENTS)
+
+
+def close_client(client: Any) -> None:
+    """Close a Garmin client's HTTP sessions (its pooled connections, and the
+    curl session it signs in with, which holds native memory)."""
+    inner = getattr(client, "client", None)
+    for holder in (inner, client):
+        for name in ("_api_session", "cs", "session", "_session"):
+            sess = getattr(holder, name, None) if holder is not None else None
+            close = getattr(sess, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    close()
 
 TOKEN_FILE = Path(
     os.environ.get("GARMIN_MCP_TOKENS") or Path.home() / ".garmin-mcp" / "tokens.json"
@@ -156,6 +180,8 @@ def build_client(
         prompt_mfa=prompt_mfa,
     )
     tracing.watch(client)
+    with contextlib.suppress(TypeError):
+        _LIVE_CLIENTS.add(client)
     return client
 
 
@@ -231,7 +257,7 @@ class GarminSession:
         owner: whose session this is, for the per-person limits in gate.py.
         """
         self._lock = threading.RLock()
-        self._memo: dict[Any, tuple[float, Any]] = {}
+        self._memo: "OrderedDict[Any, tuple[float, Any]]" = OrderedDict()
         self._client: Any = None
         self._source: str | None = None
         self._connected_at: float | None = None
@@ -298,10 +324,21 @@ class GarminSession:
         return client
 
     def reset(self) -> None:
+        # Not closed here: other reads in flight may still be using it after
+        # Garmin refused the session; it goes when the last of them lets go.
         with self._lock:
             self._client = None
             self._source = None
             self._connected_at = None
+
+    def close(self) -> None:
+        """Let go of everything: the client's connections, and what's remembered.
+        For a session dropped from memory (the idle sweep, the cap)."""
+        with self._lock:
+            client, self._client = self._client, None
+            self._memo.clear()
+        if client is not None:
+            close_client(client)
 
     def client(self) -> Any:
         with self._lock:
@@ -400,10 +437,15 @@ class GarminSession:
         if hit is not None and now - hit[0] < ttl:
             return hit[1]
         value = self.run(fn)
-        if len(self._memo) >= MEMO_LIMIT:
-            self._memo.clear()
-        self._memo[key] = (now, value)
+        self._keep(key, (now, value))
         return value
+
+    def _keep(self, key: Any, entry: tuple[float, Any]) -> None:
+        with contextlib.suppress(Exception):
+            self._memo.pop(key, None)
+            self._memo[key] = entry
+            while len(self._memo) > MEMO_LIMIT:
+                self._memo.popitem(last=False)
 
     def knows(self, key: Any, ttl: float) -> bool:
         """Whether an answer under key is remembered and still fresh, without fetching it."""
@@ -422,9 +464,7 @@ class GarminSession:
     def remember(self, key: Any, value: Any) -> None:
         """Keep an answer already in hand, such as a workout just written, so
         the next read of it doesn't go back to Garmin for the same thing."""
-        if len(self._memo) >= MEMO_LIMIT:
-            self._memo.clear()
-        self._memo[key] = (time.monotonic(), value)
+        self._keep(key, (time.monotonic(), value))
 
     def status(self) -> dict[str, Any]:
         """Describe the connection without touching the password or the token."""

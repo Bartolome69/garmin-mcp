@@ -39,6 +39,7 @@ from typing import Any, Callable
 from urllib.parse import unquote, urlsplit
 
 from . import analytics
+from .bounded import BoundedDict
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class Call:
 _call: ContextVar["Call | None"] = ContextVar("garmin_traced_call", default=None)
 _lock = threading.Lock()
 _today: dict[str, Any] = {"day": None, "sent": 0}
-_sittings: dict[tuple[str, str], tuple[str, float]] = {}
+_sittings: dict[tuple[str, str], tuple[str, float]] = BoundedDict(20000)
 
 
 def start(tool: str) -> Any:
