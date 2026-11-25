@@ -14,6 +14,9 @@ on:
       days:
         description: "How many days back"
         default: "7"
+      org:
+        description: "Fly organization slug (blank: work it out)"
+        default: ""
 
 env:
   FLY_APP: garmin-mcp-1b4387
@@ -26,9 +29,28 @@ jobs:
       - name: Read Fly's CPU metrics
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          # The deploy token can't read the organization's metrics (403). A
+          # read-only org token can: fly tokens create readonly <org>, saved as
+          # the FLY_METRICS_TOKEN repository secret.
+          METRICS_TOKEN: ${{ secrets.FLY_METRICS_TOKEN }}
           DAYS: ${{ inputs.days }}
+          ORG_INPUT: ${{ inputs.org }}
         run: |
-          org="$(flyctl status --app "$FLY_APP" --json | jq -r '.Organization.Slug // .organization.slug // empty')"
+          echo "--- Since the machine last started (from inside it) ---"
+          flyctl ssh console --app "$FLY_APP" -C "sh -c 'cat /proc/uptime; head -1 /proc/stat; nproc'" > inside.txt 2>/dev/null || true
+          python3 - <<'PY' || true
+          lines = [l.split() for l in open("inside.txt") if l.strip()]
+          up = float(next(l for l in lines if len(l) == 2)[0])
+          cpu = next(l for l in lines if l and l[0] == "cpu")
+          cores = int(next(l for l in lines if len(l) == 1)[0])
+          user, nice, system, idle, iowait, irq, softirq, steal = (int(x) for x in cpu[1:9])
+          total = user + nice + system + idle + iowait + irq + softirq + steal
+          print(f"up {up/3600:.1f} h on {cores} core(s): busy {100*(user+nice+system+irq+softirq)/total:.1f}%, "
+                f"steal {100*steal/total:.2f}% (throttling shows here), iowait {100*iowait/total:.1f}%")
+          PY
+          echo "--- Fly's metrics, hour by hour ---"
+          if [ -n "$METRICS_TOKEN" ]; then export FLY_API_TOKEN="$METRICS_TOKEN"; fi
+          org="${ORG_INPUT:-$(flyctl status --app "$FLY_APP" --json | jq -r '.Organization.Slug // .organization.slug // empty')}"
           echo "org: ${org:-personal}"
           ORG="${org:-personal}" python3 - <<'PY'
           import json, os, time, urllib.parse, urllib.request
@@ -65,8 +87,10 @@ jobs:
           balance = series(f'avg(fly_instance_cpu_balance{{{a}}})')
           baseline = series(f'avg(fly_instance_cpu_baseline{{{a}}})')
           if not used:
-              print("No CPU series came back: the token may not be allowed to read metrics.")
-              raise SystemExit(1)
+              print("No CPU series came back: the token can't read the organization's metrics. "
+                    "Add a read-only org token as the FLY_METRICS_TOKEN secret, or read it in Grafana "
+                    "(fly-metrics.net). The heartbeat's cpu_pct_1m and cpu_steal_pct_1m cover it from now on.")
+              raise SystemExit(0)
 
           london = ZoneInfo("Europe/London")
           by_hour = defaultdict(lambda: defaultdict(list))
