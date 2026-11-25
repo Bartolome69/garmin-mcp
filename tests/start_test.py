@@ -41,8 +41,8 @@ def run(env_extra: dict[str, str]) -> list[str]:
 
 print("without backup set up")
 calls = run({})
-check("the server starts as it always did, and Litestream is never called",
-      calls == ["python -m garmin_mcp.hosted"], str(calls))
+check("the server (web and worker, under the supervisor) starts, and Litestream is never called",
+      calls == ["python -m garmin_mcp.supervise"], str(calls))
 
 print("\nwith a bucket set")
 calls = run({"LITESTREAM_BUCKET": "daash-backup", "GARMIN_MCP_DB": "/data/db.sqlite3"})
@@ -50,7 +50,7 @@ check("first it restores, but only onto an empty volume and only from a replica 
       len(calls) == 2 and calls[0] == "litestream restore -config /cfg.yml -if-db-not-exists -if-replica-exists /data/db.sqlite3",
       str(calls))
 check("then it replicates, with the server as its child",
-      len(calls) == 2 and calls[1] == "litestream replicate -config /cfg.yml -exec python -m garmin_mcp.hosted", str(calls))
+      len(calls) == 2 and calls[1] == "litestream replicate -config /cfg.yml -exec python -m garmin_mcp.supervise", str(calls))
 
 print("\na Tigris bucket from `fly storage create`")
 calls = run({"BUCKET_NAME": "daash-backup", "AWS_ENDPOINT_URL_S3": "https://fly.storage.tigris.dev",
@@ -59,6 +59,11 @@ check("its secrets switch Litestream on with no LITESTREAM_* set",
       len(calls) == 2 and calls[1].startswith("litestream replicate"), str(calls))
 calls = run({"BUCKET_NAME": "something-else"})
 check("a BUCKET_NAME alone, with no storage endpoint, doesn't",
+      calls == ["python -m garmin_mcp.supervise"], str(calls))
+
+print("\nthe way back to one process")
+calls = run({"GARMIN_MCP_WORKER": "inline"})
+check("GARMIN_MCP_WORKER=inline runs the web process alone, background jobs on its threads",
       calls == ["python -m garmin_mcp.hosted"], str(calls))
 
 print("\nthe database path")

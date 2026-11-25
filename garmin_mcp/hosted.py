@@ -1742,12 +1742,16 @@ def plan_checks_once(now: float | None = None, read: Callable[[str], Any] | None
     return sent
 
 
+def plan_checks_pass() -> None:
+    try:
+        plan_checks_once()
+    except Exception:  # noqa: BLE001
+        log.exception("Get your plan 7-day check failed")
+
+
 def _plan_checks_forever() -> None:
     while True:
-        try:
-            plan_checks_once()
-        except Exception:  # noqa: BLE001
-            log.exception("Get your plan 7-day check failed")
+        plan_checks_pass()
         time.sleep(PLAN_CHECK_EVERY)
 
 
@@ -1911,27 +1915,34 @@ def weekly_message(base: str, user_token: str, fingerprint: str, said: dict[str,
                           into_app=into_app)
 
 
+def weekly_email_seed() -> None:
+    """Sends from before counting began (Nov 16): Monday's emails, so a deploy
+    that day doesn't count the day as empty. Once per process, at start."""
+    now = datetime.now(ZoneInfo("Europe/London"))
+    monday = (now.date() - timedelta(days=now.weekday())).isoformat()
+    with contextlib.suppress(Exception):
+        if now.weekday() == 0:
+            store.seed_email_count(datetime.now(timezone.utc).date().isoformat(), "weekly",
+                                   store.weekly_sent_count(monday))
+
+
+def weekly_email_pass() -> None:
+    """Send what's due of this week's email, on the days and hours it goes."""
+    now = datetime.now(ZoneInfo("Europe/London"))
+    if now.weekday() in WEEKLY_DAYS and WEEKLY_HOURS[0] <= now.hour < WEEKLY_HOURS[1]:
+        try:
+            counts = weekly_email_once(now.date())
+            if any(counts.values()):
+                log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, "
+                         "%(failed)d failed, %(held)d deferred for the day's cap", counts)
+        except Exception:  # noqa: BLE001
+            log.exception("Weekly email pass failed")
+
+
 def _weekly_email_forever() -> None:
-    seeded = False
+    weekly_email_seed()
     while True:
-        now = datetime.now(ZoneInfo("Europe/London"))
-        if not seeded:
-            # Sends from before counting began (Nov 16): Monday's emails, so a
-            # deploy that day doesn't count the day as empty.
-            seeded = True
-            monday = (now.date() - timedelta(days=now.weekday())).isoformat()
-            with contextlib.suppress(Exception):
-                if now.weekday() == 0:
-                    store.seed_email_count(datetime.now(timezone.utc).date().isoformat(), "weekly",
-                                           store.weekly_sent_count(monday))
-        if now.weekday() in WEEKLY_DAYS and WEEKLY_HOURS[0] <= now.hour < WEEKLY_HOURS[1]:
-            try:
-                counts = weekly_email_once(now.date())
-                if any(counts.values()):
-                    log.info("Weekly email: %(sent)d sent, %(nothing_to_say)d with nothing to say, "
-                             "%(failed)d failed, %(held)d deferred for the day's cap", counts)
-            except Exception:  # noqa: BLE001
-                log.exception("Weekly email pass failed")
+        weekly_email_pass()
         time.sleep(WEEKLY_EVERY)
 
 
@@ -1988,6 +1999,21 @@ def first_run_email(garmin_user_id: str, activities: list[dict], send: Callable[
         "kind": str(newest.get("activityType") or "").lower() or None,
         "days_since_connecting": round((now - link.created_at) / 86400, 1), "$process_person_profile": False})
     return True
+
+
+def activities_arrived_job(garmin_user_id: str, activities: list[dict]) -> None:
+    """The same as _activities_arrived, run by the worker one after the other."""
+    first_run_email(garmin_user_id, activities)
+    run_arrived(garmin_user_id)
+
+
+def _enqueue_activities_arrived(garmin_user_id: str, activities: list[dict]) -> None:
+    """With a worker: Garmin's push only adds a job; the email and the phone go from there."""
+    from . import jobs
+    try:
+        jobs.enqueue("activities_arrived", {"garmin_user_id": garmin_user_id, "activities": activities})
+    except Exception:  # noqa: BLE001 - never fail Garmin's push over it; the 3-minute pass still finds the run
+        log.exception("could not queue the activities-arrived job")
 
 
 def _activities_arrived(garmin_user_id: str, activities: list[dict]) -> None:
@@ -2058,25 +2084,30 @@ def report_oauth_health(now: float | None = None) -> int | None:
     return len(cut)
 
 
+def keep_alive_pass() -> None:
+    """One keep-alive round: expired sign-ins swept, reports sent, idle sessions renewed."""
+    with contextlib.suppress(Exception):
+        store.sweep_expired_oauth()
+    try:
+        report_oauth_health()
+    except Exception:  # noqa: BLE001 - the loop must go on; the log says why
+        log.exception("oauth health report failed")
+    # Crew runs on days that have passed, gone even if nobody looks.
+    with contextlib.suppress(Exception):
+        crews.purge_past()
+    with contextlib.suppress(Exception):
+        report_official_users()
+    try:
+        counts = keep_alive_once()
+        if counts["renewed"] or counts["lapsed"]:
+            log.info("Keep-alive: %(renewed)d renewed, %(lapsed)d lapsed", counts)
+    except Exception:  # noqa: BLE001
+        log.exception("Keep-alive pass failed")
+
+
 def _keep_alive_forever() -> None:
     while True:
-        with contextlib.suppress(Exception):
-            store.sweep_expired_oauth()
-        try:
-            report_oauth_health()
-        except Exception:  # noqa: BLE001 - the loop must go on; the log says why
-            log.exception("oauth health report failed")
-        # Crew runs on days that have passed, gone even if nobody looks.
-        with contextlib.suppress(Exception):
-            crews.purge_past()
-        with contextlib.suppress(Exception):
-            report_official_users()
-        try:
-            counts = keep_alive_once()
-            if counts["renewed"] or counts["lapsed"]:
-                log.info("Keep-alive: %(renewed)d renewed, %(lapsed)d lapsed", counts)
-        except Exception:  # noqa: BLE001
-            log.exception("Keep-alive pass failed")
+        keep_alive_pass()
         time.sleep(KEEP_ALIVE_EVERY)
 
 
@@ -2286,24 +2317,32 @@ def _signups_paused(why: str, failures: list[dict[str, Any]]) -> None:
         "\"open\" (for example open-YYYY-MM-DD) in deploy-hosted.yml and deploy.\n")
 
 
+def guard_pass() -> None:
+    try:
+        if OFFICIAL_SIGNUPS_OPEN:
+            signup_guard.sweep(OFFICIAL_SIGNUPS_SWITCH)
+    except Exception:  # noqa: BLE001
+        log.exception("sign-up guard pass failed")
+
+
 def _guard_forever() -> None:
     while True:
-        try:
-            if OFFICIAL_SIGNUPS_OPEN:
-                signup_guard.sweep(OFFICIAL_SIGNUPS_SWITCH)
-        except Exception:  # noqa: BLE001
-            log.exception("sign-up guard pass failed")
+        guard_pass()
         time.sleep(GUARD_EVERY)
+
+
+def notify_pass() -> None:
+    try:
+        counts = notify_once()
+        if counts["morning"] or counts["run"]:
+            log.info("Notifications: %(morning)d morning, %(run)d after a run", counts)
+    except Exception:  # noqa: BLE001
+        log.exception("Notification pass failed")
 
 
 def _notify_forever() -> None:
     while True:
-        try:
-            counts = notify_once()
-            if counts["morning"] or counts["run"]:
-                log.info("Notifications: %(morning)d morning, %(run)d after a run", counts)
-        except Exception:  # noqa: BLE001
-            log.exception("Notification pass failed")
+        notify_pass()
         time.sleep(NOTIFY_EVERY)
 
 
@@ -5583,6 +5622,51 @@ def main() -> None:
 
     if os.environ.get("GARMIN_MCP_WATCHDOG", "on") != "off":
         threading.Thread(target=_watchdog_forever, name="watchdog", daemon=True).start()
+    if separate_worker():
+        # Background jobs run in their own process (worker.py, started by
+        # supervise.py beside this one): this process only answers requests.
+        signup_guard.on_pause = _signups_paused
+        if WEEKLY_EMAIL and support_mail.can_send():
+            official.on_activities = _enqueue_activities_arrived
+        threading.Thread(target=_load_note_forever, name="load-note", daemon=True).start()
+    else:
+        _start_background_threads()
+
+    uvicorn.run(
+        build_app(),
+        host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
+        port=int(os.environ.get("PORT", "8000")),
+        # The request path is a credential. There is no way to keep an access
+        # log that records paths without logging everyone's key.
+        access_log=False,
+    )
+
+
+def separate_worker() -> bool:
+    """True when supervise.py runs the background jobs in a worker process."""
+    return os.environ.get("DAASH_WORKER") == "separate"
+
+
+# How busy this process's Garmin pool is, written every few seconds for the
+# worker on the same machine: it holds the history backfill back while people
+# are waiting on Garmin (worker.py).
+LOAD_NOTE = Path(os.environ.get("DAASH_LOAD_NOTE", "/tmp/daash-web-load.json"))
+LOAD_NOTE_EVERY = 5
+
+
+def _load_note_forever() -> None:
+    from .gate import gate
+    while True:
+        with contextlib.suppress(Exception):
+            part = LOAD_NOTE.with_suffix(".part")
+            part.write_text(json.dumps({"queue": gate.queue_depth(), "busy": gate.busy_workers(),
+                                        "workers": gate.workers, "at": time.time()}))
+            os.replace(part, LOAD_NOTE)
+        time.sleep(LOAD_NOTE_EVERY)
+
+
+def _start_background_threads() -> None:
+    """Everything in this process, as before the worker (DAASH_WORKER unset)."""
     threading.Thread(target=_keep_alive_forever, name="keep-alive", daemon=True).start()
     threading.Thread(target=_notify_forever, name="notifications", daemon=True).start()
     signup_guard.on_pause = _signups_paused
@@ -5601,15 +5685,6 @@ def main() -> None:
             official_data.tidy()
         except Exception:  # noqa: BLE001 - a tidy-up never stops the server starting
             log.exception("official data tidy failed")
-
-    uvicorn.run(
-        build_app(),
-        host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
-        port=int(os.environ.get("PORT", "8000")),
-        # The request path is a credential. There is no way to keep an access
-        # log that records paths without logging everyone's key.
-        access_log=False,
-    )
 
 
 if __name__ == "__main__":

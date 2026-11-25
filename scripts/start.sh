@@ -25,7 +25,14 @@ if [ -z "${LITESTREAM_BUCKET:-}" ] && [ -n "${BUCKET_NAME:-}" ] && [ -n "${AWS_E
   export LITESTREAM_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
   export LITESTREAM_REGION="${LITESTREAM_REGION:-auto}"
 fi
-SERVER="python -m garmin_mcp.hosted"
+# The web process and the background worker side by side (garmin_mcp/supervise.py).
+# GARMIN_MCP_WORKER=inline runs the web process alone, with the background jobs
+# on its own threads as before Nov 25: the way back if the worker misbehaves.
+if [ "${GARMIN_MCP_WORKER:-separate}" = "inline" ]; then
+  SERVER="python -m garmin_mcp.hosted"
+else
+  SERVER="python -m garmin_mcp.supervise"
+fi
 
 if [ -n "${LITESTREAM_BUCKET:-}" ]; then
   export LITESTREAM_REGION="${LITESTREAM_REGION:-auto}"

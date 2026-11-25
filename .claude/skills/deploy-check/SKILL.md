@@ -52,7 +52,7 @@ Work through every section. Say in the report which checks were skipped and why.
 # Once per container: Python 3.12 (3.11 can't install the pinned garminconnect)
 /usr/bin/python3.12 -m venv .venv && .venv/bin/pip install -r requirements-hosted.txt
 
-for t in hosted_test oauth_test smoke_test progress_test official_test signup_test gate_test cache_test restart_test; do
+for t in hosted_test oauth_test smoke_test progress_test official_test signup_test gate_test cache_test restart_test worker_test; do
   echo "== $t"; .venv/bin/python tests/$t.py 2>&1 | grep -E "  FAIL|check\(s\) failed|all checks passed|Traceback"
 done
 NODE_PATH=$(npm root -g) node tests/card_test.js 2>&1 | tail -1
