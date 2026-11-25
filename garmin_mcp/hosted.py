@@ -1390,6 +1390,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             telemetry.count("tool_errors")
         if seconds is not None:
             telemetry.observe("tool_ms", seconds * 1000)
+            _LATENCY.note(seconds * 1000)
         analytics.capture("tool_called", person, drop_empty({
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
             "card_refresh": auto or None,
@@ -5743,6 +5744,7 @@ def next_beat_in(now: float | None = None) -> float:
 
 
 _WATCH = memwatch.Watch()
+_LATENCY = memwatch.LatencyWatch()
 _GUARD_TRIPPED = threading.Event()
 
 
@@ -5766,6 +5768,16 @@ def vitals_once(now: float | None = None, figures: Mapping[str, Any] | None = No
             analytics.capture("memory_profile", "daash-server", {
                 "rss_mb": rss, "garmin_clients_live": live_clients(), "sessions": len(_SESSIONS),
                 "top": top, "$process_person_profile": False})
+    slow, p95_ms, calls = _LATENCY.should_warn(now)
+    if slow:
+        with contextlib.suppress(Exception):
+            when = datetime.fromtimestamp(now, ZoneInfo("Europe/London")).strftime("%a %d %b %H:%M")
+            support_mail.send_alert(
+                f"Daash is slow: p95 {p95_ms / 1000:.0f} s over the last hour ({when})",
+                f"In the hour to {when} (UK time) the slowest 5% of {calls} tool calls took over "
+                f"{p95_ms / 1000:.1f} s (the line is {memwatch.LATENCY_P95_MS / 1000:.0f} s). Usually Garmin being "
+                "slow, or one person's chat making a long run of calls. The System Health dashboard has the "
+                "hour by hour; this repeats every 2 hours while it stays slow.\n")
     if _WATCH.should_restart(rss) and not _GUARD_TRIPPED.is_set():
         memory_guard_restart(figures)
     beat: dict[str, Any] = {}

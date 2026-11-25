@@ -3653,6 +3653,7 @@ async def main() -> int:
         warned_mail.clear()
         hosted._WATCH = hosted.memwatch.Watch()
         # 1,300 MB: over the email line, under the 1,400 MB guard (which would stop this process).
+        hosted.vitals_once(now=4940.0, figures={"rss_mb": 1300, "machine_available_mb": 300, "machine_total_mb": 1971})
         hosted.vitals_once(now=5000.0, figures={"rss_mb": 1300, "machine_available_mb": 300, "machine_total_mb": 1971})
         check("memory over the line emails from the minute's check, with the figures",
               len(warned_mail) == 1 and "1300 MB" in warned_mail[0][0] and "300 MB" in warned_mail[0][1],

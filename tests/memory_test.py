@@ -140,10 +140,28 @@ check("remembered answers stop at the limit, oldest first, not all at once",
 print("\nthe memory email")
 w = memwatch.Watch(warn_mb=1200, warn_every=7200, guard_mb=1400)
 check("below the line: nothing", not w.should_warn(900, 0))
-check("first reading at the line: an email", w.should_warn(1210, 100))
+check("one reading at the line: not yet (could be a blip)", not w.should_warn(1210, 40))
+check("two heartbeats in a row at the line: an email", w.should_warn(1210, 100))
 check("still high an hour later: nothing yet", not w.should_warn(1300, 3700))
 check("still high two hours later: another", w.should_warn(1300, 7300))
-check("back down, then up again: at once (a new episode)", not w.should_warn(800, 7400) and w.should_warn(1250, 7500))
+check("back down, then up for two readings: at once (a new episode)",
+      not w.should_warn(800, 7400) and not w.should_warn(1250, 7460) and w.should_warn(1250, 7520))
+
+print("\nthe latency email")
+lw = memwatch.LatencyWatch(limit_ms=15000, min_calls=30, every=7200)
+for i in range(40):
+    lw.note(2000, now=1000 + i)
+check("a normal hour: nothing", lw.should_warn(1100)[0] is False)
+for i in range(10):
+    lw.note(40000, now=1200 + i)
+fired, p95, n = lw.should_warn(1300)
+check("p95 over 15 s across the hour: an email", fired and p95 == 40000 and n == 50, f"{fired} {p95} {n}")
+check("not again within 2 hours", lw.should_warn(1360)[0] is False)
+check("calls older than an hour fall out", lw.p95(1000 + 3600 + 300)[1] == 0)
+lw2 = memwatch.LatencyWatch(limit_ms=15000, min_calls=30)
+for i in range(5):
+    lw2.note(60000, now=1000 + i)
+check("too few calls to say (one slow chat at night): nothing", lw2.should_warn(1100)[0] is False)
 check("the guard is at 1,400", not w.should_restart(1399) and w.should_restart(1400))
 
 print("\nthe profile")
@@ -165,6 +183,7 @@ emails.clear()
 sent.clear()
 hosted._WATCH = memwatch.Watch(warn_mb=1200, warn_every=7200, guard_mb=1400, profile_mb=10**6)
 analytics.enabled = lambda: True
+hosted.vitals_once(now=940, figures={"rss_mb": 1250, "machine_available_mb": 500, "machine_total_mb": 1971})
 beat = hosted.vitals_once(now=1000, figures={"rss_mb": 1250, "machine_available_mb": 500, "machine_total_mb": 1971})
 check("high memory emails, and says it repeats every 2 hours",
       len(emails) == 1 and "every 2 hours" in emails[0][1] and "1250 MB" in emails[0][0], str(emails[:1]))
