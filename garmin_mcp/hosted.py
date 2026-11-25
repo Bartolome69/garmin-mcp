@@ -42,8 +42,10 @@ from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, telemetry, tracing, weekly
+from . import memwatch
 from . import app as app_routes
 from . import server as server_mod
+from .bounded import BoundedDict, BoundedSet
 from .formatting import drop_empty
 from .server import mcp
 from .session import (
@@ -135,13 +137,13 @@ def _flow_mark(flow: str) -> str:
 # Consents waiting after an approval on Garmin's page, by consent token, with
 # when they were staged: those are the ones that ask for an email if the
 # account has none, and that count as an official sign-up when allowed.
-_GARMIN_CONSENTS: dict[str, float] = {}
+_GARMIN_CONSENTS: dict[str, float] = BoundedDict(20000)
 _EMAIL_RE = re.compile(r"[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}")
 
 # Crude per-address throttle on sign-in attempts. Not a defence against a
 # determined attacker; enough to stop this being a comfortable place to test
 # stolen Garmin passwords.
-_ATTEMPTS: dict[str, list[float]] = {}
+_ATTEMPTS: dict[str, list[float]] = BoundedDict(20000)
 _ATTEMPT_WINDOW = 900
 _ATTEMPT_LIMIT = 8
 
@@ -188,7 +190,7 @@ def _pause_left() -> int:
 # sent them straight back to try the same password again.
 # Nov 16: how many in a row, too, for the reset link's second-time button and
 # its count (password_reset_link_clicked's failure_count).
-_WRONG_PASSWORD: dict[str, tuple[float, int]] = {}
+_WRONG_PASSWORD: dict[str, tuple[float, int]] = BoundedDict(20000)
 WRONG_PASSWORD_WINDOW = 30 * 60
 
 
@@ -338,7 +340,7 @@ def _signin_context(request: Request | None, flow: str) -> dict[str, Any]:
 # When each person's current run of sign-in attempts began, and how many had
 # failed, by email fingerprint: sign_in_succeeded says how long getting in
 # took, wrong passwords and all. In memory; an hour is plenty.
-_FIRST_TRY: dict[str, tuple[float, int]] = {}
+_FIRST_TRY: dict[str, tuple[float, int]] = BoundedDict(20000)
 FIRST_TRY_WINDOW = 3600
 
 
@@ -439,14 +441,14 @@ _SESSIONS_SWEPT: list[float] = [0.0]
 # When each person was last marked as seen. A conversation makes a burst of tool
 # calls; writing last_seen_at once an hour per person records the same fact
 # without a database write on every one of them.
-_TOUCHED: dict[str, float] = {}
+_TOUCHED: dict[str, float] = BoundedDict(20000)
 _TOUCH_EVERY = 3600
 
 # The UTC day each person was last reported as using the connector. One event
 # per person per day is what "who uses this daily" needs; one per request would
 # be a conversation's worth of noise. In memory, so a restart may report a day
 # twice, which a count of distinct people per day absorbs.
-_USED_ON: dict[str, str] = {}
+_USED_ON: dict[str, str] = BoundedDict(20000)
 
 # The front page shows how many people used this recently. One number, cached,
 # so a busy page never turns into a query per visitor.
@@ -862,7 +864,7 @@ FIRST_DAY_NOTE = (
     "create_workout with date 'tomorrow' sends it in one call. Not if a session is already planned "
     "for tomorrow. Ask once in this chat; if they say no or ask for something else, drop it."
 )
-_FIRST_DAY_SAID: dict[str, tuple[str, int]] = {}
+_FIRST_DAY_SAID: dict[str, tuple[str, int]] = BoundedDict(20000)
 
 
 def _first_day_due(user_token: str, user: store.User, name: str, result: Any) -> bool:
@@ -982,9 +984,9 @@ WITH_PLAN_NOTE = (
     "and it will answer."
 )
 # When each person's latest get_plan started and, once it has, ended.
-_PLAN_CALLS: dict[str, tuple[float, float | None]] = {}
+_PLAN_CALLS: dict[str, tuple[float, float | None]] = BoundedDict(20000)
 # The reads held back, by person and tool, and when.
-_HELD: dict[tuple[str, str], float] = {}
+_HELD: dict[tuple[str, str], float] = BoundedDict(20000)
 # When the tool now running started, for its after hook.
 _STARTED: ContextVar[float] = ContextVar("hosted_tool_started", default=0.0)
 
@@ -996,7 +998,7 @@ _STARTED: ContextVar[float] = ContextVar("hosted_tool_started", default=0.0)
 # a chat that keeps asking gets through again once the window moves on.
 CALL_LIMIT = 300
 CALL_WINDOW = 600.0
-_CALLS: dict[str, list[float]] = {}
+_CALLS: dict[str, list[float]] = BoundedDict(20000)
 # When each person was last reported as reaching the cap, so it's reported once a window.
 _LIMIT_REPORTED: dict[str, float] = {}
 
@@ -1082,7 +1084,7 @@ def _sent_with_plan(user_token: str, name: str) -> bool:
 _TOOL_REPORTED: dict[tuple[str, str], str] = {}
 # Who has had a tool answer since the server started. The first answer after a
 # restart or deploy signs in to Garmin again, so it is slower, and is marked.
-_WARM: set[str] = set()
+_WARM: BoundedSet = BoundedSet(20000)
 # How long each tool took this hour, sent once the hour is over as one
 # anonymous row per tool: how many calls, how long they took, and how many
 # were someone's first since a restart. No person, nothing they asked.
@@ -1384,7 +1386,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
         auto = _card_refresh()
         # The minute's figures for server_heartbeat (telemetry.py).
         telemetry.count("tool_calls")
-        if error:
+        if error and error_category(error) != "conflict":
             telemetry.count("tool_errors")
         if seconds is not None:
             telemetry.observe("tool_ms", seconds * 1000)
@@ -1591,11 +1593,36 @@ def sweep_sessions(now: float | None = None) -> int:
     idle = [t for t, used in list(_SESSION_USED.items()) if now - used > SESSION_IDLE_S]
     for token in idle:
         _SESSION_USED.pop(token, None)
-        _SESSIONS.pop(token, None)
+        _drop_session(token)
     # Sessions made before this was tracked, or by a path that skipped it, go too.
     for token in [t for t in list(_SESSIONS) if t not in _SESSION_USED]:
-        _SESSIONS.pop(token, None)
+        _drop_session(token)
     return len(idle)
+
+
+# A ceiling on live sessions (Nov 25), whatever the sweep does: past it, the
+# one used longest ago goes. About 50-70 are live at the busiest hour.
+SESSIONS_MAX = int(os.environ.get("GARMIN_MCP_SESSIONS_MAX", "400"))
+
+
+def _drop_session(token: str) -> None:
+    """Forget a session and close its Garmin client: its connections and the
+    native memory of the curl session it signed in with."""
+    gone = _SESSIONS.pop(token, None)
+    if gone is not None:
+        with contextlib.suppress(Exception):
+            gone.close()
+
+
+def _cap_sessions() -> int:
+    over = len(_SESSIONS) - SESSIONS_MAX
+    if over <= 0:
+        return 0
+    oldest = sorted(_SESSIONS, key=lambda t: _SESSION_USED.get(t, 0.0))[:over]
+    for token in oldest:
+        _SESSION_USED.pop(token, None)
+        _drop_session(token)
+    return len(oldest)
 
 
 def session_for(user_token: str) -> GarminSession:
@@ -1614,6 +1641,7 @@ def session_for(user_token: str) -> GarminSession:
         owner=user_token,
     )
     _SESSIONS[user_token] = created
+    _cap_sessions()
     return created
 
 
@@ -2045,7 +2073,7 @@ def report_official_users() -> dict[str, int] | None:
     return counts
 
 
-_OAUTH_HEALTH_DAY: dict[str, str] = {}
+_OAUTH_HEALTH_DAY: dict[str, str] = BoundedDict(20000)
 
 
 def report_oauth_health(now: float | None = None) -> int | None:
@@ -2954,7 +2982,7 @@ _INVITE_FIELD = """
 
 # What a tap on the sign-in form can say. Anything else is ignored.
 TAPS = ("reset", "show_password", "hide_password", "check_on_garmin")
-_TAPS_BY_ADDRESS: dict[str, list[float]] = {}
+_TAPS_BY_ADDRESS: dict[str, list[float]] = BoundedDict(20000)
 
 
 @mcp.custom_route("/connect/tap", methods=["POST"])
@@ -4220,7 +4248,7 @@ async def card_opened(request: Request) -> Response:
 
 async def forget_person(token: str, via: str = "disconnect_page") -> bool:
     """Delete someone's stored session and everything kept for them. True if there was one."""
-    _SESSIONS.pop(token, None)
+    _drop_session(token)
     gone = store.get_user(token)
     # Read before the row goes: afterwards there is nothing left to say which route it was.
     route = login_route(not store.has_connect(token)) if gone is not None else ""
@@ -4807,7 +4835,7 @@ async def crew_page(request: Request) -> Response:
 # a browser won't send JSON to another site's address without asking it
 # first, so another page can't make these requests for someone. Paced per
 # address, on top of the PIN's own lock.
-_CREW_WRITES: dict[str, list[float]] = {}
+_CREW_WRITES: dict[str, list[float]] = BoundedDict(20000)
 _CREW_WRITE_LIMIT = 60          # changes an hour from one address
 _CREW_JOIN_LIMIT = 10           # people added an hour from one address
 
@@ -5531,9 +5559,13 @@ def frozen_alert(at: float, misses: int, figures: Mapping[str, Any]) -> tuple[st
 
 
 # Nov 25: memory climbed for 15 hours before the server froze and nobody knew.
-# Past this, the watchdog emails, at most once per MEMORY_WARN_EVERY.
-MEMORY_WARN_MB = 1200
-MEMORY_WARN_EVERY = 6 * 3600
+# Past this an email goes at once, then every MEMORY_WARN_EVERY while it stays
+# high (memwatch.py, checked every minute with the heartbeat).
+MEMORY_WARN_MB = memwatch.WARN_MB
+MEMORY_WARN_EVERY = memwatch.WARN_EVERY_S
+# Past this the server restarts itself gracefully before the machine runs out.
+MEMORY_GUARD_MB = memwatch.GUARD_MB
+MEMORY_GUARD_EXIT = 75
 
 
 def memory_alert(at: float, figures: Mapping[str, Any], sessions: int) -> tuple[str, str]:
@@ -5542,10 +5574,11 @@ def memory_alert(at: float, figures: Mapping[str, Any], sessions: int) -> tuple[
     return (f"Daash memory is high: {figures.get('rss_mb')} MB ({when})",
             f"At {when} (UK time) the server was using {figures.get('rss_mb')} MB, with "
             f"{figures.get('machine_available_mb', '?')} MB of {figures.get('machine_total_mb', '?')} MB free "
-            f"and {sessions} live sessions. Normal is 200-500 MB. If it keeps climbing it will run out "
-            "and freeze; the watchdog would then restart it.\n\nThe Daash: System Health dashboard in "
-            "PostHog shows the trend. A deploy or a restart clears it for now; a steady climb means a leak "
-            "to find.\n")
+            f"and {sessions} live sessions. Normal is 200-500 MB. At {MEMORY_GUARD_MB} MB it restarts "
+            "itself gracefully (server_started, reason memory_guard) before the machine runs out. This "
+            "email repeats every 2 hours while memory stays above "
+            f"{MEMORY_WARN_MB} MB.\n\nThe Daash: System Health dashboard in PostHog shows the trend, and "
+            "memory_profile events (from 600 MB, every 30 minutes) name the code where it grew.\n")
 
 
 def _send_noted_restart() -> None:
@@ -5608,6 +5641,8 @@ def version() -> str:
 def start_reason(last_exit: str | None, last_version: str | None, now_version: str) -> str:
     if last_exit == "watchdog":
         return "watchdog restart"
+    if last_exit == "memory_guard":
+        return "memory_guard"
     if last_version and now_version != "unknown" and last_version != now_version:
         return "deploy"
     if last_exit == "clean":
@@ -5662,16 +5697,22 @@ def cpu_minute(stat: str | None = None) -> tuple[float | None, float | None]:
     return round(100 * (now[1] - last[1]) / span, 1), round(100 * (now[2] - last[2]) / span, 2)
 
 
-def heartbeat_once() -> dict[str, Any]:
+def heartbeat_once(figures: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """One server_heartbeat: the last minute's figures (telemetry.take starts the next)."""
+    from . import garmin_cache
     from .gate import gate
-    figures: dict[str, Any] = {}
-    with contextlib.suppress(Exception):
-        figures = memory_figures()
+    from .session import live_clients
+    if figures is None:
+        figures = {}
+        with contextlib.suppress(Exception):
+            figures = memory_figures()
     minute = telemetry.take()
     cpu, steal = cpu_minute()
     props = {
         "rss_mb": figures.get("rss_mb"),
+        "free_mb": figures.get("machine_available_mb"),
+        "garmin_clients_live": live_clients(),
+        "cache_entries": garmin_cache.stats().get("rows"),
         "cpu_pct_1m": cpu,
         "cpu_steal_pct_1m": steal,
         "active_sessions": len(_SESSIONS),
@@ -5701,13 +5742,78 @@ def next_beat_in(now: float | None = None) -> float:
     return HEARTBEAT_EVERY - (now % HEARTBEAT_EVERY) + 2
 
 
-def _heartbeat_forever() -> None:
+_WATCH = memwatch.Watch()
+_GUARD_TRIPPED = threading.Event()
+
+
+def vitals_once(now: float | None = None, figures: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Every minute: memory checked (email, profile, guard), then the heartbeat."""
+    now = time.time() if now is None else now
+    if figures is None:
+        figures = {}
+        with contextlib.suppress(Exception):
+            figures = memory_figures()
+    rss = figures.get("rss_mb") or 0
+    if _WATCH.should_warn(rss, now):
+        with contextlib.suppress(Exception):
+            support_mail.send_alert(*memory_alert(now, figures, len(_SESSIONS)))
+    with contextlib.suppress(Exception):
+        top = _WATCH.profile(rss, now)
+        if top:
+            from .session import live_clients
+            log.warning("Memory profile at %s MB, %d Garmin clients alive; most growth in 30 min:\n  %s",
+                        rss, live_clients(), "\n  ".join(top))
+            analytics.capture("memory_profile", "daash-server", {
+                "rss_mb": rss, "garmin_clients_live": live_clients(), "sessions": len(_SESSIONS),
+                "top": top, "$process_person_profile": False})
+    if _WATCH.should_restart(rss) and not _GUARD_TRIPPED.is_set():
+        memory_guard_restart(figures)
+    beat: dict[str, Any] = {}
+    if analytics.enabled():
+        beat = heartbeat_once(figures)
+    return beat
+
+
+def memory_guard_restart(figures: Mapping[str, Any]) -> None:
+    """Memory past the guard: say so, then stop gracefully and exit non-zero so
+    Fly starts the machine again (requests in flight finish first)."""
+    import signal
+
+    _GUARD_TRIPPED.set()
+    log.error("Memory guard: %s MB is past %s MB; restarting gracefully", figures.get("rss_mb"), MEMORY_GUARD_MB)
+    with contextlib.suppress(Exception):
+        store.set_setting(LAST_EXIT, "memory_guard")
+    with contextlib.suppress(Exception):
+        analytics.capture_now("memory_guard", "daash-server", {**figures, "sessions": len(_SESSIONS),
+                                                                  "$process_person_profile": False})
+    with contextlib.suppress(Exception):
+        when = datetime.now(ZoneInfo("Europe/London")).strftime("%a %d %b %H:%M")
+        support_mail.send_alert(
+            f"Daash restarted itself: memory reached {figures.get('rss_mb')} MB ({when})",
+            f"At {when} (UK time) the server was using {figures.get('rss_mb')} MB, past the "
+            f"{MEMORY_GUARD_MB} MB guard, so it restarted itself gracefully before the machine ran out. "
+            "It is back in about a minute. memory_profile events in PostHog name where the memory went.\n")
+    os.kill(os.getpid(), signal.SIGTERM)
+    # If the graceful stop hangs, go anyway; Fly starts it again.
+    threading.Timer(90, lambda: os._exit(MEMORY_GUARD_EXIT)).start()
+
+
+def _vitals_forever() -> None:
     while True:
         time.sleep(next_beat_in())
         try:
-            heartbeat_once()
+            vitals_once()
         except Exception:  # noqa: BLE001 - a missed beat shows as a gap, never a crash
             log.exception("heartbeat failed")
+
+
+def _after_stop(sig: int, _frame: Any) -> None:
+    """uvicorn hands the stop signal back once it has shut down gracefully:
+    note a clean stop, or leave with the guard's code so Fly restarts it."""
+    if _GUARD_TRIPPED.is_set():
+        os._exit(MEMORY_GUARD_EXIT)
+    note_clean_exit()
+    raise SystemExit(0)
 
 
 def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable[[float], None] = time.sleep,
@@ -5716,7 +5822,7 @@ def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable
     started = clock()
     _send_noted_restart()
     sleep(WATCHDOG_GRACE)
-    misses, reported, warned = 0, 0.0, float("-inf")
+    misses, reported = 0, 0.0
     while True:
         misses, frozen = watchdog_step(probe(), misses)
         if frozen:
@@ -5730,10 +5836,6 @@ def _watchdog_forever(probe: Callable[[], bool] = _probe_health, sleep: Callable
             figures: dict[str, Any] = {}
             with contextlib.suppress(Exception):
                 figures = memory_figures()
-            if (figures.get("rss_mb") or 0) >= MEMORY_WARN_MB and now - warned >= MEMORY_WARN_EVERY:
-                with contextlib.suppress(Exception):
-                    if support_mail.send_alert(*memory_alert(now, figures, len(_SESSIONS))):
-                        warned = now
             with contextlib.suppress(Exception):
                 analytics.capture("server_health", "daash-server", {
                     "uptime_min": round((now - started) / 60), **figures,
@@ -5755,8 +5857,9 @@ def main() -> None:
     loadfake.install_if_asked()  # load tests only; refuses in production
 
     note_start()
-    if analytics.enabled():
-        threading.Thread(target=_heartbeat_forever, name="heartbeat", daemon=True).start()
+    # Memory and the heartbeat, every minute, analytics or not (the memory
+    # email and the guard don't depend on PostHog).
+    threading.Thread(target=_vitals_forever, name="vitals", daemon=True).start()
     if os.environ.get("GARMIN_MCP_WATCHDOG", "on") != "off":
         threading.Thread(target=_watchdog_forever, name="watchdog", daemon=True).start()
     if separate_worker():
@@ -5769,6 +5872,10 @@ def main() -> None:
     else:
         _start_background_threads()
 
+    import signal
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(ValueError):  # only from the main thread
+            signal.signal(sig, _after_stop)
     uvicorn.run(
         build_app(),
         host=os.environ.get("GARMIN_MCP_HOST", "0.0.0.0"),
@@ -5777,8 +5884,9 @@ def main() -> None:
         # log that records paths without logging everyone's key.
         access_log=False,
     )
-    # uvicorn returns after a graceful stop (a deploy, fly machine restart);
-    # a crash or the watchdog never gets here.
+    # Back here without a signal (tests): a clean stop.
+    if _GUARD_TRIPPED.is_set():
+        os._exit(MEMORY_GUARD_EXIT)
     note_clean_exit()
 
 

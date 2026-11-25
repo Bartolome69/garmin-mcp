@@ -400,12 +400,17 @@ def _cipher() -> Fernet:
 # the cut-off report and the weekly email's note of who had been told, at
 # every restart.
 BUSY_WAIT = 30
+# Nov 25: the same wait set explicitly as SQLite's busy_timeout (30,000 ms) on
+# every connection, the cache's and the jobs table's too, now that a web and a
+# worker process share the file. Lower (5,000 ms) would make "database is
+# locked" likelier, not rarer.
 
 
 def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=BUSY_WAIT)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(SCHEMA)
     conn.executescript(OAUTH_SCHEMA)
     conn.executescript(OFFICIAL_SCHEMA)

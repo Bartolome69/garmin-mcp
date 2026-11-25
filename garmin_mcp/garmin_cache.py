@@ -121,6 +121,7 @@ def _conn():
     if conn is None:
         conn = sqlite3.connect(path, timeout=30, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         if not _schema_done.get(path):
             conn.executescript(SCHEMA)
             _schema_done[path] = True

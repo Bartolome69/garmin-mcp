@@ -70,6 +70,7 @@ def _conn() -> sqlite3.Connection:
         store.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(path, timeout=30, check_same_thread=False, isolation_level=None)
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         if path not in _ready:
             conn.executescript(SCHEMA)
             _ready.add(path)

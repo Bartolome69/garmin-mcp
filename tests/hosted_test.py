@@ -3646,9 +3646,18 @@ async def main() -> int:
     try:
         hosted.memory_figures = lambda: {"rss_mb": 1500, "machine_available_mb": 300, "machine_total_mb": 1971}
         run_watchdog([True] * 140)  # three quarter-hour reports
-        check("memory over the line emails once in six hours, with the figures",
-              len(warned_mail) == 1 and "1500 MB" in warned_mail[0][0] and "300 MB" in warned_mail[0][1],
+        # Nov 25: the email moved to the minute's check (vitals_once, memory_test.py),
+        # every 2 hours while high; the watchdog no longer sends its own.
+        check("the watchdog doesn't email about memory itself (vitals_once does, every minute)",
+              not warned_mail, str(warned_mail))
+        warned_mail.clear()
+        hosted._WATCH = hosted.memwatch.Watch()
+        # 1,300 MB: over the email line, under the 1,400 MB guard (which would stop this process).
+        hosted.vitals_once(now=5000.0, figures={"rss_mb": 1300, "machine_available_mb": 300, "machine_total_mb": 1971})
+        check("memory over the line emails from the minute's check, with the figures",
+              len(warned_mail) == 1 and "1300 MB" in warned_mail[0][0] and "300 MB" in warned_mail[0][1],
               str(warned_mail))
+        hosted._GUARD_TRIPPED.clear()
         warned_mail.clear()
         hosted.memory_figures = lambda: {"rss_mb": 400, "machine_available_mb": 1500, "machine_total_mb": 1971}
         run_watchdog([True] * 140)

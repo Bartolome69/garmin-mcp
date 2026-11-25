@@ -40,6 +40,12 @@ BACKFILL_IDLE_S = 15
 BACKFILL_BUSY_RETRY_S = 30
 LOAD_NOTE_FRESH_S = 30
 HEARTBEAT_EVERY = 60
+# The worker's own memory ceiling: past it the worker stops gracefully and
+# supervise.py starts a fresh one; the web process carries on. Lower than the
+# web process's 1,400 MB: both share the machine's 2 GB.
+WORKER_GUARD_MB = int(os.environ.get("GARMIN_MCP_WORKER_GUARD_MB", "700"))
+GUARD_EXIT = 75
+_guard_tripped = threading.Event()
 
 _stop = threading.Event()
 _running: set[str] = set()
@@ -190,10 +196,27 @@ def heartbeat_once() -> dict[str, Any]:
     return props
 
 
+def guard_check(rss_mb: float | None) -> bool:
+    """Past the worker's ceiling: stop taking jobs and leave for a fresh start."""
+    if rss_mb is None or rss_mb < WORKER_GUARD_MB or _guard_tripped.is_set():
+        return False
+    from . import analytics
+    log.error("worker: memory %s MB is past %s MB; restarting the worker", rss_mb, WORKER_GUARD_MB)
+    _guard_tripped.set()
+    try:
+        analytics.capture_now("memory_guard", "daash-server", {"process": "worker", "rss_mb": rss_mb,
+                                                               "$process_person_profile": False})
+    except Exception:  # noqa: BLE001
+        pass
+    _stop.set()
+    return True
+
+
 def _heartbeat_forever() -> None:
     while not _stop.wait(HEARTBEAT_EVERY - (time.time() % HEARTBEAT_EVERY) + 4):
         try:
-            heartbeat_once()
+            beat = heartbeat_once()
+            guard_check(beat.get("rss_mb"))
         except Exception:  # noqa: BLE001
             log.exception("worker heartbeat failed")
 
@@ -247,6 +270,8 @@ def main() -> None:
             if not started:
                 _stop.wait(POLL_S)
         log.info("worker: stopping; jobs in progress finish first")
+    if _guard_tripped.is_set():
+        raise SystemExit(GUARD_EXIT)
 
 
 if __name__ == "__main__":
