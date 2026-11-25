@@ -272,9 +272,9 @@ def shape(
             "shorter. Markers only move when Garmin has qualifying runs or "
             "rides to recompute them from, so a flat line can mean few "
             "recordings rather than no change. Weight is the average of the "
-            "month's weigh-ins logged in Garmin Connect, with body fat and "
-            "muscle where a scale records them; set it beside the markers month "
-            "by month to see how they moved together. That is not cause and "
+            f"{'quarter' if quarterly else 'month'}'s weigh-ins logged in Garmin Connect, with body fat and "
+            "muscle where a scale records them; set it beside the markers "
+            f"{'quarter by quarter' if quarterly else 'month by month'} to see how they moved together. That is not cause and "
             "effect: weight usually changes along with training, so don't put "
             "a figure on what each kilo is worth."
         ),
