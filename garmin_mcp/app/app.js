@@ -1488,6 +1488,56 @@ function planRow(r, day, first, week) {
     <span class="grip" aria-hidden="true">${r.movable ? ICON.grip() : ""}</span></a>`;
 }
 
+// Nov 26 (matching version 2): how a run was counted, with a way to change it;
+// a question when two sessions fit about as well; after a partial, what to do
+// with the rest. Kept beside the row, not in it: the row is a link.
+function matchBox(r, w) {
+  const aid = r.match_aid;
+  if (!aid && !r.followup) return "";
+  const pick = (w.pick || []).filter((p) => String(p.schedule_id) !== String(r.schedule_id));
+  const btn = (label, attrs) => `<button type="button" class="link-plain match-btn" ${attrs}>${esc(label)}</button>`;
+  let html = "";
+  if (r.question) {
+    html += `<div class="match-q" role="group" aria-label="Which session was this?"><span class="meta">${esc(r.question.text)}</span>
+      <div class="match-opts">${r.question.options.map((o) => `<button type="button" class="pill" data-match="session" data-aid="${esc(aid)}" data-sid="${esc(o.schedule_id)}">${esc(o.label)}</button>`).join("")}
+      <button type="button" class="pill" data-match="extra" data-aid="${esc(aid)}">Extra run</button></div></div>`;
+  } else if (r.match_line) {
+    html += `<div class="match-line"><span class="meta">${esc(r.match_line)}</span>
+      <details class="match-more"><summary class="link-plain">Change</summary><div class="match-opts">
+        ${pick.length ? `<span class="meta">Count as another session</span>${pick.map((p) => btn(p.label, `data-match="session" data-aid="${esc(aid)}" data-sid="${esc(p.schedule_id)}"`)).join("")}` : ""}
+        ${r.state === "extra" ? "" : btn("Mark as extra run", `data-match="extra" data-aid="${esc(aid)}"`)}
+        ${btn("Undo", `data-match="undo" data-aid="${esc(aid)}"`)}</div></details></div>`;
+  }
+  if (r.followup) {
+    html += `<div class="match-q" role="group" aria-label="The rest of this run"><span class="meta">${esc(r.followup.text)}</span><div class="match-opts">
+      <button type="button" class="pill light" data-partial="leave" data-sid="${esc(r.followup.schedule_id)}">Leave it</button>
+      <button type="button" class="pill" data-partial="add" data-sid="${esc(r.followup.schedule_id)}">${esc(r.followup.add)}</button>
+      <button type="button" class="pill" data-partial="skip" data-sid="${esc(r.followup.schedule_id)}">Skip the rest</button></div></div>`;
+  }
+  return html ? `<div class="match-box">${html}</div>` : "";
+}
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest("[data-match],[data-partial]");
+  if (!b) return;
+  e.preventDefault();
+  b.disabled = true;
+  const match = b.getAttribute("data-match");
+  const path = match ? "match" : "partial";
+  const body = match ? { action: match, activity_id: b.getAttribute("data-aid"), schedule_id: b.getAttribute("data-sid") || undefined }
+    : { choice: b.getAttribute("data-partial"), schedule_id: b.getAttribute("data-sid") };
+  try {
+    const r = await api(path, { method: "POST", body: JSON.stringify(body) });
+    toast(`${r.message} ${r.watch_said || ""}`.trim(), r.undo ? { label: "Undo", run: () => notUndo(r.undo, []) } : null);
+    refreshUnderPanel();
+    route(true);
+  } catch (err) {
+    b.disabled = false;
+    if (err instanceof SignedOut) return route();
+    toast(err.message);
+  }
+});
+
 // Until someone has dragged a session once, the week says it can be done (Nov 11).
 const DRAGGED = "daash.dragged";
 function dragHint(w) {
@@ -1503,7 +1553,7 @@ function goneRows(day, first) {
 
 function weekRows(w) {
   return w.days.map((day) => day.sessions.length
-    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date)).join("") + goneRows(day, false)
+    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date) + matchBox(r, w)).join("") + goneRows(day, false)
     : removedOn(day.date).length ? goneRows(day, true)
     : `<div class="plan-row rest ${day.today ? "is-today" : ""}" data-date="${day.date}"><span class="day"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span>${day.today ? `<span class="today-tag">Today</span>` : ""}</span>
         <span class="body"><span class="name rest-name">Rest day</span>${day.today && w.rest_note ? `<span class="meta rest-note">${esc(w.rest_note)}</span>` : ""}</span><span></span></div>`).join("");

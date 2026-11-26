@@ -49,6 +49,7 @@ from .formatting import (
 )
 from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, tracing, training_plan
 from . import garmin_cache
+from . import matching
 from . import gate as gate_mod
 from . import session as session_mod
 from .session import GarminError, mask_email, session
@@ -3966,6 +3967,15 @@ def _crew_tip() -> str | None:
 async def _plan_answer(label: str | None) -> dict[str, Any]:
     today = date_cls.today()
     items = await _plan_calendar(today - PLAN_SCAN_BACK, today + PLAN_SCAN_AHEAD)
+    # Matching version 2 (Nov 26), for those who have it: their choices, and
+    # the sessions a run already counted for, off the watch but still on the plan.
+    try:
+        matched = matching.context(official.current())
+    except Exception:  # noqa: BLE001 - the plan reads the old way rather than not at all
+        log.warning("match v2: couldn't load this person's state", exc_info=True)
+        matched = None
+    if matched:
+        items = list(items) + matching.off_watch_items(matched)
     events = await _plan_events(today)
     plans = training_plan.plans_in(items)
     code: str | None = None
@@ -4103,7 +4113,9 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
         result = _mark_unread(await _with_next_steps(training_plan.summarise_calendar(
             sessions, activities, today, planned_seconds=seconds,
             planned_metres=metres, weekly_km=weekly_km, shapes=shapes, phases=phases, efforts=efforts,
+            matching=matched,
         )), metres, seconds)
+        await _after_matching(matched, result, items, today)
         if context:
             key = "current_plan" if context.pop("running") else "upcoming_plan"
             result[key] = drop_empty({**context, "goal": goal, **meta})
@@ -4118,12 +4130,27 @@ async def _plan_answer(label: str | None) -> dict[str, Any]:
     extra = {"planned_metres": metres, "weekly_km": True} if weekly_km else {}
     result = _mark_unread(await _with_next_steps(training_plan.summarise(
         code, sessions, activities, today, goal=goal, planned_seconds=seconds,
-        shapes=shapes, phases=phases, efforts=efforts, **extra
+        shapes=shapes, phases=phases, efforts=efforts, matching=matched, **extra
     )), metres, seconds)
+    await _after_matching(matched, result, items, today)
     result.update(meta)
     if others:
         result["other_plans"] = others
     return training_plan.card_extras(result, meta.get("milestones"), events)
+
+
+async def _after_matching(matched: dict[str, Any] | None, result: dict[str, Any],
+                          items: list[dict[str, Any]], today: date_cls) -> None:
+    """Version 2's follow-through on a read: the watch made to agree, each decision recorded once."""
+    if not matched:
+        return
+    try:
+        if await matching.sync_watch(matched, result, items, today, _call):
+            session.forget()
+            garmin_cache.after_write(session_mod.current_session().owner, "match_v2")
+        matching.record(matched, result)
+    except Exception:  # noqa: BLE001 - the plan answer stands; the next read tries again
+        log.warning("match v2: follow-through failed", exc_info=True)
 
 
 # The sessions this close are read first, whatever their names say: the

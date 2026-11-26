@@ -25,7 +25,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from .cycling import is_ride
 from .formatting import DateError, drop_empty, duration, hr_text, pace_per_km, parse_date
 from .plan import DEFAULT_MPS, category, monday_of, planned_distance_m
-from .progress import Actual, Planned, looks_easy, match
+from .progress import Actual, Planned, is_fixed_day, looks_easy, match, match_v2
 from .workouts import WorkoutError, build_strength_workout, build_workout, format_pace
 
 TAG_SEP = " · "
@@ -1347,6 +1347,7 @@ def summarise_calendar(
     shapes: Mapping[Any, Sequence[Mapping[str, Any]]] | None = None,
     phases: Mapping[Any, str] | None = None,
     efforts: Mapping[Any, str | None] | None = None,
+    matching: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The calendar read as a plan: what was scheduled around now, against what was run.
 
@@ -1356,7 +1357,7 @@ def summarise_calendar(
     """
     result = summarise("", items, activities, today, planned_seconds=planned_seconds,
                        planned_metres=planned_metres, weekly_km=weekly_km, shapes=shapes, phases=phases,
-                       efforts=efforts, through=today)
+                       efforts=efforts, through=today, matching=matching)
     result.pop("label", None)
     # Phases stay: weeks of a plan made here band by its phases, any other
     # week is left blank.
@@ -1430,6 +1431,8 @@ def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequenc
             "actual": duration(row.get("actual_seconds")),
             "actual_min": round(row["actual_seconds"] / 60) if row.get("actual_seconds") else None,
             "activity_id": row.get("activity_id"),
+            "matched": row.get("reason"),
+            "question": row.get("question"),
         })
         for row in extra
         if start <= date.fromisoformat(row["date"]) < end
@@ -1437,6 +1440,65 @@ def _add_distance(week: dict[str, Any], actual: Sequence[Actual], extra: Sequenc
     for key in ("planned_km", "extra", "planned_min"):
         if key in week and week[key] is None:
             del week[key]
+
+
+HARD_TYPES = ("threshold", "intervals", "sub", "race")
+# The most a partial's rest may add to one session (Nov 26).
+FOLLOWUP_MAX_SHARE = 0.10
+
+
+def _match_fields(hit: Mapping[str, Any] | None, schedule_id: str, fixed: set[str],
+                  followups: Mapping[str, Any], item: Mapping[str, Any]) -> dict[str, Any]:
+    """match_v2's account of a session: how it was matched, how much was done, and what's been said about it."""
+    out: dict[str, Any] = {}
+    if schedule_id in fixed:
+        out["fixed_day"] = True
+    if item.get("offWatch"):
+        out["off_watch"] = True
+    if hit:
+        out["completion"] = hit.get("completion")
+        out["match"] = drop_empty({
+            "reason": hit.get("reason"),
+            "ratio": hit.get("ratio"),
+            "moved_days": hit.get("moved_days") or None,
+            "planned_km": hit.get("planned_km"),
+            "actual_km": hit.get("actual_km"),
+            "activity_id": hit.get("activity_id"),
+        })
+    said = followups.get(schedule_id)
+    if said:
+        out["followup"] = said.get("choice") if isinstance(said, Mapping) else str(said)
+    return out
+
+
+def offer_followups(sessions: list[dict[str, Any]], today: date) -> None:
+    """After a partial, where the rest could go: a later easy or long run that week.
+
+    Never more than a tenth onto any one session, never onto a hard session or
+    the day after one; nothing offered when no session fits.
+    """
+    hard_days = {s["date"] for s in sessions if s.get("type") in HARD_TYPES}
+    for s in sessions:
+        if s.get("completion") != "partial" or s.get("followup"):
+            continue
+        done_km, planned = (s.get("match") or {}).get("actual_km"), (s.get("match") or {}).get("planned_km")
+        if not done_km or not planned or planned <= done_km:
+            continue
+        rest = planned - done_km
+        later = [t for t in sessions if t["date"] > s["date"] and t["date"] >= today.isoformat()
+                 and t.get("status") in ("ahead", "today") and t.get("sport") == s.get("sport")
+                 and t.get("type") not in HARD_TYPES and t.get("planned_km")
+                 and (date.fromisoformat(t["date"]) - timedelta(days=1)).isoformat() not in hard_days
+                 and not t.get("fixed_day")]
+        if not later:
+            continue
+        target = max(later, key=lambda t: (t.get("type") == "long", t["planned_km"]))
+        add = min(rest, target["planned_km"] * FOLLOWUP_MAX_SHARE)
+        add = int(add * 2) / 2  # to the half km below
+        if add >= 0.5:
+            s["followup_offer"] = {"schedule_id": target.get("schedule_id"), "workout_id": target.get("workout_id"),
+                                   "name": target.get("name"), "date": target["date"], "add_km": add,
+                                   "rest_km": round(rest, 1)}
 
 
 def summarise(
@@ -1453,8 +1515,13 @@ def summarise(
     phases: Mapping[Any, str] | None = None,
     efforts: Mapping[Any, str | None] | None = None,
     through: date | None = None,
+    matching: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The plan week by week, each session marked done, missed, today or ahead.
+
+    With matching (match_v2's state for this person: their choices, fixed-day
+    sessions, partial follow-ups), runs are matched day first and each done
+    session says how it was matched and how much of it was done.
 
     With weekly_km, each week also carries the distance planned against the
     distance run, counting every run that week, and the runs that weren't on
@@ -1489,6 +1556,9 @@ def summarise(
             title=strip_tag(i.get("title") or i.get("workoutName") or ""),
             hard=(efforts.get(i.get("workoutId")) in ("threshold", "intervals")
                   if i.get("workoutId") in efforts else None),
+            fixed_day=bool(matching) and (
+                is_fixed_day(i.get("title") or i.get("workoutName"))
+                or str(i.get("id")) in set(map(str, (matching or {}).get("fixed") or ()))),
         )
         for i in sessions
     ]
@@ -1508,9 +1578,14 @@ def summarise(
         and (monday_of(first) if weekly_km else first - timedelta(days=1))
         <= _day(a.get("startTimeLocal")) <= max(last + timedelta(days=1), through or last)
     ]
-    verdict = match(planned, actual, today)
+    verdict = (match_v2(planned, actual, today, choices=matching.get("choices"))
+               if matching else match(planned, actual, today))
+    fixed_ids = {p.name for p in planned if p.fixed_day}
+    followups = (matching or {}).get("followups") or {}
     done = {row["name"]: row for row in verdict.done}
     missed = {row["name"] for row in verdict.missed}
+    # A session an open question is about isn't missed: a run that day may be it (match_v2).
+    asked = {row["name"] for row in verdict.missed + verdict.upcoming if row.get("asked")}
 
     week_one = monday_of(first)
     weeks: dict[int, dict[str, Any]] = {}
@@ -1522,6 +1597,8 @@ def summarise(
         hit = done.get(str(schedule_id))
         if hit:
             status = "done" if hit["done_on"] == item["date"][:10] else "done, moved"
+        elif str(schedule_id) in asked and day < today:
+            status = "asked"
         elif str(schedule_id) in missed:
             status = "today" if day == today else "missed"
         else:
@@ -1577,6 +1654,7 @@ def summarise(
                 # a triathlon is measured in, and a gym session's size.
                 "planned_min": round(planned_seconds[wid] / 60) if planned_seconds.get(wid) else None,
                 "_done_seconds": hit.get("actual_seconds") if focus == "time" and hit else None,
+                **(_match_fields(hit, str(schedule_id), fixed_ids, followups, item) if matching else {}),
             }
         )
         rows.append(row)
@@ -1594,6 +1672,9 @@ def summarise(
         monday += timedelta(weeks=1)
     weeks = dict(sorted(weeks.items()))
 
+    if matching:
+        for week in weeks.values():
+            offer_followups(week["sessions"], today)
     for week in weeks.values():
         statuses = [s["status"] for s in week["sessions"]]
         week["done"] = sum(s.startswith("done") for s in statuses)

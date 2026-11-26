@@ -291,6 +291,31 @@ def flag_variant(key: str, subject: str | None) -> str:
     return variant
 
 
+def flag_on(key: str, subject: str | None) -> bool:
+    """Whether an on/off flag is on for this person (Nov 26: matching version 2).
+
+    Remembered an hour like a variant; off when PostHog doesn't answer.
+    """
+    if not KEY or not subject:
+        return False
+    who = distinct_id(subject)
+    now = time.monotonic()
+    held = _FLAGS.get(("on:" + key, who))
+    if held and held[0] > now:
+        return held[1] == "on"
+    on = False
+    try:
+        answer = _fetch_flags(who)
+        flag = (answer.get("flags") or {}).get(key)
+        on = bool(flag.get("enabled")) if isinstance(flag, dict) else (answer.get("featureFlags") or {}).get(key) is True
+        memory = FLAG_MEMORY
+    except Exception:  # noqa: BLE001 - off, and asked again in five minutes
+        log.debug("flag %s not read", key, exc_info=True)
+        memory = 300
+    _FLAGS[("on:" + key, who)] = (now + memory, "on" if on else "off")
+    return on
+
+
 def known_variant(key: str, subject: str | None) -> str | None:
     """The variant already worked out for this person, without asking PostHog."""
     if not subject:

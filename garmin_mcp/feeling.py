@@ -141,6 +141,41 @@ def lighter_run(workout: Mapping[str, Any] | None, mark: str) -> dict[str, Any] 
     return made
 
 
+def longer_run(workout: Mapping[str, Any] | None, add_km: float, planned_km: float | None, mark: str) -> dict[str, Any] | None:
+    """The same session with add_km more in its main part (Nov 26: the rest of a partial run).
+
+    The longest step outside any repeat takes it: by distance where it's set by
+    distance, else by time in proportion. The distance in its name follows.
+    None when no step can carry it.
+    """
+    if not workout or add_km <= 0:
+        return None
+    made = _copy(workout, mark)
+    top = [s for s in _steps(made) if not (s.get("type") == "RepeatGroupDTO" or s.get("numberOfIterations"))
+           and _cond(s) in ("distance", "time") and float(s.get("endConditionValue") or 0) > 0]
+    if not top:
+        return None
+    by_distance = [s for s in top if _cond(s) == "distance"]
+    if by_distance:
+        main = max(by_distance, key=lambda s: float(s["endConditionValue"]))
+        main["endConditionValue"] = round((float(main["endConditionValue"]) + add_km * 1000) / 100) * 100
+    else:
+        if not planned_km:
+            return None
+        main = max(top, key=lambda s: float(s["endConditionValue"]))
+        whole = sum(float(s["endConditionValue"]) for s in top)
+        main["endConditionValue"] = round((float(main["endConditionValue"]) + whole * add_km / planned_km) / 15) * 15
+    share = (planned_km + add_km) / planned_km if planned_km else None
+    name = str(workout.get("workoutName") or "Workout")
+    code = training_plan.label_of(name)
+    bare = training_plan.strip_tag(name)
+    if share:
+        bare = re.sub(r"(\d+(?:\.\d+)?)(\s*km)\b", lambda m: f"{round(float(m.group(1)) * share, 1):g}{m.group(2)}", bare)
+    made["workoutName"] = training_plan.tagged(bare, code) if code else bare
+    _estimates(made, workout, share)
+    return made
+
+
 def easy_target(easy_workout: Mapping[str, Any] | None, easy_mps: float | None) -> list[str] | None:
     """The plan's easy pace as a range: an easy run's own target this week, else the runner's usual easy pace."""
     for step in _flat(_steps(easy_workout or {})):

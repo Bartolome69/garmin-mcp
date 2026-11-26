@@ -904,3 +904,17 @@ html, body { overscroll-behavior-y: contain; }
 .pc-foot .pill { flex: 1; }
 .pc-foot .pill:disabled { opacity: 0.45; cursor: not-allowed; }
 #pc-open.waiting { opacity: 0.55; pointer-events: none; }
+
+/* Nov 26: matching version 2, beside a week row: how a run was counted, a question, the rest of a partial. */
+.match-box { display: flex; flex-direction: column; gap: 8px; padding: 2px 14px 14px 66px; }
+.match-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.match-line > .meta { font-size: 13px; }
+.match-more > summary { cursor: pointer; font-size: 13px; list-style: none; }
+.match-more > summary::-webkit-details-marker { display: none; }
+.match-more[open] .match-opts { margin-top: 6px; }
+.match-q { display: flex; flex-direction: column; gap: 6px; }
+.match-q > .meta { font-size: 13.5px; color: var(--ink); }
+.match-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.match-opts .meta { flex-basis: 100%; font-size: 12.5px; }
+.match-btn { font-size: 13px; padding: 4px 0; margin-right: 10px; }
+@media (max-width: 420px) { .match-box { padding-left: 14px; } }

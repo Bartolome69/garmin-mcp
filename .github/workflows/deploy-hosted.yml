@@ -113,6 +113,7 @@ jobs:
           python tests/worker_test.py
           python tests/heartbeat_test.py
           python tests/memory_test.py
+          python tests/match_test.py
 
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts
       # in the Training API's shape, against a stubbed Garmin.
@@ -157,6 +158,7 @@ jobs:
           node tests/app_run_extra_test.js
           node tests/app_run_strides_test.js
           node tests/app_getplan_test.js
+          node tests/app_match_test.js
 
   # The real Garmin checks on the new code, run while the tests run: neither
   # needs the other, and together they were half of every deploy's wait.

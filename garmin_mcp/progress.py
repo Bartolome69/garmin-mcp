@@ -21,6 +21,7 @@ fact, and that is all this decides.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Iterable, Mapping
@@ -58,6 +59,9 @@ class Planned:
     # The workout was read and Garmin gives it neither a time nor a distance,
     # as with an easier copy (Nov 7). False when it simply wasn't read.
     no_size: bool = False
+    # Held on its own day: a run club, a group run, a race (Nov 26). The
+    # matcher never moves one to another day by itself; the person can.
+    fixed_day: bool = False
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,9 @@ class Result:
     missed: list[dict[str, Any]] = field(default_factory=list)
     upcoming: list[dict[str, Any]] = field(default_factory=list)
     extra: list[dict[str, Any]] = field(default_factory=list)
+    # match_v2 only: activities it won't guess about, and every decision made.
+    questions: list[dict[str, Any]] = field(default_factory=list)
+    decisions: list[dict[str, Any]] = field(default_factory=list)
 
 
 # Garmin's training-effect labels for a run that trained nothing but the base.
@@ -367,3 +374,234 @@ def from_collected(data: dict[str, Any]) -> tuple[list[Planned], list[Actual]]:
             )
         )
     return planned, actual
+
+
+# --------------------------------------------------------------------------
+# Matching, version 2 (Nov 26)
+# --------------------------------------------------------------------------
+# Thursday had an easy 12 km, Friday a 9 km run club. 7.8 km at lunch on
+# Thursday was short of the 70% the first matcher wanted, so it went looking
+# ahead, ticked Friday's run club off as done early and left Thursday to do.
+# Version 2 starts from the activity and its own day:
+#
+# 1. A day with a planned session of the same sport takes that day's activity,
+#    whatever its length: done at 85% or more, partial from 40% ("7.8 of
+#    12 km"), and under 40% the activity is an extra run and the session stays.
+# 2. Only a day with nothing of its sport looks elsewhere: a session missed in
+#    the last 2 days first, then at most the next day, and only within 20% of
+#    its length. A fixed-day session (run club, group run, race) never moves.
+# 3. Where two sessions fit about as well, it doesn't guess: the activity is
+#    left unmatched with a question, and the plan stays as it was.
+# 4. What the person chose for an activity comes before all of it.
+
+DONE_FROM = 0.85
+PARTIAL_FROM = 0.40
+MOVE_WITHIN = 0.20
+CATCH_UP_DAYS = 2
+PULL_DAYS = 1
+# Two candidates whose fit differs by less than this are a toss-up: ask.
+ASK_MARGIN = 0.10
+
+FIXED_DAY_RE = re.compile(r"\b(club|group|race|parkrun|crew run)\b", re.I)
+
+
+def is_fixed_day(title: str | None) -> bool:
+    """A session held on its day by its name: a run club, a group run, a race."""
+    return bool(FIXED_DAY_RE.search(str(title or "")))
+
+
+def ratio_of(session: Planned, activity: Actual) -> float | None:
+    """How much of the session the activity was: by distance when both have one, else time.
+
+    None when there is nothing to measure against (strength, a session with
+    no size): existence is all that counts then.
+    """
+    if session.sport == "strength":
+        return None
+    if session.metres and activity.metres:
+        return activity.metres / session.metres
+    if session.seconds and activity.seconds:
+        return activity.seconds / session.seconds
+    return None
+
+
+def completion_of(ratio: float | None) -> str:
+    if ratio is None or ratio >= DONE_FROM:
+        return "done"
+    return "partial" if ratio >= PARTIAL_FROM else "extra"
+
+
+def _fit(ratio: float | None) -> float:
+    return 0.0 if ratio is None else abs(1 - ratio)
+
+
+def match_v2(
+    planned: Iterable[Planned],
+    actual: Iterable[Actual],
+    today: date,
+    *,
+    choices: Mapping[str, str] | None = None,
+) -> Result:
+    """Pair activities with planned sessions, the activity's own day first.
+
+    choices: what the person said about an activity, by its id: a session's
+    name (its schedule id) to count it as, "extra" for an extra run, or
+    "none" to leave it uncounted (an automatic match undone).
+    """
+    choices = {str(k): str(v) for k, v in (choices or {}).items()}
+    result = Result()
+    sessions = sorted(planned, key=lambda p: (p.day, p.name))
+    by_name = {p.name: p for p in sessions}
+    acts = sorted((a for a in actual if a.day <= today), key=lambda a: (a.day, str(a.activity_id)))
+    taken: dict[str, tuple[Actual, str]] = {}
+    held: set[str] = set()  # sessions an open question is about
+    extra: list[tuple[Actual, str]] = []
+
+    def open_(p: Planned) -> bool:
+        return p.name not in taken and p.name not in held
+
+    def compatible(p: Planned, a: Actual) -> bool:
+        return p.sport == a.sport
+
+    def take(p: Planned, a: Actual, reason: str) -> None:
+        taken[p.name] = (a, reason)
+
+    def ask(a: Actual, options: list[Planned]) -> None:
+        for p in options:
+            held.add(p.name)
+        result.questions.append({
+            "activity_id": a.activity_id,
+            "date": a.day.isoformat(),
+            "name": a.name,
+            "actual_km": round(a.metres / 1000, 2) if a.metres else None,
+            "options": [{"schedule": p.name, "date": p.day.isoformat(), "title": p.title or p.name}
+                        for p in options],
+        })
+        result.decisions.append({"activity_id": a.activity_id, "reason": "question",
+                                 "options": [p.name for p in options]})
+
+    def toss_up(ranked: list[tuple[float, Planned]]) -> bool:
+        return len(ranked) > 1 and ranked[1][0] - ranked[0][0] < ASK_MARGIN
+
+    rest: list[Actual] = []
+    for a in acts:
+        said = choices.get(str(a.activity_id))
+        if said in ("extra", "none"):
+            extra.append((a, "user_extra" if said == "extra" else "undone"))
+        elif said and said in by_name and by_name[said].name not in taken:
+            take(by_name[said], a, "user_choice")
+        else:
+            rest.append(a)
+
+    for a in rest:
+        today_ones = [p for p in sessions if p.day == a.day and open_(p) and compatible(p, a)]
+        named = next((p for p in sessions if open_(p) and compatible(p, a) and _same_name(p, a)
+                      and monday_of(p.day) == monday_of(a.day)), None)
+        if today_ones:
+            if named is not None and named.day != a.day:
+                # Started from another day's workout on a day with its own:
+                # which one it was is the person's to say.
+                best = min(today_ones, key=lambda p: _fit(ratio_of(p, a)))
+                ask(a, [best, named])
+                continue
+            if named is not None:
+                pick = named
+            else:
+                ranked = sorted(((_fit(ratio_of(p, a)), p) for p in today_ones), key=lambda t: (t[0], t[1].name))
+                if toss_up(ranked):
+                    ask(a, [ranked[0][1], ranked[1][1]])
+                    continue
+                pick = ranked[0][1]
+            if completion_of(ratio_of(pick, a)) == "extra" and named is None:
+                extra.append((a, "too_short"))
+                continue
+            take(pick, a, "same_day")
+            continue
+        if named is not None and not named.fixed_day:
+            take(named, a, "missed_catchup" if named.day < a.day else "forward_pull")
+            continue
+
+        def movable(p: Planned) -> bool:
+            if not open_(p) or not compatible(p, a) or p.fixed_day:
+                return False
+            if p.hard and a.easy:
+                return False
+            r = ratio_of(p, a)
+            if r is None:
+                return p.sport == "strength"
+            return abs(1 - r) <= MOVE_WITHIN
+
+        tiers = (
+            ("missed_catchup", [p for p in sessions if 0 < (a.day - p.day).days <= CATCH_UP_DAYS and movable(p)]),
+            ("forward_pull", [p for p in sessions if 0 < (p.day - a.day).days <= PULL_DAYS and movable(p)]),
+        )
+        for reason, found in tiers:
+            if not found:
+                continue
+            ranked = sorted(((_fit(ratio_of(p, a)) + 0.01 * abs((p.day - a.day).days), p) for p in found),
+                            key=lambda t: (t[0], t[1].name))
+            if toss_up(ranked):
+                ask(a, [ranked[0][1], ranked[1][1]])
+            else:
+                take(ranked[0][1], a, reason)
+            break
+        else:
+            extra.append((a, "no_session"))
+
+    for p in sessions:
+        if p.name in taken:
+            a, reason = taken[p.name]
+            r = ratio_of(p, a)
+            completion = completion_of(r)
+            if completion == "extra":  # only a person's own choice gets here
+                completion = "partial"
+            moved = (p.day - a.day).days
+            result.done.append({
+                "date": p.day.isoformat(),
+                "name": p.name,
+                "sport": p.sport,
+                "planned_seconds": p.seconds or None,
+                "planned_km": round(p.metres / 1000, 2) if p.metres else None,
+                "actual_seconds": a.seconds or None,
+                "actual_km": round(a.metres / 1000, 2) if a.metres else None,
+                "done_on": a.day.isoformat(),
+                "activity_id": a.activity_id,
+                "why": _why(p, a),
+                "reason": reason,
+                "completion": completion,
+                "ratio": round(r, 2) if r is not None else None,
+                "moved_days": moved,
+            })
+            result.decisions.append({"activity_id": a.activity_id, "schedule": p.name, "reason": reason,
+                                     "completion": completion, "ratio": round(r, 2) if r is not None else None,
+                                     "moved_days": moved})
+            continue
+        row = {"date": p.day.isoformat(), "name": p.name, "sport": p.sport,
+               "planned_seconds": p.seconds or None, **({"asked": True} if p.name in held else {})}
+        (result.upcoming if p.day > today else result.missed).append(row)
+
+    for a, reason in extra:
+        result.extra.append({
+            "date": a.day.isoformat(),
+            "name": a.name,
+            "sport": a.sport,
+            "actual_seconds": a.seconds or None,
+            "actual_km": round(a.metres / 1000, 2) if a.metres else None,
+            "reason": reason,
+            **({"activity_id": a.activity_id} if a.activity_id else {}),
+            **({"ride": True} if a.ride else {}),
+            **({"kind": a.kind} if a.kind else {}),
+        })
+        result.decisions.append({"activity_id": a.activity_id, "reason": reason, "completion": "extra"})
+    for q in result.questions:
+        a = next(x for x in acts if x.activity_id == q["activity_id"])
+        result.extra.append({
+            "date": a.day.isoformat(), "name": a.name, "sport": a.sport,
+            "actual_seconds": a.seconds or None,
+            "actual_km": round(a.metres / 1000, 2) if a.metres else None,
+            "reason": "question", "question": q["options"],
+            **({"activity_id": a.activity_id} if a.activity_id else {}),
+            **({"kind": a.kind} if a.kind else {}),
+        })
+    result.extra.sort(key=lambda r: (r["date"], str(r.get("activity_id"))))
+    return result

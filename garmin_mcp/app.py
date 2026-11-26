@@ -63,6 +63,10 @@ LOW_READINESS = 50
 # The line an easier copy carries, so undoing it needs nothing kept here.
 EASIER_MARK = "Made easier in Daash from workout"
 EASIER_RE = re.compile(re.escape(EASIER_MARK) + r" (\d+)\.")
+# Nov 26: the rest of a partial run added to a later one. Its copy is
+# deleted by Undo the same way an easier copy is.
+LONGER_MARK = "Lengthened in Daash from workout"
+LONGER_RE = re.compile(re.escape(LONGER_MARK) + r" (\d+)\.")
 # How much shorter Easier makes each rep, and a single main step.
 EASIER_REP_SHARE = 2 / 3
 EASIER_STEP_SHARE = 0.8
@@ -1202,6 +1206,8 @@ def _row(s: Mapping[str, Any], today: date, next_id: Any, extra: Mapping[str, An
         meta = " · ".join(x for x in (s.get("actual_pace"), f"{s['actual_bpm']} bpm" if s.get("actual_bpm") else None) if x) or None
     elif is_next and d <= today + timedelta(days=1):
         meta = f"{'Today' if d == today else 'Tomorrow'} · on your watch"
+    elif status == "asked":
+        meta = "Waiting for your answer below"
     elif status == "missed":
         meta = "Not recorded"
     elif status == "skipped":
@@ -1232,10 +1238,61 @@ def _row(s: Mapping[str, Any], today: date, next_id: Any, extra: Mapping[str, An
         "u": "min" if strength and s.get("planned_min") else "" if strength else "km",
         "movable": (not done and d >= today) or None,
         "schedule_id": s.get("schedule_id"), "activity_id": s.get("activity_id") if done else None,
+        **(_match_view(s, today) if s.get("match") or s.get("followup_offer") else {}),
     })
 
 
-def _extra_row(x: Mapping[str, Any]) -> dict[str, Any]:
+def _km(value: Any) -> str:
+    return f"{round(float(value), 1):g}"
+
+
+def _match_view(s: Mapping[str, Any], today: date) -> dict[str, Any]:
+    """Matching version 2 on a session row (Nov 26): how a run was counted, and what can change it."""
+    m = s.get("match") or {}
+    out: dict[str, Any] = {}
+    if m:
+        d = date.fromisoformat(s["date"])
+        when = "today's" if d == today else "yesterday's" if d == today - timedelta(days=1) else d.strftime("%a") + "'s"
+        line = f"Counted as {when} {_display(s.get('name'))}"
+        if s.get("completion") == "partial" and m.get("actual_km") and m.get("planned_km"):
+            line += f" ({_km(m['actual_km'])} of {_km(m['planned_km'])} km)"
+        if s.get("done_on") and s["done_on"] != s["date"]:
+            line += f", moved from {d.strftime('%a')} {d.day}"
+        out["match_line"] = line
+        out["match_aid"] = m.get("activity_id")
+        if s.get("completion") == "partial":
+            out["partial_of"] = _km(m["planned_km"]) if m.get("planned_km") else None
+    offer = s.get("followup_offer")
+    if offer and s.get("completion") == "partial" and not s.get("followup"):
+        od = date.fromisoformat(offer["date"])
+        whose = "today's" if od == today else "tomorrow's" if od == today + timedelta(days=1) else od.strftime("%A") + "'s"
+        add = float(offer["add_km"])
+        label = (f"Add the rest to {whose} {_the(_display(offer.get('name')))} (+{add:g} km)"
+                 if add >= float(offer.get("rest_km") or 0) - 0.05
+                 else f"Add {add:g} km to {whose} {_the(_display(offer.get('name')))}")
+        out["followup"] = {"text": f"You did {_km(m.get('actual_km') or 0)} of {_km(m.get('planned_km') or 0)} km.",
+                           "add": label, "schedule_id": s.get("schedule_id")}
+    return out
+
+
+def _question(x: Mapping[str, Any], today: date) -> dict[str, Any] | None:
+    """Two sessions fit a run about as well: ask which it was, rather than guess."""
+    options = x.get("question") or []
+    if len(options) < 2:
+        return None
+
+    def named(o: Mapping[str, Any]) -> str:
+        d = date.fromisoformat(o["date"])
+        when = "today's" if d == today else "yesterday's" if d == today - timedelta(days=1) else d.strftime("%A") + "'s"
+        return f"{when} {_display(o.get('title'))}"
+
+    labels = [named(o) for o in options]
+    return {"text": "Was this " + " or ".join(labels) + "?",
+            "options": [{"schedule_id": o["schedule"], "label": named(o)[:1].upper() + named(o)[1:]}
+                        for o in options]}
+
+
+def _extra_row(x: Mapping[str, Any], today: date | None = None) -> dict[str, Any]:
     """A run or session not on the plan, as the week shows it: it counts in the week's total,
     so it's in the list too (Nov 6: a 1.2 km top-up was in the total and nowhere else)."""
     km = x.get("actual_km")
@@ -1247,6 +1304,12 @@ def _extra_row(x: Mapping[str, Any]) -> dict[str, Any]:
         "v": f"{round(float(km), 1):g}" if km else (f"{x['actual_min']}" if x.get("actual_min") else ""),
         "u": "km" if km else "min" if x.get("actual_min") else "",
         "activity_id": x.get("activity_id"),
+        # Matching version 2 (Nov 26): a question when it's unclear, and a way to count it.
+        **({"question": _question(x, today or date.today()), "match_aid": x.get("activity_id")}
+           if x.get("question") else
+           {"match_line": "Counted as an extra run" if x.get("matched") == "user_extra"
+            else "Not counted" if x.get("matched") == "undone" else None,
+            "match_aid": x.get("activity_id")} if x.get("matched") else {}),
     })
 
 
@@ -1266,7 +1329,7 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
             "date": d.isoformat(), "dow": DAY_NAMES[i][:3].upper(), "n": d.day, "today": d == today,
             "past": d < today, "sessions": [_row(s, today, (nxt or {}).get("schedule_id"), (targets or {}).get(s.get("schedule_id")))
                                              for s in here]
-            + [_extra_row(x) for x in extra],
+            + [_extra_row(x, today) for x in extra],
         })
     run, planned = week.get("run_km"), week.get("planned_km")
     heading = (_week_heading(week, round(run or 0), round(planned))
@@ -1284,6 +1347,11 @@ def _week_view(plan: Mapping[str, Any], weeks: Mapping[str, Mapping[str, Any]], 
         "heading": heading,
         "range": _range(monday), "current": monday == today - timedelta(days=today.weekday()) or None,
         "days": days,
+        # The sessions a run can be counted as instead (matching version 2).
+        "pick": [{"schedule_id": s.get("schedule_id"), "label": f"{date.fromisoformat(s['date']).strftime('%a')} · "
+                  f"{_display(s.get('name'))}"} for s in sorted(sessions, key=lambda s: s.get("date") or "")
+                 if s.get("schedule_id")] if any(s.get("match") for s in sessions)
+        or any(x.get("matched") or x.get("question") for x in week.get("extra") or []) else None,
         "previous": earlier.isoformat() if within(earlier) else None,
         "next": later.isoformat() if within(later) else None,
         "ask_next": _ask_links(f"Use Daash to plan next week, the week of {later.isoformat()}, "
@@ -2349,7 +2417,8 @@ async def run_undo(steps: list[Mapping[str, Any]]) -> int:
             done += 1
         if step.get("delete"):
             copy = await server_mod._call(lambda c: c.get_workout_by_id(int(step["delete"]))) or {}
-            if EASIER_RE.search(str(copy.get("description") or "")):
+            if EASIER_RE.search(str(copy.get("description") or "")) or LONGER_RE.search(
+                    str(copy.get("description") or "")):
                 try:
                     await server_mod._call(lambda c: c.delete_workout(int(step["delete"])))
                 except Exception:  # noqa: BLE001 - a copy left in the library is untidy, not wrong
@@ -2963,6 +3032,134 @@ async def api_not_100_undo(request: Request) -> Response:
     if put_back:
         _watch_sent("app_not_100_undo", put_back)
     return _json({"message": "Back as it was.", "watch_said": WATCH_UPDATED})
+
+
+# -- matching corrections (Nov 26, behind GARMIN_MCP_MATCH_V2) ---------------------------
+
+MATCH_ACTIONS = ("session", "extra", "undo")
+FOLLOWUP_CHOICES = ("leave", "add", "skip")
+
+
+def _day_word(day: str, today: date) -> str:
+    d = _day_of(day)
+    if d == today:
+        return "today's"
+    if d == today - timedelta(days=1):
+        return "yesterday's"
+    return d.strftime("%a") + "'s"
+
+
+async def _fresh_plan() -> dict[str, Any]:
+    server_mod.session.forget()
+    return await server_mod.get_plan()
+
+
+@mcp.custom_route(API_PREFIX + "match", methods=["POST"])
+@_safe
+async def api_match(request: Request) -> Response:
+    """Count a run as another session, as an extra run, or undo how it was counted.
+
+    Every change is kept with what it replaced, so Undo walks it back; the
+    next read of the plan takes off the watch, or puts back, what that changes.
+    """
+    from . import matching, official
+
+    token = official.current()
+    if not matching.enabled(token):
+        return _json({"error": "Not available."}, 404)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    action, activity_id = str(body.get("action") or ""), str(body.get("activity_id") or "")
+    if action not in MATCH_ACTIONS or not activity_id.isdigit():
+        return _json({"error": "Unknown choice."}, 400)
+    today = date.today()
+    plan = await server_mod.get_plan()
+    rows = _sessions(plan)
+    was = next((r for r in rows if str((r.get("match") or {}).get("activity_id")) == activity_id), None)
+    asked = any(str(x.get("activity_id")) == activity_id and x.get("question")
+                for w in plan.get("weeks") or [] for x in w.get("extra") or [])
+    from_reason = (was.get("match") or {}).get("reason") if was else ("question" if asked else "extra")
+    if action == "session":
+        target = next((r for r in rows if str(r.get("schedule_id")) == str(body.get("schedule_id"))), None)
+        if not target:
+            return _json({"error": "That session isn't on the plan."}, 404)
+        matching.choose(token, activity_id, str(target["schedule_id"]),
+                        was=str(was["schedule_id"]) if was else None)
+        message = f"Counted as {_day_word(target['date'], today)} {_display(target.get('name'))}."
+    elif action == "extra":
+        matching.choose(token, activity_id, "extra", was=str(was["schedule_id"]) if was else None)
+        message = "Counted as an extra run."
+        target = None
+    else:
+        matching.undo(token, activity_id, auto_schedule=str(was["schedule_id"]) if was else None)
+        message = "Back as it was."
+        target = None
+    if asked and action != "undo":
+        same_day = target is not None and next(
+            (x for w in plan.get("weeks") or [] for x in w.get("extra") or []
+             if str(x.get("activity_id")) == activity_id), {}).get("date") == target.get("date")
+        matching.event(token, "match_question_answered",
+                       {"choice": "extra" if action == "extra" else ("same_day" if same_day else "other_day")})
+    else:
+        matching.event(token, "match_corrected", {
+            "from_reason": from_reason,
+            "action": {"session": "other_session", "extra": "extra", "undo": "undo"}[action]})
+    log.info("match v2: activity %s %s (was %s)", activity_id, action, from_reason)
+    after = await _fresh_plan()  # takes off, or puts back, what this changes on the watch
+    moved = any(r.get("off_watch") for r in _sessions(after)) != any(r.get("off_watch") for r in rows)
+    return _json(drop_empty({"message": message, "watch_said": WATCH_UPDATED if moved else None}))
+
+
+@mcp.custom_route(API_PREFIX + "partial", methods=["POST"])
+@_safe
+async def api_partial(request: Request) -> Response:
+    """After a partial run: leave it, add the rest to a later run, or skip the rest."""
+    from . import feeling, matching, official
+
+    token = official.current()
+    if not matching.enabled(token):
+        return _json({"error": "Not available."}, 404)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    choice, sid = str(body.get("choice") or ""), str(body.get("schedule_id") or "")
+    if choice not in FOLLOWUP_CHOICES or not sid:
+        return _json({"error": "Unknown choice."}, 400)
+    plan = await server_mod.get_plan()
+    row = next((r for r in _sessions(plan) if str(r.get("schedule_id")) == sid), None)
+    if not row or row.get("completion") != "partial":
+        return _json({"error": "That session isn't a partial one."}, 404)
+    today = date.today()
+    if choice != "add":
+        matching.followup(token, sid, choice)
+        matching.event(token, "partial_followup_chosen", {"choice": choice})
+        return _json({"message": "Left as it is." if choice == "leave" else "The rest is skipped."})
+    offer = row.get("followup_offer")
+    if not offer:
+        return _json({"error": "No later run this week can take it."}, 409)
+    target = next((r for r in _sessions(plan) if str(r.get("schedule_id")) == str(offer["schedule_id"])), None)
+    workout = await _workout(offer.get("workout_id"))
+    made = feeling.longer_run(workout, float(offer["add_km"]), (target or {}).get("planned_km"), LONGER_MARK)
+    if not target or not made:
+        return _json({"error": "That run couldn't be made longer."}, 409)
+    try:
+        step = await _replace(target, made, str(target["date"]))
+    except Exception:  # noqa: BLE001 - Garmin refused: nothing changed
+        log.exception("partial follow-up: the longer run didn't reach Garmin")
+        return _json({"error": WATCH_FAILED, "watch_failed": True, "detail": "Nothing changed. Try again in a moment."},
+                     502)
+    finally:
+        server_mod.session.forget()
+    matching.followup(token, sid, "add", [step], onto=offer["schedule_id"])
+    matching.event(token, "partial_followup_chosen", {"choice": "add", "add_km": offer["add_km"]})
+    _watch_sent("app_partial_followup", 1)
+    return _json({"message": f"{offer['add_km']:g} km added to {_day_word(target['date'], today)} "
+                             f"{_display(target.get('name'))}.", "watch_said": WATCH_UPDATED, "undo": [step]})
 
 
 def _watch_sent(source: str, sessions: int, user_token: str | None = None) -> None:
