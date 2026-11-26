@@ -1,13 +1,14 @@
 // Daash app service worker: the shell comes from Daash first, so a deploy shows
 // on the next open, and from the copy on the phone when the network is slow or
 // gone. The plan itself is never cached here (the app keeps its own last copy).
-const SHELL = "daash-shell-v9";
+const SHELL = "daash-shell-v10";
 // How long the network gets before the saved copy opens instead.
 const WAIT_MS = 2500;
 // The script and styles are kept by their build's address as they're first
 // used (below), not here: the page asks for them by build.
 const FILES = ["/app/", "/app/manifest.webmanifest",
-  "/app/fonts/Geist.woff2", "/app/fonts/GeistMono.woff2", "/app/icons/favicon.svg", "/app/icons/icon-512.png"];
+  "/app/fonts/Geist.woff2", "/app/fonts/GeistMono.woff2", "/app/icons/favicon.svg", "/app/icons/icon-512.png",
+  "/app/icons/maskable-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

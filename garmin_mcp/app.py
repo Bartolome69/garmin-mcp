@@ -2564,6 +2564,20 @@ APP_EVENTS = {"ask_clicked", "ask_chosen", "ask_chat_saved", "share_clicked", "s
               "ready",
               # Nov 23: the Get your plan screen.
               "plan_choice_shown", "plan_form_step", "plan_handoff_opened"}
+# Nov 26 (pwa-v2): the install and notification funnel, each property from a known set.
+_PLATFORMS = ("ios", "android", "desktop")
+_PUSH_TYPES = ("today", "plan", "weekly", "run", "evening", "morning")
+PWA_EVENTS: dict[str, dict[str, Any]] = {
+    "pwa_install_prompt_shown": {"platform": _PLATFORMS, "trigger": ("plan_views", "watch_send", "edit", "remind_me")},
+    "pwa_install_prompt_result": {"result": ("accepted", "dismissed", "acknowledged"), "platform": _PLATFORMS},
+    "pwa_installed": {"platform": _PLATFORMS, "via": ("prompt", "browser", "first_standalone_open")},
+    "app_opened": {"source": ("pwa", "chat", "push", "web", "email"), "standalone": bool,
+                   "tool": ("get_plan", "create_workout", "schedule_workout", "create_plan", "get_progress",
+                            "get_activity_details", "get_session")},
+    "push_permission_prompt_shown": {"trigger": ("installed", "remind_me", "you"), "platform": _PLATFORMS},
+    "push_permission_result": {"result": ("granted", "denied", "default"), "trigger": ("installed", "remind_me", "you")},
+    "push_clicked": {"type": _PUSH_TYPES},
+}
 # The screens a view can name: the app's own GET routes.
 APP_SCREENS = {"today", "session", "run", "plan", "crew", "you", "build"}
 
@@ -2780,7 +2794,7 @@ async def api_event(request: Request) -> Response:
     except ValueError:
         body = {}
     name = str((body or {}).get("name") or "")
-    if name not in APP_EVENTS:
+    if name not in APP_EVENTS and name not in PWA_EVENTS:
         return _json({"error": "Unknown event."}, 400)
     said = (body or {}).get("properties") or {}
     if name == "viewed":
@@ -2811,6 +2825,18 @@ async def api_event(request: Request) -> Response:
                 return _json({"error": "Unknown assistant."}, 400)
             _track("plan_handoff_opened", drop_empty({"assistant": to, "screen": screen,
                                                       "race": said.get("race") if said.get("race") in (*RACE_WORDS, "other", "none") else None}))
+        return _json({"ok": True})
+    if name in PWA_EVENTS:
+        # Nov 26 (pwa-v2): install, permission, opens and notification taps, in known words only.
+        keep = {}
+        for key, allowed in PWA_EVENTS[name].items():
+            value = said.get(key)
+            if allowed is bool:
+                if isinstance(value, bool):
+                    keep[key] = value
+            elif value in allowed:
+                keep[key] = value
+        _track(name, drop_empty({**keep, "layout": _layout(request), "home_screen": _home(request)}))
         return _json({"ok": True})
     if name == "ready":
         # Numbers and a few known words only: what the wait was, and why.
@@ -2857,10 +2883,13 @@ async def _push(request: Request) -> Response:
     from . import official, push
 
     user_token = official.current()
+    pwa = await asyncio.to_thread(pwa_on, user_token)
     if request.method == "GET":
         on = await asyncio.to_thread(store.has_push, user_token) if user_token else False
         when = await asyncio.to_thread(store.heads_up_for, user_token) if on else None
-        return _json(drop_empty({"key": await asyncio.to_thread(push.public_key), "on_somewhere": on, "heads_up": when}))
+        kinds = await asyncio.to_thread(store.push_kinds_for, user_token) if on and pwa else None
+        return _json(drop_empty({"key": await asyncio.to_thread(push.public_key), "on_somewhere": on, "heads_up": when,
+                                 "pwa": pwa or None, "kinds": kinds}))
     try:
         body = await request.json()
     except ValueError:
@@ -2872,6 +2901,18 @@ async def _push(request: Request) -> Response:
         if gone:
             _track("app_push_off", drop_empty({"layout": _layout(request), "home_screen": _home(request)}))
         return _json({"ok": True})
+    if "kind" in body:
+        # Nov 26 (pwa-v2): one kind of notification on or off, from You or a notification's own screen.
+        kind = str(body.get("kind") or "")
+        if kind not in store.PUSH_KINDS or not user_token:
+            return _json({"error": "That isn't one of the notifications."}, 400)
+        kinds = await asyncio.to_thread(store.set_push_kind, user_token, kind, body.get("on") is True)
+        if kinds is None:
+            return _json({"error": "Turn notifications on first."}, 400)
+        _track("push_kind_switched", {"type": kind, "on": kinds[kind], "where": body.get("where")
+                                      if body.get("where") in ("you", "landing") else None})
+        return _json({"ok": True, "kinds": kinds,
+                      "message": f"{PUSH_KIND_SAID[kind]} {'on' if kinds[kind] else 'off'}."})
     if "heads_up" in body:
         when = str(body.get("heads_up") or "")
         if when not in store.HEADS_UP or not user_token:
@@ -2889,9 +2930,26 @@ async def _push(request: Request) -> Response:
             ZoneInfo(tz)
         except Exception:  # noqa: BLE001 - an unknown zone is left out, London is assumed
             tz = None
-    await asyncio.to_thread(store.save_push, user_token, *found, tz)
+    await asyncio.to_thread(store.save_push, user_token, *found, tz, "7" if pwa else None)
     _track("app_push_on", drop_empty({"layout": _layout(request), "home_screen": _home(request), "tz": tz}))
-    return _json({"ok": True})
+    return _json(drop_empty({"ok": True, "message": (
+        "Notifications on. Today's session at 7am, how each run counted, and your week on Sunday evening. "
+        "Change any of them in You.") if pwa else None}))
+
+
+PUSH_KIND_SAID = {"today": "Today's session", "plan": "Plan changes", "weekly": "Weekly summary"}
+PWA_FLAG = "pwa-v2"
+
+
+def pwa_on(user_token: str | None) -> bool:
+    """The PostHog flag pwa-v2 (Nov 26): install at the right moment, three kinds of notification."""
+    from . import analytics
+
+    if not user_token or user_token == "local":
+        return False
+    user = store.get_user(user_token)
+    subject = (user.email_hash or user_token) if user else None
+    return bool(subject) and analytics.flag_on(PWA_FLAG, subject)
 
 
 # What the page may say about an event: choices and counts, never a name, a date or a time typed in.

@@ -81,7 +81,7 @@ async function phone(browser, device, opens) {
     await p.tap("#ask-new");
     got = await p.state();
     check("New chat goes to a new chat with the question, as before", got.visited[1] === NEW, JSON.stringify(got));
-    const sent = p.events.map((e) => e.name + ":" + (e.properties.choice || ""));
+    const sent = p.events.filter((e) => e.name !== "app_opened").map((e) => e.name + ":" + (e.properties.choice || ""));
     check("each Ask is counted once, with the choice",
       sent.join() === "ask_clicked:,ask_chosen:my_chat,ask_clicked:,ask_chosen:new_chat", JSON.stringify(p.events));
     check("no page threw an error", p.errors.length === 0, p.errors.join("; "));

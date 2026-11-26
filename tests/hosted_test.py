@@ -461,12 +461,12 @@ async def main() -> int:
                   "app" in plan_a_off and "app" not in plan_b_off, str(plan_b_off.get("app")))
             offer_note, ask_note = garmin_server.APP_OFFER_NOTE, garmin_server.APP_NOTE
             check("the first time, a preview account's model is asked to mention the app once, and the link says so",
-                  app_a.get("note") == offer_note and str(app_a.get("url", "")).endswith("&source=chat_offer"), str(app_a))
+                  app_a.get("note") == offer_note and "&source=chat_offer&tool=get_plan" in str(app_a.get("url", "")), str(app_a))
             check("switched off, it isn't brought up outside preview: their link is for when they ask",
-                  app_b.get("note") == ask_note and str(app_b.get("url", "")).endswith("&source=chat"), str(app_b))
+                  app_b.get("note") == ask_note and "&source=chat&tool=get_plan" in str(app_b.get("url", "")), str(app_b))
             app_again = again_a.get("app") or {}
             check("not again the same week", app_again.get("note") == ask_note
-                  and str(app_again.get("url", "")).endswith("&source=chat"), str(app_again))
+                  and "&source=chat&tool=get_plan" in str(app_again.get("url", "")), str(app_again))
             check("a week on, it can be mentioned again", (week_on_a.get("app") or {}).get("note") == offer_note,
                   str(week_on_a.get("app")))
             check("never to someone who has used the app in the last two weeks",
@@ -1909,7 +1909,7 @@ async def main() -> int:
             # Nov 23: an app card, for the assistant to show as written.
             check("the first workout on the watch brings the app card, its link signed in, on that week with it picked out",
                   card.get("text") == hosted.APP_CARD_TEXT and card.get("button") == "Open the Daash app"
-                  and "login=" in url and "week=2026-11-09" in url and "focus=2026-11-14" in url and url.endswith("source=first_push")
+                  and "login=" in url and "week=2026-11-09" in url and "focus=2026-11-14" in url and "source=first_push&tool=create_workout" in url
                   and said.get("url") == url and "app_card" in said.get("note", ""), str(first_send))
             check("its words are Bart's",
                   hosted.APP_CARD_TEXT == "Your workout's on your watch. See your week in the Daash app: move sessions, tap "
@@ -1952,7 +1952,7 @@ async def main() -> int:
             offered = [e["properties"].get("reason") for e in SENT[before:] if e["event"] == "app_link_offered"]
             check("seven days on without opening the app, the card comes once more, as a reminder",
                   (reminded.get("app_card") or {}).get("text") == hosted.APP_CARD_TEXT
-                  and (reminded.get("app_card") or {}).get("url", "").endswith("source=reminder"), str(reminded))
+                  and (reminded.get("app_card") or {}).get("url", "").endswith("source=reminder&tool=schedule_workout"), str(reminded))
             check("and never again after that", "app_card" not in third and "app_card" not in fourth)
             check("app_link_offered says it was the reminder", offered == ["reminder"], str(offered))
 
@@ -1987,7 +1987,7 @@ async def main() -> int:
             vet_push = push(veteran)
             men_push = push(mentioned)
             check("someone never offered it gets it on their next push, as a first push",
-                  (vet_push.get("app_card") or {}).get("url", "").endswith("source=first_push"), str(vet_push))
+                  (vet_push.get("app_card") or {}).get("url", "").endswith("source=first_push&tool=schedule_workout"), str(vet_push))
             check("someone the old mention offered it to waits for the reminder", "app_card" not in men_push)
             check("each offer counted once with its reason",
                   [e["properties"].get("reason") for e in SENT[before:] if e["event"] == "app_link_offered"] == ["first_push"])

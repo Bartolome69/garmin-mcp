@@ -2539,7 +2539,7 @@ def _run_card(activity_id: Any, planned: dict[str, Any] | None, workout: dict[st
     return drop_empty({
         "type": (planned or {}).get("ty"), "planned": (planned or {}).get("n"),
         "week": week[0], "weeks": week[1], "block": (planned or {}).get("b"),
-        "verdict": verdict, "app_url": app_link(f"run/{activity_id}", "card"),
+        "verdict": verdict, "app_url": app_link(f"run/{activity_id}", "card", tool="get_activity_details"),
     }) or None
 
 
@@ -2850,7 +2850,7 @@ async def get_session(date: str = "today") -> dict[str, Any]:
     change = _recent_change(wid, training_plan.workout_steps(detail)) if wid and detail else None
     card = training_plan.session_card(answer, day, today, detail, change)
     # The same session in the companion app, for the card's Open in Daash.
-    link = None if card.get("rest") else app_link("plan", "card", week=monday_of(day), focus=day)
+    link = None if card.get("rest") else app_link("plan", "card", week=monday_of(day), focus=day, tool="get_session")
     if link:
         card["app_url"] = link
         button = app_button()
@@ -2894,7 +2894,7 @@ def app_link_available() -> bool:
 
 
 def app_link(route: str, source: str | None = None, week: str | None = None,
-             focus: str | None = None) -> str | None:
+             focus: str | None = None, tool: str | None = None) -> str | None:
     """The companion app at a route ("plan", "session/2026-11-04"), for a card.
 
     For everyone (Nov 6: only preview accounts had it, and nobody else ever
@@ -2917,7 +2917,19 @@ def app_link(route: str, source: str | None = None, week: str | None = None,
         query.append(f"focus={focus}")
     if source:
         query.append(f"source={source}")
+    # Nov 26: which tool's answer the link was in, so app_opened can say.
+    if tool:
+        query.append(f"tool={tool}")
     return f"{base}/app/#/{route}" + (f"?{'&'.join(query)}" if query else "")
+
+
+# Nov 26 (pwa-v2): one short link at the end of an answer about the plan, a
+# workout sent to the watch or the week, once a day at most.
+CHAT_LINK_NOTE = (
+    "After answering, end with one short line of your own linking to this in the Daash app, such as "
+    "'See it in the Daash app' with this link. This link only, once, as a plain aside: no sales talk. "
+    "It opens the app signed in (once, within 15 minutes)."
+)
 
 
 def app_card_note() -> str:

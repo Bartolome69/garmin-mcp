@@ -145,6 +145,7 @@ document.addEventListener("click", (e) => {
 }, true);
 window.addEventListener("appinstalled", () => {
   track("installed");
+  if (PWA && !store.get(INSTALLED)) track("pwa_installed", { platform: phoneKind() || "desktop", via: "browser" });
   store.set(INSTALLED, "1");
   const card = document.getElementById("nudge");
   if (card) card.remove();
@@ -166,6 +167,16 @@ class SignedOut extends Error {}
 let pullFresh = null;
 
 async function api(path, options = {}, retry = true) {
+  // A session moved here is a moment the app earned its place (pwa-v2).
+  if (options.method === "POST" && /^session\/[\d-]+\/move$/.test(path)) {
+    const done = apiCall(path, options, retry);
+    done.then(() => setTimeout(() => installMoment("edit"), 1500), () => {});
+    return done;
+  }
+  return apiCall(path, options, retry);
+}
+
+async function apiCall(path, options = {}, retry = true) {
   const from = options.ahead ? null : cameFrom;
   const link = options.ahead ? null : cameLink;
   if (from) cameFrom = null;
@@ -302,7 +313,11 @@ async function show(path, render, onFail, quiet = false) {
     if (e instanceof SignedOut) return route();
     if (mine !== showing) return;
     if (hit) toast("Couldn't reach Garmin just now. This is the last copy.");
-    else onFail(e);
+    else if (!navigator.onLine && cache.get("plan") && !path.startsWith("plan")) {
+      // Offline with nothing saved for this screen: the week as it last loaded (Nov 26).
+      toast("You're offline. This is your plan as it last loaded.");
+      location.hash = "#/plan";
+    } else onFail(e);
   }
 }
 // The other tabs, fetched once the first screen is up, so a tap is instant.
@@ -1732,6 +1747,7 @@ window.addEventListener("resize", () => fitPhases());
 
 async function showPlan(view, params, quiet = false) {
   tabs("plan");
+  if (!quiet && !calm) planSeen();
   const week = params.get("week");
   return show(`plan${week ? `?week=${encodeURIComponent(week)}` : ""}`, (d) => {
     const seg = (id, label) => `<a href="#/plan${id === "block" ? "/block" : ""}" class="${view === id ? "on" : ""}" ${view === id ? 'aria-current="page"' : ""}>${label}</a>`;
@@ -2314,8 +2330,12 @@ async function showYou() {
             toast(store.get(OPENS) === "web" ? "Ask Claude opens in the browser." : "Ask Claude opens the Claude app, or the browser without it.");
             return showYou();
           }
-          if (b.dataset.you === "push") return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => { cache.drop((k) => k === "you"); showYou(); });
+          if (b.dataset.you === "push") {
+            if (PWA && !pushIsOn()) return pushAsk("you");
+            return (pushIsOn() ? turnOffPush() : turnOnPush("you")).then(() => { cache.drop((k) => k === "you"); showYou(); });
+          }
           if (b.dataset.you === "headsup") return headsUpSheet(d);
+          if (b.dataset.you.startsWith("kind-")) return switchKind(b.dataset.you.slice(5)).then(() => { cache.drop((k) => k === "you"); showYou(); });
           if (b.dataset.you === "theme") return themeSheet();
           return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOutSheet();
         };
@@ -2413,6 +2433,7 @@ function shownOnce(name) {
 }
 
 function nudge() {
+  if (PWA) return remindRow();
   const days = daysSeen();
   // Phones only: never on a computer, however narrow its window.
   if (desktop() || !phoneKind()) return "";
@@ -2473,6 +2494,7 @@ function keyBytes(key) {
 async function turnOnPush(where) {
   try {
     const answer = await Notification.requestPermission();
+    if (PWA) track("push_permission_result", { result: answer, trigger: ["installed", "remind_me", "you"].includes(where) ? where : "you" });
     if (answer !== "granted") {
       track("push_denied", { where });
       if (answer === "denied") toast("Notifications are blocked for Daash. Allow them in your phone's settings.");
@@ -2485,9 +2507,11 @@ async function turnOnPush(where) {
       || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
     let tz = null;
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { tz = null; }
-    await api("push", { method: "POST", body: JSON.stringify({ subscription: sub.toJSON(), tz }) });
+    const said = await api("push", { method: "POST", body: JSON.stringify({ subscription: sub.toJSON(), tz }) });
     store.set(PUSH_ON, "1");
-    toast("Notifications on. You'll hear about each session at 8pm the evening before. Change it in You.");
+    document.querySelector(".remind-row")?.remove();
+    if (PWA) { try { pushInfo = await api("push", { ahead: true }); } catch { /* the switches show on the next open */ } }
+    toast(said.message || "Notifications on. You'll hear about each session at 8pm the evening before. Change it in You.");
   } catch (e) {
     if (e instanceof SignedOut) return route();
     toast(e.message || "Notifications couldn't be turned on.");
@@ -2511,7 +2535,7 @@ async function turnOffPush() {
 }
 
 // When the heads-up about a session goes (Nov 11). The evening before is the default.
-const HEADS_UP = [["evening", "Evening before", "8pm the night before"], ["6", "6am", "That morning"],
+const HEADS_UP_ALL = [["evening", "Evening before", "8pm the night before"], ["6", "6am", "That morning"],
   ["7", "7am", "That morning"], ["8", "8am", "That morning"]];
 
 // In You: the switch, on a phone that can have notifications at all, and when they go.
@@ -2561,14 +2585,15 @@ function pushRow(d = {}) {
     : !canPush() ? { l: "Notifications", v: "Not here", sub: "This browser can't show notifications. Try Chrome, Safari or the home-screen app." }
     : blocked ? { l: "Notifications", v: "Blocked", sub: "Allow them for Daash in your browser or phone settings." }
     : { l: "Notifications", v: on ? "On" : "Off", sub: "Session heads-up and run verdicts. Tap to switch", action: "push" };
-  const when = HEADS_UP.find(([code]) => code === (d.heads_up || "evening"));
+  const when = HEADS_UP_ALL.find(([code]) => code === (d.heads_up || (PWA ? "7" : "evening")));
   const time = on && !blocked && !iosBrowser ? youRow({ l: "Session heads-up", v: when[1], sub: "When you hear about a planned session", action: "headsup" }, {}, 1) : "";
   return `<section class="stack-8"><span class="kicker" style="font-size:11.5px;letter-spacing:0.08em;padding-left:2px">NOTIFICATIONS</span>
-    <div class="card" style="overflow:hidden">${youRow({ ...r, tone: on ? "ok" : undefined }, {}, 0)}${time}</div></section>`;
+    <div class="card" style="overflow:hidden">${youRow({ ...r, tone: on ? "ok" : undefined }, {}, 0)}${time}${kindRows(on && !blocked && !iosBrowser)}</div></section>`;
 }
 
 function headsUpSheet(d) {
-  const chosen = d.heads_up || "evening";
+  const chosen = d.heads_up || (PWA ? "7" : "evening");
+  const HEADS_UP = PWA ? HEADS_UP_ALL.filter(([code]) => code !== "6" || chosen === "6") : HEADS_UP_ALL;
   sheet(`<div class="stack-tight"><span class="strong" id="sheet-title">Session heads-up</span>
       <span class="meta">When you hear what's planned. Out the door early? The evening before gives you time to get kit ready.</span></div>
     <div class="times-grid">${HEADS_UP.map(([code, label, sub]) => `<button class="pill" data-when="${code}" aria-pressed="${code === chosen}" style="flex-direction:column;gap:2px;height:auto;padding:10px 12px"><span>${esc(label)}</span><span style="font-size:12px;opacity:0.72">${esc(sub)}</span></button>`).join("")}</div>
@@ -2589,6 +2614,192 @@ function headsUpSheet(d) {
 function homeScreen() {
   return window.navigator.standalone === true
     || !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
+
+// -- pwa-v2 (Nov 26, PostHog flag): install at a moment that means something, ---
+// notifications asked for in our own words first, three kinds switched in You.
+// Never on a first open, never in the home-screen app, 14 days' quiet after Not now.
+const PWA_ON = "daash.pwa";            // the flag as last heard, so a second open knows at once
+const PWA_LATER = "daash.pwa.later";
+const PLAN_VIEWS = "daash.plan.views";
+const STANDALONE_SEEN = "daash.pwa.standalone";
+const SENT_TOOLS = ["create_workout", "schedule_workout", "create_plan"];
+let PWA = store.get(PWA_ON) === "1";
+let pushInfo = null;
+let pwaOpened = false;
+let openTool = null;
+const platformNow = () => phoneKind() || "desktop";
+
+// Where this open came from: the home-screen app, a chat answer, a notification, an email, or the web.
+function openSource() {
+  if (new URLSearchParams(location.search).get("source") === "pwa") return "pwa";
+  const f = openedFrom || "";
+  if (/^push/.test(f)) return "push";
+  if (["chat", "card", "ai_mention", "chat_offer", "first_push", "reminder"].includes(f)) return "chat";
+  if (f === "weekly_email") return "email";
+  return homeScreen() ? "pwa" : "web";
+}
+
+// Once per open, after sign-in: app_opened for everyone; the rest only with the flag.
+async function pwaOpen() {
+  if (pwaOpened || !token.access) return;
+  pwaOpened = true;
+  const tool = location.hash.match(/[?&]tool=([a-z_]{1,32})/);
+  if (tool) {
+    openTool = tool[1];
+    history.replaceState(null, "", location.pathname + location.search + location.hash.replace(/[?&]tool=[a-z_]+/, "").replace(/^([^?&]*)&/, "$1?"));
+  }
+  const source = openSource();
+  track("app_opened", { source, standalone: homeScreen(), ...(openTool ? { tool: openTool } : {}) });
+  // Asked ahead, so the screen's own request keeps where the open came from.
+  try { pushInfo = await api("push", { ahead: true }); } catch { pushInfo = null; }
+  PWA = !!(pushInfo && pushInfo.pwa);
+  if (PWA) store.set(PWA_ON, "1"); else store.drop(PWA_ON);
+  if (!PWA) return;
+  document.getElementById("nudge")?.remove();
+  if (source === "push") {
+    const type = (openedFrom || "").replace(/^push_/, "");
+    track("push_clicked", { type });
+    landingNote(type);
+  }
+  if (homeScreen() && !store.get(STANDALONE_SEEN)) {
+    store.set(STANDALONE_SEEN, "1");
+    // iPhone says nothing when Daash is added: its first open from the home screen is the install.
+    if (!store.get(INSTALLED)) track("pwa_installed", { platform: platformNow(), via: "first_standalone_open" });
+    store.set(INSTALLED, "1");
+    return setTimeout(() => pushAsk("installed"), 1200);
+  }
+  if (openTool && SENT_TOOLS.includes(openTool)) setTimeout(() => installMoment("watch_send"), 1500);
+}
+
+// A meaningful moment: the plan seen a second time, a workout just sent to the watch, a session moved.
+function installMoment(trigger) {
+  if (!PWA || homeScreen() || store.get(INSTALLED) || quiet(PWA_LATER) || openNo < 2 || $("sheet").innerHTML) return;
+  const kind = phoneKind();
+  if (!kind && !installEvent) return; // a computer only when Chrome offers to install
+  track("pwa_install_prompt_shown", { platform: platformNow(), trigger });
+  if (kind === "ios") return iosInstallSheet();
+  const steps = installEvent ? "" : `<span class="meta" style="font-size:13.5px;line-height:1.45">${homeSteps()}</span>`;
+  sheet(`<div class="stack-tight" style="gap:6px"><span class="strong" id="sheet-title">Put Daash on your ${kind ? "home screen" : "computer"}</span>
+      <span class="meta" style="line-height:1.45">Your plan in one tap, without opening a chat. Then Daash can tell you what's on each morning.</span>${steps}</div>
+    <div class="pills"><button class="pill" data-pwa="later">Not now</button>${installEvent ? `<button class="pill light" data-pwa="install">Install</button>` : `<button class="pill light" data-pwa="ok">Got it</button>`}</div>`,
+  (holder, close) => wireInstall(holder, close));
+}
+
+// iPhone has no install button for a web app: the two taps, drawn.
+function iosInstallSheet(why) {
+  const share = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>`;
+  const add = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`;
+  const safari = !/CriOS|FxiOS|EdgiOS|OPiOS|FBAN|FBAV|Instagram|GSA\//.test(navigator.userAgent);
+  sheet(`<div class="stack-tight" style="gap:6px"><span class="strong" id="sheet-title">Add Daash to your home screen</span>
+      <span class="meta" style="line-height:1.45">${why ? esc(why) + " " : ""}One tap to your plan, and on iPhone it's what lets Daash send you notifications.</span></div>
+    ${safari ? "" : `<div class="card pad meta" style="font-size:13.5px">Open this page in Safari first: other browsers on iPhone can't add it.</div>`}
+    <ol class="ios-steps">
+      <li><span class="ios-ico">${share}</span><span>Tap <b>Share</b> in Safari's bar at the bottom.</span></li>
+      <li><span class="ios-ico">${add}</span><span>Scroll down, tap <b>Add to Home Screen</b>, then <b>Add</b>.</span></li>
+    </ol>
+    <div class="ios-bar" aria-hidden="true"><span></span><span class="ios-share">${share}</span><span></span><i class="ios-arrow"></i></div>
+    <div class="pills"><button class="pill" data-pwa="later">Not now</button><button class="pill light" data-pwa="ok">Got it</button></div>`,
+  (holder, close) => wireInstall(holder, close));
+}
+
+function wireInstall(holder, close) {
+  holder.querySelectorAll("[data-pwa]").forEach((b) => {
+    b.onclick = async () => {
+      const what = b.dataset.pwa;
+      if (what === "later") {
+        store.set(PWA_LATER, String(Date.now()));
+        track("pwa_install_prompt_result", { result: "dismissed", platform: platformNow() });
+      } else if (what === "ok") {
+        // iPhone: whether they added it can't be seen here; its first open from the home screen says so.
+        store.set(PWA_LATER, String(Date.now()));
+        track("pwa_install_prompt_result", { result: "acknowledged", platform: platformNow() });
+      } else if (what === "install" && installEvent) {
+        installEvent.prompt();
+        const choice = await installEvent.userChoice.catch(() => null);
+        installEvent = null;
+        const accepted = !!(choice && choice.outcome === "accepted");
+        track("pwa_install_prompt_result", { result: accepted ? "accepted" : "dismissed", platform: platformNow() });
+        if (accepted) { store.set(INSTALLED, "1"); track("pwa_installed", { platform: platformNow(), via: "prompt" }); }
+        else store.set(PWA_LATER, String(Date.now()));
+      }
+      close();
+    };
+  });
+}
+
+function planSeen() {
+  const n = (Number(store.get(PLAN_VIEWS)) || 0) + 1;
+  store.set(PLAN_VIEWS, String(n));
+  if (n >= 2) setTimeout(() => installMoment("plan_views"), 1200);
+}
+
+// Can notifications be asked for here and now? iPhone only from the home-screen app.
+const pushAskable = () => canPush() && Notification.permission !== "denied" && !pushIsOn()
+  && (phoneKind() !== "ios" || homeScreen());
+
+// Our own words first; the phone's question only after Turn on.
+function pushAsk(trigger) {
+  if (!PWA) return;
+  if (phoneKind() === "ios" && !homeScreen()) {
+    track("pwa_install_prompt_shown", { platform: "ios", trigger: "remind_me" });
+    return iosInstallSheet("On iPhone, notifications come from the home-screen app.");
+  }
+  if (!pushAskable() || (trigger !== "remind_me" && quiet(PUSH_LATER)) || $("sheet").innerHTML) return;
+  track("push_permission_prompt_shown", { trigger, platform: platformNow() });
+  sheet(`<div class="stack-tight" style="gap:6px"><span class="strong" id="sheet-title">A nudge from Daash?</span>
+      <span class="meta" style="line-height:1.45">One a day at most, plus how each run counted. Never between 9pm and 7am:</span></div>
+    <ul class="push-list"><li><b>Today's session</b> at 7am, with its paces. It's on your watch.</li>
+      <li><b>How each run counted</b> against your plan, once your watch syncs.</li>
+      <li><b>Your week</b> on Sunday evening: done against planned, and next week's key session.</li></ul>
+    <span class="meta" style="font-size:13px">Switch any of them off in You, or from the notification itself.</span>
+    <div class="pills"><button class="pill" data-push="later">Not now</button><button class="pill light" data-push="on">Turn on</button></div>`,
+  (holder, close) => {
+    holder.querySelector('[data-push="later"]').onclick = () => { store.set(PUSH_LATER, String(Date.now())); close(); };
+    holder.querySelector('[data-push="on"]').onclick = async () => { close(); await turnOnPush(trigger); };
+  });
+}
+
+// On the screen a notification opened: a way to stop that kind, right there.
+const PUSH_NAMES = { today: "today's session", plan: "plan change", weekly: "weekly summary", morning: "today's session", evening: "today's session", run: "plan change" };
+function landingNote(type) {
+  const kind = { morning: "today", evening: "today", run: "plan" }[type] || type;
+  if (!["today", "plan", "weekly"].includes(kind)) return;
+  setTimeout(() => {
+    const host = $("screen");
+    if (!host || host.querySelector(".push-landing")) return;
+    host.insertAdjacentHTML("beforeend", `<div class="push-landing meta">From a Daash notification. <button type="button" class="link-plain" data-push-off="${kind}">Stop ${esc(PUSH_NAMES[kind])} notifications</button></div>`);
+    host.querySelector("[data-push-off]").onclick = async (e) => {
+      try {
+        const r = await api("push", { method: "POST", body: JSON.stringify({ kind, on: false, where: "landing" }) });
+        e.target.parentNode.textContent = `${r.message} Turn it back on in You.`;
+      } catch (err) { toast(err.message); }
+    };
+  }, 900);
+}
+
+// The "Remind me" button: on Today, while notifications are off.
+function remindRow() {
+  if (!PWA || pushIsOn() || !canPush() || (canPush() && Notification.permission === "denied")) return "";
+  return `<div class="remind-row" id="nudge"><button type="button" class="pill" data-remind>${ICON.bell ? ICON.bell(16) : ""}Remind me before each session</button></div>`;
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest && e.target.closest("[data-remind]")) pushAsk("remind_me");
+});
+
+// In You, under pwa-v2: each kind on its own switch.
+const KIND_ROWS = [["today", "Today's session", "At the time below"], ["plan", "Plan changes", "How each run counted"],
+  ["weekly", "Weekly summary", "Sunday at 6pm"]];
+function kindRows(on) {
+  if (!PWA || !on || !pushInfo || !pushInfo.kinds) return "";
+  return KIND_ROWS.map(([k, l, sub], i) => youRow({ l, v: pushInfo.kinds[k] ? "On" : "Off", sub: sub + " · tap to switch", action: `kind-${k}`, tone: pushInfo.kinds[k] ? "ok" : undefined }, {}, i + 2)).join("");
+}
+async function switchKind(kind) {
+  try {
+    const r = await api("push", { method: "POST", body: JSON.stringify({ kind, on: !(pushInfo && pushInfo.kinds && pushInfo.kinds[kind]), where: "you" }) });
+    if (pushInfo) pushInfo.kinds = r.kinds;
+    toast(r.message);
+  } catch (e) { if (e instanceof SignedOut) return route(); toast(e.message); }
 }
 
 function signInView(message, step = "start", email = "") {
@@ -3546,6 +3757,7 @@ async function route(stay) {
   const handed = await handOff();
   if (handed) return signInView(handed);
   if (!token.access) return signInView();
+  pwaOpen();
   const [path, query] = (location.hash.replace(/^#\/?/, "") || "today").split("?");
   const params = new URLSearchParams(query || "");
   const [screen, arg] = path.split("/");

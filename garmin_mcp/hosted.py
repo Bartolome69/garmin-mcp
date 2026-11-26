@@ -1474,9 +1474,10 @@ def _with_app_card(name: str, result: dict, user_token: str, user: store.User, p
     if not reason:
         return result
     day = _sent_day(name, result)
-    link = server_mod.app_link("plan", reason, week=server_mod.monday_of(day) if day else None, focus=day)
+    link = server_mod.app_link("plan", reason, week=server_mod.monday_of(day) if day else None, focus=day, tool=name)
     if not link:
         return result
+    _CHAT_LINKED[(person, time.strftime("%Y-%m-%d"))] = True
     analytics.capture("app_link_offered", person, {"reason": reason, "tool": name})
     return {**result,
             "app_card": {"text": APP_CARD_TEXT, "url": link, "button": "Open the Daash app"},
@@ -1612,6 +1613,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             result = _with_app_link(name, result, user_token, user)
         if sent and isinstance(result, dict) and "error" not in result:
             result = _with_app_card(name, result, user_token, user, person)
+        if (sent or name == "get_progress") and isinstance(result, dict) and "error" not in result:
+            result = _with_chat_link(name, result, user, user_token)
         if (
             isinstance(result, dict) and "error" not in result
             and store.claim_news(user_token, NEWS_VERSION)
@@ -1690,9 +1693,13 @@ def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -
         and not store.used_client_since(user_token, oauth.APP_CLIENT_ID, int(time.time()) - APP_USED_WITHIN)
         and store.claim_app_offer(user_token, APP_OFFER_EVERY)
     )
-    link = server_mod.app_link("plan", "chat_offer" if offer else "chat")
+    person = user.email_hash or user_token
+    daily = not offer and _chat_link_due(person)
+    link = server_mod.app_link("plan", "chat_offer" if offer else "chat", tool=name)
     if not link:
         return result
+    if daily:
+        analytics.capture("app_link_offered", person, {"tool": name, "account": user.email_masked, "reason": "daily_chat"})
     if offer:
         analytics.capture(
             "app_link_offered",
@@ -1701,12 +1708,41 @@ def _with_app_link(name: str, result: dict, user_token: str, user: store.User) -
         )
     # The card's own button gets its own code, marked as the card's, opening on
     # the week the card shows: the card adds which week (and which run) it's on.
-    card_link = server_mod.app_link("plan", "card")
+    card_link = server_mod.app_link("plan", "card", tool=name)
     button = server_mod.app_button(week=True)
     return {**result, "app": drop_empty({
-        "url": link, "note": server_mod.APP_OFFER_NOTE if offer else server_mod.APP_NOTE,
+        "url": link, "note": (server_mod.APP_OFFER_NOTE if offer
+                              else server_mod.CHAT_LINK_NOTE if daily else server_mod.APP_NOTE),
         "card_url": card_link, "card_label": button["label"], "card_variant": button["variant"],
     })}
+
+
+# Nov 26 (pwa-v2): who has had today's one link to the app in a chat answer.
+_CHAT_LINKED = BoundedDict(20000)
+
+
+def _chat_link_due(person: str) -> bool:
+    """One short app link a day in chat answers, for accounts with pwa-v2."""
+    key = (person, time.strftime("%Y-%m-%d"))
+    if key in _CHAT_LINKED or not pwa_on(person):
+        return False
+    _CHAT_LINKED[key] = True
+    return True
+
+
+def _with_chat_link(name: str, result: dict, user: store.User, user_token: str) -> dict:
+    """A workout sent to the watch, or the week summed up: the app at that week, once a day (pwa-v2)."""
+    if result.get("app") or not server_mod.app_link_available():
+        return result
+    person = user.email_hash or user_token
+    if not _chat_link_due(person):
+        return result
+    day = _sent_day(name, result) if name != "get_progress" else None
+    link = server_mod.app_link("plan", "chat", week=server_mod.monday_of(day) if day else None, focus=day, tool=name)
+    if not link:
+        return result
+    analytics.capture("app_link_offered", person, {"tool": name, "account": user.email_masked, "reason": "daily_chat"})
+    return {**result, "app": {"url": link, "note": server_mod.CHAT_LINK_NOTE}}
 
 
 def sweep_sessions(now: float | None = None) -> int:
@@ -2357,13 +2393,170 @@ def run_message(run: dict[str, Any]) -> dict[str, Any] | None:
             "url": f"/app/#/run/{run.get('activity_id')}?from=push_run", "tag": f"run-{run.get('activity_id')}"}
 
 
-def _send_all(owner: str, subs: list[dict[str, Any]], message: dict[str, Any], kind: str) -> int:
+def _send_all(owner: str, subs: list[dict[str, Any]], message: dict[str, Any], kind: str,
+              type_: str | None = None) -> int:
+    """Send to each of someone's phones. push_sent for every try, with its type (today, plan,
+    weekly) under pwa-v2; push_failed with the push service's status when one didn't go."""
     sent = 0
     for sub in subs:
-        result = push.send(sub, message)
+        result, status = push.send_status(sub, message)
         sent += result == "sent"
-        analytics.capture("push_sent", owner, {"kind": kind, "result": result})
+        analytics.capture("push_sent", owner, drop_empty({"kind": kind, "result": result, "type": type_}))
+        if result != "sent":
+            analytics.capture("push_failed", owner, drop_empty({"status": status, "result": result,
+                                                                "type": type_ or kind}))
     return sent
+
+
+# -- notifications, version 2 (Nov 26, PostHog flag pwa-v2) -----------------------------
+# Three kinds, each switched in You: today's session (7am by default), how a
+# run counted against the plan, and the week summed up on Sunday at 6pm. One
+# a day at most besides how a run counted, nothing between 9pm and 7am except
+# a heads-up at the time the person chose, and each opens on its own day.
+PWA_FLAG = "pwa-v2"
+QUIET_FROM, QUIET_UNTIL = 21, 7
+WEEKLY_HOUR = 18
+# Monday morning: a summary that couldn't go on Sunday goes with the heads-up, or alone by 10am.
+WEEKLY_LATE_UNTIL = 10
+
+
+def pwa_on(owner: str | None) -> bool:
+    try:
+        return bool(owner) and analytics.flag_on(PWA_FLAG, owner)
+    except Exception:  # noqa: BLE001 - off when the flag can't be read
+        return False
+
+
+def quiet_now(local: datetime) -> bool:
+    return local.hour >= QUIET_FROM or local.hour < QUIET_UNTIL
+
+
+def _weekday_name(day: str) -> str:
+    return datetime.fromisoformat(day).strftime("%A")
+
+
+def week_line(plan: dict[str, Any] | None, monday: str) -> str | None:
+    """'48 of 57 km' for one week of the plan, or None when it has no such week."""
+    week = next((w for w in (plan or {}).get("weeks") or [] if w.get("starts") == monday), None)
+    if not week:
+        return None
+    done, planned = week.get("run_km"), week.get("planned_km")
+    if done is None and not planned:
+        return None
+    done_text = f"{round(float(done or 0)):g}"
+    return f"{done_text} of {round(float(planned)):g} km" if planned else f"{done_text} km"
+
+
+def key_session(plan: dict[str, Any] | None, monday: str) -> dict[str, Any] | None:
+    """Next week's key session: its hardest, else its long run, else its longest."""
+    week = next((w for w in (plan or {}).get("weeks") or [] if w.get("starts") == monday), None)
+    sessions = [s for s in (week or {}).get("sessions") or [] if not s.get("optional")]
+    if not sessions:
+        return None
+    rank = {"race": 0, "intervals": 1, "threshold": 1, "sub": 1, "long": 2}
+    return min(sessions, key=lambda s: (rank.get(s.get("type"), 3), -(s.get("planned_km") or 0), s.get("date")))
+
+
+def weekly_push_message(plan: dict[str, Any] | None, monday: str) -> dict[str, Any] | None:
+    """The week summed up: done against planned, and next week's key session."""
+    line = week_line(plan, monday)
+    if not line:
+        return None
+    nxt = (datetime.fromisoformat(monday) + timedelta(days=7)).date().isoformat()
+    key = key_session(plan, nxt)
+    body = (f"Next week's key session: {_weekday_name(key['date'])}, "
+            f"{app_routes._display(key.get('name'))}." if key else "Nothing planned next week yet.")
+    return {"title": f"Your week: {line}", "body": body,
+            "url": f"/app/#/plan?week={nxt if key else monday}&from=push_weekly", "tag": f"week-{monday}"}
+
+
+def heads_up_v2(card: dict[str, Any] | None, day: str, evening: bool, week: str | None,
+                week_word: str = "Last week") -> dict[str, Any] | None:
+    """Today's (or tomorrow's) session, opening on its own day; the week's total in front when it's owed."""
+    message = heads_up_message(card, day, evening)
+    if not message:
+        return None
+    message["url"] = f"/app/#/session/{day}?from=push_today"
+    if week:
+        message["body"] = f"{week_word}: {week}. " + message["body"]
+    return message
+
+
+def plan_change_message(plan: dict[str, Any] | None, activity_id: Any, today: date) -> dict[str, Any] | None:
+    """How a run counted against the plan: "Counted your 7.8 km as today's Easy 12 km"."""
+    rows = [s for w in (plan or {}).get("weeks") or [] for s in w.get("sessions") or []]
+    row = next((s for s in rows if str(s.get("activity_id") or (s.get("match") or {}).get("activity_id"))
+                == str(activity_id) and str(s.get("status") or "").startswith("done")), None)
+    if not row:
+        return None
+    d = datetime.fromisoformat(row["date"]).date()
+    when = ("today's" if d == today else "yesterday's" if d == today - timedelta(days=1)
+            else "tomorrow's" if d == today + timedelta(days=1) else d.strftime("%A") + "'s")
+    name = app_routes._display(row.get("name"))
+    km = row.get("actual_km")
+    title = f"Counted your {km:g} km as {when} {name}" if km else f"Counted as {when} {name}"
+    match = row.get("match") or {}
+    if row.get("completion") == "partial" and match.get("planned_km"):
+        line = f"{km:g} of {match['planned_km']:g} km. Open Daash to leave it or add the rest to a later run."
+    elif row.get("done_on") and row["done_on"] < row["date"]:
+        line = f"Done early, so it's off your watch for {d.strftime('%A')}."
+    elif row.get("done_on") and row["done_on"] > row["date"]:
+        line = f"Planned for {d.strftime('%A')}, done after."
+    else:
+        line = "Done, as planned."
+    credit = (plan or {}).get("credit") or "Garmin"
+    return {"title": title, "body": f"{line}\nFrom your {credit}",
+            "url": f"/app/#/plan?week={(d - timedelta(days=d.weekday())).isoformat()}&focus={row['date']}&from=push_plan",
+            "tag": f"run-{activity_id}"}
+
+
+def _notify_v2(owner: str, subs: list[dict[str, Any]], user_token: str, local: datetime, now: float,
+               counts: dict[str, int]) -> None:
+    first = subs[0]
+    kinds = store.kinds_from(first.get("kinds"))
+    today = local.date()
+    monday = today - timedelta(days=today.weekday())
+    daily_free = first.get("last_daily") != today.isoformat()
+    # Which week's summary is owed: this one from Sunday 6pm, last week's on Monday morning.
+    owed = None
+    if kinds["weekly"]:
+        if today.weekday() == 6 and local.hour >= WEEKLY_HOUR and first.get("last_weekly") != monday.isoformat():
+            owed = monday.isoformat()
+        elif today.weekday() == 0 and first.get("last_weekly") != (monday - timedelta(days=7)).isoformat():
+            owed = (monday - timedelta(days=7)).isoformat()
+    plan_cache: list[Any] = []
+
+    def plan() -> dict[str, Any] | None:
+        if not plan_cache:
+            plan_cache.append(_as_person(user_token, server_mod.get_plan))
+        return plan_cache[0] if isinstance(plan_cache[0], dict) else None
+
+    due = _heads_up_due(first.get("heads_up"), local) if kinds["today"] else None
+    if due and first.get("last_morning") != due[0] and daily_free:
+        day, evening = due
+        store.mark_push(owner, morning=day)
+        card = _as_person(user_token, app_routes.heads_up_payload, day)
+        line = week_line(plan(), owed) if owed and card else None
+        message = heads_up_v2(card, day, evening, line, "This week" if today.weekday() == 6 else "Last week")
+        if message:
+            counts["morning"] += _send_all(owner, subs, message, "evening" if evening else "morning", "today")
+            store.mark_push(owner, daily=today.isoformat(), **({"weekly": owed} if line else {}))
+            daily_free = False
+            owed = None if line else owed
+    if owed and daily_free and not quiet_now(local):
+        sunday_evening = today.weekday() == 6 and local.hour < QUIET_FROM
+        monday_morning = today.weekday() == 0 and local.hour < WEEKLY_LATE_UNTIL
+        # On Sunday, someone told about Monday at 8pm gets the summary with that.
+        waits = (today.weekday() == 6 and kinds["today"] and first.get("heads_up") in (None, "evening")
+                 and local.hour < HEADS_UP_HOUR["evening"])
+        if (sunday_evening or monday_morning) and not waits:
+            store.mark_push(owner, weekly=owed)
+            message = weekly_push_message(plan(), owed)
+            if message:
+                counts["weekly"] = counts.get("weekly", 0) + _send_all(owner, subs, message, "weekly", "weekly")
+                store.mark_push(owner, daily=today.isoformat())
+    if kinds["plan"] and not quiet_now(local):
+        counts["run"] += _check_run(owner, user_token, local, now, v2=True)
 
 
 def _latest_run(user_token: str) -> dict[str, Any] | None:
@@ -2379,7 +2572,7 @@ def _latest_run(user_token: str) -> dict[str, Any] | None:
 _RUN_LOCK = threading.Lock()
 
 
-def _check_run(owner: str, user_token: str, local: datetime, now: float) -> int:
+def _check_run(owner: str, user_token: str, local: datetime, now: float, v2: bool = False) -> int:
     """Tell someone's phones about their newest run, once. Returns the phones it reached."""
     with _RUN_LOCK:
         subs = [s for s in store.push_subs() if s["owner"] == owner]
@@ -2397,8 +2590,16 @@ def _check_run(owner: str, user_token: str, local: datetime, now: float) -> int:
     held = official_read and local.date().isoformat() < OFFICIAL_RUN_PUSH_FROM
     if first_look or age > RUN_FRESH_SECONDS or held:
         return 0
+    if v2:
+        # How the run counted against the plan, from the plan itself; a run it
+        # didn't count for gets its verdict as before.
+        message = plan_change_message(_as_person(user_token, server_mod.get_plan), latest["activityId"], local.date())
+        if message:
+            return _send_all(owner, subs, message, "run", "plan")
     message = run_message(_as_person(user_token, app_routes.run_payload, int(latest["activityId"])))
-    return _send_all(owner, subs, message, "run") if message else 0
+    if message and v2:
+        message["url"] = message["url"].replace("from=push_run", "from=push_plan")
+    return _send_all(owner, subs, message, "run", "plan" if v2 else None) if message else 0
 
 
 def run_arrived(garmin_user_id: str, now: float | None = None) -> int:
@@ -2429,7 +2630,7 @@ def run_arrived(garmin_user_id: str, now: float | None = None) -> int:
 def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> dict[str, int]:
     """One pass over the phones with notifications on. Returns counts."""
     now = now or time.time()
-    counts = {"morning": 0, "run": 0}
+    counts = {"morning": 0, "run": 0, "weekly": 0}
     by_owner: dict[str, list[dict[str, Any]]] = {}
     for sub in store.push_subs():
         by_owner.setdefault(sub["owner"], []).append(sub)
@@ -2438,6 +2639,14 @@ def notify_once(now: float | None = None, spacing: float = NOTIFY_SPACING) -> di
         if user_token is None:
             continue
         local = _local_now(subs[0].get("tz"), now)
+        if pwa_on(owner):
+            try:
+                _notify_v2(owner, subs, user_token, local, now, counts)
+            except Exception as exc:  # noqa: BLE001 - one person's reads never stop the others
+                log.info("Notification pass (v2) skipped someone (%s)", type(exc).__name__)
+            if spacing:
+                time.sleep(spacing)
+            continue
         try:
             due = _heads_up_due(subs[0].get("heads_up"), local)
             # last_morning holds the session day already told about, so changing

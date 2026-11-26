@@ -918,3 +918,20 @@ html, body { overscroll-behavior-y: contain; }
 .match-opts .meta { flex-basis: 100%; font-size: 12.5px; }
 .match-btn { font-size: 13px; padding: 4px 0; margin-right: 10px; }
 @media (max-width: 420px) { .match-box { padding-left: 14px; } }
+
+/* Nov 26 (pwa-v2): the install sheet's iPhone steps, the notification pre-prompt, Remind me, the note on a notification's screen. */
+.ios-steps { margin: 4px 0 0; padding: 0; list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: 12px; }
+.ios-steps li { display: flex; align-items: center; gap: 12px; font-size: 14.5px; line-height: 1.4; counter-increment: s; }
+.ios-steps li::before { content: counter(s); flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--ground); font-size: 12.5px; font-weight: 600; display: grid; place-items: center; }
+.ios-ico { flex: 0 0 38px; height: 38px; border-radius: 10px; border: 1px solid var(--hairline); display: grid; place-items: center; color: #0A84FF; }
+.ios-bar { position: relative; display: flex; justify-content: space-around; align-items: center; height: 44px; margin-top: 4px; border-radius: 12px; background: var(--hover); color: #0A84FF; }
+.ios-bar > span:not(.ios-share) { width: 18px; height: 3px; border-radius: 2px; background: var(--hairline); }
+.ios-share { display: grid; place-items: center; width: 38px; height: 34px; border-radius: 8px; outline: 2px solid #0A84FF; outline-offset: 1px; }
+.ios-arrow { position: absolute; left: 50%; top: -14px; width: 0; height: 0; margin-left: -7px; border: 7px solid transparent; border-top-color: #0A84FF; animation: ios-bob 1.4s ease-in-out infinite; }
+@keyframes ios-bob { 50% { transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .ios-arrow { animation: none; } }
+.push-list { margin: 2px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14.5px; line-height: 1.45; }
+.remind-row { display: flex; }
+.remind-row .pill { width: 100%; justify-content: center; gap: 8px; }
+.push-landing { font-size: 13px; text-align: center; padding: 18px 8px 6px; }
+.push-landing .link-plain { font-size: 13px; }
