@@ -309,6 +309,12 @@ def flag_on(key: str, subject: str | None) -> bool:
         flag = (answer.get("flags") or {}).get(key)
         on = bool(flag.get("enabled")) if isinstance(flag, dict) else (answer.get("featureFlags") or {}).get(key) is True
         memory = FLAG_MEMORY
+        # One answer has every flag (Nov 26: tools-v2 is read on every tool
+        # call): the others are kept too, so the person's other on/off flags
+        # this hour need no request of their own.
+        for other, value in (answer.get("flags") or {}).items():
+            if other != key and isinstance(value, dict):
+                _FLAGS[("on:" + other, who)] = (now + memory, "on" if value.get("enabled") else "off")
     except Exception:  # noqa: BLE001 - off, and asked again in five minutes
         log.debug("flag %s not read", key, exc_info=True)
         memory = 300

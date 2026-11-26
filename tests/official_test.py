@@ -398,6 +398,16 @@ def main() -> int:
           "from before the account connected" in missing.get("note", ""), str(missing))
     future = as_user(bart, server.get_sleep_data, "2099-01-01")
     check("a night not synced yet says it arrives as the watch syncs", "hasn't sent" in future.get("note", ""), str(future))
+    # Nov 26: ranges on the official API alone, the same rows the one-night answers give.
+    nights = as_user(bart, lambda: server.get_sleep_data(days=5, end_date=today))
+    rows = {r["date"]: r for r in nights.get("rows") or []}
+    check("a range of nights on the official API: the synced night has its row, the others say nothing recorded",
+          rows.get(today, {}).get("score") == 84 and rows.get(today, {}).get("deep_min") == 90 and len(rows) == 5
+          and sum(1 for r in rows.values() if r.get("missing") == "nothing recorded") == 4
+          and nights.get("source", "").startswith("Garmin's official API"), str(nights)[:500])
+    days_range = as_user(bart, lambda: server.get_daily_summary(days=3, end_date=today))
+    check("and a range of days, steps from the official API",
+          (days_range.get("rows") or [{}])[-1].get("steps") == 10170 and len(days_range["rows"]) == 3, str(days_range)[:400])
 
     print("\na recovery check, on the official API alone")
     from datetime import date as _date, timedelta as _td
