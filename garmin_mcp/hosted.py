@@ -5214,6 +5214,92 @@ class NoIndex:
         await self.app(scope, receive, sending)
 
 
+def connect_step_for(path: str, method: str, has_bearer: bool, status: int) -> str | None:
+    """Which step of connecting a request is, or None for everything else.
+
+    Nov 26: new ChatGPT connections fell to a few a day, and nothing was
+    recorded before someone reached the sign-in page, so whether ChatGPT was
+    trying and failing, or nobody was trying, couldn't be told apart.
+    """
+    path = path.rstrip("/") or "/"
+    if path.startswith("/.well-known/oauth-protected-resource"):
+        return "resource_metadata"
+    if path.startswith("/.well-known/oauth-authorization-server") or path.startswith("/.well-known/openid-configuration"):
+        return "server_metadata"
+    if path == "/register" and method == "POST":
+        return "register"
+    if path == "/authorize":
+        return "authorize"
+    if path == "/token" and method == "POST":
+        return "token"
+    if (path == "/mcp" or path in oauth.NAMED_PATHS) and not has_bearer and status == 401:
+        return "mcp_without_token"
+    return None
+
+
+def connect_client(user_agent: str) -> str:
+    """The calling program's name from its User-Agent, and nothing else of it."""
+    low = user_agent.lower()
+    if "openai" in low or "chatgpt" in low:
+        return "ChatGPT"
+    if "claude" in low or "anthropic" in low:
+        return "Claude"
+    if not low:
+        return "none"
+    if low.startswith("mozilla"):
+        return "browser"
+    return re.sub(r"[^a-z0-9._-]", "", low.split("/", 1)[0].split(" ", 1)[0])[:30] or "other"
+
+
+class ConnectSteps:
+    """A connect_step event for each request on the way to the sign-in page:
+    the metadata reads, registering, /authorize, and /mcp asked without a
+    token, with the answer's status and which app asked."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {k.lower(): v for k, v in scope.get("headers", [])}
+        has_bearer = headers.get(b"authorization", b"").lower().startswith(b"bearer ")
+        status = [0]
+
+        async def sending(message: Any) -> None:
+            if message.get("type") == "http.response.start":
+                status[0] = int(message.get("status", 0))
+            await send(message)
+
+        try:
+            await self.app(scope, receive, sending)
+        finally:
+            with contextlib.suppress(Exception):
+                self._note(scope, headers, has_bearer, status[0])
+
+    @staticmethod
+    def _note(scope: Any, headers: dict, has_bearer: bool, status: int) -> None:
+        step = connect_step_for(scope.get("path", ""), scope.get("method", ""), has_bearer, status)
+        if not step:
+            return
+        from urllib.parse import parse_qs
+
+        props: dict[str, Any] = {
+            "step": step, "status": status, "method": scope.get("method", ""),
+            "client": connect_client(headers.get(b"user-agent", b"").decode("latin-1")),
+            "path": (scope.get("path", "").rstrip("/") or "/")[:80],
+        }
+        if step == "authorize":
+            query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+            redirect = (query.get("redirect_uri") or [""])[0]
+            if redirect:
+                props["app"] = oauth.app_for_redirect(redirect)
+            props.update(_device(Request(scope)))
+        props.update(_where(Request(scope)))
+        analytics.capture("connect_step", None, props)
+
+
 class AppCompression:
     """Gzip for the companion app's files and API answers, and nothing else.
 
@@ -5451,6 +5537,7 @@ def build_app() -> Any:
     app.add_middleware(SessionBinding)
     app.add_middleware(NoIndex)
     app.add_middleware(AppCompression)
+    app.add_middleware(ConnectSteps)  # outermost: sees the path before SessionBinding rewrites it
     return app
 
 

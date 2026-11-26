@@ -316,6 +316,35 @@ async def main() -> int:
               f"{code} {location[:90]}")
         flow = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("flow", [""])[0]
 
+        # -- 3a. each step before the sign-in page is recorded (Nov 26) ----
+        steps = [p for e, p in reported if e == "connect_step"]
+        by_step = {p["step"]: p for p in steps}
+        check("the steps before the sign-in page are recorded, with their answers",
+              by_step.get("server_metadata", {}).get("status") == 200
+              and by_step.get("register", {}).get("status") in (200, 201)
+              and by_step.get("authorize", {}).get("status") in (302, 303, 307),
+              str([(p["step"], p["status"]) for p in steps]))
+        check("/authorize says which app it is for, from where the code goes back",
+              by_step.get("authorize", {}).get("app") == "Desktop or command line", str(by_step.get("authorize")))
+        check("nothing of the request itself is kept: no query, no address, no user agent string",
+              all(set(p) <= {"step", "status", "method", "client", "path", "app", "country", "device", "browser", "os"}
+                  for p in steps) and all("?" not in p["path"] for p in steps), str(steps[:2]))
+        reported.clear()
+        code, _, _ = await run(lambda: http("POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+                                            headers={"User-Agent": "openai-mcp/1.0.0"}, as_json=True))
+        steps = [p for e, p in reported if e == "connect_step"]
+        check("/mcp without a token is recorded, and ChatGPT is named from its user agent",
+              code == 401 and steps and steps[0]["step"] == "mcp_without_token" and steps[0]["client"] == "ChatGPT",
+              f"{code} {steps}")
+        check("the user agent is cut to the program's name",
+              hosted.connect_client("python-httpx/0.27 (x)") == "python-httpx"
+              and hosted.connect_client("Mozilla/5.0 (iPhone)") == "browser"
+              and hosted.connect_client("Claude-User/1.0") == "Claude")
+        check("ordinary requests aren't steps",
+              hosted.connect_step_for("/mcp", "POST", True, 200) is None
+              and hosted.connect_step_for("/connect", "GET", False, 200) is None
+              and hosted.connect_step_for("/token", "GET", False, 405) is None)
+
         # -- 3b. a failed sign-in keeps Claude's request attached ----------
         # A "Try again" that dropped it sent people to the form as if they had
         # arrived on their own, and that road ends in a link this mode never
