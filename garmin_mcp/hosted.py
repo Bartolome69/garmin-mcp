@@ -43,6 +43,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 
 from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, telemetry, tracing, weekly
 from . import memwatch
+from . import day_ranges, tools_v2
 from . import app as app_routes
 from . import server as server_mod
 from .bounded import BoundedDict, BoundedSet
@@ -1033,13 +1034,67 @@ def _within_call_limit(user_token: str, user: store.User | None = None, now: flo
     _CALLS[user_token] = recent
 
 
+# A guard on one tool called over and over (Nov 26, flag tools-v2). In the 14
+# days to Nov 26, 35% of calls came in runs of ten or more to one tool, the
+# longest 3,238 get_daily_summary calls in a row. The tools that can read a
+# range in one call allow 15 single-day calls in three minutes, then say to
+# pass a range; a range call is never held. Every other tool has a loose
+# cap of 50 (a plan retuned session by session is fine; a runaway isn't).
+LOOP_WINDOW = 180.0
+LOOP_LIMIT = 15
+LOOP_LIMIT_OTHER = 50
+LOOP_RANGE_HINT = {
+    "get_daily_summary": "Call get_daily_summary once with start_date and end_date (or days, up to 90)",
+    "get_sleep_data": "Call get_sleep_data once with start_date and end_date (or days, up to 90)",
+    "get_readiness": "Call get_readiness once with start_date and end_date (or days, up to 90)",
+    "get_activities": "Call get_activities once with start_date and end_date for the whole period",
+    "get_heart_rate": "For resting heart rate over several days, call get_daily_summary once with start_date "
+                      "and end_date",
+}
+_SAME_TOOL: dict[tuple[str, str], list[float]] = BoundedDict(20000)
+
+
+def _loop_note(name: str, count: int, limit: int) -> str:
+    hint = LOOP_RANGE_HINT.get(name)
+    if hint:
+        return (f"{name} was called {count} times in {int(LOOP_WINDOW // 60)} minutes, one day at a time. "
+                f"{hint} instead: one call answers the whole period, a compact row a day. "
+                "Single-day calls are paused for a few minutes; a range call works now.")
+    return (f"{name} was called {count} times in {int(LOOP_WINDOW // 60)} minutes. Daash is pausing it for a "
+            "few minutes. Tell the user what was done so far and ask before doing more.")
+
+
+def _within_loop_guard(user_token: str, name: str, user: store.User | None = None, client: str | None = None,
+                       now: float | None = None) -> None:
+    """Count one call of this tool; raise hooks.Paused past its limit. Under tools-v2 only."""
+    if not tools_v2.on() or _card_refresh():
+        return
+    args = server_mod.call_args()
+    if name in day_ranges.ROWS and day_ranges.wants_range(args.get("start_date"), args.get("end_date"),
+                                                          args.get("days")):
+        return
+    limit = LOOP_LIMIT if name in LOOP_RANGE_HINT else LOOP_LIMIT_OTHER
+    now = time.monotonic() if now is None else now
+    key = (user_token, name)
+    recent = [t for t in _SAME_TOOL.get(key, ()) if now - t < LOOP_WINDOW]
+    if len(recent) >= limit:
+        _SAME_TOOL[key] = recent
+        analytics.capture("tool_loop_blocked", (user.email_hash if user else None) or user_token, drop_empty({
+            "tool": name, "count": len(recent) + 1, "limit": limit, "client": client,
+            "ai_client": client, "window_s": int(LOOP_WINDOW)}))
+        raise hooks.Paused(_loop_note(name, len(recent) + 1, limit))
+    recent.append(now)
+    _SAME_TOOL[key] = recent
+
+
 def _card_refresh() -> bool:
     """Whether the call being answered is the plan card looking again on its
     own (Nov 19), not the model: not counted as a call or timed as a plan."""
     return server_mod.call_meta(server_mod.AUTO_REFRESH) == "auto"
 
 
-def _before_tool_for(user_token: str, alone: bool = False, user: store.User | None = None) -> hooks.Before:
+def _before_tool_for(user_token: str, alone: bool = False, user: store.User | None = None,
+                     client: str | None = None) -> hooks.Before:
     """The start hook for one person's request: hold to the call cap, note a get_plan,
     pace the reads sent with one.
 
@@ -1048,6 +1103,8 @@ def _before_tool_for(user_token: str, alone: bool = False, user: store.User | No
     """
 
     def before(name: str) -> float:
+        # The loop guard first: a call it holds back isn't one of the 300.
+        _within_loop_guard(user_token, name, user, client)
         _within_call_limit(user_token, user)
         now = time.monotonic()
         _STARTED.set(now)
@@ -1214,6 +1271,70 @@ def strength_check(error: Any) -> str | None:
     for name, pattern in _STRENGTH_CHECKS:
         if pattern.search(text):
             return name
+    return "other"
+
+
+# Which check turned a write down (Nov 26), for create_plan, update_workout,
+# unschedule_workout and remove_plan, read from our own fixed wording as
+# _STRENGTH_CHECKS is, so the event never carries what was typed. First match wins.
+_STEP_CHECKS = (
+    ("step_type", re.compile(r"Unknown step type")),
+    ("step_length", re.compile(r"needs either 'duration_seconds'|has both 'duration_seconds'|must be positive"
+                               r"|at the lap button or after|needs 'distance_meters'|whole number of .* lengths")),
+    ("target", re.compile(r"as a pace|Pace .* outside|pace range|Heart-rate|heart-rate|FTP|as power|Power .*outside"
+                          r"|power range|one target|pace or a heart-rate")),
+    ("repeat", re.compile(r"repeat|Repeat")),
+    ("exercise", re.compile(r"has nothing called|matches several exercises")),
+    ("no_steps", re.compile(r"at least one step|step must be an object|at least one exercise")),
+)
+_WRITE_CHECKS = {
+    "create_plan": (
+        ("past_date", re.compile(r"which has passed")),
+        ("too_far", re.compile(r"more than 30 weeks out")),
+        ("bad_date", re.compile(r"as a date|A date is required")),
+        ("no_name", re.compile(r"needs a name")),
+        ("no_goal", re.compile(r"needs a goal")),
+        ("label", re.compile(r"Plan label")),
+        ("too_many", re.compile(r"more than one plan should hold|has no sessions")),
+        ("milestones", re.compile(r"[Mm]ilestone")),
+        ("code_taken", re.compile(r"is already on the calendar between")),
+        ("plan_clash", re.compile(r"already has running plan")),
+        ("doubled_days", re.compile(r"run days have another run")),
+        ("write_failed", re.compile(r"Stopped at|didn't go on|Stopped taking runs off")),
+    ),
+    "update_workout": (
+        ("id", re.compile(r"workout_id must be numeric")),
+        ("nothing_to_change", re.compile(r"Nothing to change")),
+        ("not_found", re.compile(r"No workout with id|NotFound")),
+        ("sport_only", re.compile(r"sport only applies with steps")),
+    ),
+    "unschedule_workout": (
+        ("id", re.compile(r"schedule_id must be numeric")),
+        ("no_target", re.compile(r"Give either a date or a schedule_id")),
+        ("double_day", re.compile(r"More than one workout")),
+        ("not_found", re.compile(r"NotFound")),
+        ("bad_date", re.compile(r"as a date")),
+    ),
+    "remove_plan": (
+        ("not_found", re.compile(r"NotFound")),
+        ("label", re.compile(r"Plan label")),
+    ),
+}
+
+
+def write_check(tool: str, error: Any) -> str | None:
+    """The check a failed write hit, for the tools above; None for others or when it worked."""
+    checks = _WRITE_CHECKS.get(tool)
+    if not error or checks is None:
+        return None
+    text = error if isinstance(error, str) else str(error)
+    for name, pattern in checks:
+        if pattern.search(text):
+            return name
+    if tool in ("create_plan", "update_workout"):
+        for name, pattern in _STEP_CHECKS:
+            if pattern.search(text):
+                return name
     return "other"
 
 
@@ -1395,7 +1516,11 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
             "card_refresh": auto or None,
             "error_category": error_category(error), "held": held or None,
-            "error_check": strength_check(error) if name == "create_strength_workout" else None,
+            "error_check": (strength_check(error) if name == "create_strength_workout"
+                            else write_check(name, error)),
+            # How the dates were asked for (Nov 26): a range, or one day at a time.
+            **day_ranges.shape(name, server_mod.call_args()),
+            "tools_v2": tools_v2.on() or None,
             **activity_sports(name, result),
             "login_route": login_route(alone), "client": client, "ai_client": client,
             "hours_since_connect": hours_since_connect(user),
@@ -5442,7 +5567,7 @@ class SessionBinding:
         # The chat's hooks pace and count answers for a conversation; the
         # app's screens are not one, so they run without them.
         hook_token = (hooks.use(None, None) if for_app else
-                      hooks.use(_after_tool_for(user_token, user, alone, app), _before_tool_for(user_token, alone, user)))
+                      hooks.use(_after_tool_for(user_token, user, alone, app), _before_tool_for(user_token, alone, user, app)))
         crew_token = crews.use(crews.Member(crews.member_key(user_token, user.email_hash)))
         official_token = official.use(user_token)
         alone_token = server_mod.use_alone(alone)

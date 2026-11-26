@@ -1537,10 +1537,13 @@ async def main() -> int:
                   and not any('"title"' in json.dumps(d.get("inputSchema")) for d in listed_json)
                   # Raised from 30,000 for get_heart_rate and update_activity
                   # (about 1,000 each) and zone targets, then from 32,500 for
-                  # the titles the Connectors Directory requires (about 800):
-                  # what a tool adds comes out of every chat's budget, so it
-                  # stays tight.
-                  and sum(len(json.dumps(d)) for d in listed_json) < 33500,
+                  # the titles the Connectors Directory requires (about 800),
+                  # then from 33,500 for date ranges on the three per-day
+                  # health tools and unschedule_workout's name (about 1,050,
+                  # Nov 26), which stop the one-call-a-day loops that were a
+                  # third of all calls: what a tool adds comes out of every
+                  # chat's budget, so it stays tight.
+                  and sum(len(json.dumps(d)) for d in listed_json) < 34600,
                   str(sum(len(json.dumps(d)) for d in listed_json)))
 
             # Claude's Connectors Directory checks every tool for a title in

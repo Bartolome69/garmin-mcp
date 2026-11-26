@@ -22,7 +22,7 @@ TARGET_POWER_ZONE = 2
 TARGET_HEART_RATE_ZONE = 4
 TARGET_PACE_ZONE = 6
 
-from . import swimming
+from . import swimming, tools_v2
 from .formatting import HR_CAP_FLOOR
 
 # Sport name -> (workout model, default pace seconds per km used for estimates)
@@ -41,6 +41,108 @@ STEP_TYPES = {
     "recovery": (gw.StepType.RECOVERY, "recovery", 4),
     "rest": (gw.StepType.REST, "rest", 5),
 }
+
+# Step spellings chats send that mean the same thing (Nov 26): each failed a
+# workout, a plan or an update with "Unknown step type" or "needs either
+# 'duration_seconds' or 'distance_meters'".
+STEP_TYPE_WORDS = {
+    "warm up": "warmup", "warm_up": "warmup", "warm-up": "warmup",
+    "cool down": "cooldown", "cool_down": "cooldown", "cool-down": "cooldown",
+    "work": "interval", "active": "interval", "run": "interval", "main": "interval", "effort": "interval",
+    "rep": "interval", "intervals": "interval", "easy": "interval", "steady": "interval", "tempo": "interval",
+    "threshold": "interval", "hard": "interval", "fast": "interval", "stride": "interval", "strides": "interval",
+    "long": "interval", "main set": "interval",
+    "recover": "recovery", "jog": "recovery", "float": "recovery",
+    "repeats": "repeat", "repetition": "repeat", "set": "repeat", "loop": "repeat",
+}
+SECONDS_KEYS = ("duration_s", "duration_sec", "duration_secs", "seconds", "time_seconds", "secs")
+MINUTES_KEYS = ("duration_minutes", "duration_min", "duration_mins", "minutes", "mins")
+METRES_KEYS = ("distance_m", "distance_metres", "meters", "metres", "distance_meter")
+KM_KEYS = ("distance_km", "km", "kilometers", "kilometres")
+
+
+def _clock_seconds(value: Any) -> float | None:
+    """'10:00' as 600, '1:05:00' as 3900, '12 min' as 720; None otherwise."""
+    text = str(value).strip().lower()
+    match = re.fullmatch(r"(\d+)\s*(?:min|mins|minutes|m)", text)
+    if match:
+        return float(match.group(1)) * 60
+    match = re.fullmatch(r"(\d+)\s*(?:s|sec|secs|seconds)", text)
+    if match:
+        return float(match.group(1))
+    parts = text.split(":")
+    if 2 <= len(parts) <= 3 and all(p.isdigit() for p in parts):
+        total = 0.0
+        for p in parts:
+            total = total * 60 + int(p)
+        return total
+    return None
+
+
+def common_step_keys(step: Mapping[str, Any]) -> dict[str, Any]:
+    """A step with the spellings chats use turned into the ones the builder reads.
+
+    Only adds what is missing: a step that already says duration_seconds keeps it.
+    """
+    out = dict(step)
+    kind = str(out.get("type") or out.get("step_type") or out.get("kind") or "").strip().lower()
+    if kind:
+        out["type"] = STEP_TYPE_WORDS.get(kind, kind)
+    if out.get("type") == "repeat":
+        if out.get("times") is None:
+            for key in ("repetitions", "reps", "repeat", "count", "sets"):
+                if isinstance(out.get(key), (int, float, str)) and str(out.get(key)).strip().isdigit():
+                    out["times"] = int(str(out[key]).strip())
+                    break
+        if not out.get("steps"):
+            for key in ("children", "intervals", "workout_steps", "workoutSteps", "items"):
+                if isinstance(out.get(key), list):
+                    out["steps"] = out[key]
+                    break
+        return out
+    if out.get("duration_seconds") is None and out.get("distance_meters") is None and not out.get("until_lap"):
+        for key in SECONDS_KEYS:
+            if isinstance(out.get(key), (int, float)):
+                out["duration_seconds"] = float(out[key])
+                break
+        else:
+            for key in MINUTES_KEYS:
+                if isinstance(out.get(key), (int, float)):
+                    out["duration_seconds"] = float(out[key]) * 60
+                    break
+            else:
+                for key in METRES_KEYS:
+                    if isinstance(out.get(key), (int, float)):
+                        out["distance_meters"] = float(out[key])
+                        break
+                else:
+                    for key in KM_KEYS:
+                        if isinstance(out.get(key), (int, float)):
+                            out["distance_meters"] = float(out[key]) * 1000
+                            break
+                    else:
+                        clock = _clock_seconds(out["duration"]) if isinstance(out.get("duration"), str) else None
+                        if clock:
+                            out["duration_seconds"] = clock
+        for key in (*SECONDS_KEYS, *MINUTES_KEYS, *METRES_KEYS, *KM_KEYS):
+            out.pop(key, None)
+        if out.get("duration_seconds") is not None or out.get("distance_meters") is not None:
+            out.pop("duration", None)
+    if isinstance(out.get("duration_seconds"), str):
+        clock = _clock_seconds(out["duration_seconds"])
+        out["duration_seconds"] = clock if clock else out["duration_seconds"]
+    if out.get("pace") is None:
+        for key in ("target_pace", "pace_target", "pace_per_km"):
+            if out.get(key) is not None:
+                out["pace"] = out.pop(key)
+                break
+    if out.get("hr") is None:
+        for key in ("heart_rate", "target_hr", "hr_target", "hr_range", "heart_rate_bpm"):
+            if out.get(key) is not None:
+                out["hr"] = out.pop(key)
+                break
+    return out
+
 
 # A pace target is never narrower than this many seconds per km either side of
 # its centre: a single pace is widened into that window, and a tighter range is
@@ -306,6 +408,8 @@ class _Builder:
     def _build_one(self, step: Mapping[str, Any], depth: int) -> Any:
         if not isinstance(step, Mapping):
             raise WorkoutError(f"Each step must be an object, got {step!r}.")
+        if tools_v2.on():
+            step = common_step_keys(step)
         kind = str(step.get("type", "interval")).strip().lower()
 
         if kind == "repeat":
@@ -645,6 +749,34 @@ EVERYDAY_NAMES = {
     "lat pulldown": "Lat Pull-down",
 }
 
+# Gym shorthand, spelled out (Nov 26).
+SHORTHAND = {
+    "db": "dumbbell", "dbs": "dumbbell", "bb": "barbell", "kb": "kettlebell", "kbs": "kettlebell",
+    "rdl": "romanian deadlift", "rdls": "romanian deadlift", "ohp": "overhead press",
+    "sl": "single leg", "bw": "body weight", "bodyweight": "body weight", "ez": "ez bar",
+}
+
+
+def _spelled_out(term: str) -> str:
+    return _normalise(" ".join(SHORTHAND.get(w, w) for w in str(term).replace("-", " ").lower().split()))
+
+
+def _plain_version(term: str, hits: list[dict[str, str]]) -> dict[str, str] | None:
+    """The one plain version among several: it has every word asked for and
+    at most one more, and is shorter than every other match. "Bench press"
+    is Bench Press; "split squat" between Dumbbell and Barbell stays a question."""
+    wanted = set(_normalise(term).split()) - _FILLER
+    fitting = [h for h in hits if wanted <= set(_normalise(h["name"]).split())
+               and len(_normalise(h["name"]).split()) <= len(wanted) + 1]
+    if not fitting:
+        return None
+    fitting.sort(key=lambda h: len(_normalise(h["name"]).split()))
+    shortest = len(_normalise(fitting[0]["name"]).split())
+    if any(len(_normalise(h["name"]).split()) == shortest for h in fitting[1:]):
+        return None
+    return fitting[0]
+
+
 # Words too common to say two names are alike.
 _FILLER = {"with", "and", "on", "the", "a", "of", "to", "in"}
 
@@ -707,6 +839,13 @@ def resolve_exercise(name: str) -> dict[str, str]:
     if exact:
         return exact
 
+    if tools_v2.on() and _spelled_out(name) != _normalise(name):
+        # Nov 26: gym shorthand ("DB row", "RDL", "OHP") found nothing, or the
+        # wrong thing ("RDL" was only a circuit). Spelled out, it's searched as words.
+        name = _spelled_out(name)
+        exact = catalogue.resolve(name) or _everyday(name)
+        if exact:
+            return exact
     hits = find_exercises(name)
     if len(hits) == 1:
         return hits[0]
@@ -723,6 +862,9 @@ def resolve_exercise(name: str) -> dict[str, str]:
     for entry in hits:
         if _normalise(entry["name"]) == _normalise(name):
             return entry
+    plain = _plain_version(name, hits) if tools_v2.on() else None
+    if plain:
+        return plain
     names = ", ".join(e["name"] for e in hits[:6])
     raise WorkoutError(
         f"{name!r} matches several exercises: {names}"

@@ -8,6 +8,7 @@ the password or the cached token.
 from __future__ import annotations
 
 import contextlib
+import copy
 import functools
 from collections import defaultdict
 import inspect
@@ -50,9 +51,10 @@ from .formatting import (
 from . import analytics, conditions, crews, easy_check, strength, cycling, official, official_data, fitness_trends, gear, heart, hooks, metrics, wellness, zones, plan, plan_checks, preview, progress, recovery, share, store, stream, swimming, terrain, tracing, training_plan
 from . import garmin_cache
 from . import matching
+from . import day_ranges, tools_v2
 from . import gate as gate_mod
 from . import session as session_mod
-from .session import GarminError, mask_email, session
+from .session import GarminError, GarminNotFound, mask_email, session
 from .official_client import NotOnOfficial, OfficialClient
 from .workouts import (
     SPORTS,
@@ -1536,6 +1538,30 @@ def _name_sport(workout_id: Any, sport: str | None) -> None:
             sent["sport"] = sport
 
 
+# The arguments of the tool call being answered, as the chat sent them.
+CALL_ARGS: ContextVar[dict[str, Any]] = ContextVar("daash_call_args", default={})
+
+
+def call_args() -> dict[str, Any]:
+    return CALL_ARGS.get()
+
+
+async def _tools_v2_on() -> bool:
+    """tools_v2 for the person this call is for; off when nobody is signed in."""
+    if tools_v2.mode() != "flag":
+        return tools_v2.mode() == "all"
+    try:
+        subject = card_subject()
+    except Exception:  # noqa: BLE001 - no person, no flag
+        return False
+    if not subject:
+        return False
+    try:
+        return await anyio.to_thread.run_sync(tools_v2.on_for, subject)
+    except Exception:  # noqa: BLE001 - off when PostHog can't be asked
+        return False
+
+
 def tool_errors(fn):
     """Return a clear error payload instead of letting an exception escape.
 
@@ -1546,12 +1572,16 @@ def tool_errors(fn):
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
         inside, depth = hooks.enter()
-        traced = sends = request = None
+        traced = sends = request = args_token = v2_token = None
         try:
             if inside:
                 # Called by another tool, not the chat: its answer, unreported.
                 return await answer(*args, **kwargs)
             started = time.monotonic()
+            # What the call asked for, for the hooks (the loop guard, args_shape),
+            # and whether the person has the Nov 26 tool fixes (tools_v2.py).
+            args_token = CALL_ARGS.set(dict(kwargs))
+            v2_token = tools_v2.ON.set(await _tools_v2_on())
             try:
                 settle = hooks.before_tool(fn.__name__)
             except hooks.Paused as paused:
@@ -1578,6 +1608,10 @@ def tool_errors(fn):
                 await anyio.sleep(settle - took)
             return hooks.after_tool(fn.__name__, result, took)
         finally:
+            if args_token is not None:
+                CALL_ARGS.reset(args_token)
+            if v2_token is not None:
+                tools_v2.ON.reset(v2_token)
             if traced is not None:
                 tracing.finish(traced)
             if sends is not None:
@@ -1631,7 +1665,9 @@ def _method(client: Any, *names: str) -> Callable[..., Any]:
 
 @mcp.tool()
 @tool_errors
-async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
+async def get_daily_summary(
+    date: str | None = None, start_date: str = "", end_date: str = "", days: int = 0,
+) -> dict[str, Any]:
     """Daily health summary: steps, calories, resting heart rate, body battery and stress.
 
     With what charged or drained Body Battery and the longest stressful
@@ -1640,7 +1676,16 @@ async def get_daily_summary(date: str | None = None) -> dict[str, Any]:
     Args:
         date: Day to report on. YYYY-MM-DD, 'today', 'yesterday' or an offset
             like '-3'. Defaults to today.
+        start_date: For several days, a range (not one call a day): a row a day, max 90.
+        end_date: Range end, default today.
+        days: Or days back to end_date.
     """
+    if day_ranges.wants_range(start_date, end_date, days):
+        return await _over_days("get_daily_summary", _daily_summary_day, start_date, end_date, days)
+    return await _daily_summary_day(date)
+
+
+async def _daily_summary_day(date: str | None = None) -> dict[str, Any]:
     day = parse_date(date)
     garmin_user = _official_only()
     if garmin_user:
@@ -1788,13 +1833,24 @@ def _no_activities_yet(start: str | None) -> str:
 
 @mcp.tool()
 @tool_errors
-async def get_sleep_data(date: str | None = None) -> dict[str, Any]:
+async def get_sleep_data(
+    date: str | None = None, start_date: str = "", end_date: str = "", days: int = 0,
+) -> dict[str, Any]:
     """Sleep stages and sleep score for a night, with overnight breathing rate and SpO2 against usual.
 
     Args:
         date: The date you woke up on. YYYY-MM-DD, 'today', 'yesterday' or an
             offset like '-3'. Defaults to today.
+        start_date: For several nights, a range (not one call a day): a row a night, max 90.
+        end_date: Range end, default today.
+        days: Or nights back to end_date.
     """
+    if day_ranges.wants_range(start_date, end_date, days):
+        return await _over_days("get_sleep_data", _sleep_day, start_date, end_date, days)
+    return await _sleep_day(date)
+
+
+async def _sleep_day(date: str | None = None) -> dict[str, Any]:
     day = parse_date(date)
     garmin_user = _official_only()
     if garmin_user:
@@ -2060,7 +2116,7 @@ async def get_activities(
 
     Args:
         limit: Maximum activities to return (1-50). Defaults to 10.
-        start_date: Optional first day of a date range, YYYY-MM-DD.
+        start_date: First day of a range, YYYY-MM-DD: one call for a period, not one a day.
         end_date: Optional last day of a date range. Defaults to today when
             start_date is given.
     """
@@ -2268,7 +2324,43 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
         activity_id = int(str(activity_id).strip())
     except ValueError:
         return {"error": f"activity_id must be numeric, got {activity_id!r}."}
+    if not tools_v2.on():
+        return await _activity_details(activity_id)
+    # Nov 26 (tools-v2): the finished answer is kept ten minutes, so the same
+    # run asked for again (a chat re-reading it, a comparison) is no Garmin
+    # reads at all; any write through Daash clears it with everything else.
+    key = ("activity_answer", activity_id)
+    if session.knows(key, ACTIVITY_ANSWER_MEMORY):
+        return copy.deepcopy(session.peek(key))
+    answer = _trimmed(await _activity_details(activity_id, together=True))
+    if isinstance(answer, dict) and "error" not in answer:
+        session.remember(key, copy.deepcopy(answer))
+    return answer
 
+
+ACTIVITY_ANSWER_MEMORY = 600
+# A run older than this is being looked back on, not shared: its answer leaves
+# out the share image, the Strava caption and the plan card (Nov 26, tools-v2),
+# about a third of a run's answer, read 6,400 times in two weeks.
+SHARE_WINDOW_DAYS = 7
+
+
+def _trimmed(answer: Any) -> Any:
+    if not isinstance(answer, dict) or "error" in answer:
+        return answer
+    started = str((answer.get("summary") or {}).get("start_local") or "")[:10]
+    try:
+        age = (date_cls.today() - date_cls.fromisoformat(started)).days
+    except ValueError:
+        return answer
+    if age <= SHARE_WINDOW_DAYS:
+        return answer
+    for key in ("share_image", "strava_caption", "card"):
+        answer.pop(key, None)
+    return answer
+
+
+async def _activity_details(activity_id: int, together: bool = False) -> dict[str, Any]:
     garmin_user = _official_only()
     if garmin_user:
         found = await anyio.to_thread.run_sync(official_data.activity, garmin_user, activity_id)
@@ -2300,19 +2392,23 @@ async def get_activity_details(activity_id: int | str) -> dict[str, Any]:
             warnings.append(f"{label} unavailable ({type(exc).__name__})")
             return None
 
-    summary = await _optional(
-        "summary",
-        lambda c: _method(c, "get_activity", "get_activity_evaluation")(activity_id),
-    )
-    splits = await _optional("splits", lambda c: c.get_activity_splits(activity_id))
-    zones = await _optional(
-        "hr zones", lambda c: c.get_activity_hr_in_timezones(activity_id)
-    )
-    # The recording itself, for what the lap averages cannot say. Polyline off:
-    # a route is thousands of points nobody here needs.
-    recording = await _optional(
-        "recording", lambda c: c.get_activity_details(activity_id, 2000, 0)
-    )
+    reads = [
+        lambda: _optional("summary", lambda c: _method(c, "get_activity", "get_activity_evaluation")(activity_id)),
+        lambda: _optional("splits", lambda c: c.get_activity_splits(activity_id)),
+        lambda: _optional("hr zones", lambda c: c.get_activity_hr_in_timezones(activity_id)),
+        # The recording itself, for what the lap averages cannot say. Polyline
+        # off: a route is thousands of points nobody here needs.
+        lambda: _optional("recording", lambda c: c.get_activity_details(activity_id, 2000, 0)),
+    ]
+    if together:
+        # Nov 26 (tools-v2): the four reads side by side, not one after another.
+        got = await _together(reads)
+        for answer in got:
+            if isinstance(answer, BaseException):
+                raise answer
+        summary, splits, zones, recording = got
+    else:
+        summary, splits, zones, recording = [await read() for read in reads]
 
     if summary is None and splits is None and zones is None:
         return {
@@ -3010,6 +3106,9 @@ async def update_workout(
     except ValueError:
         return {"error": f"workout_id must be numeric, got {workout_id!r}."}
     if name is None and steps is None and description is None:
+        if sport and tools_v2.on():
+            return {"error": "To change a workout's sport, send its steps too (sport only applies with steps): "
+                             "read them with get_workout, then call update_workout with steps and sport."}
         return {"error": "Nothing to change: give a new name, new steps, or a description."}
 
     existing = await _call(lambda c: c.get_workout_by_id(workout_id)) or {}
@@ -3231,7 +3330,7 @@ def _scheduled_in_month(calendar: Any) -> list[dict[str, Any]]:
 @mcp.tool()
 @tool_errors
 async def unschedule_workout(
-    date: str = "", schedule_id: int | str = 0
+    date: str = "", schedule_id: int | str = 0, name: str = ""
 ) -> dict[str, Any]:
     """Take a workout off a day in the Garmin calendar.
 
@@ -3245,13 +3344,21 @@ async def unschedule_workout(
             listed back rather than guessed between.
         schedule_id: Remove one specific entry, from a previous listing or from
             what schedule_workout returned. Takes precedence over date.
+        name: With date, on a day with two workouts: part of the one's name.
     """
     if schedule_id:
         try:
             schedule_id = int(str(schedule_id).strip())
         except ValueError:
             return {"error": f"schedule_id must be numeric, got {schedule_id!r}."}
-        await _call(lambda c: c.unschedule_workout(schedule_id))
+        try:
+            await _call(lambda c: c.unschedule_workout(schedule_id))
+        except GarminNotFound:
+            if not tools_v2.on():
+                raise
+            # Already off: asked twice, or removed in the Garmin app. Done either way.
+            return {"unscheduled": schedule_id, "already_off": True,
+                    "note": "That entry was already off the calendar. Nothing else changed."}
         return {"unscheduled": schedule_id, "note": "The workout itself is kept. " + AFTER_MOVE}
 
     if not date:
@@ -3265,9 +3372,30 @@ async def unschedule_workout(
     if not on_day:
         return {"date": day, "unscheduled": None, "note": "Nothing was scheduled then."}
 
+    if len(on_day) > 1 and name:
+        wanted = str(name).strip().lower()
+        named = [i for i in on_day if wanted in str(first_present(i, "title", "workoutName") or "").lower()]
+        if len(named) == 1:
+            on_day = named
+
     if len(on_day) > 1:
         # Two sessions on one day is normal enough (a double day). Picking one
         # would be a guess, and the wrong guess silently clears the wrong thing.
+        candidates = [
+            drop_empty({
+                "schedule_id": first_present(i, "id", "workoutScheduleId"),
+                "name": first_present(i, "title", "workoutName"),
+                "workout_id": i.get("workoutId"),
+            })
+            for i in on_day
+        ]
+        if tools_v2.on():
+            # Nov 26: as an error this was retried as it was, 41 times in ten days.
+            return {
+                "date": day, "unscheduled": None, "needs_choice": True, "candidates": candidates,
+                "note": "More than one workout is on that day, so nothing was removed. Ask the user which "
+                        "one, then call again with its schedule_id (or the date and its name).",
+            }
         return {
             "date": day,
             "error": "More than one workout is scheduled that day. "
@@ -3538,6 +3666,100 @@ def _is_run_sport(sport: Any) -> bool:
     return str(sport or "running").lower().replace("_", " ").split(" ")[0] in ("running", "run", "trail", "track", "treadmill")
 
 
+def _plan_question(ask: str, code: str) -> dict[str, Any]:
+    """create_plan stopping to ask (Nov 26, tools-v2): nothing was written, and
+    that's a question for the user, not a failure to retry."""
+    return {"label": code, "created": None, "needs_answer": True, "question": ask,
+            "note": "Nothing was written. Ask the user, then call create_plan again with their answer."}
+
+
+# Sessions written to Garmin at once by create_plan (Nov 26, tools-v2). It
+# wrote them one after another: a 40-session plan was 80 calls in a row, 7 s
+# at the median and 24 s at p90. Garmin's own limits and the pool (gate.py)
+# still apply; four keeps one plan from taking the pool over.
+PLAN_WRITES_AT_ONCE = 4
+
+
+async def _write_sessions(prepared: list[dict[str, Any]], created: list[dict[str, Any]],
+                          written: dict[Any, dict[str, Any]], code: str) -> dict[str, Any] | None:
+    """Upload each distinct workout once, then schedule every date, four at a time.
+
+    Fills created (in date order) and written; returns create_plan's error
+    answer if a write failed, after every other write has finished.
+    """
+    limiter = anyio.CapacityLimiter(PLAN_WRITES_AT_ONCE)
+    report = plan_progress.get()
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in prepared:
+        payload = item["workout"].to_dict()
+        groups.setdefault(json.dumps(payload, sort_keys=True, default=str), []).append(item)
+    ids: dict[str, Any] = {}
+    failures: list[tuple[str, str, BaseException]] = []
+
+    async def upload(key: str) -> None:
+        payload = groups[key][0]["workout"].to_dict()
+        async with limiter:
+            try:
+                uploaded = await _call(lambda c, p=payload: c.upload_workout(p)) or {}
+                workout_id = first_present(uploaded, "workoutId", "id")
+                if workout_id is None:
+                    raise RuntimeError("Garmin returned no workout id")
+            except Exception as exc:  # noqa: BLE001 - reported once every write has finished
+                first = groups[key][0]
+                failures.append((first["date"].isoformat(), first["name"], exc))
+                return
+        ids[key] = workout_id
+        written[workout_id] = {**payload, **(uploaded if isinstance(uploaded, dict) else {})}
+
+    done: list[dict[str, Any]] = []
+
+    async def schedule(item: dict[str, Any], workout_id: Any) -> None:
+        async with limiter:
+            try:
+                scheduled = await _call(
+                    lambda c, w=workout_id, d=item["date"].isoformat(): c.schedule_workout(w, d)) or {}
+            except Exception as exc:  # noqa: BLE001
+                failures.append((item["date"].isoformat(), item["name"], exc))
+                return
+        _note_on_watch(workout_id, _sport_key(item["workout"].to_dict()))
+        done.append(drop_empty({
+            "date": item["date"].isoformat(), "name": item["name"], "workout_id": workout_id,
+            "schedule_id": first_present(scheduled, "workoutScheduleId", "id"),
+            "estimated": duration(item["estimated"]),
+        }))
+        if report:
+            report(sorted(done, key=lambda r: r["date"]), len(prepared))
+
+    async with anyio.create_task_group() as group:
+        for key in groups:
+            group.start_soon(upload, key)
+    async with anyio.create_task_group() as group:
+        for key, items in groups.items():
+            if key in ids:
+                for item in items:
+                    group.start_soon(schedule, item, ids[key])
+    created.extend(sorted(done, key=lambda r: r["date"]))
+    if not failures:
+        return None
+    auth = next((exc for _, _, exc in failures if isinstance(exc, GarminError)
+                 and not isinstance(exc, GarminNotFound)), None)
+    if auth is not None and not created:
+        raise auth
+    failures.sort(key=lambda f: f[0])
+    day, name, exc = failures[0]
+    return {
+        "error": (
+            f"{len(prepared) - len(created)} of {len(prepared)} sessions didn't go on, first {day} ({name}): "
+            f"{type(exc).__name__}: {exc}. The rest are created and scheduled; call create_plan again with "
+            "the same label and only the missing sessions, or remove_plan to start again."
+        ),
+        "label": code,
+        "created": created,
+        "not_created": len(prepared) - len(created),
+        "missing": [{"date": d, "name": n} for d, n, _ in failures][:60],
+    }
+
+
 def _running_clash(existing: dict[str, list[dict[str, Any]]], sessions: Any,
                    first: Any = None, last: Any = None) -> str | None:
     """Why a new plan with runs can't go on days another running plan already has, or None.
@@ -3640,6 +3862,9 @@ async def create_plan(
             "replace" unschedules them, "keep" leaves both.
     """
     today = date_cls.today()
+    v2 = tools_v2.on()
+    if v2:
+        sessions = [training_plan.common_session_keys(s, today) for s in sessions or []]
     sessions = [
         {**s, "steps": await _in_zones(s.get("steps"), s.get("sport"))} if isinstance(s, dict) and s.get("steps") else s
         for s in sessions or []
@@ -3657,34 +3882,29 @@ async def create_plan(
     choice = existing  # the user's answer about runs from elsewhere; the name is reused below
     existing = training_plan.plans_in(calendar)
     if code in existing and not plan_resume.get():
-        return {
-            "error": (
-                f"Plan code {code} is already on the calendar between "
-                f"{first.isoformat()} and {last.isoformat()}. Ask the user whether to replace it "
-                "(remove_plan, then this) or start this plan after it ends."
-            )
-        }
+        ask = (f"Plan code {code} is already on the calendar between "
+               f"{first.isoformat()} and {last.isoformat()}. Ask the user whether to replace it "
+               "(remove_plan, then this) or start this plan after it ends.")
+        return _plan_question(ask, code) if v2 else {"error": ask}
     # Two running plans over the same weeks put two runs on a day, both on the
     # watch, and the cards add them together (Nov 11: with the app's plan
     # builder open to everyone, a plan built there and then another asked for
     # in a chat). A strength or cycling plan alongside a running one is fine.
     clash = _running_clash(existing, sessions, first, last) if existing else None
     if clash:
-        return {"error": clash}
+        return _plan_question(clash, code) if v2 else {"error": clash}
     # Runs from anywhere else on the plan's run days: Garmin Coach, another
     # app, single workouts. Nov 18: a plan went on top of someone's old one
     # and their assistant then cleared 30-odd doubled days one at a time.
     doubled = _doubled_runs(calendar, sessions, code)
     if doubled and choice not in ("replace", "keep"):
-        return {
-            "error": (
-                f"{len(doubled)} of this plan's run days have another run already on the calendar "
-                f"(first {doubled[0]['date']}, {doubled[0]['name']}). Both would go to the watch. "
-                "Ask the user whether to take those off the calendar first (existing=\"replace\": "
-                "they stay in their workout library) or keep both (existing=\"keep\")."
-            ),
-            "already_scheduled": doubled[:60],
-        }
+        ask = (f"{len(doubled)} of this plan's run days have another run already on the calendar "
+               f"(first {doubled[0]['date']}, {doubled[0]['name']}). Both would go to the watch. "
+               "Ask the user whether to take those off the calendar first (existing=\"replace\": "
+               "they stay in their workout library) or keep both (existing=\"keep\").")
+        if v2:
+            return {**_plan_question(ask, code), "already_scheduled": doubled[:60]}
+        return {"error": ask, "already_scheduled": doubled[:60]}
     cleared: list[dict[str, Any]] = []
     if doubled and choice == "replace":
         for item in doubled:
@@ -3701,11 +3921,15 @@ async def create_plan(
 
     created: list[dict[str, Any]] = []
     written: dict[Any, dict[str, Any]] = {}
+    if v2:
+        stopped = await _write_sessions(prepared, created, written, code)
+        if stopped:
+            return stopped
     # The same session again (the Monday gym session, the Friday club run)
     # is one workout scheduled on each date, not a copy per week: fewer
     # workouts in the library and on the watch.
     uploaded_as: dict[str, Any] = {}
-    for item in prepared:
+    for item in ([] if v2 else prepared):
         payload = item["workout"].to_dict()
         same = json.dumps(payload, sort_keys=True, default=str)
         try:
@@ -3912,6 +4136,9 @@ async def check_plan(
         longest_recent_run_km: Their longest run in the last month or so, in km.
     """
     today = date_cls.today()
+    v2 = tools_v2.on()
+    if v2:
+        sessions = [training_plan.common_session_keys(s, today) for s in sessions or []]
     sessions = [
         {**s, "steps": await _in_zones(s.get("steps"), s.get("sport"))} if isinstance(s, dict) and s.get("steps") else s
         for s in sessions or []
@@ -4427,6 +4654,8 @@ async def remove_plan(label: str, confirm: str = "") -> dict[str, Any]:
 
     # A workout also scheduled on a kept date is only unscheduled, never deleted.
     kept_workouts = {i.get("workoutId") for i in sessions if i not in ahead}
+    if tools_v2.on():
+        return await _remove_sessions(code, ahead, kept_workouts, len(sessions) - len(ahead))
     removed, failed = 0, []
     for item in ahead:
         try:
@@ -4444,6 +4673,48 @@ async def remove_plan(label: str, confirm: str = "") -> dict[str, Any]:
     return drop_empty(
         {"label": code, "removed": removed, "kept": len(sessions) - len(ahead), "failed": failed or None}
     )
+
+
+async def _remove_sessions(code: str, ahead: list[dict[str, Any]], kept_workouts: set[Any],
+                           kept: int) -> dict[str, Any]:
+    """remove_plan's removal, safe to run twice (Nov 26, tools-v2).
+
+    A plan schedules one workout on every date it repeats, and deleting that
+    workout at its first date took the later dates off Garmin's calendar with
+    it, so the next unschedule got a 404 and the whole removal stopped part
+    way, every time it was asked again. Now every date is unscheduled first,
+    then each workout deleted once, and anything already gone counts as done.
+    """
+    removed, already, failed = 0, 0, []
+    for item in ahead:
+        sid = first_present(item, "id", "workoutScheduleId")
+        try:
+            if sid:
+                await _call(lambda c, s=sid: c.unschedule_workout(s))
+            removed += 1
+        except GarminNotFound:
+            removed += 1
+            already += 1
+        except GarminError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"date": item["date"][:10], "error": type(exc).__name__})
+    for wid in dict.fromkeys(i.get("workoutId") for i in ahead):
+        if not wid or wid in kept_workouts:
+            continue
+        try:
+            await _call(lambda c, w=wid: c.delete_workout(w))
+        except GarminNotFound:
+            pass
+        except GarminError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"workout_id": wid, "error": type(exc).__name__})
+    return drop_empty({
+        "label": code, "removed": removed, "kept": kept,
+        "already_gone": already or None, "failed": failed or None,
+        "note": "Off the calendar and out of the workout library from today on. Past sessions stay.",
+    })
 
 
 # --------------------------------------------------------------------------
@@ -4491,9 +4762,41 @@ async def _gather(labels_and_calls: list[tuple[str, Callable[[Any], Any]]]) -> t
     return results, warnings
 
 
+# Days of a range read at once. Each day's reads already go side by side
+# (get_readiness makes five), and all of one call share the person's one slot
+# at the gate (gate.py), so this keeps a 90-day range from filling its queue.
+DAYS_AT_ONCE = 3
+
+
+async def _over_days(tool: str, one: Callable[..., Any], start_date: Any, end_date: Any,
+                     days: Any) -> dict[str, Any]:
+    """A range answer: each day read as the one-day call reads it (from the
+    cache where it is there already), cut down to its row."""
+    span = day_ranges.days_between(start_date, end_date, days)
+    limiter = anyio.CapacityLimiter(DAYS_AT_ONCE)
+    answers: list[Any] = [None] * len(span)
+
+    async def read(i: int, day: str) -> None:
+        async with limiter:
+            try:
+                answers[i] = await (one(day, in_range=True) if one is _readiness_day else one(day))
+            except GarminError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - one bad day is a missing row, not a failed range
+                answers[i] = exc
+
+    async with anyio.create_task_group() as group:
+        for i, day in enumerate(span):
+            group.start_soon(read, i, day)
+    sources = {a.get("source") for a in answers if isinstance(a, dict)}
+    return day_ranges.answer(tool, span, answers, source=OFFICIAL_SOURCE if OFFICIAL_SOURCE in sources else None)
+
+
 @mcp.tool()
 @tool_errors
-async def get_readiness(date: str | None = None) -> dict[str, Any]:
+async def get_readiness(
+    date: str | None = None, start_date: str = "", end_date: str = "", days: int = 0,
+) -> dict[str, Any]:
     """Whether the user should train hard today or hold back.
 
     For that question, and for checking today before prescribing a hard
@@ -4506,7 +4809,16 @@ async def get_readiness(date: str | None = None) -> dict[str, Any]:
 
     Args:
         date: YYYY-MM-DD, 'today', 'yesterday' or an offset like '-1'. Defaults to today.
+        start_date: For several days, a range (not one call a day): a row a day, max 90.
+        end_date: Range end, default today.
+        days: Or days back to end_date.
     """
+    if day_ranges.wants_range(start_date, end_date, days):
+        return await _over_days("get_readiness", _readiness_day, start_date, end_date, days)
+    return await _readiness_day(date)
+
+
+async def _readiness_day(date: str | None = None, *, in_range: bool = False) -> dict[str, Any]:
     day = parse_date(date)
     client = _official_client()
     if client is not None and client.alone:
@@ -4528,7 +4840,7 @@ async def get_readiness(date: str | None = None) -> dict[str, Any]:
     if all(x is None for x in (readiness, status, hrv, stats, sleep)):
         return {"error": f"Garmin returned nothing for {day}.", "warnings": warnings}
     shaped = metrics.shape_readiness(day, readiness, status, hrv, stats, sleep, warnings)
-    if isinstance(shaped, dict) and not shaped.get("load_focus"):
+    if isinstance(shaped, dict) and not shaped.get("load_focus") and not in_range:
         # Some accounts' training status leaves the load focus out; Garmin's
         # load-balance endpoint has it in the same shape.
         try:
