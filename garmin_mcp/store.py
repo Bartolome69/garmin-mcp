@@ -71,6 +71,15 @@ MIGRATIONS = (
     "ALTER TABLE users ADD COLUMN weekly_clicked TEXT",
     # Nov 11: when the session heads-up goes, chosen in the app's You tab.
     "ALTER TABLE push_subs ADD COLUMN heads_up TEXT",
+    # Nov 26 (pwa-v2): each phone's last delivery and failures in a row; which
+    # notifications the person wants (JSON: today, plan, weekly); the local day
+    # of the last daily one (one a day at most); the Monday of the week the
+    # last weekly summary was about.
+    "ALTER TABLE push_subs ADD COLUMN last_success_at INTEGER",
+    "ALTER TABLE push_subs ADD COLUMN failures INTEGER",
+    "ALTER TABLE push_subs ADD COLUMN kinds TEXT",
+    "ALTER TABLE push_subs ADD COLUMN last_daily TEXT",
+    "ALTER TABLE push_subs ADD COLUMN last_weekly TEXT",
     # Nov 15: a spent magic link is kept a day, marked, so a second tap reads
     # as "used" rather than "invalid".
     "ALTER TABLE app_handoffs ADD COLUMN used_at INTEGER",
@@ -2062,17 +2071,62 @@ HEADS_UP = ("evening", "6", "7", "8")
 DEFAULT_HEADS_UP = "evening"
 
 
-def save_push(user_token: str, endpoint: str, p256dh: str, auth: str, tz: str | None) -> None:
+def save_push(user_token: str, endpoint: str, p256dh: str, auth: str, tz: str | None,
+              default_heads_up: str | None = None) -> None:
     owner = push_owner(user_token)
     with _connect() as conn:
-        # A second phone takes the time already chosen on their first.
+        # A second phone takes the time and the choices already made on their first;
+        # a first phone takes default_heads_up (Nov 26: 7am under pwa-v2).
         conn.execute(
-            "INSERT INTO push_subs (endpoint, owner, p256dh, auth, tz, created_at, heads_up) VALUES (?, ?, ?, ?, ?, ?, "
-            "(SELECT heads_up FROM push_subs WHERE owner = ? AND heads_up IS NOT NULL LIMIT 1)) "
+            "INSERT INTO push_subs (endpoint, owner, p256dh, auth, tz, created_at, heads_up, kinds) VALUES (?, ?, ?, ?, ?, ?, "
+            "COALESCE((SELECT heads_up FROM push_subs WHERE owner = ? AND heads_up IS NOT NULL LIMIT 1), ?), "
+            "(SELECT kinds FROM push_subs WHERE owner = ? AND kinds IS NOT NULL LIMIT 1)) "
             "ON CONFLICT(endpoint) DO UPDATE SET owner = excluded.owner, p256dh = excluded.p256dh, "
             "auth = excluded.auth, tz = excluded.tz",
-            (endpoint, owner, p256dh, auth, tz, int(time.time()), owner),
+            (endpoint, owner, p256dh, auth, tz, int(time.time()), owner,
+             default_heads_up if default_heads_up in HEADS_UP else None, owner),
         )
+
+
+# Nov 26 (pwa-v2): the notifications someone can switch on and off, all on to start.
+PUSH_KINDS = ("today", "plan", "weekly")
+
+
+def push_kinds_for(user_token: str) -> dict[str, bool]:
+    with _connect() as conn:
+        row = conn.execute("SELECT kinds FROM push_subs WHERE owner IN (?, ?) AND kinds IS NOT NULL LIMIT 1",
+                           (push_owner(user_token), user_token)).fetchone()
+    return kinds_from(row[0] if row else None)
+
+
+def kinds_from(raw: Any) -> dict[str, bool]:
+    try:
+        said = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        said = {}
+    said = said if isinstance(said, dict) else {}
+    return {k: said.get(k) is not False for k in PUSH_KINDS}
+
+
+def set_push_kind(user_token: str, kind: str, on: bool) -> dict[str, bool] | None:
+    """Switch one kind of notification on all of someone's phones. None when they have none."""
+    if kind not in PUSH_KINDS:
+        raise ValueError(kind)
+    kinds = push_kinds_for(user_token)
+    kinds[kind] = bool(on)
+    with _connect() as conn:
+        changed = conn.execute("UPDATE push_subs SET kinds = ? WHERE owner IN (?, ?)",
+                               (json.dumps(kinds), push_owner(user_token), user_token)).rowcount
+    return kinds if changed else None
+
+
+def note_push_result(endpoint: str, ok: bool, now: float | None = None) -> None:
+    with _connect() as conn:
+        if ok:
+            conn.execute("UPDATE push_subs SET last_success_at = ?, failures = 0 WHERE endpoint = ?",
+                         (int(now or time.time()), endpoint))
+        else:
+            conn.execute("UPDATE push_subs SET failures = COALESCE(failures, 0) + 1 WHERE endpoint = ?", (endpoint,))
 
 
 def heads_up_for(user_token: str) -> str | None:
@@ -2110,11 +2164,10 @@ def forget_push(user_token: str, email_hash: str | None) -> None:
 
 
 def push_subs() -> list[dict[str, Any]]:
+    keys = ("endpoint", "owner", "p256dh", "auth", "tz", "last_morning", "last_run", "heads_up",
+            "kinds", "last_daily", "last_weekly", "last_success_at", "failures")
     with _connect() as conn:
-        rows = conn.execute(
-            "SELECT endpoint, owner, p256dh, auth, tz, last_morning, last_run, heads_up FROM push_subs ORDER BY created_at"
-        ).fetchall()
-    keys = ("endpoint", "owner", "p256dh", "auth", "tz", "last_morning", "last_run", "heads_up")
+        rows = conn.execute(f"SELECT {', '.join(keys)} FROM push_subs ORDER BY created_at").fetchall()
     return [dict(zip(keys, r)) for r in rows]
 
 
@@ -2124,9 +2177,15 @@ def has_push(user_token: str) -> bool:
                             (push_owner(user_token), user_token)).fetchone() is not None
 
 
-def mark_push(owner: str, *, morning: str | None = None, run: str | None = None) -> None:
-    """Record, for all of someone's phones, the morning or run already sent."""
+def mark_push(owner: str, *, morning: str | None = None, run: str | None = None,
+              daily: str | None = None, weekly: str | None = None) -> None:
+    """Record, for all of someone's phones, the morning or run already sent,
+    the local day of the day's one notification, and the week last summed up."""
     with _connect() as conn:
+        if daily is not None:
+            conn.execute("UPDATE push_subs SET last_daily = ? WHERE owner = ?", (daily, owner))
+        if weekly is not None:
+            conn.execute("UPDATE push_subs SET last_weekly = ? WHERE owner = ?", (weekly, owner))
         if morning is not None:
             conn.execute("UPDATE push_subs SET last_morning = ? WHERE owner = ?", (morning, owner))
         if run is not None:

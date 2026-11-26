@@ -101,11 +101,29 @@ def encrypt(payload: bytes, p256dh: str, auth: str, *, salt: bytes | None = None
 
 
 def send(sub: dict[str, Any], message: dict[str, Any], *, urgency: str = "normal") -> str:
-    """Send one notification to one phone. Returns "sent", "gone" or "failed".
+    """Send one notification to one phone. Returns "sent", "gone" or "failed"."""
+    return send_status(sub, message, urgency=urgency)[0]
+
+
+def send_status(sub: dict[str, Any], message: dict[str, Any], *, urgency: str = "normal") -> tuple[str, int | None]:
+    """send, with the push service's HTTP status (None when it never answered).
 
     A phone that has turned notifications off, or a subscription the push
     service no longer knows, answers 404 or 410: that phone is forgotten.
+    Each phone keeps when it last took one and how many failed since (Nov 26).
     """
+    result, status = _send(sub, message, urgency)
+    try:
+        if result == "sent":
+            store.note_push_result(sub["endpoint"], True)
+        elif result == "failed":
+            store.note_push_result(sub["endpoint"], False)
+    except Exception:  # noqa: BLE001 - bookkeeping never fails a push
+        log.debug("push result not noted", exc_info=True)
+    return result, status
+
+
+def _send(sub: dict[str, Any], message: dict[str, Any], urgency: str) -> tuple[str, int | None]:
     body = encrypt(json.dumps(message, separators=(",", ":")).encode(), sub["p256dh"], sub["auth"])
     request = urllib.request.Request(sub["endpoint"], data=body, method="POST", headers={
         "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream",
@@ -113,16 +131,16 @@ def send(sub: dict[str, Any], message: dict[str, Any], *, urgency: str = "normal
     })
     try:
         with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
-            return "sent" if 200 <= response.status < 300 else "failed"
+            return ("sent" if 200 <= response.status < 300 else "failed"), response.status
     except urllib.error.HTTPError as exc:
         if exc.code in (404, 410):
             store.drop_push(sub["endpoint"])
-            return "gone"
+            return "gone", exc.code
         log.info("push refused: %s", exc.code)
-        return "failed"
+        return "failed", exc.code
     except Exception as exc:  # noqa: BLE001 - one phone's push never stops the others
         log.info("push failed (%s)", type(exc).__name__)
-        return "failed"
+        return "failed", None
 
 
 def valid_subscription(raw: Any) -> tuple[str, str, str] | None:

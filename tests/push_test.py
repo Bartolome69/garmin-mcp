@@ -156,6 +156,7 @@ check("a run that didn't load sends nothing", hosted.run_message({"error": "x"})
 print("When they go")
 sent: list[tuple[str, dict]] = []
 hosted.push.send = lambda s, msg, urgency="normal": (sent.append((s["endpoint"], msg)), "sent")[1]
+hosted.push.send_status = lambda s, msg, urgency="normal": (hosted.push.send(s, msg), 201)
 planned = {today: "Easy run 8 km", "2026-11-13": "Threshold"}
 runs = {"latest": None}
 reads = []
