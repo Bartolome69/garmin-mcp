@@ -7,6 +7,7 @@ Run: .venv/bin/python tests/tools_v2_test.py
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -22,6 +23,8 @@ os.environ.setdefault("GARMIN_EMAIL", "test@example.com")
 os.environ.setdefault("GARMIN_PASSWORD", "hunter2")
 os.environ["GARMIN_MCP_TOOLS_V2"] = "all"
 os.environ["GARMIN_MCP_POSTHOG_KEY"] = "phc_test_key"
+from cryptography.fernet import Fernet  # noqa: E402
+os.environ.setdefault("GARMIN_MCP_SECRET", Fernet.generate_key().decode())
 
 from garminconnect.exceptions import GarminConnectNotFoundError  # noqa: E402
 
@@ -77,7 +80,7 @@ class GarminLike(DemoGarmin):
 FAKE = GarminLike()
 session_mod.build_client = lambda **_: FAKE
 
-from garmin_mcp import analytics, day_ranges, hooks, server, tools_v2  # noqa: E402
+from garmin_mcp import analytics, day_ranges, hooks, server, store, tools_v2  # noqa: E402
 import garmin_mcp.hosted as hosted  # noqa: E402
 
 SENT: list[dict] = []
@@ -415,11 +418,129 @@ def test_activity_answer_kept() -> None:
     check("run details: this week's run keeps them", set(server._trimmed(dict(fresh))) == set(fresh))
 
 
+# --------------------------------------------------------------------------
+# 5. End to end: a signed-in person, the flag as PostHog answers it, the hooks
+# --------------------------------------------------------------------------
+
+def _person(email: str) -> str:
+    return store.save_user(session_mod.mask_email(email), '{"di_token": "x"}',
+                           email_hash=store.email_fingerprint(email), email=email)
+
+
+async def _as(user_token: str, client: str, calls):
+    """Run calls as this person from this chat app, with hosted's real hooks."""
+    user = store.get_user(user_token)
+    bound = server.official.use(user_token)
+    hook = hooks.use(hosted._after_tool_for(user_token, user, False, client),
+                     hosted._before_tool_for(user_token, False, user, client))
+    try:
+        return [await c() for c in calls]
+    finally:
+        hooks.reset(hook)
+        server.official.reset(bound)
+
+
+def _wait_for(pred, tries: int = 60):
+    for _ in range(tries):
+        if pred():
+            return True
+        time.sleep(0.05)
+    return pred()
+
+
+def test_end_to_end() -> None:
+    flagged, other = _person("flagged@example.test"), _person("other@example.test")
+    on_ids = {analytics.distinct_id(store.get_user(flagged).email_hash)}
+    analytics._fetch_flags = lambda who: {"flags": {"tools-v2": {"enabled": who in on_ids}}}
+    os.environ["GARMIN_MCP_TOOLS_V2"] = "flag"
+    hosted._SAME_TOOL.clear()
+    hosted._CALLS.clear()
+    SENT.clear()
+    try:
+        days = [f"-{i}" for i in range(16)]
+        got = run(_as(flagged, "ChatGPT", [lambda d=d: server.get_sleep_data(date=d) for d in days]))
+        check("e2e flagged: 15 nights one at a time answer", all("error" not in g for g in got[:15]),
+              [g.get("error") for g in got[:15]])
+        check("e2e flagged: the 16th is held, pointing at a range",
+              "start_date and end_date" in str(got[15].get("error")), got[15])
+        ranged = run(_as(flagged, "ChatGPT", [lambda: server.get_sleep_data(days=30)]))[0]
+        check("e2e flagged: the range call right after goes through with 30 rows",
+              len(ranged.get("rows") or []) == 30 and "credit" in ranged, list(ranged)[:8])
+        other_got = run(_as(other, "Claude", [lambda d=d: server.get_sleep_data(date=d) for d in days]))
+        check("e2e not flagged: 16 one-day calls all answer, as today",
+              all("error" not in g for g in other_got), [g.get("error") for g in other_got if "error" in g])
+        _wait_for(lambda: len([e for e in SENT if e.get("event") == "tool_called"]) >= 15 + 1 + 16)
+        called = [e["properties"] for e in SENT if e.get("event") == "tool_called"]
+        blocked = [e["properties"] for e in SENT if e.get("event") == "tool_loop_blocked"]
+        check("e2e: tool_loop_blocked once, for the flagged ChatGPT chat",
+              len(blocked) == 1 and blocked[0]["tool"] == "get_sleep_data" and blocked[0]["client"] == "ChatGPT"
+              and blocked[0]["count"] == 16, blocked)
+        check("e2e: held calls aren't tool_called (15 + 1 range + 16 others)", len(called) == 32, len(called))
+        check("e2e: tool_called says single_date or range_days, and tools_v2 for the flagged person",
+              sum(1 for c in called if c.get("single_date")) == 31
+              and [c.get("range_days") for c in called if c.get("range_days")] == [30]
+              and sum(1 for c in called if c.get("tools_v2")) == 16, called[-1])
+        check("e2e: no email or token in any event",
+              "example.test" not in json.dumps([e for e in SENT if e.get("event") in
+                                                ("tool_called", "tool_loop_blocked")]))
+    finally:
+        os.environ["GARMIN_MCP_TOOLS_V2"] = "all"
+        analytics._fetch_flags = lambda who: {}
+
+
+def test_one_flag_request_an_hour() -> None:
+    asked = []
+    analytics._fetch_flags = lambda who: asked.append(who) or {
+        "flags": {"tools-v2": {"enabled": True}, "match-v2": {"enabled": False}}}
+    try:
+        analytics._FLAGS.clear()
+        first = [analytics.flag_on("tools-v2", "someone-hash") for _ in range(20)]
+        second = analytics.flag_on("match-v2", "someone-hash")
+    finally:
+        analytics._fetch_flags = lambda who: {}
+    check("flags: twenty calls and a second flag are one request to PostHog an hour",
+          all(first) and second is False and len(asked) == 1, asked)
+
+
+def test_range_edge_cases() -> None:
+    original = FAKE.get_sleep_data
+    calls = []
+
+    def flaky(day, *a, **k):
+        calls.append(day)
+        if day == (date.today() - timedelta(days=2)).isoformat():
+            raise ValueError("odd payload")
+        return original(day, *a, **k)
+    FAKE.get_sleep_data = flaky
+    try:
+        from garmin_mcp import garmin_cache
+        garmin_cache.clear()
+        server.session.forget()
+        got = run(server.get_sleep_data(days=5))
+    finally:
+        FAKE.get_sleep_data = original
+    check("range: one day failing is a missing row, not a failed range",
+          "error" not in got and len(got["rows"]) == 5, got)
+    stats = FAKE.get_stats
+    FAKE.get_stats = lambda day, *a, **k: None if str(day).startswith("2020-") else stats(day, *a, **k)
+    try:
+        empty = run(server.get_daily_summary(start_date="2020-01-01", end_date="2020-01-03"))
+    finally:
+        FAKE.get_stats = stats
+    check("range: days with nothing recorded say so", [r.get("missing") for r in empty["rows"]]
+          == ["nothing recorded"] * 3 and empty["days_with_data"] == 0, empty)
+    too_long = run(server.get_readiness(start_date="2026-01-01", end_date="2026-12-31"))
+    check("range: over 90 days is a clear error", "at most 90" in str(too_long.get("error")), too_long)
+    mixed = run(server.get_sleep_data(date="yesterday", days=3))
+    check("range: date with a range reads the range", len(mixed.get("rows") or []) == 3)
+
+
 if __name__ == "__main__":
     for test in (test_days_between, test_range_equals_per_day, test_args_shape, test_loop_guard,
                  test_session_not_found, test_remove_plan_twice, test_remove_plan_after_garmin_app_delete,
                  test_unschedule, test_create_plan_inputs_and_questions, test_strength_and_update,
-                 test_previous_failures_now_answer, test_create_plan_speed, test_activity_answer_kept):
+                 test_previous_failures_now_answer, test_create_plan_speed, test_activity_answer_kept,
+                 test_end_to_end, test_one_flag_request_an_hour, test_range_edge_cases):
         try:
             test()
         except Exception as exc:  # noqa: BLE001
