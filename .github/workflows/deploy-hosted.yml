@@ -115,6 +115,7 @@ jobs:
           python tests/memory_test.py
           python tests/match_test.py
           python tests/pwa_test.py
+          python tests/tools_v2_test.py
 
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts
       # in the Training API's shape, against a stubbed Garmin.

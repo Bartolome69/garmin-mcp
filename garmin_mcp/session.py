@@ -78,6 +78,10 @@ class GarminAuthError(GarminError):
     pass
 
 
+class GarminNotFound(GarminError):
+    """Garmin answered 404: the workout, schedule entry or activity isn't there."""
+
+
 class GarminMFARequired(GarminAuthError):
     pass
 
@@ -404,6 +408,14 @@ class GarminSession:
         except _auth_error_types() as exc:
             if _is_mfa(exc):
                 raise GarminMFARequired(MFA_MESSAGE) from exc
+            if type(exc).__name__ == "GarminConnectNotFoundError":
+                # Nov 26: a 404 is Garmin saying the thing is gone, not a
+                # network problem: asking again can't help, and it was told
+                # to the user as "could not reach Garmin".
+                raise GarminNotFound(
+                    "Garmin has nothing with that id (NotFound): it was already removed, "
+                    "or the id is wrong."
+                ) from exc
             if not _is_auth_failure(exc):
                 # A connection problem, not a rejected session. Try once more
                 # on the same client rather than throwing the session away.

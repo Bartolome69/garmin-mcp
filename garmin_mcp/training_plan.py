@@ -401,6 +401,90 @@ def goal_from_description(text: str | None, label: str) -> str | None:
 # --------------------------------------------------------------------------
 
 
+# Session spellings chats send (Nov 26, tools-v2): create_plan failed on them
+# with "needs a name", "Could not read ... as a date" or an unknown sport.
+SPORT_WORDS = {
+    "run": "running", "runs": "running", "jog": "running", "trail": "trail_running",
+    "bike": "cycling", "ride": "cycling", "cycle": "cycling", "biking": "cycling", "indoor_cycling": "cycling",
+    "swim": "swimming", "pool": "swimming",
+    "gym": "strength", "weights": "strength", "strength_training": "strength", "lifting": "strength",
+}
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
+
+
+def loose_date(value: Any, today: date) -> str | None:
+    """'Mon 1 Dec', '1 December', 'December 1, 2026', '2026/12/01' as YYYY-MM-DD.
+
+    A day and month with no year is the next one on or after today. None when
+    it isn't one of these, so the usual date error stands.
+    """
+    text = str(value or "").strip().lower().replace(",", " ").replace(".", " ")
+    match = re.fullmatch(r"(\d{4})[/.](\d{1,2})[/.](\d{1,2})", str(value or "").strip())
+    if match:
+        try:
+            return date(int(match.group(1)), int(match.group(2)), int(match.group(3))).isoformat()
+        except ValueError:
+            return None
+    words = [w for w in text.split() if w not in ("mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri",
+                                                    "sat", "sun", "monday", "tuesday", "wednesday", "thursday",
+                                                    "friday", "saturday", "sunday", "the", "of")]
+    day_n = month_n = year_n = None
+    for word in words:
+        digits = re.sub(r"(st|nd|rd|th)$", "", word)
+        if digits.isdigit():
+            number = int(digits)
+            if number > 31:
+                year_n = number
+            elif day_n is None:
+                day_n = number
+        elif word[:3] in _MONTHS and month_n is None:
+            month_n = _MONTHS[word[:3]]
+    if not (day_n and month_n):
+        return None
+    try:
+        found = date(year_n or today.year, month_n, day_n)
+        if year_n is None and found < today:
+            found = date(today.year + 1, month_n, day_n)
+        return found.isoformat()
+    except ValueError:
+        return None
+
+
+def common_session_keys(raw: Any, today: date) -> Any:
+    """A create_plan session with the spellings chats use turned into the ones prepare reads."""
+    if not isinstance(raw, dict):
+        return raw
+    out = dict(raw)
+    if not str(out.get("name") or "").strip():
+        for key in ("title", "workout_name", "workoutName", "session", "label"):
+            if isinstance(out.get(key), str) and out[key].strip():
+                out["name"] = out[key]
+                break
+    if not out.get("date"):
+        for key in ("day", "when", "scheduled_for", "on", "start_date"):
+            if out.get(key):
+                out["date"] = out[key]
+                break
+    if out.get("date"):
+        try:
+            parse_date(out["date"], default_today=False)
+        except DateError:
+            out["date"] = loose_date(out["date"], today) or out["date"]
+    sport = out.get("sport") or out.get("sport_type") or out.get("activity") or out.get("kind")
+    if isinstance(sport, str) and sport.strip():
+        word = sport.strip().lower().replace(" ", "_")
+        out["sport"] = SPORT_WORDS.get(word, word)
+    if out.get("exercises") and not out.get("steps") and not out.get("sport"):
+        out["sport"] = "strength"
+    if not out.get("steps"):
+        for key in ("workout_steps", "workoutSteps", "structure", "intervals"):
+            if isinstance(out.get(key), list):
+                out["steps"] = out[key]
+                break
+    return out
+
+
 def prepare(
     goal: str,
     sessions: Sequence[Mapping[str, Any]],
