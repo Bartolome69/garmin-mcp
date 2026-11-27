@@ -1,6 +1,6 @@
 // The one way to the watch (build prompt, section 7): only the watch queue calls
 // a transport, and nothing else in the app may write to Garmin.
-import { postJson, TimedOut } from '../../api/client';
+import { ApiError, NotSignedIn, postJson, ReconnectNeeded, TimedOut } from '../../api/client';
 import type { FailureKind, WatchOp } from './queue';
 
 export class SendFailure extends Error {
@@ -38,12 +38,18 @@ export function serverTransport(connection: Connection): WatchTransport {
     async send(op) {
       try {
         const r = await postJson<{ synced?: boolean; refused?: string }>('/app/api/v1/watch/ops',
-          { id: op.id, kind: op.kind, session_id: op.sessionId, date: op.date }, { timeoutMs: SEND_TIMEOUT_MS });
+          // A builder or onboarding op carries the workout it sends (daash.workout.v1).
+          { id: op.id, kind: op.kind, session_id: op.sessionId, date: op.date, ...(op.workout ? { workout: op.workout } : {}) },
+          { timeoutMs: SEND_TIMEOUT_MS });
         if (r.refused) throw new SendFailure('refused', r.refused);
         return { synced: !!r.synced };
       } catch (err) {
         if (err instanceof SendFailure) throw err;
         if (err instanceof TimedOut) throw new SendFailure('timeout');
+        // Retrying can't help until the runner signs in again: say so, and wait for Resend.
+        if (err instanceof ReconnectNeeded) throw new SendFailure('refused', `${err.provider} needs you to sign in again. Reconnect in You, then resend.`);
+        if (err instanceof NotSignedIn) throw new SendFailure('refused', 'Sign in again, then resend.');
+        if (err instanceof ApiError && !err.retryable) throw new SendFailure('refused', err.message);
         throw new SendFailure('offline');
       }
     },

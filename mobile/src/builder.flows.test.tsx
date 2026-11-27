@@ -132,7 +132,7 @@ describe('5. New workout → Save and send', () => {
     const op = g.sent[0] as unknown as BuildOp;
     expect(op).toMatchObject({ kind: 'add', date: '2026-12-04', what: '5 × 1 km at threshold' });
     expect(op.workout).toMatchObject({ schema: 'daash.workout.v1', name: '5 × 1 km at threshold', sport: 'running' });
-    expect(op.workout.steps.map((s) => s.type)).toEqual(['warmup', 'repeat', 'cooldown']);
+    expect(op.workout.steps.map((s) => (s as { type: string }).type)).toEqual(['warmup', 'repeat', 'cooldown']);
   });
 
   it('with the Coach on, "parsed on your phone" goes and the Coach\'s note comes', async () => {
