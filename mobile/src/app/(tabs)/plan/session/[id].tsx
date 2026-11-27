@@ -60,7 +60,7 @@ export default function SessionScreen() {
           },
           resend: () => watch.ops.filter((o) => o.sessionId === id && o.state === 'failed').forEach((o) => watch.resend(o.id)),
           remove: () => confirm(unwatchProposal([session])),
-          trouble: () => next('trouble'),
+          trouble: () => router.push('/you/trouble'),
           move: () => router.push({ pathname: '/plan/move', params: { id } }),
           swap: () => router.push({ pathname: '/plan/move', params: { id, mode: 'swap' } }),
           skip: () => {

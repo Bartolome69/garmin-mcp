@@ -21,6 +21,7 @@ import PlanLayout from './app/(tabs)/plan/_layout';
 import PlanIndex from './app/(tabs)/plan/index';
 import TodayLayout from './app/(tabs)/today/_layout';
 import TodayIndex from './app/(tabs)/today/index';
+import YouLayout from './app/(tabs)/you/_layout';
 import YouIndex from './app/(tabs)/you/index';
 
 function routes(appearance: Appearance, coach: boolean) {
@@ -40,6 +41,7 @@ function routes(appearance: Appearance, coach: boolean) {
     '(tabs)/plan/index': PlanIndex,
     '(tabs)/coach/index': CoachIndex,
     '(tabs)/crew/index': CrewIndex,
+    '(tabs)/you/_layout': YouLayout,
     '(tabs)/you/index': YouIndex,
   };
 }

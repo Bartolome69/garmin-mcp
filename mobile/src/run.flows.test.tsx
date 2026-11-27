@@ -27,6 +27,7 @@ import TodayNext from './app/(tabs)/today/next';
 import TodayOptions from './app/(tabs)/today/options';
 import TodayReadiness from './app/(tabs)/today/readiness';
 import TodayRun from './app/(tabs)/today/run/[id]';
+import YouLayout from './app/(tabs)/you/_layout';
 import YouIndex from './app/(tabs)/you/index';
 import WatchConfirm from './app/watch/confirm';
 import { memoryStore } from './features/watch/store';
@@ -71,6 +72,7 @@ function app(garmin: FakeGarmin, flags: Flags = DEFAULT_FLAGS) {
     '(tabs)/plan/session/[id]': PlanSession,
     '(tabs)/coach/index': CoachIndex,
     '(tabs)/crew/index': CrewIndex,
+    '(tabs)/you/_layout': YouLayout,
     '(tabs)/you/index': YouIndex,
     'watch/confirm': WatchConfirm,
   };

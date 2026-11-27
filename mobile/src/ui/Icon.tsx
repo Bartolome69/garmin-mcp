@@ -31,6 +31,7 @@ export const ICONS = {
   check: { ios: 'checkmark', android: 'check' },
   warning: { ios: 'exclamationmark.triangle', android: 'warning' },
   info: { ios: 'info.circle', android: 'info' },
+  grip: { ios: 'line.3.horizontal', android: 'drag_indicator' },
   share: { ios: 'square.and.arrow.up', android: 'share' },
   thumbUp: { ios: 'hand.thumbsup', android: 'thumb_up' },
   thumbDown: { ios: 'hand.thumbsdown', android: 'thumb_down' },

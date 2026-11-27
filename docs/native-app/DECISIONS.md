@@ -457,3 +457,61 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
 - **TODO(server):** `GET /app/api/v1/runs/{sessionId}` returns
   `postrun.view(...)`, built from the provider's activity details and streams
   (Garmin first), with `coach: {debrief}` when coach_enabled.
+
+## Milestone 8 (Connections, source priority, de-dupe), 27 Nov
+
+- **The server words the connections.** `garmin_mcp/domain/connections.py`
+  `view()` takes the runner's connections, source order, this month's runs from
+  every source and any pairs kept apart, and returns each provider's card:
+  - the state in words ("Connected to Garmin · Forerunner 965 · synced 07:02",
+    "Reconnect needed · last synced Tue", "Reads only · synced 06:58");
+  - capability chips, each on or off;
+  - a reconnect link only where one is needed;
+  - the merges `dedupe.merge()` made.
+
+  It takes no coach flag (tested).
+- **De-dupe has a twin on the device**, `mobile/src/domain/dedupe.ts`, held to
+  the server's answers by `fixtures/dedupe.json`. That fixture covers every
+  source order, a pair kept apart, the 60 s / 2% edges, one source never merging
+  with itself, and a London run against its UTC copy. Reordering sources or
+  pressing "These are different runs" re-merges at once on the phone, the same
+  way back-to-back answers at once while dragging; the server stores the change
+  and re-merges with the same rule. The device's merge rows are tested equal to
+  the server's.
+- **Hidden, not deleted.** A merge hides the lower source's copy. "These are
+  different runs" keeps that pair apart, and a "Kept apart" list offers "Merge
+  them again", so nothing done here is one-way.
+- **The phone's health store has the phone's name.** The server sends the route
+  `health`, and the app words it: "Via Apple Health" on iOS, "Via Health
+  Connect" on Android. The development fixture has one persona per phone (Apple
+  Watch, Pixel Watch).
+- **Reconnect opens the provider's sign-in on the server.** The server names the
+  URL per provider; Garmin's is the existing `/connect`. A provider needing a
+  reconnect also comes first on You, in a card whose Reconnect is that screen's
+  one brand fill ("Your plan is safe. Runs from here wait until it's back.").
+  On Connections the button is secondary, as on the board.
+- **Source priority** is a numbered list, reordered by dragging the handle
+  (one row's height is one place). For screen readers each row has "Move up"
+  and "Move down". The rule's numbers ("within 1 minute and ±2%") come from the
+  server's config, so a flag change shows here without an app update. Advanced
+  merge rules are Plus: shown, locked, never hidden.
+- **Trust.**
+  - "What Daash can and can't see" lists, per source, what it can and can't do,
+    from its capabilities.
+  - "Trouble connecting?" gives four steps and a Reconnect for anything needing
+    one; session detail's "Trouble connecting?" opens it too.
+  - "Don't see your device? Request it" takes a name.
+  - "Tell me when" remembers it was asked.
+  - The board's independence line closes the screen.
+- **Offline.** The runner's order, kept-apart pairs and requests are kept on the
+  device until the server has them, and re-sent with the next change.
+- **You** shows only Connections for now. Coach memory or Training preferences,
+  Plus, Notifications and Privacy arrive with their milestones.
+- **TODO(server):**
+  - `GET /app/api/v1/connections` returns `connections.view(...)` from the
+    provider registry and `provider_connections` (PR #27 / #30);
+  - `POST .../priority {order}`, `.../keep-apart {pairs}` and
+    `.../request {device}` store the runner's changes;
+  - a reconnect page for providers other than Garmin
+    (`/app/connect/intervals`, with the Intervals.icu adapter once its API docs
+    are reachable).
