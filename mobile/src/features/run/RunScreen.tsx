@@ -5,7 +5,7 @@ import { Stack, useRouter } from 'expo-router';
 import { Platform, Pressable, Share, View } from 'react-native';
 
 import { useFlags } from '../../flags/FlagsProvider';
-import { Button } from '../../ui/Button';
+import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { Screen } from '../../ui/Screen';
 import { Text } from '../../ui/Text';
@@ -21,7 +21,8 @@ export function RunScreen({ id, fetcher }: { id: string; fetcher?: Parameters<ty
   return (
     <>
       <Stack.Screen options={{ title: '', headerRight: vm ? () => (
-        <Pressable testID="share" accessibilityRole="button" accessibilityLabel="Share" onPress={share} hitSlop={12}>
+        <Pressable testID="share" accessibilityRole="button" accessibilityLabel="Share" onPress={share}
+          style={{ minHeight: MIN_TOUCH, minWidth: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
           {Platform.OS === 'ios' ? <Text variant="body">Share</Text> : <Icon name="share" context="toolbar" />}
         </Pressable>
       ) : undefined }} />

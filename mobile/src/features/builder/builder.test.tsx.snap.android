@@ -252,7 +252,7 @@ exports[`snapshot: a refusal on android: builder-refused-android 1`] = `
               {
                 "alignSelf": "flex-start",
                 "justifyContent": "center",
-                "minHeight": 44,
+                "minHeight": 48,
               }
             }
             testID="fix-0"
@@ -1438,7 +1438,7 @@ exports[`snapshot: the builder on android: builder-android 1`] = `
             style={
               {
                 "justifyContent": "center",
-                "minHeight": 44,
+                "minHeight": 48,
               }
             }
             testID="day-2026-11-30"
@@ -1516,7 +1516,7 @@ exports[`snapshot: the builder on android: builder-android 1`] = `
             style={
               {
                 "justifyContent": "center",
-                "minHeight": 44,
+                "minHeight": 48,
               }
             }
             testID="day-pick"

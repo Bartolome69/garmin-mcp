@@ -125,10 +125,11 @@ exports[`snapshot: Connections on android: connections-android 1`] = `
               style={
                 {
                   "borderRadius": 6,
-                  "height": 22,
                   "justifyContent": "center",
+                  "minHeight": 22,
                   "overflow": "hidden",
                   "paddingHorizontal": 8,
+                  "paddingVertical": 2,
                 }
               }
             >
@@ -489,10 +490,11 @@ exports[`snapshot: Connections on android: connections-android 1`] = `
               style={
                 {
                   "borderRadius": 6,
-                  "height": 22,
                   "justifyContent": "center",
+                  "minHeight": 22,
                   "overflow": "hidden",
                   "paddingHorizontal": 8,
+                  "paddingVertical": 2,
                 }
               }
             >
@@ -968,10 +970,11 @@ exports[`snapshot: Connections on android: connections-android 1`] = `
               style={
                 {
                   "borderRadius": 6,
-                  "height": 22,
                   "justifyContent": "center",
+                  "minHeight": 22,
                   "overflow": "hidden",
                   "paddingHorizontal": 8,
+                  "paddingVertical": 2,
                 }
               }
             >
@@ -1692,7 +1695,7 @@ exports[`snapshot: Connections on android: connections-android 1`] = `
         style={
           {
             "justifyContent": "center",
-            "minHeight": 44,
+            "minHeight": 48,
           }
         }
         testID="link-see"
@@ -1752,7 +1755,7 @@ exports[`snapshot: Connections on android: connections-android 1`] = `
         style={
           {
             "justifyContent": "center",
-            "minHeight": 44,
+            "minHeight": 48,
           }
         }
         testID="link-trouble"
@@ -1869,7 +1872,7 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
             "borderTopWidth": 0,
             "flexDirection": "row",
             "gap": 12,
-            "height": 64,
+            "minHeight": 64,
             "paddingHorizontal": 14,
             "transform": [
               {
@@ -1970,9 +1973,9 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
           style={
             {
               "alignItems": "center",
-              "height": 44,
+              "height": 48,
               "justifyContent": "center",
-              "width": 44,
+              "width": 48,
             }
           }
           testID="grip-0"
@@ -2032,7 +2035,7 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
             "borderTopWidth": 1,
             "flexDirection": "row",
             "gap": 12,
-            "height": 64,
+            "minHeight": 64,
             "paddingHorizontal": 14,
             "transform": [
               {
@@ -2133,9 +2136,9 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
           style={
             {
               "alignItems": "center",
-              "height": 44,
+              "height": 48,
               "justifyContent": "center",
-              "width": 44,
+              "width": 48,
             }
           }
           testID="grip-1"
@@ -2191,7 +2194,7 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
             "borderTopWidth": 1,
             "flexDirection": "row",
             "gap": 12,
-            "height": 64,
+            "minHeight": 64,
             "paddingHorizontal": 14,
             "transform": [
               {
@@ -2292,9 +2295,9 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
           style={
             {
               "alignItems": "center",
-              "height": 44,
+              "height": 48,
               "justifyContent": "center",
-              "width": 44,
+              "width": 48,
             }
           }
           testID="grip-2"
@@ -2410,9 +2413,10 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
             {
               "backgroundColor": "#2C2B28",
               "borderRadius": 6,
-              "height": 22,
               "justifyContent": "center",
+              "minHeight": 22,
               "paddingHorizontal": 8,
+              "paddingVertical": 2,
             }
           }
         >
@@ -2602,9 +2606,10 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
             {
               "backgroundColor": "#2C2B28",
               "borderRadius": 6,
-              "height": 22,
               "justifyContent": "center",
+              "minHeight": 22,
               "paddingHorizontal": 8,
+              "paddingVertical": 2,
             }
           }
         >
@@ -2777,6 +2782,7 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
           "borderWidth": 1,
           "flexDirection": "row",
           "gap": 10,
+          "minHeight": 48,
           "padding": 14,
         }
       }

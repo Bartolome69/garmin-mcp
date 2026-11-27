@@ -790,7 +790,7 @@ exports[`snapshot: post-run on android: run-android 1`] = `
             {
               "flex": 1,
               "justifyContent": "center",
-              "minHeight": 44,
+              "minHeight": 48,
             }
           }
           testID="metric-paceHr"
@@ -801,8 +801,9 @@ exports[`snapshot: post-run on android: run-android 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "#F4F3EE",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -863,7 +864,7 @@ exports[`snapshot: post-run on android: run-android 1`] = `
             {
               "flex": 1,
               "justifyContent": "center",
-              "minHeight": 44,
+              "minHeight": 48,
             }
           }
           testID="metric-cadence"
@@ -874,8 +875,9 @@ exports[`snapshot: post-run on android: run-android 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -936,7 +938,7 @@ exports[`snapshot: post-run on android: run-android 1`] = `
             {
               "flex": 1,
               "justifyContent": "center",
-              "minHeight": 44,
+              "minHeight": 48,
             }
           }
           testID="metric-elevation"
@@ -947,8 +949,9 @@ exports[`snapshot: post-run on android: run-android 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -2998,7 +3001,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
             "alignItems": "center",
             "flexDirection": "row",
             "justifyContent": "space-between",
-            "minHeight": 24,
+            "minHeight": 48,
           }
         }
         testID="debrief-toggle"
@@ -3113,7 +3116,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
             accessible={true}
             collapsable={false}
             focusable={true}
-            hitSlop={5}
+            hitSlop={7}
             onBlur={[Function]}
             onClick={[Function]}
             onFocus={[Function]}
@@ -3189,7 +3192,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
             accessible={true}
             collapsable={false}
             focusable={true}
-            hitSlop={5}
+            hitSlop={7}
             onBlur={[Function]}
             onClick={[Function]}
             onFocus={[Function]}
@@ -3277,7 +3280,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
           style={
             {
               "justifyContent": "center",
-              "minHeight": 44,
+              "minHeight": 48,
             }
           }
           testID="ask-run"
@@ -3975,7 +3978,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
             {
               "flex": 1,
               "justifyContent": "center",
-              "minHeight": 44,
+              "minHeight": 48,
             }
           }
           testID="metric-paceHr"
@@ -3986,8 +3989,9 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "#F4F3EE",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -4048,7 +4052,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
             {
               "flex": 1,
               "justifyContent": "center",
-              "minHeight": 44,
+              "minHeight": 48,
             }
           }
           testID="metric-cadence"
@@ -4059,8 +4063,9 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -4121,7 +4126,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
             {
               "flex": 1,
               "justifyContent": "center",
-              "minHeight": 44,
+              "minHeight": 48,
             }
           }
           testID="metric-elevation"
@@ -4132,8 +4137,9 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >

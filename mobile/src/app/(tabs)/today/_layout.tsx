@@ -6,6 +6,9 @@ import { Platform } from 'react-native';
 import { TodayProvider } from '../../../features/today/TodayProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 
+// A sheet opened straight from a link sits over the tab's first screen, not on its own.
+export const unstable_settings = { anchor: 'index' };
+
 export default function TodayLayout() {
   const { colors } = useTheme();
   const sheet = {

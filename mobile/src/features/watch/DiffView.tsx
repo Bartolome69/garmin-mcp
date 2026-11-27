@@ -9,7 +9,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import Svg, { G, Rect, Text as SvgText } from 'react-native-svg';
 
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button } from '../../ui/Button';
+import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
@@ -140,7 +140,7 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
         <View testID="diff-coach" style={{ gap: 8, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
           <Text variant="kicker" tone="muted">Coach</Text>
           <Text variant="coach">{p.coachNote}</Text>
-          <Pressable accessibilityRole="button" onPress={onAsk} style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}>
+          <Pressable accessibilityRole="button" onPress={onAsk} style={{ alignSelf: 'flex-start', minHeight: MIN_TOUCH, justifyContent: 'center' }}>
             <View style={{ paddingHorizontal: 12, minHeight: 30, borderRadius: 999, borderWidth: 1, borderColor: colors.muted, justifyContent: 'center' }}>
               <Text variant="footnote">Ask about this</Text>
             </View>

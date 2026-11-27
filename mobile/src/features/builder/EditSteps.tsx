@@ -5,7 +5,7 @@ import { Pressable, TextInput, View } from 'react-native';
 
 import { parseWorkout, stepWords, type Parsed } from '../../domain/parser';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button } from '../../ui/Button';
+import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
 import { Text } from '../../ui/Text';
@@ -18,10 +18,10 @@ export const rowsText = (rows: string[]) => rows.map((r) => r.trim()).filter(Boo
 function Added({ which, on, words, onToggle }: { which: 'warmup' | 'cooldown'; on: boolean; words: string | null; onToggle: () => void }) {
   const name = which === 'warmup' ? 'warm-up' : 'cool-down';
   return (
-    <View testID={`added-${which}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
+    <View testID={`added-${which}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: MIN_TOUCH }}>
       <Text variant="subhead" tone={on ? 'text' : 'muted'} style={{ flex: 1 }} numeric>{on ? words ?? `10 min ${name} (added)` : `No ${name}`}</Text>
       <Pressable testID={`toggle-${which}`} accessibilityRole="button" accessibilityLabel={on ? `Take off the added ${name}` : `Add a ${name}`}
-        onPress={onToggle} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 }}>
+        onPress={onToggle} style={{ minHeight: MIN_TOUCH, justifyContent: 'center', paddingHorizontal: 4 }}>
         <Text variant="subhead" style={{ fontWeight: '600', textDecorationLine: 'underline' }}>{on ? 'Take off' : `Add a ${name}`}</Text>
       </Pressable>
     </View>
@@ -50,11 +50,11 @@ export function EditSteps({ state, onChange, parsed }: { state: EditState; onCha
                 onChangeText={(t) => set(state.rows.map((r, j) => (j === i ? t : r)))}
                 multiline scrollEnabled={false} blurOnSubmit
                 autoCapitalize="none" autoCorrect={false} spellCheck={false} placeholder="2 min easy" placeholderTextColor={colors.muted}
-                style={{ flex: 1, minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.sunken,
+                style={{ flex: 1, minHeight: MIN_TOUCH, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.sunken,
                   color: colors.text, fontSize: 16, lineHeight: 21, textAlignVertical: 'center' }} />
               <Pressable testID={`remove-${i}`} accessibilityRole="button" accessibilityLabel={`Remove step ${i + 1}`}
                 onPress={() => set(state.rows.filter((_, j) => j !== i))}
-                style={{ minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' }}>
+                style={{ minHeight: MIN_TOUCH, minWidth: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="close" tone="muted" />
               </Pressable>
             </View>
