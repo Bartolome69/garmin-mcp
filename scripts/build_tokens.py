@@ -5,11 +5,13 @@ garmin_mcp/app/app.css is the one source of truth for Daash's colours: its
 inside a prefers-color-scheme media query, which this checks stays identical).
 This reads both and writes:
 
-    mobile/src/theme/tokens.ts    the React Native app's colours, radius and fonts
+    mobile/src/theme/tokens.ts    the React Native app's colours and radius
     mobile/src/theme/design-tokens.json  the same, for native code that can't import TS
                                   (iOS widgets, Android Glance) once those exist
 
 so web and native never drift. Change a colour in app.css, run this, commit both.
+The app gets only the approved tokens (APPROVED below, the build prompt's
+section 2), under the prompt's names; app.css keeps its own names for the PWA.
 
     python3 scripts/build_tokens.py          # write the files
     python3 scripts/build_tokens.py --check  # exit 1 if they're out of date (CI)
@@ -35,6 +37,36 @@ COLOUR = re.compile(r"^(#[0-9A-Fa-f]{3,8}|rgba?\([^)]*\))$")
 DECL = re.compile(r"--([a-z0-9-]+)\s*:\s*([^;]+);")
 
 
+# The native app's approved tokens (build prompt, section 2: "use exactly, add
+# nothing"), each named as the prompt names it and mapped to the app.css
+# variable that already holds the same colour. The app sees only these.
+APPROVED = {
+    "bg": "ground",
+    "surface": "surface",
+    "sunken": "sunken",
+    "hairline": "hairline",
+    "button": "button",
+    "text": "ink",
+    "text2": "ink-2",
+    "muted": "muted",
+    "brand": "red",
+    "brandText": "red-text",
+    "onBrand": "on-brand",
+    "success": "easy",
+    "warning": "amber",
+    "warningTint": "amber-soft",
+    "cEasy": "easy",
+    "cTempo": "hard",
+    "cInt": "intervals",
+    "cLong": "long",
+    "cStr": "strength",
+    "cRest": "dash",
+    "race": "red-text",
+    "raceTint": "tint-race",
+    "band": "band-easy",
+}
+
+
 class TokenError(Exception):
     pass
 
@@ -50,11 +82,6 @@ def _block(css: str, selector: str) -> str:
 def _decls(body: str) -> dict[str, str]:
     body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
     return {name: " ".join(value.split()) for name, value in DECL.findall(body)}
-
-
-def camel(name: str) -> str:
-    head, *rest = name.split("-")
-    return head + "".join(part[:1].upper() + part[1:] for part in rest)
 
 
 def read_tokens(css: str) -> dict:
@@ -77,14 +104,15 @@ def read_tokens(css: str) -> dict:
         raise TokenError(f"dark and light colours don't pair up: no light value for {missing_light}, "
                          f"no dark value for {extra_light}")
     radius = dark_all.get("radius", "12px")
+    missing = sorted({v for v in APPROVED.values()} - set(dark))
+    if missing:
+        raise TokenError(f"app.css has no colour for approved tokens: {missing}")
     return {
         "colors": {
-            "dark": {camel(k): dark[k] for k in dark},
-            "light": {camel(k): light[k] for k in dark},
+            "dark": {name: dark[var] for name, var in APPROVED.items()},
+            "light": {name: light[var] for name, var in APPROVED.items()},
         },
         "radius": int(re.sub(r"px$", "", radius)),
-        # The PWA bundles Geist and Geist Mono; the native apps use the same families.
-        "fonts": {"sans": "Geist", "mono": "GeistMono"},
     }
 
 
@@ -98,8 +126,7 @@ def render_ts(tokens: dict) -> str:
             f"export const colors = {colours} as const;\n\n"
             "export type ColorScheme = keyof typeof colors;\n"
             "export type ColorName = keyof (typeof colors)['dark'];\n\n"
-            f"export const radius = {tokens['radius']};\n\n"
-            f"export const fonts = {json.dumps(tokens['fonts'])} as const;\n")
+            f"export const radius = {tokens['radius']};\n")
 
 
 def render_json(tokens: dict) -> str:
