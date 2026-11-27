@@ -947,3 +947,43 @@ html, body { overscroll-behavior-y: contain; }
 .remind-row .pill { width: 100%; justify-content: center; gap: 8px; }
 .push-landing { font-size: 13px; text-align: center; padding: 18px 8px 6px; }
 .push-landing .link-plain { font-size: 13px; }
+
+/* Chat (pilot, Nov 27): only for the people the server allows. Bubbles on the
+   ground colour, the input pinned above the tabs, a proposed change as a card. */
+nav.tabs.five { grid-template-columns: repeat(5, 1fr); }
+nav.tabs.five .ti { width: 48px; }
+body[data-screen="chat"] main { padding-bottom: calc(190px + env(safe-area-inset-bottom)); }
+.chat-wrap { display: flex; flex-direction: column; gap: 18px; }
+.chat-log { display: flex; flex-direction: column; gap: 12px; }
+.msg { max-width: 88%; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.msg p { margin: 0; }
+.msg p + p { margin-top: 8px; }
+.msg.me { align-self: flex-end; background: var(--sunken); border: 1px solid var(--hairline); border-radius: 16px 16px 4px 16px; padding: 10px 14px; }
+.msg.ai { align-self: flex-start; display: flex; flex-direction: column; gap: 6px; }
+.msg.ai.busy { flex-direction: row; align-items: center; gap: 10px; }
+.msg-tools { display: flex; gap: 2px; margin-left: -8px; }
+.thumb { all: unset; cursor: pointer; width: 34px; height: 34px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.thumb:hover { background: var(--hover); color: var(--ink); }
+.thumb[aria-pressed="true"] { color: var(--ink); background: var(--button); }
+.thumb:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.dots { display: inline-flex; gap: 4px; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: chat-dot 1.2s ease-in-out infinite; }
+.dots i:nth-child(2) { animation-delay: .15s; }
+.dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes chat-dot { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dots i { animation: none; } }
+.chat-action { border-color: var(--button); }
+.chat-action.settled { background: transparent; }
+.chat-action-text { font-size: 15px; line-height: 1.45; }
+.chat-action[data-status="done"] .kicker { color: var(--easy); }
+.chat-action[data-status="failed"] .kicker { color: var(--amber); }
+.chat-empty .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-starter { height: auto; min-height: 40px; padding: 8px 14px; white-space: normal; text-align: left; font-size: 14px; }
+.chat-bar { position: fixed; left: 0; right: 0; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 6; background: var(--ground);
+  border-top: 1px solid var(--hairline); padding: 10px 16px; }
+.chat-bar-in { max-width: 528px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
+.chat-bar .field { flex: 1; min-width: 0; height: auto; min-height: 44px; max-height: 140px; padding: 11px 14px; resize: none; font: inherit; font-size: 16px; line-height: 1.35; }
+.chat-bar .pill { flex-shrink: 0; }
+body.desk .chat-bar { bottom: 0; padding-bottom: 16px; }
+body.desk .chat-bar-in, body.desk .chat-wrap { max-width: 720px; margin-left: auto; margin-right: auto; width: 100%; }
+body.desk[data-screen="chat"] main { padding-bottom: 120px; }

@@ -4599,6 +4599,8 @@ async def forget_person(token: str, via: str = "disconnect_page") -> bool:
         store.forget_push(token, gone.email_hash)
         # And their weekly counts of calls and watch sends.
         store.forget_usage(token, gone.email_hash)
+        # And the in-app chat pilot's messages, if they had it (Nov 27).
+        store.forget_chat(gone.email_hash, token)
         # And every sign-in to it: Claude, ChatGPT and the app alike.
         store.delete_tokens_for_subject(token, reason="disconnected")
         analytics.disconnected(gone.email_hash or token, via, route, "everything", gone.created_at)
@@ -5650,7 +5652,8 @@ class AppCompression:
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         path = scope.get("path", "") if scope.get("type") == "http" else ""
-        if path == "/app" or path.startswith("/app/"):
+        # The chat pilot's replies stream (Nov 27): never held back to be compressed.
+        if (path == "/app" or path.startswith("/app/")) and not path.startswith("/app/api/chat"):
             await self.gzip(scope, receive, send)
         else:
             await self.app(scope, receive, send)

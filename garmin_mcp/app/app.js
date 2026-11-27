@@ -1,5 +1,6 @@
 // Daash app: Today and the session screen, over /app/api.
-// No AI in here. Ask Claude opens Claude with the context filled in.
+// No AI in here. Ask Claude opens Claude with the context filled in. The one
+// exception is the Chat pilot (below), shown only to the people the server allows.
 
 const API = "/app/api/";
 // Which build of the app this is, from the address the page loaded it by
@@ -31,7 +32,7 @@ const token = {
     memory.access = t.access_token; store.set("daash.access", t.access_token);
     if (t.refresh_token) { memory.refresh = t.refresh_token; store.set("daash.refresh", t.refresh_token); }
   },
-  clear() { delete memory.access; delete memory.refresh; store.drop("daash.access"); store.drop("daash.refresh"); cache.clear(); },
+  clear() { delete memory.access; delete memory.refresh; store.drop("daash.access"); store.drop("daash.refresh"); store.drop("daash.pilot"); cache.clear(); },
 };
 
 // -- small helpers ------------------------------------------------------------
@@ -52,6 +53,7 @@ const ICON = {
   plan: () => svg('<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>', 20),
   crew: () => svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', 20),
   you: () => svg('<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>', 20),
+  chat: () => svg('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>', 20),
 };
 const FACE = ["var(--long)", "var(--easy)", "var(--hard)", "var(--strength)"];
 
@@ -530,11 +532,18 @@ function topbar(current) {
   const href = (name === "ChatGPT" ? "https://chatgpt.com/?q=" : "https://claude.ai/new?q=") + encodeURIComponent(prompt);
   const inApp = name === "Claude" ? ` data-app="claude://claude.ai/new?q=${encodeURIComponent(prompt)}"` : "";
   bar.innerHTML = `<span class="topbar-mark">Daash</span>
-    <nav class="topbar-tabs" aria-label="Sections">${[["today", "Today"], ["plan", "Plan"], ["crew", "Crew"], ["you", "You"]]
+    <nav class="topbar-tabs" aria-label="Sections">${tabList()
       .map(([id, label]) => `<a href="#/${id}" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>
     <span style="flex:1"></span>
     <a class="pill red" href="${esc(href)}" target="_blank" rel="noopener" style="height:40px"${inApp}>Ask ${name}${ICON.out()}</a>
     <a class="avatar small" href="#/you" aria-label="You">${esc(me.initial || "Y")}</a>`;
+}
+
+// The tabs: Chat sits before You for the pilot's people only.
+function tabList() {
+  const list = [["today", "Today"], ["plan", "Plan"], ["crew", "Crew"], ["you", "You"]];
+  if (CHAT) list.splice(3, 0, ["chat", "Chat"]);
+  return list;
 }
 
 function tabs(current) {
@@ -545,7 +554,8 @@ function tabs(current) {
   $("topbar").hidden = true;
   const nav = $("tabs");
   nav.hidden = false;
-  nav.innerHTML = [["today", "Today"], ["plan", "Plan"], ["crew", "Crew"], ["you", "You"]]
+  nav.classList.toggle("five", CHAT);
+  nav.innerHTML = tabList()
     .map(([id, label]) => `<a href="#/${id}" ${id === current ? 'aria-current="page"' : ""}><span class="ti">${ICON[id]()}</span>${label}</a>`).join("");
 }
 
@@ -3805,6 +3815,254 @@ function buildSendView(step) {
   document.body.dataset.screen = "build";
 }
 
+// -- Chat (pilot, Nov 27) ------------------------------------------------------
+// A private pilot: the tab shows only when /app/api/features says chat is on for
+// this person (CHAT_PILOT_USER_IDS on the server), and every chat route answers
+// 404 for anyone else. The one place the app talks to a model; it goes through
+// the server, which reads with the same tools Claude uses. A change the model
+// proposes is a card: nothing reaches Garmin until Confirm.
+const PILOT_KEY = "daash.pilot";
+let CHAT = store.get(PILOT_KEY) === "1";
+let featuresAsked = false;
+async function askFeatures() {
+  if (featuresAsked || !token.access) return;
+  featuresAsked = true;
+  let on = false;
+  try { on = !!(await api("features", { ahead: true })).chat; } catch (e) { featuresAsked = false; return; }
+  if (on === CHAT) return;
+  CHAT = on;
+  if (on) store.set(PILOT_KEY, "1"); else store.drop(PILOT_KEY);
+  const screen = document.body.dataset.screen;
+  if (!on && screen === "chat") { location.hash = "#/today"; return; }
+  if (["today", "plan", "crew", "you"].includes(screen)) tabs(screen);
+}
+
+const CS = { loaded: false, messages: [], starters: [], busy: false, error: null, last: null, drawn: 0 };
+
+async function showChat() {
+  tabs("chat");
+  base = "chat";
+  if (!CS.loaded) loading(); else drawChat();
+  if (CS.busy) return;
+  try {
+    const d = await api("chat");
+    if (CS.busy) return;
+    CS.messages = d.messages || []; CS.starters = d.starters || []; CS.loaded = true;
+    if (document.body.dataset.screen === "chat") drawChat();
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    if (!CS.loaded) failed(e.message, showChat);
+  }
+}
+
+function chatText(t) {
+  return esc(t).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").split(/\n{2,}/)
+    .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+}
+
+const ACTION_SAID = { pending: "Waiting for you", running: "Making the change…", done: "Done", failed: "Didn't go through",
+  declined: "Cancelled", expired: "Expired, nothing changed" };
+
+function chatMessage(m) {
+  if (m.role === "user") return `<div class="msg me">${chatText(m.text)}</div>`;
+  if (m.role === "action") {
+    const pending = m.status === "pending";
+    return `<div class="card pad stack chat-action ${pending ? "" : "settled"}" data-status="${esc(m.status)}">
+      <span class="kicker">${pending ? "Proposed change" : esc(ACTION_SAID[m.status] || m.status)}</span>
+      <span class="chat-action-text">${esc(m.text)}</span>
+      ${pending ? `<div class="pills"><button type="button" class="pill" data-act="decline" data-id="${m.id}">Decline</button>
+        <button type="button" class="pill light" data-act="confirm" data-id="${m.id}">Confirm</button></div>
+        <span class="meta">Nothing changes on Garmin until you confirm.</span>` : ""}
+      ${m.status === "running" ? `<span class="meta">${esc(ACTION_SAID.running)}</span>` : ""}</div>`;
+  }
+  if (m.status === "streaming" && !m.text) {
+    return `<div class="msg ai busy" aria-live="polite"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="meta">${esc(m.label || "Thinking")}</span></div>`;
+  }
+  if (m.status === "failed" && !m.text) return `<div class="msg ai"><span class="meta">No answer came back.</span></div>`;
+  const rated = (v) => (m.feedback === v ? 'aria-pressed="true"' : 'aria-pressed="false"');
+  const thumbs = typeof m.id === "number" && !m.local && m.status !== "streaming"
+    ? `<div class="msg-tools"><button type="button" class="thumb" data-fb="up" data-id="${m.id}" ${rated("up")} aria-label="Helpful">${svg('<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>', 15)}</button>
+       <button type="button" class="thumb" data-fb="down" data-id="${m.id}" ${rated("down")} aria-label="Not helpful">${svg('<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>', 15)}</button></div>` : "";
+  return `<div class="msg ai">${chatText(m.text)}${m.status === "partial" ? '<span class="meta">(cut off)</span>' : ""}${m.status === "streaming" && m.label ? `<span class="meta">${esc(m.label)}…</span>` : ""}${thumbs}</div>`;
+}
+
+function chatLog() {
+  const items = CS.messages.map(chatMessage).join("");
+  const chips = !CS.messages.length && CS.starters.length
+    ? `<div class="chat-empty stack"><span class="meta">Ask about your training, or start with one of these.</span>
+       <div class="chips">${CS.starters.map((s) => `<button type="button" class="pill chip-starter" data-starter="${esc(s)}">${esc(s)}</button>`).join("")}</div></div>` : "";
+  const error = CS.error ? `<div class="card amber pad stack-8 chat-error" role="alert"><span>${esc(CS.error.message)}</span>
+    ${CS.error.retry ? '<button type="button" class="pill amber-line" data-act="retry">Try again</button>' : ""}</div>` : "";
+  return chips + items + error;
+}
+
+function drawChat() {
+  document.body.dataset.screen = "chat";
+  $("screen").innerHTML = `<div class="chat-wrap">
+    <header class="section-head" style="align-items:center"><div class="stack-tight"><span class="kicker">Pilot · only you can see this</span><h1 class="headline">Chat</h1></div>
+      <button type="button" class="pill" id="chat-new" style="height:36px;font-size:13.5px" ${CS.busy ? "disabled" : ""}>New chat</button></header>
+    <div class="chat-log" id="chat-log">${chatLog()}</div></div>
+    <form class="chat-bar" id="chat-form" autocomplete="off"><div class="chat-bar-in">
+      <textarea id="chat-input" class="field" rows="1" maxlength="2000" placeholder="Ask about your training" aria-label="Message"></textarea>
+      <button type="submit" class="pill light" id="chat-send" ${CS.busy ? "disabled" : ""}>${CS.busy ? "…" : "Send"}</button></div></form>`;
+  const input = $("chat-input");
+  const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; };
+  input.addEventListener("input", grow);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("chat-form").requestSubmit(); } });
+  $("chat-form").onsubmit = (e) => { e.preventDefault(); const t = input.value.trim(); if (!t || CS.busy) return; input.value = ""; grow(); chatSend(t, false); };
+  $("chat-new").onclick = chatNew;
+  $("chat-log").onclick = chatClick;
+  scrollChat(true);
+}
+
+let chatFrame = 0;
+function drawLog() {
+  if (document.body.dataset.screen !== "chat" || !$("chat-log")) return;
+  cancelAnimationFrame(chatFrame);
+  chatFrame = requestAnimationFrame(() => {
+    const log = $("chat-log");
+    if (!log) return;
+    const near = window.innerHeight + window.scrollY >= document.body.scrollHeight - 160;
+    log.innerHTML = chatLog();
+    const send = $("chat-send"), fresh_ = $("chat-new");
+    if (send) { send.disabled = CS.busy; send.textContent = CS.busy ? "…" : "Send"; }
+    if (fresh_) fresh_.disabled = CS.busy;
+    if (near) scrollChat();
+  });
+}
+
+function scrollChat(now) {
+  const go = () => window.scrollTo({ top: document.body.scrollHeight, behavior: now ? "auto" : "smooth" });
+  now ? go() : requestAnimationFrame(go);
+}
+
+function chatClick(e) {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.starter) return chatSend(b.dataset.starter, true);
+  if (b.dataset.act === "retry" && CS.last) return chatSend(CS.last.text, CS.last.starter);
+  if (b.dataset.act === "confirm" || b.dataset.act === "decline") return chatAction(Number(b.dataset.id), b.dataset.act);
+  if (b.dataset.fb) return chatFeedback(Number(b.dataset.id), b.dataset.fb);
+}
+
+async function chatPost(path, body, retry = true) {
+  const res = await fetch(API + path, { method: "POST", body: JSON.stringify(body),
+    headers: { Authorization: `Bearer ${token.access}`, "Content-Type": "application/json", Accept: "text/event-stream",
+      "X-Daash-Layout": desktop() ? "desktop" : "phone" } });
+  if (res.status === 401) {
+    if (retry && await refreshed()) return chatPost(path, body, false);
+    token.clear();
+    throw new SignedOut();
+  }
+  return res;
+}
+
+function sseEvent(raw) {
+  let event = "message"; const data = [];
+  raw.split("\n").forEach((line) => {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+  });
+  try { return { event, data: JSON.parse(data.join("\n") || "{}") }; } catch { return { event, data: {} }; }
+}
+
+async function chatSend(text, starter) {
+  if (CS.busy) return;
+  CS.busy = true; CS.error = null; CS.last = { text, starter };
+  const mine = { id: "u" + Date.now(), role: "user", text, local: true };
+  const live = { id: "a" + Date.now(), role: "assistant", text: "", status: "streaming", label: "Thinking", local: true };
+  CS.messages.push(mine, live);
+  drawLog(); scrollChat();
+  try {
+    const res = await chatPost("chat/send", { text, starter: !!starter });
+    if (!res.ok || !(res.headers.get("content-type") || "").includes("event-stream") || !res.body) {
+      const b = await res.json().catch(() => ({}));
+      const err = new Error(b.error || "Daash didn't answer. Try again in a moment.");
+      err.code = b.code;
+      throw err;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const { event, data } = sseEvent(buffer.slice(0, cut));
+        buffer = buffer.slice(cut + 2);
+        if (event === "start") { mine.id = data.user_id; live.id = data.id; }
+        else if (event === "delta") { live.text += data.text || ""; live.label = null; }
+        else if (event === "tool") live.label = data.label;
+        else if (event === "pending") CS.messages.push({ id: data.id, role: "action", text: data.text, status: "pending", tool: data.tool });
+        else if (event === "done") { live.status = data.status || "done"; live.text = live.text.trim(); }
+        else if (event === "error") { live.status = live.text ? "partial" : "failed"; CS.error = { message: data.message, retry: data.code !== "config" }; }
+        drawLog();
+      }
+    }
+    if (live.status === "streaming") {
+      live.status = live.text ? "partial" : "failed";
+      CS.error = CS.error || { message: "The answer stopped early. Try again?", retry: true };
+    }
+    live.local = false;
+  } catch (e) {
+    if (e instanceof SignedOut) { CS.busy = false; return route(); }
+    live.status = live.text ? "partial" : "failed";
+    live.local = typeof live.id !== "number";
+    const offline = !navigator.onLine;
+    CS.error = { message: offline ? "You're offline. Try again when you're back." : e.message, retry: e.code !== "cap" && e.code !== "empty" };
+  } finally {
+    live.label = null;
+    CS.busy = false;
+    drawLog();
+  }
+}
+
+async function chatAction(id, decision) {
+  const m = CS.messages.find((x) => x.id === id && x.role === "action");
+  if (!m || m.status !== "pending") return;
+  m.status = "running";
+  drawLog();
+  try {
+    // Confirm changes the plan, so the app forgets what it showed (a POST does that); Decline changes nothing.
+    const r = await api("chat/action", { method: "POST", body: JSON.stringify({ id, decision }), read: decision === "decline" });
+    m.status = r.status;
+    if (decision === "confirm") {
+      CS.messages.push({ id: "r" + id, role: "assistant", text: r.message, status: "done", local: true });
+      // The plan view catches up now, so Today and Plan show the change when opened.
+      ["plan", "today"].forEach((p) => fresh(p, true).catch(() => {}));
+      toast("Done. Your plan is updated.");
+    } else toast(r.message || "Cancelled.");
+  } catch (e) {
+    if (e instanceof SignedOut) return route();
+    const status = e.body && e.body.status;
+    m.status = status || "pending";
+    if (status === "failed") CS.messages.push({ id: "r" + id, role: "assistant", text: e.message, status: "done", local: true });
+    toast(e.message);
+  }
+  drawLog();
+}
+
+async function chatFeedback(id, value) {
+  const m = CS.messages.find((x) => x.id === id && x.role === "assistant");
+  if (!m) return;
+  const before = m.feedback;
+  m.feedback = value;
+  drawLog();
+  try { await api("chat/feedback", { method: "POST", body: JSON.stringify({ id, value }), read: true }); }
+  catch (e) { if (e instanceof SignedOut) return route(); m.feedback = before; drawLog(); toast(e.message); }
+}
+
+async function chatNew() {
+  if (CS.busy) return;
+  try {
+    await api("chat/new", { method: "POST", body: "{}", read: true });
+    CS.messages = []; CS.error = null;
+    drawChat();
+  } catch (e) { if (e instanceof SignedOut) return route(); toast(e.message); }
+}
+
 // -- routing ------------------------------------------------------------------
 
 async function route(stay) {
@@ -3822,6 +4080,7 @@ async function route(stay) {
   if (handed) return signInView(handed);
   if (!token.access) return signInView();
   pwaOpen();
+  askFeatures();
   const [path, query] = (location.hash.replace(/^#\/?/, "") || "today").split("?");
   const params = new URLSearchParams(query || "");
   const [screen, arg] = path.split("/");
@@ -3835,6 +4094,13 @@ async function route(stay) {
   if (screen === "plan") return showPlan(arg === "block" ? "block" : "week", params);
   if (screen === "crew") return showCrew(params);
   if (screen === "you") return showYou();
+  if (screen === "chat") {
+    if (CHAT) return showChat();
+    // Not on for this person: Today, with nothing left in the address to say Chat exists.
+    history.replaceState(null, "", "/app/#/today");
+    document.body.dataset.screen = "today";
+    return showToday();
+  }
   if (screen === "build") return showBuild(arg, params);
   if (screen === "plan-chat") return showPlanChat(params);
   return showToday();
@@ -3889,7 +4155,7 @@ function pullToRefresh() {
     if (!busy) { arc.style.strokeDasharray = `${(p * 86).toFixed(1)} 100`; ring.querySelector(".ptr-ring").style.transform = `rotate(${Math.round(p * 220)}deg)`; }
   };
   const blocked = () => busy || !token.access || desktop() || dragging || document.querySelector("dialog[open]") ||
-    $("sheet").innerHTML || document.body.dataset.screen === "build" || window.scrollY > 0;
+    $("sheet").innerHTML || ["build", "chat"].includes(document.body.dataset.screen) || window.scrollY > 0;
   addEventListener("touchstart", (e) => {
     if (e.touches.length !== 1 || blocked()) { y0 = null; return; }
     y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; dy = 0; armed = false;
