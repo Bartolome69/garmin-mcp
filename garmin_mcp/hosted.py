@@ -2509,8 +2509,11 @@ def plan_change_message(plan: dict[str, Any] | None, activity_id: Any, today: da
     match = row.get("match") or {}
     if row.get("completion") == "partial" and match.get("planned_km"):
         line = f"{km:g} of {match['planned_km']:g} km. Open Daash to leave it or add the rest to a later run."
-    elif row.get("done_on") and row["done_on"] < row["date"]:
+    elif row.get("done_on") and row["done_on"] < row["date"] and row.get("off_watch"):
         line = f"Done early, so it's off your watch for {d.strftime('%A')}."
+    elif row.get("done_on") and row["done_on"] < row["date"]:
+        # Nov 27: only match-v2-watch takes it off the watch; for everyone else it's still there.
+        line = f"Done early. It's still on your watch for {d.strftime('%A')}: skip it or run it as an extra."
     elif row.get("done_on") and row["done_on"] > row["date"]:
         line = f"Planned for {d.strftime('%A')}, done after."
     else:
@@ -4610,6 +4613,8 @@ async def forget_person(token: str, via: str = "disconnect_page") -> bool:
         store.forget_push(token, gone.email_hash)
         # And their weekly counts of calls and watch sends.
         store.forget_usage(token, gone.email_hash)
+        # And the in-app chat pilot's messages, if they had it (Nov 27).
+        store.forget_chat(gone.email_hash, token)
         # And every sign-in to it: Claude, ChatGPT and the app alike.
         store.delete_tokens_for_subject(token, reason="disconnected")
         analytics.disconnected(gone.email_hash or token, via, route, "everything", gone.created_at)
@@ -5668,7 +5673,8 @@ class AppCompression:
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         path = scope.get("path", "") if scope.get("type") == "http" else ""
-        if path == "/app" or path.startswith("/app/"):
+        # The chat pilot's replies stream (Nov 27): never held back to be compressed.
+        if (path == "/app" or path.startswith("/app/")) and not path.startswith("/app/api/chat"):
             await self.gzip(scope, receive, send)
         else:
             await self.app(scope, receive, send)

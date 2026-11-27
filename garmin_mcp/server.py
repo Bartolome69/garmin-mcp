@@ -4362,7 +4362,9 @@ async def _after_matching(matched: dict[str, Any] | None, result: dict[str, Any]
     if not matched:
         return
     try:
-        if await matching.sync_watch(matched, result, items, today, _call):
+        # The watch only for those with match-v2-watch: matching alone changes nothing on it.
+        if matching.watch_enabled(matched.get("user_token")) and await matching.sync_watch(
+                matched, result, items, today, _call):
             session.forget()
             garmin_cache.after_write(session_mod.current_session().owner, "match_v2")
         matching.record(matched, result)

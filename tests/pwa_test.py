@@ -145,6 +145,17 @@ check("says how much, offers the rest, credits Garmin, opens on the week",
       and message["url"] == "/app/#/plan?week=2026-11-23&focus=2026-11-26&from=push_plan", str(message))
 check("a run the plan didn't count gets nothing from here (its verdict goes instead)",
       hosted.plan_change_message(PLAN, 999, datetime(2026, 11, 26).date()) is None)
+# Nov 27: "off your watch" only when matching really took it off (match-v2-watch).
+early = {"credit": "Garmin", "weeks": [{"starts": "2026-11-23", "sessions": [
+    {"date": "2026-11-27", "name": "Easy 9 km", "status": "done, moved", "done_on": "2026-11-26", "activity_id": 88,
+     "actual_km": 9.0, "completion": "done"}]}]}
+kept = hosted.plan_change_message(early, 88, datetime(2026, 11, 26).date())
+check("done a day early, still on the watch: says so, never 'off your watch'",
+      "still on your watch for Friday" in kept["body"] and "off your watch" not in kept["body"], kept["body"])
+early["weeks"][0]["sessions"][0]["off_watch"] = True
+taken = hosted.plan_change_message(early, 88, datetime(2026, 11, 26).date())
+check("and taken off it (match-v2-watch): 'off your watch for Friday'",
+      "off your watch for Friday" in taken["body"], taken["body"])
 check("quiet from 9pm to 7am", hosted.quiet_now(datetime(2026, 11, 26, 21, 0)) and hosted.quiet_now(datetime(2026, 11, 26, 6, 59))
       and not hosted.quiet_now(datetime(2026, 11, 26, 7, 0)) and not hosted.quiet_now(datetime(2026, 11, 26, 20, 59)))
 checked: list = []

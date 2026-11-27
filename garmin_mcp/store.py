@@ -264,6 +264,44 @@ CREATE TABLE IF NOT EXISTS weekly_skips (
 );
 """
 
+# The in-app chat pilot (Nov 27, chat_pilot.py): one allowlisted person only,
+# off for everyone else. One active thread a person; each message, and each
+# change the model proposed, is a row. What was said, and a proposed change's
+# arguments, are encrypted like the Garmin tokens. A proposed change runs only
+# when its row moves from pending to running, once, on the person's Confirm.
+# Keyed like watch_sends: the email fingerprint, or the token without one.
+CHAT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS chat_threads (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    person      TEXT NOT NULL,
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS chat_threads_active ON chat_threads (person) WHERE active = 1;
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id     INTEGER NOT NULL,
+    person        TEXT NOT NULL,
+    role          TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    content_enc   BLOB,
+    tool          TEXT,
+    args_enc      BLOB,
+    starter       INTEGER,
+    feedback      INTEGER,
+    model         TEXT,
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    est_cost_usd  REAL,
+    latency_ms    INTEGER,
+    created_at    INTEGER NOT NULL,
+    done_at       INTEGER
+);
+CREATE INDEX IF NOT EXISTS chat_messages_thread ON chat_messages (thread_id, id);
+CREATE INDEX IF NOT EXISTS chat_messages_person ON chat_messages (person, created_at);
+"""
+
 # Everyone who has ever connected, one row a person, kept when they disconnect
 # (Nov 13), for the front page's count. Keyed like watch_sends. A trigger fills
 # it on every new users row, whichever sign-in made it.
@@ -466,6 +504,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(OAUTH_RETIRED_SCHEMA)
     conn.executescript(CUT_OFF_SCHEMA)
     conn.executescript(PROVIDER_SCHEMA)
+    conn.executescript(CHAT_SCHEMA)
     for statement in MIGRATIONS:
         try:
             conn.execute(statement)
@@ -2331,3 +2370,136 @@ def delete_provider_connection(user_token: str, provider: str) -> bool:
                      (user_token, provider))
     return gone
 
+# -- the in-app chat pilot (Nov 27, chat_pilot.py) -------------------------------
+
+CHAT_FIELDS = ("id", "role", "status", "content", "tool", "args", "starter", "feedback", "model",
+               "input_tokens", "output_tokens", "est_cost_usd", "latency_ms", "created_at", "done_at")
+
+
+def _seal(value: Any) -> bytes | None:
+    if value is None:
+        return None
+    text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+    return _cipher().encrypt(text.encode())
+
+
+def _open(blob: bytes | None) -> str | None:
+    if blob is None:
+        return None
+    try:
+        return _cipher().decrypt(blob).decode()
+    except InvalidToken:
+        return None
+
+
+def _chat_row(row: tuple) -> dict[str, Any]:
+    out = dict(zip(CHAT_FIELDS, row))
+    out["content"] = _open(out["content"])
+    raw = _open(out["args"])
+    try:
+        out["args"] = json.loads(raw) if raw else None
+    except ValueError:
+        out["args"] = None
+    return out
+
+
+_CHAT_SELECT = ("SELECT id, role, status, content_enc, tool, args_enc, starter, feedback, model, input_tokens, "
+                "output_tokens, est_cost_usd, latency_ms, created_at, done_at FROM chat_messages ")
+
+
+def chat_thread(person: str, now: int | None = None) -> int:
+    """The person's one active thread, started if there is none."""
+    now = int(now or time.time())
+    with _connect() as conn:
+        row = conn.execute("SELECT id FROM chat_threads WHERE person = ? AND active = 1", (person,)).fetchone()
+        if row:
+            return int(row[0])
+        return int(conn.execute("INSERT INTO chat_threads (person, active, created_at, updated_at) VALUES (?, 1, ?, ?)",
+                                (person, now, now)).lastrowid)
+
+
+def chat_new_thread(person: str) -> None:
+    """Put the active thread away (kept, not deleted); any change it still proposes expires."""
+    with _connect() as conn:
+        conn.execute("UPDATE chat_messages SET status = 'expired' WHERE person = ? AND role = 'action' "
+                     "AND status = 'pending' AND thread_id IN (SELECT id FROM chat_threads WHERE person = ? AND active = 1)",
+                     (person, person))
+        conn.execute("UPDATE chat_threads SET active = 0 WHERE person = ? AND active = 1", (person,))
+
+
+def chat_add(thread_id: int, person: str, role: str, status: str, content: str | None = None, *,
+             tool: str | None = None, args: Any = None, starter: bool | None = None, model: str | None = None) -> int:
+    now = int(time.time())
+    with _connect() as conn:
+        conn.execute("UPDATE chat_threads SET updated_at = ? WHERE id = ?", (now, thread_id))
+        return int(conn.execute(
+            "INSERT INTO chat_messages (thread_id, person, role, status, content_enc, tool, args_enc, starter, model, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (thread_id, person, role, status, _seal(content), tool, _seal(args),
+             None if starter is None else int(starter), model, now)).lastrowid)
+
+
+def chat_finish(message_id: int, status: str, content: str | None = None, **usage: Any) -> None:
+    """Close a message: its text, how it ended, and for an answer the tokens, cost and time it took."""
+    sets, values = ["status = ?", "done_at = ?"], [status, int(time.time())]
+    if content is not None:
+        sets.append("content_enc = ?")
+        values.append(_seal(content))
+    for key in ("model", "input_tokens", "output_tokens", "est_cost_usd", "latency_ms"):
+        if usage.get(key) is not None:
+            sets.append(f"{key} = ?")
+            values.append(usage[key])
+    with _connect() as conn:
+        conn.execute(f"UPDATE chat_messages SET {', '.join(sets)} WHERE id = ?", (*values, message_id))
+
+
+def chat_messages(thread_id: int, limit: int = 100) -> list[dict[str, Any]]:
+    """The thread's last messages, oldest first."""
+    with _connect() as conn:
+        rows = conn.execute(_CHAT_SELECT + "WHERE thread_id = ? ORDER BY id DESC LIMIT ?",
+                            (thread_id, limit)).fetchall()
+    return [_chat_row(r) for r in reversed(rows)]
+
+
+def chat_message(message_id: int, person: str) -> dict[str, Any] | None:
+    """One message, only if it is this person's."""
+    with _connect() as conn:
+        row = conn.execute(_CHAT_SELECT + "WHERE id = ? AND person = ?", (message_id, person)).fetchone()
+    return _chat_row(row) if row else None
+
+
+def chat_sent_since(person: str, since: int) -> int:
+    """How many messages the person has sent since a moment (the daily cap)."""
+    with _connect() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM chat_messages WHERE person = ? AND role = 'user' "
+                                "AND created_at >= ?", (person, since)).fetchone()[0])
+
+
+def chat_claim_action(message_id: int, person: str, to: str, not_before: int = 0) -> bool:
+    """Move a proposed change from pending to `to` (running or declined), once.
+
+    One UPDATE that only matches a pending row of this person's, proposed no
+    earlier than not_before, so a double tap or two phones can't both run it.
+    """
+    with _connect() as conn:
+        return conn.execute(
+            "UPDATE chat_messages SET status = ?, done_at = ? WHERE id = ? AND person = ? AND role = 'action' "
+            "AND status = 'pending' AND created_at >= ?",
+            (to, int(time.time()), message_id, person, not_before)).rowcount > 0
+
+
+def chat_feedback(message_id: int, person: str, value: int) -> bool:
+    with _connect() as conn:
+        return conn.execute("UPDATE chat_messages SET feedback = ? WHERE id = ? AND person = ? AND role = 'assistant'",
+                            (value, message_id, person)).rowcount > 0
+
+
+def forget_chat(*people: str | None) -> None:
+    """Everything the chat pilot kept for someone, when they delete their account."""
+    people_ = [p for p in people if p]
+    if not people_:
+        return
+    marks = ",".join("?" * len(people_))
+    with _connect() as conn:
+        conn.execute(f"DELETE FROM chat_messages WHERE person IN ({marks})", people_)
+        conn.execute(f"DELETE FROM chat_threads WHERE person IN ({marks})", people_)

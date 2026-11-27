@@ -117,6 +117,7 @@ jobs:
           python tests/pwa_test.py
           python tests/tools_v2_test.py
           python tests/providers_test.py
+          python tests/chat_pilot_test.py
 
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts
       # in the Training API's shape, against a stubbed Garmin.
@@ -163,6 +164,7 @@ jobs:
           node tests/app_getplan_test.js
           node tests/app_match_test.js
           node tests/app_pwa_test.js
+          node tests/app_chat_test.js
 
   # The real Garmin checks on the new code, run while the tests run: neither
   # needs the other, and together they were half of every deploy's wait.

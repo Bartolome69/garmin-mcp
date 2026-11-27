@@ -66,6 +66,28 @@ def enabled(user_token: str | None) -> bool:
     return analytics.distinct_id(subject) in analytics.internal_ids() or analytics.flag_on(FLAG, subject)
 
 
+# Taking sessions off the watch is its own flag (Nov 27). Matching went to
+# everyone; a session moved off someone's watch can be put back only from
+# the app's Change menu, and four in five people who read their plan never
+# open the app. So this stays with Bart until it has been seen to be right.
+# GARMIN_MCP_MATCH_V2_WATCH: "flag" (default), "all", or "off".
+WATCH_FLAG = "match-v2-watch"
+
+
+def watch_enabled(user_token: str | None) -> bool:
+    """Whether matching may take sessions off this person's watch and put them back."""
+    if not enabled(user_token):
+        return False
+    which = os.environ.get("GARMIN_MCP_MATCH_V2_WATCH", "flag").strip().lower()
+    if which == "off":
+        return False
+    if which == "all":
+        return True
+    subject = subject_of(user_token)
+    return bool(subject) and (analytics.distinct_id(subject) in analytics.internal_ids()
+                              or analytics.flag_on(WATCH_FLAG, subject))
+
+
 # -- what's kept -----------------------------------------------------------------
 
 def _key(user_token: str) -> str:

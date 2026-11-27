@@ -3,7 +3,8 @@
 The calendar is the home, the watch is the output, and the AI is a door. The
 app is the daily place to see, check and lightly adjust the plan that Claude
 or ChatGPT built. It has no chatbot and makes no model calls: "Ask Claude"
-opens Claude with the context filled in.
+opens Claude with the context filled in. One deliberate, temporary exception:
+the chat pilot below, for the people in `CHAT_PILOT_USER_IDS` only.
 
 Designs: `design_handoff_daash_mvp_v2` (pass 2, with the desktop screens
 3a to 3c). This file says how the app plugs into what the server already does.
@@ -283,6 +284,84 @@ the crew's page link, or its invite code when the link is off.
   can't happen.
 - Crew's grid places a Daash member's run at their usual time of day for
   weekdays or weekends; a run with no usual time fills all three slots.
+
+## The chat pilot (Nov 27)
+
+A private, flag-gated Chat tab, to see whether a chat view is useful before
+any Plus or iPhone work. For the people listed in `CHAT_PILOT_USER_IDS` only
+(Bart); off for everyone else and off for everyone when the variable is unset.
+Code in `garmin_mcp/chat_pilot.py`; the tab in `app.js` under "Chat (pilot)".
+
+- **The flag** is server-side. `CHAT_PILOT_USER_IDS` is a comma list of
+  PostHog distinct ids (the same ids `ANALYTICS_INTERNAL_IDS` takes) or email
+  fingerprints. `GET /app/api/features` answers `{"chat": true}` for them and
+  `{}` for everyone else; every chat route answers anyone else with the same
+  404 an unknown `/app/api/` path gives.
+- **Routes** (signed in like the rest of `/app/api/`): `GET /app/api/chat`
+  (the thread and the starter chips), `POST /app/api/chat/send` (the answer as
+  server-sent events: `start`, `tool`, `delta`, `pending`, then `done` or
+  `error`), `POST /app/api/chat/action` (`confirm` or `decline` one proposed
+  change), `POST /app/api/chat/feedback` (`up` or `down`), `POST
+  /app/api/chat/new` (a fresh thread; the old one is kept, anything it still
+  proposes expires).
+- **Reads** are the MCP tool functions themselves (`server.get_plan`,
+  `get_activities`, `get_readiness`, `get_sleep_data`...), offered to the model
+  with the MCP tools' own descriptions and schemas. Nothing is registered as a
+  tool, so MCP clients see no change. A tool's answer is cut to what the model
+  needs (no card fields, a plan cut to last week through three weeks ahead,
+  at most `CHAT_TOOL_RESULT_CHARS`) and never stored.
+- **Writes never run while the model answers.** A write the model asks for is
+  stored as a proposed change (a `chat_messages` row, `pending`) with a
+  plain-English summary worked out by rule from the stored call, and shown as
+  a card. Only Confirm runs it: one UPDATE moves it from pending to running, so
+  it runs once, for its owner, within a day of being proposed, with no model
+  involved. Decline cancels it. `delete_workout` and `remove_plan` keep their
+  MCP preview: the first call (a read) names what would go, and the stored call
+  carries the confirm it asked for. Moving a session is `app.move`, counting a
+  run is `app.match_apply` (the Match buttons' own code).
+- **The prompt** is short: today in Europe/London, this week's and next
+  week's sessions (with their ids), the last six activities, today's readiness.
+  The model is told to be brief, use tools for figures, propose changes rather
+  than claim them, and give no medical or injury advice.
+- **Storage**: `chat_threads` and `chat_messages` (store.py, `CHAT_SCHEMA`),
+  one active thread a person, text and a change's arguments encrypted like the
+  Garmin tokens. Deleted with the account. The model sees the last
+  `CHAT_CONTEXT_MESSAGES` (20) as plain text.
+- **Guards**: `CHAT_DAILY_MESSAGE_CAP` (500, a 429 with a clear message),
+  `CHAT_MAX_OUTPUT_TOKENS` per model call (1,024), `CHAT_MAX_REQUEST_TOKENS`
+  per message across its tool loop (60,000), `CHAT_MAX_TOOL_CALLS` per message
+  (8; the same call twice in a message is refused, as the MCP loop guard does
+  across calls), timeouts on the provider (`CHAT_PROVIDER_TIMEOUT_S`, 30 s
+  between chunks), each read (`CHAT_TOOL_TIMEOUT_S`, 25), the whole message
+  (`CHAT_TURN_TIMEOUT_S`, 90) and a confirmed write (`CHAT_WRITE_TIMEOUT_S`,
+  120). A stream that dies, or a phone that goes, saves what was said as
+  `partial` (or `failed`) rather than leaving it hanging.
+- **Memory**: the reply streams as it's written; nothing lives between
+  requests but the rows. No caches, no per-person objects.
+- **Provider**: `CHAT_PROVIDER` `anthropic` (default, `claude-haiku-5-5`),
+  `openai` (`gpt-4o-mini`) or `gemini` (`gemini-2.5-flash`, through Google's
+  OpenAI-compatible endpoint); `CHAT_MODEL`, `CHAT_API_KEY` (or the provider's
+  own `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`), `CHAT_BASE_URL`,
+  `CHAT_EFFORT` (Claude only, `low`; empty sends none). Raw HTTP over the
+  `httpx2` the MCP SDK already brings, so no SDK is added. Cost is estimated
+  from list prices in `chat_pilot.PRICES`, or `CHAT_PRICE_INPUT_PER_M` and
+  `CHAT_PRICE_OUTPUT_PER_M`.
+
+Counted in PostHog: `chat_opened`, `chat_message_sent` (`starter_used`,
+`matched_tool`: the first tool the model called, to set beside MCP's
+`tool_called`), `chat_tool_called` (`tool`, `ok`), `chat_write_confirmed`,
+`chat_write_declined`, `chat_response` (`latency_ms`, `input_tokens`,
+`output_tokens`, `est_cost_usd`, `model`), `chat_feedback` (`value`). Never
+what was said. The same tokens, model, cost and time are logged on the server
+and kept on each answer's row. The website sent a different
+`chat_message_sent` until Oct 1: count the pilot's with `$lib =
+'garmin-mcp-hosted'`.
+
+`scripts/chat_replay.py` sends one prompt for each of the six most-used MCP
+tools through the real endpoint as the allowlisted account and prints tools,
+tokens, latency and cost per request; proposed changes are declined unless
+`--confirm`, and name dates ten weeks out. Locally:
+`DEMO_CHAT=1 CHAT_API_KEY=... .venv/bin/python scripts/app_dev.py`.
 
 ## Running it locally
 
