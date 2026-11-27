@@ -116,6 +116,8 @@ jobs:
           python tests/match_test.py
           python tests/pwa_test.py
           python tests/tools_v2_test.py
+          python tests/domain_test.py
+          python scripts/domain_fixtures.py --check
 
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts
       # in the Training API's shape, against a stubbed Garmin.

@@ -9,6 +9,8 @@ name: Mobile app
 on:
   pull_request:
     paths:
+      - "garmin_mcp/domain/**"
+      - "scripts/domain_fixtures.py"
       - "mobile/**"
       - "garmin_mcp/app/app.css"
       - "scripts/build_tokens.py"
@@ -17,6 +19,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "garmin_mcp/domain/**"
+      - "scripts/domain_fixtures.py"
       - "mobile/**"
       - "garmin_mcp/app/app.css"
       - "scripts/build_tokens.py"
@@ -37,6 +41,10 @@ jobs:
           python-version: "3.12"
       - name: Tokens in step with app.css
         run: python tests/tokens_test.py
+      - name: Engines, and the fixtures the app's twins are held to
+        run: |
+          python tests/domain_test.py
+          python scripts/domain_fixtures.py --check
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
