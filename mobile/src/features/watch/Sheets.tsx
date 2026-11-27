@@ -61,6 +61,35 @@ export function ConfirmSheet({ p, connection, onConfirm, onBack }: {
       </View>
     );
   }
+  if (p.source === 'build') {
+    // From the builder: one session, added or replacing the one edited (off its old day if it moved).
+    const o = p.ops.find((x) => x.kind !== 'remove') ?? p.ops[0];
+    const off = p.ops.find((x) => x.kind === 'remove');
+    const size = o.after?.sub.split(' · ')[1] ?? '';
+    const replaces = o.kind === 'replace' ? o.what : off ? `${off.what} on ${longDay(off.date)}` : 'nothing';
+    return (
+      <View testID="confirm-sheet" style={{ padding: 20, gap: 12 }}>
+        <Text variant="title" accessibilityRole="header">{`Send to ${watch}?`}</Text>
+        <List>
+          <Line first label={`${longDay(o.date)}, ${p.title}${size ? `, ${size}` : ''}`}>
+            <Text variant="subhead" style={{ flex: 1, fontWeight: '600' }}>{`${longDay(o.date)} · ${p.title}`}</Text>
+            <Text variant="subhead" tone="muted" numeric>{size}</Text>
+          </Line>
+          <Line first={false} label={`Targets, ${p.subtitle}`}>
+            <Text variant="subhead" style={{ flex: 1 }}>Targets</Text>
+            <Text variant="subhead" tone="muted" numeric>{p.subtitle}</Text>
+          </Line>
+          <Line first={false} label={`Replaces, ${replaces}`}>
+            <Text variant="subhead" style={{ flex: 1 }}>Replaces</Text>
+            <Text variant="subhead" tone="muted" style={{ flexShrink: 1, textAlign: 'right' }}>{replaces}</Text>
+          </Line>
+        </List>
+        <Text variant="footnote" tone="muted">{`Connected to ${connection.provider}. It goes into your plan and shows up on the watch next time it syncs with your phone.`}</Text>
+        <Button label="Confirm and send" kind="primary" onPress={onConfirm} />
+        <Button label="Not now" onPress={onBack} />
+      </View>
+    );
+  }
   if (p.source === 'send' || p.source === 'adjust') {
     const o = p.ops[0];
     const size = (o.after ?? o.before)?.sub.split(' · ')[1] ?? '';

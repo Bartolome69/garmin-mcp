@@ -2,6 +2,8 @@ import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-route
 import { useEffect, useState } from 'react';
 import { Pressable } from 'react-native';
 
+import { parseWorkout } from '../../../../domain/parser';
+import { sessionText } from '../../../../features/builder/model';
 import { findSession } from '../../../../features/plan/model';
 import { usePlan } from '../../../../features/plan/PlanProvider';
 import { SessionDetailView } from '../../../../features/plan/SessionDetailView';
@@ -26,17 +28,21 @@ export default function SessionScreen() {
   // New targets, once sent, are what's on the watch: the steps go back to as planned.
   useEffect(() => { if (op?.batch.startsWith('adjust:')) setStep(0); }, [op?.batch]);
 
+  // The builder reads running sessions: not a recorded run, a rest day or strength.
+  const editable = !!session && !session.done && session.type !== 'rest' && session.type !== 'strength'
+    && (sessionText(session.detail) != null || parseWorkout(session.title).ok);
+
   if (!session) {
     return <Screen testID="session-missing"><Text variant="body" tone="muted">This session isn’t in your plan any more.</Text></Screen>;
   }
   return (
     <>
-      {/* Edit opens the builder (milestone 6). No other top-right action. */}
-      <Stack.Screen options={{ headerRight: () => (
-        <Pressable accessibilityRole="button" onPress={() => next('builder')} hitSlop={12}>
+      {/* Edit opens the builder with the session in it; saving replaces it. No other top-right action. */}
+      <Stack.Screen options={{ headerRight: editable ? () => (
+        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/plan/builder', params: { id } })} hitSlop={12}>
           <Text variant="body">Edit</Text>
         </Pressable>
-      ) }} />
+      ) : undefined }} />
       <SessionDetailView
         session={session}
         basis={plan.shown!.basis}

@@ -22,7 +22,9 @@ export function Button({ label, kind = 'secondary', brand = true, full = false, 
   style?: ViewStyle;
 }) {
   const { colors } = useTheme();
-  const filled = kind === 'primary' && brand;
+  // A primary that can't be pressed doesn't look like one: no brand fill, dimmed.
+  const off = !!rest.disabled;
+  const filled = kind === 'primary' && brand && !off;
   return (
     <Pressable
       accessibilityRole="button"
@@ -32,7 +34,7 @@ export function Button({ label, kind = 'secondary', brand = true, full = false, 
         flexDirection: 'row', gap: 6,
         borderWidth: 1, borderColor: filled ? colors.brand : colors.muted,
         backgroundColor: filled ? colors.brand : 'transparent',
-        opacity: pressed ? 0.75 : 1, flexGrow: full ? 1 : 0, flexBasis: full ? 0 : 'auto',
+        opacity: off ? 0.4 : pressed ? 0.75 : 1, flexGrow: full ? 1 : 0, flexBasis: full ? 0 : 'auto',
       }, style]}
       {...rest}
     >
