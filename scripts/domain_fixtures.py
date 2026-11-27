@@ -19,7 +19,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from garmin_mcp.domain import adjust, backtoback, paces, proposal  # noqa: E402
+import math  # noqa: E402
+from datetime import datetime  # noqa: E402
+
+from garmin_mcp.domain import adjust, backtoback, paces, postrun, proposal  # noqa: E402
 from garmin_mcp.domain.load import band  # noqa: E402
 from garmin_mcp.domain.model import Session  # noqa: E402
 
@@ -112,9 +115,73 @@ def proposal_cases() -> dict:
     return out
 
 
-FILES = {"paces.json": paces_cases, "backtoback.json": backtoback_cases, "proposals.json": proposal_cases}
+# The persona's recorded runs, as a watch would have them: 2 s samples. Built so the
+# numbers match the plan fixture's rows ("Intervals · 11.2 km · reps 4:01 /km").
+ZONE_TOPS = (130, 145, 155, 165)        # bpm: Z1 under 130 ... Z5 from 165
+
+
+def _record(segments, start_lat=51.5045, start_lon=-0.1700, turns=(1.3, 3)):
+    """segments: (kind, metres, s/km, hr_from, hr_to, hr_shape, cadence). Returns samples, laps and zone seconds."""
+    samples, laps, zones = [], [], [0.0] * 5
+    t = d = 0.0
+    total = sum(seg[1] for seg in segments)
+    for kind, metres, pace, h0, h1, shape, cad in segments:
+        start_d, start_t, end_d = d, t, d + metres
+        while d < end_d - 1e-6:
+            dt = min(2.0, (end_d - d) * pace / 1000)   # the last step of a lap only as long as it needs
+            d = min(end_d, d + dt / pace * 1000)
+            t += dt
+            x = t - start_t
+            if shape == "rise":
+                hr = h0 + (h1 - h0) * (1 - math.exp(-x / 20))
+            elif shape == "fall":
+                hr = h1 + (h0 - h1) * math.exp(-x / 25)
+            else:
+                hr = h0 + (h1 - h0) * (d - start_d) / metres
+            u = d / total
+            samples.append(postrun.Sample(
+                t=round(t, 1), d=round(d, 1), hr=round(hr), cadence=cad,
+                elevation=round(22 + 6 * math.sin(d / 900) + 3 * math.sin(d / 250), 1),
+                lat=round(start_lat + 0.006 * math.sin(2 * math.pi * u * turns[0]), 6),
+                lon=round(start_lon + 0.03 * u + 0.004 * math.sin(2 * math.pi * u * turns[1]), 6)))
+            zones[sum(hr >= top for top in ZONE_TOPS)] += dt
+        laps.append(postrun.Lap(kind, start_d, end_d))
+    return samples, laps, zones
+
+
+def postrun_cases() -> dict:
+    """The post-run screen for the persona's runs this week: the app's development fixture, from the real engine."""
+    reps = [(238, 164), (241, 165), (240, 166), (240, 168), (244, 168), (242, 172)]
+    segs = [("warmup", 2000, 340, 118, 138, "line", 168)]
+    for i, (pace, peak) in enumerate(reps):
+        segs.append(("work", 800, pace, 128 if i else 138, peak, "rise", 184 if i < 5 else 182))
+        if i < len(reps) - 1:
+            segs.append(("recovery", 400, 380, peak, 124, "fall", 162))
+    segs.append(("cooldown", 2400, 345, 130, 138, "line", 166))
+    samples, laps, zones = _record(segs)
+    intervals = postrun.Run(id="2026-11-25-run", start=datetime(2026, 11, 25, 6, 30), type="intervals", title="6 × 800 m",
+                            samples=samples, laps=laps, zone_seconds=zones, session_id="2026-11-25-intervals",
+                            planned=postrun.Planned(distance_km=11.0, pace=(238, 248), reps=6, rep_words="6 × 800 m"))
+    km_paces = [318, 317, 316, 315, 314, 313, 312, 310, 309]
+    segs = [("run", 1000 if i < 8 else 1200, p, 136 + i, 137 + i, "line", 172 + (i > 5)) for i, p in enumerate(km_paces)]
+    samples, laps, zones = _record(segs, start_lat=51.5310, start_lon=-0.1540, turns=(0.6, 1.5))
+    club = postrun.Run(id="2026-11-26-run", start=datetime(2026, 11, 26, 18, 45), type="easy", title="9 km run club",
+                       samples=samples, laps=(), zone_seconds=zones, session_id="2026-11-26-easy",
+                       planned=postrun.Planned(distance_km=9.0, pace=(327, 370)))
+    easy = [("run", 1000 if i < 7 else 300, p, 134 + i // 2, 135 + i // 2, "line", 170) for i, p in enumerate([314, 313, 312, 312, 311, 312, 311, 310])]
+    easy += [("strides", 100, 200, 140, 158, "rise", 192) if k % 2 == 0 else ("recovery", 100, 600, 158, 132, "fall", 150) for k in range(7)]
+    samples, laps, zones = _record(easy, start_lat=51.5190, start_lon=-0.1880, turns=(2.1, 0.8))
+    strides = postrun.Run(id="2026-11-24-run", start=datetime(2026, 11, 24, 7, 10), type="easy", title="8 km easy + strides",
+                          samples=samples, laps=[postrun.Lap("run", 0, 7300)] + [lap for lap in laps if lap.kind != "run"],
+                          zone_seconds=zones, session_id="2026-11-24-easy", planned=postrun.Planned(distance_km=8.0, pace=(327, 370)))
+    return {r.session_id: postrun.view(r) for r in (strides, intervals, club)}
+
+
+FILES = {"paces.json": paces_cases, "backtoback.json": backtoback_cases, "proposals.json": proposal_cases,
+         "postrun.json": postrun_cases}
 # The app's development build reads its own copy: Metro bundles only what's inside mobile/.
-COPIES = {"proposals.json": ROOT / "mobile" / "src" / "features" / "watch" / "proposals.fixture.json"}
+COPIES = {"proposals.json": ROOT / "mobile" / "src" / "features" / "watch" / "proposals.fixture.json",
+          "postrun.json": ROOT / "mobile" / "src" / "features" / "run" / "runs.fixture.json"}
 
 
 def main(argv: list[str]) -> int:

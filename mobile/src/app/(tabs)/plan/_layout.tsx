@@ -32,6 +32,7 @@ export default function PlanLayout() {
         }} />
         <Stack.Screen name="new-week" options={{ title: 'New week', headerBackTitle: 'Plan' }} />
         <Stack.Screen name="builder" options={{ title: 'New workout', headerBackTitle: 'Plan' }} />
+        <Stack.Screen name="run/[id]" options={{ title: '', headerBackTitle: 'Plan' }} />
         <Stack.Screen name="next" options={{ title: '' }} />
       </Stack>
     </PlanProvider>

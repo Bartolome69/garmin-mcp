@@ -22,6 +22,8 @@ export type TodayActions = {
   how: () => void;
   askWhy: () => void;
   openSession: () => void;
+  /** A done day in the week strip: its run. */
+  openRun?: (id: string) => void;
   refresh: () => void;
 };
 
@@ -66,7 +68,7 @@ export function TodayView({ vm, coach, brand, fontScale, fresh, refreshing, erro
       {vm.session ? <SessionCard session={vm.session} onOpen={actions.openSession} />
         : <Card testID="session-card"><Text variant="headline">Rest day</Text>
           <Text variant="footnote" tone="muted">Nothing planned today. Rest counts toward your active week.</Text></Card>}
-      <WeekStrip week={vm.week} />
+      <WeekStrip week={vm.week} onRun={actions.openRun} />
     </ScrollView>
   );
 }

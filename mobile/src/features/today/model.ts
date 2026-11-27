@@ -57,6 +57,8 @@ export type WeekDay = {
   label: string;                 // "Easy"
   status: 'done' | 'planned' | 'rest' | 'rest_done';
   today: boolean;
+  /** A done day's recorded run, which opens post-run. */
+  runId?: string | null;
 };
 
 export type TodayOption = { kind: 'as_planned' | 'swap' | 'rest'; title: string; sub: string };

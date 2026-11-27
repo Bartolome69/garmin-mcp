@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from garmin_mcp.domain import adjust, backtoback, config, dedupe, load, paces, predict, proposal, readiness, takeaways  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, config, dedupe, load, paces, postrun, predict, proposal, readiness, takeaways  # noqa: E402
 from garmin_mcp.domain.model import Activity, Session, mmss  # noqa: E402
 
 failures: list[str] = []
@@ -385,6 +385,66 @@ def takeaway_checks() -> None:
 
 # -- config and Coach parity ---------------------------------------------------------------------------------
 
+def postrun_checks() -> None:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("domain_fixtures", ROOT / "scripts" / "domain_fixtures.py")
+    fx = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fx)
+    runs = fx.postrun_cases()
+    v = runs["2026-11-25-intervals"]
+    check("post-run: planned vs actual, each row marked",
+          v["planned"] == [{"label": "Distance", "plan": "11.0 km", "done": "11.2 km", "ok": True},
+                           {"label": "Rep pace", "plan": "3:58–4:08", "done": "4:01 avg", "ok": True},
+                           {"label": "Reps", "plan": "6 × 800 m", "done": "6 of 6", "ok": True}], str(v["planned"]))
+    check("post-run: the plan fixture's numbers", v["totalKm"] == 11.2 and v["when"] == "Wed 25 Nov · 06:30")
+    check("post-run: one takeaway under each chart, an observation",
+          [v["charts"][k]["takeaway"]["text"] for k in ("pace", "hr")]
+          == ["Even reps. Fastest and slowest 6 s apart.", "HR drifted 4 bpm across the 6 reps."])
+    check("post-run: takeaways split for drawing, with a tone",
+          v["charts"]["pace"]["takeaway"] | {} == {"bold": "Even reps.", "rest": "Fastest and slowest 6 s apart.",
+                                                   "text": "Even reps. Fastest and slowest 6 s apart.", "tone": "good"}
+          and v["charts"]["hr"]["takeaway"]["tone"] == "note")
+    lens = {k: len(x) for k, x in v["series"].items()}
+    check("post-run: every metric on the same points, so one scrub line reads them all",
+          set(lens.values()) == {postrun.POINTS}, str(lens))
+    check("post-run: laps by distance, reps numbered",
+          [lap["label"] for lap in v["laps"]][:4] == ["Warm-up", "Rep 1", "Recovery", "Rep 2"] and len(v["laps"]) == 13
+          and v["laps"][-1]["toKm"] == 11.2)
+    route = v["route"]["points"]
+    check("post-run: the route fits a unit box", 2 < len(route) <= postrun.ROUTE_POINTS + 1
+          and all(0 <= x <= 1 and 0 <= y <= 1 for x, y in route))
+    check("post-run: zones in minutes, bars relative to the longest",
+          [z["label"] for z in v["zones"]] == ["Z1", "Z2", "Z3", "Z4", "Z5"] and max(z["share"] for z in v["zones"]) == 1.0)
+    check("post-run: pace axis is faster-up, on round values",
+          v["charts"]["pace"]["inverted"] and [t["label"] for t in v["charts"]["pace"]["domain"]["ticks"]] == ["4:00", "6:00"])
+    check("post-run: the scrub line starts on the rep nearest halfway", v["scrubKm"] == 6.0, str(v["scrubKm"]))
+    easy = runs["2026-11-24-easy"]
+    check("post-run: strides are their own laps, not reps, and the run's pace leaves them out",
+          [lap["label"] for lap in easy["laps"]][:3] == ["Run", "Stride 1", "Recovery"]
+          and easy["planned"][1]["label"] == "Pace" and easy["planned"][1]["done"] == "5:12 avg"
+          and easy["charts"]["pace"]["takeaway"]["text"].startswith("Even pace."))
+    club = runs["2026-11-26-easy"]
+    check("post-run: an easy run faster than its range is marked off plan",
+          club["planned"][1] == {"label": "Pace", "plan": "5:27–6:10", "done": "5:14 avg", "ok": False})
+    check("post-run: a steady run's takeaways are splits and drift",
+          club["charts"]["pace"]["takeaway"]["text"].startswith("Negative split.")
+          and club["charts"]["hr"]["takeaway"]["text"].startswith("HR drifted"))
+    bare = postrun.Run(id="x", start=datetime(2026, 11, 20, 7, 0), type="easy", title="Easy 5 km",
+                       samples=[postrun.Sample(t=i * 3.0, d=i * 10.0) for i in range(1, 501)])
+    b = postrun.view(bare)
+    check("post-run: no HR, cadence, elevation or GPS: said, not drawn",
+          b["charts"]["hr"]["takeaway"] is None and b["charts"]["hr"]["summary"] == "No heart rate recorded"
+          and b["route"] is None and b["planned"] is None and b["zones"] is None)
+    still = postrun.Run(id="y", start=datetime(2026, 11, 20, 7, 0), type="easy", title="x",
+                        samples=[postrun.Sample(t=i * 3.0, d=min(i, 200) * 10.0 + max(0, i - 260) * 10.0) for i in range(1, 501)])
+    check("post-run: standing still reads as the slowest pace, not infinity",
+          max(postrun.view(still)["series"]["pace"]) == postrun.SLOWEST_PACE)
+    check("rep HR drift", takeaways.rep_hr([160, 161, 162, 165, 166, 166]) == "HR drifted 5 bpm across the 6 reps.")
+    check("rep HR steady", takeaways.rep_hr([160, 161, 161, 161]) == "HR steady across the 4 reps.")
+    check("elevation", takeaways.elevation(48.2, 46.0) == "48 m up, 46 m down."
+          and takeaways.elevation(4, 6) == "Flat. Under 15 m of climbing.")
+
+
 def config_checks() -> None:
     check("bad config JSON keeps the defaults", config.load_config("{not json") == config.DEFAULT)
     c = config.load_config(json.dumps({"merge": {"start_within_seconds": 90, "nope": 1}, "readiness": {"hrv_low_percentile": "x"}}))
@@ -396,7 +456,7 @@ def config_checks() -> None:
     check("the server's defaults match the app's flag defaults",
           (r.sleep_short_hours, r.load_ratio_low, r.load_ratio_high, r.hrv_low_percentile, m.start_within_seconds,
            m.distance_within_pct) == tuple(flags_defaults.values()))
-    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal)
+    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal, postrun)
     params = [p for mod in modules for _, fn in inspect.getmembers(mod, inspect.isfunction)
               if fn.__module__ == mod.__name__ for p in inspect.signature(fn).parameters]
     source = " ".join(inspect.getsource(mod) for mod in modules)
@@ -414,6 +474,7 @@ def main() -> int:
     pace_checks()
     dedupe_checks()
     takeaway_checks()
+    postrun_checks()
     config_checks()
     print()
     if failures:

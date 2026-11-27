@@ -66,4 +66,23 @@ def cadence(spm: Sequence[float], cfg: DomainConfig = DEFAULT) -> str | None:
         return f"Cadence dropped {-change:.0f} spm in the last third."
     if change >= cfg.takeaways.cadence_change_spm:
         return f"Cadence rose {change:.0f} spm in the last third."
-    return f"Cadence steady, around {(a + b) / 2:.0f} spm."
+    return f"Cadence steady, around {sum(spm) / len(spm):.0f} spm."
+
+
+def rep_hr(rep_hr: Sequence[float], cfg: DomainConfig = DEFAULT) -> str | None:
+    """Average HR of each rep, in order: the later half of the reps against the first."""
+    if len(rep_hr) < 2:
+        return None
+    half = len(rep_hr) // 2
+    a, b = sum(rep_hr[:half]) / half, sum(rep_hr[-half:]) / half
+    drift = b - a
+    if drift >= cfg.takeaways.hr_drift_bpm:
+        return f"HR drifted {drift:.0f} bpm across the {len(rep_hr)} reps."
+    return f"HR steady across the {len(rep_hr)} reps."
+
+
+def elevation(gain_m: float, loss_m: float, cfg: DomainConfig = DEFAULT) -> str | None:
+    """Metres climbed and descended. Flat under the threshold either way."""
+    if gain_m < cfg.takeaways.flat_metres and loss_m < cfg.takeaways.flat_metres:
+        return "Flat. Under " + f"{cfg.takeaways.flat_metres:.0f} m of climbing."
+    return f"{gain_m:.0f} m up, {loss_m:.0f} m down."

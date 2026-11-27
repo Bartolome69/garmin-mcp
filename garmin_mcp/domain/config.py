@@ -88,6 +88,13 @@ class TakeawayConfig:
     hr_drift_bpm: float = 3.0
     hr_drift_pace_pct: float = 3.0      # halves compared only when their paces are this close
     cadence_change_spm: float = 4.0
+    flat_metres: float = 15.0           # less climbing than this either way: flat
+
+
+@dataclass(frozen=True)
+class PostRunConfig:
+    distance_ok_pct: float = 10.0       # within this of the planned distance: on plan
+    pace_ok_seconds: float = 3.0        # outside the planned range by no more than this: on plan
 
 
 @dataclass(frozen=True)
@@ -100,6 +107,7 @@ class DomainConfig:
     predict: PredictConfig = field(default_factory=PredictConfig)
     merge: MergeConfig = field(default_factory=MergeConfig)
     takeaways: TakeawayConfig = field(default_factory=TakeawayConfig)
+    postrun: PostRunConfig = field(default_factory=PostRunConfig)
 
 
 def _apply(section: Any, values: dict[str, Any]) -> Any:

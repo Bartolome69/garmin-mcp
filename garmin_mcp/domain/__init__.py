@@ -14,6 +14,7 @@ Modules:
     predict     race-time prediction and its 12-week trend
     dedupe      same run from two sources: keep one, hide the other
     takeaways   one observation under each post-run chart
+    postrun     a recorded run worked out for the post-run screen
 
 The mobile app has TypeScript twins of backtoback and paces (and the text
 parser, which lives only there); fixtures/ holds the cases both must agree on.

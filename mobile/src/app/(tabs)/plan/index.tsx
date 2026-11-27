@@ -50,7 +50,7 @@ export default function PlanScreen() {
       refreshing={plan.refreshing}
       width={width}
       actions={{
-        open: (s) => (s.done ? next('run', { id: s.id }) : router.push({ pathname: '/plan/session/[id]', params: { id: s.id } })),
+        open: (s) => router.push(s.done ? { pathname: '/plan/run/[id]', params: { id: s.id } } : { pathname: '/plan/session/[id]', params: { id: s.id } }),
         move: (id, to) => { plan.move(id, to); },
         moveAnyway: plan.confirmPending,
         keep: plan.clearPending,
