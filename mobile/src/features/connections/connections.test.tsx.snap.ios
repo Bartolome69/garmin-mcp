@@ -1,0 +1,2668 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`snapshot: Connections on ios: connections-ios 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "gap": 10,
+      "padding": 16,
+    }
+  }
+  contentInsetAdjustmentBehavior="automatic"
+  style={
+    {
+      "backgroundColor": "#161614",
+      "flex": 1,
+    }
+  }
+  testID="connections"
+>
+  <View>
+    <View
+      style={
+        {
+          "backgroundColor": "#222220",
+          "borderColor": "#3A3936",
+          "borderRadius": 16,
+          "borderWidth": 1,
+          "gap": 10,
+          "padding": 14,
+        }
+      }
+      testID="provider-garmin"
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 12,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 10,
+              "height": 40,
+              "justifyContent": "center",
+              "width": 40,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="watch.analog"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4293059035}
+            tintColor="#E2E1DB"
+            type="monochrome"
+          />
+        </View>
+        <View
+          accessibilityLabel="Garmin, Live, Connected to Garmin · Forerunner 965 · synced 07:02"
+          accessible={true}
+          style={
+            {
+              "flex": 1,
+              "gap": 2,
+              "minWidth": 0,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "flexWrap": "wrap",
+                "gap": 8,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 17,
+                    "fontWeight": "600",
+                    "lineHeight": 22,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Garmin
+            </Text>
+            <View
+              style={
+                {
+                  "borderRadius": 6,
+                  "height": 22,
+                  "justifyContent": "center",
+                  "overflow": "hidden",
+                  "paddingHorizontal": 8,
+                }
+              }
+            >
+              <View
+                style={
+                  {
+                    "backgroundColor": "#8CC08F",
+                    "bottom": 0,
+                    "left": 0,
+                    "opacity": 0.18,
+                    "position": "absolute",
+                    "right": 0,
+                    "top": 0,
+                  }
+                }
+              />
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 12,
+                      "lineHeight": 16,
+                    },
+                    {
+                      "color": "#8CC08F",
+                    },
+                    false,
+                    {
+                      "fontWeight": "700",
+                    },
+                  ]
+                }
+              >
+                Live
+              </Text>
+            </View>
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 13,
+                  "lineHeight": 18,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                undefined,
+              ]
+            }
+            testID="status-garmin"
+          >
+            Connected to Garmin · Forerunner 965 · synced 07:02
+          </Text>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "columnGap": 12,
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "rowGap": 4,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="Activities, yes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4294243310}
+            tintColor="#F4F3EE"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Activities
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Sleep and HRV, yes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4294243310}
+            tintColor="#F4F3EE"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Sleep and HRV
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Send workouts, yes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4294243310}
+            tintColor="#F4F3EE"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Send workouts
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#222220",
+          "borderColor": "#3A3936",
+          "borderRadius": 16,
+          "borderWidth": 1,
+          "gap": 10,
+          "padding": 14,
+        }
+      }
+      testID="provider-intervals"
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 12,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 10,
+              "height": 40,
+              "justifyContent": "center",
+              "width": 40,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="watch.analog"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4293059035}
+            tintColor="#E2E1DB"
+            type="monochrome"
+          />
+        </View>
+        <View
+          accessibilityLabel="COROS, Via Intervals.icu, Reconnect needed · last synced Tue"
+          accessible={true}
+          style={
+            {
+              "flex": 1,
+              "gap": 2,
+              "minWidth": 0,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "flexWrap": "wrap",
+                "gap": 8,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 17,
+                    "fontWeight": "600",
+                    "lineHeight": 22,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              COROS
+            </Text>
+            <View
+              style={
+                {
+                  "borderRadius": 6,
+                  "height": 22,
+                  "justifyContent": "center",
+                  "overflow": "hidden",
+                  "paddingHorizontal": 8,
+                }
+              }
+            >
+              <View
+                style={
+                  {
+                    "backgroundColor": "#74A3DB",
+                    "bottom": 0,
+                    "left": 0,
+                    "opacity": 0.18,
+                    "position": "absolute",
+                    "right": 0,
+                    "top": 0,
+                  }
+                }
+              />
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 12,
+                      "lineHeight": 16,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "700",
+                    },
+                  ]
+                }
+              >
+                Via Intervals.icu
+              </Text>
+            </View>
+          </View>
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 6,
+              }
+            }
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="exclamationmark.triangle"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4293444447}
+              tintColor="#E8C35F"
+              type="monochrome"
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#E8C35F",
+                  },
+                  false,
+                  {
+                    "flexShrink": 1,
+                  },
+                ]
+              }
+              testID="status-intervals"
+            >
+              Reconnect needed · last synced Tue
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            [
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#A6A59F",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "flexBasis": "auto",
+                "flexDirection": "row",
+                "flexGrow": 0,
+                "gap": 6,
+                "justifyContent": "center",
+                "minHeight": 44,
+                "opacity": 1,
+                "paddingHorizontal": 14,
+              },
+              undefined,
+            ]
+          }
+          testID="button-Reconnect"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "600",
+                  "textAlign": "center",
+                },
+              ]
+            }
+          >
+            Reconnect
+          </Text>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "columnGap": 12,
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "rowGap": 4,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="Activities, yes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4294243310}
+            tintColor="#F4F3EE"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Activities
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Sleep, no"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="xmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4289111455}
+            tintColor="#A6A59F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "textDecorationLine": "line-through",
+                },
+              ]
+            }
+          >
+            Sleep
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Send workouts, no"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="xmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4289111455}
+            tintColor="#A6A59F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "textDecorationLine": "line-through",
+                },
+              ]
+            }
+          >
+            Send workouts
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#222220",
+          "borderColor": "#3A3936",
+          "borderRadius": 16,
+          "borderWidth": 1,
+          "gap": 10,
+          "padding": 14,
+        }
+      }
+      testID="provider-health"
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 12,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 10,
+              "height": 40,
+              "justifyContent": "center",
+              "width": 40,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="watch.analog"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4293059035}
+            tintColor="#E2E1DB"
+            type="monochrome"
+          />
+        </View>
+        <View
+          accessibilityLabel="Apple Watch, Via Apple Health, Reads only · synced 06:58"
+          accessible={true}
+          style={
+            {
+              "flex": 1,
+              "gap": 2,
+              "minWidth": 0,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "flexWrap": "wrap",
+                "gap": 8,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 17,
+                    "fontWeight": "600",
+                    "lineHeight": 22,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Apple Watch
+            </Text>
+            <View
+              style={
+                {
+                  "borderRadius": 6,
+                  "height": 22,
+                  "justifyContent": "center",
+                  "overflow": "hidden",
+                  "paddingHorizontal": 8,
+                }
+              }
+            >
+              <View
+                style={
+                  {
+                    "backgroundColor": "#74A3DB",
+                    "bottom": 0,
+                    "left": 0,
+                    "opacity": 0.18,
+                    "position": "absolute",
+                    "right": 0,
+                    "top": 0,
+                  }
+                }
+              />
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 12,
+                      "lineHeight": 16,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "700",
+                    },
+                  ]
+                }
+              >
+                Via Apple Health
+              </Text>
+            </View>
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 13,
+                  "lineHeight": 18,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                undefined,
+              ]
+            }
+            testID="status-health"
+          >
+            Reads only · synced 06:58
+          </Text>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "columnGap": 12,
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "rowGap": 4,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="Activities, yes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4294243310}
+            tintColor="#F4F3EE"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Activities
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Sleep, yes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4294243310}
+            tintColor="#F4F3EE"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Sleep
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Send workouts, no"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 4,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="xmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4289111455}
+            tintColor="#A6A59F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "textDecorationLine": "line-through",
+                },
+              ]
+            }
+          >
+            Send workouts
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#222220",
+          "borderColor": "#3A3936",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "overflow": "hidden",
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 0,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="Source priority, Garmin first · 2 duplicate runs merged"
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "backgroundColor": "transparent",
+            }
+          }
+          testID="row-priority"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 10,
+                "minHeight": 56,
+                "paddingHorizontal": 14,
+                "paddingVertical": 10,
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "flex": 1,
+                  "minWidth": 0,
+                }
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 17,
+                      "lineHeight": 22,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    undefined,
+                  ]
+                }
+              >
+                Source priority
+              </Text>
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 13,
+                      "lineHeight": 18,
+                    },
+                    {
+                      "color": "#A6A59F",
+                    },
+                    false,
+                    undefined,
+                  ]
+                }
+              >
+                Garmin first · 2 duplicate runs merged
+              </Text>
+            </View>
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="chevron.right"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4289111455}
+              tintColor="#A6A59F"
+              type="monochrome"
+            />
+          </View>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+          }
+        }
+      >
+        <View
+          testID="row-coming"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 10,
+                "minHeight": 56,
+                "paddingHorizontal": 14,
+                "paddingVertical": 10,
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "flex": 1,
+                  "minWidth": 0,
+                }
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 17,
+                      "lineHeight": 22,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    undefined,
+                  ]
+                }
+              >
+                Polar, Suunto
+              </Text>
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 13,
+                      "lineHeight": 18,
+                    },
+                    {
+                      "color": "#A6A59F",
+                    },
+                    false,
+                    undefined,
+                  ]
+                }
+              >
+                Coming soon
+              </Text>
+            </View>
+            <View
+              accessibilityRole="button"
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": false,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                [
+                  {
+                    "alignItems": "center",
+                    "backgroundColor": "transparent",
+                    "borderColor": "#A6A59F",
+                    "borderRadius": 999,
+                    "borderWidth": 1,
+                    "flexBasis": "auto",
+                    "flexDirection": "row",
+                    "flexGrow": 0,
+                    "gap": 6,
+                    "justifyContent": "center",
+                    "minHeight": 44,
+                    "opacity": 1,
+                    "paddingHorizontal": 14,
+                  },
+                  undefined,
+                ]
+              }
+              testID="button-Tell me when"
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 15,
+                      "lineHeight": 20,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "600",
+                      "textAlign": "center",
+                    },
+                  ]
+                }
+              >
+                Tell me when
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+          }
+        }
+      >
+        <View
+          testID="row-request"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 10,
+                "minHeight": 56,
+                "paddingHorizontal": 14,
+                "paddingVertical": 10,
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "flex": 1,
+                  "minWidth": 0,
+                }
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 17,
+                      "lineHeight": 22,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    undefined,
+                  ]
+                }
+              >
+                Don’t see your device?
+              </Text>
+            </View>
+            <View
+              accessibilityRole="button"
+              accessibilityState={
+                {
+                  "busy": undefined,
+                  "checked": undefined,
+                  "disabled": undefined,
+                  "expanded": undefined,
+                  "selected": undefined,
+                }
+              }
+              accessibilityValue={
+                {
+                  "max": undefined,
+                  "min": undefined,
+                  "now": undefined,
+                  "text": undefined,
+                }
+              }
+              accessible={true}
+              collapsable={false}
+              focusable={true}
+              onBlur={[Function]}
+              onClick={[Function]}
+              onFocus={[Function]}
+              onResponderGrant={[Function]}
+              onResponderMove={[Function]}
+              onResponderRelease={[Function]}
+              onResponderTerminate={[Function]}
+              onResponderTerminationRequest={[Function]}
+              onStartShouldSetResponder={[Function]}
+              style={
+                [
+                  {
+                    "alignItems": "center",
+                    "backgroundColor": "transparent",
+                    "borderColor": "#A6A59F",
+                    "borderRadius": 999,
+                    "borderWidth": 1,
+                    "flexBasis": "auto",
+                    "flexDirection": "row",
+                    "flexGrow": 0,
+                    "gap": 6,
+                    "justifyContent": "center",
+                    "minHeight": 44,
+                    "opacity": 1,
+                    "paddingHorizontal": 14,
+                  },
+                  undefined,
+                ]
+              }
+              testID="button-Request it"
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 15,
+                      "lineHeight": 20,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "600",
+                      "textAlign": "center",
+                    },
+                  ]
+                }
+              >
+                Request it
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "columnGap": 12,
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        accessibilityRole="link"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "justifyContent": "center",
+            "minHeight": 44,
+          }
+        }
+        testID="link-see"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 13,
+                "lineHeight": 18,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "textDecorationLine": "underline",
+              },
+            ]
+          }
+        >
+          What Daash can and can’t see
+        </Text>
+      </View>
+      <View
+        accessibilityRole="link"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "justifyContent": "center",
+            "minHeight": 44,
+          }
+        }
+        testID="link-trouble"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 13,
+                "lineHeight": 18,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "textDecorationLine": "underline",
+              },
+            ]
+          }
+        >
+          Trouble connecting?
+        </Text>
+      </View>
+    </View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 13,
+            "lineHeight": 18,
+          },
+          {
+            "color": "#A6A59F",
+          },
+          false,
+          undefined,
+        ]
+      }
+    >
+      “Connected to” means you linked your own account. Daash is independent and not endorsed by any watch maker.
+    </Text>
+  </View>
+</RCTScrollView>
+`;
+
+exports[`snapshot: Source priority on ios: priority-ios 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "gap": 12,
+      "padding": 16,
+    }
+  }
+  contentInsetAdjustmentBehavior="automatic"
+  style={
+    {
+      "backgroundColor": "#161614",
+      "flex": 1,
+    }
+  }
+  testID="priority"
+>
+  <View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 13,
+            "lineHeight": 18,
+          },
+          {
+            "color": "#A6A59F",
+          },
+          false,
+          undefined,
+        ]
+      }
+    >
+      When two sources send the same run, Daash keeps the one higher on this list and hides the other. Drag to reorder.
+    </Text>
+    <View
+      style={
+        {
+          "borderColor": "#3A3936",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "overflow": "hidden",
+        }
+      }
+      testID="priority-list"
+    >
+      <View
+        accessibilityActions={
+          [
+            {
+              "label": "Move down",
+              "name": "moveDown",
+            },
+          ]
+        }
+        accessibilityHint="Swipe up or down to move it"
+        accessibilityLabel="1, Garmin, Activities, sleep, HRV"
+        accessible={true}
+        onAccessibilityAction={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#222220",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 0,
+            "flexDirection": "row",
+            "gap": 12,
+            "height": 64,
+            "paddingHorizontal": 14,
+            "transform": [
+              {
+                "translateY": 0,
+              },
+            ],
+            "zIndex": 0,
+          }
+        }
+        testID="source-0"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "textTransform": "none",
+                "width": 16,
+              },
+            ]
+          }
+        >
+          1
+        </Text>
+        <View
+          style={
+            {
+              "flex": 1,
+              "minWidth": 0,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 17,
+                  "lineHeight": 22,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Garmin
+          </Text>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 13,
+                  "lineHeight": 18,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Activities, sleep, HRV
+          </Text>
+        </View>
+        <View
+          onMoveShouldSetResponder={[Function]}
+          onMoveShouldSetResponderCapture={[Function]}
+          onResponderEnd={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderReject={[Function]}
+          onResponderRelease={[Function]}
+          onResponderStart={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          onStartShouldSetResponderCapture={[Function]}
+          style={
+            {
+              "alignItems": "center",
+              "height": 44,
+              "justifyContent": "center",
+              "width": 44,
+            }
+          }
+          testID="grip-0"
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="line.3.horizontal"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4289111455}
+            tintColor="#A6A59F"
+            type="monochrome"
+          />
+        </View>
+      </View>
+      <View
+        accessibilityActions={
+          [
+            {
+              "label": "Move up",
+              "name": "moveUp",
+            },
+            {
+              "label": "Move down",
+              "name": "moveDown",
+            },
+          ]
+        }
+        accessibilityHint="Swipe up or down to move it"
+        accessibilityLabel="2, Apple Health, Activities, sleep"
+        accessible={true}
+        onAccessibilityAction={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#222220",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+            "gap": 12,
+            "height": 64,
+            "paddingHorizontal": 14,
+            "transform": [
+              {
+                "translateY": 0,
+              },
+            ],
+            "zIndex": 0,
+          }
+        }
+        testID="source-1"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "textTransform": "none",
+                "width": 16,
+              },
+            ]
+          }
+        >
+          2
+        </Text>
+        <View
+          style={
+            {
+              "flex": 1,
+              "minWidth": 0,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 17,
+                  "lineHeight": 22,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Apple Health
+          </Text>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 13,
+                  "lineHeight": 18,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Activities, sleep
+          </Text>
+        </View>
+        <View
+          onMoveShouldSetResponder={[Function]}
+          onMoveShouldSetResponderCapture={[Function]}
+          onResponderEnd={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderReject={[Function]}
+          onResponderRelease={[Function]}
+          onResponderStart={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          onStartShouldSetResponderCapture={[Function]}
+          style={
+            {
+              "alignItems": "center",
+              "height": 44,
+              "justifyContent": "center",
+              "width": 44,
+            }
+          }
+          testID="grip-1"
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="line.3.horizontal"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4289111455}
+            tintColor="#A6A59F"
+            type="monochrome"
+          />
+        </View>
+      </View>
+      <View
+        accessibilityActions={
+          [
+            {
+              "label": "Move up",
+              "name": "moveUp",
+            },
+          ]
+        }
+        accessibilityHint="Swipe up or down to move it"
+        accessibilityLabel="3, COROS via Intervals.icu, Activities"
+        accessible={true}
+        onAccessibilityAction={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#222220",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+            "gap": 12,
+            "height": 64,
+            "paddingHorizontal": 14,
+            "transform": [
+              {
+                "translateY": 0,
+              },
+            ],
+            "zIndex": 0,
+          }
+        }
+        testID="source-2"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "textTransform": "none",
+                "width": 16,
+              },
+            ]
+          }
+        >
+          3
+        </Text>
+        <View
+          style={
+            {
+              "flex": 1,
+              "minWidth": 0,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 17,
+                  "lineHeight": 22,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            COROS via Intervals.icu
+          </Text>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 13,
+                  "lineHeight": 18,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Activities
+          </Text>
+        </View>
+        <View
+          onMoveShouldSetResponder={[Function]}
+          onMoveShouldSetResponderCapture={[Function]}
+          onResponderEnd={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderReject={[Function]}
+          onResponderRelease={[Function]}
+          onResponderStart={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          onStartShouldSetResponderCapture={[Function]}
+          style={
+            {
+              "alignItems": "center",
+              "height": 44,
+              "justifyContent": "center",
+              "width": 44,
+            }
+          }
+          testID="grip-2"
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="line.3.horizontal"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4289111455}
+            tintColor="#A6A59F"
+            type="monochrome"
+          />
+        </View>
+      </View>
+    </View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontFamily": "GeistMono_500Medium",
+            "fontSize": 12,
+            "letterSpacing": 0.6,
+            "lineHeight": 16,
+            "textTransform": "uppercase",
+          },
+          {
+            "color": "#A6A59F",
+          },
+          false,
+          {
+            "marginTop": 6,
+          },
+        ]
+      }
+    >
+      Merged this month
+    </Text>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 8,
+          },
+        ]
+      }
+      testID="merge-g-1126|h-1126"
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "gap": 8,
+            "justifyContent": "space-between",
+          }
+        }
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 17,
+                "fontWeight": "600",
+                "lineHeight": 22,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              undefined,
+            ]
+          }
+        >
+          Thu 26 · 9.2 km
+        </Text>
+        <View
+          style={
+            {
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 6,
+              "height": 22,
+              "justifyContent": "center",
+              "paddingHorizontal": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "fontWeight": "700",
+                },
+              ]
+            }
+          >
+            Kept Garmin
+          </Text>
+        </View>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 13,
+              "lineHeight": 18,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            undefined,
+          ]
+        }
+      >
+        Also came from Apple Health. Started 12 s apart, distances 0.3% apart. Hidden, not deleted.
+      </Text>
+      <View
+        style={
+          {
+            "alignSelf": "flex-start",
+          }
+        }
+      >
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            [
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#A6A59F",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "flexBasis": "auto",
+                "flexDirection": "row",
+                "flexGrow": 0,
+                "gap": 6,
+                "justifyContent": "center",
+                "minHeight": 44,
+                "opacity": 1,
+                "paddingHorizontal": 14,
+              },
+              undefined,
+            ]
+          }
+          testID="button-These are different runs"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "600",
+                  "textAlign": "center",
+                },
+              ]
+            }
+          >
+            These are different runs
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 8,
+          },
+        ]
+      }
+      testID="merge-g-1122|i-1122"
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "gap": 8,
+            "justifyContent": "space-between",
+          }
+        }
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 17,
+                "fontWeight": "600",
+                "lineHeight": 22,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              undefined,
+            ]
+          }
+        >
+          Sun 22 · 16.0 km
+        </Text>
+        <View
+          style={
+            {
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 6,
+              "height": 22,
+              "justifyContent": "center",
+              "paddingHorizontal": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "fontWeight": "700",
+                },
+              ]
+            }
+          >
+            Kept Garmin
+          </Text>
+        </View>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 13,
+              "lineHeight": 18,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            undefined,
+          ]
+        }
+      >
+        Also came from COROS via Intervals.icu. Started 20 s apart, distances 0.3% apart. Hidden, not deleted.
+      </Text>
+      <View
+        style={
+          {
+            "alignSelf": "flex-start",
+          }
+        }
+      >
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            [
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#A6A59F",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "flexBasis": "auto",
+                "flexDirection": "row",
+                "flexGrow": 0,
+                "gap": 6,
+                "justifyContent": "center",
+                "minHeight": 44,
+                "opacity": 1,
+                "paddingHorizontal": 14,
+              },
+              undefined,
+            ]
+          }
+          testID="button-These are different runs"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "600",
+                  "textAlign": "center",
+                },
+              ]
+            }
+          >
+            These are different runs
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      accessibilityLabel="Advanced merge rules, Plus. Per-metric sources and custom match windows."
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onBlur={[Function]}
+      onClick={[Function]}
+      onFocus={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "alignItems": "center",
+          "borderColor": "#3A3936",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "flexDirection": "row",
+          "gap": 10,
+          "padding": 14,
+        }
+      }
+      testID="advanced"
+    >
+      <ViewManagerAdapter_SymbolModule
+        accessible={false}
+        animated={false}
+        colors={[]}
+        importantForAccessibility="no-hide-descendants"
+        name="lock"
+        size={17}
+        style={
+          {
+            "height": 17,
+            "width": 17,
+          }
+        }
+        tint={4289111455}
+        tintColor="#A6A59F"
+        type="monochrome"
+      />
+      <View
+        style={
+          {
+            "flex": 1,
+          }
+        }
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 17,
+                "lineHeight": 22,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Advanced merge rules
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 13,
+                "lineHeight": 18,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Per-metric sources and custom match windows. Now: within 1 minute and ±2%.
+        </Text>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 13,
+              "lineHeight": 18,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            false,
+            {
+              "fontWeight": "600",
+            },
+          ]
+        }
+      >
+        Plus
+      </Text>
+    </View>
+  </View>
+</RCTScrollView>
+`;

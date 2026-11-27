@@ -22,7 +22,11 @@ sys.path.insert(0, str(ROOT))
 import math  # noqa: E402
 from datetime import datetime  # noqa: E402
 
-from garmin_mcp.domain import adjust, backtoback, paces, postrun, proposal  # noqa: E402
+from datetime import timezone  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
+
+from garmin_mcp.domain import adjust, backtoback, connections, dedupe, paces, postrun, proposal  # noqa: E402
+from garmin_mcp.domain.model import Activity  # noqa: E402
 from garmin_mcp.domain.load import band  # noqa: E402
 from garmin_mcp.domain.model import Session  # noqa: E402
 
@@ -177,11 +181,80 @@ def postrun_cases() -> dict:
     return {r.session_id: postrun.view(r) for r in (strides, intervals, club)}
 
 
+# The persona's sources this month (build prompt, section 16, and the Connections board):
+# Garmin live, COROS via Intervals.icu needing a reconnect, the phone's health store
+# reading only. Two runs arrived twice: Thu 26 from the phone, Sun 22 from COROS.
+LON = ZoneInfo("Europe/London")
+NOW = datetime(2026, 11, 27, 7, 30, tzinfo=LON)
+
+
+def _act(id_: str, provider: str, day: str, hhmm: str, km: float, minutes: float, tz=LON, shift_s: float = 0) -> Activity:
+    h, m = map(int, hhmm.split(":"))
+    start = datetime.fromisoformat(day).replace(hour=h, minute=m, tzinfo=tz) + timedelta(seconds=shift_s)
+    return Activity(id_, provider, start, km * 1000, minutes * 60)
+
+
+PERSONA_RUNS = [
+    _act("g-1104", "garmin", "2026-11-04", "06:40", 10.0, 52), _act("g-1108", "garmin", "2026-11-08", "08:00", 14.0, 77),
+    _act("g-1111", "garmin", "2026-11-11", "06:35", 9.0, 46), _act("g-1115", "garmin", "2026-11-15", "08:10", 15.0, 82),
+    _act("g-1117", "garmin", "2026-11-17", "06:45", 8.0, 42), _act("g-1118", "garmin", "2026-11-18", "06:30", 10.0, 49),
+    _act("g-1119", "garmin", "2026-11-19", "18:40", 8.0, 42), _act("g-1121", "garmin", "2026-11-21", "09:00", 6.0, 33),
+    _act("g-1122", "garmin", "2026-11-22", "08:15", 16.0, 88), _act("g-1124", "garmin", "2026-11-24", "07:10", 8.0, 42),
+    _act("g-1125", "garmin", "2026-11-25", "06:30", 11.2, 57), _act("g-1126", "garmin", "2026-11-26", "18:45", 9.2, 48),
+    # Also from the phone's health store: the run club 12 s later, 0.3% shorter; a walk that is only there.
+    _act("h-1126", "health", "2026-11-26", "18:45", 9.17, 48, shift_s=12), _act("h-1120", "health", "2026-11-20", "12:30", 3.1, 38),
+    # Also from COROS via Intervals.icu, recorded in UTC: Sunday's long run, 20 s earlier, 0.3% longer.
+    _act("i-1122", "intervals", "2026-11-22", "08:14", 16.05, 88, tz=timezone.utc, shift_s=40),
+]
+
+
+def _persona_connections(phone: str) -> list:
+    health_name = "Apple Watch" if phone == "ios" else "Pixel Watch"
+    return [
+        connections.Connection("garmin", "Garmin", "direct", "live", activities=True, sleep=True, hrv=True, send=True,
+                               device="Forerunner 965", last_sync=datetime(2026, 11, 27, 7, 2, tzinfo=LON)),
+        connections.Connection("intervals", "COROS", "intervals", "reconnect", activities=True,
+                               last_sync=datetime(2026, 11, 24, 21, 15, tzinfo=LON), reconnect_url="/app/connect/intervals"),
+        connections.Connection("health", health_name, "health", "live", activities=True, sleep=True,
+                               last_sync=datetime(2026, 11, 27, 6, 58, tzinfo=LON)),
+    ]
+
+
+def connections_cases() -> dict:
+    """The Connections screen for the persona, per phone: the app's development fixture, from the real engines."""
+    return {phone: connections.view(_persona_connections(phone), ["garmin", "health", "intervals"], PERSONA_RUNS, NOW,
+                                    coming=["Polar", "Suunto"]) for phone in ("ios", "android")}
+
+
+def dedupe_cases() -> list[dict]:
+    """The merge, for the app's twin: every source order, with and without a pair kept apart, across time zones."""
+    orders = [["garmin", "health", "intervals"], ["health", "garmin", "intervals"], ["intervals", "health", "garmin"],
+              ["garmin"], []]
+    extra = [  # edges: exactly 60 s apart and 2% shorter (merged); 61 s or 2.1% (not); same source twice (never)
+        _act("e-a", "garmin", "2026-11-12", "07:00", 10.0, 50), _act("e-b", "health", "2026-11-12", "07:01", 9.8, 50),
+        _act("e-c", "garmin", "2026-11-13", "07:00", 10.0, 50), _act("e-d", "health", "2026-11-13", "07:00", 10.0, 50, shift_s=61),
+        _act("e-e", "garmin", "2026-11-14", "07:00", 10.0, 50), _act("e-f", "intervals", "2026-11-14", "07:00", 9.79, 50),
+        _act("e-g", "garmin", "2026-11-16", "07:00", 5.0, 25), _act("e-h", "garmin", "2026-11-16", "07:00", 5.0, 25, shift_s=5),
+        # A DST-free UTC record of a London run an hour "later" on the clock: the same instant.
+        _act("e-i", "garmin", "2026-07-05", "08:00", 12.0, 60), _act("e-j", "intervals", "2026-07-05", "07:00", 12.0, 60, tz=timezone.utc),
+    ]
+    acts = PERSONA_RUNS + extra
+    out = []
+    for order in orders:
+        for apart in ([], [["g-1126", "h-1126"]]):
+            shown, records = dedupe.merge(acts, order, not_same=[frozenset(p) for p in apart])
+            out.append({"priority": order, "keptApart": apart,
+                        "shown": [a.id for a in shown], "merges": [[r.kept, r.hidden] for r in records]})
+    return {"activities": [connections.activity_json(a) for a in acts], "cases": out}
+
+
 FILES = {"paces.json": paces_cases, "backtoback.json": backtoback_cases, "proposals.json": proposal_cases,
-         "postrun.json": postrun_cases}
+         "postrun.json": postrun_cases, "connections.json": connections_cases, "dedupe.json": dedupe_cases}
 # The app's development build reads its own copy: Metro bundles only what's inside mobile/.
 COPIES = {"proposals.json": ROOT / "mobile" / "src" / "features" / "watch" / "proposals.fixture.json",
-          "postrun.json": ROOT / "mobile" / "src" / "features" / "run" / "runs.fixture.json"}
+          "postrun.json": ROOT / "mobile" / "src" / "features" / "run" / "runs.fixture.json",
+          "connections.json": ROOT / "mobile" / "src" / "features" / "connections" / "connections.fixture.json",
+          "dedupe.json": ROOT / "mobile" / "src" / "domain" / "dedupe.fixture.json"}
 
 
 def main(argv: list[str]) -> int:

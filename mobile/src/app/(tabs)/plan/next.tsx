@@ -6,7 +6,6 @@ import { Text } from '../../../ui/Text';
 // Where Plan's actions lead, until the milestones that build them. Nothing is
 // written to the watch from here.
 const COMING: Record<string, string> = {
-  trouble: 'Connection help, and what Daash can and can’t see, arrive with Connections in milestone 8.',
   plus: 'Plus arrives in milestone 10.',
 };
 

@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from garmin_mcp.domain import adjust, backtoback, config, dedupe, load, paces, postrun, predict, proposal, readiness, takeaways  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, config, connections, dedupe, load, paces, postrun, predict, proposal, readiness, takeaways  # noqa: E402
 from garmin_mcp.domain.model import Activity, Session, mmss  # noqa: E402
 
 failures: list[str] = []
@@ -445,6 +445,35 @@ def postrun_checks() -> None:
           and takeaways.elevation(4, 6) == "Flat. Under 15 m of climbing.")
 
 
+def connections_checks() -> None:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("domain_fixtures", ROOT / "scripts" / "domain_fixtures.py")
+    fx = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fx)
+    v = fx.connections_cases()["ios"]
+    words = {p["key"]: p["status"] for p in v["providers"]}
+    check("connections: each state in words",
+          words == {"garmin": "Connected to Garmin · Forerunner 965 · synced 07:02",
+                    "intervals": "Reconnect needed · last synced Tue", "health": "Reads only · synced 06:58"}, str(words))
+    check("connections: capability chips, each on or off",
+          [(c["label"], c["on"]) for c in v["providers"][1]["caps"]] == [("Activities", True), ("Sleep", False), ("Send workouts", False)])
+    check("connections: only a provider needing it has a reconnect link",
+          [p["reconnectUrl"] for p in v["providers"]] == [None, "/app/connect/intervals", None])
+    check("connections: two runs that came twice are merged, the higher source kept",
+          [(m["kept"], m["hidden"], m["title"]) for m in v["merges"]]
+          == [("g-1126", "h-1126", "Thu 26 · 9.2 km"), ("g-1122", "i-1122", "Sun 22 · 16.0 km")])
+    check("connections: a UTC copy of a London run is the same instant", v["merges"][1]["gapSeconds"] == 20)
+    again = connections.view(fx._persona_connections("ios"), ["garmin", "health", "intervals"], fx.PERSONA_RUNS, fx.NOW,
+                             kept_apart=[("g-1126", "h-1126")])
+    check("connections: \"These are different runs\" keeps a pair apart",
+          [m["id"] for m in again["merges"]] == ["g-1122|i-1122"] and again["keptApart"] == [["g-1126", "h-1126"]])
+    flipped = connections.view(fx._persona_connections("ios"), ["health", "garmin"], fx.PERSONA_RUNS, fx.NOW)
+    check("connections: the order decides which is kept; unlisted sources go last",
+          flipped["merges"][0]["kept"] == "h-1126" and flipped["priority"] == ["health", "garmin", "intervals"])
+    old = [a for a in fx.PERSONA_RUNS if a.start < fx.NOW - timedelta(days=30)]
+    check("connections: this month's runs only", all(a["start"] >= "2026-10-28" for a in v["activities"]) and not old)
+
+
 def config_checks() -> None:
     check("bad config JSON keeps the defaults", config.load_config("{not json") == config.DEFAULT)
     c = config.load_config(json.dumps({"merge": {"start_within_seconds": 90, "nope": 1}, "readiness": {"hrv_low_percentile": "x"}}))
@@ -456,7 +485,7 @@ def config_checks() -> None:
     check("the server's defaults match the app's flag defaults",
           (r.sleep_short_hours, r.load_ratio_low, r.load_ratio_high, r.hrv_low_percentile, m.start_within_seconds,
            m.distance_within_pct) == tuple(flags_defaults.values()))
-    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal, postrun)
+    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal, postrun, connections)
     params = [p for mod in modules for _, fn in inspect.getmembers(mod, inspect.isfunction)
               if fn.__module__ == mod.__name__ for p in inspect.signature(fn).parameters]
     source = " ".join(inspect.getsource(mod) for mod in modules)
@@ -475,6 +504,7 @@ def main() -> int:
     dedupe_checks()
     takeaway_checks()
     postrun_checks()
+    connections_checks()
     config_checks()
     print()
     if failures:

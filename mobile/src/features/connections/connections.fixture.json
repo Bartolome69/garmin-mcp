@@ -1,0 +1,441 @@
+{
+ "_generated": "scripts/domain_fixtures.py; do not edit",
+ "cases": {
+  "ios": {
+   "providers": [
+    {
+     "key": "garmin",
+     "name": "Garmin",
+     "route": "direct",
+     "state": "live",
+     "status": "Connected to Garmin \u00b7 Forerunner 965 \u00b7 synced 07:02",
+     "caps": [
+      {
+       "label": "Activities",
+       "on": true
+      },
+      {
+       "label": "Sleep and HRV",
+       "on": true
+      },
+      {
+       "label": "Send workouts",
+       "on": true
+      }
+     ],
+     "reads": "Activities, sleep, HRV",
+     "reconnectUrl": null
+    },
+    {
+     "key": "intervals",
+     "name": "COROS",
+     "route": "intervals",
+     "state": "reconnect",
+     "status": "Reconnect needed \u00b7 last synced Tue",
+     "caps": [
+      {
+       "label": "Activities",
+       "on": true
+      },
+      {
+       "label": "Sleep",
+       "on": false
+      },
+      {
+       "label": "Send workouts",
+       "on": false
+      }
+     ],
+     "reads": "Activities",
+     "reconnectUrl": "/app/connect/intervals"
+    },
+    {
+     "key": "health",
+     "name": "Apple Watch",
+     "route": "health",
+     "state": "live",
+     "status": "Reads only \u00b7 synced 06:58",
+     "caps": [
+      {
+       "label": "Activities",
+       "on": true
+      },
+      {
+       "label": "Sleep",
+       "on": true
+      },
+      {
+       "label": "Send workouts",
+       "on": false
+      }
+     ],
+     "reads": "Activities, sleep",
+     "reconnectUrl": null
+    }
+   ],
+   "priority": [
+    "garmin",
+    "health",
+    "intervals"
+   ],
+   "activities": [
+    {
+     "id": "g-1104",
+     "provider": "garmin",
+     "start": "2026-11-04T06:40:00+00:00",
+     "distanceM": 10000.0,
+     "durationS": 3120
+    },
+    {
+     "id": "g-1108",
+     "provider": "garmin",
+     "start": "2026-11-08T08:00:00+00:00",
+     "distanceM": 14000.0,
+     "durationS": 4620
+    },
+    {
+     "id": "g-1111",
+     "provider": "garmin",
+     "start": "2026-11-11T06:35:00+00:00",
+     "distanceM": 9000.0,
+     "durationS": 2760
+    },
+    {
+     "id": "g-1115",
+     "provider": "garmin",
+     "start": "2026-11-15T08:10:00+00:00",
+     "distanceM": 15000.0,
+     "durationS": 4920
+    },
+    {
+     "id": "g-1117",
+     "provider": "garmin",
+     "start": "2026-11-17T06:45:00+00:00",
+     "distanceM": 8000.0,
+     "durationS": 2520
+    },
+    {
+     "id": "g-1118",
+     "provider": "garmin",
+     "start": "2026-11-18T06:30:00+00:00",
+     "distanceM": 10000.0,
+     "durationS": 2940
+    },
+    {
+     "id": "g-1119",
+     "provider": "garmin",
+     "start": "2026-11-19T18:40:00+00:00",
+     "distanceM": 8000.0,
+     "durationS": 2520
+    },
+    {
+     "id": "h-1120",
+     "provider": "health",
+     "start": "2026-11-20T12:30:00+00:00",
+     "distanceM": 3100.0,
+     "durationS": 2280
+    },
+    {
+     "id": "g-1121",
+     "provider": "garmin",
+     "start": "2026-11-21T09:00:00+00:00",
+     "distanceM": 6000.0,
+     "durationS": 1980
+    },
+    {
+     "id": "i-1122",
+     "provider": "intervals",
+     "start": "2026-11-22T08:14:40+00:00",
+     "distanceM": 16050.0,
+     "durationS": 5280
+    },
+    {
+     "id": "g-1122",
+     "provider": "garmin",
+     "start": "2026-11-22T08:15:00+00:00",
+     "distanceM": 16000.0,
+     "durationS": 5280
+    },
+    {
+     "id": "g-1124",
+     "provider": "garmin",
+     "start": "2026-11-24T07:10:00+00:00",
+     "distanceM": 8000.0,
+     "durationS": 2520
+    },
+    {
+     "id": "g-1125",
+     "provider": "garmin",
+     "start": "2026-11-25T06:30:00+00:00",
+     "distanceM": 11200.0,
+     "durationS": 3420
+    },
+    {
+     "id": "g-1126",
+     "provider": "garmin",
+     "start": "2026-11-26T18:45:00+00:00",
+     "distanceM": 9200.0,
+     "durationS": 2880
+    },
+    {
+     "id": "h-1126",
+     "provider": "health",
+     "start": "2026-11-26T18:45:12+00:00",
+     "distanceM": 9170.0,
+     "durationS": 2880
+    }
+   ],
+   "keptApart": [],
+   "merges": [
+    {
+     "id": "g-1126|h-1126",
+     "kept": "g-1126",
+     "hidden": "h-1126",
+     "keptProvider": "garmin",
+     "hiddenProvider": "health",
+     "date": "2026-11-26",
+     "title": "Thu 26 \u00b7 9.2 km",
+     "gapSeconds": 12,
+     "distancePct": 0.3
+    },
+    {
+     "id": "g-1122|i-1122",
+     "kept": "g-1122",
+     "hidden": "i-1122",
+     "keptProvider": "garmin",
+     "hiddenProvider": "intervals",
+     "date": "2026-11-22",
+     "title": "Sun 22 \u00b7 16.0 km",
+     "gapSeconds": 20,
+     "distancePct": 0.3
+    }
+   ],
+   "coming": [
+    "Polar",
+    "Suunto"
+   ],
+   "match": {
+    "startWithinSeconds": 60,
+    "distanceWithinPct": 2.0
+   }
+  },
+  "android": {
+   "providers": [
+    {
+     "key": "garmin",
+     "name": "Garmin",
+     "route": "direct",
+     "state": "live",
+     "status": "Connected to Garmin \u00b7 Forerunner 965 \u00b7 synced 07:02",
+     "caps": [
+      {
+       "label": "Activities",
+       "on": true
+      },
+      {
+       "label": "Sleep and HRV",
+       "on": true
+      },
+      {
+       "label": "Send workouts",
+       "on": true
+      }
+     ],
+     "reads": "Activities, sleep, HRV",
+     "reconnectUrl": null
+    },
+    {
+     "key": "intervals",
+     "name": "COROS",
+     "route": "intervals",
+     "state": "reconnect",
+     "status": "Reconnect needed \u00b7 last synced Tue",
+     "caps": [
+      {
+       "label": "Activities",
+       "on": true
+      },
+      {
+       "label": "Sleep",
+       "on": false
+      },
+      {
+       "label": "Send workouts",
+       "on": false
+      }
+     ],
+     "reads": "Activities",
+     "reconnectUrl": "/app/connect/intervals"
+    },
+    {
+     "key": "health",
+     "name": "Pixel Watch",
+     "route": "health",
+     "state": "live",
+     "status": "Reads only \u00b7 synced 06:58",
+     "caps": [
+      {
+       "label": "Activities",
+       "on": true
+      },
+      {
+       "label": "Sleep",
+       "on": true
+      },
+      {
+       "label": "Send workouts",
+       "on": false
+      }
+     ],
+     "reads": "Activities, sleep",
+     "reconnectUrl": null
+    }
+   ],
+   "priority": [
+    "garmin",
+    "health",
+    "intervals"
+   ],
+   "activities": [
+    {
+     "id": "g-1104",
+     "provider": "garmin",
+     "start": "2026-11-04T06:40:00+00:00",
+     "distanceM": 10000.0,
+     "durationS": 3120
+    },
+    {
+     "id": "g-1108",
+     "provider": "garmin",
+     "start": "2026-11-08T08:00:00+00:00",
+     "distanceM": 14000.0,
+     "durationS": 4620
+    },
+    {
+     "id": "g-1111",
+     "provider": "garmin",
+     "start": "2026-11-11T06:35:00+00:00",
+     "distanceM": 9000.0,
+     "durationS": 2760
+    },
+    {
+     "id": "g-1115",
+     "provider": "garmin",
+     "start": "2026-11-15T08:10:00+00:00",
+     "distanceM": 15000.0,
+     "durationS": 4920
+    },
+    {
+     "id": "g-1117",
+     "provider": "garmin",
+     "start": "2026-11-17T06:45:00+00:00",
+     "distanceM": 8000.0,
+     "durationS": 2520
+    },
+    {
+     "id": "g-1118",
+     "provider": "garmin",
+     "start": "2026-11-18T06:30:00+00:00",
+     "distanceM": 10000.0,
+     "durationS": 2940
+    },
+    {
+     "id": "g-1119",
+     "provider": "garmin",
+     "start": "2026-11-19T18:40:00+00:00",
+     "distanceM": 8000.0,
+     "durationS": 2520
+    },
+    {
+     "id": "h-1120",
+     "provider": "health",
+     "start": "2026-11-20T12:30:00+00:00",
+     "distanceM": 3100.0,
+     "durationS": 2280
+    },
+    {
+     "id": "g-1121",
+     "provider": "garmin",
+     "start": "2026-11-21T09:00:00+00:00",
+     "distanceM": 6000.0,
+     "durationS": 1980
+    },
+    {
+     "id": "i-1122",
+     "provider": "intervals",
+     "start": "2026-11-22T08:14:40+00:00",
+     "distanceM": 16050.0,
+     "durationS": 5280
+    },
+    {
+     "id": "g-1122",
+     "provider": "garmin",
+     "start": "2026-11-22T08:15:00+00:00",
+     "distanceM": 16000.0,
+     "durationS": 5280
+    },
+    {
+     "id": "g-1124",
+     "provider": "garmin",
+     "start": "2026-11-24T07:10:00+00:00",
+     "distanceM": 8000.0,
+     "durationS": 2520
+    },
+    {
+     "id": "g-1125",
+     "provider": "garmin",
+     "start": "2026-11-25T06:30:00+00:00",
+     "distanceM": 11200.0,
+     "durationS": 3420
+    },
+    {
+     "id": "g-1126",
+     "provider": "garmin",
+     "start": "2026-11-26T18:45:00+00:00",
+     "distanceM": 9200.0,
+     "durationS": 2880
+    },
+    {
+     "id": "h-1126",
+     "provider": "health",
+     "start": "2026-11-26T18:45:12+00:00",
+     "distanceM": 9170.0,
+     "durationS": 2880
+    }
+   ],
+   "keptApart": [],
+   "merges": [
+    {
+     "id": "g-1126|h-1126",
+     "kept": "g-1126",
+     "hidden": "h-1126",
+     "keptProvider": "garmin",
+     "hiddenProvider": "health",
+     "date": "2026-11-26",
+     "title": "Thu 26 \u00b7 9.2 km",
+     "gapSeconds": 12,
+     "distancePct": 0.3
+    },
+    {
+     "id": "g-1122|i-1122",
+     "kept": "g-1122",
+     "hidden": "i-1122",
+     "keptProvider": "garmin",
+     "hiddenProvider": "intervals",
+     "date": "2026-11-22",
+     "title": "Sun 22 \u00b7 16.0 km",
+     "gapSeconds": 20,
+     "distancePct": 0.3
+    }
+   ],
+   "coming": [
+    "Polar",
+    "Suunto"
+   ],
+   "match": {
+    "startWithinSeconds": 60,
+    "distanceWithinPct": 2.0
+   }
+  }
+ }
+}
