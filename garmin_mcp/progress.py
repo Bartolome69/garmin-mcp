@@ -454,6 +454,9 @@ def match_v2(
     by_name = {p.name: p for p in sessions}
     acts = sorted((a for a in actual if a.day <= today), key=lambda a: (a.day, str(a.activity_id)))
     taken: dict[str, tuple[Actual, str]] = {}
+    # How many sessions each run was chosen from (Nov 27): two or more is a
+    # call the app made, which the plan view says.
+    chosen_from: dict[str, int] = {}
     held: set[str] = set()  # sessions an open question is about
     extra: list[tuple[Actual, str]] = []
 
@@ -463,8 +466,9 @@ def match_v2(
     def compatible(p: Planned, a: Actual) -> bool:
         return p.sport == a.sport
 
-    def take(p: Planned, a: Actual, reason: str) -> None:
+    def take(p: Planned, a: Actual, reason: str, among: int = 1) -> None:
         taken[p.name] = (a, reason)
+        chosen_from[p.name] = among
 
     def ask(a: Actual, options: list[Planned]) -> None:
         for p in options:
@@ -515,7 +519,7 @@ def match_v2(
             if completion_of(ratio_of(pick, a)) == "extra" and named is None:
                 extra.append((a, "too_short"))
                 continue
-            take(pick, a, "same_day")
+            take(pick, a, "same_day", 1 if named is not None else len(today_ones))
             continue
         if named is not None and not named.fixed_day:
             take(named, a, "missed_catchup" if named.day < a.day else "forward_pull")
@@ -543,7 +547,7 @@ def match_v2(
             if toss_up(ranked):
                 ask(a, [ranked[0][1], ranked[1][1]])
             else:
-                take(ranked[0][1], a, reason)
+                take(ranked[0][1], a, reason, len(found))
             break
         else:
             extra.append((a, "no_session"))
@@ -571,6 +575,7 @@ def match_v2(
                 "completion": completion,
                 "ratio": round(r, 2) if r is not None else None,
                 "moved_days": moved,
+                "candidates": chosen_from.get(p.name, 1),
             })
             result.decisions.append({"activity_id": a.activity_id, "schedule": p.name, "reason": reason,
                                      "completion": completion, "ratio": round(r, 2) if r is not None else None,

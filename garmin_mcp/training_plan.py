@@ -1545,6 +1545,7 @@ def _match_fields(hit: Mapping[str, Any] | None, schedule_id: str, fixed: set[st
             "reason": hit.get("reason"),
             "ratio": hit.get("ratio"),
             "moved_days": hit.get("moved_days") or None,
+            "candidates": hit.get("candidates") if (hit.get("candidates") or 1) > 1 else None,
             "planned_km": hit.get("planned_km"),
             "actual_km": hit.get("actual_km"),
             "activity_id": hit.get("activity_id"),
@@ -1552,6 +1553,11 @@ def _match_fields(hit: Mapping[str, Any] | None, schedule_id: str, fixed: set[st
     said = followups.get(schedule_id)
     if said:
         out["followup"] = said.get("choice") if isinstance(said, Mapping) else str(said)
+        if isinstance(said, Mapping) and said.get("onto"):
+            # Where the rest went, and how much (Nov 27): the receiving session says so too.
+            out["followup_onto"] = str(said["onto"])
+            if said.get("add_km"):
+                out["followup_km"] = said["add_km"]
     return out
 
 

@@ -9,6 +9,8 @@ club, done early, and left Thursday to do. It's a partial of Thursday now.
 
 from __future__ import annotations
 
+import json
+
 import asyncio
 import os
 import sys
@@ -145,7 +147,8 @@ check("started from Friday's workout on a day with its own session: asked, plan 
 from garmin_mcp import app  # noqa: E402
 
 view = app._question(q[0], THU)
-check("the card asks it in words", view["text"] == "Was this today's Easy 12 km or Friday's Tempo 9 km?", view["text"])
+check("the card asks it in words, days by name and date", view["text"] == "Was this Thu 26 Easy 12 km or Fri 27 Tempo 9 km?",
+      view["text"])
 
 print("\nthe person's choice comes first")
 result = plan(items, [run(1, THU, 7.8)], THU, metres=metres, matching_ctx={"choices": {"1": "102"}})
@@ -158,12 +161,17 @@ check("or as an extra run", row(result, 101)["status"] == "today"
 print("\nthe line on each match")
 result = plan(items, [run(1, THU, 7.8)], THU, metres=metres)
 view = app._match_view(row(result, 101), THU)
-check("Counted as today's Easy 12 km (7.8 of 12 km)", view.get("match_line") == "Counted as today's Easy 12 km (7.8 of 12 km)",
-      str(view.get("match_line")))
+# Nov 27: a same-day, same-type match says nothing more than its stats.
+check("same day, same type: no line, just 7.8 of 12 km and a neutral-or-amber tone",
+      view.get("match_line") is None and view.get("of_line") == "7.8 of 12 km" and view.get("out_tone") == "amber"
+      and view.get("match_aid"), str(view))
+view_next_day = app._match_view(row(result, 101), FRI)
+check("viewed the next morning it still says nothing about yesterday (the Thu 26 bug)",
+      view_next_day.get("match_line") is None, str(view_next_day.get("match_line")))
 result = plan(items4b, [run(5, THU, 9.0)], THU, metres={42: 9000})
 view = app._match_view(row(result, 402), THU)
-check("a moved one says where from", view.get("match_line") == "Counted as Fri's Easy 9 km, moved from Fri 27",
-      str(view.get("match_line")))
+check("a moved one says where from, and nothing else", view.get("match_line") == "Moved from Fri 27"
+      and view.get("line_reason") == "moved", str(view))
 
 print("\nundo puts the plan and the watch back")
 user_token = "tok-bart-0123456789"
@@ -241,6 +249,8 @@ got = [p for e, p in sent if e == "activity_matched"]
 check("activity_matched once, with reason, completion, ratio and moved days",
       len(got) == 1 and got[0]["reason"] == "same_day" and got[0]["completion"] == "partial"
       and got[0]["ratio"] == 0.65 and got[0]["moved_days"] == 0, str(got))
+check("line_shown says no line for a same-day partial nobody has decided about",
+      got and got[0].get("line_shown") == "none", str(got))
 
 print("\nafter a partial: the rest of it")
 week = [item(701, THU, "Easy 12 km", 71), item(702, SAT, "Easy 6 km", 72), item(703, SUN, "Long run 20 km", 73)]
@@ -250,7 +260,7 @@ check("offered onto Sunday's long run, a tenth of it at most (+2 km, not +4.2)",
       offer and offer["schedule_id"] == 703 and offer["add_km"] == 2.0, str(offer))
 view = app._match_view(row(result, 701), THU)
 check("in words", view["followup"]["text"] == "You did 7.8 of 12 km."
-      and view["followup"]["add"] == "Add 2 km to Sunday's long run 20 km", str(view.get("followup")))
+      and view["followup"]["add"] == "Add 2 km to Sun 29 long run 20 km", str(view.get("followup")))
 week_hard = [item(711, THU, "Easy 12 km", 81), item(712, SAT, "Tempo 8 km", 82), item(713, SUN, "Easy 10 km", 83)]
 result = plan(week_hard, [run(9, THU, 7.8)], THU, metres={81: 12000, 82: 8000, 83: 10000},
               efforts={82: "threshold"})
@@ -305,7 +315,7 @@ def post(handler, path, body):
 
 sent.clear()
 code, body = post(app.api_match, "match", {"action": "session", "activity_id": "1", "schedule_id": "102"})
-check("Count as another session: Friday's run club", code == 200 and body["message"] == "Counted as Fri's 9 km run club."
+check("Count as another session: Friday's run club", code == 200 and body["message"] == "Counted as Fri 27 9 km run club."
       and matching.context(user_token)["choices"] == {"1": "102"}, f"{code} {body}")
 check("match_corrected says from what to what", ("match_corrected", {"account": "b***@example.com",
       "from_reason": "same_day", "action": "other_session"}) in sent, str(sent))
@@ -319,6 +329,118 @@ check("bad input is refused", post(app.api_match, "match", {"action": "delete", 
 official.current = lambda: "tok-other-0123456789"
 check("and nobody without the flag can reach it", post(app.api_match, "match",
                                                          {"action": "undo", "activity_id": "1"})[0] == 404)
+
+print("\nNov 27: the line only when it adds something")
+from garmin_mcp import matching as _m  # noqa: E402
+
+
+def week_of(result, today):
+    weeks = {w["starts"]: w for w in result.get("weeks") or [] if w.get("starts")}
+    return app._week_view(result, weeks, None, MON, today)
+
+
+def card(view, sid):
+    return next((r for d in view["days"] for r in d["sessions"] if str(r.get("schedule_id")) == str(sid)), None)
+
+
+def day_of_card(view, sid):
+    return next((d["date"] for d in view["days"] for r in d["sessions"] if str(r.get("schedule_id")) == str(sid)), None)
+
+
+two = [item(901, THU, "Easy 12 km", 91), item(902, THU, "Easy 5 km", 92)]
+res = plan(two, [run(21, THU, 11.8)], THU, metres={91: 12000, 92: 5000})
+v = app._match_view(row(res, 901), THU)
+check("chosen between two sessions that day: says so", v.get("match_line") == "Best fit of 2 sessions"
+      and v.get("line_reason") == "ambiguous", str(v))
+
+res = plan(items, [run(1, THU, 7.8)], THU, metres=metres, matching_ctx={"choices": {"1": "102"}})
+v = app._match_view(row(res, 102), FRI)
+check("re-matched by hand to Friday's run club: the decision, not the match",
+      v.get("match_line") == "Moved from Fri 27 · your call" and v.get("line_reason") == "user_decision", str(v))
+w = week_of(res, FRI)
+check("and it sits on Thursday, the day it was run", day_of_card(w, 102) == THU.isoformat(), str(day_of_card(w, 102)))
+
+res = plan(items4b, [run(5, THU, 9.0)], THU, metres={42: 9000})
+w = week_of(res, FRI)
+check("a session done a day early shows on the day it was run, saying where from",
+      day_of_card(w, 402) == THU.isoformat() and card(w, 402).get("match_line") == "Moved from Fri 27",
+      str((day_of_card(w, 402), card(w, 402))))
+
+for choice, line in (("leave", "Rest left as is"), ("skip", "Rest skipped")):
+    res = plan(week, [run(8, THU, 7.8)], THU, metres={71: 12000, 72: 6000, 73: 20000},
+               matching_ctx={"choices": {}, "followups": {"701": {"choice": choice}}})
+    v = app._match_view(row(res, 701), THU)
+    check(f"after a partial, {choice}: {line}", v.get("match_line") == line and v.get("line_reason") == "user_decision"
+          and v.get("decided") == choice and not v.get("followup"), str(v))
+res = plan(week, [run(8, THU, 7.8)], THU, metres={71: 12000, 72: 6000, 73: 20000},
+           matching_ctx={"choices": {}, "followups": {"701": {"choice": "add", "onto": "703", "add_km": 2.0}}})
+w = week_of(res, FRI)
+check("+2 km added to Sun 29 long run", card(w, 701).get("match_line") == "+2 km added to Sun 29 long run",
+      str(card(w, 701)))
+check("and Sunday's run says where it came from: +2 km from Thu", card(w, 703).get("from_note") == "+2 km from Thu",
+      str(card(w, 703)))
+
+res = plan(items, [run(1, THU, 7.8)], THU, metres=metres)
+w = week_of(res, FRI)
+check("the Thu 26 card the next morning: no 'yesterday's', no line, 7.8 of 12 km",
+      card(w, 101).get("match_line") is None and card(w, 101).get("of_line") == "7.8 of 12 km"
+      and "yesterday" not in json.dumps(w), str(card(w, 101)))
+
+for km, tone in ((12, None), (13.7, "neutral"), (13.9, "amber"), (10.3, "neutral"), (10.1, "amber"), (7.8, "amber")):
+    res = plan(items, [run(1, THU, km)], THU, metres=metres)
+    got_tone = app._match_view(row(res, 101), THU).get("out_tone")
+    want = "neutral" if tone is None else tone
+    check(f"{km} km of 12: {want}", got_tone == want, str(got_tone))
+
+extra_auto = app._extra_row({"date": THU.isoformat(), "name": "Shakeout", "actual_km": 3.0, "activity_id": 31,
+                             "matched": "no_session"}, THU)
+extra_user = app._extra_row({"date": THU.isoformat(), "name": "Shakeout", "actual_km": 3.0, "activity_id": 31,
+                             "matched": "user_extra"}, THU)
+check("an extra run the app made extra says so", extra_auto.get("match_line") == "No session fit, counted as extra"
+      and extra_auto.get("line_reason") == "extra", str(extra_auto))
+check("one the person marked extra says it was their call", extra_user.get("line_reason") == "user_decision"
+      and "your call" in extra_user.get("match_line", ""), str(extra_user))
+
+sent.clear()
+state = matching.load(user_token)
+state["logged"] = []
+matching.save(user_token, state)
+ctx = {**matching.context(user_token), "followups": {"101": {"choice": "leave"}}}
+res = plan(items, [run(1, THU, 7.8)], THU, metres=metres, matching_ctx=ctx)
+matching.record(ctx, res)
+got = [p for e, p in sent if e == "activity_matched"]
+check("activity_matched carries line_shown: user_decision once they've decided", got
+      and got[-1].get("line_shown") == "user_decision", str(got))
+
+print("\nChange reopens a decision")
+state = matching.load(user_token)
+state["followups"] = {"101": {"choice": "skip"}}
+matching.save(user_token, state)
+official.current = lambda: user_token
+sent.clear()
+code, body = post(app.api_partial, "partial", {"choice": "reopen", "schedule_id": "101"})
+check("reopen forgets the decision and says so", code == 200 and "101" not in matching.load(user_token)["followups"]
+      and any(e == "partial_followup_reopened" and p.get("was") == "skip" for e, p in sent), f"{code} {body}")
+code, body = post(app.api_partial, "partial", {"choice": "reopen", "schedule_id": "101"})
+check("reopening twice is a clear no, not a crash", code == 404, f"{code} {body}")
+undone = []
+
+
+async def fake_undo(steps):
+    undone.append(steps)
+    return 1
+
+
+real_undo = app.run_undo
+app.run_undo = fake_undo
+state = matching.load(user_token)
+state["followups"] = {"101": {"choice": "add", "onto": "103", "add_km": 2.0,
+                              "undo": [{"remove": 555, "put": {"workout_id": 73, "date": SUN.isoformat()}}]}}
+matching.save(user_token, state)
+code, body = post(app.api_partial, "partial", {"choice": "reopen", "schedule_id": "101"})
+app.run_undo = real_undo
+check("reopening an add takes the added km back off first", code == 200 and undone and undone[0][0]["remove"] == 555
+      and body.get("watch_said"), f"{code} {body} {undone}")
 
 print()
 if failures:
