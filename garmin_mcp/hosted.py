@@ -1512,7 +1512,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             telemetry.count("tool_errors")
         if seconds is not None:
             telemetry.observe("tool_ms", seconds * 1000)
-            _LATENCY.note(seconds * 1000)
+            _LATENCY.note(seconds * 1000, who=person)
         analytics.capture("tool_called", person, drop_empty({
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
             "card_refresh": auto or None,
@@ -6196,9 +6196,11 @@ def vitals_once(now: float | None = None, figures: Mapping[str, Any] | None = No
             support_mail.send_alert(
                 f"Daash is slow: p95 {p95_ms / 1000:.0f} s over the last hour ({when})",
                 f"In the hour to {when} (UK time) the slowest 5% of {calls} tool calls took over "
-                f"{p95_ms / 1000:.1f} s (the line is {memwatch.LATENCY_P95_MS / 1000:.0f} s). Usually Garmin being "
-                "slow, or one person's chat making a long run of calls. The System Health dashboard has the "
-                "hour by hour; this repeats every 2 hours while it stays slow.\n")
+                f"{p95_ms / 1000:.1f} s (the line is {memwatch.LATENCY_P95_MS / 1000:.0f} s), and "
+                f"{_LATENCY.slow_people} people had a call that slow; the busiest one made "
+                f"{_LATENCY.busiest_share:.0%} of the calls. Several people slow at once usually means Garmin "
+                "is slow. The System Health dashboard has the hour by hour; this repeats every 2 hours while it "
+                "stays slow. One person's long run of calls alone doesn't send this.\n")
     if _WATCH.should_restart(rss) and not _GUARD_TRIPPED.is_set():
         memory_guard_restart(figures)
     beat: dict[str, Any] = {}
