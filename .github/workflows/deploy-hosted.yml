@@ -117,6 +117,7 @@ jobs:
           python tests/pwa_test.py
           python tests/tools_v2_test.py
           python tests/providers_test.py
+          python tests/provider_connect_test.py
           python tests/chat_pilot_test.py
 
       # Garmin's official API: the sign-in, what Garmin pushes, and workouts

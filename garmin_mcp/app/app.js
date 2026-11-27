@@ -2368,6 +2368,39 @@ function deleteSheet() {
   });
 }
 
+// A provider besides Garmin (Intervals.icu first), behind its flag: its state, what it's
+// for, and Connect / Reconnect / Disconnect. Disconnect takes two taps: it deletes the
+// stored sign-in and anything Daash kept from that provider. Connect stays off until
+// the provider's adapter is in (the server says so in can_connect).
+async function providerSheet(name) {
+  let c;
+  try { c = ((await api("providers")).providers || []).find((p) => p.name === name); }
+  catch (e) { return toast(e.message); }
+  if (!c) return toast("That connection isn't available.");
+  const live = c.state === "live";
+  sheet(`<div class="stack-tight"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">${esc(c.label)}</span>
+      <span class="meta">${esc(c.via)} · ${esc(c.words)}</span></div>
+    <span class="meta" style="line-height:1.5">${esc(c.explainer)}</span>
+    ${c.error ? `<span class="meta" style="line-height:1.5;color:var(--red-text)">${esc(c.error)}</span>` : ""}
+    ${!live && !c.can_connect ? `<span class="meta" style="line-height:1.5">Connecting ${esc(c.label)} isn't ready yet.</span>` : ""}
+    <div class="pills"><button class="pill" data-close>Close</button>
+      ${live ? `<button class="pill red" id="provider-off">Disconnect</button>`
+        : `<button class="pill light" id="provider-on" ${c.can_connect ? "" : "disabled"}>${c.state === "reconnect" ? "Reconnect" : "Connect"}</button>`}</div>`,
+  (holder, close) => {
+    const off = $("provider-off");
+    if (!off) return;
+    let asked = false;
+    off.onclick = async () => {
+      if (!asked) { asked = true; off.textContent = "Disconnect and delete"; return; }
+      off.disabled = true;
+      try {
+        const r = await api(`providers/${encodeURIComponent(name)}/disconnect`, { method: "POST", body: "{}" });
+        close(); toast(r.message); cache.drop((k) => k === "you"); showYou();
+      } catch (e) { close(); toast(e.message); }
+    };
+  });
+}
+
 // Sign out asks first (Nov 13): one tap on a row was enough to land on the sign-in screen.
 function signOutSheet() {
   sheet(`<div class="stack-tight"><span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Sign out of the Daash app?</span>
@@ -2411,6 +2444,7 @@ async function showYou() {
           if (b.dataset.you === "headsup") return headsUpSheet(d);
           if (b.dataset.you.startsWith("kind-")) return switchKind(b.dataset.you.slice(5)).then(() => { cache.drop((k) => k === "you"); showYou(); });
           if (b.dataset.you === "theme") return themeSheet();
+          if (b.dataset.you.startsWith("provider-")) return providerSheet(b.dataset.you.slice("provider-".length));
           return b.dataset.you === "times" ? timesSheet(d) : b.dataset.you === "delete" ? deleteSheet() : signOutSheet();
         };
     });

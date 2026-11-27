@@ -93,6 +93,14 @@ through `normalise()` builds byte-identical Garmin JSON.
    send `provider_connected` / `provider_disconnected` / `provider_error`.
 5. Writes follow confirm-before-write, as Garmin's do.
 
+## Connecting other providers (`catalog.py`, `provider_routes.py`)
+
+A provider's card, flag and sign-in routes are listed in `catalog.py`, apart from
+its adapter. The app's Connections group, `GET /app/api/providers` and
+connect / disconnect work from that listing; an adapter registers a `Connector`
+(verify, revoke) to make Connect live. Duplicate runs across providers are hidden
+by `merge.py` (Garmin first). Intervals.icu's status: `intervals.md`.
+
 ## Analytics
 
 `tool_called` carries `provider` (today always `garmin`).
