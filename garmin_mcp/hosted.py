@@ -2507,8 +2507,11 @@ def plan_change_message(plan: dict[str, Any] | None, activity_id: Any, today: da
     match = row.get("match") or {}
     if row.get("completion") == "partial" and match.get("planned_km"):
         line = f"{km:g} of {match['planned_km']:g} km. Open Daash to leave it or add the rest to a later run."
-    elif row.get("done_on") and row["done_on"] < row["date"]:
+    elif row.get("done_on") and row["done_on"] < row["date"] and row.get("off_watch"):
         line = f"Done early, so it's off your watch for {d.strftime('%A')}."
+    elif row.get("done_on") and row["done_on"] < row["date"]:
+        # Nov 27: only match-v2-watch takes it off the watch; for everyone else it's still there.
+        line = f"Done early. It's still on your watch for {d.strftime('%A')}: skip it or run it as an extra."
     elif row.get("done_on") and row["done_on"] > row["date"]:
         line = f"Planned for {d.strftime('%A')}, done after."
     else:
