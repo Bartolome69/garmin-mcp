@@ -104,3 +104,36 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
 - `backtoback.py` follows the prompt (a long run is hard only over 25 km);
   the PWA's existing `plan_checks.py` treats every long run as hard. Left as
   is until the screens decide which the plan views use.
+
+## Milestone 3 (Today), 27 Nov
+
+- **Fixtures until the server exists.** Today reads `GET /app/api/v1/today`,
+  which isn't built yet, and there's no sign-in until M9. Development builds
+  (and the layout check's web build, `EXPO_PUBLIC_DAASH_FIXTURE=1`) fall back
+  to the persona in `features/today/fixture.ts`; a store build shows the error
+  state with Try again. The server endpoint is a separate backend PR.
+- **Offline first.** Every screen-shaped response is cached in SQLite (`kv`)
+  and shown at once on launch, then refreshed. A failed refresh keeps the
+  cached data. Past 30 minutes the header says "Updated 2h ago" (iOS) or shows
+  a stale chip in the app bar (Android).
+- **Conflict, prompt wins: "On your watch" is text2, not success.** The Pass 3
+  board draws it green; the prompt says the watch line is quiet unless it
+  needs action (amber when changed, brand text when failed).
+- **Conflict, prompt wins: no explanation line with Coach off.** The 200% (XL)
+  board shows a one-line explanation under the readiness signals even with
+  Coach off. The prompt says that with `coach_enabled` off nothing reads like
+  a Coach, so Coach off shows the signals and their notes only. With Coach on,
+  the line is the Coach's, clamped to 2 lines at 200%, with "Ask why".
+- **Brand fill.** "Make it easier" (or whatever the recommended action is) is
+  the screen's one brand fill. It loses the fill whenever Today isn't focused,
+  so the readiness and options sheets sit over a screen with none.
+- **"Next" is a placeholder.** Choosing "Make it easier", "Swap a day" or
+  "Rest and recover" opens `/today/next`, which says the step arrives with the
+  diff and confirm sheet (M5) or the plan (M4). Nothing is written yet.
+- **Above the fold, checked on a web build.** No simulators here, so
+  `mobile/scripts/layout-check.js` measures a `react-native-web` export at
+  390×844: the session card ends 428 pt and This week 599 pt below the top of
+  the header, against 702 pt of room above the iPhone tab bar and home
+  indicator. On web the native tabs render as a top bar over the title; on
+  iOS and Android they're the system bar at the bottom. The check runs locally
+  (it needs Chromium), not in CI.

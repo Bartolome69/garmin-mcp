@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { openDb } from '../db/expo';
+import { DbContext } from '../db/DbContext';
 import { kv } from '../db/kv';
 import type { Db } from '../db/types';
 import { FlagsProvider, type FlagsFetcher, type FlagsStore } from '../flags/FlagsProvider';
@@ -49,11 +50,13 @@ export default function RootLayout() {
   if (!ready) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider initial={appearance} onChange={(a) => { if (db) kv(db).set(APPEARANCE_KEY, a); }}>
-        <FlagsProvider store={flagsStore} fetcher={devFetcher}>
-          <Root />
-        </FlagsProvider>
-      </ThemeProvider>
+      <DbContext.Provider value={db}>
+        <ThemeProvider initial={appearance} onChange={(a) => { if (db) kv(db).set(APPEARANCE_KEY, a); }}>
+          <FlagsProvider store={flagsStore} fetcher={devFetcher}>
+            <Root />
+          </FlagsProvider>
+        </ThemeProvider>
+      </DbContext.Provider>
     </GestureHandlerRootView>
   );
 }

@@ -2,7 +2,7 @@
 // UITabBarController on iOS (only the selected tab bright, with its filled
 // symbol), a Material 3 navigation bar on Android. With coach_enabled off the
 // Coach tab is hidden, which also makes it unreachable, and the bar reflows to 4.
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/native-tabs';
 
 import { tabsFor, type TabName } from '../../flags/flags';
 import { useFlags } from '../../flags/FlagsProvider';

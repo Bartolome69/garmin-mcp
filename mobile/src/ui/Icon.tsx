@@ -28,6 +28,7 @@ export const ICONS = {
   race: { ios: 'flag', android: 'flag' },
   edit: { ios: 'pencil', android: 'edit' },
   close: { ios: 'xmark', android: 'close' },
+  check: { ios: 'checkmark', android: 'check' },
 } as const satisfies Record<string, { ios: SFSymbol; iosSelected?: SFSymbol; android: AndroidSymbol }>;
 
 export type IconName = keyof typeof ICONS;
