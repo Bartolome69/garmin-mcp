@@ -14,18 +14,35 @@ async function accessToken(): Promise<string | null> {
   try { return await SecureStore.getItemAsync(ACCESS_KEY); } catch { return null; }
 }
 
+/** The server didn't answer in time (the request was abandoned). */
+export class TimedOut extends Error {
+  constructor() { super('Timed out'); }
+}
+
 export async function getJson<T>(path: string, init?: { timeoutMs?: number }): Promise<T> {
+  return request<T>(path, { timeoutMs: init?.timeoutMs });
+}
+
+export async function postJson<T>(path: string, body: unknown, init?: { timeoutMs?: number }): Promise<T> {
+  return request<T>(path, { method: 'POST', body, timeoutMs: init?.timeoutMs });
+}
+
+async function request<T>(path: string, { method = 'GET', body, timeoutMs = 15000 }: { method?: string; body?: unknown; timeoutMs?: number }): Promise<T> {
   const token = await accessToken();
   if (!token) throw new NotSignedIn();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), init?.timeoutMs ?? 15000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${token}`, 'X-Daash-Layout': 'native' }, signal: controller.signal });
-    const body = await res.json().catch(() => ({}));
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'X-Daash-Layout': 'native', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    }).catch((err) => { throw controller.signal.aborted ? new TimedOut() : err; });
+    const answer = await res.json().catch(() => ({}));
     if (res.status === 401) throw new NotSignedIn();
-    if (!res.ok || body.error) throw new Error(body.error ?? 'Daash didn’t answer. Try again in a moment.');
-    return body as T;
+    if (!res.ok || answer.error) throw new Error(answer.error ?? 'Daash didn’t answer. Try again in a moment.');
+    return answer as T;
   } finally {
     clearTimeout(timer);
   }

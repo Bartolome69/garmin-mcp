@@ -7,6 +7,9 @@ import { renderRouter, screen } from 'expo-router/testing-library';
 import { Platform, StyleSheet } from 'react-native';
 import type { ReactNode } from 'react';
 
+import { memoryStore } from './features/watch/store';
+import { FakeGarmin } from './features/watch/transport';
+import { WatchProvider } from './features/watch/WatchProvider';
 import { DEFAULT_FLAGS } from './flags/flags';
 import { FlagsProvider } from './flags/FlagsProvider';
 import { ThemeProvider, type Appearance } from './theme/ThemeProvider';
@@ -23,7 +26,9 @@ import YouIndex from './app/(tabs)/you/index';
 function routes(appearance: Appearance, coach: boolean) {
   const Wrap = ({ children }: { children: ReactNode }) => (
     <ThemeProvider initial={appearance}>
-      <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach }}>{children}</FlagsProvider>
+      <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach }}>
+        <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false}>{children}</WatchProvider>
+      </FlagsProvider>
     </ThemeProvider>
   );
   return {

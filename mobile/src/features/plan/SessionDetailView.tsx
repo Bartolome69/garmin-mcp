@@ -2,8 +2,8 @@
 // scrolling. One line per step, repeats grouped in a "10 ×" block, the target pace
 // range per km (or heart rate / power), "Based on your 10K of 43:30 (12 Oct)" with
 // Easier / Harder (the shared pace engine, 2% a step, the server's twin), the watch
-// status row, and Move / Swap / Skip. Changing targets or the day reaches the watch
-// only through the confirm sheet (milestone 5).
+// status row with every send state (watch/WatchCard.tsx), and Move / Swap / Skip.
+// Changing targets or the day reaches the watch only through the confirm sheet.
 import { ScrollView, View } from 'react-native';
 
 import { mmss } from '../../domain/format';
@@ -14,8 +14,8 @@ import { Card } from '../../ui/Card';
 import { StructureBar } from '../../ui/session/StructureBar';
 import { TypeChip } from '../../ui/session/TypeChip';
 import { TYPE_TOKEN } from '../../ui/session/types';
-import { WatchStatus } from '../../ui/session/WatchStatus';
 import { Text } from '../../ui/Text';
+import { WatchCard } from '../watch/WatchCard';
 import type { Basis, PlanSession, StepRow, Target } from './model';
 
 /** The words for a target, re-stepped Easier (−) or Harder (+) when it's a pace from the basis race. */
@@ -59,20 +59,31 @@ function Step({ row, session, basis, step, first }: { row: StepRow; session: Pla
   );
 }
 
-export function SessionDetailView({ session, basis, coach, step, onStep, actions }: {
+export type SessionActions = {
+  send: () => void; resend: () => void; remove: () => void; trouble: () => void;
+  move: () => void; swap: () => void; skip: () => void;
+};
+
+export function SessionDetailView({ session, basis, coach, step, onStep, device = null, error = null, retrying = false, brand = true, actions }: {
   session: PlanSession;
   basis: Basis | null;
   coach: boolean;
   step: number;
   onStep: (step: number) => void;
-  actions: { send: () => void; move: () => void; swap: () => void; skip: () => void };
+  /** The watch by name, when Garmin says which: "Forerunner 965". */
+  device?: string | null;
+  /** The last send's failure in words, from the watch queue. */
+  error?: string | null;
+  retrying?: boolean;
+  /** false while a sheet is open over the screen. */
+  brand?: boolean;
+  actions: SessionActions;
 }) {
   const { colors } = useTheme();
   const d = session.detail;
   const unit = d?.steps.some((s) => (s.kind === 'repeat' ? s.steps : [s]).some((r) => r.target.kind === 'pace')) ? '/km' : '';
   const adjusted = stepLabel(step);
   const watch = session.watch;
-  const onWatch = watch?.state === 'on_watch' || watch?.state === 'changed_pending_sync';
   return (
     <ScrollView testID="session" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -118,13 +129,8 @@ export function SessionDetailView({ session, basis, coach, step, onStep, actions
         </View>
       ) : null}
       {watch ? (
-        <Card style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-          <View style={{ flexShrink: 1, gap: 2 }}>
-            <WatchStatus state={watch.state} at={watch.at} />
-            {adjusted && onWatch ? <Text variant="footnote" tone="muted">The watch has the old targets until you send.</Text> : null}
-          </View>
-          {!onWatch || adjusted ? <Button label={adjusted && onWatch ? 'Send changes' : 'Send to watch'} kind="emphasis" small onPress={actions.send} /> : null}
-        </Card>
+        <WatchCard watch={watch} device={device} error={error} retrying={retrying} adjusted={!!adjusted} brand={brand}
+          onSend={actions.send} onResend={actions.resend} onRemove={actions.remove} onTrouble={actions.trouble} />
       ) : null}
       {!session.done && session.type !== 'rest' ? (
         <View style={{ flexDirection: 'row', gap: 8 }}>

@@ -19,9 +19,12 @@ from .config import DEFAULT, DomainConfig
 from .model import Session, monday, week_of
 
 REASONS = ("unwell", "niggle", "travelling", "race_moved", "busy")
+# Today's other options and the Trends warning: the same shape of answer, one day or one week.
+OPTIONS = ("easier", "rest", "swap", "trim")
 REASON_WORDS = {
     "unwell": "Not feeling 100%", "niggle": "Niggle or injury", "travelling": "Travelling",
     "race_moved": "Race moved", "busy": "Busy week",
+    "easier": "Make it easier", "rest": "Rest and recover", "swap": "Swap a day", "trim": "Trim the week",
 }
 MEDICAL = "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."
 HARD_TO_EASY_TITLE = "Easy run"
@@ -55,11 +58,22 @@ def _round_km(km: float) -> float:
     return max(0.0, round(km * 2) / 2)
 
 
+def _easy_title(km: float | None, minutes: float | None) -> str:
+    return f"Easy {km:g} km" if km else f"Easy {minutes:g} min" if minutes else HARD_TO_EASY_TITLE
+
+
+def _scaled_title(title: str, old_km: float | None, new_km: float | None) -> str:
+    """"Long 18 km easy" scaled to 9 km reads "Long 9 km easy"; a title without the distance stays."""
+    if old_km and new_km is not None and f"{old_km:g} km" in title:
+        return title.replace(f"{old_km:g} km", f"{new_km:g} km", 1)
+    return title
+
+
 def _easy_from(s: Session, cfg: DomainConfig) -> Session:
     share = cfg.adjust.easy_from_hard_share
-    return s.with_(type="easy", title=HARD_TO_EASY_TITLE, load=None,
-                   distance_km=_round_km((s.distance_km or 0) * share) or None,
-                   minutes=round((s.minutes or 0) * share) or None)
+    km = _round_km((s.distance_km or 0) * share) or None
+    minutes = round((s.minutes or 0) * share) or None
+    return s.with_(type="easy", title=_easy_title(km, minutes), load=None, distance_km=km, minutes=minutes)
 
 
 def _cap_volume(week: list[Session], limit_km: float, keep: set[str] = frozenset()) -> list[Session]:
@@ -73,7 +87,7 @@ def _cap_volume(week: list[Session], limit_km: float, keep: set[str] = frozenset
         return week
     share = max(0.0, (limit_km - fixed) / flexible)
     return [s if s.id in keep or not s.distance_km else
-            s.with_(distance_km=_round_km(s.distance_km * share),
+            s.with_(distance_km=_round_km(s.distance_km * share), title=_scaled_title(s.title, s.distance_km, _round_km(s.distance_km * share)),
                     minutes=round(s.minutes * share) if s.minutes else None, load=None)
             for s in week]
 
@@ -88,20 +102,22 @@ def _fix_back_to_back(sessions: list[Session], cfg: DomainConfig) -> list[Sessio
     return sessions
 
 
-def _rule_unwell(plan, since, cfg, days, volume, long_share=None):
+def _rule_unwell(plan, since, cfg, days, volume, long_share=None, start=None):
     end = since + timedelta(days=days)
     out = []
     for s in plan:
         if since <= s.date < end and backtoback.is_hard(s, cfg) and s.type != "race":
             s = _easy_from(s, cfg)
         elif long_share and since <= s.date < end and s.type == "long":
-            s = s.with_(distance_km=_round_km((s.distance_km or 0) * long_share),
+            km = _round_km((s.distance_km or 0) * long_share)
+            s = s.with_(distance_km=km, title=_scaled_title(s.title, s.distance_km, km),
                         minutes=round((s.minutes or 0) * long_share) or None, load=None)
         out.append(s)
-    start = monday(since)
-    week = week_of(out, start)
-    limit = _km(week_of(plan, start)) * volume
-    capped = {s.id: s for s in _cap_volume(week, limit, keep={s.id for s in week if s.date < since})}
+    frozen = start or since
+    first = monday(since)
+    week = week_of(out, first)
+    limit = _km(week_of(plan, first)) * volume
+    capped = {s.id: s for s in _cap_volume(week, limit, keep={s.id for s in week if s.date < frozen})}
     return [capped.get(s.id, s) for s in out]
 
 
@@ -111,9 +127,10 @@ def _rule_travelling(plan, since, cfg):
             if since <= s.date < end and s.type == "intervals" else s for s in plan]
 
 
-def _rule_busy(plan, since, cfg):
+def _rule_busy(plan, since, cfg, start=None):
+    frozen = start or since
     start = monday(since)
-    week = [s for s in week_of(plan, start) if s.date >= since]
+    week = [s for s in week_of(plan, start) if s.date >= frozen]
     quality = sorted([s for s in week if s.type in ("tempo", "intervals")],
                      key=lambda s: -(s.minutes or (s.distance_km or 0) * cfg.load.est_min_per_km))
     keep = {s.id for s in week if s.type in ("long", "race")} | ({quality[0].id} if quality else set())
@@ -126,7 +143,7 @@ def _rule_busy(plan, since, cfg):
         out.append(s)
     full = week_of(out, start)
     limit = _km(week_of(plan, start)) * cfg.adjust.busy_volume
-    capped = {s.id: s for s in _cap_volume(full, limit, keep=keep | {s.id for s in full if s.date < since})}
+    capped = {s.id: s for s in _cap_volume(full, limit, keep=keep | {s.id for s in full if s.date < frozen})}
     return [capped.get(s.id, s) for s in out]
 
 
@@ -163,30 +180,104 @@ RULES = {
 
 
 def adjust(plan: list[Session], reason: str, since: date, *, new_race: date | None = None,
-           cfg: DomainConfig = DEFAULT) -> Adjustment:
-    """The day-by-day changes for one reason, from `since` on. Past days never change."""
+           today: date | None = None, cfg: DomainConfig = DEFAULT) -> Adjustment:
+    """The day-by-day changes for one reason, from `since` on.
+
+    `since` is when it started, which can be days ago: a rule's window ("no hard
+    sessions for 3 days") counts from then. Days before `today` never change:
+    they're done.
+    """
     if reason not in REASONS:
         raise ValueError(f"unknown reason {reason!r}")
     a = cfg.adjust
+    start = max(since, today) if today else since
     if reason == "unwell":
-        after = _rule_unwell(plan, since, cfg, a.unwell_days, a.unwell_volume)
+        after = _rule_unwell(plan, since, cfg, a.unwell_days, a.unwell_volume, start=start)
     elif reason == "niggle":
-        after = _rule_unwell(plan, since, cfg, a.niggle_days, a.niggle_volume, a.niggle_long_share)
+        after = _rule_unwell(plan, since, cfg, a.niggle_days, a.niggle_volume, a.niggle_long_share, start=start)
     elif reason == "travelling":
         after = _rule_travelling(plan, since, cfg)
     elif reason == "busy":
-        after = _rule_busy(plan, since, cfg)
+        after = _rule_busy(plan, since, cfg, start=start)
     else:
         after = _rule_race_moved(plan, since, cfg, new_race)
+    return _finish(plan, after, reason, RULES[reason](a), start, monday(start), cfg,
+                   MEDICAL if reason in ("unwell", "niggle") else None)
+
+
+def _finish(plan, after, reason, rule, start, week, cfg, disclaimer=None) -> Adjustment:
+    old = {s.id: s for s in plan}
+    # Done days stay as they were, whatever the rule did to them.
+    after = [old[s.id] if s.id in old and old[s.id].date < start else s for s in after]
     after = _fix_back_to_back(after, cfg)
-    ops = diff(plan, after, since)
-    week = monday(since)
+    after = [old[s.id] if s.id in old and old[s.id].date < start else s for s in after]
+    ops = diff(plan, after, start)
     before_km, after_km = _km(week_of(plan, week)), _km(week_of(after, week))
-    n = len(ops)
+    n = sessions_changed(ops)
     summary = (f"{n} session{'s' if n != 1 else ''} change{'' if n != 1 else 's'} · "
                f"{before_km:g} → {after_km:g} km this week") if n else "Nothing needs to change"
-    return Adjustment(reason, RULES[reason](a), tuple(ops), before_km, after_km, summary,
-                      MEDICAL if reason in ("unwell", "niggle") else None)
+    return Adjustment(reason, rule, tuple(ops), before_km, after_km, summary, disclaimer)
+
+
+def sessions_changed(ops) -> int:
+    """Sessions, not watch operations: a move is a remove and an add of one session."""
+    return len({(o.before or o.after).id for o in ops})
+
+
+def _today_session(plan: list[Session], today: date) -> Session | None:
+    return next((s for s in plan if s.date == today and s.type != "rest"), None)
+
+
+def easier(plan: list[Session], today: date, cfg: DomainConfig = DEFAULT) -> Adjustment:
+    """Make it easier: today's hard session becomes an easy run, the rest of the week stays."""
+    s = _today_session(plan, today)
+    after = [_easy_from(x, cfg) if s and x.id == s.id and backtoback.is_hard(x, cfg) else x for x in plan]
+    rule = (f"Make it easier: today's {s.type} becomes an easy run, about "
+            f"{cfg.adjust.easy_from_hard_share:.0%} of the time; the rest of the week stays") if s else \
+        "Make it easier: nothing hard today"
+    return _finish(plan, after, "easier", rule, today, monday(today), cfg)
+
+
+def rest(plan: list[Session], today: date, cfg: DomainConfig = DEFAULT) -> Adjustment:
+    """Rest and recover: today's session comes off; a rest day counts toward the active week."""
+    s = _today_session(plan, today)
+    after = [x for x in plan if not s or x.id != s.id]
+    return _finish(plan, after, "rest", "Rest and recover: today becomes a rest day, which counts toward "
+                   "your active week; the rest of the week stays", today, monday(today), cfg)
+
+
+def swap(plan: list[Session], today: date, cfg: DomainConfig = DEFAULT) -> Adjustment:
+    """Swap a day: today's session trades places with a later easy run this week,
+    the first one that leaves no two hard days in a row."""
+    s = _today_session(plan, today)
+    end = monday(today) + timedelta(days=7)
+    for other in sorted((x for x in plan if today < x.date < end and x.type in ("easy", "recovery", "strength")),
+                        key=lambda x: x.date):
+        if not s:
+            break
+        after = [x.with_(date=other.date) if x.id == s.id else x.with_(date=today) if x.id == other.id else x
+                 for x in plan]
+        if not backtoback.clashes([x for x in after if x.date >= today], cfg):
+            day = other.date.strftime("%a")
+            what = "strength session" if other.type == "strength" else "easy run"
+            return _finish(plan, after, "swap", f"Swap a day: today's {s.type} moves to {day} and {day}'s "
+                           f"{what} comes to today, with no two hard days in a row", today, monday(today), cfg)
+    return _finish(plan, list(plan), "swap", "Swap a day: no easier day left this week to swap with without "
+                   "two hard days in a row", today, monday(today), cfg)
+
+
+def trim(plan: list[Session], week: date, limit_km: float, today: date, number: int | None = None,
+         cfg: DomainConfig = DEFAULT) -> Adjustment:
+    """Trim week N: its easy runs scale down to `limit_km` (the top of the target band); the long run
+    and the quality sessions stay as they are."""
+    start = max(week, today)
+    days = week_of(plan, week)
+    keep = {s.id for s in days if s.type in ("long", "race", "tempo", "intervals") or s.date < start}
+    scaled = {s.id: s for s in _cap_volume(days, limit_km, keep=keep)}
+    after = [scaled.get(s.id, s) for s in plan]
+    label = f"week {number}" if number else "the week"
+    return _finish(plan, after, "trim", f"Trim {label}: the easy runs scale down so it sits at the top of your target "
+                   f"band, {limit_km:g} km; the long run and the quality sessions stay", start, week, cfg)
 
 
 def diff(before: list[Session], after: list[Session], since: date) -> list[DayOp]:

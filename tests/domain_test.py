@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from garmin_mcp.domain import adjust, backtoback, config, dedupe, load, paces, predict, readiness, takeaways  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, config, dedupe, load, paces, predict, proposal, readiness, takeaways  # noqa: E402
 from garmin_mcp.domain.model import Activity, Session, mmss  # noqa: E402
 
 failures: list[str] = []
@@ -232,6 +232,60 @@ def adjust_checks() -> None:
     check("nothing to change says so", nothing.ops == () and nothing.summary == "Nothing needs to change")
 
 
+def today_and_options_checks() -> None:
+    monday = date(2026, 11, 23)
+    plan = plan_week(monday)
+    friday = monday + timedelta(days=4)
+    # Started on Tuesday, told on Thursday: the window counts from Tuesday, but Tuesday and Wednesday are done.
+    a = adjust.adjust(plan, "unwell", monday + timedelta(days=1), today=monday + timedelta(days=3))
+    check("since days ago: done days never change", all(o.date >= monday + timedelta(days=3) for o in a.ops),
+          str([(o.op, o.date) for o in a.ops]))
+    check("since days ago: the rule's window still counts from when it started (Thu's tempo becomes easy)",
+          any(o.date == monday + timedelta(days=3) and o.after and o.after.type == "easy" for o in a.ops))
+    check("a hard session made easy says its size", a.ops[0].after.title == f"Easy {a.ops[0].after.distance_km:g} km",
+          a.ops[0].after.title)
+    check("a scaled run's title follows its distance; a title without one stays",
+          adjust._scaled_title("Long 18 km easy", 18, 9) == "Long 9 km easy"
+          and adjust._scaled_title("Hill reps", 10, 8) == "Hill reps")
+
+    tempo_day = monday + timedelta(days=3)
+    e = adjust.easier(plan, tempo_day)
+    check("make it easier: only today's hard session changes, to an easy run",
+          [(o.op, o.date, o.after.type) for o in e.ops] == [("replace", tempo_day, "easy")], str(e.ops))
+    check("make it easier on an easy day changes nothing", adjust.easier(plan, monday).ops == ())
+    r = adjust.rest(plan, tempo_day)
+    check("rest and recover: today's session comes off, nothing else",
+          [(o.op, o.date) for o in r.ops] == [("remove", tempo_day)] and "counts toward your active week" in r.rule)
+    sw = adjust.swap(plan, tempo_day)
+    moved = {(o.op, o.before.id if o.before else o.after.id, o.date) for o in sw.ops}
+    check("swap a day: today's session and a later easy one trade days", len(sw.ops) == 4
+          and ("add", plan[3].id, monday + timedelta(days=5)) in moved and sw.summary.startswith("2 sessions change"),
+          str(moved))
+    check("swap a day never leaves two hard days in a row",
+          not backtoback.clashes(list(proposal._apply(plan, sw))))
+    t = adjust.trim(plan, monday, 40, monday, number=4)
+    check("trim: the easy runs come down to the limit; the long run and quality sessions stay",
+          t.km_after <= 40.5 and not any(o.before.type in ("long", "intervals", "tempo") for o in t.ops),
+          f"{t.km_before} -> {t.km_after}: {[(o.before.title, o.after.title) for o in t.ops]}")
+
+    v = proposal.view(adjust.adjust(plan, "unwell", monday, today=monday), plan, monday, since=monday,
+                      numbers={monday: 4, monday + timedelta(weeks=1): 5})
+    check("the view: kicker, title in sessions, km subtitle", v["kicker"] == "Not feeling 100% · since today"
+          and v["title"].endswith(("sessions change", "session changes"))
+          and v["subtitle"].endswith("km this week. Next week unchanged."), f"{v['kicker']} | {v['title']} | {v['subtitle']}")
+    check("the view: every op names its day and session; a replace says what with",
+          all(o["dayLabel"] and o["what"] for o in v["ops"])
+          and all(o["withWhat"] for o in v["ops"] if o["kind"] == "replace"))
+    check("the view: unchanged weeks have identical before and after", all(l["before"] == l["after"] for l in v["load"]
+                                                                          if not l["changed"]) and v["load"][0]["changed"])
+    check("the view: no week drawn with nothing planned either side", all(l["before"] or l["after"] for l in v["load"]))
+    check("the view: rows run in date order, changed ones marked",
+          [r["date"] for r in v["days"]] == sorted(r["date"] for r in v["days"]) and any(r["changed"] for r in v["days"]))
+    empty = proposal.view(adjust.easier(plan, monday), plan, monday)
+    check("the view: nothing to change has no ops and no chart", empty["ops"] == [] and empty["load"] is None
+          and empty["title"] == "Nothing needs to change")
+
+
 def _raises(fn) -> bool:
     try:
         fn()
@@ -342,7 +396,7 @@ def config_checks() -> None:
     check("the server's defaults match the app's flag defaults",
           (r.sleep_short_hours, r.load_ratio_low, r.load_ratio_high, r.hrv_low_percentile, m.start_within_seconds,
            m.distance_within_pct) == tuple(flags_defaults.values()))
-    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways)
+    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal)
     params = [p for mod in modules for _, fn in inspect.getmembers(mod, inspect.isfunction)
               if fn.__module__ == mod.__name__ for p in inspect.signature(fn).parameters]
     source = " ".join(inspect.getsource(mod) for mod in modules)
@@ -356,6 +410,7 @@ def main() -> int:
     load_checks()
     backtoback_checks()
     adjust_checks()
+    today_and_options_checks()
     pace_checks()
     dedupe_checks()
     takeaway_checks()

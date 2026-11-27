@@ -25,6 +25,12 @@ export default function PlanLayout() {
           sheetCornerRadius: Platform.OS === 'android' ? 28 : undefined, headerShown: false,
           contentStyle: { backgroundColor: colors.surface },
         }} />
+        <Stack.Screen name="life" options={{
+          presentation: 'formSheet', sheetGrabberVisible: true, sheetAllowedDetents: 'fitToContents',
+          sheetCornerRadius: Platform.OS === 'android' ? 28 : undefined, headerShown: false,
+          contentStyle: { backgroundColor: colors.surface },
+        }} />
+        <Stack.Screen name="new-week" options={{ title: 'New week', headerBackTitle: 'Plan' }} />
         <Stack.Screen name="next" options={{ title: '' }} />
       </Stack>
     </PlanProvider>

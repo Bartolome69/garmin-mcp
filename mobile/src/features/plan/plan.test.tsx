@@ -15,6 +15,9 @@ import type { PlanTab } from './PlanTabs';
 import { PlanView, type PlanActions } from './PlanView';
 import { SessionDetailView } from './SessionDetailView';
 import type { Pending } from './PlanProvider';
+import { memoryStore } from '../watch/store';
+import { FakeGarmin } from '../watch/transport';
+import { WatchProvider } from '../watch/WatchProvider';
 
 const os = Platform.OS;
 const actions = (): PlanActions => ({
@@ -34,11 +37,11 @@ async function draw(vm: PlanVM, { scheme = 'dark' as 'dark' | 'light', tab = 'We
 }
 
 async function drawSession(id: string, { coach = false, scheme = 'dark' as 'dark' | 'light', vm = PERSONA_PLAN } = {}) {
-  const send = jest.fn(), move = jest.fn(), swap = jest.fn(), skip = jest.fn();
+  const send = jest.fn(), move = jest.fn(), swap = jest.fn(), skip = jest.fn(), resend = jest.fn(), remove = jest.fn(), trouble = jest.fn();
   function Harness() {
     const [step, setStep] = require('react').useState(0);
     return <SessionDetailView session={findSession(vm, id)!} basis={vm.basis} coach={coach} step={step} onStep={setStep}
-      actions={{ send, move, swap, skip }} />;
+      actions={{ send, move, swap, skip, resend, remove, trouble }} />;
   }
   const utils = await render(<ThemeProvider initial={scheme}><Harness /></ThemeProvider>);
   return { ...utils, send, move };
@@ -230,7 +233,9 @@ describe(`Moving a session on ${os}`, () => {
     function Probe() { plan = usePlan(); return <RNText>{plan.proposal ? `${plan.proposal.id}>${plan.proposal.to}` : plan.pending?.kind ?? 'idle'}</RNText>; }
     await render(
       <FlagsProvider initial={DEFAULT_FLAGS}>
-        <PlanProvider fetcher={async () => PERSONA_PLAN}><Probe /></PlanProvider>
+        <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false}>
+          <PlanProvider fetcher={async () => PERSONA_PLAN}><Probe /></PlanProvider>
+        </WatchProvider>
       </FlagsProvider>,
     );
     await screen.findByText('idle');
@@ -325,13 +330,14 @@ describe(`Session detail on ${os}`, () => {
     expect(send).toHaveBeenCalled();
   });
 
-  it('Move, Swap and Skip; no brand fill', async () => {
+  it('Move, Swap and Skip; "Send to watch" is the one brand fill', async () => {
     const { move, toJSON } = await drawSession('2026-12-02-intervals');
     await fireEvent.press(screen.getByTestId('button-Move'));
     expect(move).toHaveBeenCalled();
     expect(screen.getByTestId('button-Swap')).toBeTruthy();
     expect(screen.getByTestId('button-Skip')).toBeTruthy();
-    expect(brandFills(toJSON(), 'dark')).toBe(0);
+    expect(brandFills(toJSON(), 'dark')).toBe(1);
+    expect(StyleSheet.flatten(screen.getByTestId('button-Send to watch').props.style).backgroundColor).toBe(colors.dark.brand);
   });
 
   it('Coach on adds one card on why this session, and nothing else changes', async () => {

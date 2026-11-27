@@ -1,10 +1,12 @@
 import { Stack, useIsFocused, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform, useWindowDimensions, View } from 'react-native';
+import { Alert, Platform, useWindowDimensions, View } from 'react-native';
 
 import { freshness } from '../../../data/freshness';
 import { useToday } from '../../../features/today/TodayProvider';
 import { TodayEmpty, TodayView } from '../../../features/today/TodayView';
+import { applyToToday } from '../../../features/watch/apply';
+import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { Text } from '../../../ui/Text';
@@ -16,7 +18,11 @@ function useNow(everyMs = 60000) {
 }
 
 export default function TodayScreen() {
-  const { data, fetchedAt, refreshing, error, refresh } = useToday();
+  const today = useToday();
+  const watch = useWatch();
+  const { fetchedAt, refreshing, error, refresh } = today;
+  // Confirmed changes and the watch queue's state, over the server's last answer.
+  const data = today.data ? applyToToday(today.data, watch.applied, watch.ops) : null;
   const { flags } = useFlags();
   const { colors } = useTheme();
   const router = useRouter();
@@ -47,7 +53,18 @@ export default function TodayScreen() {
         actions={{
           signal: (key) => router.push({ pathname: '/today/readiness', params: { signal: key } }),
           how: () => router.push({ pathname: '/today/readiness', params: { signal: data.readiness.signals.find((s) => s.status === 'low')?.key ?? 'sleep' } }),
-          recommended: () => router.push({ pathname: '/today/next', params: { kind: data.readiness.recommended.kind } }),
+          recommended: async () => {
+            if (data.readiness.recommended.kind !== 'easier') {
+              if (data.session) router.push({ pathname: '/plan/session/[id]', params: { id: data.session.id } });
+              return;
+            }
+            try {
+              const p = await watch.propose({ kind: 'easier' });
+              router.push({ pathname: '/today/new-week', params: { id: p.id } });
+            } catch (err) {
+              Alert.alert('Couldn’t work out an easier day', err instanceof Error ? err.message : 'Try again in a moment.');
+            }
+          },
           options: () => router.push('/today/options'),
           askWhy: () => router.push({ pathname: '/coach', params: { about: 'readiness', date: data.date } }),
           openSession: () => data.session && router.push({ pathname: '/plan/session/[id]', params: { id: data.session.id } }),

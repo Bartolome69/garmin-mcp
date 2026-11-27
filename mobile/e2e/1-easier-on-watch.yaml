@@ -1,0 +1,17 @@
+appId: run.daash.app
+---
+- launchApp
+- tapOn: { id: "button-Make it easier" }
+- assertVisible: "Make it easier · today"
+- assertVisible: "1 session changes"
+- tapOn: { id: "button-Review watch changes" }
+- assertVisible: "1 change on your watch"
+- assertVisible: "Connected to Garmin · synced 07:02"
+- tapOn: { id: "button-Confirm and send 1 change" }
+- assertVisible: "Easy 6 km"
+- extendedWaitUntil:
+    visible: "Changed · arrives at next sync"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "Changed your mind?"
+    timeout: 60000

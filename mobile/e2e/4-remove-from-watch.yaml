@@ -1,0 +1,14 @@
+appId: run.daash.app
+---
+- launchApp
+- tapOn: "Plan"
+- tapOn: { id: "open-2026-11-27-tempo" }
+- assertVisible: "On your watch · 20:14"
+- tapOn: { id: "button-Remove from watch" }
+- assertVisible: "Remove from your watch?"
+- assertVisible: "It stays in your plan, marked Not on watch. You can send it again any time."
+- tapOn: { id: "button-Remove from watch" }
+- extendedWaitUntil:
+    visible: "Not on your watch"
+    timeout: 15000
+- assertVisible: "3 × 2 km at threshold"

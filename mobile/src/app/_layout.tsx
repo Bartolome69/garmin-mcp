@@ -6,6 +6,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { openDb } from '../db/expo';
@@ -13,6 +14,8 @@ import { DbContext } from '../db/DbContext';
 import { kv } from '../db/kv';
 import type { Db } from '../db/types';
 import { FlagsProvider, type FlagsFetcher, type FlagsStore } from '../flags/FlagsProvider';
+import { WatchToast } from '../features/watch/WatchToast';
+import { WatchProvider } from '../features/watch/WatchProvider';
 import { ThemeProvider, useTheme, type Appearance } from '../theme/ThemeProvider';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -53,7 +56,9 @@ export default function RootLayout() {
       <DbContext.Provider value={db}>
         <ThemeProvider initial={appearance} onChange={(a) => { if (db) kv(db).set(APPEARANCE_KEY, a); }}>
           <FlagsProvider store={flagsStore} fetcher={devFetcher}>
-            <Root />
+            <WatchProvider>
+              <Root />
+            </WatchProvider>
           </FlagsProvider>
         </ThemeProvider>
       </DbContext.Provider>
@@ -66,7 +71,15 @@ function Root() {
   return (
     <>
       <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+        <Stack.Screen name="(tabs)" />
+        {/* The watch confirm, over whichever tab asked: a sheet with a grabber. */}
+        <Stack.Screen name="watch/confirm" options={{
+          presentation: 'formSheet', sheetGrabberVisible: true, sheetAllowedDetents: 'fitToContents',
+          sheetCornerRadius: Platform.OS === 'android' ? 28 : undefined, contentStyle: { backgroundColor: colors.surface },
+        }} />
+      </Stack>
+      <WatchToast />
     </>
   );
 }

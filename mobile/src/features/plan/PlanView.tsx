@@ -36,6 +36,7 @@ export function PlanView({ vm, tab, onTab, index, onIndex, pending, proposalText
 }) {
   const { colors } = useTheme();
   const [dragging, setDragging] = useState(false);
+  const deciding = pending?.kind === 'warn' || !!proposalText;
   const tabs = <PlanTabs value={tab} onChange={onTab} os={os} />;
   return (
     <View testID="plan" style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -54,7 +55,7 @@ export function PlanView({ vm, tab, onTab, index, onIndex, pending, proposalText
         ) : null}
         <View style={{ paddingTop: 8 }}>
           {tab === 'Week' ? (
-            <WeekView vm={vm} index={index} onIndex={onIndex} pending={pending} proposalText={proposalText} width={width} os={os}
+            <WeekView vm={vm} index={index} onIndex={onIndex} pending={pending} proposalText={proposalText} width={width} os={os} brand={brand}
               actions={actions} onDragging={setDragging} />
           ) : tab === 'Block' ? (
             <BlockView block={vm.block} onChange={actions.change} />
@@ -63,7 +64,8 @@ export function PlanView({ vm, tab, onTab, index, onIndex, pending, proposalText
           )}
         </View>
       </ScrollView>
-      {os !== 'ios' && tab === 'Week' ? <Fab label="New workout" icon="add" brand={brand} onPress={actions.newWorkout} /> : null}
+      {/* One brand fill: while a move waits for a decision, its banner has it and the FAB steps aside. */}
+      {os !== 'ios' && tab === 'Week' && !deciding ? <Fab label="New workout" icon="add" brand={brand} onPress={actions.newWorkout} /> : null}
     </View>
   );
 }

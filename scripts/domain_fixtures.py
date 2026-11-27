@@ -19,7 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from garmin_mcp.domain import backtoback, paces  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, paces, proposal  # noqa: E402
+from garmin_mcp.domain.load import band  # noqa: E402
 from garmin_mcp.domain.model import Session  # noqa: E402
 
 OUT = ROOT / "garmin_mcp" / "domain" / "fixtures"
@@ -65,20 +66,68 @@ def backtoback_cases() -> list[dict]:
     return out
 
 
-FILES = {"paces.json": paces_cases, "backtoback.json": backtoback_cases}
+# The design's persona (build prompt, section 16), as the app's Plan fixture has it
+# (mobile/src/features/plan/fixture.ts, same session ids): week 4 to week 7, today
+# Fri 27 Nov. Rest days have no session.
+TODAY = date(2026, 11, 27)
+NUMBERS = {date(2026, 11, 23): 4, date(2026, 11, 30): 5, date(2026, 12, 7): 6, date(2026, 12, 14): 7}
+
+
+def _s(day: str, kind: str, title: str, km: float | None = None, minutes: float | None = None) -> Session:
+    return Session(date.fromisoformat(day), kind, title, km, minutes, id=f"{day}-{kind}")
+
+
+PERSONA = [
+    _s("2026-11-24", "easy", "8 km easy + strides", 8), _s("2026-11-25", "intervals", "6 × 800 m", 10),
+    _s("2026-11-26", "easy", "9 km run club", 8), _s("2026-11-27", "tempo", "3 × 2 km at threshold", 10),
+    _s("2026-11-28", "strength", "Full body (runner)", None, 27), _s("2026-11-29", "long", "Long 18 km easy", 18),
+    _s("2026-12-01", "easy", "8 km easy", 8), _s("2026-12-02", "intervals", "10 × 400 m", 9.5),
+    _s("2026-12-03", "easy", "10 km easy", 10), _s("2026-12-05", "easy", "8 km easy", 8),
+    _s("2026-12-06", "long", "Long 20 km easy", 20),
+    _s("2026-12-08", "easy", "8 km easy", 8), _s("2026-12-09", "tempo", "4 × 2 km at threshold", 12),
+    _s("2026-12-10", "easy", "10 km easy", 10), _s("2026-12-12", "easy", "8 km easy", 8),
+    _s("2026-12-13", "long", "Long 22 km easy", 22),
+    _s("2026-12-15", "easy", "10 km easy", 10), _s("2026-12-16", "intervals", "6 × 1 km", 12),
+    _s("2026-12-17", "easy", "10 km easy", 10), _s("2026-12-19", "easy", "10 km easy", 10),
+    _s("2026-12-20", "long", "Long 26 km with 10 at marathon pace", 26),
+]
+# Week 7's planned volume before the extra kilometres crept in: its band's top is the trim's limit.
+WEEK7_INTENDED_KM = 58
+
+
+def proposal_cases() -> dict:
+    """What the server proposes for the persona: the app's development fixture, from the real engines."""
+    out = {}
+    for reason in ("unwell", "niggle", "travelling", "busy", "race_moved"):
+        for back in range(7):
+            since = TODAY - timedelta(days=back)
+            a = adjust.adjust(PERSONA, reason, since, today=TODAY)
+            out[f"life:{reason}:{since.isoformat()}"] = proposal.view(a, PERSONA, TODAY, since=since, numbers=NUMBERS)
+    for name, make in (("easier", adjust.easier), ("rest", adjust.rest), ("swap", adjust.swap)):
+        out[name] = proposal.view(make(PERSONA, TODAY), PERSONA, TODAY, numbers=NUMBERS)
+    week7 = date(2026, 12, 14)
+    limit = band(WEEK7_INTENDED_KM)[1]
+    out["trim:2026-12-14"] = proposal.view(adjust.trim(PERSONA, week7, limit, TODAY, number=7), PERSONA, TODAY,
+                                           focus=week7, numbers=NUMBERS, id="trim-2026-12-14")
+    return out
+
+
+FILES = {"paces.json": paces_cases, "backtoback.json": backtoback_cases, "proposals.json": proposal_cases}
+# The app's development build reads its own copy: Metro bundles only what's inside mobile/.
+COPIES = {"proposals.json": ROOT / "mobile" / "src" / "features" / "watch" / "proposals.fixture.json"}
 
 
 def main(argv: list[str]) -> int:
     stale = []
     for name, make in FILES.items():
         text = json.dumps({"_generated": "scripts/domain_fixtures.py; do not edit", "cases": make()}, indent=1) + "\n"
-        path = OUT / name
-        if "--check" in argv:
-            if not path.exists() or path.read_text() != text:
-                stale.append(name)
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
+        for path in (OUT / name, *([COPIES[name]] if name in COPIES else [])):
+            if "--check" in argv:
+                if not path.exists() or path.read_text() != text:
+                    stale.append(str(path.relative_to(ROOT)))
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
     if stale:
         print("domain_fixtures: out of date, run python3 scripts/domain_fixtures.py: " + ", ".join(stale), file=sys.stderr)
         return 1

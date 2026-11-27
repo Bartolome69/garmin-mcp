@@ -3703,7 +3703,7 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                   ],
                   "number": 5,
                   "start": "2026-11-30",
-                  "summary": "30 Nov to 6 Dec · 56 km planned",
+                  "summary": "30 Nov to 6 Dec · 55.5 km planned",
                   "title": "Week 5 · Base",
                 },
                 {
@@ -9781,152 +9781,161 @@ exports[`snapshot: session detail on ios: session-ios 1`] = `
             "padding": 14,
           },
           {
+            "gap": 8,
+          },
+        ]
+      }
+      testID="watch-card"
+    >
+      <View
+        style={
+          {
             "alignItems": "center",
             "flexDirection": "row",
             "flexWrap": "wrap",
             "gap": 8,
             "justifyContent": "space-between",
-          },
-        ]
-      }
-    >
-      <View
-        style={
-          {
-            "flexShrink": 1,
-            "gap": 2,
           }
         }
       >
         <View
-          accessibilityLabel="Not on your watch"
-          accessible={true}
           style={
             {
-              "alignItems": "center",
-              "flexDirection": "row",
-              "gap": 6,
+              "flexShrink": 1,
+              "gap": 2,
             }
           }
-          testID="watch-not_sent"
         >
-          <ViewManagerAdapter_SymbolModule
-            accessible={false}
-            animated={false}
-            colors={[]}
-            importantForAccessibility="no-hide-descendants"
-            name="watch.analog"
-            size={17}
+          <View
+            accessibilityLabel="Not on your watch"
+            accessible={true}
             style={
               {
-                "height": 17,
-                "width": 17,
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 6,
               }
             }
-            tint={4289111455}
-            tintColor="#A6A59F"
-            type="monochrome"
-          />
+            testID="watch-not_sent"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="watch.analog"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4289111455}
+              tintColor="#A6A59F"
+              type="monochrome"
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  {
+                    "fontVariant": [
+                      "tabular-nums",
+                    ],
+                  },
+                  {
+                    "fontWeight": "500",
+                  },
+                ]
+              }
+            >
+              Not on your watch
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            [
+              {
+                "alignItems": "center",
+                "backgroundColor": "#DD2C25",
+                "borderColor": "#DD2C25",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "flexBasis": "auto",
+                "flexDirection": "row",
+                "flexGrow": 0,
+                "gap": 6,
+                "justifyContent": "center",
+                "minHeight": 44,
+                "opacity": 1,
+                "paddingHorizontal": 14,
+              },
+              undefined,
+            ]
+          }
+          testID="button-Send to watch"
+        >
           <Text
             maxFontSizeMultiplier={2}
             style={
               [
                 {
-                  "fontSize": 13,
-                  "lineHeight": 18,
+                  "fontSize": 15,
+                  "lineHeight": 20,
                 },
                 {
-                  "color": "#A6A59F",
+                  "color": "#FFFFFF",
                 },
+                false,
                 {
-                  "fontVariant": [
-                    "tabular-nums",
-                  ],
-                },
-                {
-                  "fontWeight": "500",
+                  "fontWeight": "600",
+                  "textAlign": "center",
                 },
               ]
             }
           >
-            Not on your watch
+            Send to watch
           </Text>
         </View>
-      </View>
-      <View
-        accessibilityRole="button"
-        accessibilityState={
-          {
-            "busy": undefined,
-            "checked": undefined,
-            "disabled": undefined,
-            "expanded": undefined,
-            "selected": undefined,
-          }
-        }
-        accessibilityValue={
-          {
-            "max": undefined,
-            "min": undefined,
-            "now": undefined,
-            "text": undefined,
-          }
-        }
-        accessible={true}
-        collapsable={false}
-        focusable={true}
-        onBlur={[Function]}
-        onClick={[Function]}
-        onFocus={[Function]}
-        onResponderGrant={[Function]}
-        onResponderMove={[Function]}
-        onResponderRelease={[Function]}
-        onResponderTerminate={[Function]}
-        onResponderTerminationRequest={[Function]}
-        onStartShouldSetResponder={[Function]}
-        style={
-          [
-            {
-              "alignItems": "center",
-              "backgroundColor": "#F4F3EE",
-              "borderColor": "#F4F3EE",
-              "borderRadius": 999,
-              "borderWidth": 1,
-              "flexBasis": "auto",
-              "flexDirection": "row",
-              "flexGrow": 0,
-              "gap": 6,
-              "justifyContent": "center",
-              "minHeight": 44,
-              "opacity": 1,
-              "paddingHorizontal": 14,
-            },
-            undefined,
-          ]
-        }
-        testID="button-Send to watch"
-      >
-        <Text
-          maxFontSizeMultiplier={2}
-          style={
-            [
-              {
-                "fontSize": 15,
-                "lineHeight": 20,
-              },
-              {
-                "color": "#161614",
-              },
-              false,
-              {
-                "fontWeight": "600",
-                "textAlign": "center",
-              },
-            ]
-          }
-        >
-          Send to watch
-        </Text>
       </View>
     </View>
     <View
