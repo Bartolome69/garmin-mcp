@@ -50,7 +50,7 @@ export default function TodayScreen() {
           recommended: () => router.push({ pathname: '/today/next', params: { kind: data.readiness.recommended.kind } }),
           options: () => router.push('/today/options'),
           askWhy: () => router.push({ pathname: '/coach', params: { about: 'readiness', date: data.date } }),
-          openSession: () => router.push({ pathname: '/today/next', params: { kind: 'session' } }),
+          openSession: () => data.session && router.push({ pathname: '/plan/session/[id]', params: { id: data.session.id } }),
           refresh,
         }}
       />

@@ -43,7 +43,7 @@ export type TodaySession = {
   type: SessionType;
   typeLabel: string;             // "Tempo"
   title: string;                 // "3 × 2 km at threshold"
-  meta: string;                  // "Today · 10 km · about 52 min · 4:22–4:30 /km"
+  meta: string;                  // "Today · 10 km · about 52 min · 4:23–4:28 /km"
   structure: StructurePart[];
   legend: string[];              // ["Warm-up 15 min", "3 × 2 km · 2 min jog", "Cool 10"]
   watch: { state: WatchState; at: string | null };

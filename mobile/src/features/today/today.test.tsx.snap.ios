@@ -696,7 +696,9 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
                 "borderRadius": 999,
                 "borderWidth": 1,
                 "flexBasis": "auto",
+                "flexDirection": "row",
                 "flexGrow": 0,
+                "gap": 6,
                 "justifyContent": "center",
                 "minHeight": 44,
                 "opacity": 1,
@@ -721,6 +723,7 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
                 },
                 false,
                 {
+                  "fontWeight": "600",
                   "textAlign": "center",
                 },
               ]
@@ -769,7 +772,9 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
                 "borderRadius": 999,
                 "borderWidth": 1,
                 "flexBasis": "auto",
+                "flexDirection": "row",
                 "flexGrow": 0,
+                "gap": 6,
                 "justifyContent": "center",
                 "minHeight": 44,
                 "opacity": 1,
@@ -794,6 +799,7 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
                 },
                 false,
                 {
+                  "fontWeight": "600",
                   "textAlign": "center",
                 },
               ]
@@ -843,7 +849,9 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
               "borderRadius": 999,
               "borderWidth": 1,
               "flexBasis": "auto",
+              "flexDirection": "row",
               "flexGrow": 0,
+              "gap": 6,
               "justifyContent": "center",
               "minHeight": 44,
               "opacity": 1,
@@ -868,6 +876,7 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
               },
               false,
               {
+                "fontWeight": "600",
                 "textAlign": "center",
               },
             ]
@@ -1086,7 +1095,7 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
           ]
         }
       >
-        Today · 10 km · about 52 min · 4:22–4:30 /km
+        Today · 10 km · about 52 min · 4:23–4:28 /km
       </Text>
       <View
         style={

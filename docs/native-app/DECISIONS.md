@@ -137,3 +137,68 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   indicator. On web the native tabs render as a top bar over the title; on
   iOS and Android they're the system bar at the bottom. The check runs locally
   (it needs Chromium), not in CI.
+
+## Milestone 4 (Plan), 27 Nov
+
+- **Fixtures until the server exists.** Plan reads `GET /app/api/v1/plan` (a
+  window of weeks around this one, the block and the trends, each planned
+  session with its steps so the detail opens offline). It isn't built yet;
+  development builds and the layout check's web build show the persona, as
+  Today does. Cached in SQLite and drawn at once; pull to refresh; "Updated 2h
+  ago" when stale.
+- **Pace numbers come from the engine, not the board.** The boards' sample
+  targets (4:22–4:30, 3:55–4:05, 5:30–5:50) aren't what the pace engine gives
+  for the persona's 10K of 43:30. The fixtures use the engine's answers
+  (threshold 4:23–4:28, VO2 4:03–4:10, easy 5:27–6:10), and Today's fixture
+  now matches, so the two screens agree.
+- **Block has no Pass 1 or Pass 3 board.** Built from the canvas's first-page
+  Block board with the neutral phase bar from section 5.13 (steps of the text
+  colour's opacity, labelled, never session colours; this week stands
+  taller). The persona has 21 weeks (Today's "Week 4 of 21"), not the board's
+  25. The board's "Pfitzinger-style" label is left out: a named method reads
+  as an endorsement.
+- **Conflict, prompt and privacy: the Plus preview is faded, not blurred.**
+  The prompt asks for a blurred preview of the prediction trend. A blur over
+  the person's own numbers would still send them to a Free account, and
+  React Native has no blur without another native module. Free gets a faded
+  chart drawn from placeholder data, with no figures, under "See Plus". The
+  server leaves the trend out for Free.
+- **Moving a session.** Hold and drag, or the "a day earlier / later"
+  accessibility actions, or Move on the session detail (a sheet of the
+  week's days). All three run the same check on the device (the shared
+  back-to-back engine): a clash warns first with "Move anyway" and "Keep it
+  on <day>"; a pass becomes a proposal drawn as "Waiting for your confirm",
+  with Undo and "Review and send". Nothing is written. The confirm sheet and
+  the watch queue are milestone 5; "Review and send" leads to a placeholder.
+  Runs already done, rest days and moves into the past stay put, with words.
+- **The drag uses React Native's PanResponder, not the gesture handler.** A
+  long press lifts the row; the pan responder takes the moves that follow.
+  The gesture handler needs Reanimated, whose Jest mock doesn't load with
+  this SDK, and the drag needs no worklets. The test drives the real
+  PanResponder (long press, grant, moves with touch history, release) and
+  caught a bug a phone would have shown: the press ending as the pan took
+  the touch put the row back down mid-drag.
+- **Brand fill.** iOS Plan has none ("Life happened" and "New workout" are
+  outlines, as the board). Android's extended FAB is the one, and loses it
+  behind a sheet. "Keep it on Fri", "Send to watch" and "Review and send" use
+  a new text-colour fill (Button kind "emphasis"), as the boards do, not
+  brand.
+- **Status icons.** Done is the filled tick in success; On your watch is the
+  outline watch in text2 (prompt, over the board's success); a session not
+  yet sent shows no icon, and its row reads "Not on your watch".
+- **Session detail.** The board's Edit (top right) opens the builder
+  (milestone 6). Easier and Harder step pace targets 2% with the shared pace
+  engine; a session already on the watch then offers "Send changes". With
+  the Coach on, one "Coach · why this session" card; every number is the
+  same.
+- **Checked on a web build.** `mobile/scripts/plan-check.js` at 390×844: the
+  seven rows end 519 pt below the switch (room 606 pt on an iPhone under the
+  large title, 636 pt on Android), the FAB starts at 564 pt, after the last
+  row, and 10 × 400 m ends at 640 of 658 pt. The web build draws the Android
+  layout (Material 3 tabs, the FAB). Symbols don't draw on web (expo-symbols
+  is native only), and the web version of native tabs stacks the other tabs'
+  screens over the one shown, so the browser can't drag; the drag is tested
+  in Jest.
+- **New dependency.** `@react-native-segmented-control/segmented-control`
+  2.5.7 (the SDK's pinned version) for the standard iOS segmented control.
+  Its typings predate React 19's JSX types, so PlanTabs casts the component.

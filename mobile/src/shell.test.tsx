@@ -14,6 +14,7 @@ import { colors } from './theme/tokens';
 import TabsLayout from './app/(tabs)/_layout';
 import CoachIndex from './app/(tabs)/coach/index';
 import CrewIndex from './app/(tabs)/crew/index';
+import PlanLayout from './app/(tabs)/plan/_layout';
 import PlanIndex from './app/(tabs)/plan/index';
 import TodayLayout from './app/(tabs)/today/_layout';
 import TodayIndex from './app/(tabs)/today/index';
@@ -30,6 +31,7 @@ function routes(appearance: Appearance, coach: boolean) {
     '(tabs)/_layout': TabsLayout,
     '(tabs)/today/_layout': TodayLayout,
     '(tabs)/today/index': TodayIndex,
+    '(tabs)/plan/_layout': PlanLayout,
     '(tabs)/plan/index': PlanIndex,
     '(tabs)/coach/index': CoachIndex,
     '(tabs)/crew/index': CrewIndex,
@@ -42,6 +44,12 @@ describe.each(['dark', 'light'] as const)(`shell on ${Platform.OS}, %s`, (appear
     await renderRouter(routes(appearance, false), { initialUrl: '/today' });
     const today = await screen.findByTestId('today');
     expect(StyleSheet.flatten(today.props.style).backgroundColor).toBe(colors[appearance].bg);
+  });
+
+  it('opens Plan on this week (the persona, in a development build)', async () => {
+    await renderRouter(routes(appearance, false), { initialUrl: '/plan' });
+    expect(await screen.findByTestId('week-title')).toHaveTextContent('Week 4 · Base');
+    expect(StyleSheet.flatten(screen.getByTestId('plan').props.style).backgroundColor).toBe(colors[appearance].bg);
   });
 
   it('keeps the Coach out of reach with coach_enabled off', async () => {

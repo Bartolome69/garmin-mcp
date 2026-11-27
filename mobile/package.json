@@ -6,6 +6,7 @@
     "@expo-google-fonts/geist-mono": "~0.4.3",
     "@expo-google-fonts/source-serif-4": "~0.4.2",
     "@expo/metro-runtime": "~58.0.17",
+    "@react-native-segmented-control/segmented-control": "2.5.7",
     "expo": "58.0.24",
     "expo-asset": "~58.0.21",
     "expo-constants": "~58.0.16",

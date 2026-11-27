@@ -29,6 +29,7 @@ export const ICONS = {
   edit: { ios: 'pencil', android: 'edit' },
   close: { ios: 'xmark', android: 'close' },
   check: { ios: 'checkmark', android: 'check' },
+  warning: { ios: 'exclamationmark.triangle', android: 'warning' },
 } as const satisfies Record<string, { ios: SFSymbol; iosSelected?: SFSymbol; android: AndroidSymbol }>;
 
 export type IconName = keyof typeof ICONS;
