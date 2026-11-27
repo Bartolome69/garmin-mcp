@@ -5,6 +5,7 @@
 // skip, sending one session, Remove from watch). Every one goes through the same
 // diff and the same watch confirm, and nothing reaches the watch without it.
 
+import type { SessionDetail } from '../plan/model';
 import type { SessionType } from '../today/model';
 
 export type OpKind = 'add' | 'replace' | 'remove';
@@ -17,6 +18,8 @@ export type DiffSession = {
   title: string;
   sub: string;                   // "Easy · 6 km"
   distanceKm: number | null;
+  /** A session the builder made carries its steps, so Plan can open it before the server's plan has it. */
+  detail?: SessionDetail | null;
 };
 
 export type DiffDay = {
@@ -50,7 +53,7 @@ export type OpDraft = {
 
 export type Proposal = {
   id: string;
-  source: string;                // unwell, niggle, travelling, busy, race_moved, easier, rest, swap, trim, move, skip, send, adjust, unwatch
+  source: string;                // unwell, niggle, travelling, busy, race_moved, easier, rest, swap, trim, move, skip, send, adjust, unwatch, build
   kicker: string;                // "Not feeling 100% · since today"
   title: string;                 // "3 sessions change"
   subtitle: string;              // "54 → 37 km this week. Next week unchanged."

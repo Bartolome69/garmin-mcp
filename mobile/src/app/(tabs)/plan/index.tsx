@@ -64,7 +64,7 @@ export default function PlanScreen() {
           router.push({ pathname: '/plan/new-week', params: { id: staged.id } });
         },
         life: () => router.push('/plan/life'),
-        newWorkout: () => next('builder'),
+        newWorkout: () => router.push('/plan/builder'),
         refresh: plan.refresh,
         trim: async () => {
           const week = vm.trends.load.weeks.find((w) => w.trim);

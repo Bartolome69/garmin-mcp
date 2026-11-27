@@ -159,7 +159,7 @@ const isShortRecovery = (s: Size) => (s.durationS ?? Infinity) <= 300 || (s.dist
 
 // -- words --------------------------------------------------------------------------
 
-function sizeWords(s: Size): string {
+export function sizeWords(s: Size): string {
   if (s.distanceM != null) return s.distanceM >= 1000 ? `${+(s.distanceM / 1000).toFixed(2)} km` : `${s.distanceM} m`;
   const secs = s.durationS ?? 0;
   if (secs % 60 === 0) return `${secs / 60} min`;
@@ -405,7 +405,11 @@ function readLast(c: Clause): Step[] | Problem | null {
   return [first, { kind: 'run', ...last, ...e }];
 }
 
-export function parseWorkout(input: string): Parsed {
+/** add: false leaves out the warm-up or cool-down the parser would add (Edit steps can remove them). */
+export type ParseOptions = { add?: { warmup?: boolean; cooldown?: boolean } };
+
+export function parseWorkout(input: string, opts: ParseOptions = {}): Parsed {
+  const addWarmup = opts.add?.warmup ?? true, addCooldown = opts.add?.cooldown ?? true;
   const steps: Step[] = [];
   const problems: Problem[] = [];
 
@@ -430,12 +434,12 @@ export function parseWorkout(input: string): Parsed {
   const quality = steps.some((s) => (s.kind === 'repeat' && s.work.label !== 'strides')
     || (s.kind === 'run' && s.label !== 'strides' && !isEasy(s)));
   if (quality && !problems.length) {
-    if (!steps.some((s) => s.kind === 'warmup') && !isEasy(steps[0])) steps.unshift({ kind: 'warmup', durationS: ADDED_WARMUP_S, added: true });
-    if (!steps.some((s) => s.kind === 'cooldown') && !isEasy(steps[steps.length - 1])) steps.push({ kind: 'cooldown', durationS: ADDED_WARMUP_S, added: true });
+    if (addWarmup && !steps.some((s) => s.kind === 'warmup') && !isEasy(steps[0])) steps.unshift({ kind: 'warmup', durationS: ADDED_WARMUP_S, added: true });
+    if (addCooldown && !steps.some((s) => s.kind === 'cooldown') && !isEasy(steps[steps.length - 1])) steps.push({ kind: 'cooldown', durationS: ADDED_WARMUP_S, added: true });
   }
   const written = steps.filter((s) => !('added' in s && s.added));
   const readAs = written.length ? `Read as ${written.map(stepWords).join(' · ')}` : '';
   return { steps, readAs, problems, ok: steps.length > 0 && problems.length === 0 };
 }
 
-export { ZONES };
+export { ZONES, ZONE_PROSE, RECOVERY_WORDS };

@@ -282,3 +282,110 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   - These sit on the server's existing Garmin writes (schedule, unschedule,
     update). Until then a development build sends to a stand-in Garmin
     (`EXPO_PUBLIC_DAASH_WATCH=fail` makes its first send fail).
+
+## Milestone 6 (builder and parser), 27 Nov
+
+- **The parser reads more than the prompt's minimum, and refuses what it can't
+  know.** On top of section 5.7's grammar it reads:
+  - coach shorthand (`'` for minutes, `"` for seconds);
+  - a zone without "at" ("5x1km threshold");
+  - a recovery in the same clause ("6x800m at 3:50/km 400m jog");
+  - the word first ("tempo 20 min", "jog 2 min");
+  - strides, as reps with no pace target;
+  - long runs ("16 km long run", easy);
+  - "28 km with the last 8 at marathon", read as 20 km easy then 8 km at
+    marathon;
+  - "hr 150 for 40 min";
+  - bracketed repeats ("4x(1km at 10k, 400m jog)").
+
+  It refuses these, each with what to write instead:
+  - "hard", "fast" and "quick";
+  - "mile pace", 3K and half-marathon pace (5K pace is the fastest zone);
+  - "parkrun" and "race";
+  - fartlek;
+  - a run with no length ("easy run");
+  - a number with no unit ("Did you mean "200 m"?");
+  - a unit one letter off ("1kn": "Did you mean "1 km"?");
+  - repeats inside repeats (not yet).
+
+  The corpus is `mobile/src/domain/parser.corpus.test.ts`: 31 readings and
+  10 refusals. M2's 16 still pass, with one change below.
+- **Added warm-up and cool-down.** Strides no longer count as quality. An easy
+  run written first or last already does the warm-up's or cool-down's job, so
+  nothing is added there. That changes one M2 reading: "20 min easy + 6 x 20 s
+  at 5k + 10 min easy" no longer gets an added warm-up and cool-down. The added
+  ones stay at 10 minutes. The board's "15 min easy (added)" is illustration;
+  the prompt names no length.
+- **The builder is the parser's reader, all the way down.**
+  - Edit steps shows one text row per step. The rows become the builder's text
+    and are read by the same parser, with the same fix-its. There is no second
+    step editor to keep in step.
+  - A planned session's Edit turns its step rows back into that text ("15 min
+    warm-up, 3 x 2 km at threshold with 2 min jog, 10 min cool-down"). A
+    session without rows uses its title when the title reads.
+  - Strength, rest days and recorded runs have no Edit.
+- **A "Did you mean …?" fix-it is a button** ("Use "threshold""). It replaces
+  only the marked text, and the runner presses it. Other fix-its are words
+  only, because the choice is the runner's.
+- **Conflict: the board's numbers.** The board says "9.4 km · about 46 min"
+  for 5 × 1 km with a 15 min warm-up. The estimate here is worked out:
+  - zones at their middle;
+  - a jog at the slow end of easy;
+  - a walk at 10:00 /km;
+  - a rest covers no ground;
+  - the recovery after every rep.
+
+  For the persona that comes to 10.1 km · about 52 min.
+- **The type chip** follows the work:
+  - 10K, 5K or VO2 (or repeats with no target) is Intervals;
+  - steady, marathon, threshold, tempo or a heart rate is Tempo, which matches
+    the board's "Tempo" for threshold reps;
+  - a long run, or 18 km and over, is Long;
+  - anything else is Easy.
+
+  Editing a planned long run that reads as easy keeps it Long.
+- **Targets.** The zones come from the runner's basis race, through the shared
+  pace engine. Before a watch is connected they come from a 10K of 45:00, and
+  the adjust row says so ("Threshold from a 10K of 45:00 until a watch is
+  connected"). Easier and Harder re-step the zones by 2%. A pace or heart rate
+  written out is kept as written, and the row doesn't show.
+- **Save and send** stages one proposal, `source: 'build'`, and opens the
+  watch confirm, which has a one-session shape for it. The shapes are:
+  - a new workout is an Add;
+  - Edit is a Replace;
+  - Edit onto another day is a Remove from the old day plus an Add.
+
+  Each op carries the `daash.workout.v1` it sends, as
+  `garmin_mcp/providers/workout.py` defines it (PR #27). Its tests hold every
+  corpus session to that file's rules. Once confirmed, Plan shows the session
+  with its steps before the server has it, and the builder closes.
+- **A day that already has a session** says "8 km easy is already planned that
+  day. This adds a second session." Saving adds the new one alongside; it
+  doesn't replace. Replacing is Edit's job, so a new workout never silently
+  takes a planned one's place. Two hard days in a row are said with the
+  back-to-back engine and never blocked.
+- **Disabled primary buttons lose the brand fill.** A greyed "Save and send"
+  in brand red looked pressable. This applies to every primary button; no
+  earlier screen's snapshot changed.
+- **The steps card is shared** (`features/plan/StepsCard.tsx`) by session
+  detail and the builder. Session detail's snapshots are unchanged.
+- **Coach on** drops "parsed on your phone" and adds the Coach card, and every
+  number stays the same (tested). The card's text is the server's.
+  TODO(server): a Coach note for a built session. A development build shows a
+  stand-in from the days around it ("Fits Friday. …").
+- **Not yet:**
+  - The diff's "Edit days" (M5) still has no design beyond its button, so it
+    stays out. The builder edits sessions from the plan.
+  - The "try-builder used" analytics event waits for the app's analytics layer.
+  - Trying the builder before sign-up needs onboarding (M9). The builder already
+    works with no plan and no account.
+- **E2E.** Five builder flows run as Jest integration tests over the real
+  routes and queue (`mobile/src/builder.flows.test.tsx`), on iOS and Android:
+  - new workout to the watch;
+  - a typo and its fix-it;
+  - a refusal;
+  - Edit steps;
+  - editing a planned session.
+- **TODO(server):** `POST /app/api/v1/watch/ops` takes the op's `workout`
+  (daash.workout.v1) for an add or replace from the builder. The server builds
+  it with `providers.current()`, so Garmin keeps building it as before.

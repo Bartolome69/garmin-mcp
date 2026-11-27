@@ -1,5 +1,5 @@
 // Plan's stack: the tab (a large title on iOS, the Material 3 app bar on Android),
-// a session's detail, the Move sheet, and the steps that open from them.
+// a session's detail, the Move sheet, the workout builder, and the steps that open from them.
 // Navigation uses the text colour, never brand.
 import { Stack } from 'expo-router';
 import { Platform } from 'react-native';
@@ -31,6 +31,7 @@ export default function PlanLayout() {
           contentStyle: { backgroundColor: colors.surface },
         }} />
         <Stack.Screen name="new-week" options={{ title: 'New week', headerBackTitle: 'Plan' }} />
+        <Stack.Screen name="builder" options={{ title: 'New workout', headerBackTitle: 'Plan' }} />
         <Stack.Screen name="next" options={{ title: '' }} />
       </Stack>
     </PlanProvider>

@@ -10,7 +10,8 @@ function toSession(d: DiffSession, was: PlanSession | undefined): PlanSession {
   return {
     id: d.id, date: d.date, type: d.type, typeLabel: d.typeLabel, title: d.title, sub: d.sub, distanceKm: d.distanceKm,
     done: false, watch: was?.watch ?? { state: 'not_sent', at: null },
-    detail: same ? was!.detail : null,   // the steps changed: the detail comes back with the server's plan
+    // The builder's sessions bring their steps; otherwise the steps changed and come back with the server's plan.
+    detail: d.detail ?? (same ? was!.detail : null),
   };
 }
 
