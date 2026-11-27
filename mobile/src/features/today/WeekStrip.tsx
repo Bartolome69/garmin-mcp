@@ -12,6 +12,11 @@ import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
 import type { WeekDay } from './model';
 
+// The strip's short words ("Int", "Str") said in full.
+const SPOKEN: Partial<Record<WeekDay['type'], string>> = {
+  easy: 'Easy', recovery: 'Recovery', tempo: 'Tempo', intervals: 'Intervals', long: 'Long run', race: 'Race', strength: 'Strength', rest: 'Rest',
+};
+
 function Day({ d, onRun }: { d: WeekDay; onRun?: (id: string) => void }) {
   const { colors } = useTheme();
   const colour = colors[TYPE_TOKEN[d.type]];
@@ -22,7 +27,7 @@ function Day({ d, onRun }: { d: WeekDay; onRun?: (id: string) => void }) {
   const run = done && !rest && d.runId && onRun ? d.runId : null;
   const Box = run ? Pressable : View;
   return (
-    <Box accessible accessibilityLabel={`${d.label}, ${d.day}, ${state}${d.today ? ', today' : ''}`} testID={`day-${d.date}`}
+    <Box accessible accessibilityLabel={`${SPOKEN[d.type] ?? d.label}, ${d.day}, ${state}${d.today ? ', today' : ''}`} testID={`day-${d.date}`}
       {...(run ? { accessibilityRole: 'button' as const, accessibilityHint: 'Opens the run', onPress: () => onRun!(run) } : {})}
       style={{ flex: 1, minHeight: MIN_TOUCH, alignItems: 'center', gap: 5, paddingVertical: 6, borderRadius: 10,
         backgroundColor: d.today ? colors.sunken : 'transparent' }}>

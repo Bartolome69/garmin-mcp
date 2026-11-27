@@ -150,9 +150,21 @@ export function audit(tree: unknown) {
       if (words.length) clipping.push(`${describeNode(n)}: height ${s.height}`);
     }
   }
-  return { names: [...new Set(names)], targets: [...new Set(targets)], clipping: [...new Set(clipping)] };
+  // Charts: every drawing is itself labelled or sits inside a labelled element (its one-line summary).
+  const charts: string[] = [];
+  const walk = (n: unknown, labelled: boolean) => {
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n)) { n.forEach((c) => walk(c, labelled)); return; }
+    const node = n as Node;
+    const here = labelled || !!(node.props?.accessibilityLabel && (node.props.accessible || node.props.accessibilityRole));
+    if (/^RNSVG(SvgView|Svg)/.test(node.type)) { drawings += 1; if (!here) charts.push(node.props.testID ?? '(unnamed chart)'); }
+    (node.children ?? []).forEach((c) => walk(c, here));
+  };
+  walk(tree, false);
+  return { names: [...new Set(names)], targets: [...new Set(targets)], clipping: [...new Set(clipping)], charts: [...new Set(charts)] };
 }
 
+let drawings = 0;
 let errors: string[] = [];
 const realError = console.error;
 beforeEach(() => {
@@ -188,6 +200,10 @@ describe(`accessibility on ${Platform.OS}`, () => {
   });
   it(`every control is at least ${MIN_TOUCH} tall`, () => {
     expect(Object.fromEntries(Object.entries(findings).filter(([, f]) => f.targets.length).map(([k, f]) => [k, f.targets]))).toEqual({});
+  });
+  it('every chart has a spoken summary', () => {
+    expect(drawings).toBeGreaterThan(10); // the check saw the charts it checks
+    expect(Object.fromEntries(Object.entries(findings).filter(([, f]) => f.charts.length).map(([k, f]) => [k, f.charts]))).toEqual({});
   });
   it('no text sits in a fixed-height box', () => {
     expect(Object.fromEntries(Object.entries(findings).filter(([, f]) => f.clipping.length).map(([k, f]) => [k, f.clipping]))).toEqual({});

@@ -1722,7 +1722,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           </Text>
         </View>
         <View
-          accessibilityLabel="Int, 25, done"
+          accessibilityLabel="Intervals, 25, done"
           accessible={true}
           style={
             {
@@ -2104,7 +2104,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           </Text>
         </View>
         <View
-          accessibilityLabel="Str, 28, planned"
+          accessibilityLabel="Strength, 28, planned"
           accessible={true}
           style={
             {
@@ -2212,7 +2212,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           </Text>
         </View>
         <View
-          accessibilityLabel="Long, 29, planned"
+          accessibilityLabel="Long run, 29, planned"
           accessible={true}
           style={
             {

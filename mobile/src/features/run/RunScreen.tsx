@@ -5,9 +5,9 @@ import { Stack, useRouter } from 'expo-router';
 import { Platform, Pressable, Share, View } from 'react-native';
 
 import { useFlags } from '../../flags/FlagsProvider';
-import { Button, MIN_TOUCH } from '../../ui/Button';
+import { MIN_TOUCH } from '../../ui/Button';
+import { LoadState } from '../../ui/StateViews';
 import { Icon } from '../../ui/Icon';
-import { Screen } from '../../ui/Screen';
 import { Text } from '../../ui/Text';
 import { RunView, shareText } from './RunView';
 import { useRun } from './useRun';
@@ -30,14 +30,7 @@ export function RunScreen({ id, fetcher }: { id: string; fetcher?: Parameters<ty
         <RunView vm={vm} coach={flags.coach_enabled}
           onAsk={() => router.push({ pathname: '/coach', params: { run: vm.sessionId ?? vm.id } })} />
       ) : (
-        <Screen testID="run-missing">
-          <View style={{ gap: 12 }}>
-            <Text variant="body" tone="muted">
-              {run.refreshing && !run.error ? 'Getting the run…' : 'This run isn’t on your phone yet. It comes down next time Daash reaches your watch’s data.'}
-            </Text>
-            {run.error ? <Button label="Try again" onPress={run.refresh} /> : null}
-          </View>
-        </Screen>
+        <LoadState what="this run" failure={run.failure} error={run.error} onRetry={run.refresh} testID="run-missing" />
       )}
     </>
   );

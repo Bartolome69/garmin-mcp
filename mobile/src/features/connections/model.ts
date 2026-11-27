@@ -83,6 +83,7 @@ export function mergeWords(m: MergeRow, vm: ConnectionsVM, os: string): string {
 
 /** The Source priority row: "Garmin first · 2 duplicate runs merged". */
 export function prioritySummary(vm: ConnectionsVM, os: string): string {
+  if (!vm.providers.length) return 'Nothing connected yet';
   const first = vm.providers.find((p) => p.key === vm.priority[0]);
   const n = vm.merges.length;
   return `${first ? sourceName(first, os) : 'No source'} first · ${n ? `${n} duplicate run${n === 1 ? '' : 's'} merged` : 'no duplicates this month'}`;

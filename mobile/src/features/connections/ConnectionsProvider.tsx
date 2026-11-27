@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { useDb } from '../../db/DbContext';
 import { kv } from '../../db/kv';
-import { useResource, type Cached, type ResourceStore } from '../../data/resource';
+import { useResource, type Cached, type FailureKind, type ResourceStore } from '../../data/resource';
 import { withChanges, type ConnectionsVM } from './model';
 import { fetchConnections, sendChanges } from './source';
 
@@ -16,6 +16,8 @@ const CHANGES_KEY = 'connections:changes';
 type State = {
   vm: ConnectionsVM | null;
   error: string | null;
+  failure: FailureKind | null;
+  fetchedAt: number | null;
   refresh: () => Promise<void>;
   setPriority: (order: string[]) => void;
   /** "These are different runs": the merge comes apart. */
@@ -53,6 +55,8 @@ export function ConnectionsProvider({ children, fetcher }: { children: ReactNode
   const value = useMemo<State>(() => ({
     vm,
     error: resource.error,
+    failure: resource.failure,
+    fetchedAt: resource.fetchedAt,
     refresh: resource.refresh,
     setPriority: (order) => update((c) => ({ ...c, priority: order }), (n) => ({ priority: n.priority! })),
     keepApart: (id) => {
@@ -63,7 +67,7 @@ export function ConnectionsProvider({ children, fetcher }: { children: ReactNode
       (n) => ({ keptApart: n.keptApart! })),
     asked: changes.asked,
     ask: (what) => update((c) => ({ ...c, asked: [...new Set([...c.asked, what])] })),
-  }), [vm, resource.error, resource.refresh, update, changes.asked]);
+  }), [vm, resource.error, resource.failure, resource.fetchedAt, resource.refresh, update, changes.asked]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -12,6 +12,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
+import { openGarminSignIn } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { badgeWords, mergeTitle, mergeWords, prioritySummary, sourceName, youSummary, type ConnectionsVM, type Provider } from './model';
 
@@ -114,14 +115,26 @@ export type ConnectionsActions = {
   tell: (what: string) => void;
 };
 
-export function ConnectionsView({ vm, asked, actions, os = Platform.OS }: { vm: ConnectionsVM; asked: string[]; actions: ConnectionsActions; os?: string }) {
+export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated = null }: {
+  vm: ConnectionsVM; asked: string[]; actions: ConnectionsActions; os?: string;
+  /** "Updated 2h ago" when what's shown is the phone's copy and it's old. */
+  updated?: string | null;
+}) {
   const { colors } = useTheme();
   const coming = vm.coming.join(', ');
   const told = asked.includes(`tell:${coming}`);
   return (
     <ScrollView testID="connections" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ padding: 16, gap: 10 }}>
+      {updated ? <Text testID="connections-updated" variant="footnote" tone="muted">{updated}</Text> : null}
       {vm.providers.map((p) => <ProviderCard key={p.key} p={p} os={os} onReconnect={actions.reconnect} />)}
+      {!vm.providers.length ? (
+        <Card testID="connections-empty" style={{ gap: 8 }}>
+          <Text variant="headline">Nothing connected yet</Text>
+          <Text variant="footnote" tone="muted">Connect your watch and Daash reads your runs, sleep and readiness, and sends the sessions you confirm.</Text>
+          <Button label="Connect Garmin" kind="primary" onPress={openGarminSignIn} />
+        </Card>
+      ) : null}
       <List>
         <Row testID="row-priority" title="Source priority" sub={prioritySummary(vm, os)} onPress={actions.priority} chevron />
         {coming ? (

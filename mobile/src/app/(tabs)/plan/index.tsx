@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, useWindowDimensions } from 'react-native';
 
 import { freshness } from '../../../data/freshness';
+import { EmptyPlan } from '../../../features/plan/EmptyPlan';
 import { findSession, weekIndexOf } from '../../../features/plan/model';
 import { proposalWords } from '../../../features/plan/moves';
 import { usePlan } from '../../../features/plan/PlanProvider';
@@ -12,6 +13,7 @@ import { TodayEmpty } from '../../../features/today/TodayView';
 import { moveProposal } from '../../../features/watch/proposals';
 import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
+import { FailureBanner } from '../../../ui/StateViews';
 
 function useNow(everyMs = 60000) {
   const [now, setNow] = useState(Date.now());
@@ -32,10 +34,14 @@ export default function PlanScreen() {
   const [index, setIndex] = useState<number | null>(null);
   const vm = plan.shown;
 
-  if (!vm) return <TodayEmpty error={plan.error} onRetry={plan.refresh} />;
+  if (!vm) return <TodayEmpty error={plan.error} failure={plan.failure} what="your plan" testID="plan" onRetry={plan.refresh} />;
+  // A new runner with no plan: the empty state, not a blank week.
+  if (!vm.weeks.length) return <EmptyPlan brand={focused} onWeekByWeek={() => router.push('/plan/builder')} />;
   const shownIndex = index ?? weekIndexOf(vm, vm.currentWeek);
   const next = (kind: string, extra: Record<string, string> = {}) => router.push({ pathname: '/plan/next', params: { kind, ...extra } });
   return (
+    <>
+    <FailureBanner failure={plan.failure} />
     <PlanView
       vm={vm}
       tab={tab}
@@ -80,5 +86,6 @@ export default function PlanScreen() {
         change: () => router.push('/plan/life'),
       }}
     />
+    </>
   );
 }
