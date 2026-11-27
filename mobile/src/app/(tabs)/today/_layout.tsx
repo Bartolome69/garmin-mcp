@@ -29,6 +29,7 @@ export default function TodayLayout() {
         <Stack.Screen name="readiness" options={sheet} />
         <Stack.Screen name="options" options={sheet} />
         <Stack.Screen name="new-week" options={{ title: 'New week', headerShown: true, headerBackTitle: 'Today' }} />
+        <Stack.Screen name="run/[id]" options={{ title: '', headerShown: true, headerBackTitle: 'Today' }} />
         <Stack.Screen name="next" options={{ title: '' }} />
       </Stack>
     </TodayProvider>

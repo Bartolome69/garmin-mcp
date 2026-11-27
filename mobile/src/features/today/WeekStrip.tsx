@@ -2,7 +2,7 @@
 // (filled with a tick when done, outlined when planned, dashed for rest) and a
 // word. Today's date is outlined in brand-text on Today, which already has its
 // one brand fill. Rest days count: no "Missed!".
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
 import { Card } from '../../ui/Card';
@@ -11,14 +11,18 @@ import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
 import type { WeekDay } from './model';
 
-function Day({ d }: { d: WeekDay }) {
+function Day({ d, onRun }: { d: WeekDay; onRun?: (id: string) => void }) {
   const { colors } = useTheme();
   const colour = colors[TYPE_TOKEN[d.type]];
   const rest = d.status === 'rest' || d.status === 'rest_done';
   const done = d.status === 'done' || d.status === 'rest_done';
   const state = rest ? 'rest day' : done ? 'done' : 'planned';
+  // A done day opens its run (post-run); the others are information only.
+  const run = done && !rest && d.runId && onRun ? d.runId : null;
+  const Box = run ? Pressable : View;
   return (
-    <View accessible accessibilityLabel={`${d.label}, ${d.day}, ${state}${d.today ? ', today' : ''}`} testID={`day-${d.date}`}
+    <Box accessible accessibilityLabel={`${d.label}, ${d.day}, ${state}${d.today ? ', today' : ''}`} testID={`day-${d.date}`}
+      {...(run ? { accessibilityRole: 'button' as const, accessibilityHint: 'Opens the run', onPress: () => onRun!(run) } : {})}
       style={{ flex: 1, alignItems: 'center', gap: 5, paddingVertical: 6, borderRadius: 10,
         backgroundColor: d.today ? colors.sunken : 'transparent' }}>
       <Text variant="caption" tone="muted" maxFontSizeMultiplier={1.5}>{d.letter}</Text>
@@ -32,11 +36,11 @@ function Day({ d }: { d: WeekDay }) {
         {done ? <Icon name="check" tone={rest ? 'cRest' : 'bg'} /> : null}
       </View>
       <Text variant="caption" tone="muted" maxFontSizeMultiplier={1.5} numberOfLines={1}>{d.label}</Text>
-    </View>
+    </Box>
   );
 }
 
-export function WeekStrip({ week }: { week: { doneKm: number; plannedKm: number; activeWeeks: number; days: WeekDay[] } }) {
+export function WeekStrip({ week, onRun }: { week: { doneKm: number; plannedKm: number; activeWeeks: number; days: WeekDay[] }; onRun?: (id: string) => void }) {
   return (
     <Card testID="week" style={{ paddingVertical: 12 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
@@ -47,7 +51,7 @@ export function WeekStrip({ week }: { week: { doneKm: number; plannedKm: number;
         </Text>
       </View>
       <View style={{ flexDirection: 'row', gap: 4 }}>
-        {week.days.map((d) => <Day key={d.date} d={d} />)}
+        {week.days.map((d) => <Day key={d.date} d={d} onRun={onRun} />)}
       </View>
     </Card>
   );

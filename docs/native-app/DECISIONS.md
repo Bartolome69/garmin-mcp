@@ -389,3 +389,71 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
 - **TODO(server):** `POST /app/api/v1/watch/ops` takes the op's `workout`
   (daash.workout.v1) for an add or replace from the builder. The server builds
   it with `providers.current()`, so Garmin keeps building it as before.
+
+## Milestone 7 (post-run), 27 Nov
+
+- **The server works the run out; the app draws it.**
+  `garmin_mcp/domain/postrun.py` `view()` turns a provider-neutral `Run` into
+  what the screen shows:
+  - planned vs actual, each row marked on plan or not;
+  - pace, HR, cadence and elevation on the same 160 points by distance;
+  - laps;
+  - each chart's ticks, its screen-reader summary and its takeaway;
+  - HR zones;
+  - the route scaled to a box.
+
+  Nothing in it takes a coach flag (tested), so every number is the same with
+  the Coach on or off (also tested on the app's side). The app reads values at
+  the scrub line and formats them; it computes nothing else.
+- **Takeaways: two new templates in `takeaways.py`.** HR across reps ("HR
+  drifted 4 bpm across the 6 reps.") and elevation ("48 m up, 46 m down.", or
+  "Flat." under 15 m). Their thresholds are in `config.py`, alongside new
+  on-plan tolerances: within 10% of the distance, and within 3 s of the pace
+  range.
+
+  Which template applies:
+  - runs with reps use the rep templates;
+  - steady runs use splits and HR drift at the same pace;
+  - strides are their own laps ("Stride 1"), never reps, and the run's pace and
+    splits leave them and their recoveries out.
+
+  The first sentence is bold, as on the board. "Even", "Negative split" and
+  "steady" carry a tick; the rest carry an info mark. Neither is colour alone.
+- **The scrub line** is one line across every metric. It starts in the middle of
+  the rep nearest halfway, which is "Rep 4 · 4:00 /km" for the persona, as on
+  the board, and halfway on a run without reps. A finger on either chart moves
+  it. For screen readers the charts are one adjustable element: its label is
+  each chart's summary, its value is what the line reads, and swiping up or
+  down moves the line lap by lap (or a kilometre at a time).
+- **Conflict: Android's board** (Pass 1) shows one chart with Pace, HR, Cadence
+  and Elev as pages. The prompt says stacked Pace and HR with Cadence and
+  Elevation as further tabs, so both platforms use Pass 3's layout: "Pace +
+  HR", "Cadence" and "Elev". The tabs are the board's pills.
+- **Conflict: Pass 1's light debrief** says rep 6 was "in line with this week's
+  short sleep", which states a cause. Pass 3 replaced it with an observation;
+  that's the line followed here. The debrief is the server's (TODO(server)). A
+  development build shows a stand-in whose numbers are all the run's own, which
+  is tested.
+- **The route map is the GPS line on the sunken tone**, with a hollow dot for
+  the start and a solid one for the finish, and it says so to screen readers.
+  Map tiles need a maps SDK and a key: an open question for the accessibility
+  and polish pass, not a blocker.
+- **Where post-run opens.** It opens from a done row on Plan and from a done day
+  in Today's week strip. That makes those days buttons ("Opens the run"); the
+  rest of the strip stays information only. Today's snapshots didn't change.
+  Share sends the run in words: title, date, distance and time, and the two
+  takeaways. "Ask about this run" opens the Coach with the run as its context,
+  which the Coach milestone (M11) will read.
+- **Thumbs up and down** are held on the screen for now. TODO(server): store
+  them with the debrief.
+- **Offline.** A run is cached on the device (`run:<id>`) and drawn from there
+  first. A run doesn't change once recorded, so it shows no stale label.
+- **Persona runs.** The development fixture (`runs.fixture.json`, written by
+  `scripts/domain_fixtures.py` from the real engine and checked in CI) has this
+  week's three runs, built so their numbers match the plan fixture's rows:
+  - Tue: 8 km easy + strides;
+  - Wed: 6 × 800 m, 11.2 km, reps 4:01 avg;
+  - Thu: 9 km run club, 5:14 /km, faster than easy, so it's marked off plan.
+- **TODO(server):** `GET /app/api/v1/runs/{sessionId}` returns
+  `postrun.view(...)`, built from the provider's activity details and streams
+  (Garmin first), with `coach: {debrief}` when coach_enabled.

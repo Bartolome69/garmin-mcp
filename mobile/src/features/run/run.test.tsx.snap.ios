@@ -1,0 +1,5831 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`snapshot: post-run on ios: run-ios 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "gap": 10,
+      "padding": 16,
+      "paddingTop": 4,
+    }
+  }
+  contentInsetAdjustmentBehavior="automatic"
+  style={
+    {
+      "backgroundColor": "#161614",
+      "flex": 1,
+    }
+  }
+  testID="run"
+>
+  <View>
+    <View
+      accessibilityLabel="Route map, 11.2 km. Hollow dot: start. Solid dot: finish."
+      accessibilityRole="image"
+      accessible={true}
+      style={
+        {
+          "backgroundColor": "#2C2B28",
+          "borderRadius": 12,
+          "height": 110,
+          "overflow": "hidden",
+        }
+      }
+      testID="route-map"
+    >
+      <RNSVGSvgView
+        align="xMidYMid"
+        bbHeight="100%"
+        bbWidth="100%"
+        focusable={false}
+        height="100%"
+        meetOrSlice={0}
+        minX={0}
+        minY={0}
+        style={
+          [
+            {
+              "backgroundColor": "transparent",
+              "borderWidth": 0,
+            },
+            {
+              "flex": 0,
+              "height": "100%",
+              "width": "100%",
+            },
+          ]
+        }
+        vbHeight={110}
+        vbWidth={350}
+        width="100%"
+      >
+        <RNSVGGroup
+          fill={
+            {
+              "payload": 4278190080,
+              "type": 0,
+            }
+          }
+        >
+          <RNSVGPath
+            d="M111.3 54.8 L114.9 52.2 L118.3 49.5 L121.7 47.0 L124.8 44.4 L127.8 41.9 L130.5 39.4 L133.0 37.0 L135.0 34.6 L136.8 32.4 L138.2 30.2 L139.2 28.2 L139.8 26.3 L140.1 24.4 L140.0 22.7 L139.6 21.2 L138.9 19.8 L138.0 18.5 L136.8 17.4 L135.4 16.4 L134.0 15.6 L132.5 14.9 L131.0 14.5 L129.3 14.1 L127.4 14.0 L125.9 14.2 L125.0 14.8 L124.6 15.7 L125.0 17.0 L126.0 18.5 L127.0 19.6 L128.4 20.8 L130.0 22.2 L131.9 23.7 L134.1 25.2 L137.9 27.9 L142.2 30.8 L146.9 33.9 L151.9 37.1 L156.8 40.6 L161.7 44.1 L165.4 46.9 L168.2 49.3 L170.8 51.6 L173.2 54.0 L175.4 56.3 L177.7 59.2 L180.0 62.9 L181.6 66.6 L182.5 70.1 L182.6 73.5 L182.1 76.7 L180.9 79.8 L180.0 81.7 L178.9 83.4 L177.6 85.1 L176.3 86.6 L175.0 88.1 L172.9 90.1 L170.9 91.9 L169.2 93.3 L168.0 94.5 L167.3 95.3 L167.2 95.8 L167.7 96.0 L168.4 95.9 L169.4 95.8 L170.7 95.5 L172.3 95.0 L174.7 94.3 L178.2 93.1 L182.2 91.6 L186.7 89.8 L191.5 87.7 L196.4 85.3 L201.3 82.8 L204.3 81.0 L207.3 79.1 L210.1 77.2 L212.8 75.1 L215.2 73.1 L218.4 69.8 L221.2 66.3 L223.2 62.7 L224.5 59.0 L225.1 55.3 L225.0 51.6 L224.4 48.5 L223.6 45.9 L222.6 43.4 L221.3 40.9 L220.0 38.5 L218.5 36.2 L217.0 33.9 L215.5 31.7 L214.1 29.6 L212.8 27.6 L211.7 25.7 L210.8 24.0 L210.1 22.4 L209.7 20.8 L209.7 19.5 L210.0 18.2 L210.6 17.2 L211.6 16.2 L213.0 15.5 L214.7 14.9 L216.8 14.4 L219.1 14.1 L221.8 14.0 L224.7 14.0 L227.8 14.2 L231.1 14.6 L234.5 15.1 L238.0 15.8 L238.7 16.0"
+            fill={null}
+            propList={
+              [
+                "fill",
+                "stroke",
+                "strokeWidth",
+                "strokeLinecap",
+                "strokeLinejoin",
+              ]
+            }
+            stroke={
+              {
+                "payload": 4294243310,
+                "type": 0,
+              }
+            }
+            strokeLinecap={1}
+            strokeLinejoin={1}
+            strokeWidth={3.5}
+          />
+          <RNSVGCircle
+            cx={111.327}
+            cy={54.814392999999995}
+            fill={
+              {
+                "payload": 4281084712,
+                "type": 0,
+              }
+            }
+            propList={
+              [
+                "fill",
+                "stroke",
+                "strokeWidth",
+              ]
+            }
+            r={5}
+            stroke={
+              {
+                "payload": 4294243310,
+                "type": 0,
+              }
+            }
+            strokeWidth={2}
+          />
+          <RNSVGCircle
+            cx={238.673}
+            cy={15.9993322}
+            fill={
+              {
+                "payload": 4294243310,
+                "type": 0,
+              }
+            }
+            propList={
+              [
+                "fill",
+              ]
+            }
+            r={5}
+          />
+        </RNSVGGroup>
+      </RNSVGSvgView>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "flex-end",
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "gap": 8,
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "flexShrink": 1,
+            "gap": 4,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "alignSelf": "flex-start",
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 7,
+              "flexDirection": "row",
+              "gap": 6,
+              "minHeight": 24,
+              "paddingLeft": 7,
+              "paddingRight": 9,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#E07AA8",
+                "borderColor": "#9A9993",
+                "borderRadius": 3,
+                "borderWidth": 0,
+                "height": 9,
+                "width": 9,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "600",
+                },
+              ]
+            }
+          >
+            Intervals
+          </Text>
+        </View>
+        <Text
+          accessibilityRole="header"
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 22,
+                "fontWeight": "700",
+                "lineHeight": 28,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              undefined,
+            ]
+          }
+        >
+          6 × 800 m
+        </Text>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 13,
+              "lineHeight": 18,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            undefined,
+          ]
+        }
+      >
+        Wed 25 Nov · 06:30
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 0,
+            "paddingHorizontal": 14,
+            "paddingVertical": 8,
+          },
+        ]
+      }
+      testID="planned"
+    >
+      <View
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+        style={
+          {
+            "flexDirection": "row",
+          }
+        }
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 6,
+              },
+            ]
+          }
+        >
+          Planned vs actual
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "paddingVertical": 6,
+              },
+            ]
+          }
+        >
+          Plan
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "paddingVertical": 6,
+              },
+            ]
+          }
+        >
+          Done
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Distance, plan 11.0 km, done 11.2 km, on plan"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+          }
+        }
+        testID="planned-Distance"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          Distance
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#E2E1DB",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "flex": 1,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          11.0 km
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 4,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4287414415}
+            tintColor="#8CC08F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#8CC08F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            11.2 km
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="Rep pace, plan 3:58 to 4:08, done 4:01 avg, on plan"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+          }
+        }
+        testID="planned-Rep pace"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          Rep pace
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#E2E1DB",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "flex": 1,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          3:58–4:08
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 4,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4287414415}
+            tintColor="#8CC08F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#8CC08F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            4:01 avg
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="Reps, plan 6 × 800 m, done 6 of 6, on plan"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+          }
+        }
+        testID="planned-Reps"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          Reps
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#E2E1DB",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "flex": 1,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          6 × 800 m
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 4,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4287414415}
+            tintColor="#8CC08F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#8CC08F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            6 of 6
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 6,
+            "paddingHorizontal": 14,
+            "paddingVertical": 12,
+          },
+        ]
+      }
+      testID="charts"
+    >
+      <View
+        accessibilityRole="tablist"
+        style={
+          {
+            "backgroundColor": "#2C2B28",
+            "borderRadius": 999,
+            "flexDirection": "row",
+            "gap": 4,
+            "padding": 3,
+          }
+        }
+      >
+        <View
+          accessibilityRole="tab"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": true,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "flex": 1,
+              "justifyContent": "center",
+              "minHeight": 44,
+            }
+          }
+          testID="metric-paceHr"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "#F4F3EE",
+                "borderRadius": 999,
+                "height": 32,
+                "justifyContent": "center",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#161614",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Pace + HR
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="tab"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": false,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "flex": 1,
+              "justifyContent": "center",
+              "minHeight": 44,
+            }
+          }
+          testID="metric-cadence"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderRadius": 999,
+                "height": 32,
+                "justifyContent": "center",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Cadence
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="tab"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": false,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "flex": 1,
+              "justifyContent": "center",
+              "minHeight": 44,
+            }
+          }
+          testID="metric-elevation"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderRadius": 999,
+                "height": 32,
+                "justifyContent": "center",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Elev
+            </Text>
+          </View>
+        </View>
+      </View>
+      <View
+        accessibilityActions={
+          [
+            {
+              "name": "increment",
+            },
+            {
+              "name": "decrement",
+            },
+          ]
+        }
+        accessibilityLabel="Pace by distance, 6 reps around 4:01 per km. Heart rate by distance, from 118 to 172 bpm"
+        accessibilityRole="adjustable"
+        accessibilityValue={
+          {
+            "text": "Rep 4 · 4:00 /km, Rep 4 · 168 bpm",
+          }
+        }
+        accessible={true}
+        onAccessibilityAction={[Function]}
+        onLayout={[Function]}
+        onMoveShouldSetResponder={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "gap": 6,
+          }
+        }
+        testID="scrub-area"
+      >
+        <View
+          style={
+            {
+              "gap": 4,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "flexDirection": "row",
+                "justifyContent": "space-between",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Pace · /km
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              faster ↑
+            </Text>
+          </View>
+          <RNSVGSvgView
+            accessible={false}
+            align="xMidYMid"
+            bbHeight={112}
+            bbWidth="100%"
+            focusable={false}
+            height={112}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 112,
+                  "width": "100%",
+                },
+              ]
+            }
+            testID="chart-pace"
+            vbHeight={112}
+            vbWidth={320}
+            width="100%"
+          >
+            <RNSVGGroup
+              fill={
+                {
+                  "payload": 4278190080,
+                  "type": 0,
+                }
+              }
+            >
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={38}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={316}
+                y1={92}
+                y2={92}
+              />
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={14.222222222222221}
+                  y2={14.222222222222221}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      17.22222222222222,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="4:00"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={76.44444444444444}
+                  y2={76.44444444444444}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      79.44444444444444,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="6:00"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGPath
+                d="M38.9 66.1 40.6 66.1 42.3 66.1 44.1 66.1 45.8 66.1 47.6 66.1 49.3 66.1 51.0 66.1 52.8 66.1 54.5 66.1 56.2 66.1 58.0 66.1 59.7 66.1 61.5 66.1 63.2 66.1 64.9 66.1 66.7 66.1 68.4 66.1 70.1 66.1 71.9 66.1 73.6 66.1 75.4 66.1 77.1 66.1 78.8 66.1 80.6 66.1 82.3 66.1 84.0 66.1 85.8 66.1 87.5 43.3 89.3 13.2 91.0 13.2 92.7 13.2 94.5 13.2 96.2 13.2 97.9 13.2 99.7 13.2 101.4 13.2 103.2 13.2 104.9 13.2 106.6 13.2 108.4 86.8 110.1 86.8 111.8 86.8 113.6 86.8 115.3 86.8 117.1 66.1 118.8 14.7 120.5 14.7 122.3 14.7 124.0 14.7 125.7 14.7 127.5 14.7 129.2 14.7 131.0 14.7 132.7 14.7 134.4 14.7 136.2 14.7 137.9 76.4 139.6 86.8 141.4 86.8 143.1 86.8 144.9 86.8 146.6 76.4 148.3 14.2 150.1 14.2 151.8 14.2 153.5 14.2 155.3 14.2 157.0 14.2 158.8 14.2 160.5 14.2 162.2 14.2 164.0 14.2 165.7 14.2 167.4 66.1 169.2 86.8 170.9 86.8 172.7 86.8 174.4 86.8 176.1 86.8 177.9 14.2 179.6 14.2 181.3 14.2 183.1 14.2 184.8 14.2 186.6 14.2 188.3 14.2 190.0 14.2 191.8 14.2 193.5 14.2 195.2 14.2 197.0 55.7 198.7 86.8 200.5 86.8 202.2 86.8 203.9 86.8 205.7 86.8 207.4 26.1 209.1 16.3 210.9 16.3 212.6 16.3 214.4 16.3 216.1 16.3 217.8 16.3 219.6 16.3 221.3 16.3 223.0 16.3 224.8 16.3 226.5 46.4 228.3 86.8 230.0 86.8 231.7 86.8 233.5 86.8 235.2 86.8 236.9 35.5 238.7 15.3 240.4 15.3 242.2 15.3 243.9 15.3 245.6 15.3 247.4 15.3 249.1 15.3 250.8 15.3 252.6 15.3 254.3 15.3 256.1 30.3 257.8 68.7 259.5 68.7 261.3 68.7 263.0 68.7 264.7 68.7 266.5 68.7 268.2 68.7 270.0 68.7 271.7 68.7 273.4 68.7 275.2 68.7 276.9 68.7 278.6 68.7 280.4 68.7 282.1 68.7 283.9 68.7 285.6 68.7 287.3 68.7 289.1 68.7 290.8 68.7 292.5 68.7 294.3 68.7 296.0 68.7 297.8 68.7 299.5 68.7 301.2 68.7 303.0 68.7 304.7 68.7 306.4 68.7 308.2 68.7 309.9 68.7 311.7 68.7 313.4 68.7 315.1 68.7"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                    "strokeLinejoin",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeLinejoin={1}
+                strokeWidth={2}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1.2}
+                testID="scrub-pace"
+                x1={186.55625}
+                x2={186.55625}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGCircle
+                cx={186.55625}
+                cy={14.222222222222221}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                r={4}
+              />
+              <RNSVGRect
+                fill={
+                  {
+                    "payload": 4281084712,
+                    "type": 0,
+                  }
+                }
+                height={18}
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rx={5}
+                width={111.2}
+                x={192.55625}
+                y={4}
+              />
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10.5,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                testID="scrub-label-pace"
+                x={
+                  [
+                    198.55625,
+                  ]
+                }
+                y={
+                  [
+                    17,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Rep 4 · 4:00 /km"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    40,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="0"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    177,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="5.6"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "end",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    316,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="11.2 km"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+            </RNSVGGroup>
+          </RNSVGSvgView>
+          <View
+            accessibilityLabel="Even reps. Fastest and slowest 6 s apart."
+            accessible={true}
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 8,
+              }
+            }
+            testID="takeaway-pace"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="checkmark"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4287414415}
+              tintColor="#8CC08F"
+              type="monochrome"
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  {
+                    "fontVariant": [
+                      "tabular-nums",
+                    ],
+                  },
+                  {
+                    "flex": 1,
+                  },
+                ]
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 13,
+                      "lineHeight": 18,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "600",
+                    },
+                  ]
+                }
+              >
+                Even reps.
+              </Text>
+               Fastest and slowest 6 s apart.
+            </Text>
+          </View>
+        </View>
+        <View
+          style={
+            {
+              "gap": 4,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "flexDirection": "row",
+                "justifyContent": "space-between",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Heart rate · bpm
+            </Text>
+          </View>
+          <RNSVGSvgView
+            accessible={false}
+            align="xMidYMid"
+            bbHeight={112}
+            bbWidth="100%"
+            focusable={false}
+            height={112}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 112,
+                  "width": "100%",
+                },
+              ]
+            }
+            testID="chart-hr"
+            vbHeight={112}
+            vbWidth={320}
+            width="100%"
+          >
+            <RNSVGGroup
+              fill={
+                {
+                  "payload": 4278190080,
+                  "type": 0,
+                }
+              }
+            >
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={38}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={316}
+                y1={92}
+                y2={92}
+              />
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={83.87096774193549}
+                  y2={83.87096774193549}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      86.87096774193549,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="120"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={16.129032258064512}
+                  y2={16.129032258064512}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      19.129032258064512,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="170"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGPath
+                d="M38.9 86.6 40.6 85.2 42.3 83.9 44.1 83.9 45.8 82.5 47.6 81.2 49.3 79.8 51.0 79.8 52.8 78.5 54.5 77.1 56.2 77.1 58.0 75.7 59.7 74.4 61.5 74.4 63.2 73.0 64.9 71.7 66.7 70.3 68.4 70.3 70.1 69.0 71.9 67.6 73.6 67.6 75.4 66.3 77.1 64.9 78.8 64.9 80.6 63.5 82.3 62.2 84.0 60.8 85.8 60.8 87.5 58.1 89.3 41.9 91.0 31.0 92.7 27.0 94.5 25.6 96.2 24.3 97.9 24.3 99.7 24.3 101.4 24.3 103.2 24.3 104.9 24.3 106.6 24.3 108.4 44.6 110.1 67.6 111.8 74.4 113.6 77.1 115.3 78.5 117.1 75.7 118.8 50.0 120.5 33.7 122.3 28.3 124.0 25.6 125.7 24.3 127.5 22.9 129.2 22.9 131.0 22.9 132.7 22.9 134.4 22.9 136.2 22.9 137.9 40.5 139.6 64.9 141.4 74.4 143.1 77.1 144.9 78.5 146.6 77.1 148.3 51.4 150.1 35.1 151.8 27.0 153.5 24.3 155.3 22.9 157.0 21.5 158.8 21.5 160.5 21.5 162.2 21.5 164.0 21.5 165.7 21.5 167.4 35.1 169.2 62.2 170.9 73.0 172.7 77.1 174.4 78.5 176.1 78.5 177.9 56.8 179.6 35.1 181.3 25.6 183.1 21.5 184.8 20.2 186.6 18.8 188.3 18.8 190.0 18.8 191.8 18.8 193.5 18.8 195.2 18.8 197.0 28.3 198.7 58.1 200.5 71.7 202.2 75.7 203.9 77.1 205.7 78.5 207.4 60.8 209.1 36.5 210.9 27.0 212.6 21.5 214.4 20.2 216.1 18.8 217.8 18.8 219.6 18.8 221.3 18.8 223.0 18.8 224.8 18.8 226.5 24.3 228.3 55.4 230.0 70.3 231.7 75.7 233.5 77.1 235.2 78.5 236.9 64.9 238.7 35.1 240.4 22.9 242.2 17.5 243.9 14.8 245.6 14.8 247.4 13.4 249.1 13.4 250.8 13.4 252.6 13.4 254.3 13.4 256.1 31.0 257.8 70.3 259.5 70.3 261.3 69.0 263.0 69.0 264.7 69.0 266.5 69.0 268.2 67.6 270.0 67.6 271.7 67.6 273.4 67.6 275.2 66.3 276.9 66.3 278.6 66.3 280.4 66.3 282.1 66.3 283.9 64.9 285.6 64.9 287.3 64.9 289.1 64.9 290.8 63.5 292.5 63.5 294.3 63.5 296.0 63.5 297.8 62.2 299.5 62.2 301.2 62.2 303.0 62.2 304.7 62.2 306.4 60.8 308.2 60.8 309.9 60.8 311.7 60.8 313.4 59.5 315.1 59.5"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                    "strokeLinejoin",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeLinejoin={1}
+                strokeWidth={2}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1.2}
+                testID="scrub-hr"
+                x1={186.55625}
+                x2={186.55625}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGCircle
+                cx={186.55625}
+                cy={18.83870967741936}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                r={4}
+              />
+              <RNSVGRect
+                fill={
+                  {
+                    "payload": 4281084712,
+                    "type": 0,
+                  }
+                }
+                height={18}
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rx={5}
+                width={105}
+                x={192.55625}
+                y={4}
+              />
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10.5,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                testID="scrub-label-hr"
+                x={
+                  [
+                    198.55625,
+                  ]
+                }
+                y={
+                  [
+                    17,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Rep 4 · 168 bpm"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    40,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="0"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    177,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="5.6"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "end",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    316,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="11.2 km"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+            </RNSVGGroup>
+          </RNSVGSvgView>
+          <View
+            accessibilityLabel="HR drifted 4 bpm across the 6 reps."
+            accessible={true}
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 8,
+              }
+            }
+            testID="takeaway-hr"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="info.circle"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4289111455}
+              tintColor="#A6A59F"
+              type="monochrome"
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  {
+                    "fontVariant": [
+                      "tabular-nums",
+                    ],
+                  },
+                  {
+                    "flex": 1,
+                  },
+                ]
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 13,
+                      "lineHeight": 18,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "600",
+                    },
+                  ]
+                }
+              >
+                HR drifted 4 bpm across the 6 reps.
+              </Text>
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 8,
+            "paddingHorizontal": 14,
+            "paddingVertical": 12,
+          },
+        ]
+      }
+      testID="zones"
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 17,
+              "fontWeight": "600",
+              "lineHeight": 22,
+            },
+            {
+              "color": "#F4F3EE",
+            },
+            false,
+            undefined,
+          ]
+        }
+      >
+        Heart rate zones
+      </Text>
+      <View
+        style={
+          {
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="Zone 1, 15 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z1
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.2,
+                  "width": "68%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            15 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 2, 22 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z2
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.35,
+                  "width": "100%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            22 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 3, 2 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z3
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.55,
+                  "width": "9%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            2 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 4, 8 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z4
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.75,
+                  "width": "36%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            8 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 5, 9 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z5
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 1,
+                  "width": "41%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            9 min
+          </Text>
+        </View>
+      </View>
+    </View>
+  </View>
+</RCTScrollView>
+`;
+
+exports[`snapshot: post-run with the Coach on ios: run-coach-ios 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "gap": 10,
+      "padding": 16,
+      "paddingTop": 4,
+    }
+  }
+  contentInsetAdjustmentBehavior="automatic"
+  style={
+    {
+      "backgroundColor": "#161614",
+      "flex": 1,
+    }
+  }
+  testID="run"
+>
+  <View>
+    <View
+      accessibilityLabel="Route map, 11.2 km. Hollow dot: start. Solid dot: finish."
+      accessibilityRole="image"
+      accessible={true}
+      style={
+        {
+          "backgroundColor": "#2C2B28",
+          "borderRadius": 12,
+          "height": 110,
+          "overflow": "hidden",
+        }
+      }
+      testID="route-map"
+    >
+      <RNSVGSvgView
+        align="xMidYMid"
+        bbHeight="100%"
+        bbWidth="100%"
+        focusable={false}
+        height="100%"
+        meetOrSlice={0}
+        minX={0}
+        minY={0}
+        style={
+          [
+            {
+              "backgroundColor": "transparent",
+              "borderWidth": 0,
+            },
+            {
+              "flex": 0,
+              "height": "100%",
+              "width": "100%",
+            },
+          ]
+        }
+        vbHeight={110}
+        vbWidth={350}
+        width="100%"
+      >
+        <RNSVGGroup
+          fill={
+            {
+              "payload": 4278190080,
+              "type": 0,
+            }
+          }
+        >
+          <RNSVGPath
+            d="M111.3 54.8 L114.9 52.2 L118.3 49.5 L121.7 47.0 L124.8 44.4 L127.8 41.9 L130.5 39.4 L133.0 37.0 L135.0 34.6 L136.8 32.4 L138.2 30.2 L139.2 28.2 L139.8 26.3 L140.1 24.4 L140.0 22.7 L139.6 21.2 L138.9 19.8 L138.0 18.5 L136.8 17.4 L135.4 16.4 L134.0 15.6 L132.5 14.9 L131.0 14.5 L129.3 14.1 L127.4 14.0 L125.9 14.2 L125.0 14.8 L124.6 15.7 L125.0 17.0 L126.0 18.5 L127.0 19.6 L128.4 20.8 L130.0 22.2 L131.9 23.7 L134.1 25.2 L137.9 27.9 L142.2 30.8 L146.9 33.9 L151.9 37.1 L156.8 40.6 L161.7 44.1 L165.4 46.9 L168.2 49.3 L170.8 51.6 L173.2 54.0 L175.4 56.3 L177.7 59.2 L180.0 62.9 L181.6 66.6 L182.5 70.1 L182.6 73.5 L182.1 76.7 L180.9 79.8 L180.0 81.7 L178.9 83.4 L177.6 85.1 L176.3 86.6 L175.0 88.1 L172.9 90.1 L170.9 91.9 L169.2 93.3 L168.0 94.5 L167.3 95.3 L167.2 95.8 L167.7 96.0 L168.4 95.9 L169.4 95.8 L170.7 95.5 L172.3 95.0 L174.7 94.3 L178.2 93.1 L182.2 91.6 L186.7 89.8 L191.5 87.7 L196.4 85.3 L201.3 82.8 L204.3 81.0 L207.3 79.1 L210.1 77.2 L212.8 75.1 L215.2 73.1 L218.4 69.8 L221.2 66.3 L223.2 62.7 L224.5 59.0 L225.1 55.3 L225.0 51.6 L224.4 48.5 L223.6 45.9 L222.6 43.4 L221.3 40.9 L220.0 38.5 L218.5 36.2 L217.0 33.9 L215.5 31.7 L214.1 29.6 L212.8 27.6 L211.7 25.7 L210.8 24.0 L210.1 22.4 L209.7 20.8 L209.7 19.5 L210.0 18.2 L210.6 17.2 L211.6 16.2 L213.0 15.5 L214.7 14.9 L216.8 14.4 L219.1 14.1 L221.8 14.0 L224.7 14.0 L227.8 14.2 L231.1 14.6 L234.5 15.1 L238.0 15.8 L238.7 16.0"
+            fill={null}
+            propList={
+              [
+                "fill",
+                "stroke",
+                "strokeWidth",
+                "strokeLinecap",
+                "strokeLinejoin",
+              ]
+            }
+            stroke={
+              {
+                "payload": 4294243310,
+                "type": 0,
+              }
+            }
+            strokeLinecap={1}
+            strokeLinejoin={1}
+            strokeWidth={3.5}
+          />
+          <RNSVGCircle
+            cx={111.327}
+            cy={54.814392999999995}
+            fill={
+              {
+                "payload": 4281084712,
+                "type": 0,
+              }
+            }
+            propList={
+              [
+                "fill",
+                "stroke",
+                "strokeWidth",
+              ]
+            }
+            r={5}
+            stroke={
+              {
+                "payload": 4294243310,
+                "type": 0,
+              }
+            }
+            strokeWidth={2}
+          />
+          <RNSVGCircle
+            cx={238.673}
+            cy={15.9993322}
+            fill={
+              {
+                "payload": 4294243310,
+                "type": 0,
+              }
+            }
+            propList={
+              [
+                "fill",
+              ]
+            }
+            r={5}
+          />
+        </RNSVGGroup>
+      </RNSVGSvgView>
+    </View>
+    <View
+      style={
+        {
+          "backgroundColor": "#222220",
+          "borderColor": "#3A3936",
+          "borderRadius": 16,
+          "borderWidth": 1,
+          "gap": 8,
+          "padding": 14,
+          "paddingHorizontal": 16,
+        }
+      }
+      testID="debrief"
+    >
+      <View
+        accessibilityLabel="Coach debrief"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": true,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "justifyContent": "space-between",
+            "minHeight": 24,
+          }
+        }
+        testID="debrief-toggle"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Coach debrief
+        </Text>
+        <ViewManagerAdapter_SymbolModule
+          accessible={false}
+          animated={false}
+          colors={[]}
+          importantForAccessibility="no-hide-descendants"
+          name="chevron.up"
+          size={17}
+          style={
+            {
+              "height": 17,
+              "width": 17,
+            }
+          }
+          tint={4289111455}
+          tintColor="#A6A59F"
+          type="monochrome"
+        />
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "SourceSerif4_400Regular",
+              "fontSize": 17,
+              "lineHeight": 25,
+            },
+            {
+              "color": "#F4F3EE",
+            },
+            false,
+            undefined,
+          ]
+        }
+        testID="debrief-text"
+      >
+        Reps were even, 3:58 to 4:04, and your heart rate fell under 130 in every recovery. Rep 6 peaked at 172 bpm, 4 above rep 5.
+      </Text>
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "justifyContent": "space-between",
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "flexDirection": "row",
+              "gap": 6,
+            }
+          }
+        >
+          <View
+            accessibilityLabel="Helpful"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": false,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={5}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#3A3936",
+                "borderRadius": 17,
+                "borderWidth": 1,
+                "height": 34,
+                "justifyContent": "center",
+                "width": 34,
+              }
+            }
+            testID="thumb-up"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="hand.thumbsup"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4289111455}
+              tintColor="#A6A59F"
+              type="monochrome"
+            />
+          </View>
+          <View
+            accessibilityLabel="Not helpful"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": false,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={5}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#3A3936",
+                "borderRadius": 17,
+                "borderWidth": 1,
+                "height": 34,
+                "justifyContent": "center",
+                "width": 34,
+              }
+            }
+            testID="thumb-down"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="hand.thumbsdown"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4289111455}
+              tintColor="#A6A59F"
+              type="monochrome"
+            />
+          </View>
+        </View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "justifyContent": "center",
+              "minHeight": 44,
+            }
+          }
+          testID="ask-run"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#A6A59F",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "justifyContent": "center",
+                "minHeight": 32,
+                "paddingHorizontal": 12,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 15,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Ask about this run
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "flex-end",
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "gap": 8,
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "flexShrink": 1,
+            "gap": 4,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "alignSelf": "flex-start",
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 7,
+              "flexDirection": "row",
+              "gap": 6,
+              "minHeight": 24,
+              "paddingLeft": 7,
+              "paddingRight": 9,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#E07AA8",
+                "borderColor": "#9A9993",
+                "borderRadius": 3,
+                "borderWidth": 0,
+                "height": 9,
+                "width": 9,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "600",
+                },
+              ]
+            }
+          >
+            Intervals
+          </Text>
+        </View>
+        <Text
+          accessibilityRole="header"
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 22,
+                "fontWeight": "700",
+                "lineHeight": 28,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              undefined,
+            ]
+          }
+        >
+          6 × 800 m
+        </Text>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 13,
+              "lineHeight": 18,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            undefined,
+          ]
+        }
+      >
+        Wed 25 Nov · 06:30
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 0,
+            "paddingHorizontal": 14,
+            "paddingVertical": 8,
+          },
+        ]
+      }
+      testID="planned"
+    >
+      <View
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+        style={
+          {
+            "flexDirection": "row",
+          }
+        }
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 6,
+              },
+            ]
+          }
+        >
+          Planned vs actual
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "paddingVertical": 6,
+              },
+            ]
+          }
+        >
+          Plan
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "paddingVertical": 6,
+              },
+            ]
+          }
+        >
+          Done
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Distance, plan 11.0 km, done 11.2 km, on plan"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+          }
+        }
+        testID="planned-Distance"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          Distance
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#E2E1DB",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "flex": 1,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          11.0 km
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 4,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4287414415}
+            tintColor="#8CC08F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#8CC08F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            11.2 km
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="Rep pace, plan 3:58 to 4:08, done 4:01 avg, on plan"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+          }
+        }
+        testID="planned-Rep pace"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          Rep pace
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#E2E1DB",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "flex": 1,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          3:58–4:08
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 4,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4287414415}
+            tintColor="#8CC08F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#8CC08F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            4:01 avg
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="Reps, plan 6 × 800 m, done 6 of 6, on plan"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+          }
+        }
+        testID="planned-Reps"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "flex": 1.6,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          Reps
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 15,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#E2E1DB",
+              },
+              {
+                "fontVariant": [
+                  "tabular-nums",
+                ],
+              },
+              {
+                "flex": 1,
+                "paddingVertical": 8,
+              },
+            ]
+          }
+        >
+          6 × 800 m
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 4,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <ViewManagerAdapter_SymbolModule
+            accessible={false}
+            animated={false}
+            colors={[]}
+            importantForAccessibility="no-hide-descendants"
+            name="checkmark"
+            size={17}
+            style={
+              {
+                "height": 17,
+                "width": 17,
+              }
+            }
+            tint={4287414415}
+            tintColor="#8CC08F"
+            type="monochrome"
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 15,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#8CC08F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            6 of 6
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 6,
+            "paddingHorizontal": 14,
+            "paddingVertical": 12,
+          },
+        ]
+      }
+      testID="charts"
+    >
+      <View
+        accessibilityRole="tablist"
+        style={
+          {
+            "backgroundColor": "#2C2B28",
+            "borderRadius": 999,
+            "flexDirection": "row",
+            "gap": 4,
+            "padding": 3,
+          }
+        }
+      >
+        <View
+          accessibilityRole="tab"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": true,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "flex": 1,
+              "justifyContent": "center",
+              "minHeight": 44,
+            }
+          }
+          testID="metric-paceHr"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "#F4F3EE",
+                "borderRadius": 999,
+                "height": 32,
+                "justifyContent": "center",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#161614",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Pace + HR
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="tab"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": false,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "flex": 1,
+              "justifyContent": "center",
+              "minHeight": 44,
+            }
+          }
+          testID="metric-cadence"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderRadius": 999,
+                "height": 32,
+                "justifyContent": "center",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Cadence
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="tab"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": false,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "flex": 1,
+              "justifyContent": "center",
+              "minHeight": 44,
+            }
+          }
+          testID="metric-elevation"
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderRadius": 999,
+                "height": 32,
+                "justifyContent": "center",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Elev
+            </Text>
+          </View>
+        </View>
+      </View>
+      <View
+        accessibilityActions={
+          [
+            {
+              "name": "increment",
+            },
+            {
+              "name": "decrement",
+            },
+          ]
+        }
+        accessibilityLabel="Pace by distance, 6 reps around 4:01 per km. Heart rate by distance, from 118 to 172 bpm"
+        accessibilityRole="adjustable"
+        accessibilityValue={
+          {
+            "text": "Rep 4 · 4:00 /km, Rep 4 · 168 bpm",
+          }
+        }
+        accessible={true}
+        onAccessibilityAction={[Function]}
+        onLayout={[Function]}
+        onMoveShouldSetResponder={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "gap": 6,
+          }
+        }
+        testID="scrub-area"
+      >
+        <View
+          style={
+            {
+              "gap": 4,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "flexDirection": "row",
+                "justifyContent": "space-between",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Pace · /km
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              faster ↑
+            </Text>
+          </View>
+          <RNSVGSvgView
+            accessible={false}
+            align="xMidYMid"
+            bbHeight={112}
+            bbWidth="100%"
+            focusable={false}
+            height={112}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 112,
+                  "width": "100%",
+                },
+              ]
+            }
+            testID="chart-pace"
+            vbHeight={112}
+            vbWidth={320}
+            width="100%"
+          >
+            <RNSVGGroup
+              fill={
+                {
+                  "payload": 4278190080,
+                  "type": 0,
+                }
+              }
+            >
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={38}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={316}
+                y1={92}
+                y2={92}
+              />
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={14.222222222222221}
+                  y2={14.222222222222221}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      17.22222222222222,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="4:00"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={76.44444444444444}
+                  y2={76.44444444444444}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      79.44444444444444,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="6:00"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGPath
+                d="M38.9 66.1 40.6 66.1 42.3 66.1 44.1 66.1 45.8 66.1 47.6 66.1 49.3 66.1 51.0 66.1 52.8 66.1 54.5 66.1 56.2 66.1 58.0 66.1 59.7 66.1 61.5 66.1 63.2 66.1 64.9 66.1 66.7 66.1 68.4 66.1 70.1 66.1 71.9 66.1 73.6 66.1 75.4 66.1 77.1 66.1 78.8 66.1 80.6 66.1 82.3 66.1 84.0 66.1 85.8 66.1 87.5 43.3 89.3 13.2 91.0 13.2 92.7 13.2 94.5 13.2 96.2 13.2 97.9 13.2 99.7 13.2 101.4 13.2 103.2 13.2 104.9 13.2 106.6 13.2 108.4 86.8 110.1 86.8 111.8 86.8 113.6 86.8 115.3 86.8 117.1 66.1 118.8 14.7 120.5 14.7 122.3 14.7 124.0 14.7 125.7 14.7 127.5 14.7 129.2 14.7 131.0 14.7 132.7 14.7 134.4 14.7 136.2 14.7 137.9 76.4 139.6 86.8 141.4 86.8 143.1 86.8 144.9 86.8 146.6 76.4 148.3 14.2 150.1 14.2 151.8 14.2 153.5 14.2 155.3 14.2 157.0 14.2 158.8 14.2 160.5 14.2 162.2 14.2 164.0 14.2 165.7 14.2 167.4 66.1 169.2 86.8 170.9 86.8 172.7 86.8 174.4 86.8 176.1 86.8 177.9 14.2 179.6 14.2 181.3 14.2 183.1 14.2 184.8 14.2 186.6 14.2 188.3 14.2 190.0 14.2 191.8 14.2 193.5 14.2 195.2 14.2 197.0 55.7 198.7 86.8 200.5 86.8 202.2 86.8 203.9 86.8 205.7 86.8 207.4 26.1 209.1 16.3 210.9 16.3 212.6 16.3 214.4 16.3 216.1 16.3 217.8 16.3 219.6 16.3 221.3 16.3 223.0 16.3 224.8 16.3 226.5 46.4 228.3 86.8 230.0 86.8 231.7 86.8 233.5 86.8 235.2 86.8 236.9 35.5 238.7 15.3 240.4 15.3 242.2 15.3 243.9 15.3 245.6 15.3 247.4 15.3 249.1 15.3 250.8 15.3 252.6 15.3 254.3 15.3 256.1 30.3 257.8 68.7 259.5 68.7 261.3 68.7 263.0 68.7 264.7 68.7 266.5 68.7 268.2 68.7 270.0 68.7 271.7 68.7 273.4 68.7 275.2 68.7 276.9 68.7 278.6 68.7 280.4 68.7 282.1 68.7 283.9 68.7 285.6 68.7 287.3 68.7 289.1 68.7 290.8 68.7 292.5 68.7 294.3 68.7 296.0 68.7 297.8 68.7 299.5 68.7 301.2 68.7 303.0 68.7 304.7 68.7 306.4 68.7 308.2 68.7 309.9 68.7 311.7 68.7 313.4 68.7 315.1 68.7"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                    "strokeLinejoin",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeLinejoin={1}
+                strokeWidth={2}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1.2}
+                testID="scrub-pace"
+                x1={186.55625}
+                x2={186.55625}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGCircle
+                cx={186.55625}
+                cy={14.222222222222221}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                r={4}
+              />
+              <RNSVGRect
+                fill={
+                  {
+                    "payload": 4281084712,
+                    "type": 0,
+                  }
+                }
+                height={18}
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rx={5}
+                width={111.2}
+                x={192.55625}
+                y={4}
+              />
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10.5,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                testID="scrub-label-pace"
+                x={
+                  [
+                    198.55625,
+                  ]
+                }
+                y={
+                  [
+                    17,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Rep 4 · 4:00 /km"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    40,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="0"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    177,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="5.6"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "end",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    316,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="11.2 km"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+            </RNSVGGroup>
+          </RNSVGSvgView>
+          <View
+            accessibilityLabel="Even reps. Fastest and slowest 6 s apart."
+            accessible={true}
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 8,
+              }
+            }
+            testID="takeaway-pace"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="checkmark"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4287414415}
+              tintColor="#8CC08F"
+              type="monochrome"
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  {
+                    "fontVariant": [
+                      "tabular-nums",
+                    ],
+                  },
+                  {
+                    "flex": 1,
+                  },
+                ]
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 13,
+                      "lineHeight": 18,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "600",
+                    },
+                  ]
+                }
+              >
+                Even reps.
+              </Text>
+               Fastest and slowest 6 s apart.
+            </Text>
+          </View>
+        </View>
+        <View
+          style={
+            {
+              "gap": 4,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "flexDirection": "row",
+                "justifyContent": "space-between",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Heart rate · bpm
+            </Text>
+          </View>
+          <RNSVGSvgView
+            accessible={false}
+            align="xMidYMid"
+            bbHeight={112}
+            bbWidth="100%"
+            focusable={false}
+            height={112}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 112,
+                  "width": "100%",
+                },
+              ]
+            }
+            testID="chart-hr"
+            vbHeight={112}
+            vbWidth={320}
+            width="100%"
+          >
+            <RNSVGGroup
+              fill={
+                {
+                  "payload": 4278190080,
+                  "type": 0,
+                }
+              }
+            >
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={38}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4282005814,
+                    "type": 0,
+                  }
+                }
+                x1={38}
+                x2={316}
+                y1={92}
+                y2={92}
+              />
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={83.87096774193549}
+                  y2={83.87096774193549}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      86.87096774193549,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="120"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGGroup
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+              >
+                <RNSVGLine
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  propList={
+                    [
+                      "stroke",
+                      "strokeDasharray",
+                    ]
+                  }
+                  stroke={
+                    {
+                      "payload": 4282005814,
+                      "type": 0,
+                    }
+                  }
+                  strokeDasharray={
+                    [
+                      "2",
+                      "3",
+                    ]
+                  }
+                  x1={38}
+                  x2={316}
+                  y1={16.129032258064512}
+                  y2={16.129032258064512}
+                />
+                <RNSVGText
+                  content={null}
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4289111455,
+                      "type": 0,
+                    }
+                  }
+                  font={
+                    {
+                      "fontFamily": "GeistMono_500Medium",
+                      "fontSize": 10,
+                      "textAnchor": "end",
+                    }
+                  }
+                  propList={
+                    [
+                      "fill",
+                    ]
+                  }
+                  rotate={[]}
+                  x={
+                    [
+                      34,
+                    ]
+                  }
+                  y={
+                    [
+                      19.129032258064512,
+                    ]
+                  }
+                >
+                  <RNSVGTSpan
+                    content="170"
+                    dx={[]}
+                    dy={[]}
+                    fill={
+                      {
+                        "payload": 4278190080,
+                        "type": 0,
+                      }
+                    }
+                    font={{}}
+                    rotate={[]}
+                    x={[]}
+                    y={[]}
+                  />
+                </RNSVGText>
+              </RNSVGGroup>
+              <RNSVGPath
+                d="M38.9 86.6 40.6 85.2 42.3 83.9 44.1 83.9 45.8 82.5 47.6 81.2 49.3 79.8 51.0 79.8 52.8 78.5 54.5 77.1 56.2 77.1 58.0 75.7 59.7 74.4 61.5 74.4 63.2 73.0 64.9 71.7 66.7 70.3 68.4 70.3 70.1 69.0 71.9 67.6 73.6 67.6 75.4 66.3 77.1 64.9 78.8 64.9 80.6 63.5 82.3 62.2 84.0 60.8 85.8 60.8 87.5 58.1 89.3 41.9 91.0 31.0 92.7 27.0 94.5 25.6 96.2 24.3 97.9 24.3 99.7 24.3 101.4 24.3 103.2 24.3 104.9 24.3 106.6 24.3 108.4 44.6 110.1 67.6 111.8 74.4 113.6 77.1 115.3 78.5 117.1 75.7 118.8 50.0 120.5 33.7 122.3 28.3 124.0 25.6 125.7 24.3 127.5 22.9 129.2 22.9 131.0 22.9 132.7 22.9 134.4 22.9 136.2 22.9 137.9 40.5 139.6 64.9 141.4 74.4 143.1 77.1 144.9 78.5 146.6 77.1 148.3 51.4 150.1 35.1 151.8 27.0 153.5 24.3 155.3 22.9 157.0 21.5 158.8 21.5 160.5 21.5 162.2 21.5 164.0 21.5 165.7 21.5 167.4 35.1 169.2 62.2 170.9 73.0 172.7 77.1 174.4 78.5 176.1 78.5 177.9 56.8 179.6 35.1 181.3 25.6 183.1 21.5 184.8 20.2 186.6 18.8 188.3 18.8 190.0 18.8 191.8 18.8 193.5 18.8 195.2 18.8 197.0 28.3 198.7 58.1 200.5 71.7 202.2 75.7 203.9 77.1 205.7 78.5 207.4 60.8 209.1 36.5 210.9 27.0 212.6 21.5 214.4 20.2 216.1 18.8 217.8 18.8 219.6 18.8 221.3 18.8 223.0 18.8 224.8 18.8 226.5 24.3 228.3 55.4 230.0 70.3 231.7 75.7 233.5 77.1 235.2 78.5 236.9 64.9 238.7 35.1 240.4 22.9 242.2 17.5 243.9 14.8 245.6 14.8 247.4 13.4 249.1 13.4 250.8 13.4 252.6 13.4 254.3 13.4 256.1 31.0 257.8 70.3 259.5 70.3 261.3 69.0 263.0 69.0 264.7 69.0 266.5 69.0 268.2 67.6 270.0 67.6 271.7 67.6 273.4 67.6 275.2 66.3 276.9 66.3 278.6 66.3 280.4 66.3 282.1 66.3 283.9 64.9 285.6 64.9 287.3 64.9 289.1 64.9 290.8 63.5 292.5 63.5 294.3 63.5 296.0 63.5 297.8 62.2 299.5 62.2 301.2 62.2 303.0 62.2 304.7 62.2 306.4 60.8 308.2 60.8 309.9 60.8 311.7 60.8 313.4 59.5 315.1 59.5"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                    "strokeLinejoin",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeLinejoin={1}
+                strokeWidth={2}
+              />
+              <RNSVGLine
+                fill={
+                  {
+                    "payload": 4278190080,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1.2}
+                testID="scrub-hr"
+                x1={186.55625}
+                x2={186.55625}
+                y1={8}
+                y2={92}
+              />
+              <RNSVGCircle
+                cx={186.55625}
+                cy={18.83870967741936}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                r={4}
+              />
+              <RNSVGRect
+                fill={
+                  {
+                    "payload": 4281084712,
+                    "type": 0,
+                  }
+                }
+                height={18}
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rx={5}
+                width={105}
+                x={192.55625}
+                y={4}
+              />
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4294243310,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10.5,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                testID="scrub-label-hr"
+                x={
+                  [
+                    198.55625,
+                  ]
+                }
+                y={
+                  [
+                    17,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Rep 4 · 168 bpm"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    40,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="0"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    177,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="5.6"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": 4289111455,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 10,
+                    "textAnchor": "end",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    316,
+                  ]
+                }
+                y={
+                  [
+                    106,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="11.2 km"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": 4278190080,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+            </RNSVGGroup>
+          </RNSVGSvgView>
+          <View
+            accessibilityLabel="HR drifted 4 bpm across the 6 reps."
+            accessible={true}
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 8,
+              }
+            }
+            testID="takeaway-hr"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="info.circle"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4289111455}
+              tintColor="#A6A59F"
+              type="monochrome"
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  {
+                    "fontVariant": [
+                      "tabular-nums",
+                    ],
+                  },
+                  {
+                    "flex": 1,
+                  },
+                ]
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 13,
+                      "lineHeight": 18,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    {
+                      "fontWeight": "600",
+                    },
+                  ]
+                }
+              >
+                HR drifted 4 bpm across the 6 reps.
+              </Text>
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 8,
+            "paddingHorizontal": 14,
+            "paddingVertical": 12,
+          },
+        ]
+      }
+      testID="zones"
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 17,
+              "fontWeight": "600",
+              "lineHeight": 22,
+            },
+            {
+              "color": "#F4F3EE",
+            },
+            false,
+            undefined,
+          ]
+        }
+      >
+        Heart rate zones
+      </Text>
+      <View
+        style={
+          {
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="Zone 1, 15 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z1
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.2,
+                  "width": "68%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            15 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 2, 22 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z2
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.35,
+                  "width": "100%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            22 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 3, 2 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z3
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.55,
+                  "width": "9%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            2 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 4, 8 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z4
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 0.75,
+                  "width": "36%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            8 min
+          </Text>
+        </View>
+        <View
+          accessibilityLabel="Zone 5, 9 minutes"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                {
+                  "width": 28,
+                },
+              ]
+            }
+          >
+            Z5
+          </Text>
+          <View
+            style={
+              {
+                "backgroundColor": "#2C2B28",
+                "borderRadius": 5,
+                "flex": 1,
+                "height": 10,
+                "overflow": "hidden",
+              }
+            }
+          >
+            <View
+              style={
+                {
+                  "backgroundColor": "#F4F3EE",
+                  "borderRadius": 5,
+                  "height": "100%",
+                  "opacity": 1,
+                  "width": "41%",
+                }
+              }
+            />
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "textAlign": "right",
+                  "width": 54,
+                },
+              ]
+            }
+          >
+            9 min
+          </Text>
+        </View>
+      </View>
+    </View>
+  </View>
+</RCTScrollView>
+`;

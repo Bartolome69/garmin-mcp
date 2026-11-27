@@ -40,9 +40,9 @@ export const PERSONA_TODAY: TodayVM = {
     doneKm: 28, plannedKm: 54, activeWeeks: 11,
     days: [
       { date: '2026-11-23', letter: 'M', day: 23, type: 'rest', label: 'Rest', status: 'rest_done', today: false },
-      { date: '2026-11-24', letter: 'T', day: 24, type: 'easy', label: 'Easy', status: 'done', today: false },
-      { date: '2026-11-25', letter: 'W', day: 25, type: 'intervals', label: 'Int', status: 'done', today: false },
-      { date: '2026-11-26', letter: 'T', day: 26, type: 'easy', label: 'Easy', status: 'done', today: false },
+      { date: '2026-11-24', letter: 'T', day: 24, type: 'easy', label: 'Easy', status: 'done', today: false, runId: '2026-11-24-easy' },
+      { date: '2026-11-25', letter: 'W', day: 25, type: 'intervals', label: 'Int', status: 'done', today: false, runId: '2026-11-25-intervals' },
+      { date: '2026-11-26', letter: 'T', day: 26, type: 'easy', label: 'Easy', status: 'done', today: false, runId: '2026-11-26-easy' },
       { date: '2026-11-27', letter: 'F', day: 27, type: 'tempo', label: 'Tempo', status: 'planned', today: true },
       { date: '2026-11-28', letter: 'S', day: 28, type: 'strength', label: 'Str', status: 'planned', today: false },
       { date: '2026-11-29', letter: 'S', day: 29, type: 'long', label: 'Long', status: 'planned', today: false },
