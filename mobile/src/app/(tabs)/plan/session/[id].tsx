@@ -24,7 +24,6 @@ export default function SessionScreen() {
   const [step, setStep] = useState(0);
   const session = plan.shown ? findSession(plan.shown, id) : null;
   const op = watch.opFor(id);
-  const next = (kind: string) => router.push({ pathname: '/plan/next', params: { kind, id } });
   const confirm = (p: Parameters<typeof watch.stage>[0]) => { watch.stage(p); router.push({ pathname: '/watch/confirm', params: { id: p.id } }); };
   // New targets, once sent, are what's on the watch: the steps go back to as planned.
   useEffect(() => { if (op?.batch.startsWith('adjust:')) setStep(0); }, [op?.batch]);

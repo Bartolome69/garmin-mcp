@@ -6,7 +6,6 @@ import type { Freshness } from '../../data/freshness';
 import type { FailureKind } from '../../data/resource';
 import { useTheme } from '../../theme/ThemeProvider';
 import { LoadState } from '../../ui/StateViews';
-import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Text } from '../../ui/Text';
 import { kickerText, type SignalKey, type TodayVM } from './model';

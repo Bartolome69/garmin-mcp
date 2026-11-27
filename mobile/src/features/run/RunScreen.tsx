@@ -2,7 +2,7 @@
 // the run, Share on the right (iOS words, Android an icon), and "Ask about this
 // run" into the Coach with the run as its context.
 import { Stack, useRouter } from 'expo-router';
-import { Platform, Pressable, Share, View } from 'react-native';
+import { Platform, Pressable, Share } from 'react-native';
 
 import { useFlags } from '../../flags/FlagsProvider';
 import { MIN_TOUCH } from '../../ui/Button';
