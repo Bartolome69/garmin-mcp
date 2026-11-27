@@ -1823,10 +1823,22 @@ def _crew_cells(member: Mapping[str, Any], days: list[date], today: date,
     usual = [code for code, said in crews._TIME_WORDS.items() if said in words]
     cells = []
     for day, runs in zip(days, member.get("days") or []):
+        # One run is one bar (Nov 27: CJ's Sunday long run filled all three).
+        # A run could be at its own times (the club run's start, the slots
+        # someone added by hand ticked) or else their usual times that day,
+        # the morning if they haven't said. It's drawn where it lines up with
+        # someone, if it does, else at the first of those times.
+        lined_up = {t.get("when") for t in together
+                    if t["date"] == day.isoformat() and member["name"] in t.get("who", [])}
+        placed: dict[str, Mapping[str, Any]] = {}
+        for r in runs:
+            could = [s for s in SLOT_NAMES if s in (r.get("when") or crews._slot_for(day, usual))] or [crews.DEFAULT_SLOT]
+            at = next((s for s in could if s in lined_up and r.get("kind") != "hard"), None) \
+                or next((s for s in could if s not in placed), could[0])
+            placed.setdefault(at, r)
         segs = []
         for slot in SLOT_NAMES:
-            # A run with no known time of day could be at any of them.
-            here = next((r for r in runs if slot in (r.get("when") or crews._slot_for(day, usual) or SLOT_NAMES)), None)
+            here = placed.get(slot)
             kind = (here or {}).get("kind")
             kind = "easy" if kind == "club" else kind
             match = bool(here) and kind != "hard" and any(
