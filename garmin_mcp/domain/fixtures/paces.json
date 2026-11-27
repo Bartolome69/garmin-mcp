@@ -1,0 +1,1440 @@
+{
+ "_generated": "scripts/domain_fixtures.py; do not edit",
+ "cases": [
+  {
+   "race_km": 10,
+   "race_seconds": 2610,
+   "race_date": "2026-10-12",
+   "step": -2,
+   "zones": {
+    "easy": [
+     340,
+     385
+    ],
+    "steady": [
+     311,
+     332
+    ],
+    "marathon": [
+     293,
+     299
+    ],
+    "threshold": [
+     274,
+     279
+    ],
+    "tempo": [
+     284,
+     293
+    ],
+    "10k": [
+     269,
+     274
+    ],
+    "5k": [
+     258,
+     263
+    ],
+    "vo2": [
+     253,
+     260
+    ]
+   },
+   "basis": "Based on your 10K of 43:30 (12 Oct)"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2610,
+   "race_date": "2026-10-12",
+   "step": -1,
+   "zones": {
+    "easy": [
+     334,
+     377
+    ],
+    "steady": [
+     305,
+     325
+    ],
+    "marathon": [
+     287,
+     293
+    ],
+    "threshold": [
+     268,
+     274
+    ],
+    "tempo": [
+     278,
+     287
+    ],
+    "10k": [
+     264,
+     269
+    ],
+    "5k": [
+     253,
+     258
+    ],
+    "vo2": [
+     248,
+     255
+    ]
+   },
+   "basis": "Based on your 10K of 43:30 (12 Oct)"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2610,
+   "race_date": "2026-10-12",
+   "step": 0,
+   "zones": {
+    "easy": [
+     327,
+     370
+    ],
+    "steady": [
+     299,
+     319
+    ],
+    "marathon": [
+     282,
+     287
+    ],
+    "threshold": [
+     263,
+     268
+    ],
+    "tempo": [
+     273,
+     281
+    ],
+    "10k": [
+     258,
+     264
+    ],
+    "5k": [
+     248,
+     253
+    ],
+    "vo2": [
+     243,
+     250
+    ]
+   },
+   "basis": "Based on your 10K of 43:30 (12 Oct)"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2610,
+   "race_date": "2026-10-12",
+   "step": 1,
+   "zones": {
+    "easy": [
+     321,
+     363
+    ],
+    "steady": [
+     293,
+     312
+    ],
+    "marathon": [
+     276,
+     282
+    ],
+    "threshold": [
+     258,
+     263
+    ],
+    "tempo": [
+     267,
+     276
+    ],
+    "10k": [
+     253,
+     258
+    ],
+    "5k": [
+     243,
+     248
+    ],
+    "vo2": [
+     238,
+     245
+    ]
+   },
+   "basis": "Based on your 10K of 43:30 (12 Oct)"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2610,
+   "race_date": "2026-10-12",
+   "step": 2,
+   "zones": {
+    "easy": [
+     314,
+     355
+    ],
+    "steady": [
+     287,
+     306
+    ],
+    "marathon": [
+     271,
+     276
+    ],
+    "threshold": [
+     253,
+     258
+    ],
+    "tempo": [
+     262,
+     270
+    ],
+    "10k": [
+     248,
+     253
+    ],
+    "5k": [
+     238,
+     243
+    ],
+    "vo2": [
+     233,
+     240
+    ]
+   },
+   "basis": "Based on your 10K of 43:30 (12 Oct)"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2700,
+   "race_date": null,
+   "step": -2,
+   "zones": {
+    "easy": [
+     352,
+     398
+    ],
+    "steady": [
+     322,
+     343
+    ],
+    "marathon": [
+     303,
+     309
+    ],
+    "threshold": [
+     283,
+     288
+    ],
+    "tempo": [
+     294,
+     303
+    ],
+    "10k": [
+     278,
+     284
+    ],
+    "5k": [
+     267,
+     272
+    ],
+    "vo2": [
+     261,
+     269
+    ]
+   },
+   "basis": "Based on your 10K of 45:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2700,
+   "race_date": null,
+   "step": -1,
+   "zones": {
+    "easy": [
+     345,
+     390
+    ],
+    "steady": [
+     315,
+     336
+    ],
+    "marathon": [
+     297,
+     303
+    ],
+    "threshold": [
+     277,
+     283
+    ],
+    "tempo": [
+     288,
+     297
+    ],
+    "10k": [
+     273,
+     278
+    ],
+    "5k": [
+     262,
+     267
+    ],
+    "vo2": [
+     256,
+     264
+    ]
+   },
+   "basis": "Based on your 10K of 45:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2700,
+   "race_date": null,
+   "step": 0,
+   "zones": {
+    "easy": [
+     339,
+     383
+    ],
+    "steady": [
+     309,
+     330
+    ],
+    "marathon": [
+     291,
+     297
+    ],
+    "threshold": [
+     272,
+     277
+    ],
+    "tempo": [
+     282,
+     291
+    ],
+    "10k": [
+     267,
+     273
+    ],
+    "5k": [
+     256,
+     262
+    ],
+    "vo2": [
+     251,
+     259
+    ]
+   },
+   "basis": "Based on your 10K of 45:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2700,
+   "race_date": null,
+   "step": 1,
+   "zones": {
+    "easy": [
+     332,
+     375
+    ],
+    "steady": [
+     303,
+     323
+    ],
+    "marathon": [
+     286,
+     291
+    ],
+    "threshold": [
+     266,
+     272
+    ],
+    "tempo": [
+     277,
+     285
+    ],
+    "10k": [
+     262,
+     267
+    ],
+    "5k": [
+     251,
+     256
+    ],
+    "vo2": [
+     246,
+     254
+    ]
+   },
+   "basis": "Based on your 10K of 45:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 2700,
+   "race_date": null,
+   "step": 2,
+   "zones": {
+    "easy": [
+     325,
+     368
+    ],
+    "steady": [
+     297,
+     317
+    ],
+    "marathon": [
+     280,
+     286
+    ],
+    "threshold": [
+     261,
+     266
+    ],
+    "tempo": [
+     271,
+     279
+    ],
+    "10k": [
+     257,
+     262
+    ],
+    "5k": [
+     246,
+     251
+    ],
+    "vo2": [
+     241,
+     249
+    ]
+   },
+   "basis": "Based on your 10K of 45:00"
+  },
+  {
+   "race_km": 5,
+   "race_seconds": 1230,
+   "race_date": "2026-09-05",
+   "step": -2,
+   "zones": {
+    "easy": [
+     335,
+     378
+    ],
+    "steady": [
+     305,
+     326
+    ],
+    "marathon": [
+     288,
+     294
+    ],
+    "threshold": [
+     269,
+     275
+    ],
+    "tempo": [
+     279,
+     287
+    ],
+    "10k": [
+     264,
+     269
+    ],
+    "5k": [
+     253,
+     258
+    ],
+    "vo2": [
+     248,
+     256
+    ]
+   },
+   "basis": "Based on your 5K of 20:30 (5 Sep)"
+  },
+  {
+   "race_km": 5,
+   "race_seconds": 1230,
+   "race_date": "2026-09-05",
+   "step": -1,
+   "zones": {
+    "easy": [
+     328,
+     371
+    ],
+    "steady": [
+     299,
+     319
+    ],
+    "marathon": [
+     282,
+     288
+    ],
+    "threshold": [
+     264,
+     269
+    ],
+    "tempo": [
+     274,
+     282
+    ],
+    "10k": [
+     259,
+     264
+    ],
+    "5k": [
+     248,
+     253
+    ],
+    "vo2": [
+     243,
+     251
+    ]
+   },
+   "basis": "Based on your 5K of 20:30 (5 Sep)"
+  },
+  {
+   "race_km": 5,
+   "race_seconds": 1230,
+   "race_date": "2026-09-05",
+   "step": 0,
+   "zones": {
+    "easy": [
+     322,
+     363
+    ],
+    "steady": [
+     294,
+     313
+    ],
+    "marathon": [
+     277,
+     282
+    ],
+    "threshold": [
+     259,
+     264
+    ],
+    "tempo": [
+     268,
+     276
+    ],
+    "10k": [
+     254,
+     259
+    ],
+    "5k": [
+     244,
+     248
+    ],
+    "vo2": [
+     239,
+     246
+    ]
+   },
+   "basis": "Based on your 5K of 20:30 (5 Sep)"
+  },
+  {
+   "race_km": 5,
+   "race_seconds": 1230,
+   "race_date": "2026-09-05",
+   "step": 1,
+   "zones": {
+    "easy": [
+     315,
+     356
+    ],
+    "steady": [
+     288,
+     307
+    ],
+    "marathon": [
+     271,
+     277
+    ],
+    "threshold": [
+     254,
+     259
+    ],
+    "tempo": [
+     263,
+     271
+    ],
+    "10k": [
+     249,
+     254
+    ],
+    "5k": [
+     239,
+     243
+    ],
+    "vo2": [
+     234,
+     241
+    ]
+   },
+   "basis": "Based on your 5K of 20:30 (5 Sep)"
+  },
+  {
+   "race_km": 5,
+   "race_seconds": 1230,
+   "race_date": "2026-09-05",
+   "step": 2,
+   "zones": {
+    "easy": [
+     309,
+     349
+    ],
+    "steady": [
+     282,
+     301
+    ],
+    "marathon": [
+     266,
+     271
+    ],
+    "threshold": [
+     249,
+     254
+    ],
+    "tempo": [
+     258,
+     265
+    ],
+    "10k": [
+     244,
+     249
+    ],
+    "5k": [
+     234,
+     239
+    ],
+    "vo2": [
+     229,
+     236
+    ]
+   },
+   "basis": "Based on your 5K of 20:30 (5 Sep)"
+  },
+  {
+   "race_km": 21.0975,
+   "race_seconds": 5400,
+   "race_date": "2026-04-26",
+   "step": -2,
+   "zones": {
+    "easy": [
+     319,
+     361
+    ],
+    "steady": [
+     291,
+     311
+    ],
+    "marathon": [
+     275,
+     280
+    ],
+    "threshold": [
+     258,
+     263
+    ],
+    "tempo": [
+     266,
+     274
+    ],
+    "10k": [
+     252,
+     257
+    ],
+    "5k": [
+     242,
+     247
+    ],
+    "vo2": [
+     237,
+     244
+    ]
+   },
+   "basis": "Based on your half marathon of 1:30:00 (26 Apr)"
+  },
+  {
+   "race_km": 21.0975,
+   "race_seconds": 5400,
+   "race_date": "2026-04-26",
+   "step": -1,
+   "zones": {
+    "easy": [
+     313,
+     354
+    ],
+    "steady": [
+     286,
+     305
+    ],
+    "marathon": [
+     269,
+     275
+    ],
+    "threshold": [
+     253,
+     258
+    ],
+    "tempo": [
+     261,
+     269
+    ],
+    "10k": [
+     247,
+     252
+    ],
+    "5k": [
+     237,
+     242
+    ],
+    "vo2": [
+     232,
+     239
+    ]
+   },
+   "basis": "Based on your half marathon of 1:30:00 (26 Apr)"
+  },
+  {
+   "race_km": 21.0975,
+   "race_seconds": 5400,
+   "race_date": "2026-04-26",
+   "step": 0,
+   "zones": {
+    "easy": [
+     307,
+     347
+    ],
+    "steady": [
+     280,
+     299
+    ],
+    "marathon": [
+     264,
+     269
+    ],
+    "threshold": [
+     248,
+     253
+    ],
+    "tempo": [
+     256,
+     264
+    ],
+    "10k": [
+     242,
+     247
+    ],
+    "5k": [
+     232,
+     237
+    ],
+    "vo2": [
+     228,
+     235
+    ]
+   },
+   "basis": "Based on your half marathon of 1:30:00 (26 Apr)"
+  },
+  {
+   "race_km": 21.0975,
+   "race_seconds": 5400,
+   "race_date": "2026-04-26",
+   "step": 1,
+   "zones": {
+    "easy": [
+     301,
+     340
+    ],
+    "steady": [
+     275,
+     293
+    ],
+    "marathon": [
+     259,
+     264
+    ],
+    "threshold": [
+     243,
+     248
+    ],
+    "tempo": [
+     251,
+     258
+    ],
+    "10k": [
+     237,
+     242
+    ],
+    "5k": [
+     228,
+     232
+    ],
+    "vo2": [
+     223,
+     230
+    ]
+   },
+   "basis": "Based on your half marathon of 1:30:00 (26 Apr)"
+  },
+  {
+   "race_km": 21.0975,
+   "race_seconds": 5400,
+   "race_date": "2026-04-26",
+   "step": 2,
+   "zones": {
+    "easy": [
+     295,
+     333
+    ],
+    "steady": [
+     269,
+     287
+    ],
+    "marathon": [
+     254,
+     259
+    ],
+    "threshold": [
+     238,
+     243
+    ],
+    "tempo": [
+     246,
+     253
+    ],
+    "10k": [
+     233,
+     237
+    ],
+    "5k": [
+     223,
+     228
+    ],
+    "vo2": [
+     219,
+     225
+    ]
+   },
+   "basis": "Based on your half marathon of 1:30:00 (26 Apr)"
+  },
+  {
+   "race_km": 42.195,
+   "race_seconds": 11700,
+   "race_date": "2026-04-24",
+   "step": -2,
+   "zones": {
+    "easy": [
+     332,
+     375
+    ],
+    "steady": [
+     303,
+     323
+    ],
+    "marathon": [
+     286,
+     291
+    ],
+    "threshold": [
+     267,
+     273
+    ],
+    "tempo": [
+     277,
+     285
+    ],
+    "10k": [
+     262,
+     267
+    ],
+    "5k": [
+     251,
+     256
+    ],
+    "vo2": [
+     246,
+     254
+    ]
+   },
+   "basis": "Based on your marathon of 3:15:00 (24 Apr)"
+  },
+  {
+   "race_km": 42.195,
+   "race_seconds": 11700,
+   "race_date": "2026-04-24",
+   "step": -1,
+   "zones": {
+    "easy": [
+     325,
+     368
+    ],
+    "steady": [
+     297,
+     317
+    ],
+    "marathon": [
+     280,
+     286
+    ],
+    "threshold": [
+     262,
+     267
+    ],
+    "tempo": [
+     271,
+     279
+    ],
+    "10k": [
+     257,
+     262
+    ],
+    "5k": [
+     246,
+     251
+    ],
+    "vo2": [
+     241,
+     249
+    ]
+   },
+   "basis": "Based on your marathon of 3:15:00 (24 Apr)"
+  },
+  {
+   "race_km": 42.195,
+   "race_seconds": 11700,
+   "race_date": "2026-04-24",
+   "step": 0,
+   "zones": {
+    "easy": [
+     319,
+     360
+    ],
+    "steady": [
+     291,
+     311
+    ],
+    "marathon": [
+     275,
+     280
+    ],
+    "threshold": [
+     257,
+     262
+    ],
+    "tempo": [
+     266,
+     274
+    ],
+    "10k": [
+     252,
+     257
+    ],
+    "5k": [
+     242,
+     246
+    ],
+    "vo2": [
+     237,
+     244
+    ]
+   },
+   "basis": "Based on your marathon of 3:15:00 (24 Apr)"
+  },
+  {
+   "race_km": 42.195,
+   "race_seconds": 11700,
+   "race_date": "2026-04-24",
+   "step": 1,
+   "zones": {
+    "easy": [
+     312,
+     353
+    ],
+    "steady": [
+     285,
+     304
+    ],
+    "marathon": [
+     269,
+     274
+    ],
+    "threshold": [
+     252,
+     257
+    ],
+    "tempo": [
+     261,
+     268
+    ],
+    "10k": [
+     247,
+     252
+    ],
+    "5k": [
+     237,
+     241
+    ],
+    "vo2": [
+     232,
+     239
+    ]
+   },
+   "basis": "Based on your marathon of 3:15:00 (24 Apr)"
+  },
+  {
+   "race_km": 42.195,
+   "race_seconds": 11700,
+   "race_date": "2026-04-24",
+   "step": 2,
+   "zones": {
+    "easy": [
+     306,
+     346
+    ],
+    "steady": [
+     280,
+     298
+    ],
+    "marathon": [
+     264,
+     269
+    ],
+    "threshold": [
+     247,
+     252
+    ],
+    "tempo": [
+     255,
+     263
+    ],
+    "10k": [
+     242,
+     247
+    ],
+    "5k": [
+     232,
+     237
+    ],
+    "vo2": [
+     227,
+     234
+    ]
+   },
+   "basis": "Based on your marathon of 3:15:00 (24 Apr)"
+  },
+  {
+   "race_km": 15,
+   "race_seconds": 3900,
+   "race_date": null,
+   "step": -2,
+   "zones": {
+    "easy": [
+     331,
+     374
+    ],
+    "steady": [
+     302,
+     322
+    ],
+    "marathon": [
+     285,
+     291
+    ],
+    "threshold": [
+     267,
+     272
+    ],
+    "tempo": [
+     276,
+     284
+    ],
+    "10k": [
+     261,
+     267
+    ],
+    "5k": [
+     251,
+     256
+    ],
+    "vo2": [
+     246,
+     253
+    ]
+   },
+   "basis": "Based on your 15 km of 1:05:00"
+  },
+  {
+   "race_km": 15,
+   "race_seconds": 3900,
+   "race_date": null,
+   "step": -1,
+   "zones": {
+    "easy": [
+     325,
+     367
+    ],
+    "steady": [
+     296,
+     316
+    ],
+    "marathon": [
+     279,
+     285
+    ],
+    "threshold": [
+     261,
+     267
+    ],
+    "tempo": [
+     271,
+     279
+    ],
+    "10k": [
+     256,
+     261
+    ],
+    "5k": [
+     246,
+     251
+    ],
+    "vo2": [
+     241,
+     248
+    ]
+   },
+   "basis": "Based on your 15 km of 1:05:00"
+  },
+  {
+   "race_km": 15,
+   "race_seconds": 3900,
+   "race_date": null,
+   "step": 0,
+   "zones": {
+    "easy": [
+     318,
+     360
+    ],
+    "steady": [
+     290,
+     310
+    ],
+    "marathon": [
+     274,
+     279
+    ],
+    "threshold": [
+     256,
+     261
+    ],
+    "tempo": [
+     265,
+     273
+    ],
+    "10k": [
+     251,
+     256
+    ],
+    "5k": [
+     241,
+     246
+    ],
+    "vo2": [
+     236,
+     243
+    ]
+   },
+   "basis": "Based on your 15 km of 1:05:00"
+  },
+  {
+   "race_km": 15,
+   "race_seconds": 3900,
+   "race_date": null,
+   "step": 1,
+   "zones": {
+    "easy": [
+     312,
+     352
+    ],
+    "steady": [
+     285,
+     304
+    ],
+    "marathon": [
+     268,
+     274
+    ],
+    "threshold": [
+     251,
+     256
+    ],
+    "tempo": [
+     260,
+     268
+    ],
+    "10k": [
+     246,
+     251
+    ],
+    "5k": [
+     236,
+     241
+    ],
+    "vo2": [
+     231,
+     239
+    ]
+   },
+   "basis": "Based on your 15 km of 1:05:00"
+  },
+  {
+   "race_km": 15,
+   "race_seconds": 3900,
+   "race_date": null,
+   "step": 2,
+   "zones": {
+    "easy": [
+     306,
+     345
+    ],
+    "steady": [
+     279,
+     298
+    ],
+    "marathon": [
+     263,
+     268
+    ],
+    "threshold": [
+     246,
+     251
+    ],
+    "tempo": [
+     255,
+     263
+    ],
+    "10k": [
+     241,
+     246
+    ],
+    "5k": [
+     231,
+     236
+    ],
+    "vo2": [
+     227,
+     234
+    ]
+   },
+   "basis": "Based on your 15 km of 1:05:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 3600,
+   "race_date": null,
+   "step": -2,
+   "zones": {
+    "easy": [
+     470,
+     531
+    ],
+    "steady": [
+     429,
+     457
+    ],
+    "marathon": [
+     404,
+     412
+    ],
+    "threshold": [
+     371,
+     378
+    ],
+    "tempo": [
+     392,
+     403
+    ],
+    "10k": [
+     371,
+     378
+    ],
+    "5k": [
+     356,
+     363
+    ],
+    "vo2": [
+     348,
+     359
+    ]
+   },
+   "basis": "Based on your 10K of 1:00:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 3600,
+   "race_date": null,
+   "step": -1,
+   "zones": {
+    "easy": [
+     460,
+     520
+    ],
+    "steady": [
+     420,
+     448
+    ],
+    "marathon": [
+     396,
+     404
+    ],
+    "threshold": [
+     364,
+     371
+    ],
+    "tempo": [
+     384,
+     396
+    ],
+    "10k": [
+     364,
+     371
+    ],
+    "5k": [
+     349,
+     356
+    ],
+    "vo2": [
+     342,
+     352
+    ]
+   },
+   "basis": "Based on your 10K of 1:00:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 3600,
+   "race_date": null,
+   "step": 0,
+   "zones": {
+    "easy": [
+     451,
+     510
+    ],
+    "steady": [
+     412,
+     440
+    ],
+    "marathon": [
+     389,
+     396
+    ],
+    "threshold": [
+     356,
+     364
+    ],
+    "tempo": [
+     376,
+     388
+    ],
+    "10k": [
+     356,
+     364
+    ],
+    "5k": [
+     342,
+     349
+    ],
+    "vo2": [
+     335,
+     345
+    ]
+   },
+   "basis": "Based on your 10K of 1:00:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 3600,
+   "race_date": null,
+   "step": 1,
+   "zones": {
+    "easy": [
+     442,
+     500
+    ],
+    "steady": [
+     404,
+     431
+    ],
+    "marathon": [
+     381,
+     388
+    ],
+    "threshold": [
+     349,
+     356
+    ],
+    "tempo": [
+     369,
+     380
+    ],
+    "10k": [
+     349,
+     356
+    ],
+    "5k": [
+     335,
+     342
+    ],
+    "vo2": [
+     328,
+     338
+    ]
+   },
+   "basis": "Based on your 10K of 1:00:00"
+  },
+  {
+   "race_km": 10,
+   "race_seconds": 3600,
+   "race_date": null,
+   "step": 2,
+   "zones": {
+    "easy": [
+     433,
+     490
+    ],
+    "steady": [
+     396,
+     422
+    ],
+    "marathon": [
+     373,
+     381
+    ],
+    "threshold": [
+     342,
+     349
+    ],
+    "tempo": [
+     362,
+     372
+    ],
+    "10k": [
+     342,
+     349
+    ],
+    "5k": [
+     328,
+     335
+    ],
+    "vo2": [
+     322,
+     332
+    ]
+   },
+   "basis": "Based on your 10K of 1:00:00"
+  }
+ ]
+}

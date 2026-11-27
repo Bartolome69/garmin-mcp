@@ -71,3 +71,36 @@ later without touching the app:
 - Checks: `npm run check` (tokens in step, colour lint, typecheck, 54 tests run
   as iOS and as Android) and an offline Metro bundle for both platforms, all in
   `.github/workflows/mobile.yml`.
+
+## Milestone 2 (domain engines), 27 Nov
+
+Where they live, as decided above: the server's `garmin_mcp/domain/` is the one
+source; the app's `mobile/src/domain/` holds only what runs on the device.
+
+| Engine | Server (Python) | App (TypeScript) |
+| --- | --- | --- |
+| Readiness | `readiness.py` | reads the server's answer |
+| Load and band, forward projection | `load.py` | reads |
+| Life happened rules → day operations | `adjust.py` | reads |
+| Back-to-back | `backtoback.py` | `backToBack.ts` (instant drag warning) |
+| Pace targets, Easier / Harder | `paces.py` | `paces.ts` (try-before-signup) |
+| Prediction and 12-week trend | `predict.py` | reads |
+| De-duplication and source priority | `dedupe.py` | reads |
+| Post-run takeaways | `takeaways.py` | reads |
+| Text-to-workout parser | — | `parser.ts` (before sign-up, offline) |
+
+- The twins are held to the server's answers by `garmin_mcp/domain/fixtures/`
+  (106 back-to-back and 35 pace cases, written by `scripts/domain_fixtures.py`;
+  CI fails if either side drifts). Both round halves up, as JavaScript does.
+- Nothing is wired to a route yet: no server or PWA behaviour changes. The
+  screens' milestones expose them through the API.
+- Thresholds are in `garmin_mcp/domain/config.py`, overridable by
+  `DAASH_DOMAIN_CONFIG` (JSON), with the same defaults as the app's flags.
+- Choices made where the prompt left room (all TODO for the sports-science
+  sign-off): "none low" is Push even when the load ratio is under 0.8; the
+  intensity factors (easy 1.0 … race 1.8); the Life happened volumes; a
+  recovery after repeats attaches to them only if it's 5 min / 800 m or less;
+  the parser adds a 10 min warm-up and cool-down to any session with quality.
+- `backtoback.py` follows the prompt (a long run is hard only over 25 km);
+  the PWA's existing `plan_checks.py` treats every long run as hard. Left as
+  is until the screens decide which the plan views use.

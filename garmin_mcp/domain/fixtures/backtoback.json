@@ -1,0 +1,3833 @@
+{
+ "_generated": "scripts/domain_fixtures.py; do not edit",
+ "cases": [
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": null,
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a1",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a1",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a1",
+    "to": "2026-11-26"
+   },
+   "clashes": [
+    "Thu tempo and Fri intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a1",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a1",
+    "to": "2026-11-28"
+   },
+   "clashes": [
+    "Fri intervals and Sat tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a1",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a3",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a3",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a3",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a3",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a3",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a3",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a4",
+    "to": "2026-11-23"
+   },
+   "clashes": [
+    "Mon intervals and Tue tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a4",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a4",
+    "to": "2026-11-25"
+   },
+   "clashes": [
+    "Tue tempo and Wed intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a4",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a4",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a4",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a6",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a6",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a6",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a6",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a6",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "spread",
+   "sessions": [
+    {
+     "id": "a1",
+     "date": "2026-11-24",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "a3",
+     "date": "2026-11-26",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "a4",
+     "date": "2026-11-27",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "a6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 22
+    }
+   ],
+   "move": {
+    "id": "a6",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": null,
+   "clashes": [
+    "Sat intervals and Sun long run would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b1",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b1",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b1",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b1",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b1",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b1",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b3",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b3",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b3",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b3",
+    "to": "2026-11-27"
+   },
+   "clashes": [
+    "Fri tempo and Sat intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b3",
+    "to": "2026-11-28"
+   },
+   "clashes": [
+    "Sat tempo and Sun long run would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b3",
+    "to": "2026-11-29"
+   },
+   "clashes": [
+    "Sat intervals and Sun tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b5",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b5",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b5",
+    "to": "2026-11-25"
+   },
+   "clashes": [
+    "Wed intervals and Thu tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b5",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b5",
+    "to": "2026-11-27"
+   },
+   "clashes": [
+    "Thu tempo and Fri intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b5",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b6",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b6",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b6",
+    "to": "2026-11-25"
+   },
+   "clashes": [
+    "Wed long run and Thu tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b6",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b6",
+    "to": "2026-11-27"
+   },
+   "clashes": [
+    "Thu tempo and Fri long run would be back to back",
+    "Fri long run and Sat intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "long_hard",
+   "sessions": [
+    {
+     "id": "b1",
+     "date": "2026-11-24",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "b3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "b5",
+     "date": "2026-11-28",
+     "type": "intervals",
+     "distance_km": 9
+    },
+    {
+     "id": "b6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 28
+    }
+   ],
+   "move": {
+    "id": "b6",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": null,
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c0",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c0",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c0",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c0",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c0",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c0",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c2",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c2",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c2",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c2",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c2",
+    "to": "2026-11-28"
+   },
+   "clashes": [
+    "Sat tempo and Sun race would be back to back"
+   ]
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c2",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c4",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c4",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c4",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c4",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c4",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c4",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c6",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c6",
+    "to": "2026-11-24"
+   },
+   "clashes": [
+    "Tue race and Wed tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c6",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c6",
+    "to": "2026-11-26"
+   },
+   "clashes": [
+    "Wed tempo and Thu race would be back to back"
+   ]
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c6",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "race_week",
+   "sessions": [
+    {
+     "id": "c0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "c2",
+     "date": "2026-11-25",
+     "type": "tempo",
+     "distance_km": 8
+    },
+    {
+     "id": "c4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 5
+    },
+    {
+     "id": "c6",
+     "date": "2026-11-29",
+     "type": "race",
+     "distance_km": 21.1
+    }
+   ],
+   "move": {
+    "id": "c6",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": null,
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d0",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d0",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d0",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d0",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d0",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d0",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d1",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d1",
+    "to": "2026-11-25"
+   },
+   "clashes": [
+    "Wed intervals and Thu tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d1",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d1",
+    "to": "2026-11-27"
+   },
+   "clashes": [
+    "Thu tempo and Fri intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d1",
+    "to": "2026-11-28"
+   },
+   "clashes": [
+    "Sat intervals and Sun long run would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d1",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d3",
+    "to": "2026-11-23"
+   },
+   "clashes": [
+    "Mon tempo and Tue intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d3",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d3",
+    "to": "2026-11-25"
+   },
+   "clashes": [
+    "Tue intervals and Wed tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d3",
+    "to": "2026-11-27"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d3",
+    "to": "2026-11-28"
+   },
+   "clashes": [
+    "Sat tempo and Sun long run would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d3",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d4",
+    "to": "2026-11-23"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d4",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d4",
+    "to": "2026-11-25"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d4",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d4",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d4",
+    "to": "2026-11-29"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d6",
+    "to": "2026-11-23"
+   },
+   "clashes": [
+    "Mon long run and Tue intervals would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d6",
+    "to": "2026-11-24"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d6",
+    "to": "2026-11-25"
+   },
+   "clashes": [
+    "Tue intervals and Wed long run would be back to back",
+    "Wed long run and Thu tempo would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d6",
+    "to": "2026-11-26"
+   },
+   "clashes": []
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d6",
+    "to": "2026-11-27"
+   },
+   "clashes": [
+    "Thu tempo and Fri long run would be back to back"
+   ]
+  },
+  {
+   "plan": "five_day",
+   "sessions": [
+    {
+     "id": "d0",
+     "date": "2026-11-23",
+     "type": "easy",
+     "distance_km": 8
+    },
+    {
+     "id": "d1",
+     "date": "2026-11-24",
+     "type": "intervals",
+     "distance_km": 10
+    },
+    {
+     "id": "d3",
+     "date": "2026-11-26",
+     "type": "tempo",
+     "distance_km": 10
+    },
+    {
+     "id": "d4",
+     "date": "2026-11-27",
+     "type": "easy",
+     "distance_km": 6
+    },
+    {
+     "id": "d6",
+     "date": "2026-11-29",
+     "type": "long",
+     "distance_km": 26
+    }
+   ],
+   "move": {
+    "id": "d6",
+    "to": "2026-11-28"
+   },
+   "clashes": []
+  }
+ ]
+}
