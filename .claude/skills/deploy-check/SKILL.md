@@ -40,6 +40,10 @@ Work through every section. Say in the report which checks were skipped and why.
     a short note in the session is enough.
   - Big changes that need people warned (a machine or database move) also get
     a maintenance note on the Better Stack status page. Routine deploys don't.
+- **"Roll out X"** (Nov 27): take the safe option, put any fix the rollout
+  needs into the next deploy, and tell Bart afterwards what was done and why.
+  Stop and ask only when a choice messages people, writes to their watches, or
+  touches sign-in. Scheduled checks that find nothing new say nothing.
 - Fetch and merge `origin/main` before pushing; other sessions merge PRs into it.
   Never force push. Push to `main` and to the session's branch.
 - Keep emails, distinct ids and secrets out of this repo: it is public.
