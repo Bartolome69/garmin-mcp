@@ -29,8 +29,8 @@ export const PERSONA_TODAY: TodayVM = {
     ],
   },
   session: {
-    id: 's-2026-11-27', date: '2026-11-27', type: 'tempo', typeLabel: 'Tempo', title: '3 × 2 km at threshold',
-    meta: 'Today · 10 km · about 52 min · 4:22–4:30 /km',
+    id: '2026-11-27-tempo', date: '2026-11-27', type: 'tempo', typeLabel: 'Tempo', title: '3 × 2 km at threshold',
+    meta: 'Today · 10 km · about 52 min · 4:23–4:28 /km',
     structure: [{ part: 'wu', weight: 15 }, { part: 'work', weight: 9 }, { part: 'rec', weight: 2 }, { part: 'work', weight: 9 },
       { part: 'rec', weight: 2 }, { part: 'work', weight: 9 }, { part: 'cd', weight: 10 }],
     legend: ['Warm-up 15 min', '3 × 2 km · 2 min jog', 'Cool 10'],
@@ -49,7 +49,7 @@ export const PERSONA_TODAY: TodayVM = {
     ],
   },
   options: [
-    { kind: 'as_planned', title: 'Go as planned', sub: '3 × 2 km at 4:22–4:30 /km, as it is' },
+    { kind: 'as_planned', title: 'Go as planned', sub: '3 × 2 km at 4:23–4:28 /km, as it is' },
     { kind: 'swap', title: 'Swap a day', sub: 'Move the tempo, see the new week first' },
     { kind: 'rest', title: 'Rest and recover', sub: 'Counts toward your active week' },
   ],
