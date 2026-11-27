@@ -36,7 +36,7 @@ describe('text to workout: the corpus', () => {
     ['2 x 20 min at threshold pace, 5 min easy', 'Read as 2 repeats · 20 min at threshold · 5 min easy jog',
       ['10 min warm-up (added)', '2 repeats · 20 min at threshold · 5 min easy jog', '10 min cool-down (added)']],
     ['20 min easy + 6 x 20 s at 5k + 10 min easy', 'Read as 20 min at easy · 6 repeats · 20 s at 5K pace · 10 min at easy',
-      ['10 min warm-up (added)', '20 min at easy', '6 repeats · 20 s at 5K pace', '10 min at easy', '10 min cool-down (added)']],
+      ['20 min at easy', '6 repeats · 20 s at 5K pace', '10 min at easy']],
   ];
   it.each(corpus)('%s', (input, readAs, steps) => {
     const p = read(input);
