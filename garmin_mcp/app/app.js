@@ -1472,11 +1472,15 @@ function planDetail(r) {
   }
   if (r.state === "done") {
     const [label, word] = OUTCOME[r.outcome] || OUTCOME.on;
-    const bits = [r.plan_km ? `${r.plan_km} km` : r.plan_min ? `~${r.plan_min} min` : "",
-      r.done_km ? `${r.done_km} done` : r.done_time ? `${r.done_time} done` : "done", r.done_pace || ""].filter(Boolean);
-    return `<span class="row-line" title="${esc(label)}"><span class="dot ${esc(r.outcome || "on")}" aria-hidden="true"></span>
-      ${word ? `<span class="out-word ${esc(r.outcome)}">${esc(word)}</span>` : `<span class="sr-only">${esc(label)}.</span>`}<span class="meta">${esc(bits.join(" · "))}</span></span>
-      ${r.meta && r.meta.startsWith("Run on") ? `<span class="meta">${esc(r.meta)}</span>` : ""}`;
+    // Nov 27 (matching version 2): "7.8 of 12 km", and Over or Short neutral
+    // within 15% of the plan, amber beyond it, the same both ways.
+    const bits = r.of_line ? [r.of_line, r.done_pace || ""].filter(Boolean)
+      : [r.plan_km ? `${r.plan_km} km` : r.plan_min ? `~${r.plan_min} min` : "",
+        r.done_km ? `${r.done_km} done` : r.done_time ? `${r.done_time} done` : "done", r.done_pace || ""].filter(Boolean);
+    const tone = r.out_tone && (r.outcome === "over" || r.outcome === "short") ? ` tone-${esc(r.out_tone)}` : "";
+    return `<span class="row-line" title="${esc(label)}"><span class="dot ${esc(r.outcome || "on")}${tone}" aria-hidden="true"></span>
+      ${word ? `<span class="out-word ${esc(r.outcome)}${tone}">${esc(word)}</span>` : `<span class="sr-only">${esc(label)}.</span>`}<span class="meta">${esc(bits.join(" · "))}</span></span>
+      ${r.meta && r.meta.startsWith("Run on") && !r.match_aid ? `<span class="meta">${esc(r.meta)}</span>` : ""}`;
   }
   const bits = [plannedLen, r.target || ""].filter(Boolean);
   return `${bits.length ? `<span class="meta plan-line">${esc(bits.join(" · "))}</span>` : ""}
@@ -1492,36 +1496,42 @@ function planRow(r, day, first, week) {
     : r.state === "extra" ? `#/plan` : `#/session/${day.date}?sid=${r.schedule_id}&from=plan${wk}`;
   const mark = r.state === "done" || r.state === "extra" ? `<span class="tick bg-${esc(r.colour)}" style="width:15px;height:15px">${ICON.check(9)}</span>`
     : r.state === "next" ? `<span class="ring" style="width:14px;height:14px"></span>` : "";
-  return `<a class="plan-row ${first ? "" : "same-day"} ${r.state === "next" ? "is-next" : ""} ${day.today ? "is-today" : ""} ${r.outcome === "missed" ? "is-missed" : ""}" href="${href}" data-date="${day.date}" draggable="false"
-      data-sid="${r.schedule_id || ""}" ${r.movable ? 'data-movable="1"' : ""} data-name="${esc(r.name)}">
+  return `<a class="plan-row ${first ? "" : "same-day"} ${r.state === "next" ? "is-next" : ""} ${day.today ? "is-today" : ""} ${r.outcome === "missed" ? "is-missed" : ""} ${r.match_aid ? "is-matched" : ""}" href="${href}" data-date="${day.date}" draggable="false"
+      data-sid="${r.schedule_id || ""}" ${r.movable ? 'data-movable="1"' : ""} data-name="${esc(r.name)}"
+      ${r.match_aid ? `data-aid="${esc(r.match_aid)}" data-decided="${esc(r.decided || "")}"` : ""}>
     <span class="day ${first ? "" : "hide"}"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span>${day.today && first ? `<span class="today-tag">Today</span>` : ""}</span>
     <span class="body"><span class="type c-${esc(r.colour)}">${mark}${esc(r.type_label)}${r.optional ? `<span class="opt">Optional</span>` : ""}</span>
       <span class="name ${r.state === "done" || r.state === "extra" || r.outcome === "missed" ? "dim" : ""}">${esc(r.name)}</span>
       ${planDetail({ ...r, watch: r.watch || !!(r.state !== "done" && watchFor(day.date, r.name)), watch_changed: r.state !== "done" && !!watchFor(day.date, r.name),
         watch_failed: r.state !== "done" && !!failedOn(day.date) && failedOn(day.date).name === r.name })}
+      ${matchInline(r)}
       ${r.segments ? `<span class="mini-shape">${r.segments.map((g) => `<i class="bg-${esc(g.colour)}" style="flex-grow:${g.w};height:${Math.max(3, Math.round(g.h * 0.45))}px"></i>`).join("")}</span>` : ""}</span>
     <span class="grip" aria-hidden="true">${r.movable ? ICON.grip() : ""}</span></a>`;
 }
 
-// Nov 26 (matching version 2): how a run was counted, with a way to change it;
-// a question when two sessions fit about as well; after a partial, what to do
-// with the rest. Kept beside the row, not in it: the row is a link.
-function matchBox(r, w) {
+// Nov 27 (matching version 2): one small muted line under the stats, only
+// when it adds something (moved, chosen between sessions, extra, or a
+// decision the person made), ending in Change. Every matched card also opens
+// the same Change menu on a long press. A received top-up says where it came from.
+function matchInline(r) {
+  const parts = [];
+  if (r.match_line) {
+    parts.push(`<span class="meta match-inline">${esc(r.match_line)} · <span class="match-change" role="button" tabindex="0"
+      data-change="1" aria-label="Change how this run counted">Change</span></span>`);
+  }
+  if (r.from_note) parts.push(`<span class="meta match-inline from-note">${esc(r.from_note)}</span>`);
+  return parts.join("");
+}
+
+// What still needs an answer, under its card: which session a run was, or
+// what to do with the rest of a partial one.
+function matchBox(r) {
   const aid = r.match_aid;
-  if (!aid && !r.followup) return "";
-  const pick = (w.pick || []).filter((p) => String(p.schedule_id) !== String(r.schedule_id));
-  const btn = (label, attrs) => `<button type="button" class="link-plain match-btn" ${attrs}>${esc(label)}</button>`;
   let html = "";
   if (r.question) {
     html += `<div class="match-q" role="group" aria-label="Which session was this?"><span class="meta">${esc(r.question.text)}</span>
       <div class="match-opts">${r.question.options.map((o) => `<button type="button" class="pill" data-match="session" data-aid="${esc(aid)}" data-sid="${esc(o.schedule_id)}">${esc(o.label)}</button>`).join("")}
       <button type="button" class="pill" data-match="extra" data-aid="${esc(aid)}">Extra run</button></div></div>`;
-  } else if (r.match_line) {
-    html += `<div class="match-line"><span class="meta">${esc(r.match_line)}</span>
-      <details class="match-more"><summary class="link-plain">Change</summary><div class="match-opts">
-        ${pick.length ? `<span class="meta">Count as another session</span>${pick.map((p) => btn(p.label, `data-match="session" data-aid="${esc(aid)}" data-sid="${esc(p.schedule_id)}"`)).join("")}` : ""}
-        ${r.state === "extra" ? "" : btn("Mark as extra run", `data-match="extra" data-aid="${esc(aid)}"`)}
-        ${btn("Undo", `data-match="undo" data-aid="${esc(aid)}"`)}</div></details></div>`;
   }
   if (r.followup) {
     html += `<div class="match-q" role="group" aria-label="The rest of this run"><span class="meta">${esc(r.followup.text)}</span><div class="match-opts">
@@ -1531,6 +1541,36 @@ function matchBox(r, w) {
   }
   return html ? `<div class="match-box">${html}</div>` : "";
 }
+
+// The Change menu for one matched card (from its line, a long press or the keyboard).
+let WEEK_NOW = null;
+function changeSheet(row) {
+  const aid = row.dataset.aid, sid = row.dataset.sid, decided = row.dataset.decided;
+  const pick = ((WEEK_NOW && WEEK_NOW.pick) || []).filter((p) => String(p.schedule_id) !== String(sid));
+  const opt = (label, attrs, cls = "") => `<button type="button" class="sheet-opt ${cls}" ${attrs}>${esc(label)}</button>`;
+  sheet(`<span class="strong" id="sheet-title" style="font-size:18px;font-weight:700">Change how this run counted</span>
+    <div class="sheet-opts">
+      ${decided ? opt(decided === "add" ? "Take the added km back off, and choose again" : "Choose again what to do with the rest",
+        `data-partial="reopen" data-sid="${esc(sid)}"`) : ""}
+      ${pick.length ? `<span class="meta sheet-sub">Count it as another session</span>${pick.map((p) => opt(p.label, `data-match="session" data-aid="${esc(aid)}" data-sid="${esc(p.schedule_id)}"`)).join("")}` : ""}
+      ${sid ? opt("Mark as an extra run", `data-match="extra" data-aid="${esc(aid)}"`) : ""}
+      ${opt("Undo how it was counted", `data-match="undo" data-aid="${esc(aid)}"`, "quiet")}
+    </div><button type="button" class="pill light" data-close>Cancel</button>`, (holder, close) => {
+    holder.querySelectorAll("[data-match],[data-partial]").forEach((b) => b.addEventListener("click", () => setTimeout(close, 0)));
+  });
+}
+
+document.addEventListener("click", (e) => {
+  const c = e.target.closest && e.target.closest("[data-change]");
+  if (!c) return;
+  e.preventDefault();
+  e.stopPropagation();
+  changeSheet(c.closest(".plan-row"));
+}, true);
+document.addEventListener("keydown", (e) => {
+  const c = e.target.closest && e.target.closest("[data-change]");
+  if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); changeSheet(c.closest(".plan-row")); }
+});
 
 document.addEventListener("click", async (e) => {
   const b = e.target.closest && e.target.closest("[data-match],[data-partial]");
@@ -1567,8 +1607,9 @@ function goneRows(day, first) {
 }
 
 function weekRows(w) {
+  WEEK_NOW = w;
   return w.days.map((day) => day.sessions.length
-    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date) + matchBox(r, w)).join("") + goneRows(day, false)
+    ? day.sessions.map((r, i) => planRow(r, day, i === 0, w.current ? null : w.days[0].date) + matchBox(r)).join("") + goneRows(day, false)
     : removedOn(day.date).length ? goneRows(day, true)
     : `<div class="plan-row rest ${day.today ? "is-today" : ""}" data-date="${day.date}"><span class="day"><span class="d">${esc(day.dow)}</span><span class="n ${day.today ? "today" : ""}">${day.n}</span>${day.today ? `<span class="today-tag">Today</span>` : ""}</span>
         <span class="body"><span class="name rest-name">Rest day</span>${day.today && w.rest_note ? `<span class="meta rest-note">${esc(w.rest_note)}</span>` : ""}</span><span></span></div>`).join("");
@@ -1973,7 +2014,30 @@ function holdToMove(list, today) {
     });
     return { dates, items, rest, label };
   };
-  list.addEventListener("contextmenu", (e) => { if (e.target.closest("[data-movable]")) e.preventDefault(); });
+  list.addEventListener("contextmenu", (e) => {
+    if (e.target.closest("[data-movable]")) return e.preventDefault();
+    // A matched card's menu (Nov 27): right-click, the keyboard's menu key, or a long press.
+    const matched = e.target.closest(".plan-row[data-aid]");
+    if (matched) { e.preventDefault(); changeSheet(matched); }
+  });
+  // A long press on a matched card opens its Change menu, as one on a
+  // session to come starts moving it; a tap still opens the run.
+  let held = null;
+  list.addEventListener("pointerdown", (e) => {
+    const row = e.target.closest(".plan-row[data-aid]:not([data-movable])");
+    if (!row || e.button > 0 || e.target.closest("[data-change]")) return;
+    const at = { x: e.clientX, y: e.clientY };
+    held = { at, timer: setTimeout(() => { held.fired = true; if (navigator.vibrate) navigator.vibrate(10); changeSheet(row); }, HOLD_MS) };
+  });
+  list.addEventListener("pointermove", (e) => {
+    if (held && !held.fired && Math.hypot(e.clientX - held.at.x, e.clientY - held.at.y) > 8) { clearTimeout(held.timer); held = null; }
+  });
+  ["pointerup", "pointercancel"].forEach((t) => list.addEventListener(t, () => { if (held && !held.fired) { clearTimeout(held.timer); held = null; } }));
+  // Lifting the finger after the menu opened is a click on whatever is now
+  // under it (the menu's backdrop, which would close it at once): swallowed.
+  document.addEventListener("click", (e) => {
+    if (held && held.fired) { e.preventDefault(); e.stopPropagation(); held = null; }
+  }, true);
   // A held link is something the phone drags itself (Android shows the link
   // as a bubble), which cancels this drag, so the row lifted but never
   // dropped (Nov 3). The browser's own drag of a row is stopped here.

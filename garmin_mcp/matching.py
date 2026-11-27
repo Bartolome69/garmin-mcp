@@ -158,11 +158,51 @@ def undo(user_token: str, activity_id: Any, *, auto_schedule: str | None = None)
 
 
 def followup(user_token: str, schedule_id: Any, choice: str, undo_steps: list[Mapping[str, Any]] | None = None,
-             onto: Any = None) -> None:
+             onto: Any = None, add_km: float | None = None) -> None:
     state = load(user_token)
     state["followups"][str(schedule_id)] = {"choice": choice, **({"undo": list(undo_steps)} if undo_steps else {}),
-                                            **({"onto": str(onto)} if onto else {})}
+                                            **({"onto": str(onto)} if onto else {}),
+                                            **({"add_km": round(float(add_km), 1)} if add_km else {})}
     save(user_token, state)
+
+
+def reopen(user_token: str, schedule_id: Any) -> dict[str, Any] | None:
+    """Forget what was decided about a partial run's rest (Nov 27: Change reopens
+    the decision). Returns what was decided, with its undo steps, or None."""
+    state = load(user_token)
+    was = state["followups"].pop(str(schedule_id), None)
+    if was is not None:
+        save(user_token, state)
+    return was if isinstance(was, dict) else ({"choice": str(was)} if was else None)
+
+
+# Why the plan view shows a line on a matched session (Nov 27). Same day, same
+# type, nothing decided: the tick, the Over or Short tag and "7.8 of 12 km"
+# say it all, so no line. Shared by the view and activity_matched, so the
+# event counts exactly the lines people see.
+LINE_REASONS = ("moved", "ambiguous", "extra", "user_decision")
+MOVED_REASONS = ("missed_catchup", "forward_pull")
+
+
+def line_reason(row: Mapping[str, Any]) -> str | None:
+    """moved, ambiguous, extra or user_decision for a session or extra run; None when no line shows."""
+    if row.get("state") == "extra" or row.get("matched") is not None and not row.get("match"):
+        matched = row.get("matched")
+        if row.get("question"):
+            return None  # the question is its own box
+        if matched in ("user_extra", "undone"):
+            return "user_decision"
+        return "extra" if matched in ("no_session", "too_short") else None
+    m = row.get("match") or {}
+    if not m:
+        return None
+    if row.get("followup") in ("leave", "add", "skip") or m.get("reason") == "user_choice":
+        return "user_decision"
+    if m.get("reason") in MOVED_REASONS:
+        return "moved"
+    if (m.get("candidates") or 1) > 1:
+        return "ambiguous"
+    return None
 
 
 # -- after each read: the watch, and the record -----------------------------------------
@@ -237,7 +277,10 @@ def record(ctx: Mapping[str, Any], result: Mapping[str, Any]) -> None:
             m = s.get("match")
             if not m:
                 continue
-            mark = f"m:{m.get('activity_id')}:{s.get('schedule_id')}:{m.get('reason')}:{s.get('completion')}"
+            shown = line_reason(s)
+            # A decision about the rest is a new line, so it's a new event (Nov 27).
+            mark = (f"m:{m.get('activity_id')}:{s.get('schedule_id')}:{m.get('reason')}:{s.get('completion')}"
+                    + (f":{s['followup']}" if s.get("followup") else ""))
             if mark in seen:
                 continue
             seen.add(mark)
@@ -249,7 +292,8 @@ def record(ctx: Mapping[str, Any], result: Mapping[str, Any]) -> None:
                 analytics.capture("activity_matched", subject, {
                     "account": account, "reason": m.get("reason"), "completion": s.get("completion"),
                     "ratio": m.get("ratio"), "moved_days": m.get("moved_days") or 0,
-                    "fixed_day": bool(s.get("fixed_day")), "session_type": s.get("type")})
+                    "fixed_day": bool(s.get("fixed_day")), "session_type": s.get("type"),
+                    "candidates": m.get("candidates") or 1, "line_shown": shown or "none"})
         for x in week.get("extra") or []:
             if x.get("question"):
                 mark = f"q:{x.get('activity_id')}"
@@ -270,7 +314,7 @@ def record(ctx: Mapping[str, Any], result: Mapping[str, Any]) -> None:
                     if subject:
                         analytics.capture("activity_matched", subject, {
                             "account": account, "reason": x.get("matched"), "completion": "extra",
-                            "ratio": None, "moved_days": 0})
+                            "ratio": None, "moved_days": 0, "line_shown": line_reason(x) or "none"})
     if len(logged) != len(state.get("logged") or []):
         state["logged"] = logged
         save(user_token, state)

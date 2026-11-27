@@ -905,18 +905,30 @@ html, body { overscroll-behavior-y: contain; }
 .pc-foot .pill:disabled { opacity: 0.45; cursor: not-allowed; }
 #pc-open.waiting { opacity: 0.55; pointer-events: none; }
 
-/* Nov 26: matching version 2, beside a week row: how a run was counted, a question, the rest of a partial. */
-.match-box { display: flex; flex-direction: column; gap: 8px; padding: 2px 14px 14px 66px; }
-.match-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
-.match-line > .meta { font-size: 13px; }
-.match-more > summary { cursor: pointer; font-size: 13px; list-style: none; }
-.match-more > summary::-webkit-details-marker { display: none; }
-.match-more[open] .match-opts { margin-top: 6px; }
+/* Nov 26: matching version 2. Nov 27: the line sits inside the card, one small
+   muted line under the stats, and a matched card is compact. What still needs
+   an answer (which session, the rest of a partial) sits under its card. */
+.plan-row.is-matched { padding: 8px 14px; min-height: 50px; }
+.plan-row.is-matched .body { gap: 2px; }
+.match-inline { font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+.match-change { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.match-change:focus-visible { outline: 2px solid var(--red-text); outline-offset: 2px; border-radius: 3px; }
+.from-note { color: var(--muted); }
+/* Over and Short: neutral within 15% of the plan, amber beyond, the same both ways. */
+.dot.tone-neutral { background: var(--muted); }
+.dot.tone-amber { background: var(--amber); }
+.out-word.tone-neutral { color: var(--muted); }
+.out-word.tone-amber { color: var(--amber); }
+.match-box { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 12px 66px; }
 .match-q { display: flex; flex-direction: column; gap: 6px; }
 .match-q > .meta { font-size: 13.5px; color: var(--ink); }
 .match-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.match-opts .meta { flex-basis: 100%; font-size: 12.5px; }
-.match-btn { font-size: 13px; padding: 4px 0; margin-right: 10px; }
+/* The Change menu. */
+.sheet-opts { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 14px; }
+.sheet-opt { text-align: left; font: inherit; font-size: 15px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--hairline);
+  background: var(--surface); color: var(--ink); cursor: pointer; }
+.sheet-opt.quiet { color: var(--muted); }
+.sheet-sub { margin-top: 6px; font-size: 12.5px; }
 @media (max-width: 420px) { .match-box { padding-left: 14px; } }
 
 /* Nov 26 (pwa-v2): the install sheet's iPhone steps, the notification pre-prompt, Remind me, the note on a notification's screen. */

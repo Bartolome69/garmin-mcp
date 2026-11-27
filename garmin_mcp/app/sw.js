@@ -1,7 +1,7 @@
 // Daash app service worker: the shell comes from Daash first, so a deploy shows
 // on the next open, and from the copy on the phone when the network is slow or
 // gone. The plan itself is never cached here (the app keeps its own last copy).
-const SHELL = "daash-shell-v10";
+const SHELL = "daash-shell-v11";
 // How long the network gets before the saved copy opens instead.
 const WAIT_MS = 2500;
 // The script and styles are kept by their build's address as they're first

@@ -257,8 +257,10 @@ def test_unschedule() -> None:
     FAKE.schedule_workout(b, day)
     server.session.forget()
     double = run(server.unschedule_workout(date=day))
+    # The demo plan can have its own session that day too, depending on today's date.
+    names = {c.get("name") for c in double.get("candidates") or []}
     check("unschedule: a double day answers with its sessions, not an error",
-          "error" not in double and double.get("needs_choice") and len(double.get("candidates") or []) == 2, double)
+          "error" not in double and double.get("needs_choice") and {"Tempo 5k", "Strides"} <= names, double)
     named = run(server.unschedule_workout(date=day, name="tempo"))
     check("unschedule: the date and part of a name picks one", named.get("unscheduled") == sa, named)
     again = run(server.unschedule_workout(schedule_id=sa))

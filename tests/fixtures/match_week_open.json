@@ -1,0 +1,275 @@
+{
+ "week": {
+  "starts": "2026-11-23",
+  "title": "Week of 23 Nov",
+  "done": 30,
+  "planned": 67,
+  "heading": 69,
+  "range": "23 Nov to 29 Nov",
+  "current": true,
+  "days": [
+   {
+    "date": "2026-11-23",
+    "dow": "MON",
+    "n": 23,
+    "today": false,
+    "past": true,
+    "sessions": [
+     {
+      "date": "2026-11-24",
+      "name": "Easy 8 km",
+      "type": "easy",
+      "type_label": "Easy",
+      "colour": "easy",
+      "state": "done",
+      "meta": "Run on Monday",
+      "plan_km": "8",
+      "plan_min": 44,
+      "done_km": "8",
+      "done_pace": "5:30/km",
+      "done_time": "44m 00s",
+      "outcome": "on",
+      "v": "8",
+      "u": "km",
+      "schedule_id": 100,
+      "activity_id": 5,
+      "match_aid": 5,
+      "out_tone": "neutral",
+      "of_line": "8 of 8 km",
+      "match_line": "Moved from Tue 24",
+      "line_reason": "moved"
+     }
+    ]
+   },
+   {
+    "date": "2026-11-24",
+    "dow": "TUE",
+    "n": 24,
+    "today": false,
+    "past": true,
+    "sessions": []
+   },
+   {
+    "date": "2026-11-25",
+    "dow": "WED",
+    "n": 25,
+    "today": false,
+    "past": true,
+    "sessions": [
+     {
+      "date": "2026-11-25",
+      "name": "Easy 8 km",
+      "type": "easy",
+      "type_label": "Easy",
+      "colour": "easy",
+      "state": "asked",
+      "meta": "Waiting for your answer below",
+      "plan_km": "8",
+      "plan_min": 44,
+      "v": "8",
+      "u": "km",
+      "schedule_id": 104
+     },
+     {
+      "date": "2026-11-25",
+      "name": "9 km run club",
+      "type": "extra",
+      "type_label": "Extra",
+      "colour": "rec",
+      "state": "extra",
+      "meta": "Not on the plan \u00b7 44m 33s",
+      "v": "8.1",
+      "u": "km",
+      "activity_id": 3,
+      "question": {
+       "text": "Was this Wed 25 Easy 8 km or Fri 27 9 km run club?",
+       "options": [
+        {
+         "schedule_id": "104",
+         "label": "Wed 25 Easy 8 km"
+        },
+        {
+         "schedule_id": "102",
+         "label": "Fri 27 9 km run club"
+        }
+       ]
+      },
+      "match_aid": 3
+     }
+    ]
+   },
+   {
+    "date": "2026-11-26",
+    "dow": "THU",
+    "n": 26,
+    "today": true,
+    "past": false,
+    "sessions": [
+     {
+      "date": "2026-11-26",
+      "name": "Easy 12 km",
+      "type": "easy",
+      "type_label": "Easy",
+      "colour": "easy",
+      "state": "done",
+      "meta": "5:30 /km",
+      "plan_km": "12",
+      "plan_min": 66,
+      "done_km": "7.8",
+      "done_pace": "5:30/km",
+      "done_time": "42m 54s",
+      "outcome": "short",
+      "v": "7.8",
+      "u": "km",
+      "schedule_id": 101,
+      "activity_id": 1,
+      "match_aid": 1,
+      "out_tone": "amber",
+      "of_line": "7.8 of 12 km",
+      "partial_of": "12",
+      "match_line": "Best fit of 2 sessions",
+      "line_reason": "ambiguous",
+      "followup": {
+       "text": "You did 7.8 of 12 km.",
+       "add": "Add 2 km to Sun 29 long run 20 km",
+       "schedule_id": 101
+      }
+     },
+     {
+      "date": "2026-11-26",
+      "name": "Strides 4 km",
+      "type": "easy",
+      "type_label": "Easy",
+      "colour": "easy",
+      "state": "next",
+      "meta": "Today \u00b7 on your watch",
+      "plan_km": "4",
+      "plan_min": 22,
+      "watch": true,
+      "v": "4",
+      "u": "km",
+      "movable": true,
+      "schedule_id": 105
+     }
+    ]
+   },
+   {
+    "date": "2026-11-27",
+    "dow": "FRI",
+    "n": 27,
+    "today": false,
+    "past": false,
+    "sessions": [
+     {
+      "date": "2026-11-27",
+      "name": "9 km run club",
+      "type": "easy",
+      "type_label": "Easy",
+      "colour": "easy",
+      "state": "ahead",
+      "plan_km": "9",
+      "plan_min": 50,
+      "watch": true,
+      "v": "9",
+      "u": "km",
+      "movable": true,
+      "schedule_id": 102
+     }
+    ]
+   },
+   {
+    "date": "2026-11-28",
+    "dow": "SAT",
+    "n": 28,
+    "today": false,
+    "past": false,
+    "sessions": [
+     {
+      "date": "2026-11-28",
+      "name": "Easy 6 km",
+      "type": "easy",
+      "type_label": "Easy",
+      "colour": "easy",
+      "state": "ahead",
+      "plan_km": "6",
+      "plan_min": 33,
+      "watch": true,
+      "v": "6",
+      "u": "km",
+      "movable": true,
+      "schedule_id": 106
+     }
+    ]
+   },
+   {
+    "date": "2026-11-29",
+    "dow": "SUN",
+    "n": 29,
+    "today": false,
+    "past": false,
+    "sessions": [
+     {
+      "date": "2026-11-29",
+      "name": "Long run 20 km",
+      "type": "long",
+      "type_label": "Long",
+      "colour": "long",
+      "state": "ahead",
+      "plan_km": "20",
+      "plan_min": 110,
+      "watch": true,
+      "v": "20",
+      "u": "km",
+      "movable": true,
+      "schedule_id": 103
+     }
+    ]
+   }
+  ],
+  "pick": [
+   {
+    "schedule_id": 100,
+    "label": "Tue \u00b7 Easy 8 km"
+   },
+   {
+    "schedule_id": 104,
+    "label": "Wed \u00b7 Easy 8 km"
+   },
+   {
+    "schedule_id": 101,
+    "label": "Thu \u00b7 Easy 12 km"
+   },
+   {
+    "schedule_id": 105,
+    "label": "Thu \u00b7 Strides 4 km"
+   },
+   {
+    "schedule_id": 102,
+    "label": "Fri \u00b7 9 km run club"
+   },
+   {
+    "schedule_id": 106,
+    "label": "Sat \u00b7 Easy 6 km"
+   },
+   {
+    "schedule_id": 103,
+    "label": "Sun \u00b7 Long run 20 km"
+   }
+  ],
+  "ask_next": {
+   "claude": "https://claude.ai/new?q=Use%20Daash%20to%20plan%20next%20week%2C%20the%20week%20of%202026-11-30%2C%20and%20adjust%20it%20to%20how%20this%20week%20has%20gone.",
+   "chatgpt": "https://chatgpt.com/?q=Use%20Daash%20to%20plan%20next%20week%2C%20the%20week%20of%202026-11-30%2C%20and%20adjust%20it%20to%20how%20this%20week%20has%20gone.",
+   "claude_app": "claude://claude.ai/new?q=Use%20Daash%20to%20plan%20next%20week%2C%20the%20week%20of%202026-11-30%2C%20and%20adjust%20it%20to%20how%20this%20week%20has%20gone."
+  },
+  "ask": {
+   "claude": "https://claude.ai/new?q=Use%20Daash%20to%20look%20at%20my%20training%20week%20of%202026-11-23.%20Is%20it%20balanced%2C%20and%20is%20anything%20worth%20changing%3F",
+   "chatgpt": "https://chatgpt.com/?q=Use%20Daash%20to%20look%20at%20my%20training%20week%20of%202026-11-23.%20Is%20it%20balanced%2C%20and%20is%20anything%20worth%20changing%3F",
+   "claude_app": "claude://claude.ai/new?q=Use%20Daash%20to%20look%20at%20my%20training%20week%20of%202026-11-23.%20Is%20it%20balanced%2C%20and%20is%20anything%20worth%20changing%3F"
+  }
+ },
+ "block": null,
+ "assistant": "Claude",
+ "ask": {
+  "claude": "https://claude.ai/new?q=x"
+ }
+}
