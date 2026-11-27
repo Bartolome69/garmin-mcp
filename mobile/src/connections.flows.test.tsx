@@ -38,20 +38,17 @@ import YouConnections from './app/(tabs)/you/connections';
 import WatchConfirm from './app/watch/confirm';
 import { memoryStore } from './features/watch/store';
 import { FakeGarmin } from './features/watch/transport';
-import { WatchProvider, useWatch, type WatchContext } from './features/watch/WatchProvider';
+import { WatchProvider } from './features/watch/WatchProvider';
 import { DEFAULT_FLAGS, type Flags } from './flags/flags';
 import { FlagsProvider } from './flags/FlagsProvider';
 import { ThemeProvider } from './theme/ThemeProvider';
 
-let queue: WatchContext | null = null;
-function Probe() { queue = useWatch(); return null; }
 
 function app(garmin: FakeGarmin, flags: Flags = DEFAULT_FLAGS) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial="dark">
       <FlagsProvider initial={flags}>
         <WatchProvider transport={garmin} store={memoryStore()} auto={false} pollEveryMs={0}>
-          <Probe />
           {children ?? <Stack screenOptions={{ headerShown: false }} />}
         </WatchProvider>
       </FlagsProvider>

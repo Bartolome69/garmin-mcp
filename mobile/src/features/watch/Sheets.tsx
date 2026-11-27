@@ -8,7 +8,7 @@ import { Pressable, View } from 'react-native';
 
 import { DAYS, parseDate, weekday } from '../../domain/format';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button } from '../../ui/Button';
+import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { Text } from '../../ui/Text';
 import { VERB, type Proposal } from './model';
@@ -152,7 +152,7 @@ export function LifeSheet({ today, busy, onSee }: { today: string; busy: boolean
     const on = c.date === since;
     return (
       <Pressable key={c.date} testID={`since-${c.date}`} accessibilityRole="radio" accessibilityState={{ selected: on }}
-        onPress={() => setSince(c.date)} style={{ minHeight: 44, justifyContent: 'center' }}>
+        onPress={() => setSince(c.date)} style={{ minHeight: MIN_TOUCH, justifyContent: 'center' }}>
         <View style={{ minHeight: 32, paddingHorizontal: 14, borderRadius: 999, justifyContent: 'center',
           backgroundColor: on ? colors.text : 'transparent', borderWidth: 1, borderColor: on ? colors.text : colors.muted }}>
           <Text variant="subhead" tone={on ? 'bg' : 'text'} style={{ fontWeight: '600' }}>{c.label}</Text>
@@ -189,7 +189,7 @@ export function LifeSheet({ today, busy, onSee }: { today: string; busy: boolean
         <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 8 }}>
           {choices.slice(0, 2).map(chip)}
           {more ? choices.slice(2).map(chip) : (
-            <Pressable testID="since-pick" accessibilityRole="button" onPress={() => setMore(true)} style={{ minHeight: 44, justifyContent: 'center' }}>
+            <Pressable testID="since-pick" accessibilityRole="button" onPress={() => setMore(true)} style={{ minHeight: MIN_TOUCH, justifyContent: 'center' }}>
               <View style={{ minHeight: 32, paddingHorizontal: 14, borderRadius: 999, justifyContent: 'center', borderWidth: 1, borderColor: colors.muted }}>
                 <Text variant="subhead" style={{ fontWeight: '600' }}>{choices.some((c, i) => i > 1 && c.date === since) ? choices.find((c) => c.date === since)!.label : 'Pick a date'}</Text>
               </View>
@@ -214,7 +214,7 @@ export function SendToast({ onRemove, onDismiss }: { onRemove: () => void; onDis
       <Pressable testID="toast-remove" accessibilityRole="button" onPress={onRemove} style={{ minHeight: 48, justifyContent: 'center', paddingHorizontal: 8 }}>
         <Text variant="subhead" style={{ fontWeight: '600', textDecorationLine: 'underline' }}>Remove from watch</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDismiss} style={{ minHeight: 48, minWidth: 44, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDismiss} style={{ minHeight: 48, minWidth: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
         <Icon name="close" tone="muted" />
       </Pressable>
     </View>

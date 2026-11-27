@@ -9,9 +9,10 @@ import { useRef, useState } from 'react';
 import { PanResponder, Platform, Pressable, ScrollView, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button } from '../../ui/Button';
+import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
+import { openGarminSignIn } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { badgeWords, mergeTitle, mergeWords, prioritySummary, sourceName, youSummary, type ConnectionsVM, type Provider } from './model';
 
@@ -21,7 +22,7 @@ function Badge({ p, os }: { p: Provider; os: string }) {
   const { colors } = useTheme();
   const tint = p.route === 'direct' ? colors.success : colors.cLong;
   return (
-    <View style={{ height: 22, paddingHorizontal: 8, borderRadius: 6, justifyContent: 'center', overflow: 'hidden' }}>
+    <View style={{ minHeight: 22, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, justifyContent: 'center', overflow: 'hidden' }}>
       <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: tint, opacity: 0.18 }} />
       <Text variant="caption" tone={p.route === 'direct' ? 'success' : 'text'} style={{ fontWeight: '700' }}>{badgeWords(p, os)}</Text>
     </View>
@@ -103,7 +104,7 @@ function List({ children }: { children: React.ReactNode }) {
 
 function Link({ label, onPress, testID }: { label: string; onPress: () => void; testID: string }) {
   return (
-    <Pressable testID={testID} accessibilityRole="link" onPress={onPress} style={{ minHeight: 44, justifyContent: 'center' }}>
+    <Pressable testID={testID} accessibilityRole="link" onPress={onPress} style={{ minHeight: MIN_TOUCH, justifyContent: 'center' }}>
       <Text variant="footnote" style={{ textDecorationLine: 'underline' }}>{label}</Text>
     </Pressable>
   );
@@ -114,14 +115,26 @@ export type ConnectionsActions = {
   tell: (what: string) => void;
 };
 
-export function ConnectionsView({ vm, asked, actions, os = Platform.OS }: { vm: ConnectionsVM; asked: string[]; actions: ConnectionsActions; os?: string }) {
+export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated = null }: {
+  vm: ConnectionsVM; asked: string[]; actions: ConnectionsActions; os?: string;
+  /** "Updated 2h ago" when what's shown is the phone's copy and it's old. */
+  updated?: string | null;
+}) {
   const { colors } = useTheme();
   const coming = vm.coming.join(', ');
   const told = asked.includes(`tell:${coming}`);
   return (
     <ScrollView testID="connections" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ padding: 16, gap: 10 }}>
+      {updated ? <Text testID="connections-updated" variant="footnote" tone="muted">{updated}</Text> : null}
       {vm.providers.map((p) => <ProviderCard key={p.key} p={p} os={os} onReconnect={actions.reconnect} />)}
+      {!vm.providers.length ? (
+        <Card testID="connections-empty" style={{ gap: 8 }}>
+          <Text variant="headline">Nothing connected yet</Text>
+          <Text variant="footnote" tone="muted">Connect your watch and Daash reads your runs, sleep and readiness, and sends the sessions you confirm.</Text>
+          <Button label="Connect Garmin" kind="primary" onPress={openGarminSignIn} />
+        </Card>
+      ) : null}
       <List>
         <Row testID="row-priority" title="Source priority" sub={prioritySummary(vm, os)} onPress={actions.priority} chevron />
         {coming ? (
@@ -198,14 +211,14 @@ function PriorityRow({ index, count, title, sub, onMove }: { index: number; coun
       accessibilityHint="Swipe up or down to move it"
       accessibilityActions={[...(index > 0 ? [{ name: 'moveUp', label: 'Move up' }] : []), ...(index < count - 1 ? [{ name: 'moveDown', label: 'Move down' }] : [])]}
       onAccessibilityAction={(e) => onMove(index, index + (e.nativeEvent.actionName === 'moveUp' ? -1 : 1))}
-      style={{ height: ROW_H, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, backgroundColor: colors.surface,
+      style={{ minHeight: ROW_H, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, backgroundColor: colors.surface,
         transform: [{ translateY: dy }], zIndex: dy ? 2 : 0, borderTopWidth: index ? 1 : 0, borderTopColor: colors.hairline }}>
       <Text variant="kicker" style={{ width: 16, textTransform: 'none' }} numeric>{String(index + 1)}</Text>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text variant="body">{title}</Text>
         <Text variant="footnote" tone="muted">{sub}</Text>
       </View>
-      <View testID={`grip-${index}`} {...pan.panHandlers} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+      <View testID={`grip-${index}`} {...pan.panHandlers} style={{ width: MIN_TOUCH, height: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
         <Icon name="grip" tone="muted" />
       </View>
     </View>
@@ -237,7 +250,7 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
         <Card key={m.id} testID={`merge-${m.id}`} style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <Text variant="headline" numeric>{m.title}</Text>
-            <View style={{ height: 22, paddingHorizontal: 8, borderRadius: 6, justifyContent: 'center', backgroundColor: colors.sunken }}>
+            <View style={{ minHeight: 22, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, justifyContent: 'center', backgroundColor: colors.sunken }}>
               <Text variant="caption" tone="muted" style={{ fontWeight: '700' }}>{`Kept ${kept(m.keptProvider)}`}</Text>
             </View>
           </View>
@@ -260,7 +273,7 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
       ) : null}
       <Pressable testID="advanced" accessibilityRole="button" onPress={actions.plus}
         accessibilityLabel={plus ? 'Advanced merge rules' : 'Advanced merge rules, Plus. Per-metric sources and custom match windows.'}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.hairline }}>
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, minHeight: MIN_TOUCH, borderRadius: 12, borderWidth: 1, borderColor: colors.hairline }}>
         <Icon name="lock" tone="muted" />
         <View style={{ flex: 1 }}>
           <Text variant="body">Advanced merge rules</Text>

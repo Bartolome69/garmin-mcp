@@ -7,6 +7,9 @@ import { Platform } from 'react-native';
 import { PlanProvider } from '../../../features/plan/PlanProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 
+// A sheet opened straight from a link sits over the tab's first screen, not on its own.
+export const unstable_settings = { anchor: 'index' };
+
 export default function PlanLayout() {
   const { colors } = useTheme();
   return (

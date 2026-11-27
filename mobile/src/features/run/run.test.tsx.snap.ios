@@ -768,8 +768,9 @@ exports[`snapshot: post-run on ios: run-ios 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "#F4F3EE",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -841,8 +842,9 @@ exports[`snapshot: post-run on ios: run-ios 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -914,8 +916,9 @@ exports[`snapshot: post-run on ios: run-ios 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -2930,7 +2933,7 @@ exports[`snapshot: post-run with the Coach on ios: run-coach-ios 1`] = `
             "alignItems": "center",
             "flexDirection": "row",
             "justifyContent": "space-between",
-            "minHeight": 24,
+            "minHeight": 44,
           }
         }
         testID="debrief-toggle"
@@ -3852,8 +3855,9 @@ exports[`snapshot: post-run with the Coach on ios: run-coach-ios 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "#F4F3EE",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -3925,8 +3929,9 @@ exports[`snapshot: post-run with the Coach on ios: run-coach-ios 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >
@@ -3998,8 +4003,9 @@ exports[`snapshot: post-run with the Coach on ios: run-coach-ios 1`] = `
                 "alignItems": "center",
                 "backgroundColor": "transparent",
                 "borderRadius": 999,
-                "height": 32,
                 "justifyContent": "center",
+                "minHeight": 32,
+                "paddingVertical": 4,
               }
             }
           >

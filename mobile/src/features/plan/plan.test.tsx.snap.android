@@ -2801,7 +2801,7 @@ exports[`snapshot on android Trends: plan-Trends-android 1`] = `
                     "borderRadius": 999,
                     "flexDirection": "row",
                     "gap": 6,
-                    "minHeight": 44,
+                    "minHeight": 48,
                     "paddingHorizontal": 16,
                   }
                 }
@@ -3229,10 +3229,10 @@ exports[`snapshot on android Week: plan-Week-android 1`] = `
                   style={
                     {
                       "alignItems": "center",
-                      "height": 44,
+                      "height": 48,
                       "justifyContent": "center",
                       "opacity": 1,
-                      "width": 44,
+                      "width": 48,
                     }
                   }
                   testID="week-prev"
@@ -3301,7 +3301,7 @@ exports[`snapshot on android Week: plan-Week-android 1`] = `
                   style={
                     {
                       "justifyContent": "center",
-                      "minHeight": 44,
+                      "minHeight": 48,
                       "paddingHorizontal": 8,
                     }
                   }
@@ -3363,10 +3363,10 @@ exports[`snapshot on android Week: plan-Week-android 1`] = `
                   style={
                     {
                       "alignItems": "center",
-                      "height": 44,
+                      "height": 48,
                       "justifyContent": "center",
                       "opacity": 1,
-                      "width": 44,
+                      "width": 48,
                     }
                   }
                   testID="week-next"
@@ -9211,7 +9211,7 @@ exports[`snapshot on android Week: plan-Week-android 1`] = `
         "elevation": 6,
         "flexDirection": "row",
         "gap": 10,
-        "height": 56,
+        "minHeight": 56,
         "opacity": 1,
         "paddingLeft": 16,
         "paddingRight": 20,

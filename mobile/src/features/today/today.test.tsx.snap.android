@@ -608,50 +608,101 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           </View>
         </View>
       </View>
-      <Text
-        maxFontSizeMultiplier={2}
-        numberOfLines={2}
+      <View
         style={
-          [
-            {
-              "fontFamily": "SourceSerif4_400Regular",
-              "fontSize": 16,
-              "lineHeight": 24,
-            },
-            {
-              "color": "#E2E1DB",
-            },
-            false,
-            undefined,
-          ]
+          {
+            "gap": 2,
+          }
         }
-        testID="coach-line"
       >
-        Sleep was 2h under your usual and HRV is below your range. The tempo is your only hard day left this week.
-         
         <Text
-          accessibilityRole="link"
           maxFontSizeMultiplier={2}
-          onPress={[MockFunction]}
+          numberOfLines={2}
           style={
             [
               {
-                "fontSize": 12,
-                "lineHeight": 16,
+                "fontFamily": "SourceSerif4_400Regular",
+                "fontSize": 16,
+                "lineHeight": 24,
               },
               {
-                "color": "#F4F3EE",
+                "color": "#E2E1DB",
               },
               false,
-              {
-                "textDecorationLine": "underline",
-              },
+              undefined,
             ]
           }
+          testID="coach-line"
         >
-          Ask why
+          Sleep was 2h under your usual and HRV is below your range. The tempo is your only hard day left this week.
         </Text>
-      </Text>
+        <View
+          accessibilityRole="link"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          hitSlop={
+            {
+              "bottom": 16,
+              "top": 16,
+            }
+          }
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "alignSelf": "flex-start",
+              "minWidth": 48,
+            }
+          }
+          testID="ask-why"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "textDecorationLine": "underline",
+                },
+              ]
+            }
+          >
+            Ask why
+          </Text>
+        </View>
+      </View>
       <View
         style={
           {
@@ -1056,6 +1107,12 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
         accessible={true}
         collapsable={false}
         focusable={true}
+        hitSlop={
+          {
+            "bottom": 10,
+            "top": 10,
+          }
+        }
         onBlur={[Function]}
         onClick={[Function]}
         onFocus={[Function]}
@@ -1400,6 +1457,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
               "borderRadius": 10,
               "flex": 1,
               "gap": 5,
+              "minHeight": 48,
               "paddingVertical": 6,
             }
           }
@@ -1536,6 +1594,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
               "borderRadius": 10,
               "flex": 1,
               "gap": 5,
+              "minHeight": 48,
               "paddingVertical": 6,
             }
           }
@@ -1663,7 +1722,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           </Text>
         </View>
         <View
-          accessibilityLabel="Int, 25, done"
+          accessibilityLabel="Intervals, 25, done"
           accessible={true}
           style={
             {
@@ -1672,6 +1731,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
               "borderRadius": 10,
               "flex": 1,
               "gap": 5,
+              "minHeight": 48,
               "paddingVertical": 6,
             }
           }
@@ -1808,6 +1868,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
               "borderRadius": 10,
               "flex": 1,
               "gap": 5,
+              "minHeight": 48,
               "paddingVertical": 6,
             }
           }
@@ -1944,6 +2005,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
               "borderRadius": 10,
               "flex": 1,
               "gap": 5,
+              "minHeight": 48,
               "paddingVertical": 6,
             }
           }
@@ -2042,7 +2104,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           </Text>
         </View>
         <View
-          accessibilityLabel="Str, 28, planned"
+          accessibilityLabel="Strength, 28, planned"
           accessible={true}
           style={
             {
@@ -2051,6 +2113,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
               "borderRadius": 10,
               "flex": 1,
               "gap": 5,
+              "minHeight": 48,
               "paddingVertical": 6,
             }
           }
@@ -2149,7 +2212,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           </Text>
         </View>
         <View
-          accessibilityLabel="Long, 29, planned"
+          accessibilityLabel="Long run, 29, planned"
           accessible={true}
           style={
             {
@@ -2158,6 +2221,7 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
               "borderRadius": 10,
               "flex": 1,
               "gap": 5,
+              "minHeight": 48,
               "paddingVertical": 6,
             }
           }

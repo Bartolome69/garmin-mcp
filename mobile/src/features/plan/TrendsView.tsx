@@ -8,6 +8,7 @@ import Svg, { Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import { mmss } from '../../domain/format';
 import { useTheme } from '../../theme/ThemeProvider';
+import { MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
 import { Text } from '../../ui/Text';
@@ -154,7 +155,7 @@ export function TrendsView({ vm, plus, onTrim, onPlus }: { vm: TrendsVM; plus: b
           </View>
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16 }}>
             <Pressable testID="see-plus" accessibilityRole="button" accessibilityLabel="See Plus. Trend and race-day projection are in Plus" onPress={onPlus}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 16, borderRadius: 999, backgroundColor: colors.button }}>
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: MIN_TOUCH, paddingHorizontal: 16, borderRadius: 999, backgroundColor: colors.button }}>
               <Icon name="lock" />
               <Text variant="subhead" style={{ fontWeight: '600' }}>See Plus</Text>
             </Pressable>

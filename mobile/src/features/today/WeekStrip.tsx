@@ -5,11 +5,17 @@
 import { Pressable, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
+import { MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
 import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
 import type { WeekDay } from './model';
+
+// The strip's short words ("Int", "Str") said in full.
+const SPOKEN: Partial<Record<WeekDay['type'], string>> = {
+  easy: 'Easy', recovery: 'Recovery', tempo: 'Tempo', intervals: 'Intervals', long: 'Long run', race: 'Race', strength: 'Strength', rest: 'Rest',
+};
 
 function Day({ d, onRun }: { d: WeekDay; onRun?: (id: string) => void }) {
   const { colors } = useTheme();
@@ -21,9 +27,9 @@ function Day({ d, onRun }: { d: WeekDay; onRun?: (id: string) => void }) {
   const run = done && !rest && d.runId && onRun ? d.runId : null;
   const Box = run ? Pressable : View;
   return (
-    <Box accessible accessibilityLabel={`${d.label}, ${d.day}, ${state}${d.today ? ', today' : ''}`} testID={`day-${d.date}`}
+    <Box accessible accessibilityLabel={`${SPOKEN[d.type] ?? d.label}, ${d.day}, ${state}${d.today ? ', today' : ''}`} testID={`day-${d.date}`}
       {...(run ? { accessibilityRole: 'button' as const, accessibilityHint: 'Opens the run', onPress: () => onRun!(run) } : {})}
-      style={{ flex: 1, alignItems: 'center', gap: 5, paddingVertical: 6, borderRadius: 10,
+      style={{ flex: 1, minHeight: MIN_TOUCH, alignItems: 'center', gap: 5, paddingVertical: 6, borderRadius: 10,
         backgroundColor: d.today ? colors.sunken : 'transparent' }}>
       <Text variant="caption" tone="muted" maxFontSizeMultiplier={1.5}>{d.letter}</Text>
       <View style={{ minWidth: 26, paddingHorizontal: 2, borderRadius: 13, borderWidth: 1.5, borderColor: d.today ? colors.brandText : 'transparent' }}>

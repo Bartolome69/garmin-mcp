@@ -18,7 +18,7 @@
 
 import { addDays, DAYS, mmss, parseDate, weekday } from '../../domain/format';
 import { paces, ZONE_WORDS, type Paces, type Zone } from '../../domain/paces';
-import { RECOVERY_WORDS, sizeWords, type Parsed, type Recovery, type Size, type Step, type Target as Written } from '../../domain/parser';
+import { sizeWords, type Parsed, type Recovery, type Size, type Step, type Target as Written } from '../../domain/parser';
 import type { Basis, PlanSession, PlanVM, SessionDetail, StepItem, StepRow, Target } from '../plan/model';
 import type { SessionType, StructurePart } from '../today/model';
 import type { DiffSession, OpDraft, Proposal } from '../watch/model';

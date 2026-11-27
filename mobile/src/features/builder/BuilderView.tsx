@@ -9,7 +9,7 @@ import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import type { Parsed, Problem } from '../../domain/parser';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button } from '../../ui/Button';
+import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { TypeChip } from '../../ui/session/TypeChip';
 import { Text } from '../../ui/Text';
@@ -62,7 +62,7 @@ function Problems({ text, problems, onFix }: { text: string; problems: Problem[]
               <Text variant="footnote" style={{ fontWeight: '600' }}>{p.message}</Text>
               {fix ? (
                 <Pressable testID={`fix-${i}`} accessibilityRole="button" accessibilityLabel={`${p.message}. Change it to ${fix}`}
-                  onPress={() => onFix(p)} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+                  onPress={() => onFix(p)} style={{ minHeight: MIN_TOUCH, justifyContent: 'center', alignSelf: 'flex-start' }}>
                   <View style={{ minHeight: 32, paddingHorizontal: 12, borderRadius: 999, justifyContent: 'center', borderWidth: 1, borderColor: colors.muted }}>
                     <Text variant="subhead" style={{ fontWeight: '600' }}>{`Use “${fix}”`}</Text>
                   </View>
@@ -80,7 +80,7 @@ function Chip({ label, on, onPress, testID, hint }: { label: string; on: boolean
   const { colors } = useTheme();
   return (
     <Pressable testID={testID} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityHint={hint}
-      onPress={onPress} style={{ minHeight: 44, justifyContent: 'center' }}>
+      onPress={onPress} style={{ minHeight: MIN_TOUCH, justifyContent: 'center' }}>
       <View style={{ minHeight: 32, paddingHorizontal: 14, borderRadius: 999, justifyContent: 'center',
         backgroundColor: on ? colors.text : 'transparent', borderWidth: 1, borderColor: on ? colors.text : colors.muted }}>
         <Text variant="subhead" tone={on ? 'bg' : 'text'} style={{ fontWeight: '600' }} numeric>{label}</Text>

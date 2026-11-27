@@ -9,6 +9,7 @@ import { applyToToday } from '../../../features/watch/apply';
 import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
+import { FailureBanner } from '../../../ui/StateViews';
 import { Text } from '../../../ui/Text';
 
 function useNow(everyMs = 60000) {
@@ -31,7 +32,7 @@ export default function TodayScreen() {
   const { fontScale } = useWindowDimensions();
   const fresh = freshness(fetchedAt, useNow());
 
-  if (!data) return <TodayEmpty error={error} onRetry={refresh} />;
+  if (!data) return <TodayEmpty error={error} failure={today.failure} onRetry={refresh} />;
   return (
     <>
       {Platform.OS === 'android' && fresh?.stale ? (
@@ -42,6 +43,7 @@ export default function TodayScreen() {
           </View>
         ) }} />
       ) : null}
+      <FailureBanner failure={today.failure} />
       <TodayView
         vm={data}
         coach={flags.coach_enabled}
