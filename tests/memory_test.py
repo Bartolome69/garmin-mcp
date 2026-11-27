@@ -153,15 +153,33 @@ for i in range(40):
     lw.note(2000, now=1000 + i)
 check("a normal hour: nothing", lw.should_warn(1100)[0] is False)
 for i in range(10):
-    lw.note(40000, now=1200 + i)
+    lw.note(40000, now=1200 + i, who=f"person{i % 3}")
 fired, p95, n = lw.should_warn(1300)
-check("p95 over 15 s across the hour: an email", fired and p95 == 40000 and n == 50, f"{fired} {p95} {n}")
+check("p95 over 15 s across the hour, three people slow: an email", fired and p95 == 40000 and n == 50
+      and lw.slow_people == 3, f"{fired} {p95} {n} {lw.slow_people}")
 check("not again within 2 hours", lw.should_warn(1360)[0] is False)
 check("calls older than an hour fall out", lw.p95(1000 + 3600 + 300)[1] == 0)
 lw2 = memwatch.LatencyWatch(limit_ms=15000, min_calls=30)
 for i in range(5):
     lw2.note(60000, now=1000 + i)
 check("too few calls to say (one slow chat at night): nothing", lw2.should_warn(1100)[0] is False)
+# Nov 27: one ChatGPT chat read 248 runs in 27 minutes, queued behind its own
+# two Garmin slots, and took the hour's p95 to 16 s while everyone else's
+# calls took 2-3 s. One account alone doesn't send the email.
+lw3 = memwatch.LatencyWatch(limit_ms=15000, min_calls=30, min_people=3)
+for i in range(60):
+    lw3.note(2500, now=1000 + i, who=f"other{i % 20}")
+for i in range(40):
+    lw3.note(18000, now=1100 + i, who="busy-chat")
+fired, p95, _ = lw3.should_warn(1200)
+check("one account's long run of slow calls: no email, though the p95 is over 15 s",
+      not fired and p95 > 15000 and lw3.slow_people == 1 and round(lw3.busiest_share, 1) == 0.4,
+      f"{fired} {p95} {lw3.slow_people} {lw3.busiest_share}")
+lw3.note(19000, now=1150, who="other1")
+check("two people slow: still none", lw3.should_warn(1201)[0] is False and lw3.slow_people == 2)
+lw3.note(21000, now=1160, who="other2")
+check("a third person slow too: the email (Garmin is the likelier cause)", lw3.should_warn(1202)[0] is True
+      and lw3.slow_people == 3)
 check("the guard is at 1,400", not w.should_restart(1399) and w.should_restart(1400))
 
 print("\nthe profile")
