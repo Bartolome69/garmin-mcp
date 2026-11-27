@@ -3,6 +3,18 @@
 // refresh keeps what's there and says so; nothing ever spins over content.
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { NotSignedIn, Offline, ReconnectNeeded, TimedOut } from '../api/client';
+
+/** Why the last refresh failed, so a screen can say the right thing. */
+export type FailureKind = 'offline' | 'reconnect' | 'signedOut' | 'server';
+
+export function failureKind(err: unknown): FailureKind {
+  if (err instanceof ReconnectNeeded) return 'reconnect';
+  if (err instanceof NotSignedIn) return 'signedOut';
+  if (err instanceof Offline || err instanceof TimedOut) return 'offline';
+  return 'server';
+}
+
 export type Cached<T> = { data: T; fetchedAt: number };
 export type ResourceStore<T> = { load(): Promise<Cached<T> | null>; save(value: Cached<T>): Promise<void> };
 
@@ -11,12 +23,13 @@ export type Resource<T> = {
   fetchedAt: number | null;
   refreshing: boolean;
   error: string | null;        // the last refresh failed; data (if any) is the cached copy
+  failure: FailureKind | null; // why it failed
   refresh: () => Promise<void>;
 };
 
 export function useResource<T>(fetcher: () => Promise<T>, store?: ResourceStore<T>, now: () => number = Date.now): Resource<T> {
-  const [state, setState] = useState<{ data: T | null; fetchedAt: number | null; error: string | null }>(
-    { data: null, fetchedAt: null, error: null });
+  const [state, setState] = useState<{ data: T | null; fetchedAt: number | null; error: string | null; failure: FailureKind | null }>(
+    { data: null, fetchedAt: null, error: null, failure: null });
   const [refreshing, setRefreshing] = useState(false);
   const busy = useRef(false);
   // The latest fetcher, store and clock, read when a refresh runs: a new function
@@ -31,10 +44,10 @@ export function useResource<T>(fetcher: () => Promise<T>, store?: ResourceStore<
     try {
       const data = await latest.current.fetcher();
       const value = { data, fetchedAt: latest.current.now() };
-      setState({ ...value, error: null });
+      setState({ ...value, error: null, failure: null });
       await latest.current.store?.save(value).catch(() => {});
     } catch (err) {
-      setState((s) => ({ ...s, error: err instanceof Error ? err.message : 'Couldn\u2019t reach Daash' }));
+      setState((s) => ({ ...s, error: err instanceof Error ? err.message : 'Couldn\u2019t reach Daash', failure: failureKind(err) }));
     } finally {
       busy.current = false;
       setRefreshing(false);
@@ -46,7 +59,7 @@ export function useResource<T>(fetcher: () => Promise<T>, store?: ResourceStore<
     let live = true;
     (async () => {
       const cached = await store?.load().catch(() => null);
-      if (live && cached) setState((s) => (s.data ? s : { data: cached.data, fetchedAt: cached.fetchedAt, error: null }));
+      if (live && cached) setState((s) => (s.data ? s : { data: cached.data, fetchedAt: cached.fetchedAt, error: null, failure: null }));
       if (live) await refresh();
     })();
     return () => { live = false; };
