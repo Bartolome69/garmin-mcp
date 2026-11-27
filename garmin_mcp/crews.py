@@ -550,40 +550,53 @@ def _short_date(d: date) -> str:
     return f"{_SHORT[d.weekday()]} {d.day} {_MONTHS[d.month - 1]}"
 
 
+# When someone hasn't said when they run on that part of the week (weekday
+# mornings only, say, and a long run on Sunday), their run is taken to be in
+# the morning: the usual time for a run, and a long run most of all. Before
+# Nov 27 such a run was drawn across all three slots and, on the matching
+# side, fitted none of them, so CJ's Sunday long run never lined up.
+DEFAULT_SLOT = "morning"
+
+
 def _slot_for(day: date, times: list[str]) -> set[str]:
+    """The times of day someone runs on that day, by their usual times; the morning if they haven't said."""
     prefix = "weekend" if day.weekday() >= 5 else "weekday"
-    return {t.split("_", 1)[1] for t in times if t.startswith(prefix)}
+    return {t.split("_", 1)[1] for t in times if t.startswith(prefix)} or {DEFAULT_SLOT}
 
 
 _SLOTS = ("morning", "afternoon", "evening")
+
+
+def _slot_at(hhmm: str | None) -> str | None:
+    """The time of day a start time falls in, by the same edges as the crew page (noon, 6pm)."""
+    try:
+        hour = int(str(hhmm).split(":")[0])
+    except (TypeError, ValueError):
+        return None
+    return "morning" if hour < 12 else "afternoon" if hour < 18 else "evening"
 
 
 def _free_at(person: dict[str, Any], day: date, slot: str) -> bool:
     """Whether someone runs at that time of day, by their usual times or, added by hand, the slots they picked."""
     if "day_slots" in person:
         return slot in person["day_slots"].get(day.isoformat(), ())
-    return not person["times"] or slot in _slot_for(day, person["times"])
+    return slot in _slot_for(day, person["times"])
 
 
 def _best_group(day: date, people: list[dict[str, Any]], must: dict[str, Any] | None = None
                 ) -> tuple[list[dict[str, Any]], str | None]:
     """The biggest set of these people who can run together that day.
 
-    Together means a usual time they share; someone who hasn't said when they
-    run fits any. Pace never comes into it: whoever is quicker runs at the
-    group's pace, as a club run does. Someone who can't make that time drops
+    Together means a usual time they share. Pace never comes into it: whoever is quicker runs at the
+    group's pace, as a club run does. Someone who hasn't said when counts as
+    a morning runner (DEFAULT_SLOT). Someone who can't make that time drops
     out rather than sinking the rest. With
     must, only groups that include that person count. Returns the group, two
     or more, and the time it meets at, or an empty group.
     """
     best: tuple[list[dict[str, Any]], str | None] = ([], None)
-    options: list[str | None] = list(_SLOTS) + [None]
-    for slot in options:
-        if slot is None:
-            free = [p for p in people if not p["times"] and "day_slots" not in p]
-        else:
-            free = [p for p in people if _free_at(p, day, slot)]
-        group = free
+    for slot in _SLOTS:
+        group = [p for p in people if _free_at(p, day, slot)]
         if must is not None and must not in group:
             continue
         if len(group) >= 2 and len(group) > len(best[0]):
@@ -775,8 +788,11 @@ def _week(crew_id: str, me_key: str | None, week_of: date | None, today: date | 
             if club_day == day and p["club"] and not any(r["kind"] == "hard" for r in day_runs):
                 # Their run on the club's day is the club run; done, if they've run it.
                 ran = any(r.get("done") and r["kind"] != "long" for r in cell)
+                # At its start time, not the runner's usual one: a 6:45 club run
+                # is a morning run for an evening runner too.
+                at = _slot_at(club.get("time"))
                 cell = [{"kind": "club", **({"km": club["km"]} if club.get("km") else {}),
-                         **({"done": True} if ran else {})}] + [r for r in cell if r["kind"] == "long"]
+                         **({"when": [at]} if at else {}), **({"done": True} if ran else {})}] + [r for r in cell if r["kind"] == "long"]
             grid.append(cell)
         out_members.append({
             **({"by_hand": True, "id": p["id"]} if p.get("by_hand") else {}),

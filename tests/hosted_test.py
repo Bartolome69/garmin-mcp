@@ -3296,6 +3296,36 @@ async def main() -> int:
         sun_later = [t for t in later["together"] if t["date"] == (monday + _td(days=6)).isoformat()]
         check("an afternoon runner isn't matched with the morning runners",
               sun_later and "Dave" not in sun_later[0]["who"] and sorted(sun_later[0]["who"]) == ["Bob", "Carol"], str(sun_later))
+        # Nov 27, CJ: weekday times only, and a long run on Sunday. It was drawn
+        # across all three slots and matched none; it's a morning run now.
+        await call(dave, "update_crew", {"usual_times": ["weekday_evening"]})
+        cj = await call(carol, "get_crew", {"week_of": monday.isoformat()})
+        sun_cj = [t for t in cj["together"] if t["date"] == (monday + _td(days=6)).isoformat()]
+        check("someone who said only weekday times runs at the weekend in the morning, and lines up there",
+              sun_cj and sorted(sun_cj[0]["who"]) == ["Bob", "Carol", "Dave"] and sun_cj[0]["when"] == "morning", str(sun_cj))
+        cj_days = [monday + _td(days=i) for i in range(7)]
+        dave_row = next(m for m in cj["members"] if m["name"] == "Dave")
+        from garmin_mcp import app as app_mod
+        cells = app_mod._crew_cells(dave_row, cj_days, monday, cj["together"])
+        filled = lambda c: [bool(s.get("kind")) for s in c["segs"]]
+        check("on the grid, that Sunday long run is one bar in the morning, not three",
+              filled(cells[6]) == [True, False, False] and cells[6]["segs"][0].get("match"), str(cells[6]))
+        check("and the 6:45am club run sits in the morning for an evening runner too, not at their usual evening",
+              filled(cells[4]) == [True, False, False], str(cells[4]))
+        check("a weekday easy run stays at the time they said: the evening",
+              filled(cells[2]) == [False, False, True], str(cells[2]))
+        sat = (monday + _td(days=5)).isoformat()
+        two = {"name": "Nic", "times": "weekend mornings, weekend afternoons",
+               "days": [[], [], [], [], [], [{"kind": "easy", "km": 8}], []]}
+        alone = app_mod._crew_cells(two, cj_days, monday, [])[5]
+        paired = app_mod._crew_cells(two, cj_days, monday, [{"date": sat, "who": ["Nic", "Al"], "when": "afternoon"}])[5]
+        check("someone with two usual weekend times: one run is one bar, the first of them, not two",
+              filled(alone) == [True, False, False], str(alone))
+        check("and where it lines up with someone, at that time, outlined",
+              filled(paired) == [False, True, False] and paired["segs"][1].get("match"), str(paired))
+        ticked = {"name": "Nick", "times": None, "days": [[{"kind": "easy", "when": ["morning", "afternoon", "evening"]}]] + [[]] * 6}
+        check("a friend added by hand who ticked all three times on a day shows one run, not three",
+              filled(app_mod._crew_cells(ticked, cj_days, monday, [])[0]) == [True, False, False])
         await call(dave, "update_crew", {"usual_times": ["weekday_evening", "weekend_morning"]})
         check("only easy and long runs, never what was done, are kept",
               {k for k, in crews._connect().execute("SELECT DISTINCT kind FROM crew_runs").fetchall()} <= {"easy", "long", "hard"}
@@ -3321,7 +3351,7 @@ async def main() -> int:
         now_card = await call(carol, "get_crew", {"week_of": t0.isoformat()})
         carol_today = next(m for m in now_card["members"] if m["name"] == "Carol")["days"][t0.weekday()]
         check("on the card it is marked done, and nobody is matched with it",
-              carol_today[:1] in ([{"kind": "easy", "km": 10.0, "done": True}], [{"kind": "club", "km": 4.3, "done": True}])
+              carol_today[:1] in ([{"kind": "easy", "km": 10.0, "done": True}], [{"kind": "club", "km": 4.3, "when": ["morning"], "done": True}])
               and not [t for t in now_card["together"] if t["date"] == t0.isoformat() and "Carol" in t["who"]]
               and "Carol easy 10k" not in now_card.get("group_message", ""), str(carol_today))
 
@@ -3456,7 +3486,7 @@ async def main() -> int:
         sam_row = next((m for m in (await page_week(monday.isoformat())).get("members", []) if m["name"] == "Sam"), {})
         check("someone added by hand can say they do the club run, and shows at it",
               status == 200 and joined.get("club") is True and sam_row.get("club") is True
-              and sam_row["days"][4][:1] == [{"kind": "club", "km": 4.3}], str(sam_row.get("days")))
+              and sam_row["days"][4][:1] == [{"kind": "club", "km": 4.3, "when": ["morning"]}], str(sam_row.get("days")))
         status, _ = await anyio_run(runner_post, {"action": "update", "token": sam["token"], "club": "yes"})
         status, still = await anyio_run(runner_post, {"action": "mine", "token": sam["token"]})
         check("only a yes or no changes it", still.get("club") is True, str(still))
@@ -3483,7 +3513,7 @@ async def main() -> int:
               and crews._connect().execute("SELECT COUNT(*) FROM crew_slot_changes").fetchone()[0] == 0, str(gone))
         status, kim = await anyio_run(runner_post, {"action": "add", "name": "Kim", "pin": "1234", "usual": ["mon_morning"], "club": True})
         kim_row = next((m for m in (await page_week(monday.isoformat())).get("members", []) if m["name"] == "Kim"), {})
-        check("and can say so as they add their runs", kim_row.get("club") is True and kim_row["days"][4][:1] == [{"kind": "club", "km": 4.3}],
+        check("and can say so as they add their runs", kim_row.get("club") is True and kim_row["days"][4][:1] == [{"kind": "club", "km": 4.3, "when": ["morning"]}],
               str(kim_row.get("days")))
         removed = await call(carol, "update_crew", {"remove_member": "Kim"})
         check("whoever started the crew can remove someone added by hand",
