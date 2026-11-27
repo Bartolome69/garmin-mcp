@@ -1053,9 +1053,17 @@ LOOP_RANGE_HINT = {
 }
 _SAME_TOOL: dict[tuple[str, str], list[float]] = BoundedDict(20000)
 
+# Clients that can't yet ask for a range (Nov 27). ChatGPT keeps the tool list
+# it read when it connected and had made no range call a day after ranges
+# shipped (666 one-day reads, none ranged), so telling it to use start_date
+# would leave a month-of-sleep question stuck at day 15. Its one-day reads get
+# the loose cap every tool has, which still stops a runaway (226 reads of one
+# tool in 3 minutes, Nov 27). Take a client off once it calls with a range.
+CLIENTS_WITHOUT_RANGES = {"ChatGPT"}
 
-def _loop_note(name: str, count: int, limit: int) -> str:
-    hint = LOOP_RANGE_HINT.get(name)
+
+def _loop_note(name: str, count: int, limit: int, ranged: bool = True) -> str:
+    hint = LOOP_RANGE_HINT.get(name) if ranged else None
     if hint:
         return (f"{name} was called {count} times in {int(LOOP_WINDOW // 60)} minutes, one day at a time. "
                 f"{hint} instead: one call answers the whole period, a compact row a day. "
@@ -1073,7 +1081,8 @@ def _within_loop_guard(user_token: str, name: str, user: store.User | None = Non
     if name in day_ranges.ROWS and day_ranges.wants_range(args.get("start_date"), args.get("end_date"),
                                                           args.get("days")):
         return
-    limit = LOOP_LIMIT if name in LOOP_RANGE_HINT else LOOP_LIMIT_OTHER
+    ranged = name in LOOP_RANGE_HINT and client not in CLIENTS_WITHOUT_RANGES
+    limit = LOOP_LIMIT if ranged else LOOP_LIMIT_OTHER
     now = time.monotonic() if now is None else now
     key = (user_token, name)
     recent = [t for t in _SAME_TOOL.get(key, ()) if now - t < LOOP_WINDOW]
@@ -1082,7 +1091,7 @@ def _within_loop_guard(user_token: str, name: str, user: store.User | None = Non
         analytics.capture("tool_loop_blocked", (user.email_hash if user else None) or user_token, drop_empty({
             "tool": name, "count": len(recent) + 1, "limit": limit, "client": client,
             "ai_client": client, "window_s": int(LOOP_WINDOW)}))
-        raise hooks.Paused(_loop_note(name, len(recent) + 1, limit))
+        raise hooks.Paused(_loop_note(name, len(recent) + 1, limit, ranged))
     recent.append(now)
     _SAME_TOOL[key] = recent
 
