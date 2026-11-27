@@ -101,7 +101,7 @@ function WeekPage({ week, today, width, actions, onDragging }: {
   );
 }
 
-export function WeekView({ vm, index, onIndex, pending, proposalText, width, os = Platform.OS, actions, onDragging }: {
+export function WeekView({ vm, index, onIndex, pending, proposalText, width, os = Platform.OS, brand = true, actions, onDragging }: {
   vm: PlanVM;
   index: number;
   onIndex: (i: number) => void;
@@ -110,6 +110,8 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
   proposalText: string | null;
   width: number;
   os?: string;
+  /** The banner's main button is the screen's one brand fill (Android's FAB steps aside for it). */
+  brand?: boolean;
   actions: WeekActions;
   onDragging: (on: boolean) => void;
 }) {
@@ -184,7 +186,7 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
               <Text variant="subhead"><Text variant="subhead" style={{ fontWeight: '700' }}>{pending.title}</Text> {pending.words}</Text>
               <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                 <Button label="Move anyway" small full onPress={actions.moveAnyway} />
-                <Button label={pending.keepLabel} kind="emphasis" small full onPress={actions.keep} />
+                <Button label={pending.keepLabel} kind="primary" brand={brand} small full onPress={actions.keep} />
               </View>
             </View>
           </View>
@@ -200,7 +202,7 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
             <Text variant="subhead">{proposalText} Nothing changes on your watch until you confirm.</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Button label="Undo" small full onPress={actions.undo} />
-              <Button label="Review and send" kind="emphasis" small full onPress={actions.review} />
+              <Button label="Review and send" kind="primary" brand={brand} small full onPress={actions.review} />
             </View>
           </View>
         ) : (

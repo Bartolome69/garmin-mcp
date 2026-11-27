@@ -1,0 +1,1808 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`The shared diff on android snapshot on android: diff-android 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "gap": 14,
+      "padding": 16,
+    }
+  }
+  contentInsetAdjustmentBehavior="automatic"
+  style={
+    {
+      "backgroundColor": "#161614",
+      "flex": 1,
+    }
+  }
+  testID="diff"
+>
+  <View>
+    <View
+      style={
+        {
+          "gap": 4,
+        }
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "GeistMono_500Medium",
+              "fontSize": 12,
+              "letterSpacing": 0.6,
+              "lineHeight": 16,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#A6A59F",
+            },
+            false,
+            undefined,
+          ]
+        }
+        testID="diff-kicker"
+      >
+        Not feeling 100% · since today
+      </Text>
+      <Text
+        accessibilityRole="header"
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 22,
+              "lineHeight": 28,
+            },
+            {
+              "color": "#F4F3EE",
+            },
+            false,
+            undefined,
+          ]
+        }
+        testID="diff-title"
+      >
+        2 sessions change
+      </Text>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 14,
+              "lineHeight": 20,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            undefined,
+          ]
+        }
+        testID="diff-subtitle"
+      >
+        54 → 38 km this week. Next week unchanged.
+      </Text>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 0,
+            "paddingVertical": 8,
+          },
+        ]
+      }
+      testID="diff-days"
+    >
+      <View
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+        style={
+          {
+            "flexDirection": "row",
+            "gap": 10,
+            "paddingBottom": 4,
+          }
+        }
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "width": 52,
+              },
+            ]
+          }
+        >
+          Day
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+              },
+            ]
+          }
+        >
+          Before
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "paddingLeft": 12,
+              },
+            ]
+          }
+        >
+          After
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="FRI 27: 3 × 2 km at threshold, becomes Easy 3 km, Easy · 3 km"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 0,
+            "flexDirection": "row",
+            "gap": 10,
+            "minHeight": 40,
+            "opacity": 1,
+            "paddingVertical": 6,
+          }
+        }
+        testID="diff-2026-11-27"
+      >
+        <Text
+          maxFontSizeMultiplier={1.5}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "width": 52,
+              },
+            ]
+          }
+        >
+          FRI 27
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          numberOfLines={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "textDecorationLine": "line-through",
+              },
+            ]
+          }
+        >
+          3 × 2 km at threshold
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#8CC08F",
+                "borderColor": "#9A9993",
+                "borderRadius": 2,
+                "borderStyle": "dashed",
+                "borderWidth": 0,
+                "height": 16,
+                "width": 4,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            numberOfLines={2}
+            style={
+              [
+                {
+                  "fontSize": 14,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "flex": 1,
+                  "fontWeight": "600",
+                },
+              ]
+            }
+          >
+            Easy 3 km
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="SAT 28: Full body (runner), unchanged"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+            "gap": 10,
+            "minHeight": 40,
+            "opacity": 0.55,
+            "paddingVertical": 6,
+          }
+        }
+        testID="diff-2026-11-28"
+      >
+        <Text
+          maxFontSizeMultiplier={1.5}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "width": 52,
+              },
+            ]
+          }
+        >
+          SAT 28
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          numberOfLines={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "textDecorationLine": "none",
+              },
+            ]
+          }
+        >
+          Full body (runner)
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#B39DDB",
+                "borderColor": "#9A9993",
+                "borderRadius": 2,
+                "borderStyle": "dashed",
+                "borderWidth": 0,
+                "height": 16,
+                "width": 4,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            numberOfLines={2}
+            style={
+              [
+                {
+                  "fontSize": 14,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "flex": 1,
+                  "fontWeight": "600",
+                },
+              ]
+            }
+          >
+            Full body (runner)
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="SUN 29: Long 18 km easy, becomes Long 9 km easy, Long · 9 km"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+            "gap": 10,
+            "minHeight": 40,
+            "opacity": 1,
+            "paddingVertical": 6,
+          }
+        }
+        testID="diff-2026-11-29"
+      >
+        <Text
+          maxFontSizeMultiplier={1.5}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "width": 52,
+              },
+            ]
+          }
+        >
+          SUN 29
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          numberOfLines={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "textDecorationLine": "line-through",
+              },
+            ]
+          }
+        >
+          Long 18 km easy
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#74A3DB",
+                "borderColor": "#9A9993",
+                "borderRadius": 2,
+                "borderStyle": "dashed",
+                "borderWidth": 0,
+                "height": 16,
+                "width": 4,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            numberOfLines={2}
+            style={
+              [
+                {
+                  "fontSize": 14,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "flex": 1,
+                  "fontWeight": "600",
+                },
+              ]
+            }
+          >
+            Long 9 km easy
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="TUE 1: 8 km easy, unchanged"
+        accessible={true}
+        style={
+          {
+            "alignItems": "center",
+            "borderTopColor": "#3A3936",
+            "borderTopWidth": 1,
+            "flexDirection": "row",
+            "gap": 10,
+            "minHeight": 40,
+            "opacity": 0.55,
+            "paddingVertical": 6,
+          }
+        }
+        testID="diff-2026-12-01"
+      >
+        <Text
+          maxFontSizeMultiplier={1.5}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "width": 52,
+              },
+            ]
+          }
+        >
+          TUE 1
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          numberOfLines={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              {
+                "flex": 1,
+                "textDecorationLine": "none",
+              },
+            ]
+          }
+        >
+          8 km easy
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flex": 1,
+              "flexDirection": "row",
+              "gap": 8,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#8CC08F",
+                "borderColor": "#9A9993",
+                "borderRadius": 2,
+                "borderStyle": "dashed",
+                "borderWidth": 0,
+                "height": 16,
+                "width": 4,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            numberOfLines={2}
+            style={
+              [
+                {
+                  "fontSize": 14,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "flex": 1,
+                  "fontWeight": "600",
+                },
+              ]
+            }
+          >
+            8 km easy
+          </Text>
+        </View>
+      </View>
+    </View>
+    <View
+      style={
+        [
+          {
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 12,
+            "borderWidth": 1,
+            "gap": 8,
+            "padding": 14,
+          },
+          {
+            "gap": 6,
+          },
+        ]
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "GeistMono_500Medium",
+              "fontSize": 12,
+              "letterSpacing": 0.6,
+              "lineHeight": 16,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#A6A59F",
+            },
+            false,
+            undefined,
+          ]
+        }
+      >
+        Kilometres
+      </Text>
+      <RNSVGSvgViewAndroid
+        accessibilityLabel="Kilometres a week. This week: 54 before, 38 after. Next week: unchanged at 55.5. Week 6: unchanged at 60."
+        accessibilityRole="image"
+        accessible={true}
+        align="xMidYMid"
+        bbHeight={130}
+        bbWidth="100%"
+        focusable={false}
+        height={130}
+        meetOrSlice={0}
+        minX={0}
+        minY={0}
+        style={
+          [
+            {
+              "backgroundColor": "transparent",
+              "borderWidth": 0,
+            },
+            {
+              "flex": 0,
+              "height": 130,
+              "width": "100%",
+            },
+          ]
+        }
+        testID="diff-load"
+        vbHeight={130}
+        vbWidth={320}
+        width="100%"
+      >
+        <RNSVGGroup
+          fill={
+            {
+              "payload": -16777216,
+              "type": 0,
+            }
+          }
+        >
+          <RNSVGRect
+            fill={
+              {
+                "payload": 697090191,
+                "type": 0,
+              }
+            }
+            height={12.779220779220786}
+            propList={
+              [
+                "fill",
+              ]
+            }
+            width={320}
+            x={0}
+            y={29.714285714285708}
+          />
+          <RNSVGGroup
+            fill={
+              {
+                "payload": -16777216,
+                "type": 0,
+              }
+            }
+          >
+            <RNSVGRect
+              fill={null}
+              height={63.8961038961039}
+              propList={
+                [
+                  "fill",
+                  "stroke",
+                  "strokeWidth",
+                ]
+              }
+              rx={3}
+              stroke={
+                {
+                  "payload": -5855841,
+                  "type": 0,
+                }
+              }
+              strokeWidth={1.5}
+              testID="diff-before-0"
+              width={22}
+              x={28.333333333333336}
+              y={36.1038961038961}
+            />
+            <RNSVGRect
+              fill={
+                {
+                  "payload": -723986,
+                  "type": 0,
+                }
+              }
+              height={44.96392496392497}
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rx={3}
+              testID="diff-after-0"
+              width={22}
+              x={56.333333333333336}
+              y={55.03607503607503}
+            />
+            <RNSVGText
+              content={null}
+              dx={[]}
+              dy={[]}
+              fill={
+                {
+                  "payload": -5855841,
+                  "type": 0,
+                }
+              }
+              font={
+                {
+                  "fontSize": 10.5,
+                  "fontWeight": "600",
+                  "textAnchor": "middle",
+                }
+              }
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rotate={[]}
+              x={
+                [
+                  39.333333333333336,
+                ]
+              }
+              y={
+                [
+                  32.1038961038961,
+                ]
+              }
+            >
+              <RNSVGTSpan
+                content="54"
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -16777216,
+                    "type": 0,
+                  }
+                }
+                font={{}}
+                rotate={[]}
+                x={[]}
+                y={[]}
+              />
+            </RNSVGText>
+            <RNSVGText
+              content={null}
+              dx={[]}
+              dy={[]}
+              fill={
+                {
+                  "payload": -723986,
+                  "type": 0,
+                }
+              }
+              font={
+                {
+                  "fontSize": 10.5,
+                  "fontWeight": "600",
+                  "textAnchor": "middle",
+                }
+              }
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rotate={[]}
+              x={
+                [
+                  67.33333333333334,
+                ]
+              }
+              y={
+                [
+                  51.03607503607503,
+                ]
+              }
+            >
+              <RNSVGTSpan
+                content="38 km"
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -16777216,
+                    "type": 0,
+                  }
+                }
+                font={{}}
+                rotate={[]}
+                x={[]}
+                y={[]}
+              />
+            </RNSVGText>
+            <RNSVGText
+              content={null}
+              dx={[]}
+              dy={[]}
+              fill={
+                {
+                  "payload": -5855841,
+                  "type": 0,
+                }
+              }
+              font={
+                {
+                  "fontSize": 10,
+                  "textAnchor": "middle",
+                }
+              }
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rotate={[]}
+              x={
+                [
+                  53.333333333333336,
+                ]
+              }
+              y={
+                [
+                  116,
+                ]
+              }
+            >
+              <RNSVGTSpan
+                content="This week"
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -16777216,
+                    "type": 0,
+                  }
+                }
+                font={{}}
+                rotate={[]}
+                x={[]}
+                y={[]}
+              />
+            </RNSVGText>
+          </RNSVGGroup>
+          <RNSVGGroup
+            fill={
+              {
+                "payload": -16777216,
+                "type": 0,
+              }
+            }
+          >
+            <RNSVGRect
+              fill={null}
+              height={65.67099567099568}
+              propList={
+                [
+                  "fill",
+                  "stroke",
+                  "strokeWidth",
+                ]
+              }
+              rx={3}
+              stroke={
+                {
+                  "payload": -5855841,
+                  "type": 0,
+                }
+              }
+              strokeWidth={1.5}
+              testID="diff-before-1"
+              width={22}
+              x={135}
+              y={34.32900432900432}
+            />
+            <RNSVGRect
+              fill={
+                {
+                  "payload": -723986,
+                  "type": 0,
+                }
+              }
+              height={65.67099567099568}
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rx={3}
+              testID="diff-after-1"
+              width={22}
+              x={163}
+              y={34.32900432900432}
+            />
+            <RNSVGText
+              content={null}
+              dx={[]}
+              dy={[]}
+              fill={
+                {
+                  "payload": -5855841,
+                  "type": 0,
+                }
+              }
+              font={
+                {
+                  "fontSize": 10,
+                  "textAnchor": "middle",
+                }
+              }
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rotate={[]}
+              x={
+                [
+                  160,
+                ]
+              }
+              y={
+                [
+                  116,
+                ]
+              }
+            >
+              <RNSVGTSpan
+                content="Next · unchanged"
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -16777216,
+                    "type": 0,
+                  }
+                }
+                font={{}}
+                rotate={[]}
+                x={[]}
+                y={[]}
+              />
+            </RNSVGText>
+          </RNSVGGroup>
+          <RNSVGGroup
+            fill={
+              {
+                "payload": -16777216,
+                "type": 0,
+              }
+            }
+          >
+            <RNSVGRect
+              fill={null}
+              height={70.99567099567099}
+              propList={
+                [
+                  "fill",
+                  "stroke",
+                  "strokeWidth",
+                ]
+              }
+              rx={3}
+              stroke={
+                {
+                  "payload": -5855841,
+                  "type": 0,
+                }
+              }
+              strokeWidth={1.5}
+              testID="diff-before-2"
+              width={22}
+              x={241.66666666666669}
+              y={29.00432900432901}
+            />
+            <RNSVGRect
+              fill={
+                {
+                  "payload": -723986,
+                  "type": 0,
+                }
+              }
+              height={70.99567099567099}
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rx={3}
+              testID="diff-after-2"
+              width={22}
+              x={269.6666666666667}
+              y={29.00432900432901}
+            />
+            <RNSVGText
+              content={null}
+              dx={[]}
+              dy={[]}
+              fill={
+                {
+                  "payload": -5855841,
+                  "type": 0,
+                }
+              }
+              font={
+                {
+                  "fontSize": 10,
+                  "textAnchor": "middle",
+                }
+              }
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              rotate={[]}
+              x={
+                [
+                  266.6666666666667,
+                ]
+              }
+              y={
+                [
+                  116,
+                ]
+              }
+            >
+              <RNSVGTSpan
+                content="Week 6 · unchanged"
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -16777216,
+                    "type": 0,
+                  }
+                }
+                font={{}}
+                rotate={[]}
+                x={[]}
+                y={[]}
+              />
+            </RNSVGText>
+          </RNSVGGroup>
+        </RNSVGGroup>
+      </RNSVGSvgViewAndroid>
+      <View
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "flexWrap": "wrap",
+            "gap": 14,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 6,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "transparent",
+                "borderColor": "#A6A59F",
+                "borderRadius": 2,
+                "borderWidth": 1.5,
+                "height": 10,
+                "width": 10,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 11,
+                  "fontWeight": "500",
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Before
+          </Text>
+        </View>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 6,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#F4F3EE",
+                "borderColor": "#F4F3EE",
+                "borderRadius": 2,
+                "borderWidth": 1.5,
+                "height": 10,
+                "width": 10,
+              }
+            }
+          />
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 11,
+                  "fontWeight": "500",
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            After
+          </Text>
+        </View>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 11,
+                "fontWeight": "500",
+                "lineHeight": 16,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Shaded: your target band
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "gap": 2,
+        }
+      }
+      testID="diff-rule"
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "GeistMono_500Medium",
+              "fontSize": 12,
+              "letterSpacing": 0.6,
+              "lineHeight": 16,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#A6A59F",
+            },
+            false,
+            undefined,
+          ]
+        }
+      >
+        Rule used
+      </Text>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 12,
+              "lineHeight": 16,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            false,
+            undefined,
+          ]
+        }
+      >
+        Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned.
+      </Text>
+    </View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 12,
+            "lineHeight": 16,
+          },
+          {
+            "color": "#A6A59F",
+          },
+          false,
+          undefined,
+        ]
+      }
+      testID="diff-disclaimer"
+    >
+      Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.
+    </Text>
+    <View
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onBlur={[Function]}
+      onClick={[Function]}
+      onFocus={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        [
+          {
+            "alignItems": "center",
+            "backgroundColor": "#DD2C25",
+            "borderColor": "#DD2C25",
+            "borderRadius": 999,
+            "borderWidth": 1,
+            "flexBasis": "auto",
+            "flexDirection": "row",
+            "flexGrow": 0,
+            "gap": 6,
+            "justifyContent": "center",
+            "minHeight": 48,
+            "opacity": 1,
+            "paddingHorizontal": 18,
+          },
+          undefined,
+        ]
+      }
+      testID="button-Review watch changes"
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 16,
+              "fontWeight": "500",
+              "lineHeight": 24,
+            },
+            {
+              "color": "#FFFFFF",
+            },
+            false,
+            {
+              "fontWeight": "600",
+              "textAlign": "center",
+            },
+          ]
+        }
+      >
+        Review watch changes
+      </Text>
+    </View>
+  </View>
+</RCTScrollView>
+`;
+
+exports[`The watch confirm on android snapshot on android: confirm-android 1`] = `
+<View
+  style={
+    {
+      "gap": 12,
+      "padding": 20,
+    }
+  }
+  testID="confirm-sheet"
+>
+  <Text
+    accessibilityRole="header"
+    maxFontSizeMultiplier={2}
+    style={
+      [
+        {
+          "fontSize": 22,
+          "lineHeight": 28,
+        },
+        {
+          "color": "#F4F3EE",
+        },
+        false,
+        undefined,
+      ]
+    }
+  >
+    2 changes on your watch
+  </Text>
+  <Text
+    maxFontSizeMultiplier={2}
+    style={
+      [
+        {
+          "fontSize": 12,
+          "lineHeight": 16,
+        },
+        {
+          "color": "#A6A59F",
+        },
+        false,
+        undefined,
+      ]
+    }
+  >
+    This is exactly what Forerunner 965 gets. Nothing else on the watch changes.
+  </Text>
+  <View
+    style={
+      {
+        "backgroundColor": "#2C2B28",
+        "borderRadius": 12,
+        "paddingHorizontal": 12,
+      }
+    }
+    testID="confirm-list"
+  >
+    <View
+      accessibilityLabel="Replace, Fri 27, 3 × 2 km at threshold, with Easy 3 km"
+      accessible={true}
+      style={
+        {
+          "alignItems": "center",
+          "borderTopColor": "#3A3936",
+          "borderTopWidth": 0,
+          "flexDirection": "row",
+          "gap": 8,
+          "minHeight": 40,
+          "paddingVertical": 8,
+        }
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 14,
+              "lineHeight": 20,
+            },
+            {
+              "color": "#F4F3EE",
+            },
+            false,
+            {
+              "flex": 1,
+            },
+          ]
+        }
+        testID="confirm-op-0"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "fontWeight": "600",
+              },
+            ]
+          }
+        >
+          Replace
+        </Text>
+         · Fri 27 · 3 × 2 km at threshold
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+           with Easy 3 km
+        </Text>
+      </Text>
+    </View>
+    <View
+      accessibilityLabel="Replace, Sun 29, Long 18 km easy, with Long 9 km easy"
+      accessible={true}
+      style={
+        {
+          "alignItems": "center",
+          "borderTopColor": "#3A3936",
+          "borderTopWidth": 1,
+          "flexDirection": "row",
+          "gap": 8,
+          "minHeight": 40,
+          "paddingVertical": 8,
+        }
+      }
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 14,
+              "lineHeight": 20,
+            },
+            {
+              "color": "#F4F3EE",
+            },
+            false,
+            {
+              "flex": 1,
+            },
+          ]
+        }
+        testID="confirm-op-1"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "fontWeight": "600",
+              },
+            ]
+          }
+        >
+          Replace
+        </Text>
+         · Sun 29 · Long 18 km easy
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 14,
+                "lineHeight": 20,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+           with Long 9 km easy
+        </Text>
+      </Text>
+    </View>
+  </View>
+  <View
+    accessibilityLabel="Connected to Garmin · synced 07:02"
+    accessible={true}
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "gap": 6,
+      }
+    }
+  >
+    <View
+      accessible={false}
+      collapsable={false}
+      importantForAccessibility="no-hide-descendants"
+      style={
+        [
+          {
+            "height": 24,
+            "width": 24,
+          },
+          undefined,
+        ]
+      }
+    >
+      <Text
+        aria-hidden={true}
+        style={
+          {
+            "color": "#A6A59F",
+            "fontFamily": "MaterialSymbols_400Regular",
+            "fontSize": 24,
+            "lineHeight": 24,
+          }
+        }
+      >
+        
+      </Text>
+    </View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 12,
+            "lineHeight": 16,
+          },
+          {
+            "color": "#A6A59F",
+          },
+          false,
+          undefined,
+        ]
+      }
+    >
+      Connected to Garmin · synced 07:02
+    </Text>
+  </View>
+  <View
+    accessibilityRole="button"
+    accessibilityState={
+      {
+        "busy": undefined,
+        "checked": undefined,
+        "disabled": undefined,
+        "expanded": undefined,
+        "selected": undefined,
+      }
+    }
+    accessibilityValue={
+      {
+        "max": undefined,
+        "min": undefined,
+        "now": undefined,
+        "text": undefined,
+      }
+    }
+    accessible={true}
+    collapsable={false}
+    focusable={true}
+    onBlur={[Function]}
+    onClick={[Function]}
+    onFocus={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderRelease={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    style={
+      [
+        {
+          "alignItems": "center",
+          "backgroundColor": "#DD2C25",
+          "borderColor": "#DD2C25",
+          "borderRadius": 999,
+          "borderWidth": 1,
+          "flexBasis": "auto",
+          "flexDirection": "row",
+          "flexGrow": 0,
+          "gap": 6,
+          "justifyContent": "center",
+          "minHeight": 48,
+          "opacity": 1,
+          "paddingHorizontal": 18,
+        },
+        undefined,
+      ]
+    }
+    testID="button-Confirm and send 2 changes"
+  >
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 16,
+            "fontWeight": "500",
+            "lineHeight": 24,
+          },
+          {
+            "color": "#FFFFFF",
+          },
+          false,
+          {
+            "fontWeight": "600",
+            "textAlign": "center",
+          },
+        ]
+      }
+    >
+      Confirm and send 2 changes
+    </Text>
+  </View>
+  <View
+    accessibilityRole="button"
+    accessibilityState={
+      {
+        "busy": undefined,
+        "checked": undefined,
+        "disabled": undefined,
+        "expanded": undefined,
+        "selected": undefined,
+      }
+    }
+    accessibilityValue={
+      {
+        "max": undefined,
+        "min": undefined,
+        "now": undefined,
+        "text": undefined,
+      }
+    }
+    accessible={true}
+    collapsable={false}
+    focusable={true}
+    onBlur={[Function]}
+    onClick={[Function]}
+    onFocus={[Function]}
+    onResponderGrant={[Function]}
+    onResponderMove={[Function]}
+    onResponderRelease={[Function]}
+    onResponderTerminate={[Function]}
+    onResponderTerminationRequest={[Function]}
+    onStartShouldSetResponder={[Function]}
+    style={
+      [
+        {
+          "alignItems": "center",
+          "backgroundColor": "transparent",
+          "borderColor": "#A6A59F",
+          "borderRadius": 999,
+          "borderWidth": 1,
+          "flexBasis": "auto",
+          "flexDirection": "row",
+          "flexGrow": 0,
+          "gap": 6,
+          "justifyContent": "center",
+          "minHeight": 48,
+          "opacity": 1,
+          "paddingHorizontal": 18,
+        },
+        undefined,
+      ]
+    }
+    testID="button-Back"
+  >
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 16,
+            "fontWeight": "500",
+            "lineHeight": 24,
+          },
+          {
+            "color": "#F4F3EE",
+          },
+          false,
+          {
+            "fontWeight": "600",
+            "textAlign": "center",
+          },
+        ]
+      }
+    >
+      Back
+    </Text>
+  </View>
+</View>
+`;

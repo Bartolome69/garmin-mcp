@@ -140,7 +140,7 @@ export const PERSONA_PLAN: PlanVM = {
       { type: 'strength', title: 'Full body (runner)', sub: 'Strength · 27 min · 8 exercises', watch: 'on_watch', at: '20:14', detail: STRENGTH },
       { type: 'long', title: 'Long 18 km easy', sub: 'Long · 18 km · 5:27–6:10 /km', km: 18, watch: 'on_watch', at: '20:14', detail: LONG_18 },
     ]),
-    week('2026-11-30', 5, 'Base', '30 Nov to 6 Dec · 56 km planned', [
+    week('2026-11-30', 5, 'Base', '30 Nov to 6 Dec · 55.5 km planned', [
       rest(),
       { type: 'easy', title: '8 km easy', sub: 'Easy · 8 km · 5:27–6:10 /km', km: 8, detail: easyDetail('2026-12-01', 8, 46) },
       { type: 'intervals', title: '10 × 400 m', sub: 'Intervals · 9.5 km · reps 4:03–4:10 /km', km: 9.5, detail: TEN_BY_400 },

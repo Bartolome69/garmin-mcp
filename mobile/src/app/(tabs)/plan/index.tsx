@@ -1,14 +1,16 @@
 import { useIsFocused, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { Alert, useWindowDimensions } from 'react-native';
 
 import { freshness } from '../../../data/freshness';
-import { weekIndexOf } from '../../../features/plan/model';
+import { findSession, weekIndexOf } from '../../../features/plan/model';
 import { proposalWords } from '../../../features/plan/moves';
 import { usePlan } from '../../../features/plan/PlanProvider';
 import type { PlanTab } from '../../../features/plan/PlanTabs';
 import { PlanView } from '../../../features/plan/PlanView';
 import { TodayEmpty } from '../../../features/today/TodayView';
+import { moveProposal } from '../../../features/watch/proposals';
+import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
 
 function useNow(everyMs = 60000) {
@@ -19,6 +21,7 @@ function useNow(everyMs = 60000) {
 
 export default function PlanScreen() {
   const plan = usePlan();
+  const watch = useWatch();
   const { flags } = useFlags();
   const router = useRouter();
   // A screen behind an open sheet loses its brand fill (build prompt, section 2).
@@ -52,13 +55,29 @@ export default function PlanScreen() {
         moveAnyway: plan.confirmPending,
         keep: plan.clearPending,
         undo: plan.clearProposal,
-        review: () => next('move'),
-        life: () => next('life'),
+        review: () => {
+          const p = plan.proposal;
+          const s = p ? findSession(vm, p.id) : null;
+          if (!p || !s) return;
+          const staged = moveProposal(vm, { ...s, date: p.from }, p.to, plan.warned);
+          watch.stage(staged);
+          router.push({ pathname: '/plan/new-week', params: { id: staged.id } });
+        },
+        life: () => router.push('/plan/life'),
         newWorkout: () => next('builder'),
         refresh: plan.refresh,
-        trim: () => next('trim'),
+        trim: async () => {
+          const week = vm.trends.load.weeks.find((w) => w.trim);
+          if (!week) return;
+          try {
+            const p = await watch.propose({ kind: 'trim', week: week.starts });
+            router.push({ pathname: '/plan/new-week', params: { id: p.id } });
+          } catch (err) {
+            Alert.alert('Couldn’t work out the trim', err instanceof Error ? err.message : 'Try again in a moment.');
+          }
+        },
         plus: () => next('plus'),
-        change: () => next('change'),
+        change: () => router.push('/plan/life'),
       }}
     />
   );

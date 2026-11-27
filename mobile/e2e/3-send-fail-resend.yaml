@@ -1,0 +1,18 @@
+# Needs a development build with EXPO_PUBLIC_DAASH_WATCH=fail: the first send times out.
+appId: run.daash.app
+---
+- launchApp
+- tapOn: "Plan"
+- tapOn: { id: "week-next" }
+- tapOn: { id: "open-2026-12-02-intervals" }
+- tapOn: { id: "button-Send to watch" }
+- assertVisible: "Send to Forerunner 965?"
+- tapOn: { id: "button-Confirm and send" }
+- extendedWaitUntil:
+    visible: "Not sent. Garmin didn’t answer."
+    timeout: 30000
+- assertVisible: "Nothing changed on your watch. Daash retries when Garmin is back."
+- tapOn: { id: "button-Resend" }
+- extendedWaitUntil:
+    visible: "Changed · arrives at next sync"
+    timeout: 15000

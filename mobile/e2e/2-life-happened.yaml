@@ -1,0 +1,17 @@
+appId: run.daash.app
+---
+- launchApp
+- tapOn: "Plan"
+- tapOn: { id: "button-Life happened" }
+- assertVisible: "What changed?"
+- tapOn: { id: "reason-niggle" }
+- tapOn: { id: "button-See the new week" }
+- assertVisible: "Niggle or injury · since today"
+- assertVisible: "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."
+- tapOn: { id: "button-Review watch changes" }
+- assertVisible: "2 changes on your watch"
+- tapOn: { id: "button-Confirm and send 2 changes" }
+- assertVisible: "Week 4 · Base"
+- extendedWaitUntil:
+    visible: "Changed · arrives at next sync"
+    timeout: 15000

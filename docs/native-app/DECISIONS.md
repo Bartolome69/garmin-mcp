@@ -202,3 +202,83 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
 - **New dependency.** `@react-native-segmented-control/segmented-control`
   2.5.7 (the SDK's pinned version) for the standard iOS segmented control.
   Its typings predate React 19's JSX types, so PlanTabs casts the component.
+
+## Milestone 5 (diff, watch confirm, watch queue, Life happened, Remove from watch), 27 Nov
+
+- **Correction to milestone 4: the boards' primary pill is a brand fill.** In
+  the canvas CSS a later rule (`daash.css`, line 339) makes `.pill.primary`
+  brand red, not the text-colour fill I read in M4. The text-filled "emphasis"
+  button is gone. "Keep it on Fri", "Review and send", "Send to watch",
+  "Review watch changes", "Confirm and send", "Remove from watch" and "Resend"
+  are each their screen's one brand fill. On Android, Plan's FAB steps aside
+  while a move waits for a decision, so the banner holds the brand fill
+  alone.
+- **One queue writes to the watch** (`features/watch/`). WatchProvider is the
+  only code that calls a transport, and only for operations confirmed on the
+  sheet. Operations are stored in `watch_operations` (M1's table) and sent in
+  order. They move through sending, then "Changed · arrives at next sync", then
+  "On your watch", or to failed. "On your watch" shows only once the watch
+  syncs, the section 0 default. A failure that may pass (Garmin didn't answer,
+  no connection) retries on its own after 30 s, 1, 2, 4, 8, 15 and 30 min,
+  then waits for Resend; a refusal waits for Resend at once. The screen always
+  shows the current state, in words.
+- **Where proposals come from.** The engine's changes come from the server:
+  Life happened, Make it easier, Rest and recover, Swap a day and Trim week N,
+  made by the new `garmin_mcp/domain/proposal.py` view. The simple ones are
+  built on the device and need no new number: a move, a skip, a swap of two
+  days, sending one session, new targets, and Remove from watch. Every one
+  goes through the same confirm sheet. Changes to the plan also go through
+  the shared diff ("New week"), Today's "Make it easier" included.
+- **Engine changes (pure, tested).**
+  - `adjust()` takes `today`. A rule's window counts from `since`, but a day
+    before today never changes: it's done. Before, "since Wednesday" could
+    rewrite Wednesday's run.
+  - New rules: `easier`, `rest`, `swap` and `trim`. Trim scales only the easy
+    runs; the long run and quality sessions stay.
+  - Titles follow distances: "Long 18 km easy" scaled reads "Long 9 km easy",
+    and a hard session made easy reads "Easy 6 km".
+  - "N sessions change" counts sessions, not watch operations: a move is a
+    remove and an add of one session.
+  - `tests/domain_test.py` has 94 checks.
+- **Fixtures from the engine.** `scripts/domain_fixtures.py` writes
+  `proposals.json` for the persona's weeks 4 to 7: every reason × "since"
+  over the past 7 days, Make it easier, Rest, Swap and Trim week 7. It writes
+  the same file into `mobile/src/features/watch/` because Metro bundles only
+  what's inside `mobile/`. `--check` in CI keeps both in step. The persona's
+  Python plan uses the app fixture's session ids.
+- **The diff's chart is kilometres, not load.** The board labels its bars in
+  km ("54", "37 km") with "Shaded: your target band". So the bars are planned
+  kilometres a week, and the band is the engine's ±10% around the week as
+  planned. Unchanged weeks have identical bars, and value labels appear only
+  where a week changes. A week with nothing planned either way is left out.
+- **Conflict: no "Edit days" yet.** The diff board has "Edit days", and its
+  rule text ends "Edit any day before you confirm." Editing single days of a
+  proposed week has no design beyond that button, and arrives with the
+  builder (M6). Until then the button is left out, and so is that sentence of
+  the rule.
+- **Device-built summaries say only what changes.** A move reads "This week's
+  kilometres stay the same"; a skip reads "10 km less this week". Adding up
+  done runs at their actual distance gave 56.5 km against the week header's
+  54 km.
+- **Session detail's Swap** trades days with a session on a chosen day of
+  the week, checked with the back-to-back engine. "Trouble connecting?" leads
+  to Connections (M8).
+- **E2E.** Maestro and Detox need a simulator; there's none here. The four
+  flows run as Jest integration tests over the real routes, screens and queue
+  against a scripted Garmin (`mobile/src/flows.test.tsx`), on iOS and Android.
+  The same flows are written as Maestro files in `mobile/e2e/`, not run.
+  Contract tests cover the send with success, timeout and failure, and the
+  store runs against real SQLite.
+- **Web.** The web version of native tabs draws the wrong screen inside a
+  nested stack. The diff and confirm can't be viewed there; their structure
+  is covered by the Jest snapshots and tests.
+- **TODO(server), for the nightly deploys:**
+  - `POST /app/api/v1/plan/propose`: `{kind: life|easier|rest|swap|trim,
+    reason?, since?, week?}` returns `proposal.view(...)`.
+  - `POST /app/api/v1/watch/ops`: one confirmed operation, `{id, kind,
+    session_id, date}`. It must be idempotent by id, because a timed-out send
+    can arrive late; it answers `{synced}` or `{refused: "<reason>"}`.
+  - `POST /app/api/v1/watch/synced`: `{ids}` returns the ids the watch has.
+  - These sit on the server's existing Garmin writes (schedule, unschedule,
+    update). Until then a development build sends to a stand-in Garmin
+    (`EXPO_PUBLIC_DAASH_WATCH=fail` makes its first send fail).

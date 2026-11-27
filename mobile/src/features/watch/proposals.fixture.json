@@ -1,0 +1,2981 @@
+{
+ "_generated": "scripts/domain_fixtures.py; do not edit",
+ "cases": {
+  "life:unwell:2026-11-27": {
+   "id": "unwell-2026-11-27",
+   "source": "unwell",
+   "kicker": "Not feeling 100% \u00b7 since today",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 38 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 3 km",
+      "sub": "Easy \u00b7 3 km",
+      "distanceKm": 3.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 9 km easy",
+      "sub": "Long \u00b7 9 km",
+      "distanceKm": 9.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 38.0,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 3 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 3 km",
+      "sub": "Easy \u00b7 3 km",
+      "distanceKm": 3.0
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 9 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 9 km easy",
+      "sub": "Long \u00b7 9 km",
+      "distanceKm": 9.0
+     }
+    }
+   ]
+  },
+  "life:unwell:2026-11-26": {
+   "id": "unwell-2026-11-26",
+   "source": "unwell",
+   "kicker": "Not feeling 100% \u00b7 since yesterday",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 38 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 3 km",
+      "sub": "Easy \u00b7 3 km",
+      "distanceKm": 3.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 9 km easy",
+      "sub": "Long \u00b7 9 km",
+      "distanceKm": 9.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 38.0,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 3 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 3 km",
+      "sub": "Easy \u00b7 3 km",
+      "distanceKm": 3.0
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 9 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 9 km easy",
+      "sub": "Long \u00b7 9 km",
+      "distanceKm": 9.0
+     }
+    }
+   ]
+  },
+  "life:unwell:2026-11-25": {
+   "id": "unwell-2026-11-25",
+   "source": "unwell",
+   "kicker": "Not feeling 100% \u00b7 since Wed 25",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 42 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 4 km",
+      "sub": "Easy \u00b7 4 km",
+      "distanceKm": 4.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 12 km easy",
+      "sub": "Long \u00b7 12 km",
+      "distanceKm": 12.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 42.0,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 4 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 4 km",
+      "sub": "Easy \u00b7 4 km",
+      "distanceKm": 4.0
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 12 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 12 km easy",
+      "sub": "Long \u00b7 12 km",
+      "distanceKm": 12.0
+     }
+    }
+   ]
+  },
+  "life:unwell:2026-11-24": {
+   "id": "unwell-2026-11-24",
+   "source": "unwell",
+   "kicker": "Not feeling 100% \u00b7 since Tue 24",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 41.5 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 5.5 km",
+      "distanceKm": 5.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 10 km easy",
+      "sub": "Long \u00b7 10 km",
+      "distanceKm": 10.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 41.5,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "3 \u00d7 2 km at threshold",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 5.5 km",
+      "distanceKm": 5.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 10 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 10 km easy",
+      "sub": "Long \u00b7 10 km",
+      "distanceKm": 10.0
+     }
+    }
+   ]
+  },
+  "life:unwell:2026-11-23": {
+   "id": "unwell-2026-11-23",
+   "source": "unwell",
+   "kicker": "Not feeling 100% \u00b7 since Mon 23",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 41.5 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 5.5 km",
+      "distanceKm": 5.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 10 km easy",
+      "sub": "Long \u00b7 10 km",
+      "distanceKm": 10.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 41.5,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "3 \u00d7 2 km at threshold",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 5.5 km",
+      "distanceKm": 5.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 10 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 10 km easy",
+      "sub": "Long \u00b7 10 km",
+      "distanceKm": 10.0
+     }
+    }
+   ]
+  },
+  "life:unwell:2026-11-22": {
+   "id": "unwell-2026-11-22",
+   "source": "unwell",
+   "kicker": "Not feeling 100% \u00b7 since Sun 22",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": []
+  },
+  "life:unwell:2026-11-21": {
+   "id": "unwell-2026-11-21",
+   "source": "unwell",
+   "kicker": "Not feeling 100% \u00b7 since Sat 21",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Not feeling 100%: no hard sessions for 3 days, this week at most 70% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": []
+  },
+  "life:niggle:2026-11-27": {
+   "id": "niggle-2026-11-27",
+   "source": "niggle",
+   "kicker": "Niggle or injury \u00b7 since today",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 32.5 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 4 km easy",
+      "sub": "Long \u00b7 4 km",
+      "distanceKm": 4.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 32.5,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Niggle: no hard sessions for 5 days, long runs cut to 60%, this week at most 60% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 2.5 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 4 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 4 km easy",
+      "sub": "Long \u00b7 4 km",
+      "distanceKm": 4.0
+     }
+    }
+   ]
+  },
+  "life:niggle:2026-11-26": {
+   "id": "niggle-2026-11-26",
+   "source": "niggle",
+   "kicker": "Niggle or injury \u00b7 since yesterday",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 32.5 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 4 km easy",
+      "sub": "Long \u00b7 4 km",
+      "distanceKm": 4.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 32.5,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Niggle: no hard sessions for 5 days, long runs cut to 60%, this week at most 60% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 2.5 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 4 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 4 km easy",
+      "sub": "Long \u00b7 4 km",
+      "distanceKm": 4.0
+     }
+    }
+   ]
+  },
+  "life:niggle:2026-11-25": {
+   "id": "niggle-2026-11-25",
+   "source": "niggle",
+   "kicker": "Niggle or injury \u00b7 since Wed 25",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 36 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 3.5 km",
+      "sub": "Easy \u00b7 3.5 km",
+      "distanceKm": 3.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 6.5 km easy",
+      "sub": "Long \u00b7 6.5 km",
+      "distanceKm": 6.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 36.0,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Niggle: no hard sessions for 5 days, long runs cut to 60%, this week at most 60% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 3.5 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 3.5 km",
+      "sub": "Easy \u00b7 3.5 km",
+      "distanceKm": 3.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 6.5 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 6.5 km easy",
+      "sub": "Long \u00b7 6.5 km",
+      "distanceKm": 6.5
+     }
+    }
+   ]
+  },
+  "life:niggle:2026-11-24": {
+   "id": "niggle-2026-11-24",
+   "source": "niggle",
+   "kicker": "Niggle or injury \u00b7 since Tue 24",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 36.5 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 8 km easy",
+      "sub": "Long \u00b7 8 km",
+      "distanceKm": 8.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 36.5,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Niggle: no hard sessions for 5 days, long runs cut to 60%, this week at most 60% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 2.5 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 8 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 8 km easy",
+      "sub": "Long \u00b7 8 km",
+      "distanceKm": 8.0
+     }
+    }
+   ]
+  },
+  "life:niggle:2026-11-23": {
+   "id": "niggle-2026-11-23",
+   "source": "niggle",
+   "kicker": "Niggle or injury \u00b7 since Mon 23",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 36.5 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 8 km easy",
+      "sub": "Long \u00b7 8 km",
+      "distanceKm": 8.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-01",
+     "label": "TUE 1",
+     "before": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "after": {
+      "id": "2026-12-01-easy",
+      "date": "2026-12-01",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8 km easy",
+      "sub": "Easy \u00b7 8 km",
+      "distanceKm": 8
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 36.5,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Niggle: no hard sessions for 5 days, long runs cut to 60%, this week at most 60% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 2.5 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 2.5 km",
+      "sub": "Easy \u00b7 2.5 km",
+      "distanceKm": 2.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-29-long",
+     "date": "2026-11-29",
+     "dayLabel": "Sun 29",
+     "what": "Long 18 km easy",
+     "withWhat": "Long 8 km easy",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 8 km easy",
+      "sub": "Long \u00b7 8 km",
+      "distanceKm": 8.0
+     }
+    }
+   ]
+  },
+  "life:niggle:2026-11-22": {
+   "id": "niggle-2026-11-22",
+   "source": "niggle",
+   "kicker": "Niggle or injury \u00b7 since Sun 22",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Niggle: no hard sessions for 5 days, long runs cut to 60%, this week at most 60% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": []
+  },
+  "life:niggle:2026-11-21": {
+   "id": "niggle-2026-11-21",
+   "source": "niggle",
+   "kicker": "Niggle or injury \u00b7 since Sat 21",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Niggle: no hard sessions for 5 days, long runs cut to 60%, this week at most 60% of planned",
+   "disclaimer": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+   "ops": []
+  },
+  "life:travelling:2026-11-27": {
+   "id": "travelling-2026-11-27",
+   "source": "travelling",
+   "kicker": "Travelling \u00b7 since today",
+   "title": "1 session changes",
+   "subtitle": "54 \u2192 54 km this week. Next week 55.5 \u2192 46 km.",
+   "days": [
+    {
+     "date": "2026-12-02",
+     "label": "WED 2",
+     "before": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "intervals",
+      "typeLabel": "Intervals",
+      "title": "10 \u00d7 400 m",
+      "sub": "Intervals \u00b7 9.5 km",
+      "distanceKm": 9.5
+     },
+     "after": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "Treadmill tempo",
+      "sub": "Tempo",
+      "distanceKm": null
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-03",
+     "label": "THU 3",
+     "before": {
+      "id": "2026-12-03-easy",
+      "date": "2026-12-03",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-03-easy",
+      "date": "2026-12-03",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 54,
+     "changed": false,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 46,
+     "changed": true,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Travelling: intervals become treadmill tempo for 7 days; the long run stays",
+   "disclaimer": null,
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-12-02-intervals",
+     "date": "2026-12-02",
+     "dayLabel": "Wed 2",
+     "what": "10 \u00d7 400 m",
+     "withWhat": "Treadmill tempo",
+     "before": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "intervals",
+      "typeLabel": "Intervals",
+      "title": "10 \u00d7 400 m",
+      "sub": "Intervals \u00b7 9.5 km",
+      "distanceKm": 9.5
+     },
+     "after": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "Treadmill tempo",
+      "sub": "Tempo",
+      "distanceKm": null
+     }
+    }
+   ]
+  },
+  "life:travelling:2026-11-26": {
+   "id": "travelling-2026-11-26",
+   "source": "travelling",
+   "kicker": "Travelling \u00b7 since yesterday",
+   "title": "1 session changes",
+   "subtitle": "54 \u2192 54 km this week. Next week 55.5 \u2192 46 km.",
+   "days": [
+    {
+     "date": "2026-12-02",
+     "label": "WED 2",
+     "before": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "intervals",
+      "typeLabel": "Intervals",
+      "title": "10 \u00d7 400 m",
+      "sub": "Intervals \u00b7 9.5 km",
+      "distanceKm": 9.5
+     },
+     "after": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "Treadmill tempo",
+      "sub": "Tempo",
+      "distanceKm": null
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-03",
+     "label": "THU 3",
+     "before": {
+      "id": "2026-12-03-easy",
+      "date": "2026-12-03",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-03-easy",
+      "date": "2026-12-03",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 54,
+     "changed": false,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 46,
+     "changed": true,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Travelling: intervals become treadmill tempo for 7 days; the long run stays",
+   "disclaimer": null,
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-12-02-intervals",
+     "date": "2026-12-02",
+     "dayLabel": "Wed 2",
+     "what": "10 \u00d7 400 m",
+     "withWhat": "Treadmill tempo",
+     "before": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "intervals",
+      "typeLabel": "Intervals",
+      "title": "10 \u00d7 400 m",
+      "sub": "Intervals \u00b7 9.5 km",
+      "distanceKm": 9.5
+     },
+     "after": {
+      "id": "2026-12-02-intervals",
+      "date": "2026-12-02",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "Treadmill tempo",
+      "sub": "Tempo",
+      "distanceKm": null
+     }
+    }
+   ]
+  },
+  "life:travelling:2026-11-25": {
+   "id": "travelling-2026-11-25",
+   "source": "travelling",
+   "kicker": "Travelling \u00b7 since Wed 25",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Travelling: intervals become treadmill tempo for 7 days; the long run stays",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:travelling:2026-11-24": {
+   "id": "travelling-2026-11-24",
+   "source": "travelling",
+   "kicker": "Travelling \u00b7 since Tue 24",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Travelling: intervals become treadmill tempo for 7 days; the long run stays",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:travelling:2026-11-23": {
+   "id": "travelling-2026-11-23",
+   "source": "travelling",
+   "kicker": "Travelling \u00b7 since Mon 23",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Travelling: intervals become treadmill tempo for 7 days; the long run stays",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:travelling:2026-11-22": {
+   "id": "travelling-2026-11-22",
+   "source": "travelling",
+   "kicker": "Travelling \u00b7 since Sun 22",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Travelling: intervals become treadmill tempo for 7 days; the long run stays",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:travelling:2026-11-21": {
+   "id": "travelling-2026-11-21",
+   "source": "travelling",
+   "kicker": "Travelling \u00b7 since Sat 21",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Travelling: intervals become treadmill tempo for 7 days; the long run stays",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:busy:2026-11-27": {
+   "id": "busy-2026-11-27",
+   "source": "busy",
+   "kicker": "Busy week \u00b7 since today",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Busy week: the long run and one quality session stay, other runs become 30 min easy, at most 75% of planned",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:busy:2026-11-26": {
+   "id": "busy-2026-11-26",
+   "source": "busy",
+   "kicker": "Busy week \u00b7 since yesterday",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Busy week: the long run and one quality session stay, other runs become 30 min easy, at most 75% of planned",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:busy:2026-11-25": {
+   "id": "busy-2026-11-25",
+   "source": "busy",
+   "kicker": "Busy week \u00b7 since Wed 25",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Busy week: the long run and one quality session stay, other runs become 30 min easy, at most 75% of planned",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:busy:2026-11-24": {
+   "id": "busy-2026-11-24",
+   "source": "busy",
+   "kicker": "Busy week \u00b7 since Tue 24",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Busy week: the long run and one quality session stay, other runs become 30 min easy, at most 75% of planned",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:busy:2026-11-23": {
+   "id": "busy-2026-11-23",
+   "source": "busy",
+   "kicker": "Busy week \u00b7 since Mon 23",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Busy week: the long run and one quality session stay, other runs become 30 min easy, at most 75% of planned",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:busy:2026-11-22": {
+   "id": "busy-2026-11-22",
+   "source": "busy",
+   "kicker": "Busy week \u00b7 since Sun 22",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Busy week: the long run and one quality session stay, other runs become 30 min easy, at most 75% of planned",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:busy:2026-11-21": {
+   "id": "busy-2026-11-21",
+   "source": "busy",
+   "kicker": "Busy week \u00b7 since Sat 21",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Busy week: the long run and one quality session stay, other runs become 30 min easy, at most 75% of planned",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:race_moved:2026-11-27": {
+   "id": "race_moved-2026-11-27",
+   "source": "race_moved",
+   "kicker": "Race moved \u00b7 since today",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Race moved: the race goes on its new date and the last 2 weeks before it taper again",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:race_moved:2026-11-26": {
+   "id": "race_moved-2026-11-26",
+   "source": "race_moved",
+   "kicker": "Race moved \u00b7 since yesterday",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Race moved: the race goes on its new date and the last 2 weeks before it taper again",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:race_moved:2026-11-25": {
+   "id": "race_moved-2026-11-25",
+   "source": "race_moved",
+   "kicker": "Race moved \u00b7 since Wed 25",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Race moved: the race goes on its new date and the last 2 weeks before it taper again",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:race_moved:2026-11-24": {
+   "id": "race_moved-2026-11-24",
+   "source": "race_moved",
+   "kicker": "Race moved \u00b7 since Tue 24",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Race moved: the race goes on its new date and the last 2 weeks before it taper again",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:race_moved:2026-11-23": {
+   "id": "race_moved-2026-11-23",
+   "source": "race_moved",
+   "kicker": "Race moved \u00b7 since Mon 23",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Race moved: the race goes on its new date and the last 2 weeks before it taper again",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:race_moved:2026-11-22": {
+   "id": "race_moved-2026-11-22",
+   "source": "race_moved",
+   "kicker": "Race moved \u00b7 since Sun 22",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Race moved: the race goes on its new date and the last 2 weeks before it taper again",
+   "disclaimer": null,
+   "ops": []
+  },
+  "life:race_moved:2026-11-21": {
+   "id": "race_moved-2026-11-21",
+   "source": "race_moved",
+   "kicker": "Race moved \u00b7 since Sat 21",
+   "title": "Nothing needs to change",
+   "subtitle": "Your plan already fits.",
+   "days": [],
+   "load": null,
+   "rule": "Race moved: the race goes on its new date and the last 2 weeks before it taper again",
+   "disclaimer": null,
+   "ops": []
+  },
+  "easier": {
+   "id": "easier-2026-11-27",
+   "source": "easier",
+   "kicker": "Make it easier \u00b7 today",
+   "title": "1 session changes",
+   "subtitle": "54 \u2192 50 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 6 km",
+      "sub": "Easy \u00b7 6 km",
+      "distanceKm": 6.0
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 50.0,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Make it easier: today's tempo becomes an easy run, about 60% of the time; the rest of the week stays",
+   "disclaimer": null,
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": "Easy 6 km",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "Easy 6 km",
+      "sub": "Easy \u00b7 6 km",
+      "distanceKm": 6.0
+     }
+    }
+   ]
+  },
+  "rest": {
+   "id": "rest-2026-11-27",
+   "source": "rest",
+   "kicker": "Rest and recover \u00b7 today",
+   "title": "1 session changes",
+   "subtitle": "54 \u2192 44 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": null,
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 44,
+     "changed": true,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Rest and recover: today becomes a rest day, which counts toward your active week; the rest of the week stays",
+   "disclaimer": null,
+   "ops": [
+    {
+     "kind": "remove",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": null,
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": null
+    }
+   ]
+  },
+  "swap": {
+   "id": "swap-2026-11-27",
+   "source": "swap",
+   "kicker": "Swap a day \u00b7 today",
+   "title": "2 sessions change",
+   "subtitle": "54 \u2192 54 km this week. Next week unchanged.",
+   "days": [
+    {
+     "date": "2026-11-27",
+     "label": "FRI 27",
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-27",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-28",
+     "label": "SAT 28",
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-28",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-11-29",
+     "label": "SUN 29",
+     "before": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "after": {
+      "id": "2026-11-29-long",
+      "date": "2026-11-29",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 18 km easy",
+      "sub": "Long \u00b7 18 km",
+      "distanceKm": 18
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "This week",
+     "before": 54,
+     "after": 54,
+     "changed": false,
+     "low": 48.6,
+     "high": 59.4
+    },
+    {
+     "label": "Next week",
+     "before": 55.5,
+     "after": 55.5,
+     "changed": false,
+     "low": 50.0,
+     "high": 61.1
+    },
+    {
+     "label": "Week 6",
+     "before": 60,
+     "after": 60,
+     "changed": false,
+     "low": 54.0,
+     "high": 66.0
+    }
+   ],
+   "rule": "Swap a day: today's tempo moves to Sat and Sat's strength session comes to today, with no two hard days in a row",
+   "disclaimer": null,
+   "ops": [
+    {
+     "kind": "remove",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": null,
+     "before": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-27",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": null
+    },
+    {
+     "kind": "add",
+     "sessionId": "2026-11-28-strength",
+     "date": "2026-11-27",
+     "dayLabel": "Fri 27",
+     "what": "Full body (runner)",
+     "withWhat": null,
+     "before": null,
+     "after": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-27",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     }
+    },
+    {
+     "kind": "remove",
+     "sessionId": "2026-11-28-strength",
+     "date": "2026-11-28",
+     "dayLabel": "Sat 28",
+     "what": "Full body (runner)",
+     "withWhat": null,
+     "before": {
+      "id": "2026-11-28-strength",
+      "date": "2026-11-28",
+      "type": "strength",
+      "typeLabel": "Strength",
+      "title": "Full body (runner)",
+      "sub": "Strength \u00b7 27 min",
+      "distanceKm": null
+     },
+     "after": null
+    },
+    {
+     "kind": "add",
+     "sessionId": "2026-11-27-tempo",
+     "date": "2026-11-28",
+     "dayLabel": "Sat 28",
+     "what": "3 \u00d7 2 km at threshold",
+     "withWhat": null,
+     "before": null,
+     "after": {
+      "id": "2026-11-27-tempo",
+      "date": "2026-11-28",
+      "type": "tempo",
+      "typeLabel": "Tempo",
+      "title": "3 \u00d7 2 km at threshold",
+      "sub": "Tempo \u00b7 10 km",
+      "distanceKm": 10
+     }
+    }
+   ]
+  },
+  "trim:2026-12-14": {
+   "id": "trim-2026-12-14",
+   "source": "trim",
+   "kicker": "Trim week 7",
+   "title": "3 sessions change",
+   "subtitle": "68 \u2192 63.5 km week 7.",
+   "days": [
+    {
+     "date": "2026-12-15",
+     "label": "TUE 15",
+     "before": {
+      "id": "2026-12-15-easy",
+      "date": "2026-12-15",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-15-easy",
+      "date": "2026-12-15",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8.5 km easy",
+      "sub": "Easy \u00b7 8.5 km",
+      "distanceKm": 8.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-16",
+     "label": "WED 16",
+     "before": {
+      "id": "2026-12-16-intervals",
+      "date": "2026-12-16",
+      "type": "intervals",
+      "typeLabel": "Intervals",
+      "title": "6 \u00d7 1 km",
+      "sub": "Intervals \u00b7 12 km",
+      "distanceKm": 12
+     },
+     "after": {
+      "id": "2026-12-16-intervals",
+      "date": "2026-12-16",
+      "type": "intervals",
+      "typeLabel": "Intervals",
+      "title": "6 \u00d7 1 km",
+      "sub": "Intervals \u00b7 12 km",
+      "distanceKm": 12
+     },
+     "changed": false
+    },
+    {
+     "date": "2026-12-17",
+     "label": "THU 17",
+     "before": {
+      "id": "2026-12-17-easy",
+      "date": "2026-12-17",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-17-easy",
+      "date": "2026-12-17",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8.5 km easy",
+      "sub": "Easy \u00b7 8.5 km",
+      "distanceKm": 8.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-19",
+     "label": "SAT 19",
+     "before": {
+      "id": "2026-12-19-easy",
+      "date": "2026-12-19",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-19-easy",
+      "date": "2026-12-19",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8.5 km easy",
+      "sub": "Easy \u00b7 8.5 km",
+      "distanceKm": 8.5
+     },
+     "changed": true
+    },
+    {
+     "date": "2026-12-20",
+     "label": "SUN 20",
+     "before": {
+      "id": "2026-12-20-long",
+      "date": "2026-12-20",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 26 km with 10 at marathon pace",
+      "sub": "Long \u00b7 26 km",
+      "distanceKm": 26
+     },
+     "after": {
+      "id": "2026-12-20-long",
+      "date": "2026-12-20",
+      "type": "long",
+      "typeLabel": "Long",
+      "title": "Long 26 km with 10 at marathon pace",
+      "sub": "Long \u00b7 26 km",
+      "distanceKm": 26
+     },
+     "changed": false
+    }
+   ],
+   "load": [
+    {
+     "label": "Week 7",
+     "before": 68,
+     "after": 63.5,
+     "changed": true,
+     "low": 61.2,
+     "high": 74.8
+    }
+   ],
+   "rule": "Trim week 7: the easy runs scale down so it sits at the top of your target band, 63.8 km; the long run and the quality sessions stay",
+   "disclaimer": null,
+   "ops": [
+    {
+     "kind": "replace",
+     "sessionId": "2026-12-15-easy",
+     "date": "2026-12-15",
+     "dayLabel": "Tue 15",
+     "what": "10 km easy",
+     "withWhat": "8.5 km easy",
+     "before": {
+      "id": "2026-12-15-easy",
+      "date": "2026-12-15",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-15-easy",
+      "date": "2026-12-15",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8.5 km easy",
+      "sub": "Easy \u00b7 8.5 km",
+      "distanceKm": 8.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-12-17-easy",
+     "date": "2026-12-17",
+     "dayLabel": "Thu 17",
+     "what": "10 km easy",
+     "withWhat": "8.5 km easy",
+     "before": {
+      "id": "2026-12-17-easy",
+      "date": "2026-12-17",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-17-easy",
+      "date": "2026-12-17",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8.5 km easy",
+      "sub": "Easy \u00b7 8.5 km",
+      "distanceKm": 8.5
+     }
+    },
+    {
+     "kind": "replace",
+     "sessionId": "2026-12-19-easy",
+     "date": "2026-12-19",
+     "dayLabel": "Sat 19",
+     "what": "10 km easy",
+     "withWhat": "8.5 km easy",
+     "before": {
+      "id": "2026-12-19-easy",
+      "date": "2026-12-19",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "10 km easy",
+      "sub": "Easy \u00b7 10 km",
+      "distanceKm": 10
+     },
+     "after": {
+      "id": "2026-12-19-easy",
+      "date": "2026-12-19",
+      "type": "easy",
+      "typeLabel": "Easy",
+      "title": "8.5 km easy",
+      "sub": "Easy \u00b7 8.5 km",
+      "distanceKm": 8.5
+     }
+    }
+   ]
+  }
+ }
+}
