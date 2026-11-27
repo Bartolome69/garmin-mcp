@@ -148,14 +148,15 @@ def test_args_shape() -> None:
 # 2. The loop guard
 # --------------------------------------------------------------------------
 
-def _guard(name: str, args: dict, now: float, user_token: str = "tok-guard") -> bool:
+def _guard(name: str, args: dict, now: float, user_token: str = "tok-guard", client: str = "Claude") -> bool:
     """One call through the guard; True if it went through."""
     args_token = server.CALL_ARGS.set(args)
     v2_token = tools_v2.ON.set(True)
     try:
-        hosted._within_loop_guard(user_token, name, None, "ChatGPT", now=now)
+        hosted._within_loop_guard(user_token, name, None, client, now=now)
         return True
-    except hooks.Paused:
+    except hooks.Paused as said:
+        _guard.said = str(said)
         return False
     finally:
         server.CALL_ARGS.reset(args_token)
@@ -171,7 +172,7 @@ def test_loop_guard() -> None:
     blocked = [e for e in SENT if e.get("event") == "tool_loop_blocked"]
     check("guard: tool_loop_blocked logged with tool, count and client",
           blocked and blocked[-1]["properties"].get("tool") == "get_daily_summary"
-          and blocked[-1]["properties"].get("count") == 16 and blocked[-1]["properties"].get("client") == "ChatGPT",
+          and blocked[-1]["properties"].get("count") == 16 and blocked[-1]["properties"].get("client") == "Claude",
           blocked)
     check("guard: a range call is never held", _guard("get_daily_summary", {"days": 30}, t0 + 17))
     check("guard: through again once the window moves on",
@@ -180,6 +181,13 @@ def test_loop_guard() -> None:
     loose = [_guard("update_workout", {"workout_id": i}, t0 + i, "tok-loose") for i in range(50)]
     check("guard: 50 calls of any other tool go through", all(loose))
     check("guard: the 51st is held", not _guard("update_workout", {"workout_id": 51}, t0 + 51, "tok-loose"))
+    # Nov 27: ChatGPT can't ask for a range yet, so its one-day reads get the
+    # loose cap, and the note doesn't tell it to use one.
+    gpt = [_guard("get_sleep_data", {"date": f"-{i}"}, t0 + i, "tok-gpt", "ChatGPT") for i in range(50)]
+    check("guard: ChatGPT, which can't ask for a range yet, reads 50 single days in 3 minutes", all(gpt))
+    held = not _guard("get_sleep_data", {"date": "-51"}, t0 + 51, "tok-gpt", "ChatGPT")
+    check("guard: the 51st is held, as a runaway (226 in 3 minutes, Nov 27) would be",
+          held and "ask before doing more" in _guard.said and "start_date" not in _guard.said, _guard.said)
     # Off the flag, nothing is held.
     args_token = server.CALL_ARGS.set({"date": "-1"})
     os.environ["GARMIN_MCP_TOOLS_V2"] = "off"
@@ -460,12 +468,13 @@ def test_end_to_end() -> None:
     SENT.clear()
     try:
         days = [f"-{i}" for i in range(16)]
-        got = run(_as(flagged, "ChatGPT", [lambda d=d: server.get_sleep_data(date=d) for d in days]))
+        # A client that can ask for a range (ChatGPT can't yet: it gets the loose cap, tested above).
+        got = run(_as(flagged, "Claude", [lambda d=d: server.get_sleep_data(date=d) for d in days]))
         check("e2e flagged: 15 nights one at a time answer", all("error" not in g for g in got[:15]),
               [g.get("error") for g in got[:15]])
         check("e2e flagged: the 16th is held, pointing at a range",
               "start_date and end_date" in str(got[15].get("error")), got[15])
-        ranged = run(_as(flagged, "ChatGPT", [lambda: server.get_sleep_data(days=30)]))[0]
+        ranged = run(_as(flagged, "Claude", [lambda: server.get_sleep_data(days=30)]))[0]
         check("e2e flagged: the range call right after goes through with 30 rows",
               len(ranged.get("rows") or []) == 30 and "credit" in ranged, list(ranged)[:8])
         other_got = run(_as(other, "Claude", [lambda d=d: server.get_sleep_data(date=d) for d in days]))
@@ -474,8 +483,8 @@ def test_end_to_end() -> None:
         _wait_for(lambda: len([e for e in SENT if e.get("event") == "tool_called"]) >= 15 + 1 + 16)
         called = [e["properties"] for e in SENT if e.get("event") == "tool_called"]
         blocked = [e["properties"] for e in SENT if e.get("event") == "tool_loop_blocked"]
-        check("e2e: tool_loop_blocked once, for the flagged ChatGPT chat",
-              len(blocked) == 1 and blocked[0]["tool"] == "get_sleep_data" and blocked[0]["client"] == "ChatGPT"
+        check("e2e: tool_loop_blocked once, for the flagged chat",
+              len(blocked) == 1 and blocked[0]["tool"] == "get_sleep_data" and blocked[0]["client"] == "Claude"
               and blocked[0]["count"] == 16, blocked)
         check("e2e: held calls aren't tool_called (15 + 1 range + 16 others)", len(called) == 32, len(called))
         check("e2e: tool_called says single_date or range_days, and tools_v2 for the flagged person",

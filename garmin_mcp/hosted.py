@@ -1053,9 +1053,17 @@ LOOP_RANGE_HINT = {
 }
 _SAME_TOOL: dict[tuple[str, str], list[float]] = BoundedDict(20000)
 
+# Clients that can't yet ask for a range (Nov 27). ChatGPT keeps the tool list
+# it read when it connected and had made no range call a day after ranges
+# shipped (666 one-day reads, none ranged), so telling it to use start_date
+# would leave a month-of-sleep question stuck at day 15. Its one-day reads get
+# the loose cap every tool has, which still stops a runaway (226 reads of one
+# tool in 3 minutes, Nov 27). Take a client off once it calls with a range.
+CLIENTS_WITHOUT_RANGES = {"ChatGPT"}
 
-def _loop_note(name: str, count: int, limit: int) -> str:
-    hint = LOOP_RANGE_HINT.get(name)
+
+def _loop_note(name: str, count: int, limit: int, ranged: bool = True) -> str:
+    hint = LOOP_RANGE_HINT.get(name) if ranged else None
     if hint:
         return (f"{name} was called {count} times in {int(LOOP_WINDOW // 60)} minutes, one day at a time. "
                 f"{hint} instead: one call answers the whole period, a compact row a day. "
@@ -1073,7 +1081,8 @@ def _within_loop_guard(user_token: str, name: str, user: store.User | None = Non
     if name in day_ranges.ROWS and day_ranges.wants_range(args.get("start_date"), args.get("end_date"),
                                                           args.get("days")):
         return
-    limit = LOOP_LIMIT if name in LOOP_RANGE_HINT else LOOP_LIMIT_OTHER
+    ranged = name in LOOP_RANGE_HINT and client not in CLIENTS_WITHOUT_RANGES
+    limit = LOOP_LIMIT if ranged else LOOP_LIMIT_OTHER
     now = time.monotonic() if now is None else now
     key = (user_token, name)
     recent = [t for t in _SAME_TOOL.get(key, ()) if now - t < LOOP_WINDOW]
@@ -1082,7 +1091,7 @@ def _within_loop_guard(user_token: str, name: str, user: store.User | None = Non
         analytics.capture("tool_loop_blocked", (user.email_hash if user else None) or user_token, drop_empty({
             "tool": name, "count": len(recent) + 1, "limit": limit, "client": client,
             "ai_client": client, "window_s": int(LOOP_WINDOW)}))
-        raise hooks.Paused(_loop_note(name, len(recent) + 1, limit))
+        raise hooks.Paused(_loop_note(name, len(recent) + 1, limit, ranged))
     recent.append(now)
     _SAME_TOOL[key] = recent
 
@@ -1512,7 +1521,7 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             telemetry.count("tool_errors")
         if seconds is not None:
             telemetry.observe("tool_ms", seconds * 1000)
-            _LATENCY.note(seconds * 1000)
+            _LATENCY.note(seconds * 1000, who=person)
         analytics.capture("tool_called", person, drop_empty({
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
             "card_refresh": auto or None,
@@ -2498,8 +2507,11 @@ def plan_change_message(plan: dict[str, Any] | None, activity_id: Any, today: da
     match = row.get("match") or {}
     if row.get("completion") == "partial" and match.get("planned_km"):
         line = f"{km:g} of {match['planned_km']:g} km. Open Daash to leave it or add the rest to a later run."
-    elif row.get("done_on") and row["done_on"] < row["date"]:
+    elif row.get("done_on") and row["done_on"] < row["date"] and row.get("off_watch"):
         line = f"Done early, so it's off your watch for {d.strftime('%A')}."
+    elif row.get("done_on") and row["done_on"] < row["date"]:
+        # Nov 27: only match-v2-watch takes it off the watch; for everyone else it's still there.
+        line = f"Done early. It's still on your watch for {d.strftime('%A')}: skip it or run it as an extra."
     elif row.get("done_on") and row["done_on"] > row["date"]:
         line = f"Planned for {d.strftime('%A')}, done after."
     else:
@@ -5326,8 +5338,14 @@ def _pointing_at_named(send: Any, path: str = oauth.LISTED_PATH) -> Any:
 
 @mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.LISTED_PATH}", methods=["GET", "OPTIONS"])
 @mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.PASSWORD_PATH}", methods=["GET", "OPTIONS"])
+@mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.MCP_PATH}", methods=["GET", "OPTIONS"])
 async def listed_resource_metadata(request: Request) -> Response:
-    """RFC 9728 metadata for a named address: the same authorization server, its own resource name."""
+    """RFC 9728 metadata for a named address: the same authorization server, its own resource name.
+
+    /mcp too (Nov 27): RFC 9728 has clients look for /mcp's metadata at
+    /.well-known/oauth-protected-resource/mcp first. That answered 404, and
+    they fell back to the root's; now the first place they look answers.
+    """
     from starlette.responses import JSONResponse
 
     cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -5335,7 +5353,8 @@ async def listed_resource_metadata(request: Request) -> Response:
     if request.method == "OPTIONS":
         return Response(status_code=204, headers=cors)
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    named = oauth.PASSWORD_PATH if request.url.path.endswith(oauth.PASSWORD_PATH) else oauth.LISTED_PATH
+    path = request.url.path.rstrip("/")
+    named = next((p for p in oauth.NAMED_PATHS if path.endswith(p)), oauth.MCP_PATH)
     return JSONResponse({
         "resource": f"{base}{named}",
         "authorization_servers": [f"{base}/"],
@@ -6199,9 +6218,11 @@ def vitals_once(now: float | None = None, figures: Mapping[str, Any] | None = No
             support_mail.send_alert(
                 f"Daash is slow: p95 {p95_ms / 1000:.0f} s over the last hour ({when})",
                 f"In the hour to {when} (UK time) the slowest 5% of {calls} tool calls took over "
-                f"{p95_ms / 1000:.1f} s (the line is {memwatch.LATENCY_P95_MS / 1000:.0f} s). Usually Garmin being "
-                "slow, or one person's chat making a long run of calls. The System Health dashboard has the "
-                "hour by hour; this repeats every 2 hours while it stays slow.\n")
+                f"{p95_ms / 1000:.1f} s (the line is {memwatch.LATENCY_P95_MS / 1000:.0f} s), and "
+                f"{_LATENCY.slow_people} people had a call that slow; the busiest one made "
+                f"{_LATENCY.busiest_share:.0%} of the calls. Several people slow at once usually means Garmin "
+                "is slow. The System Health dashboard has the hour by hour; this repeats every 2 hours while it "
+                "stays slow. One person's long run of calls alone doesn't send this.\n")
     if _WATCH.should_restart(rss) and not _GUARD_TRIPPED.is_set():
         memory_guard_restart(figures)
     beat: dict[str, Any] = {}

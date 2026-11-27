@@ -145,6 +145,7 @@ check("started from Friday's workout on a day with its own session: asked, plan 
       len(q) == 1 and {o["schedule"] for o in q[0]["question"]} == {"601", "602"}
       and row(result, 601)["status"] == "today" and row(result, 602)["status"] == "ahead", str(q))
 from garmin_mcp import app  # noqa: E402
+from garmin_mcp import server  # noqa: E402
 
 view = app._question(q[0], THU)
 check("the card asks it in words, days by name and date", view["text"] == "Was this Thu 26 Easy 12 km or Fri 27 Tempo 9 km?",
@@ -188,6 +189,39 @@ check("the PostHog flag match-v2 turns it on for one account", matching.enabled(
 os.environ["GARMIN_MCP_MATCH_V2"] = "off"
 check("GARMIN_MCP_MATCH_V2=off turns it off for everyone", not matching.enabled(user_token))
 os.environ["GARMIN_MCP_MATCH_V2"] = "flag"
+
+# Nov 27: matching goes to everyone; taking sessions off the watch stays with
+# Bart (its own flag) until it has been seen to be right.
+check("the watch: on for Daash's own accounts", matching.watch_enabled(user_token))
+check("but not for an account with only match-v2: matching alone never writes to the watch",
+      matching.enabled("tok-flagged-0123456789") and not matching.watch_enabled("tok-flagged-0123456789"))
+analytics._fetch_flags = lambda who: {"flags": {
+    "match-v2": {"enabled": who == analytics.distinct_id("fp-flagged")},
+    "match-v2-watch": {"enabled": who == analytics.distinct_id("fp-flagged")}}}
+analytics._FLAGS.clear() if hasattr(analytics, "_FLAGS") else None
+check("the PostHog flag match-v2-watch turns the watch on for one account",
+      matching.watch_enabled("tok-flagged-0123456789"))
+os.environ["GARMIN_MCP_MATCH_V2_WATCH"] = "off"
+check("GARMIN_MCP_MATCH_V2_WATCH=off turns the watch off for everyone, matching stays",
+      not matching.watch_enabled(user_token) and matching.enabled(user_token))
+os.environ["GARMIN_MCP_MATCH_V2_WATCH"] = "flag"
+analytics._fetch_flags = lambda who: {"flags": {"match-v2": {"enabled": who == analytics.distinct_id("fp-flagged")}}}
+analytics._FLAGS.clear() if hasattr(analytics, "_FLAGS") else None
+synced: list = []
+real_sync = matching.sync_watch
+
+
+async def _no_sync(*a, **k):
+    synced.append(a)
+    return 0
+matching.sync_watch = _no_sync
+try:
+    asyncio.run(server._after_matching({"user_token": "tok-flagged-0123456789"}, {"weeks": []}, [], THU))
+    check("a plan read for someone without the watch flag never calls the watch sync", synced == [], str(synced))
+    asyncio.run(server._after_matching({"user_token": user_token}, {"weeks": []}, [], THU))
+    check("and one for Bart does", len(synced) == 1, str(synced))
+finally:
+    matching.sync_watch = real_sync
 
 calls: list[tuple] = []
 

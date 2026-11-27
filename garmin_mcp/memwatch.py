@@ -107,38 +107,61 @@ class Watch:
 LATENCY_P95_MS = float(os.environ.get("GARMIN_MCP_LATENCY_ALERT_MS", "15000"))
 LATENCY_WINDOW_S = 3600
 LATENCY_MIN_CALLS = 30
+# Slow for Daash, not for one chat (Nov 27): the alert also needs this many
+# people with a call over the line in the hour. On Nov 27 one ChatGPT chat
+# read 248 runs in 27 minutes; its own calls queued behind the two Garmin
+# requests a person may have in flight, the hour's p95 went to 16 s, and
+# the alert fired while everyone else's calls took 2-3 s.
+LATENCY_MIN_PEOPLE = int(os.environ.get("GARMIN_MCP_LATENCY_ALERT_PEOPLE", "3"))
 
 
 class LatencyWatch:
-    """The last hour's tool call times; an alert when their p95 passes 15 s."""
+    """The last hour's tool call times; an alert when their p95 passes 15 s
+    and at least three people had a call that slow."""
 
     def __init__(self, limit_ms: float = LATENCY_P95_MS, window: float = LATENCY_WINDOW_S,
-                 min_calls: int = LATENCY_MIN_CALLS, every: float = WARN_EVERY_S) -> None:
+                 min_calls: int = LATENCY_MIN_CALLS, every: float = WARN_EVERY_S,
+                 min_people: int = LATENCY_MIN_PEOPLE) -> None:
         from collections import deque
         import threading
         self.limit_ms, self.window, self.min_calls, self.every = limit_ms, window, min_calls, every
-        self._calls: "deque[tuple[float, float]]" = deque(maxlen=50_000)
+        self.min_people = min_people
+        self._calls: "deque[tuple[float, float, str | None]]" = deque(maxlen=50_000)
         self._lock = threading.Lock()
         self.warned_at: float | None = None
+        # The last check's slow people and the busiest one's share of the calls, for the email.
+        self.slow_people = 0
+        self.busiest_share = 0.0
 
-    def note(self, ms: float, now: float | None = None) -> None:
+    def note(self, ms: float, now: float | None = None, who: str | None = None) -> None:
         with self._lock:
-            self._calls.append((time.time() if now is None else now, ms))
+            self._calls.append((time.time() if now is None else now, ms, who))
 
     def p95(self, now: float | None = None) -> tuple[float | None, int]:
         now = time.time() if now is None else now
         with self._lock:
             while self._calls and now - self._calls[0][0] > self.window:
                 self._calls.popleft()
-            times = sorted(ms for _, ms in self._calls)
+            times = sorted(ms for _, ms, _ in self._calls)
         if not times:
             return None, 0
         return times[min(len(times) - 1, int(0.95 * len(times)))], len(times)
 
+    def _people(self) -> tuple[int, float]:
+        """How many people had a call over the line, and the busiest person's share of all calls.
+        Calls with no person count as one."""
+        from collections import Counter
+        with self._lock:
+            calls = list(self._calls)
+        slow = {who for _, ms, who in calls if ms > self.limit_ms}
+        busiest = Counter(who for _, _, who in calls).most_common(1)
+        return len(slow), (busiest[0][1] / len(calls) if busiest else 0.0)
+
     def should_warn(self, now: float | None = None) -> tuple[bool, float | None, int]:
         now = time.time() if now is None else now
         p95, n = self.p95(now)
-        if p95 is None or n < self.min_calls or p95 <= self.limit_ms:
+        self.slow_people, self.busiest_share = self._people() if p95 is not None else (0, 0.0)
+        if p95 is None or n < self.min_calls or p95 <= self.limit_ms or self.slow_people < self.min_people:
             self.warned_at = None
             return False, p95, n
         if self.warned_at is None or now - self.warned_at >= self.every:
