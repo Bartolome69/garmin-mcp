@@ -2010,6 +2010,8 @@ async def you_payload() -> dict[str, Any]:
             row("ChatGPT", "Connected" if "ChatGPT" in apps else "Connect", tone="ok" if "ChatGPT" in apps else "red",
                 href=None if "ChatGPT" in apps else SITE),
         ]),
+        # Providers besides Garmin, each shown only to people its flag is on for (provider_routes.py).
+        ("Connections", provider_routes.you_rows(user_token)),
         ("Training", [
             row("Units", "Miles" if miles is True else "km", sub="From Garmin"),
             row("Week starts", "Monday"),
@@ -2050,7 +2052,7 @@ async def you_payload() -> dict[str, Any]:
         "watch": {"name": device.get("lastUsedDeviceName") or "Your watch",
                   "synced": _synced(device.get("lastUsedDeviceUploadTime"), today),
                   "line": "Workouts go to your watch. Runs, sleep and readiness come back from Garmin."},
-        "groups": [{"title": t, "rows": rows} for t, rows in groups],
+        "groups": [{"title": t, "rows": rows} for t, rows in groups if rows],
         "times": {"options": [{"code": c, "label": l} for c, l in USUAL_TIMES],
                   "chosen": [c for c, said in crews._TIME_WORDS.items() if said in str((member or {}).get("times") or "")]} if member else None,
         "assistant": assistant(), "ask": _ask_links(goal_prompt),
@@ -4179,6 +4181,7 @@ async def api_race_prompt(request: Request) -> Response:
 # The in-app chat pilot (Nov 27): its routes, before the files' catch-all below. Off
 # for everyone not in CHAT_PILOT_USER_IDS; see chat_pilot.py.
 from . import chat_pilot  # noqa: E402,F401
+from . import provider_routes  # noqa: E402,F401
 
 
 # The web app's own files, registered last so the API's routes match first.
