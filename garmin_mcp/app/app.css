@@ -10,6 +10,7 @@
   --easy: #8CC08F; --hard: #E8A15F; --long: #74A3DB; --strength: #B39DDB; --rec: #4A4844; --race: #E8A15F;
   /* Nov 27: intervals, for the native apps first (docs/native-app/PLAN.md); the PWA still draws them as --hard. */
   --intervals: #E07AA8;
+  --on-brand: #FFFFFF;
   --amber: #E8C35F; --amber-soft: #2A2520; --amber-soft-line: #5C4A33;
   --band-hard: rgba(232, 161, 95, 0.18); --band-easy: rgba(140, 192, 143, 0.16); --band-easy-line: rgba(140, 192, 143, 0.45);
   /* Nov 13: colours that were written out, as tokens, so light mode can swap them. */
@@ -37,6 +38,7 @@
     --red: #C8251E; --red-text: #C21F18; --red-soft: #FDECEA; --red-soft-line: #F2B8B3;
     --easy: #2A7030; --hard: #9C4D0B; --long: #2563A8; --strength: #6A47B0; --rec: #C9C6BE; --race: #9C4D0B;
     --intervals: #B23A78;
+    --on-brand: #FFFFFF;
     --amber: #7F5A00; --amber-soft: #FFF5DD; --amber-soft-line: #E8CF94;
     --band-hard: rgba(156, 77, 11, 0.12); --band-easy: rgba(42, 112, 48, 0.10); --band-easy-line: rgba(42, 112, 48, 0.40);
     --hover: rgba(22, 22, 20, 0.04); --hover-soft: rgba(22, 22, 20, 0.03);
@@ -56,6 +58,7 @@
   --red: #C8251E; --red-text: #C21F18; --red-soft: #FDECEA; --red-soft-line: #F2B8B3;
   --easy: #2A7030; --hard: #9C4D0B; --long: #2563A8; --strength: #6A47B0; --rec: #C9C6BE; --race: #9C4D0B;
   --intervals: #B23A78;
+  --on-brand: #FFFFFF;
   --amber: #7F5A00; --amber-soft: #FFF5DD; --amber-soft-line: #E8CF94;
   --band-hard: rgba(156, 77, 11, 0.12); --band-easy: rgba(42, 112, 48, 0.10); --band-easy-line: rgba(42, 112, 48, 0.40);
   --hover: rgba(22, 22, 20, 0.04); --hover-soft: rgba(22, 22, 20, 0.03);

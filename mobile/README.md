@@ -1,20 +1,28 @@
 # Daash mobile app
 
-The native iOS and Android app, in Expo (React Native) SDK 58. An empty shell
-for now: no screens until the designs land. The plan, the API it uses and the
-open questions are in [docs/native-app/](../docs/native-app/PLAN.md).
+The native iOS and Android app: Expo SDK 58, TypeScript, expo-router. Built
+milestone by milestone from the build prompt; what's settled is in
+[docs/native-app/DECISIONS.md](../docs/native-app/DECISIONS.md), the API it
+uses in [API_INVENTORY.md](../docs/native-app/API_INVENTORY.md).
 
 ```bash
 npm ci
-npx expo start        # Expo Go or a development build
-npm run typecheck
-npm run tokens        # regenerate src/theme/tokens.* after changing garmin_mcp/app/app.css
+npx expo start            # a development build (native modules: not Expo Go)
+npm run check             # tokens in step, colour lint, typecheck, tests on iOS and Android
+EXPO_PUBLIC_DAASH_COACH=1 npx expo start   # development only: show the Coach tab
 ```
 
-- Colours come from the PWA's `garmin_mcp/app/app.css` through
-  `scripts/build_tokens.py`. Never edit `src/theme/tokens.*` by hand; CI
-  (`.github/workflows/mobile.yml`) fails if they drift.
+- **Colours** come from `garmin_mcp/app/app.css` through
+  `scripts/build_tokens.py`, as the approved tokens only. Never edit
+  `src/theme/tokens.*`; never write a colour literal (`npm run lint:colours`
+  fails on any). Faded values come from `theme/derived.ts`.
+- **Text** goes through `ui/Text` (type role, token colour, `numeric` for
+  tabular figures); **icons** through `ui/Icon` (one name, SF Symbols on iOS,
+  Material Symbols on Android).
+- **Routes** live in `src/app/` and every file there is a route: keep tests and
+  helpers outside it.
+- **Local data** is SQLite (`src/db/`); add tables by adding a migration.
 - `ios/` and `android/` are generated (Continuous Native Generation) and not
-  committed; configure native behaviour in `app.json` and config plugins.
-- The icons in `assets/` are Expo's placeholders, to be replaced with the designs.
-- Install packages with `npx expo install <pkg>` so versions match the SDK.
+  committed. Install packages with `npx expo install <pkg>` where it can reach
+  expo.dev, so versions match the SDK.
+- The icons in `assets/` are Expo's placeholders.
