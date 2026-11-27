@@ -5324,8 +5324,14 @@ def _pointing_at_named(send: Any, path: str = oauth.LISTED_PATH) -> Any:
 
 @mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.LISTED_PATH}", methods=["GET", "OPTIONS"])
 @mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.PASSWORD_PATH}", methods=["GET", "OPTIONS"])
+@mcp.custom_route(f"/.well-known/oauth-protected-resource{oauth.MCP_PATH}", methods=["GET", "OPTIONS"])
 async def listed_resource_metadata(request: Request) -> Response:
-    """RFC 9728 metadata for a named address: the same authorization server, its own resource name."""
+    """RFC 9728 metadata for a named address: the same authorization server, its own resource name.
+
+    /mcp too (Nov 27): RFC 9728 has clients look for /mcp's metadata at
+    /.well-known/oauth-protected-resource/mcp first. That answered 404, and
+    they fell back to the root's; now the first place they look answers.
+    """
     from starlette.responses import JSONResponse
 
     cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -5333,7 +5339,8 @@ async def listed_resource_metadata(request: Request) -> Response:
     if request.method == "OPTIONS":
         return Response(status_code=204, headers=cors)
     base = os.environ.get("GARMIN_MCP_BASE_URL", "").strip().rstrip("/")
-    named = oauth.PASSWORD_PATH if request.url.path.endswith(oauth.PASSWORD_PATH) else oauth.LISTED_PATH
+    path = request.url.path.rstrip("/")
+    named = next((p for p in oauth.NAMED_PATHS if path.endswith(p)), oauth.MCP_PATH)
     return JSONResponse({
         "resource": f"{base}{named}",
         "authorization_servers": [f"{base}/"],

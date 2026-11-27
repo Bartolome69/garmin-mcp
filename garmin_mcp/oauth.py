@@ -271,6 +271,8 @@ LISTED_PATH = "/listed/mcp"
 # way, by the resource name the client asks for.
 PASSWORD_PATH = "/password/mcp"
 NAMED_PATHS = (LISTED_PATH, PASSWORD_PATH)
+# The usual address, which clients also find metadata for by its own path.
+MCP_PATH = "/mcp"
 
 
 def _sweep() -> None:
@@ -295,9 +297,21 @@ def _issued_for(resource: str | None) -> str | None:
     token only for exactly the resource it serves. Its name has done its job
     by then, at /authorize.
     """
-    if not resource or str(resource).rstrip("/").endswith(NAMED_PATHS):
+    if not resource or str(resource).rstrip("/").endswith(NAMED_PATHS) or _is_own_mcp(resource):
         return _own_resource()
     return resource
+
+
+def _is_own_mcp(resource: str) -> bool:
+    """Whether a client asked for this server's /mcp address by name (Nov 27).
+
+    Clients look for the metadata at /.well-known/oauth-protected-resource/mcp
+    first, find /mcp named as the resource there, and ask for a token for it.
+    It is the same endpoint, so the token is stamped with this server's own
+    resource, as a named address's is.
+    """
+    own = _own_resource()
+    return bool(own) and str(resource).rstrip("/") == f"{own.rstrip('/')}{MCP_PATH}"
 
 
 def _own_resource() -> str | None:

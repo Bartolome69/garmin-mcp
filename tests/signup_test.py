@@ -866,6 +866,28 @@ async def main() -> int:
         check("nor is a read sent alongside get_plan held back",
               hosted._before_tool_for(subject_of(listed_token), alone=True)("get_sleep_data") == 0.0)
 
+        print("\n/mcp's own resource metadata (Nov 27)")
+        code, body, _ = await run(lambda: http("GET", "/.well-known/oauth-protected-resource/mcp"))
+        meta = json.loads(body) if code == 200 else {}
+        check("the usual address has metadata where RFC 9728 clients look first, not a 404",
+              code == 200 and meta.get("resource") == f"{BASE}/mcp" and meta.get("authorization_servers") == [f"{BASE}/"],
+              f"{code} {meta}")
+        code, body, _ = await run(lambda: http("GET", "/.well-known/oauth-protected-resource"))
+        check("the root's metadata is still there for clients that look there",
+              code == 200 and json.loads(body).get("resource", "").rstrip("/") == BASE, f"{code} {body[:120]}")
+        flow_m, verifier_m = await start(resource=f"{BASE}/mcp")
+        NEXT_GARMIN["id"] = "g-mcp-path"
+        code, body = await through_garmin(flow_m)
+        _, _, headers = await run(lambda: http("POST", "/oauth/consent", {
+            "consent": consent_of(body), "decision": "allow", "email": "mcppath@example.com"}))
+        mcp_token = await token_for(headers.get("location", ""), verifier_m)
+        names, _said = await listing(mcp_token, "/mcp")
+        check("a client that asks for a token for /mcp by name gets one /mcp accepts",
+              bool(mcp_token) and "get_plan" in names, str(sorted(names))[:120])
+        check("stamped with the server's own resource, like a named address's",
+              _oauth._issued_for(f"{BASE}/mcp") == _oauth._own_resource()
+              and _oauth._issued_for("https://elsewhere.example/mcp") == "https://elsewhere.example/mcp")
+
         print("\nGarmin's page first, then a password on another device")
         # Oct 30: approved on Garmin's page on a tablet, then signed in with a
         # password on a phone, and kept reading from the official API alone.
