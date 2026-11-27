@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from garmin_mcp.domain import adjust, backtoback, config, connections, dedupe, load, paces, postrun, predict, proposal, readiness, takeaways  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, config, connections, dedupe, load, onboarding, paces, postrun, predict, proposal, readiness, takeaways  # noqa: E402
 from garmin_mcp.domain.model import Activity, Session, mmss  # noqa: E402
 
 failures: list[str] = []
@@ -474,6 +474,36 @@ def connections_checks() -> None:
     check("connections: this month's runs only", all(a["start"] >= "2026-10-28" for a in v["activities"]) and not old)
 
 
+def onboarding_checks() -> None:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("domain_fixtures", ROOT / "scripts" / "domain_fixtures.py")
+    fx = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fx)
+    c = fx.onboarding_cases()
+    rows = {r["key"]: r for r in c["import"]["rows"]}
+    check("onboarding: the import reads 12 weeks", c["import"]["title"].startswith("Found ") and c["import"]["title"].endswith("since September"))
+    check("onboarding: the best recent race, and threshold from it",
+          rows["race"]["value"] == "10K · 43:30" and rows["race"]["note"] == "12 Oct" and rows["threshold"]["note"] == "from your 10K")
+    check("onboarding: the usual week", rows["week"]["value"] == "48 km · 5 runs", rows["week"]["value"])
+    z = paces.paces(10, 2610).zones["threshold"]
+    check("onboarding: threshold is the pace engine's", rows["threshold"]["value"] == f"{mmss(z[0])}–{mmss(z[1])} /km")
+    q = {r["key"]: r for r in c["questions"]["rows"]}
+    check("onboarding: four questions with no race use the experience's 10K and say so",
+          q["race"]["value"] == "None given" and q["race"]["note"] == "using a 10K of 45:00")
+    r = c["reveal"]
+    check("onboarding: the reveal is the plan builder's plan",
+          r["kicker"] == "Your plan · 20 weeks" and r["title"] == "London Marathon, Sat 24 Apr"
+          and [p["label"] for p in r["phases"]] == ["Base", "Build", "Peak", "Taper"] and sum(p["weeks"] for p in r["phases"]) == 20)
+    check("onboarding: predicted from the race, against the target", (r["predicted"], r["target"]) == ("3:20", "3:15"))
+    check("onboarding: week 1 carries its workouts for the watch",
+          all(s["workout"]["schema"] == "daash.workout.v1" and s["workout"]["steps"] for s in r["week1"]) and len(r["week1"]) >= 3)
+    check("onboarding: no race, a fitness plan with no prediction",
+          c["reveal_fit"]["title"] == "Your fitness plan" and c["reveal_fit"]["predicted"] is None)
+    empty = onboarding.import_summary([], TODAY)
+    check("onboarding: no runs read says so and uses the default 10K",
+          empty["title"] == "No runs in the last 12 weeks" and empty["basis"]["raceSeconds"] == 45 * 60)
+
+
 def config_checks() -> None:
     check("bad config JSON keeps the defaults", config.load_config("{not json") == config.DEFAULT)
     c = config.load_config(json.dumps({"merge": {"start_within_seconds": 90, "nope": 1}, "readiness": {"hrv_low_percentile": "x"}}))
@@ -485,7 +515,7 @@ def config_checks() -> None:
     check("the server's defaults match the app's flag defaults",
           (r.sleep_short_hours, r.load_ratio_low, r.load_ratio_high, r.hrv_low_percentile, m.start_within_seconds,
            m.distance_within_pct) == tuple(flags_defaults.values()))
-    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal, postrun, connections)
+    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal, postrun, connections, onboarding)
     params = [p for mod in modules for _, fn in inspect.getmembers(mod, inspect.isfunction)
               if fn.__module__ == mod.__name__ for p in inspect.signature(fn).parameters]
     source = " ".join(inspect.getsource(mod) for mod in modules)
@@ -505,6 +535,7 @@ def main() -> int:
     takeaway_checks()
     postrun_checks()
     connections_checks()
+    onboarding_checks()
     config_checks()
     print()
     if failures:

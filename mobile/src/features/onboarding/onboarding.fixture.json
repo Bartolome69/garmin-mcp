@@ -1,0 +1,430 @@
+{
+ "_generated": "scripts/domain_fixtures.py; do not edit",
+ "cases": {
+  "import": {
+   "source": "import",
+   "title": "Found 56 runs since September",
+   "rows": [
+    {
+     "key": "race",
+     "label": "Best recent race",
+     "value": "10K \u00b7 43:30",
+     "note": "12 Oct"
+    },
+    {
+     "key": "easy",
+     "label": "Easy pace",
+     "value": "5:10\u20135:20 /km",
+     "note": "from 55 runs"
+    },
+    {
+     "key": "threshold",
+     "label": "Threshold",
+     "value": "4:23\u20134:28 /km",
+     "note": "from your 10K"
+    },
+    {
+     "key": "week",
+     "label": "Usual week",
+     "value": "48 km \u00b7 5 runs",
+     "note": "last 8 weeks"
+    }
+   ],
+   "basis": {
+    "raceKm": 10.0,
+    "raceSeconds": 2610,
+    "raceDate": "2026-10-12"
+   },
+   "answers": {
+    "avg_km": 48.2,
+    "longest_km": 17.0,
+    "days": 5
+   }
+  },
+  "questions": {
+   "source": "questions",
+   "title": "From your answers",
+   "rows": [
+    {
+     "key": "race",
+     "label": "Best recent race",
+     "value": "None given",
+     "note": "using a 10K of 45:00"
+    },
+    {
+     "key": "easy",
+     "label": "Easy pace",
+     "value": "5:39\u20136:23 /km",
+     "note": "from the 10K above"
+    },
+    {
+     "key": "threshold",
+     "label": "Threshold",
+     "value": "4:32\u20134:37 /km",
+     "note": "from the 10K above"
+    },
+    {
+     "key": "week",
+     "label": "Usual week",
+     "value": "60 km \u00b7 5 runs",
+     "note": "from your answers"
+    }
+   ],
+   "basis": {
+    "raceKm": 10.0,
+    "raceSeconds": 2700.0,
+    "raceDate": null
+   },
+   "answers": {
+    "avg_km": 60,
+    "longest_km": 18.0,
+    "days": 5,
+    "level": "exp"
+   }
+  },
+  "reveal": {
+   "kicker": "Your plan \u00b7 20 weeks",
+   "title": "London Marathon, Sat 24 Apr",
+   "phases": [
+    {
+     "label": "Base",
+     "weeks": 6
+    },
+    {
+     "label": "Build",
+     "weeks": 7
+    },
+    {
+     "label": "Peak",
+     "weeks": 4
+    },
+    {
+     "label": "Taper",
+     "weeks": 3
+    }
+   ],
+   "predicted": "3:20",
+   "target": "3:15",
+   "startKm": 48,
+   "peakKm": 77,
+   "starts": "2026-12-07",
+   "because": "Phases follow from your 20 weeks and recent 48 km weeks. Prediction uses your 10K of 43:30.",
+   "week1": [
+    {
+     "id": "ob-2026-12-07",
+     "date": "2026-12-07",
+     "dow": "MON",
+     "day": 7,
+     "type": "easy",
+     "typeLabel": "Easy",
+     "title": "Easy 8 km",
+     "distanceKm": 8.0,
+     "sub": "Easy \u00b7 8 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Easy 8 km",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 8000
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-08",
+     "date": "2026-12-08",
+     "dow": "TUE",
+     "day": 8,
+     "type": "easy",
+     "typeLabel": "Easy",
+     "title": "Easy 7 km + strides",
+     "distanceKm": 8.4,
+     "sub": "Easy \u00b7 8.4 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Easy 7 km + strides",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 7000
+       },
+       {
+        "type": "repeat",
+        "times": 6,
+        "steps": [
+         {
+          "type": "interval",
+          "duration_seconds": 20
+         },
+         {
+          "type": "recovery",
+          "duration_seconds": 60
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-09",
+     "date": "2026-12-09",
+     "dow": "WED",
+     "day": 9,
+     "type": "tempo",
+     "typeLabel": "Tempo",
+     "title": "Tempo 2 \u00d7 6 min",
+     "distanceKm": 7.7,
+     "sub": "Tempo \u00b7 7.7 km",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Tempo 2 \u00d7 6 min",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "warmup",
+        "duration_seconds": 900
+       },
+       {
+        "type": "repeat",
+        "times": 2,
+        "steps": [
+         {
+          "type": "interval",
+          "duration_seconds": 360,
+          "pace": [
+           "4:17",
+           "4:37"
+          ]
+         },
+         {
+          "type": "recovery",
+          "duration_seconds": 120
+         }
+        ]
+       },
+       {
+        "type": "cooldown",
+        "duration_seconds": 600
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-11",
+     "date": "2026-12-11",
+     "dow": "FRI",
+     "day": 11,
+     "type": "easy",
+     "typeLabel": "Easy",
+     "title": "Easy 7 km",
+     "distanceKm": 7.0,
+     "sub": "Easy \u00b7 7 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Easy 7 km",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 7000
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-13",
+     "date": "2026-12-13",
+     "dow": "SUN",
+     "day": 13,
+     "type": "long",
+     "typeLabel": "Long",
+     "title": "Long run 17 km",
+     "distanceKm": 17.0,
+     "sub": "Long \u00b7 17 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Long run 17 km",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 17000
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "reveal_fit": {
+   "kicker": "Your plan \u00b7 12 weeks",
+   "title": "Your fitness plan",
+   "phases": [
+    {
+     "label": "Base",
+     "weeks": 6
+    },
+    {
+     "label": "Build",
+     "weeks": 6
+    }
+   ],
+   "predicted": null,
+   "target": null,
+   "startKm": 48,
+   "peakKm": 77,
+   "starts": "2026-11-30",
+   "because": "Phases follow from your 12 weeks and recent 48 km weeks.",
+   "week1": [
+    {
+     "id": "ob-2026-11-30",
+     "date": "2026-11-30",
+     "dow": "MON",
+     "day": 30,
+     "type": "easy",
+     "typeLabel": "Easy",
+     "title": "Easy 8 km",
+     "distanceKm": 8.0,
+     "sub": "Easy \u00b7 8 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Easy 8 km",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 8000
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-01",
+     "date": "2026-12-01",
+     "dow": "TUE",
+     "day": 1,
+     "type": "easy",
+     "typeLabel": "Easy",
+     "title": "Easy 8 km + strides",
+     "distanceKm": 9.4,
+     "sub": "Easy \u00b7 9.4 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Easy 8 km + strides",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 8000
+       },
+       {
+        "type": "repeat",
+        "times": 6,
+        "steps": [
+         {
+          "type": "interval",
+          "duration_seconds": 20
+         },
+         {
+          "type": "recovery",
+          "duration_seconds": 60
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-02",
+     "date": "2026-12-02",
+     "dow": "WED",
+     "day": 2,
+     "type": "tempo",
+     "typeLabel": "Tempo",
+     "title": "Tempo 2 \u00d7 6 min",
+     "distanceKm": 7.7,
+     "sub": "Tempo \u00b7 7.7 km",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Tempo 2 \u00d7 6 min",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "warmup",
+        "duration_seconds": 900
+       },
+       {
+        "type": "repeat",
+        "times": 2,
+        "steps": [
+         {
+          "type": "interval",
+          "duration_seconds": 360,
+          "pace": [
+           "4:17",
+           "4:37"
+          ]
+         },
+         {
+          "type": "recovery",
+          "duration_seconds": 120
+         }
+        ]
+       },
+       {
+        "type": "cooldown",
+        "duration_seconds": 600
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-04",
+     "date": "2026-12-04",
+     "dow": "FRI",
+     "day": 4,
+     "type": "easy",
+     "typeLabel": "Easy",
+     "title": "Easy 7 km",
+     "distanceKm": 7.0,
+     "sub": "Easy \u00b7 7 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Easy 7 km",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 7000
+       }
+      ]
+     }
+    },
+    {
+     "id": "ob-2026-12-06",
+     "date": "2026-12-06",
+     "dow": "SUN",
+     "day": 6,
+     "type": "long",
+     "typeLabel": "Long",
+     "title": "Long run 16 km",
+     "distanceKm": 16.0,
+     "sub": "Long \u00b7 16 km \u00b7 5:27\u20136:10",
+     "workout": {
+      "schema": "daash.workout.v1",
+      "name": "Long run 16 km",
+      "sport": "running",
+      "steps": [
+       {
+        "type": "interval",
+        "distance_meters": 16000
+       }
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

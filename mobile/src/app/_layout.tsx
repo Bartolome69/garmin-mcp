@@ -73,6 +73,7 @@ function Root() {
       <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
         {/* The watch confirm, over whichever tab asked: a sheet with a grabber. */}
         <Stack.Screen name="watch/confirm" options={{
           presentation: 'formSheet', sheetGrabberVisible: true, sheetAllowedDetents: 'fitToContents',
