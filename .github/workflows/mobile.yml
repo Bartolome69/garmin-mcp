@@ -1,0 +1,49 @@
+name: Mobile app
+
+# The native app in mobile/ (docs/native-app/PLAN.md). Builds nothing yet: it
+# checks the design tokens are in step with the PWA's app.css, so a colour
+# changed on the web can't land without the apps, and that the app typechecks.
+# Never deploys anything; the hosted server's workflows don't watch mobile/.
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "garmin_mcp/app/app.css"
+      - "scripts/build_tokens.py"
+      - "tests/tokens_test.py"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "garmin_mcp/app/app.css"
+      - "scripts/build_tokens.py"
+      - "tests/tokens_test.py"
+      - ".github/workflows/mobile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tokens in step with app.css
+        run: python tests/tokens_test.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install
+        working-directory: mobile
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        working-directory: mobile
+        run: npx tsc --noEmit
