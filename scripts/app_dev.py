@@ -4,6 +4,7 @@
     DEMO_RAN=1 .venv/bin/python scripts/app_dev.py  # today's session already run
     DEMO_READINESS=low ...                          # a poor night
     DEMO_CREW=0 ...                                 # not in a crew
+    DEMO_CHAT=1 CHAT_API_KEY=... ...                # the chat pilot's tab, for the demo runner
 
 It is the real hosted server, with OAuth on, and only the Garmin client
 swapped for tests/demo_garmin.py, so the app's sign-in, its API and every
@@ -67,6 +68,10 @@ def main() -> None:
         from tests.demo_garmin import seed_crew
 
         seed_crew(crews.member_key(user_token, store.email_fingerprint(email)))
+    if os.environ.get("DEMO_CHAT") == "1":
+        # The chat pilot (Nov 27) for the demo runner: still needs CHAT_API_KEY (or the
+        # provider's own key) set, as on the server.
+        os.environ["CHAT_PILOT_USER_IDS"] = store.email_fingerprint(email)
     token = secrets.token_urlsafe(32)
     store.save_oauth_token(token, kind="access", client_id="daash-app-dev", subject=user_token,
                            scopes="", resource=None, expires_at=int(time.time()) + 30 * 86400)

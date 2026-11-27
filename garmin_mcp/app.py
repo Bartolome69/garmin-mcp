@@ -8,7 +8,8 @@ here: what the app changes is what Claude reads next, and what the watch
 gets at its next sync. See APP.md.
 
 There is no model behind any of it. Wording is by rule, plain, and never
-medical advice.
+medical advice. The one exception is the chat pilot (chat_pilot.py), off for
+everyone outside CHAT_PILOT_USER_IDS.
 """
 
 from __future__ import annotations
@@ -3215,6 +3216,19 @@ async def api_match(request: Request) -> Response:
     action, activity_id = str(body.get("action") or ""), str(body.get("activity_id") or "")
     if action not in MATCH_ACTIONS or not activity_id.isdigit():
         return _json({"error": "Unknown choice."}, 400)
+    try:
+        return _json(await match_apply(token, action, activity_id, body.get("schedule_id")))
+    except EditError as exc:
+        return _json({"error": str(exc)}, 404)
+
+
+async def match_apply(token: str, action: str, activity_id: str, schedule_id: Any = None) -> dict[str, Any]:
+    """How a run counts: as another session, as an extra run, or back as it was.
+
+    The app's Match buttons and the chat pilot's confirmed change both come here.
+    """
+    from . import matching
+
     today = date.today()
     plan = await server_mod.get_plan()
     rows = _sessions(plan)
@@ -3223,9 +3237,9 @@ async def api_match(request: Request) -> Response:
                 for w in plan.get("weeks") or [] for x in w.get("extra") or [])
     from_reason = (was.get("match") or {}).get("reason") if was else ("question" if asked else "extra")
     if action == "session":
-        target = next((r for r in rows if str(r.get("schedule_id")) == str(body.get("schedule_id"))), None)
+        target = next((r for r in rows if str(r.get("schedule_id")) == str(schedule_id)), None)
         if not target:
-            return _json({"error": "That session isn't on the plan."}, 404)
+            raise EditError("That session isn't on the plan.")
         matching.choose(token, activity_id, str(target["schedule_id"]),
                         was=str(was["schedule_id"]) if was else None)
         message = f"Counted as {_dayname(_day_of(target['date']))} {_display(target.get('name'))}."
@@ -3250,7 +3264,7 @@ async def api_match(request: Request) -> Response:
     log.info("match v2: activity %s %s (was %s)", activity_id, action, from_reason)
     after = await _fresh_plan()  # takes off, or puts back, what this changes on the watch
     moved = any(r.get("off_watch") for r in _sessions(after)) != any(r.get("off_watch") for r in rows)
-    return _json(drop_empty({"message": message, "watch_said": WATCH_UPDATED if moved else None}))
+    return drop_empty({"message": message, "watch_said": WATCH_UPDATED if moved else None})
 
 
 @mcp.custom_route(API_PREFIX + "partial", methods=["POST"])
@@ -4160,6 +4174,11 @@ async def api_race_prompt(request: Request) -> Response:
         return _json({"error": "Not open yet."}, 404)
     except plan_builder.BuildError as exc:
         return _json({"error": str(exc)}, 400)
+
+
+# The in-app chat pilot (Nov 27): its routes, before the files' catch-all below. Off
+# for everyone not in CHAT_PILOT_USER_IDS; see chat_pilot.py.
+from . import chat_pilot  # noqa: E402,F401
 
 
 # The web app's own files, registered last so the API's routes match first.
