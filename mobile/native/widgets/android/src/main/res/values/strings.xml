@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UNVERIFIED: never built (docs/native-app/DECISIONS.md, milestone 10). -->
+<resources>
+  <string name="daash_widget_today_description">Readiness, today’s session and your watch</string>
+  <string name="daash_widget_week_description">Your week, day by day</string>
+  <string name="daash_widget_countdown_description">Days to your race</string>
+</resources>
