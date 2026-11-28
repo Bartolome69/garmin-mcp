@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Daash",
+    "slug": "daash",
+    "scheme": "daash",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "run.daash.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "run.daash.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#161614",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true
+    }
+  }
+}
