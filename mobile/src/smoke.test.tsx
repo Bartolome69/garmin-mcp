@@ -38,7 +38,12 @@ import YouPriority from './app/(tabs)/you/priority';
 import YouRequest from './app/(tabs)/you/request';
 import YouSee from './app/(tabs)/you/see';
 import YouTrouble from './app/(tabs)/you/trouble';
+import YouWidgets from './app/(tabs)/you/widgets';
+import PlusPaywall from './app/plus/index';
+import PlusTrial from './app/plus/trial';
 import WatchConfirm from './app/watch/confirm';
+import { EntitlementsProvider } from './features/plus/EntitlementsProvider';
+import { FakeStore } from './features/plus/store';
 import { PERSONA_PLAN } from './features/plan/fixture';
 import { findSession } from './features/plan/model';
 import { skipProposal } from './features/watch/proposals';
@@ -57,10 +62,12 @@ function app(scheme: 'dark' | 'light') {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial={scheme}>
       <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: true }}>
-        <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false} pollEveryMs={0}>
-          <Probe />
-          {children ?? <Stack screenOptions={{ headerShown: false }} />}
-        </WatchProvider>
+        <EntitlementsProvider store={new FakeStore()} fetcher={async () => { throw new Error('offline'); }}>
+          <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false} pollEveryMs={0}>
+            <Probe />
+            {children ?? <Stack screenOptions={{ headerShown: false }} />}
+          </WatchProvider>
+        </EntitlementsProvider>
       </FlagsProvider>
     </ThemeProvider>
   );
@@ -77,6 +84,8 @@ function app(scheme: 'dark' | 'light') {
     '(tabs)/crew/_layout': CrewLayout, '(tabs)/crew/index': CrewIndex,
     '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/connections': YouConnections,
     '(tabs)/you/priority': YouPriority, '(tabs)/you/see': YouSee, '(tabs)/you/trouble': YouTrouble, '(tabs)/you/request': YouRequest,
+    '(tabs)/you/widgets': YouWidgets,
+    'plus/index': PlusPaywall, 'plus/trial': PlusTrial,
     'watch/confirm': WatchConfirm,
   };
 }
@@ -94,13 +103,16 @@ export const SCREENS: [string, string, string][] = [
   ['Builder · edit', '/plan/builder?id=2026-11-27-tempo', 'builder'],
   ['Post-run (Plan)', '/plan/run/2026-11-25-intervals', 'run'],
   ['Post-run (Today)', '/today/run/2026-11-26-easy', 'run'],
-  ['Plus placeholder', '/plan/next?kind=plus', 'plan-next'],
+  ['Plus feature to come', '/plan/next?kind=plan_styles', 'plan-next'],
   ['You', '/you', 'you'],
   ['Connections', '/you/connections', 'connections'],
   ['Source priority', '/you/priority', 'priority'],
   ['What Daash can see', '/you/see', 'see-sheet'],
   ['Trouble connecting', '/you/trouble', 'trouble-sheet'],
   ['Request a device', '/you/request', 'request-sheet'],
+  ['Widgets setup', '/you/widgets', 'widgets'],
+  ['Plus (paywall)', '/plus?from=you', 'paywall'],
+  ['Plus · free week sheet', '/plus/trial', 'trial-sheet'],
   ['Coach', '/coach', 'coach'],
   ['Crew', '/crew', 'crew'],
 ];

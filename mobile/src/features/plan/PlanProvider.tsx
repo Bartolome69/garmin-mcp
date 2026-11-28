@@ -1,6 +1,6 @@
 // Plan's data for the screen, the session detail and the Move sheet: one fetch,
 // cached on the device (offline first), and the one move waiting for a confirm.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { kv } from '../../db/kv';
 import { useDb } from '../../db/DbContext';
@@ -48,6 +48,13 @@ export function PlanProvider({ children, fetcher }: { children: ReactNode; fetch
     save: (value) => kv(db).set(key, value),
   } : undefined, [db, key]);
   const resource = useResource(source, store);
+  // Plus starting (or ending) changes what the server sends: ask again at once.
+  const wasPlus = useRef(plus);
+  useEffect(() => {
+    if (wasPlus.current === plus) return;
+    wasPlus.current = plus;
+    resource.refresh();
+  }, [plus, resource.refresh]); // eslint-disable-line react-hooks/exhaustive-deps
   const watch = useWatch();
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [warned, setWarned] = useState(false);

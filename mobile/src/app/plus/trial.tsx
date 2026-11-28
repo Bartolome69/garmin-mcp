@@ -1,5 +1,5 @@
 import { useIsFocused, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useEntitlement } from '../../features/plus/EntitlementsProvider';
 import { TrialSheet } from '../../features/plus/PaywallView';
@@ -13,6 +13,8 @@ export default function TrialScreen() {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const product = e.products?.find((p) => p.id === PRODUCT_IDS.monthly) ?? e.products?.[0] ?? null;
+  // Opened straight from a link: ask the store here too.
+  useEffect(() => { if (e.products === null) e.loadProducts(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const unavailable = e.products !== null && !e.products.length ? 'Daash Plus isn’t on sale in this version yet.' : null;
 
   return (
