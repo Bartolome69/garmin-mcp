@@ -187,7 +187,9 @@ def _track(event: str, properties: Mapping[str, Any] | None = None) -> None:
 # Reads run as the model asks. Writes are proposed and wait for Confirm.
 
 READS = ("get_plan", "get_session", "get_activities", "get_activity_details", "get_readiness", "get_sleep_data",
-         "get_daily_summary", "get_workout", "list_workouts", "find_exercises", "get_fitness")
+         "get_daily_summary", "get_workout", "list_workouts", "find_exercises", "get_fitness",
+         # Nov 28: how fitness and recovery have moved, weekly volume, heart rate through a day, shoes.
+         "get_fitness_trends", "get_recovery_trends", "get_progress", "get_heart_rate", "get_shoes")
 WRITES = ("create_workout", "create_strength_workout", "update_workout", "schedule_workout", "unschedule_workout",
           "delete_workout", "create_plan", "remove_plan", "move_session", "count_run")
 # The two writes that already ask first in MCP: a call without confirm only reads back what would go.
@@ -219,6 +221,8 @@ TOOL_LABELS = {
     "get_activity_details": "Looking at the run", "get_readiness": "Checking readiness",
     "get_sleep_data": "Checking sleep", "get_daily_summary": "Checking your days", "get_workout": "Reading the workout",
     "list_workouts": "Reading your workouts", "find_exercises": "Finding exercises", "get_fitness": "Checking fitness",
+    "get_fitness_trends": "Looking at fitness over time", "get_recovery_trends": "Looking at recovery over time",
+    "get_progress": "Looking at your weeks", "get_heart_rate": "Checking heart rate", "get_shoes": "Checking your shoes",
 }
 
 
@@ -284,7 +288,14 @@ def _check_args(name: str, args: Mapping[str, Any]) -> str | None:
 
 # Keys only the cards and the app draw from: never worth a model's tokens.
 UI_KEYS = {"shape", "segments", "credit", "app_url", "app_card", "card", "chart", "structuredContent", "view",
-           "ask", "units_note", "_meta", "share_url"}
+           "ask", "units_note", "_meta", "share_url",
+           # Nov 28: the app link (it signs the person in) and the card's seen-beacon are never the model's.
+           "app", "_card"}
+# get_plan's answer as the model sees it (Nov 28): what the plan is for first, the weeks last, so a
+# long answer cut short loses far-off sessions rather than the goal, the races and their targets.
+PLAN_FIRST = ("current_plan", "races", "this_week", "phases", "starts", "ends", "sessions_total", "completed",
+              "missed", "remaining", "next_session", "checks", "situation", "how_to_adapt", "source", "note")
+PLAN_DROP = ("for_the_assistant", "about_checks", "review", "as_of")
 
 
 def _strip(value: Any, depth: int = 0) -> Any:
@@ -301,9 +312,15 @@ def _compact(name: str, result: Any, limit: int, today: date) -> str:
     if name == "get_plan" and isinstance(result, dict) and isinstance(result.get("weeks"), list):
         monday = today - timedelta(days=today.weekday())
         keep_from, keep_to = (monday - timedelta(days=7)).isoformat(), (monday + timedelta(days=21)).isoformat()
-        result = {**result, "weeks": [w for w in result["weeks"] if keep_from <= str(w.get("starts") or "") <= keep_to],
-                  "weeks_shown": "last week to three weeks ahead; ask with a label for others"}
-        result.pop("review", None)
+        plan = {k: result[k] for k in PLAN_FIRST if k in result}
+        # The card's "completion_percent" is done out of the sessions due so far, not of the whole plan.
+        if result.get("completion_percent") is not None:
+            plan["done_percent_of_sessions_due_so_far"] = result["completion_percent"]
+        plan.update({k: v for k, v in result.items() if k not in plan and k not in PLAN_DROP
+                     and k not in ("weeks", "completion_percent")})
+        plan["weeks"] = [w for w in result["weeks"] if keep_from <= str(w.get("starts") or "") <= keep_to]
+        plan["weeks_shown"] = "last week to three weeks ahead; ask with a label for others"
+        result = plan
     text = json.dumps(_strip(result), separators=(",", ":"), default=str)
     if len(text) > limit:
         text = text[:limit] + '..."(cut short: ask for a narrower range if more is needed)"'
@@ -650,6 +667,7 @@ How to answer:
 - Tool descriptions mention cards, app links and attribution lines: there are none here, answer in words.
 - Changes (creating, scheduling, moving, unscheduling, editing or deleting workouts; creating or removing a plan; how a run counts) never happen when you call those tools. The runner sees a card saying what will change and taps Confirm. So propose, don't claim: say what you've proposed and that it's waiting for their confirm. Never say it's done.
 - One change per message where you can. create_workout with a date creates and schedules it in one go. To move a planned session use move_session. Something that needs an id from an earlier change waits until that change is confirmed.
+- The plan's goal, block, races (with their targets) and Garmin's fitness markers are below. Use them before saying something isn't known. A session named like a race or a test (a "Half check", a "Tune-up half") is one of the plan's races or milestones: its target, if it has one, is listed with it. "Sessions so far" counts what's done against what was due, not the whole plan.
 - No medical or injury advice. If they mention pain, injury or illness, suggest easing off and checking with a physio or doctor, and don't prescribe training through it.
 
 What Daash can see right now (tools have the latest):
@@ -662,7 +680,7 @@ def _plan_lines(plan: Any, today: date) -> list[str]:
     if plan.get("source") in ("log", "none", "waiting") or not plan.get("weeks"):
         return ["Plan: nothing planned on the Garmin calendar."]
     monday = today - timedelta(days=today.weekday())
-    lines = []
+    lines = _plan_head(plan, monday)
     for label, start in (("This week", monday), ("Next week", monday + timedelta(days=7))):
         week = next((w for w in plan["weeks"] if w.get("starts") == start.isoformat()), None)
         if not week:
@@ -677,10 +695,120 @@ def _plan_lines(plan: Any, today: date) -> list[str]:
         head += f", {week['planned_km']:g} km planned" if week.get("planned_km") else ""
         head += f", {week['run_km']:g} km run so far)" if week.get("run_km") is not None else ")"
         lines.append(head + ":\n  " + ("\n  ".join(rows) if rows else "nothing planned"))
-    goal = next((r for r in plan.get("races") or [] if isinstance(r, Mapping)), None)
-    if goal and goal.get("name"):
-        lines.append(f"Next race: {goal.get('name')} on {str(goal.get('date', ''))[:10]}.")
+    lines += _race_lines(plan, today) + _check_lines(plan, today)
     return lines or ["Plan: nothing planned this week or next."]
+
+
+def _short_date(value: Any) -> str:
+    try:
+        d = date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return str(value)[:10]
+    return f"{app_routes.DAY_NAMES[d.weekday()][:3]} {d.day} {datetime(2000, d.month, 1).strftime('%b')} {d.year}"
+
+
+def _plan_head(plan: Mapping[str, Any], monday: date) -> list[str]:
+    """What the plan is for and where the runner is in it (Nov 28): the goal, the method, the
+    week and its phase, and the sessions done so far. Without these the model guessed."""
+    out = []
+    cur = plan.get("current_plan") if isinstance(plan.get("current_plan"), Mapping) else {}
+    week_no = next((w.get("week") for w in plan.get("weeks") or [] if w.get("starts") == monday.isoformat()), None)
+    phase = next((p.get("label") for p in plan.get("phases") or [] if isinstance(p, Mapping) and week_no
+                  and (p.get("from_week") or 0) <= week_no <= (p.get("to_week") or 0)), None)
+    if cur:
+        head = f"Plan: {app_routes._display(cur.get('name')) or 'the current plan'}"
+        if cur.get("starts") and cur.get("ends"):
+            head += f", {_short_date(cur['starts'])} to {_short_date(cur['ends'])}"
+        if cur.get("week") and cur.get("weeks_total"):
+            head += f", week {cur['week']} of {cur['weeks_total']}"
+        head += f", {phase} phase" if phase else ""
+        out.append(head + ".")
+        if cur.get("goal"):
+            out.append(f"Goal: {cur['goal']}.")
+        if cur.get("method"):
+            out.append(f"Method: {cur['method']}.")
+    else:
+        bits = ["Plan: the sessions on the Garmin calendar"]
+        if plan.get("starts") and plan.get("ends"):
+            bits.append(f"{_short_date(plan['starts'])} to {_short_date(plan['ends'])}")
+        if phase:
+            bits.append(f"{phase} phase")
+        out.append(", ".join(bits) + ".")
+    if plan.get("phases"):
+        out.append("Phases (calendar weeks): " + ", ".join(
+            f"{p.get('label')} {p.get('from_week')} to {p.get('to_week')}" for p in plan["phases"] if isinstance(p, Mapping))
+            + (f"; this is calendar week {week_no}." if week_no else "."))
+    if plan.get("completed") is not None and plan.get("missed") is not None:
+        out.append(f"Sessions so far: {plan['completed']} done, {plan['missed']} missed"
+                   + (f", {plan['remaining']} still to come" if plan.get("remaining") is not None else "")
+                   + (f" ({plan['sessions_total']} in all)." if plan.get("sessions_total") else "."))
+    tw = plan.get("this_week") if isinstance(plan.get("this_week"), Mapping) else {}
+    if tw.get("planned") is not None and tw.get("done") is not None:
+        unit = tw.get("unit") or "km"
+        out.append(f"This week so far: {tw['done']:g} of {tw['planned']:g} {unit} done"
+                   + (f", {tw['to_go']:g} {unit} to go." if tw.get("to_go") is not None else "."))
+    return out
+
+
+def _race_lines(plan: Mapping[str, Any], today: date, limit: int = 6) -> list[str]:
+    """Races and milestones from today on, with their targets, the goal race always included."""
+    races = [r for r in plan.get("races") or [] if isinstance(r, Mapping) and str(r.get("date", ""))[:10] >= today.isoformat()]
+    if not races:
+        return []
+    shown = races[:limit]
+    goal = next((r for r in races if r.get("tier") == "goal"), None)
+    if goal and goal not in shown:
+        shown.append(goal)
+    rows = []
+    for r in shown:
+        bits = [x for x in (r.get("tier"), f"{r['distance_km']:g} km" if r.get("distance_km") else None,
+                            f"target {r['target']}" if r.get("target") else "no target set") if x]
+        rows.append(f"{_short_date(r.get('date'))} {r.get('name')} ({', '.join(bits)})")
+    more = len(races) - len(shown)
+    return ["Races and milestones ahead:\n  " + "\n  ".join(rows) + (f"\n  and {more} more" if more > 0 else "")]
+
+
+def _check_lines(plan: Mapping[str, Any], today: date, limit: int = 3) -> list[str]:
+    """The plan's own checks still ahead (back-to-back races, no lighter week), as worth a look."""
+    checks = [c for c in plan.get("checks") or [] if isinstance(c, Mapping) and c.get("text")
+              and str(c.get("date", ""))[:10] >= today.isoformat()][:limit]
+    if not checks:
+        return []
+    return ["Plan checks worth a look (mention gently, change nothing unless asked):\n  "
+            + "\n  ".join(str(c["text"]) for c in checks)]
+
+
+def _fitness_lines(found: Any) -> list[str]:
+    """Garmin's fitness markers (Nov 28): race predictions, threshold, VO2 max, zones."""
+    if not isinstance(found, Mapping) or found.get("error") or found.get("for_the_assistant") and len(found) == 1:
+        return ["Fitness: not available just now (get_fitness has it)."]
+    bits = []
+    preds = found.get("race_predictions") or {}
+    names = (("5k", "5k"), ("10k", "10k"), ("half_marathon", "half"), ("marathon", "marathon"))
+    said = [f"{label} {preds[k]['time']}" for k, label in names if isinstance(preds.get(k), Mapping) and preds[k].get("time")]
+    if said:
+        when = found.get("race_predictions_as_of")
+        bits.append("race predictions " + ", ".join(said) + (f" (as of {_short_date(when)})" if when else ""))
+    lt = found.get("lactate_threshold") or {}
+    if lt.get("heart_rate_bpm") or lt.get("pace_per_km"):
+        bits.append("lactate threshold " + " at ".join(str(x).replace(" ", "") if i else f"{x:g} bpm"
+                                                       for i, x in enumerate((lt.get("heart_rate_bpm"), lt.get("pace_per_km"))) if x))
+    vo2 = found.get("vo2_max")
+    if isinstance(vo2, Mapping) and vo2.get("value"):
+        bits.append(f"VO2 max {vo2['value']:g}")
+    elif isinstance(vo2, (int, float)):
+        bits.append(f"VO2 max {vo2:g}")
+    for key, label in (("endurance_score", "endurance score"), ("hill_score", "hill score")):
+        v = found.get(key)
+        v = v.get("value") if isinstance(v, Mapping) else v
+        if isinstance(v, (int, float)):
+            bits.append(f"{label} {v:g}")
+    hr = ((found.get("zones") or {}).get("heart_rate") or {})
+    if hr.get("zones"):
+        bits.append("heart rate zones " + ", ".join(f"Z{z.get('zone')} {z['bpm'][0]}-{z['bpm'][1]}"
+                                                    for z in hr["zones"] if isinstance(z.get("bpm"), list) and len(z["bpm"]) == 2)
+                    + (f" (max {hr['max_hr']}, resting {hr['resting_hr']})" if hr.get("max_hr") and hr.get("resting_hr") else ""))
+    return ["Fitness (Garmin): " + ("; ".join(bits) if bits else "no markers yet") + "."]
 
 
 def _activity_lines(found: Any) -> list[str]:
@@ -735,10 +863,11 @@ async def build_system(cfg: Mapping[str, Any]) -> tuple[str, Any]:
     """The compact system prompt, and the plan it read (kept for this request's summaries)."""
     today = _today()
     seconds = min(10, cfg["tool_timeout"])
-    plan, activities, readiness = await asyncio.gather(
+    plan, activities, readiness, fitness = await asyncio.gather(
         _quietly(server_mod.get_plan(), seconds), _quietly(server_mod.get_activities(limit=6), seconds),
-        _quietly(server_mod.get_readiness(), seconds))
-    context = "\n".join(_plan_lines(plan, today) + _activity_lines(activities) + [_readiness_line(readiness)])
+        _quietly(server_mod.get_readiness(), seconds), _quietly(server_mod.get_fitness(), seconds))
+    context = "\n".join(_plan_lines(plan, today) + _activity_lines(activities) + [_readiness_line(readiness)]
+                        + _fitness_lines(fitness))
     when = f"{app_routes.DAY_NAMES[today.weekday()]} {today.day} {datetime(2000, today.month, 1).strftime('%B')} {today.year}"
     return PROMPT.format(today=when, context=context), plan
 
