@@ -13,11 +13,14 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { router, Stack } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
 import type { ReactNode } from 'react';
-import { Linking } from 'react-native';
+import { BackHandler, Linking } from 'react-native';
 
 // What the server does in each test.
-let mockServer: 'ok' | 'empty' | 'offline' | 'signedOut' | 'server' = 'ok';
-let mockPlanServer: 'ok' | 'signedOut' | 'offline' = 'ok';
+let mockServer: 'ok' | 'empty' | 'offline' | 'signedOut' | 'server' | 'held' = 'ok';
+let mockPlanServer: 'ok' | 'signedOut' | 'offline' | 'held' = 'ok';
+// 'held': the reply waits until the test lets it go (a slow network).
+const mockHeld: { resolve: (v: unknown) => void }[] = [];
+const mockHold = () => new Promise((resolve) => { mockHeld.push({ resolve }); });
 let mockSignedIn = false;
 let mockEmptyPlan = false;
 const mockAsk = jest.fn(async () => 'granted' as const);
@@ -32,8 +35,12 @@ jest.mock('./features/onboarding/source', () => {
   };
   return {
     ...real,
-    importRuns: jest.fn(async () => { fail(mockServer); return mockServer === 'empty' ? real.CASES.import_empty : real.CASES.import; }),
+    importRuns: jest.fn(async () => {
+      if (mockServer === 'held') return mockHold();
+      fail(mockServer); return mockServer === 'empty' ? real.CASES.import_empty : real.CASES.import;
+    }),
     makePlan: jest.fn(async (_r: unknown, goal: { kind: string }, coach: boolean) => {
+      if (mockPlanServer === 'held') return mockHold();
       fail(mockPlanServer);
       const r = goal.kind === 'race' ? real.CASES.reveal : real.CASES.reveal_fit;
       return coach ? { ...r, coachNote: 'Base is long because your weeks have been steady.' } : r;
@@ -82,6 +89,7 @@ import { kv } from './db/kv';
 import { migratedNodeDb } from './db/testing/nodeDb';
 import type { Db } from './db/types';
 import { NOTIFICATIONS_KEY, ONBOARDED_KEY } from './features/onboarding/OnboardingProvider';
+import { localToday } from './features/onboarding/model';
 import { CASES } from './features/onboarding/source';
 import { memoryStore } from './features/watch/store';
 import { FakeGarmin, type Outcome } from './features/watch/transport';
@@ -130,16 +138,19 @@ const WEEK = CASES.reveal.week1;
 
 let db: Db;
 beforeEach(async () => {
-  mockServer = 'ok'; mockPlanServer = 'ok'; mockSignedIn = false; mockEmptyPlan = false;
+  mockServer = 'ok'; mockPlanServer = 'ok'; mockSignedIn = false; mockEmptyPlan = false; mockHeld.length = 0;
   mockAsk.mockClear();
   db = await migratedNodeDb();
 });
+
+/** A race day about five months out, from the real clock, so the goal step never sees it as past. */
+const RACE_DAY = localToday(new Date(Date.now() + 150 * 86_400_000));
 
 /** Step 1 with the persona's race. */
 async function londonGoal() {
   await screen.findByTestId('ob-goal');
   await type('race-name', 'London Marathon');
-  await type('race-date', '24 Apr 2027');
+  await type('race-date', RACE_DAY);
   await type('race-target', '3:15');
   await press('button-Continue');
   await screen.findByTestId('ob-paces');
@@ -170,12 +181,25 @@ describe('1. The app\'s first screen', () => {
     expect(await screen.findByTestId('today')).toBeTruthy();
     expect(screen.queryByTestId('welcome')).toBeNull();
   });
-  it('Sign in is Garmin\'s own sign-in, on the server', async () => {
+  it('Sign in is Garmin\'s own sign-in, on the server; once signed in, "I\'ve signed in" goes to Today, onboarded', async () => {
     const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     await renderRouter(app(db, garmin()), { initialUrl: '/' });
     await press('sign-in');
     expect(open).toHaveBeenCalledWith(expect.stringMatching(/\/connect\?app=native$/));
+    // Not back from Garmin yet: says so, stays.
+    await press('button-I’ve signed in');
+    expect((await screen.findByTestId('sign-in-problem')).props.accessibilityLabel).toBe('Not signed in yet. Sign in on Garmin’s page, then come back here.');
+    expect(await kv(db).get(ONBOARDED_KEY)).toBeNull();
+    mockSignedIn = true;
+    await press('button-I’ve signed in');
+    expect(await screen.findByTestId('today')).toBeTruthy();
+    expect(await kv(db).get(ONBOARDED_KEY)).toBe(true);
     open.mockRestore();
+  });
+  it('a phone that\'s signed in already (from before onboarding existed) goes to Today', async () => {
+    mockSignedIn = true;
+    await renderRouter(app(db, garmin()), { initialUrl: '/' });
+    expect(await screen.findByTestId('today')).toBeTruthy();
   });
 });
 
@@ -191,11 +215,11 @@ describe('2. Onboarding → first workout lands', () => {
     expect(screen.getByTestId('builder-input').props.value).toBe('5x1km at threshold, 2 min easy');
     expect(screen.queryByTestId('button-Save and send')).toBeNull();   // sending needs an account
     const card = within(screen.getByTestId('try-card'));
-    expect(card.getByText('Like it? Send it to your watch.')).toBeTruthy();
+    expect(card.getByText('Like it? Make a plan that goes to your watch.')).toBeTruthy();
     await fireEvent.press(card.getByTestId('button-Create free account'));
 
     // Step 1: the goal.
-    expect(await screen.findByText('Step 1 of 4')).toBeTruthy();
+    expect(await screen.findByText('Step 1 of 3')).toBeTruthy();
     await londonGoal();
 
     // Step 2: import, recommended.
@@ -208,7 +232,7 @@ describe('2. Onboarding → first workout lands', () => {
 
     // The reveal: the server's plan. Nothing has gone anywhere yet.
     expect(await screen.findByText('London Marathon, Sat 24 Apr')).toBeTruthy();
-    expect(screen.getByText('Your plan · 20 weeks')).toBeTruthy();
+    expect(screen.getByText('Step 3 of 3 · Your plan · 20 weeks')).toBeTruthy();
     expect(screen.getByLabelText('Predicted now, 3:20')).toBeTruthy();
     expect(screen.getByLabelText('Target, 3:15')).toBeTruthy();
     expect(screen.getByTestId('because')).toBeTruthy();
@@ -281,6 +305,7 @@ describe('2. Onboarding → first workout lands', () => {
   it('with the Coach on: the "why this shape" note, and the same numbers', async () => {
     await toReveal(garmin(), { ...DEFAULT_FLAGS, coach_enabled: true });
     expect(screen.getByTestId('coach-note')).toHaveTextContent(/why this shape/);
+    expect(screen.getByTestId('because')).toHaveTextContent(CASES.reveal.because);
     expect(screen.getByLabelText('Predicted now, 3:20')).toBeTruthy();
     expect(screen.getByLabelText('Target, 3:15')).toBeTruthy();
   });
@@ -413,6 +438,72 @@ describe('3. The other ways through', () => {
     expect(g.sent).toHaveLength(WEEK.length);
   });
 
+  it('some of week 1 not sent: the first lands, and the rest is said as not sent, with Resend', async () => {
+    const g = garmin(['synced', ...WEEK.slice(1).map((): Outcome => 'refused')]);
+    await toReveal(g);
+    await press('button-Send week 1 to my watch');
+    await press(`button-Confirm and send ${WEEK.length} changes`);
+    await pump();
+    await pump();
+    expect(await screen.findByTestId('success-check')).toBeTruthy();
+    expect(screen.getByTestId('landed-detail')).not.toHaveTextContent(/follow/);
+    expect(screen.getByTestId('landed-failed-words').props.accessibilityLabel)
+      .toBe(`${WEEK.length - 1} sessions of week 1 weren’t sent. Nothing changed on your watch for those.`);
+    await press('button-Resend');
+    await pump();
+    await pump();
+    expect(g.sent).toHaveLength(WEEK.length);
+    expect(screen.queryByTestId('landed-failed')).toBeNull();
+  });
+
+  it('Android\'s back does nothing on the landing: week 1 can\'t be sent twice from the steps', async () => {
+    const spy = jest.spyOn(BackHandler, 'addEventListener');
+    await toReveal(garmin(['synced']));
+    await press('button-Send week 1 to my watch');
+    await press(`button-Confirm and send ${WEEK.length} changes`);
+    expect(await screen.findByTestId('ob-landed')).toBeTruthy();
+    const back = spy.mock.calls.filter(([event]) => event === 'hardwareBackPress').map(([, fn]) => fn).pop();
+    expect(back).toBeDefined();
+    expect(back!(undefined as never)).toBe(true);
+    expect(screen.getByTestId('ob-landed')).toBeTruthy();
+    spy.mockRestore();
+  });
+
+  it('a slow import doesn\'t push its result over the four questions once they\'re chosen', async () => {
+    mockServer = 'held';
+    await renderRouter(app(db, garmin()), { initialUrl: '/onboarding/goal' });
+    await londonGoal();
+    await press('button-Connect Garmin');
+    expect(await screen.findByTestId('button-Reading your runs…')).toBeTruthy();
+    await press('questions');
+    expect(await screen.findByTestId('ob-questions')).toBeTruthy();
+    await act(async () => { mockHeld[0].resolve(CASES.import); });
+    expect(screen.getByTestId('ob-questions')).toBeTruthy();
+    expect(screen.queryByTestId('ob-result')).toBeNull();
+  });
+
+  it('a slow plan for answers changed since is never shown or sent', async () => {
+    mockPlanServer = 'held';
+    await renderRouter(app(db, garmin()), { initialUrl: '/onboarding/goal' });
+    await londonGoal();
+    await press('button-Connect Garmin');
+    await press('button-Looks right');
+    expect(await screen.findByTestId('ob-reveal-wait')).toBeTruthy();
+    // Back, Adjust, new answers, Looks right: a second request, while the first is still out.
+    await goBack();
+    await press('button-Adjust');
+    for (const id of ['exp-regular', 'days-4', 'weekly-30to50']) await press(id);
+    await press('button-Continue');
+    await press('button-Looks right');
+    expect(await screen.findByTestId('ob-reveal-wait')).toBeTruthy();
+    expect(mockHeld).toHaveLength(2);
+    await act(async () => { mockHeld[0].resolve({ ...CASES.reveal, title: 'Made from the old answers' }); });
+    expect(screen.getByTestId('ob-reveal-wait')).toBeTruthy();
+    expect(screen.queryByText('Made from the old answers')).toBeNull();
+    await act(async () => { mockHeld[1].resolve({ ...CASES.reveal, title: 'Made from the new answers' }); });
+    expect(await screen.findByText('Made from the new answers')).toBeTruthy();
+  });
+
   it('a step opened with nothing before it goes back to where it can start', async () => {
     await renderRouter(app(db, garmin()), { initialUrl: '/onboarding/reveal' });
     expect(await screen.findByTestId('ob-paces')).toBeTruthy();
@@ -431,7 +522,7 @@ describe('4. Plan\'s "Create a plan"', () => {
     expect(await screen.findByTestId('plan-empty')).toBeTruthy();
   });
 
-  it('and ends back on Plan', async () => {
+  it('and ends back on Plan, showing the plan just made', async () => {
     mockEmptyPlan = true;
     mockSignedIn = true;
     await kv(db).set(ONBOARDED_KEY, true);
@@ -441,10 +532,33 @@ describe('4. Plan\'s "Create a plan"', () => {
     await londonGoal();
     await press('button-Import my runs');
     await press('button-Looks right');
+    await screen.findByTestId('ob-reveal');
+    mockEmptyPlan = false;   // the server saved the plan when it made it
     await press('button-Send week 1 to my watch');
     await press(`button-Confirm and send ${WEEK.length} changes`);
     await pump();
     await press('button-Not now');
+    expect(await screen.findByTestId('plan')).toBeTruthy();
+    expect(screen.queryByTestId('plan-empty')).toBeNull();
+  });
+
+  it('a runner who answered the notification ask before isn\'t asked again', async () => {
+    mockEmptyPlan = true;
+    mockSignedIn = true;
+    await kv(db).set(ONBOARDED_KEY, true);
+    await kv(db).set(NOTIFICATIONS_KEY, { answer: 'granted', at: 1 });
+    await renderRouter(app(db, garmin(['synced'])), { initialUrl: '/plan' });
+    await press('button-Create a plan');
+    await londonGoal();
+    await press('button-Import my runs');
+    await press('button-Looks right');
+    await press('button-Send week 1 to my watch');
+    await press(`button-Confirm and send ${WEEK.length} changes`);
+    await pump();
+    expect(await screen.findByTestId('success-check')).toBeTruthy();
+    expect(screen.queryByTestId('notify-ask')).toBeNull();
+    await press('button-Go to Plan');
     expect(await screen.findByTestId('plan-empty')).toBeTruthy();
+    expect(mockAsk).not.toHaveBeenCalled();
   });
 });
