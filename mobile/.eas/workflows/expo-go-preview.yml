@@ -6,6 +6,9 @@ jobs:
   publish:
     name: Publish to Expo Go
     type: update
+    environment: preview
+    env:
+      EXPO_PUBLIC_DAASH_FIXTURE: '1'
     params:
       branch: preview
       platform: all

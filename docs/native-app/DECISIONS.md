@@ -1260,6 +1260,11 @@ Built on `claude/native-app-m11` (which holds every earlier milestone), 28 Nov.
   `npx expo export` for both platforms succeeds.
 - **Smaller updates.** The fonts are imported by face, so a bundle carries three font files
   instead of about sixty (the Material Symbols font comes with `expo-symbols`).
+- **Android preview APK on sample data:** the `preview` build profile and the update workflow both
+  set `EXPO_PUBLIC_DAASH_FIXTURE=1`. Outside Expo Go the app only shows sample data with that
+  switch, and native sign-in can't hand the app a token yet, so without it the APK would stop at
+  sign-in. Updates on `preview` carry the switch too, or the first update would turn it off.
+  Remove both once sign-in works.
 - **Slug and owner:** the slug is `daash` and the owner is `bartolome69s-team`, matching
   the Expo project the owner linked (`expo.dev/accounts/bartolome69s-team/projects/daash`).
 - **Docs:** `docs/native-app/EXPO_GO.md` (from a computer, from the phone, sample data on

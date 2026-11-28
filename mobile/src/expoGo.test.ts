@@ -113,13 +113,18 @@ describe('Expo Go', () => {
   it('eas.json and the workflow publish the preview branch on each push', () => {
     const eas = JSON.parse(read('eas.json'));
     expect(eas.cli).toEqual({ version: '>= 16.0.0', appVersionSource: 'local' });
-    expect(eas.build.preview).toEqual({ distribution: 'internal', channel: 'preview', android: { buildType: 'apk' } });
+    // The preview APK has no working sign-in yet, so it runs on sample data, and so must every update it loads.
+    expect(eas.build.preview).toEqual({
+      distribution: 'internal', channel: 'preview',
+      env: { EXPO_PUBLIC_DAASH_FIXTURE: '1' }, android: { buildType: 'apk' },
+    });
     expect(eas.build.development.developmentClient).toBe(true);
     const wf = read('.eas/workflows/expo-go-preview.yml');
     expect(wf).toMatch(/branches: \['claude\/native-app-m12'\]/);
     expect(wf).toMatch(/type: update/);
     expect(wf).toMatch(/branch: preview/);
     expect(wf).toMatch(/platform: all/);
+    expect(wf).toMatch(/EXPO_PUBLIC_DAASH_FIXTURE: '1'/);
   });
 
   it('documents the sample data switch', () => {

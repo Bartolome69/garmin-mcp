@@ -12,6 +12,9 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_DAASH_FIXTURE": "1"
+      },
       "android": {
         "buildType": "apk"
       }

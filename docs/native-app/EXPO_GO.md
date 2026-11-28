@@ -21,8 +21,24 @@ through the Expo workflow in `mobile/.eas/workflows/expo-go-preview.yml`.
 3. The **Workflows** tab shows each run; a new push publishes a new update in a few
    minutes. Close and reopen the app in Expo Go to load the newest one.
 
-The update needs no environment variables: in Expo Go with nobody signed in, the app runs
-on sample data.
+The workflow publishes with `EXPO_PUBLIC_DAASH_FIXTURE=1`, so every update on **preview**
+runs on sample data, in Expo Go and in the preview APK alike.
+
+## Android preview APK (installs without Expo Go)
+
+The `preview` profile in `mobile/eas.json` builds an APK on the `preview` channel, with
+`EXPO_PUBLIC_DAASH_FIXTURE=1` (the APK has no working sign-in yet). It loads the same updates
+as Expo Go, so later pushes reach it without a new build.
+
+```sh
+cd mobile
+eas login
+eas build --platform android --profile preview --non-interactive --no-wait
+```
+
+EAS makes an Android keystore on the first build. When the build finishes, open its page on
+expo.dev on the phone and install the APK (Android asks to allow installs from the browser).
+`eas build:list --limit 1` shows the latest build's status.
 
 ## From a computer
 
