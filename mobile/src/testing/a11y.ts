@@ -119,7 +119,8 @@ export function a11yElements(tree: unknown): A11yElement[] {
       || (!!p.accessibilityRole && p.accessibilityRole !== 'none' && (n.type === 'Text' || !!p.onClick || !!p.onPress || !!p.accessibilityLabel));
     if (focusable) { const e = element(n); if (e.label || e.role !== 'group') out.push(e); return; }
     if (n.type === 'Text') {
-      const t = words(n).join('').replace(/\s+/g, ' ').trim();
+      // A Text is read as its label when it has one ("Repeat 10 times" for "10 ×").
+      const t = String(p.accessibilityLabel ?? words(n).join('')).replace(/\s+/g, ' ').trim();
       if (t) out.push({ role: 'text', label: t, ...(p.accessibilityLiveRegion && p.accessibilityLiveRegion !== 'none' ? { live: p.accessibilityLiveRegion } : {}) });
       return;
     }

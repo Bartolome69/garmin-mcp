@@ -10,7 +10,7 @@ text "Build a session in plain words and see it as steps. No account needed to t
 text "Tempo"
 text "example"
 text "5 × 1 km at threshold, 2 min easy"
-image "Session structure:"
+image "Session structure: Warm-up, 5 × 1 km with 2 min easy between, Cool-down"
 button "Try building a session"
 button "Set up my plan"
 button "Sign in"

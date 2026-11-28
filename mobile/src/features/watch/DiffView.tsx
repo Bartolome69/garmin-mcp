@@ -140,7 +140,7 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
       {p.rule ? (
         <View testID="diff-rule" style={{ gap: 2 }}>
           <Text variant="kicker" accessibilityRole="header" tone="muted">Rule used</Text>
-          <Text variant="footnote" tone="muted">{`${p.rule}.`}</Text>
+          <Text variant="footnote" tone="muted">{/[.!?]$/.test(p.rule) ? p.rule : `${p.rule}.`}</Text>
         </View>
       ) : null}
 

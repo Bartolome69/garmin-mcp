@@ -101,7 +101,8 @@ export function Welcome({ brand, onTry, onSetUp, onSignIn, signingIn = false, si
             <Text variant="footnote" tone="muted">example</Text>
           </View>
           <Text variant="headline">5 × 1 km at threshold, 2 min easy</Text>
-          <StructureBar type="tempo" parts={[{ part: 'wu', weight: 10 }, ...Array.from({ length: 5 }, (_, i) => [{ part: 'work' as const, weight: 4.4 }, ...(i < 4 ? [{ part: 'rec' as const, weight: 2 }] : [])]).flat(), { part: 'cd', weight: 10 }]} legend={[]} />
+          <StructureBar type="tempo" parts={[{ part: 'wu', weight: 10 }, ...Array.from({ length: 5 }, (_, i) => [{ part: 'work' as const, weight: 4.4 }, ...(i < 4 ? [{ part: 'rec' as const, weight: 2 }] : [])]).flat(), { part: 'cd', weight: 10 }]} legend={[]}
+            label="Session structure: Warm-up, 5 × 1 km with 2 min easy between, Cool-down" />
         </Card>
       </View>
       <View style={{ gap: 10 }}>
