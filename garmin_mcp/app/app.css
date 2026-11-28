@@ -952,9 +952,28 @@ html, body { overscroll-behavior-y: contain; }
    ground colour, the input pinned above the tabs, a proposed change as a card. */
 nav.tabs.five { grid-template-columns: repeat(5, 1fr); }
 nav.tabs.five .ti { width: 48px; }
-body[data-screen="chat"] main { padding-bottom: calc(190px + env(safe-area-inset-bottom)); }
 .chat-wrap { display: flex; flex-direction: column; gap: 18px; }
 .chat-log { display: flex; flex-direction: column; gap: 12px; }
+/* On a phone the chat is one column the height of what you can see (Nov 28), the way
+   messaging apps hold it: the title stays at the top, the messages scroll between, and the
+   box sits on the tabs, or on the keyboard while it's up (the tabs step aside). --vvh and
+   --vvt are the visible height and its top, kept by viewportSync() in app.js. */
+body[data-screen="chat"]:not(.desk) { overflow: hidden; overscroll-behavior: none; }
+body[data-screen="chat"]:not(.desk) main { padding: 0; }
+body:not(.desk) .chat-wrap { position: fixed; left: 0; right: 0; top: var(--vvt, 0px); height: var(--vvh, 100dvh); gap: 0;
+  padding-bottom: calc(67px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+body:not(.desk) .chat-wrap > .section-head { flex-shrink: 0; padding: calc(16px + env(safe-area-inset-top)) 16px 12px; border-bottom: 1px solid var(--hairline); }
+body:not(.desk) .chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 16px; }
+body:not(.desk) .chat-wrap .chat-bar { position: static; flex-shrink: 0; }
+body.kb:not(.desk) .chat-wrap { padding-bottom: 0; }
+body.kb:not(.desk) .chat-wrap > .section-head { padding-top: calc(10px + env(safe-area-inset-top)); padding-bottom: 8px; }
+body.kb:not(.desk) .chat-wrap > .section-head .kicker { display: none; }
+/* Very little room (a phone on its side with the keyboard up): the box keeps to a third of it and
+   the title steps aside too, so the newest message still shows. */
+body:not(.desk) .chat-wrap .chat-bar .field { max-height: min(140px, calc(var(--vvh, 100dvh) * 0.3)); }
+@media (max-height: 340px) { body.kb:not(.desk) .chat-wrap > .section-head { display: none; } }
+/* Any screen: while the keyboard is up the tabs step aside, so what you're typing into sits on it. */
+body.kb nav.tabs { display: none; }
 .msg { max-width: 88%; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
 .msg p { margin: 0; }
 .msg p + p { margin-top: 8px; }

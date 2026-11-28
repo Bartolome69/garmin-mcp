@@ -1,6 +1,8 @@
 // The chat pilot's tab (Nov 27), in a real browser against a mocked API: no Chat tab unless
 // /app/api/features says so, the starter chips send a message, the reply streams in, a proposed
-// change is a card that does nothing until Confirm, Decline cancels, and thumbs are kept.
+// change is a card that does nothing until Confirm, Decline cancels, and thumbs are kept. And
+// (Nov 28) on a phone the keyboard doesn't push the screen up: the title stays, the messages
+// scroll in their own column, and the box sits on the keyboard with the tabs out of the way.
 // Run: node tests/app_chat_test.js  (needs playwright and Chromium)
 
 const fs = require("fs");
@@ -19,8 +21,8 @@ function check(name, ok, detail) {
 const STARTERS = ["How did this week go?", "I'm short on time tomorrow, adjust", "Move my long run to Saturday"];
 const sse = (...events) => events.map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`).join("");
 
-async function open(browser, { chat }) {
-  const ctx = await browser.newContext({ ...devices["iPhone 13"], serviceWorkers: "block" });
+async function open(browser, { chat, device = "iPhone 13", history = [] }) {
+  const ctx = await browser.newContext({ ...devices[device], serviceWorkers: "block" });
   await ctx.addInitScript(() => { localStorage.setItem("daash.access", "x"); localStorage.setItem("daash.refresh", "y"); });
   const seen = { sends: [], actions: [], feedback: [] };
   await ctx.route("**/*", (r) => {
@@ -28,7 +30,7 @@ async function open(browser, { chat }) {
     const body = r.request().postData();
     if (u.pathname === "/app/api/features") return r.fulfill({ json: chat ? { chat: true } : {} });
     if (u.pathname === "/app/api/chat") {
-      return chat ? r.fulfill({ json: { messages: [], starters: STARTERS } }) : r.fulfill({ status: 404, json: { error: "Not found" } });
+      return chat ? r.fulfill({ json: { messages: history, starters: STARTERS } }) : r.fulfill({ status: 404, json: { error: "Not found" } });
     }
     if (u.pathname === "/app/api/chat/send") {
       seen.sends.push(JSON.parse(body));
@@ -119,6 +121,110 @@ async function open(browser, { chat }) {
       && (await page.$$eval(".chat-action .kicker", (k) => k.map((x) => x.textContent.trim()))).includes("Cancelled"));
     tabs = await page.$$eval("#tabs a", (as) => as.map((a) => a.textContent.trim()));
     check("five tabs fit on a phone", tabs.length === 5 && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    check("no page threw an error", !errors.length, errors);
+    await ctx.close();
+  }
+
+  console.log("keyboard on a phone");
+  {
+    const history = [];
+    for (let i = 1; i <= 14; i += 1) {
+      history.push({ id: i * 2 - 1, role: "user", text: `Question ${i} about this week's running?` });
+      history.push({ id: i * 2, role: "assistant", status: "done", text: `Answer ${i}. Your easy runs were around 5:10 to 5:20/km at 120 to 126 bpm, which looks well controlled. What's left is Sunday's 18 km long run.` });
+    }
+    const { ctx, page, errors } = await open(browser, { chat: true, device: "Pixel 7", history });
+    await page.goto("http://localhost/app/#/plan");
+    await page.waitForTimeout(1000);
+    await page.click("#tabs a[href='#/chat']");
+    await page.waitForTimeout(800);
+    const layout = () => page.evaluate(() => {
+      const r = (sel) => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, shown: getComputedStyle(e).display !== "none" && b.height > 0 }; };
+      const log = document.getElementById("chat-log");
+      const msgs = [...document.querySelectorAll("#chat-log .msg")];
+      const last = msgs[msgs.length - 1].getBoundingClientRect();
+      return { h: window.innerHeight, scrollY: window.scrollY, head: r(".chat-wrap > .section-head"), bar: r("#chat-form"), tabs: r("#tabs"),
+        logScrolls: log.scrollHeight > log.clientHeight, lastBottom: last.bottom, kb: document.body.classList.contains("kb") };
+    });
+    let l = await layout();
+    check("a long thread scrolls inside its column, not the page", l.logScrolls && l.scrollY === 0, JSON.stringify(l));
+    check("the title is at the top", l.head && l.head.shown && l.head.top >= 0 && l.head.top < 40, JSON.stringify(l.head));
+    check("the box sits on the tabs", l.bar && l.tabs && l.tabs.shown && Math.abs(l.bar.bottom - l.tabs.top) <= 2, JSON.stringify({ bar: l.bar, tabs: l.tabs }));
+    check("it opens at the newest message, just above the box", l.lastBottom <= l.bar.top + 1 && l.lastBottom > l.bar.top - 140, JSON.stringify(l));
+    await page.screenshot({ path: path.join(SHOTS, "chat-phone.png") });
+
+    // The keyboard comes up: Android shrinks the page (interactive-widget=resizes-content).
+    const full = page.viewportSize();
+    await page.focus("#chat-input");
+    await page.setViewportSize({ width: full.width, height: full.height - 330 });
+    await page.waitForTimeout(400);
+    l = await layout();
+    check("with the keyboard up the page doesn't move", l.scrollY === 0, JSON.stringify(l));
+    check("the title stays in view", l.head && l.head.shown && l.head.top >= 0 && l.head.top < 40, JSON.stringify(l.head));
+    check("the tabs step aside", l.kb && l.tabs && !l.tabs.shown, JSON.stringify(l.tabs));
+    check("the box sits on the keyboard", l.bar && Math.abs(l.bar.bottom - l.h) <= 2, JSON.stringify({ bar: l.bar, h: l.h }));
+    check("the newest message stays in view above the box", l.lastBottom <= l.bar.top + 1 && l.lastBottom > l.head.bottom, JSON.stringify(l));
+    await page.screenshot({ path: path.join(SHOTS, "chat-phone-keyboard.png") });
+
+    // Typing a long message grows the box; the newest message stays in view.
+    await page.fill("#chat-input", "One\ntwo\nthree\nfour lines of a longer question about Sunday");
+    await page.dispatchEvent("#chat-input", "input");
+    await page.waitForTimeout(200);
+    l = await layout();
+    check("a growing box keeps the newest message in view", l.lastBottom <= l.bar.top + 1 && Math.abs(l.bar.bottom - l.h) <= 2, JSON.stringify(l));
+
+    // Turned sideways with the keyboard still up: still the keyboard, the tabs stay aside. A phone's
+    // screen keeps its size when the page shrinks (the test browser's doesn't), so it's pinned here.
+    await page.evaluate(([w, h]) => {
+      Object.defineProperty(screen, "width", { get: () => (innerWidth > innerHeight ? h : w), configurable: true });
+      Object.defineProperty(screen, "height", { get: () => (innerWidth > innerHeight ? w : h), configurable: true });
+    }, [full.width, full.height]);
+    await page.setViewportSize({ width: full.height, height: full.width - 250 });
+    await page.waitForTimeout(400);
+    l = await layout();
+    check("turning the phone with the keyboard up keeps the tabs aside", l.kb && !l.tabs.shown && Math.abs(l.bar.bottom - l.h) <= 2, JSON.stringify(l));
+    check("and on its side the box keeps to a third, so the newest message still shows",
+      l.bar.bottom - l.bar.top <= l.h * 0.3 + 24 && l.lastBottom > 0 && l.lastBottom <= l.bar.top + 1, JSON.stringify(l));
+    await page.setViewportSize({ width: full.width, height: full.height - 330 });
+    await page.waitForTimeout(300);
+
+    // The keyboard goes down: the tabs come back under the box.
+    await page.fill("#chat-input", "");
+    await page.evaluate(() => document.activeElement.blur());
+    await page.setViewportSize(full);
+    await page.waitForTimeout(500);
+    l = await layout();
+    check("with the keyboard down the tabs are back under the box", !l.kb && l.tabs.shown && Math.abs(l.bar.bottom - l.tabs.top) <= 2, JSON.stringify(l));
+
+    // Other screens: the tabs step aside for the keyboard there too, and come back.
+    await page.goto("http://localhost/app/#/plan");
+    await page.waitForTimeout(600);
+    check("off the chat the page scrolls normally again", await page.evaluate(() => getComputedStyle(document.body).overflowY !== "hidden"));
+    check("no page threw an error", !errors.length, errors);
+    await ctx.close();
+  }
+
+  console.log("keyboard on a phone, early in a thread");
+  {
+    const history = [{ id: 1, role: "user", text: "How did this week go?" },
+      { id: 2, role: "assistant", status: "done", text: "Four runs, all easy. What's left is Sunday's 18 km long run." }];
+    const { ctx, page, errors } = await open(browser, { chat: true, device: "Pixel 7", history });
+    await page.goto("http://localhost/app/#/plan");
+    await page.waitForTimeout(1000);
+    await page.click("#tabs a[href='#/chat']");
+    await page.waitForTimeout(800);
+    const full = page.viewportSize();
+    await page.focus("#chat-input");
+    await page.setViewportSize({ width: full.width, height: full.height - 330 });
+    await page.waitForTimeout(400);
+    const l = await page.evaluate(() => {
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+      return { scrollY: window.scrollY, h: window.innerHeight, head: box(".chat-wrap > .section-head"),
+        first: box("#chat-log .msg"), bar: box("#chat-form") };
+    });
+    check("a short thread stays just under the title with the keyboard up, not pushed off the top",
+      l.scrollY === 0 && l.head.top >= 0 && l.first.top >= l.head.bottom && l.first.top < l.head.bottom + 40, JSON.stringify(l));
+    check("and the box is on the keyboard", Math.abs(l.bar.bottom - l.h) <= 2, JSON.stringify(l));
+    await page.screenshot({ path: path.join(SHOTS, "chat-phone-keyboard-short.png") });
     check("no page threw an error", !errors.length, errors);
     await ctx.close();
   }

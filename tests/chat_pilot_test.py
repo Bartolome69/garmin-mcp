@@ -232,6 +232,96 @@ def adapter_checks() -> None:
         chat_pilot.make_provider = real
 
 
+def context_checks() -> None:
+    """What the model is told before it answers (Nov 28): a chat said a "Half check" had no target
+    and missed the goal race, because get_plan's goal and races sat after its weeks and were cut
+    off, and fitness was never read. Now the system prompt carries them, and a cut-short plan
+    loses far-off weeks, never the goal."""
+    today = date(2026, 11, 28)
+    week = lambda n, starts, sessions: {"week": n, "starts": starts, "planned_km": 60, "run_km": 40, "sessions": sessions}
+    plan = {
+        "for_the_assistant": "The user is looking at this as an interactive plan card.",
+        "app": {"url": "https://example.test/app/#/plan?login=SECRET", "note": "link"}, "_card": "https://example.test/card/seen?u=x",
+        "weeks": [week(n, (date(2026, 11, 2) + timedelta(days=7 * (n - 1))).isoformat(),
+                       [{"date": (date(2026, 11, 2) + timedelta(days=7 * (n - 1) + d)).isoformat(), "day": "Mon",
+                         "name": "Easy run " + "x" * 200, "type": "easy", "status": "ahead", "planned_km": 10}
+                        for d in range(7)]) for n in range(1, 21)],
+        "phases": [{"label": "Base", "from_week": 1, "to_week": 9}, {"label": "Build", "from_week": 10, "to_week": 20}],
+        "starts": "2026-11-02", "ends": "2027-03-21", "sessions_total": 137, "completed": 19, "missed": 5, "remaining": 113,
+        "completion_percent": 79,
+        "current_plan": {"label": "MAR", "starts": "2026-11-07", "ends": "2027-04-24", "weeks_total": 25, "week": 4,
+                         "goal": "Spring Marathon, sub-3:00", "name": "Spring build", "method": "Base then marathon-specific"},
+        "this_week": {"week": 4, "unit": "km", "done": 43, "to_go": 18, "planned": 63},
+        "races": [{"name": "Half check", "date": "2026-11-29", "tier": "key", "target": "1:25", "distance_km": 21.1},
+                  {"name": "Old 10k", "date": "2026-11-01", "tier": "tune", "distance_km": 10},
+                  *[{"name": f"Parkrun {i}", "date": f"2027-01-{10 + i:02d}", "tier": "tune", "distance_km": 5} for i in range(8)],
+                  {"name": "Spring Marathon", "date": "2027-04-24", "tier": "goal", "target": "sub-3:00", "distance_km": 42.2}],
+        "checks": [{"rule": "b_races_close", "date": "2026-12-05", "text": "Two halves six days apart."},
+                   {"rule": "old", "date": "2026-11-01", "text": "A check already behind us."}],
+    }
+    lines = "\n".join(chat_pilot._plan_lines(plan, today))
+    check("the prompt names the plan, the week of the block and its phase",
+          "Plan: Spring build" in lines and "week 4 of 25" in lines and "Base phase" in lines, lines[:300])
+    check("and the goal and method", "Goal: Spring Marathon, sub-3:00." in lines and "Method: Base then marathon-specific." in lines)
+    check("sessions so far are done against due, with the whole plan's count beside them",
+          "19 done, 5 missed, 113 still to come (137 in all)" in lines and "79" not in lines)
+    check("races ahead carry their targets; past ones are left out",
+          "Half check (key, 21.1 km, target 1:25)" in lines and "Old 10k" not in lines)
+    check("the goal race is always there, even past the first six",
+          "Spring Marathon (goal, 42.2 km, target sub-3:00)" in lines and "and 3 more" in lines, lines)
+    check("the plan's own checks still ahead are passed on, not the ones behind",
+          "Two halves six days apart." in lines and "already behind" not in lines)
+
+    fit = {"race_predictions": {"5k": {"time": "19m 10s"}, "half_marathon": {"time": "1h 29m 30s"}},
+           "race_predictions_as_of": "2026-11-27", "lactate_threshold": {"heart_rate_bpm": 168, "pace_per_km": "4:05 /km"},
+           # The keys metrics.shape_fitness really gives.
+           "vo2max": 57.2, "fitness_age": 31, "endurance_score": {"score": 6512, "class": "Well trained"},
+           "hill_score": {"score": 46, "class": "Recreational"}, "zones": {"heart_rate": {"max_hr": 188, "resting_hr": 45,
+                                                              "zones": [{"zone": 1, "bpm": [95, 130]}, {"zone": 2, "bpm": [131, 150]}]}}}
+    said = chat_pilot._fitness_lines(fit)[0]
+    check("fitness markers go in the prompt: predictions, threshold, VO2 max, zones",
+          "5k 19m 10s" in said and "half 1h 29m 30s" in said and "168 bpm at 4:05/km" in said
+          and "VO2 max 57.2 (fitness age 31)" in said and "endurance score 6512 (well trained)" in said
+          and "hill score 46 (recreational)" in said and "Z2 131-150" in said and "max 188, resting 45" in said, said)
+    named = {**plan, "current_plan": {k: v for k, v in plan["current_plan"].items() if k != "name"}}
+    check("a plan without a name goes by its code, not \"Workout\"",
+          "Plan: MAR," in "\n".join(chat_pilot._plan_lines(named, today)))
+    check("a part of the context that can't be read is left out, not the turn",
+          chat_pilot._lines(chat_pilot._fitness_lines, {"race_predictions": {"5k": "odd"}, "lactate_threshold": {"heart_rate_bpm": "x"}}) == [])
+
+    import asyncio
+    reads = []
+
+    async def counted_fitness() -> dict:
+        reads.append(1)
+        return fit
+
+    real_fitness = chat_pilot.server_mod.get_fitness
+    chat_pilot.server_mod.get_fitness = counted_fitness
+    try:
+        chat_pilot._FITNESS.clear()
+        asyncio.run(chat_pilot._fitness_for("someone", 5))
+        again = asyncio.run(chat_pilot._fitness_for("someone", 5))
+        asyncio.run(chat_pilot._fitness_for("someone else", 5))
+        check("fitness is read once an hour per person, not on every message", len(reads) == 2 and again == fit, str(len(reads)))
+    finally:
+        chat_pilot.server_mod.get_fitness = real_fitness
+        chat_pilot._FITNESS.clear()
+    check("fitness that couldn't be read says so", "not available" in chat_pilot._fitness_lines({"error": "Timeout"})[0])
+
+    text = chat_pilot._compact("get_plan", plan, 3000, today)
+    check("a plan cut short keeps the goal and the races' targets: they come before the weeks",
+          '"goal":"Spring Marathon, sub-3:00"' in text and '"target":"1:25"' in text and text.index('"current_plan"') < 30, text[:200])
+    check("the app's sign-in link and the card's beacon never reach the model", "login=" not in text and "_card" not in text
+          and "SECRET" not in chat_pilot._compact("get_plan", plan, 100000, today))
+    check("and the card's own note to the assistant is left out", "interactive plan card" not in chat_pilot._compact("get_plan", plan, 100000, today))
+    full = json.loads(chat_pilot._compact("get_plan", plan, 100000, today))
+    check("the card's completion figure is named for what it is",
+          full.get("done_percent_of_sessions_due_so_far") == 79 and "completion_percent" not in full)
+    check("the fitness and trend reads are offered", {"get_fitness", "get_fitness_trends", "get_recovery_trends",
+                                                      "get_progress", "get_shoes"} <= set(chat_pilot.READS))
+
+
 def person(client: TestClient, email: str) -> tuple[str, dict]:
     user_token = store.save_user(session_mod.mask_email(email), '{"di_token": "x"}',
                                  email_hash=store.email_fingerprint(email), email=email)
@@ -243,6 +333,7 @@ def person(client: TestClient, email: str) -> tuple[str, dict]:
 
 def main() -> int:
     adapter_checks()
+    context_checks()
     client = TestClient(hosted.build_app(), base_url="http://localhost")
     bart_token, bart = person(client, "bart@example.com")
     other_token, other = person(client, "someone@example.com")
@@ -297,6 +388,7 @@ def main() -> int:
     check("the read ran through the same tool function", CALLS["get_activities"][-1:] == [{"limit": 5}])
     check("the system prompt has today's date, the plan week and readiness, not raw JSON",
           "Europe/London" in scripted.system and "This week" in scripted.system and "Readiness today" in scripted.system
+          and "Fitness" in scripted.system
           and '"weeks"' not in scripted.system, scripted.system[:400])
     check("the model is offered the MCP tools' own descriptions, writes marked as proposals",
           any(t["name"] == "create_workout" and "taps Confirm" in t["description"] for t in scripted.tools)
