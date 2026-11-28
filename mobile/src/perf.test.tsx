@@ -16,7 +16,6 @@ import { PERSONA_PLAN } from './features/plan/fixture';
 import { findSession } from './features/plan/model';
 import { skipProposal } from './features/watch/proposals';
 import { app, COACH_MESSAGES, openScreen, SCREENS, watchQueue } from './testing/screens';
-import { linePoints } from './features/run/RunView';
 import { renderCounts } from './ui/hooks';
 
 beforeEach(() => renderCounts.clear());
@@ -70,13 +69,13 @@ describe(`post-run charts on ${Platform.OS}`, () => {
   it('scrubbing moves the marker without redrawing the map or working out the lines again', async () => {
     await openScreen(SCREENS.find((c) => c.name === 'Post-run (Plan)')!);
     const maps = count('RouteMap');
-    const lines = linePoints.calls;
+    const lines = count('linePoints');
     const area = screen.getByTestId('scrub-area');
     for (const dir of ['increment', 'increment', 'decrement']) {
       await act(async () => { area.props.onAccessibilityAction({ nativeEvent: { actionName: dir } }); });
     }
     expect(count('RouteMap')).toBe(maps);
-    expect(linePoints.calls).toBe(lines);
+    expect(count('linePoints')).toBe(lines);
   });
 });
 

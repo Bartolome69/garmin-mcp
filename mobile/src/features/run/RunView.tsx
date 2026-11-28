@@ -17,7 +17,7 @@ import { Icon } from '../../ui/Icon';
 import { TypeChip } from '../../ui/session/TypeChip';
 import { Text } from '../../ui/Text';
 import { lapAt, pointAt, type Chart, type Metric, type RunVM, type Takeaway } from './model';
-import { useRenderCount } from '../../ui/hooks';
+import { countCall, useRenderCount } from '../../ui/hooks';
 import { READABLE } from '../../ui/Screen';
 
 // -- route --------------------------------------------------------------------------------
@@ -174,10 +174,9 @@ export function linePoints(vm: RunVM, metric: Metric, chart: Chart): string[] {
     if (v == null) { if (runs[runs.length - 1].length) runs.push([]); return; }
     runs[runs.length - 1].push(`${x(vm.series.km[i]).toFixed(1)},${y(v).toFixed(1)}`);
   });
-  linePoints.calls += 1;
+  countCall('linePoints');
   return runs.filter((r) => r.length > 1).map((r) => r.join(' '));
 }
-linePoints.calls = 0;
 
 function ChartSvg({ vm, metric, chart, km }: { vm: RunVM; metric: Metric; chart: Chart; km: number }) {
   const { colors } = useTheme();

@@ -10,7 +10,8 @@ import { MemoryProvider } from '../../features/coach/MemoryProvider';
 import { tabsFor, type TabName } from '../../flags/flags';
 import { useFlags } from '../../flags/FlagsProvider';
 import { ICONS } from '../../ui/Icon';
-import { useKeyboard } from '../../ui/keyboard';
+import { useRenderCount } from '../../ui/hooks';
+import { useKeyboardVisible } from '../../ui/keyboard';
 import { useTheme } from '../../theme/ThemeProvider';
 
 const TAB_LABELS: Record<TabName, string> = {
@@ -23,14 +24,16 @@ export default function TabsLayout() {
   const { flags } = useFlags();
   const shown = new Set(tabsFor(flags));
   // The tab bar hides while the keyboard is up (the Coach's composer sits on the keyboard, not on the bar).
-  const keyboard = useKeyboard();
+  // Only `visible`: every keyboard frame change (QuickType, emoji, switching keyboards) would redraw the whole tab tree.
+  const keyboardUp = useKeyboardVisible();
+  useRenderCount('TabsLayout');
   // The Coach's thread and memory sit over the tabs, so they outlive switching tabs; both do nothing with the Coach off.
   return (
     <MemoryProvider>
     <CoachProvider>
     <NativeTabs
-      hidden={keyboard.visible}
-      disableHiddenAnimation={keyboard.visible}
+      hidden={keyboardUp}
+      disableHiddenAnimation={keyboardUp}
       backgroundColor={colors.bg}
       tintColor={colors.text}
       iconColor={{ default: colors.muted, selected: colors.text }}

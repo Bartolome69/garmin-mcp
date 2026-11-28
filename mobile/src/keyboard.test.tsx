@@ -7,6 +7,7 @@ import { act, screen } from 'expo-router/testing-library';
 import { DeviceEventEmitter, FlatList, Platform, StyleSheet } from 'react-native';
 
 import { openScreen, SCREENS } from './testing/screens';
+import { renderCounts } from './ui/hooks';
 import { keyboardOverlap, setKeyboardForTests } from './ui/keyboard';
 
 const coach = SCREENS.find((c) => c.name === 'Coach')!;
@@ -62,6 +63,17 @@ describe(`the Coach with the keyboard on ${Platform.OS}`, () => {
       screen.getByTestId('coach-thread').props.onLayout?.({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 300 } } });
     });
     expect(toEnd).toHaveBeenCalled();
+  });
+
+  it('a keyboard that changes height while up (QuickType, emoji) moves the dock, not the whole tab tree', async () => {
+    await openScreen(coach);
+    await keyboard(true);
+    const tabs = renderCounts.get('TabsLayout') ?? 0;
+    expect(tabs).toBeGreaterThan(0);
+    const e = { endCoordinates: { height: 380, screenY: WINDOW_H - 380, screenX: 0, width: 390 }, duration: 250, easing: 'keyboard' };
+    await act(async () => { DeviceEventEmitter.emit(ios ? 'keyboardWillChangeFrame' : 'keyboardDidShow', e); });
+    expect(dockPadding()).toBe(380 + 8);
+    expect(renderCounts.get('TabsLayout') ?? 0).toBe(tabs);
   });
 
   it('a phone that already shrank its window for the keyboard (Android resize) adds nothing', () => {

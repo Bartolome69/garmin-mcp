@@ -25,7 +25,11 @@ export function useStable<T>(value: T): T {
 const IN_JEST = typeof process !== 'undefined' && process.env.JEST_WORKER_ID !== undefined;
 /** How many times each counted component has rendered (tests only). */
 export const renderCounts = new Map<string, number>();
+/** Counts a call under `name` in tests (a function worked out again); does nothing in the app. */
+export function countCall(name: string): void {
+  if (IN_JEST) renderCounts.set(name, (renderCounts.get(name) ?? 0) + 1);
+}
 /** Counts a render under `name` in tests; does nothing in the app. */
 export function useRenderCount(name: string): void {
-  if (IN_JEST) renderCounts.set(name, (renderCounts.get(name) ?? 0) + 1);
+  countCall(name);
 }

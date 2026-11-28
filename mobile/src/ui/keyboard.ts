@@ -41,6 +41,11 @@ export function useKeyboard(): KeyboardState {
   return useSyncExternalStore(subscribe, () => state, () => HIDDEN);
 }
 
+/** Only whether the keyboard is up: a height or frame change doesn't redraw the caller (the tab layout). */
+export function useKeyboardVisible(): boolean {
+  return useSyncExternalStore(subscribe, () => state.visible, () => false);
+}
+
 /**
  * How much of a view the keyboard covers: the view's bottom edge (in window coordinates)
  * below the keyboard's top edge. Zero when the window already shrank for it (Android's
