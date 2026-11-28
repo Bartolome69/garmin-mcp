@@ -3,7 +3,8 @@ name: Mobile app
 # The native app in mobile/ (docs/native-app/PLAN.md): the tokens are in step
 # with the PWA's app.css and match the approved table, no colour literal sits
 # outside them, the app typechecks, the tests pass on iOS and on Android, and
-# Metro can bundle the app for both. No store builds (those run on EAS), and it
+# Metro can bundle the app for both, and the web build passes the layout checks
+# at 390x844 (npm run layout). No store builds (those run on EAS), and it
 # never deploys; the hosted server's workflows don't watch mobile/.
 
 on:
@@ -33,7 +34,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -65,3 +66,10 @@ jobs:
           EXPO_OFFLINE: "1"
           CI: "1"
         run: npx expo export --platform ios --platform android --output-dir "$RUNNER_TEMP/expo-export"
+      - name: Layout at 390x844 (Today above the fold, the week and a 10-rep session fit)
+        working-directory: mobile
+        env:
+          EXPO_OFFLINE: "1"
+        run: |
+          npx playwright install --with-deps chromium
+          npm run layout

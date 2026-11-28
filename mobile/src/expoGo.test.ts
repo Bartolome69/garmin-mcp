@@ -54,6 +54,17 @@ describe('Expo Go', () => {
     expect(deps).toContain('expo-updates');
   });
 
+  it('every SDK package is at the version Expo Go (SDK 58) expects, as `npx expo start` checks', () => {
+    // semver comes with Expo's own tooling; bundledNativeModules.json is the list `expo install` follows.
+    const semver = require('semver') as { minVersion: (r: string) => { version: string } | null; satisfies: (v: string, r: string) => boolean };
+    const bundled = JSON.parse(fs.readFileSync(require.resolve('expo/bundledNativeModules.json'), 'utf8')) as Record<string, string>;
+    const pkg = JSON.parse(read('package.json'));
+    const off = Object.entries<string>({ ...pkg.dependencies, ...pkg.devDependencies })
+      .filter(([name, spec]) => bundled[name] && !semver.satisfies(semver.minVersion(spec)!.version, bundled[name]))
+      .map(([name, spec]) => `${name} ${spec} (Expo Go expects ${bundled[name]})`);
+    expect(off).toEqual([]);
+  });
+
   it('every package imported under src/ is on the list', () => {
     const bad: string[] = [];
     for (const file of sources()) {
