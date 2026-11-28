@@ -3,13 +3,14 @@ import { useEffect, useState } from 'react';
 import { Alert, Platform, useWindowDimensions, View } from 'react-native';
 
 import { freshness } from '../../../data/freshness';
+import { sampleData } from '../../../data/sample';
 import { useToday } from '../../../features/today/TodayProvider';
 import { TodayEmpty, TodayView } from '../../../features/today/TodayView';
 import { applyToToday } from '../../../features/watch/apply';
 import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
-import { FailureBanner } from '../../../ui/StateViews';
+import { FailureBanner, SampleDataLabel } from '../../../ui/StateViews';
 import { Text } from '../../../ui/Text';
 
 function useNow(everyMs = 60000) {
@@ -43,6 +44,7 @@ export default function TodayScreen() {
           </View>
         ) }} />
       ) : null}
+      {sampleData() ? <SampleDataLabel /> : null}
       <FailureBanner failure={today.failure} />
       <TodayView
         vm={data}

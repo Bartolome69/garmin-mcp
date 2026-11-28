@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { accessToken } from '../../api/client';
 import { failureKind, type FailureKind } from '../../data/resource';
+import { sampleData } from '../../data/sample';
 import { useOnboarding } from '../../features/onboarding/OnboardingProvider';
 import { importRuns } from '../../features/onboarding/source';
 import { PacesStep } from '../../features/onboarding/views';
@@ -20,7 +21,7 @@ export default function PacesScreen() {
   // Each import has a number; choosing the four questions, or leaving, makes a slow one stale.
   const request = useRef(0);
   useEffect(() => {
-    accessToken().then((t) => setConnected(!!t)).catch(() => {});
+    accessToken().then((t) => setConnected(!!t || sampleData())).catch(() => {});
     return () => { request.current += 1; };
   }, []);
   const read = async () => {

@@ -1,0 +1,11 @@
+name: Expo Go preview
+on:
+  push:
+    branches: ['claude/native-app-m12']
+jobs:
+  publish:
+    name: Publish to Expo Go
+    type: update
+    params:
+      branch: preview
+      platform: all

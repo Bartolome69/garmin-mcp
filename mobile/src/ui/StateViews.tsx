@@ -70,3 +70,19 @@ export function FailureBanner({ failure }: { failure: FailureKind | null }) {
     </View>
   );
 }
+
+/**
+ * Sample data is showing (data/sample.ts): a small neutral label on the first screen and in
+ * You, so the persona's numbers are never taken for the runner's own. No colour of its own.
+ */
+export function SampleDataLabel({ style }: { style?: object }) {
+  const { colors } = useTheme();
+  return (
+    <View testID="sample-data" accessible accessibilityLabel="Sample data. These numbers are from a sample runner, not yours."
+      style={[{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 16, marginTop: 8,
+        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: colors.muted }, style]}>
+      <Icon name="info" tone="muted" />
+      <Text variant="footnote" tone="text2">Sample data</Text>
+    </View>
+  );
+}

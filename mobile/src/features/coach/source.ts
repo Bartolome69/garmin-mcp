@@ -6,8 +6,8 @@ import { createContext } from 'react';
 
 import { serverCoachApi, type CoachApi } from './api';
 import { devThread, FakeCoach } from './fake';
+import { fixturesOn } from '../../data/sample';
 
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 
 /** Tests hand the provider their own Coach here. */
 export const CoachApiContext = createContext<CoachApi | null>(null);
@@ -34,6 +34,6 @@ function withFallback(server: CoachApi, fake: CoachApi): CoachApi {
 let shared: CoachApi | null = null;
 
 export function defaultCoachApi(): CoachApi {
-  if (!shared) shared = USE_FIXTURE ? withFallback(serverCoachApi(), new FakeCoach({ messages: devThread(Date.now()) })) : serverCoachApi();
+  if (!shared) shared = fixturesOn() ? withFallback(serverCoachApi(), new FakeCoach({ messages: devThread(Date.now()) })) : serverCoachApi();
   return shared;
 }

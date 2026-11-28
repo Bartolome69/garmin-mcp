@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { getJson, postJson } from '../../api/client';
 import FIXTURE from './connections.fixture.json';
 import type { ConnectionsVM } from './model';
+import { fixturesOn } from '../../data/sample';
 
 /**
  * Connections from the server. TODO(server): GET /app/api/v1/connections returns
@@ -11,7 +12,6 @@ import type { ConnectionsVM } from './model';
  * Until they exist, a development build reads connections.fixture.json, written by
  * scripts/domain_fixtures.py from that engine for the design's persona.
  */
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 const CASES = (FIXTURE as unknown as { cases: Record<'ios' | 'android', ConnectionsVM> }).cases;
 
 export function fixtureConnections(os: string = Platform.OS): ConnectionsVM {
@@ -22,7 +22,7 @@ export async function fetchConnections(): Promise<ConnectionsVM> {
   try {
     return await getJson<ConnectionsVM>('/app/api/v1/connections');
   } catch (err) {
-    if (USE_FIXTURE) return fixtureConnections();
+    if (fixturesOn()) return fixtureConnections();
     throw err;
   }
 }

@@ -6,6 +6,7 @@ import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
 
 import { accessToken } from '../api/client';
+import { sampleData } from '../data/sample';
 import { useDb } from '../db/DbContext';
 import { kv } from '../db/kv';
 import { ONBOARDED_KEY } from '../features/onboarding/OnboardingProvider';
@@ -22,6 +23,8 @@ export default function Index() {
     })();
     return () => { live = false; };
   }, [db]);
+  // Sample data (Expo Go with nobody signed in): no sign-in wall; the persona is onboarded. You has "Try onboarding".
+  if (sampleData()) return <Redirect href="/today" />;
   if (onboarded == null) return null;
   return <Redirect href={onboarded ? '/today' : '/onboarding'} />;
 }

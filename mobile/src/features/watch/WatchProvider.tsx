@@ -13,6 +13,7 @@ import { proposalSource, type ProposalRequest } from './proposals';
 import { accepted, confirmOps, failed, isDue, isSettled, latestFor, onWatch, resend as resendOp, watchFor, type WatchOp } from './queue';
 import { memoryStore, sqlStore, type WatchStore } from './store';
 import { FakeGarmin, SEND_TIMEOUT_MS, SendFailure, serverTransport, withTimeout, type Connection, type WatchTransport } from './transport';
+import { fixturesOn } from '../../data/sample';
 
 export type WatchContext = {
   ops: WatchOp[];
@@ -35,14 +36,13 @@ export type WatchContext = {
 
 const Ctx = createContext<WatchContext | null>(null);
 
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 const DEFAULT_CONNECTION: Connection = { provider: 'Garmin', device: null, syncedAt: null };
 export const PUMP_EVERY_MS = 5000;
 export const POLL_SYNC_EVERY_MS = 30000;
 
 function defaultTransport(): WatchTransport {
   // A development build sends to a stand-in Garmin; EXPO_PUBLIC_DAASH_WATCH=fail makes the first try fail.
-  if (USE_FIXTURE) return new FakeGarmin(process.env.EXPO_PUBLIC_DAASH_WATCH === 'fail' ? ['timeout'] : [], 'ok', 2);
+  if (fixturesOn()) return new FakeGarmin(process.env.EXPO_PUBLIC_DAASH_WATCH === 'fail' ? ['timeout'] : [], 'ok', 2);
   return serverTransport(DEFAULT_CONNECTION);
 }
 

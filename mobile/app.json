@@ -4,6 +4,12 @@
     "slug": "daash",
     "scheme": "daash",
     "version": "0.1.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5ff0354e-22b6-417a-b6f3-9fc7e7278439"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -19,7 +25,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": true,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
       "expo-router",
@@ -40,6 +47,11 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5ff0354e-22b6-417a-b6f3-9fc7e7278439"
+      }
     }
   }
 }

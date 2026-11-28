@@ -141,7 +141,11 @@ export function WidgetPreviews({ s, os = Platform.OS }: { s: WidgetSnapshot; os?
   );
 }
 
-export function WidgetsView({ snapshot, plus, os = Platform.OS, onPlus }: { snapshot: WidgetSnapshot; plus: boolean; os?: string; onPlus: () => void }) {
+export function WidgetsView({ snapshot, plus, os = Platform.OS, onPlus, expoGo = false }: {
+  snapshot: WidgetSnapshot; plus: boolean; os?: string; onPlus: () => void;
+  /** In Expo Go there are no widgets to add: they need the App Store or Google Play build. */
+  expoGo?: boolean;
+}) {
   const { colors } = useTheme();
   const places = widgetPlaces(os);
   return (
@@ -153,6 +157,12 @@ export function WidgetsView({ snapshot, plus, os = Platform.OS, onPlus }: { snap
           <WidgetPreviews s={snapshot} os={os} />
         </LockedPreview>
       )}
+      {expoGo ? (
+        <Card testID="widgets-expo-go">
+          <Text variant="headline" accessibilityRole="header">Not in this test app</Text>
+          <Text variant="subhead">{`Widgets need the ${os === 'android' ? 'Google Play' : 'App Store'} build of Daash. Expo Go can’t add them, so the previews here are all there is for now.`}</Text>
+        </Card>
+      ) : null}
       <Card testID="widgets-how">
         <Text variant="headline" accessibilityRole="header">{plus ? 'Add a widget' : 'Once you have Plus'}</Text>
         <Text testID="widgets-how-words" variant="subhead">{addWidgetWords(os)}</Text>

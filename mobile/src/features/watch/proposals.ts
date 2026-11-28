@@ -15,6 +15,7 @@ import { addDays, DAYS, parseDate, weekday } from '../../domain/format';
 import type { PlanSession, PlanVM } from '../plan/model';
 import type { DiffSession, OpDraft, Proposal } from './model';
 import FIXTURE from './proposals.fixture.json';
+import { fixturesOn } from '../../data/sample';
 
 export type Reason = 'unwell' | 'niggle' | 'travelling' | 'race_moved' | 'busy';
 export const REASONS: { key: Reason; title: string; sub: string }[] = [
@@ -32,7 +33,6 @@ export type ProposalRequest =
   | { kind: 'easier' | 'rest' | 'swap' }
   | { kind: 'trim'; week: string };
 
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 const CASES = (FIXTURE as unknown as { cases: Record<string, Proposal> }).cases;
 
 // Development only: what the server's Coach would add, one observation per kind, never a number of its own.
@@ -64,7 +64,7 @@ export function proposalSource(coach: boolean): (req: ProposalRequest) => Promis
     try {
       return await postJson<Proposal>(`/app/api/v1/plan/propose${coach ? '?coach=1' : ''}`, req);
     } catch (err) {
-      const p = USE_FIXTURE ? fixtureProposal(req, coach) : null;
+      const p = fixturesOn() ? fixtureProposal(req, coach) : null;
       if (p) return p;
       throw err;
     }

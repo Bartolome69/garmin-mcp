@@ -1,8 +1,8 @@
 import { getJson, postJson } from '../../api/client';
 import { FREE, parseEntitlement, type Entitlement } from './entitlement';
 import type { Purchase } from './store';
+import { fixturesOn } from '../../data/sample';
 
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 
 /**
  * The server's answer. TODO(server): GET /app/api/v1/entitlements answers
@@ -16,7 +16,7 @@ export async function fetchEntitlement(): Promise<Entitlement> {
   try {
     return parseEntitlement(await getJson<unknown>('/app/api/v1/entitlements'));
   } catch (err) {
-    if (USE_FIXTURE) {
+    if (fixturesOn()) {
       return process.env.EXPO_PUBLIC_DAASH_PLUS === '1'
         ? { tier: 'plus', expiresAt: null, source: 'server', since: Date.UTC(2026, 10, 1), willRenew: true, productId: 'run.daash.plus.monthly' }
         : FREE;
