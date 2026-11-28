@@ -3,8 +3,9 @@
 //   - Today: a watch-queue tick (idle, or a send for another week's session) doesn't redraw
 //     TodayView; a change to today's session does.
 //   - The Coach: each streamed token redraws the reply it belongs to, never the messages
-//     before it.
-//   - Long lists are virtualised: the Coach thread and the post-run laps.
+//     before it (the screen and list shell around them still redraw; not pinned).
+//   - Post-run: scrubbing moves the marker without redrawing the map or the chart lines.
+//   - The Coach thread is a virtualised list (post-run laps are not: PERFORMANCE.md says why).
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { Platform } from 'react-native';

@@ -1239,13 +1239,14 @@ Built on `claude/native-app-m11` (which holds every earlier milestone), 28 Nov.
   answers. Sample data has the Coach on, talking to its stand-in, the stand-in Garmin for
   sends (nothing reaches a real watch) and the fake store for Plus.
 - **Only Expo Go's native modules.** `src/expoGo.test.ts` checks every dependency and every
-  import under `src/` against a list kept in the test (expo-*, react-native-svg, reanimated,
+  import under `src/` against a list kept in the test (each expo-* package by name, react-native-svg, reanimated,
   worklets, gesture-handler, screens, safe-area-context, segmented-control, expo-updates,
   JavaScript-only packages), that native code outside Expo Go is only loaded through
   `requireOptionalNativeModule` (just `DaashWidgets`, which falls back to writing nowhere),
   and that the store is the fake or the unavailable one (no purchase library).
 - **Notifications in Expo Go:** permission and local notifications only. Push tokens are
-  asked for in one place (`features/settings/push.ts`, not called yet: TODO(server)), which
+  asked for in one place (`features/settings/push.ts`, uncalled until TODO(server) `POST
+  /app/api/v1/push-token` exists), which
   returns nothing in Expo Go, because Expo Go on Android has had no remote push since SDK 53
   (asking throws there).
 - **Widgets setup in Expo Go** says widgets need the App Store / Google Play build.
@@ -1292,8 +1293,8 @@ Built on `claude/native-app-m11` (which holds every earlier milestone), 28 Nov.
   `src/testing/screens.tsx`). Each cell is written as what a screen reader finds, in reading
   order (role, name, value, state, live region), plus the brand fills and any clipped or
   line-capped text, into one file per screen in `src/__matrix__/` (cells that read the same
-  are written once, listing every cell they stand for). 55 screens, about 820 cells; the
-  files are about 460 KB together. Rewrite with `npx jest src/matrix -u`.
+  are written once, listing every cell they stand for). 58 screen cases and 10 state cases (review fixes), about 1,000 cells; the
+  files are about 130 KB together. Rewrite with `npx jest src/matrix -u`.
 - **What every cell must hold:** one brand fill where the screen has a primary action (pinned
   per screen, Android-only for Plan's FAB), at most one otherwise, none behind a sheet; no
   scalable text in a box of fixed height; every control at least 44 pt / 48 dp; with the
@@ -1390,11 +1391,13 @@ All are in the matrix, the focus test and the smoke list.
 | Route | Board | Still needs |
 |---|---|---|
 | `/crew` | Sitemap (Crew: This week · nudge · invite) | It was an empty screen. TODO(server): `GET /app/api/v1/crew` (this week's easy and long runs, the invite link, nudges); then the This week list, Invite (share the link) and Nudge. The crew itself stays the web feature (out of scope to redesign). |
-| `/you/activities` (and `/you/run/[id]`) | Sitemap ("Activities is reached from Today, Plan and You") | TODO(server): `GET /app/api/v1/runs` (12 weeks, each with the session id post-run opens by). Development builds and sample data list the persona's runs. A board for the list. Reached from You only so far; Today's week strip and Plan's done days already open runs. |
+| `/you/activities` (and `/you/run/[id]`) | Sitemap ("Activities is reached from Today, Plan and You") | TODO(server): `GET /app/api/v1/runs` (12 weeks, each with the session id post-run opens by). Development builds and sample data list the persona's runs. A board for the list. **Open: reached from You only.** Today's week strip and Plan's done days open single runs; an "All runs" entry on Today and Plan waits for the list's board (where it sits on each is a design call), so it isn't guessed in. |
 | `/you/training` (Units and zones) | You-ios (Training) | TODO(server): `GET /app/api/v1/profile` (units, week start, heart rate zones, goal race from Garmin). Shows where each comes from, never the board's sample values. |
 | `/you/notifications` | Notifications-ios / -android, prompt section 8 | The four switches are kept on the phone (`notify:prefs`). TODO(server): the pushes themselves and `POST /app/api/v1/push-token` with these choices; a device build to see them. Doesn't know yet whether the system permission is off (the "off in your phone's settings" line is ready). |
 | `/you/privacy` | You-ios (Privacy) | TODO(server): `DELETE /app/api/v1/account` (disconnects Garmin, deletes the crew data too), then a confirm. Export stays Garmin Connect's. |
 | `/you/help` | You-ios footer ("Privacy · Help") | No board. Holds the trust sheets, the medical line and the version. Needs design and a support contact the owner chooses. |
+| `/plan/next` | Block-ios (plan styles) | Where a Plus runner lands on a locked plan style: "comes with your Plus and arrives in an update". Needs the plan-styles engine, which is the owner's decision (milestone 10). Its "Coming in a later milestone." fallback is gone (review fix). |
+| `/you/coming` | P1-Priority-ios (advanced merge rules) | The same for advanced merge rules, from Source priority. Needs the merge-rule engine (owner's decision, milestone 10). |
 
 Not sketches: `/you/appearance` and `/you/sign-out` are finished.
 
@@ -1404,6 +1407,96 @@ Not sketches: `/you/appearance` and `/you/sign-out` are finished.
   (`src/flows.test.tsx` 1 to 4, `src/onboarding.flows.test.tsx` 2) and a Maestro flow in
   `mobile/e2e/`; `src/e2e.test.ts` ties them together. **Maestro (or Detox) needs a device
   and a development build**: a follow-up.
+
+### Review fixes (after the milestone 12 review)
+
+Each says which milestone the code came from.
+
+- **The matrix kept every app alive (M12).** Each cell mounted a new app without unmounting
+  the last, so up to eight trees per test kept re-rendering (expo-router's "mounted a second
+  time", and "not wrapped in act" from window changes). `openScreen` now unmounts first and
+  only then changes the window. Jest still needs `workerIdleMemoryLimit`: without it a worker
+  grew past 4 GB over the suite and the container killed one, so it stays.
+- **Nothing was drawn behind a sheet (M12).** The test app map kept only each route's
+  `default`, losing the layouts' `unstable_settings.anchor`, so a sheet opened by link was
+  drawn alone and "no brand fill behind a sheet" checked nothing. The map keeps whole
+  modules, the free week sheet opens over the paywall, a form sheet (`RNSModalScreen`) counts
+  as a screen, and the matrix and focus test fail when nothing is behind a sheet.
+- **Send status announced once (M5, M9, M12).** See the Accessibility fixes list above. On
+  iOS the session's card, the onboarding landing and the toast weren't announced at all; on
+  Android each change could be said twice.
+- **Every control is checked (M12, H2).** The checks only counted controls with a role and a
+  press handler, measured height only, and skipped unnamed role-less elements. Now anything
+  that answers a press, any switch and any text field is a control; width counts where it's
+  set; unnamed focusables are flagged; names are checked in every matrix cell; smoke uses the
+  same helpers (`testing/a11y.ts`, pinned by `testing/a11y.test.tsx`). They found the
+  composer (about 40 tall: now `MIN_TOUCH`), the iOS segmented control (32: now `MIN_TOUCH`
+  tall, taller than the system's) and the native switches (31: a switch row is now the switch,
+  56 tall, the native one inside hidden from screen readers; the Coach's switch in You too).
+- **Switch contrast (M11, M12).** The off track was the button grey, 1.7:1 on the row, and in
+  dark mode the off thumb matched the row. It's muted now (`ui/List` `switchColors`); the
+  pairs are in `tokens.source.test.ts`.
+- **Read once (M3, M4).** The structure bar's legend was read again after its label; Plan's
+  week pager read the weeks either side under this week's heading (14 extra days). Both
+  fixed; WALKTHROUGHS flows 1, 2 and 6 match the matrix again.
+- **Sign out (M12).** The root providers kept the last runner's watch queue (whose pump
+  saved operations back into the cleared database), Plus and flags. Each has a `reset`, called
+  before the data goes; a send under way is dropped, not saved.
+- **The tab layout redrew on every keyboard frame (M12):** it now selects only `visible`.
+- **Coverage (M12).** Plan · Block, Plan · Trends and Plan · Trends (Plus) are matrix, smoke
+  and focus cases; `STATE_SCREENS` adds Today and Plan loading, offline, with an expired
+  Garmin sign-in and empty, and the Coach empty, offline and streaming. A labelled chart is
+  now an element in the matrix files (Trends' load chart was missing). **The 200% cells
+  check what the code does at that size** (layouts that switch on `fontScale`, scalable text,
+  nothing scalable in a box of fixed height); the test renderer doesn't measure or wrap
+  text, so real wrapping and clipping at 200% is a device check.
+- **Foreground refresh (M3, M4).** Today and Plan ask again when the app comes back to the
+  foreground (`useResource`'s `foreground`), so a phone left overnight shows today.
+- **Stop (M11).** The Interaction board's "Send becomes Stop while streaming" wasn't built:
+  it is now (the reply keeps what it had written, "You stopped this reply.").
+- **Smaller things.** `linePoints` counts its calls through the Jest-only `countCall`, not a
+  property in production code (M12). One lazy `expo-notifications` loader
+  (`data/notifications.ts`) for the permission ask, the free week's reminder and the push
+  token (M9, M10, M12). The notification copy (server's words) moved to
+  `settings/notificationCopy.ts`, which nothing in the app imports (M12). The Expo Go allowlist
+  names each `expo-*` package instead of a prefix (M12). `perf.test`'s header and
+  PERFORMANCE.md say what is and isn't pinned (M12).
+
+### Not built: recorded with the default taken
+
+- **Analytics (prompt section 11; HARDENING's deferred item).** Only `paywall_viewed` and
+  `trial_started` exist, and the sink does nothing (`analytics/analytics.ts`): no event
+  leaves the phone. Still missing: onboarding steps, try-builder used, import chosen, first
+  workout landed, notification permission result, readiness option chosen, life-happened
+  reason, diff confirmed / backed out, watch send success / fail / retry, remove from watch,
+  Coach message sent / thumbs. TODO(server): `POST /app/api/event` (PLAN.md's choice, the
+  PWA's route; it isn't on `main`'s server yet). Default: nothing sent until it exists; the
+  events go in with the sink, in one change, so names are reviewed together.
+- **Background refresh (prompt section 7).** Foreground refresh is built (above). BGAppRefresh
+  / WorkManager need `expo-background-task`, which Expo Go doesn't ship: **needs a
+  development build**, and TODO(server): `GET /app/api/v1/glance` (PLAN.md), so a background
+  wake reads the cache, never Garmin.
+- **Android dynamic colour for surfaces (prompt section 3).** Not built. `PlatformColor` for
+  surfaces would bypass the token lint and the contrast tests (every pair is checked against
+  fixed tokens), and the wallpaper's tint can't be checked in Jest. Default: fixed tokens on
+  both platforms. Building it means surface tokens that resolve per platform, with the
+  session and status colours fixed, and a device check (P1-OpenQuestions asks for one).
+- **Notifications (prompt section 8).** The four kinds' switches are built; none is delivered,
+  even locally. TODO(server): the pushes (and `POST /app/api/v1/push-token`; `push.ts` is
+  ready and uncalled). Also not built: **opening the screen a notification names when it's
+  tapped** (the Interaction board; needs a `data.url` on each push and a response listener),
+  and **scheduling "Session heads-up" and "Sent to your watch" locally** (Expo Go allows local
+  notifications). Default: none, so a runner doesn't get one locally and the same one again
+  from the server once pushes exist; the owner decides whether local ones come first.
+
+### TODO(server) also in the code (review)
+
+- `GET /app/api/v1/features` (prompt section 10): `coach`, `plus`, `coach_daily_limit`,
+  readiness and merge thresholds and the rule tables (`app/_layout.tsx`; PLAN.md,
+  API_INVENTORY.md). Today only the chat pilot's `GET /app/api/features` answers
+  (`{"chat": true}`).
+- API errors carrying `{code: "reconnect_needed", provider}` for an expired Garmin login
+  (`api/client.ts`; HARDENING.md). Until then the app can't tell it from other failures.
 
 ### Open questions for the owner (defaults taken)
 
@@ -1436,4 +1529,5 @@ opening its update in Expo Go, and the notification permission on Android 13+.
 app from `src/testing/screens.tsx`, whose route map is read from `src/app`. Component
 snapshots changed for the header roles, live regions and the readable column (coach, today,
 plan, run, connections, plus, watch). Jest restarts a worker over 1.2 GB: the full suite
-reached the container's memory limit once.
+reached the container's memory limit once, and still does without it (review fixes).
+`src/matrix/states.test.tsx` and `src/testing/a11y.test.tsx` came with the review fixes.
