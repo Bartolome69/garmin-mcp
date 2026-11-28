@@ -18,6 +18,8 @@ import { WatchStatus } from '../../ui/session/WatchStatus';
 import { Text } from '../../ui/Text';
 import type { Watch } from '../plan/model';
 
+// No live regions: the queue says each change once (WatchProvider), on both platforms.
+
 export function WatchCard({ watch, device, error, retrying, adjusted, brand = true, onSend, onResend, onRemove, onTrouble }: {
   watch: Watch;
   device: string | null;
@@ -40,7 +42,7 @@ export function WatchCard({ watch, device, error, retrying, adjusted, brand = tr
   if (state === 'failed') {
     return (
       <View testID="watch-card" style={{ gap: 8 }}>
-        <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`${error ?? 'Not sent.'}${at ? ` ${at}` : ''}`}
+        <View accessible accessibilityLabel={`${error ?? 'Not sent.'}${at ? ` ${at}` : ''}`}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: colors.sunken }}>
           <Icon name="warning" tone="brandText" />
           <Text variant="subhead" tone="brandText" style={{ flex: 1, fontWeight: '600' }}>{error ?? 'Not sent.'}</Text>
@@ -60,7 +62,7 @@ export function WatchCard({ watch, device, error, retrying, adjusted, brand = tr
   if (state === 'sending') {
     return (
       <Card testID="watch-card" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`Sending to ${name}`}
+        <View accessible accessibilityLabel={`Sending to ${name}`}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <ActivityIndicator size="small" color={colors.muted} />
           <Text variant="subhead" tone="muted" style={{ flex: 1 }}>{`Sending to ${name}`}</Text>

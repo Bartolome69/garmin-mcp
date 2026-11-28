@@ -5,5 +5,5 @@
 brand fills: 0
 clipped: none
 cut to lines: none
-group "Sending Monday’s run to your watch" (live polite)
+group "Sending Monday’s run to your watch"
 button "Go to Today"

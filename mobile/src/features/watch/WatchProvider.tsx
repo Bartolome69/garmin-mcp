@@ -5,12 +5,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 
+import { announce } from '../../ui/motion';
+
 import { useDb } from '../../db/DbContext';
 import { useFlags } from '../../flags/FlagsProvider';
 import type { Watch } from '../plan/model';
 import { changesPlan, type Proposal } from './model';
 import { proposalSource, type ProposalRequest } from './proposals';
-import { accepted, confirmOps, failed, isDue, isSettled, latestFor, onWatch, resend as resendOp, watchFor, type WatchOp } from './queue';
+import { accepted, batchWords, confirmOps, failed, isDue, isSettled, latestFor, onWatch, resend as resendOp, watchFor, type WatchOp } from './queue';
 import { memoryStore, sqlStore, type WatchStore } from './store';
 import { FakeGarmin, SEND_TIMEOUT_MS, SendFailure, serverTransport, withTimeout, type Connection, type WatchTransport } from './transport';
 import { fixturesOn } from '../../data/sample';
@@ -72,25 +74,35 @@ export function WatchProvider({ children, transport: given, store: givenStore, c
   const pumping = useRef(false);
   const again = useRef(false);
   const lastPoll = useRef(0);
+  // What was last said about each batch: a send is announced here, once per change, however
+  // many screens show its status (and on iOS, which has no live regions).
+  const said = useRef(new Map<string, string>());
 
   useEffect(() => { store.load().then((loaded) => { opsRef.current = loaded; setOps(loaded); }).catch(() => {}); }, [store]);
 
-  const update = useCallback(async (changed: WatchOp[]) => {
+  /** `quiet`: an automatic retry starting, not said (only what it comes to, if that's new). */
+  const update = useCallback(async (changed: WatchOp[], { quiet = false } = {}) => {
     if (!changed.length) return;
     const byId = new Map(opsRef.current.map((o) => [o.id, o]));
     for (const o of changed) byId.set(o.id, o);
     opsRef.current = [...byId.values()];
     setOps(opsRef.current);
-    // A batch that put something on the watch, all through: offer the way back once.
     for (const batch of new Set(changed.map((o) => o.batch))) {
       const all = opsRef.current.filter((o) => o.batch === batch);
-      if (!toasted.current.has(batch) && all.every(isSettled) && all.some((o) => o.kind !== 'remove')) {
+      // A batch that put something on the watch, all through: offer the way back once.
+      const offer = !toasted.current.has(batch) && all.every(isSettled) && all.some((o) => o.kind !== 'remove');
+      if (offer) {
         toasted.current.add(batch);
         setToast({ batch });
       }
+      const words = quiet ? null : batchWords(all, transport.connection().device);
+      if (words && words !== said.current.get(batch)) {
+        said.current.set(batch, words);
+        announce(offer ? `${words}. Changed your mind? Remove from watch.` : words);
+      }
     }
     await store.save(changed).catch(() => {});
-  }, [store]);
+  }, [store, transport]);
 
   const pump = useCallback(async () => {
     if (pumping.current) { again.current = true; return; }
@@ -100,7 +112,7 @@ export function WatchProvider({ children, transport: given, store: givenStore, c
         again.current = false;
         for (const due of opsRef.current.filter((o) => isDue(o, clock()))) {
           let op = due.state === 'failed' ? resendOp(due, clock()) : due;
-          if (op !== due) await update([op]);
+          if (op !== due) await update([op], { quiet: true });
           try {
             const r = await withTimeout(transport.send(op), SEND_TIMEOUT_MS);
             op = accepted(op, r.synced, clock());

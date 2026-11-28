@@ -7,10 +7,12 @@
 //   2. Life happened → new week → confirm
 //   3. Send fails → Resend → sent
 //   4. Remove from watch (from the toast, and from a session)
-import { describe, expect, it } from '@jest/globals';
+//   5. Each change of a send is said once, on iOS and Android
+import { describe, expect, it, jest } from '@jest/globals';
 import { router, Stack } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
 import type { ReactNode } from 'react';
+import { AccessibilityInfo } from 'react-native';
 
 import TabsLayout from './app/(tabs)/_layout';
 import CoachIndex from './app/(tabs)/coach/index';
@@ -41,11 +43,11 @@ import { ThemeProvider } from './theme/ThemeProvider';
 let queue: WatchContext | null = null;
 function Probe() { queue = useWatch(); return null; }
 
-function app(garmin: FakeGarmin) {
+function app(garmin: FakeGarmin, clock?: () => number) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial="dark">
       <FlagsProvider initial={DEFAULT_FLAGS}>
-        <WatchProvider transport={garmin} store={memoryStore()} auto={false} pollEveryMs={0}>
+        <WatchProvider transport={garmin} store={memoryStore()} auto={false} pollEveryMs={0} clock={clock}>
           <Probe />
           {/* As the app's root: a stack, so the watch confirm opens over the tabs and closes back onto them. */}
           {children ?? <Stack screenOptions={{ headerShown: false }} />}
@@ -247,5 +249,67 @@ describe('4. Remove from watch', () => {
     await pump();
     expect(within(screen.getByTestId('watch-card')).getByLabelText('Not on your watch')).toBeTruthy();
     expect(screen.queryByTestId('send-toast')).toBeNull(); // a removal offers no "Remove from watch"
+  });
+});
+
+describe('5. Each change of a send is said once', () => {
+  const said = () => {
+    const spy = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    spy.mockClear(); // the platform mock may already hold earlier tests' calls
+    return { words: () => spy.mock.calls.map((c) => c[0]), done: () => spy.mockRestore() };
+  };
+
+  it('on Today: sending, then accepted with the way back, then on the watch', async () => {
+    const g = garmin();
+    await renderRouter(app(g), { initialUrl: '/today' });
+    const a = said();
+    try {
+      await press('button-Make it easier');
+      await press('button-Review watch changes');
+      await press('button-Confirm and send 1 change');
+      await within(screen.getByTestId('session-card')).findByLabelText('Sending');
+      await pump();
+      await pump();
+      await pump(); // nothing new: nothing said
+      expect(a.words()).toEqual([
+        'Sending to Forerunner 965',
+        'Changed · arrives at next sync. Changed your mind? Remove from watch.',
+        'On your watch',
+      ]);
+    } finally { a.done(); }
+  });
+
+  it('on a session: not sent, a retry on its own says nothing new, Resend, then accepted', async () => {
+    const g = garmin(['timeout', 'timeout']);
+    let now = Date.now();
+    // Today stays mounted in its tab behind the Plan's session: still said once.
+    await renderRouter(app(g, () => now), { initialUrl: '/today' });
+    await screen.findByTestId('today');
+    await act(async () => { router.push('/plan'); });
+    await screen.findByTestId('week-title');
+    await act(async () => { router.push({ pathname: '/plan/session/[id]', params: { id: '2026-12-02-intervals' } }); });
+    await screen.findByTestId('session');
+    const a = said();
+    try {
+      await press('button-Send to watch');
+      await press('button-Confirm and send');
+      await pump();
+      expect(screen.getByText('Not sent. Garmin didn’t answer.')).toBeTruthy();
+      // Its backoff passes: the automatic retry fails the same way, and isn't said again.
+      const op = queue!.ops[0];
+      await act(async () => { await queue!.pump(); });
+      expect(queue!.ops[0].attempts).toBe(op.attempts); // not due yet
+      now += 60_000;
+      await pump();
+      expect(queue!.ops[0].attempts).toBe(op.attempts + 1);
+      await press('button-Resend');
+      await pump();
+      expect(a.words()).toEqual([
+        'Sending to Forerunner 965',
+        'Not sent. Garmin didn’t answer.',
+        'Sending to Forerunner 965',
+        'Changed · arrives at next sync. Changed your mind? Remove from watch.',
+      ]);
+    } finally { a.done(); }
   });
 });

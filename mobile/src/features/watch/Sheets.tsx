@@ -203,11 +203,11 @@ export function LifeSheet({ today, busy, onSee }: { today: string; busy: boolean
   );
 }
 
-/** The only toast after a send (build prompt, section 5.8). */
+/** The only toast after a send (build prompt, section 5.8). Said with the send's status by the queue. */
 export function SendToast({ onRemove, onDismiss }: { onRemove: () => void; onDismiss: () => void }) {
   const { colors } = useTheme();
   return (
-    <View testID="send-toast" accessibilityLiveRegion="polite" style={{ position: 'absolute', left: 16, right: 16, bottom: 100,
+    <View testID="send-toast" style={{ position: 'absolute', left: 16, right: 16, bottom: 100,
       flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, borderRadius: 12, backgroundColor: colors.surface,
       borderWidth: 1, borderColor: colors.hairline, elevation: 6 }}>
       <Text variant="subhead" tone="text2" style={{ flex: 1 }}>Changed your mind?</Text>

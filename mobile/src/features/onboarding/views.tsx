@@ -63,10 +63,10 @@ function Field({ label, value, onChange, placeholder, testID, hint }: { label: s
   );
 }
 
-/** A problem in words with its icon, in the error colour (never colour alone). */
-function Problem({ testID, children }: { testID: string; children: string }) {
+/** A problem in words with its icon, in the error colour (never colour alone). `live: false` when something else says it. */
+function Problem({ testID, children, live = true }: { testID: string; children: string; live?: boolean }) {
   return (
-    <View testID={testID} accessible accessibilityLiveRegion="polite" accessibilityLabel={children} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+    <View testID={testID} accessible accessibilityLiveRegion={live ? 'polite' : undefined} accessibilityLabel={children} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
       <Icon name="error" tone="brandText" />
       <Text variant="footnote" tone="brandText" style={{ flex: 1 }}>{children}</Text>
     </View>
@@ -467,7 +467,7 @@ export function LandedView({ first, landing, brand, device, home = 'Today', ask 
         </Text>
         {landing.failed > 0 ? (
           <View testID="landed-failed" style={{ gap: 8 }}>
-            <Problem testID="landed-failed-words">{failedLine(landing.failed)}</Problem>
+            <Problem testID="landed-failed-words" live={false}>{failedLine(landing.failed)}</Problem>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               <Button label="Resend" small onPress={onResend} />
               <Button label="Trouble connecting?" small onPress={onTrouble} />
@@ -502,7 +502,8 @@ export function LandedView({ first, landing, brand, device, home = 'Today', ask 
   const pending = landing.state === 'pending';
   return page(
     <>
-      <View testID="landed-waiting" accessible accessibilityLiveRegion="polite"
+      {/* The queue says each change of the send (WatchProvider): no live region here. */}
+      <View testID="landed-waiting" accessible
         accessibilityLabel={pending ? `${day}’s run arrives at the next sync` : `Sending ${day}’s run to your watch`} style={{ gap: 12 }}>
         {pending ? null : <ActivityIndicator testID="landed-spinner" size="small" color={colors.muted} style={{ alignSelf: 'flex-start' }} />}
         <Text variant="largeTitle" accessibilityRole="header">{pending ? `${day}’s run arrives at the next sync.` : `Sending ${day}’s run to your watch…`}</Text>

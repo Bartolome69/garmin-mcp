@@ -9944,7 +9944,6 @@ exports[`snapshot: session detail on ios: session-ios 1`] = `
         >
           <View
             accessibilityLabel="Not on your watch"
-            accessibilityLiveRegion="polite"
             accessible={true}
             style={
               {

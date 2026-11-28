@@ -1,9 +1,10 @@
 // Accessibility helpers shared by the screens (build prompt, section 9):
 //   - useReduceMotion: the system's Reduce Motion (iOS) / Remove animations (Android)
 //     setting, so a screen can skip an animation it would otherwise run;
-//   - useAnnounce: says a change out loud when it happens (a send that lands or fails, the
-//     Coach's reply when it's finished). Android also has live regions; iOS has only
-//     announcements, so both platforms announce, once per change, never on first draw.
+//   - announce / useAnnounce: says a change out loud when it happens (the Coach's reply when
+//     it's finished; a send's status is said once by the watch queue, WatchProvider). iOS
+//     has no live regions, so these announce on both platforms; a view that is announced
+//     this way carries no live region too, or TalkBack would say it twice.
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
@@ -18,12 +19,17 @@ export function useReduceMotion(): boolean {
   return reduce;
 }
 
+/** Says `words` now, on both platforms. */
+export function announce(words: string): void {
+  AccessibilityInfo.announceForAccessibility?.(words);
+}
+
 /** Announces `words` each time they change after the first draw (null says nothing). */
 export function useAnnounce(words: string | null): void {
   const last = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (last.current === undefined) { last.current = words; return; }
-    if (words && words !== last.current) AccessibilityInfo.announceForAccessibility?.(words);
+    if (words && words !== last.current) announce(words);
     last.current = words;
   }, [words]);
 }

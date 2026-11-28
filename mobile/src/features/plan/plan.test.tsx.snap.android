@@ -10621,7 +10621,6 @@ exports[`snapshot: session detail on android: session-android 1`] = `
         >
           <View
             accessibilityLabel="Not on your watch"
-            accessibilityLiveRegion="polite"
             accessible={true}
             style={
               {

@@ -53,9 +53,10 @@ are left out below unless they matter.
    exactly what Forerunner 965 gets. Nothing else on the watch changes."*, the change (*"Replace,
    Fri 27, …"*), *"Connected to Garmin · synced 07:02"*, *"Confirm and send 1 change"*, *"Back"*.
    Focus can't leave the sheet.
-4. Double-tap *"Confirm and send 1 change"*. Back on Today you should hear the status change
-   announced without moving focus: *"Sending"*, then *"Changed · arrives at next sync"* or *"On
-   your watch · <time>"*.
+4. Double-tap *"Confirm and send 1 change"*. Back on Today you should hear each change of the
+   send announced once, without moving focus: *"Sending to Forerunner 965"*, then *"Changed ·
+   arrives at next sync. Changed your mind? Remove from watch."*, then *"On your watch"* when
+   the watch syncs. Each is said once, even with Plan or the Coach open in another tab.
 5. The toast *"Changed your mind? · Remove from watch"* appears; with a screen reader on it
    stays until dismissed (it doesn't time out).
 
@@ -77,10 +78,12 @@ are left out below unless they matter.
 Use `EXPO_PUBLIC_DAASH_WATCH=fail` (the stand-in watch fails its first try).
 
 1. Send a session from its detail (*"Send to watch"*) and confirm.
-2. You should hear *"Not sent"* announced, and on the card: the reason in words, *"Resend"*,
-   *"Trouble connecting?"*, *"Nothing changed on your watch."* No exclamation marks; the
-   colour is never the only sign (an icon and the words).
-3. Double-tap *"Resend"*: *"Sending"*, then *"On your watch · <time>"*.
+2. You should hear *"Not sent. Garmin didn't answer."* announced, and on the card: the reason
+   in words, *"Resend"*, *"Trouble connecting?"*, *"Nothing changed on your watch."* No
+   exclamation marks; the colour is never the only sign (an icon and the words). A retry Daash
+   makes on its own that fails the same way isn't announced again.
+3. Double-tap *"Resend"*: *"Sending to …"*, then *"Changed · arrives at next sync. Changed your
+   mind? Remove from watch."*
 
 ## 4. Remove from watch
 
@@ -101,8 +104,9 @@ Use `EXPO_PUBLIC_DAASH_WATCH=fail` (the stand-in watch fails its first try).
    *"Week 1"* (heading), each day as one element, then *"Send week 1 to my watch"*.
 3. Confirm sheet: *"5 changes on your watch"*, one line per session, *"Confirm and send 5
    changes"*.
-4. The landing announces *"Sending Monday's run to your watch"*, then the success check
-   (*"Done"*) and only then the notification ask: *"Allow notifications"*, *"Not now"*. The
+4. The landing shows *"Sending Monday's run to your watch"*; you should hear *"Sending to
+   …"*, then *"Changed · arrives at next sync…"* or *"On your watch…"* as week 1 lands (or
+   *"Not sent. …"*), then the success check (*"Done"*) and only then the notification ask: *"Allow notifications"*, *"Not now"*. The
    system's own permission prompt follows *"Allow notifications"*.
 
 ## 6. Coach: ask → proposal → confirm

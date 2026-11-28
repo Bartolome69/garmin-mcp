@@ -217,4 +217,11 @@ describe(`Send states on ${os}`, () => {
     expect(onResend).toHaveBeenCalled();
     expect(onTrouble).toHaveBeenCalled();
   });
+
+  // The queue says each change once, on both platforms (flows.test.tsx, flow 5); a live
+  // region here as well would have TalkBack say it a second time.
+  it.each(['not_sent', 'sending', 'changed_pending_sync', 'on_watch', 'failed'] as const)('%s carries no live region', async (state) => {
+    const { toJSON } = await draw({ state, at: '20:14' }, { error: 'Not sent. Garmin didn’t answer.' });
+    expect(nodes(toJSON()).filter((n) => n.props.accessibilityLiveRegion).map((n) => n.type)).toEqual([]);
+  });
 });

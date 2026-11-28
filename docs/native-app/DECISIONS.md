@@ -1322,8 +1322,11 @@ Built on `claude/native-app-m11` (which holds every earlier milestone), 28 Nov.
   to Training preferences, which has no Clear.
 - Section titles (Connections, Always free, Rule used, Steps, Week 1, the Coach's kickers…)
   are headings, so heading navigation works.
-- Send status is announced when it changes (sending, on the watch, not sent), on both
-  platforms (Android live region and an announcement for iOS, which has no live regions).
+- Send status is announced when it changes (sending, accepted, on the watch, not sent), on
+  both platforms, once per change, by the watch queue (`WatchProvider`), not by each status
+  on screen: Today, a session and the Coach's card can all show the same send, and native
+  tabs keep them mounted. The status views carry no live region, so TalkBack doesn't say it
+  twice. An automatic retry that fails the same way isn't said again (review fix).
 - The Coach's reply had a live region on its text, which would read every streamed word.
   The "Reading your data" / "Writing" status is the live part now, and the finished reply is
   announced once.
