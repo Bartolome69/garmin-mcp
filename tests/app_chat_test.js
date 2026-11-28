@@ -188,6 +188,32 @@ async function open(browser, { chat, device = "iPhone 13", history = [] }) {
     await ctx.close();
   }
 
+  console.log("keyboard on a phone, early in a thread");
+  {
+    const history = [{ id: 1, role: "user", text: "How did this week go?" },
+      { id: 2, role: "assistant", status: "done", text: "Four runs, all easy. What's left is Sunday's 18 km long run." }];
+    const { ctx, page, errors } = await open(browser, { chat: true, device: "Pixel 7", history });
+    await page.goto("http://localhost/app/#/plan");
+    await page.waitForTimeout(1000);
+    await page.click("#tabs a[href='#/chat']");
+    await page.waitForTimeout(800);
+    const full = page.viewportSize();
+    await page.focus("#chat-input");
+    await page.setViewportSize({ width: full.width, height: full.height - 330 });
+    await page.waitForTimeout(400);
+    const l = await page.evaluate(() => {
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+      return { scrollY: window.scrollY, h: window.innerHeight, head: box(".chat-wrap > .section-head"),
+        first: box("#chat-log .msg"), bar: box("#chat-form") };
+    });
+    check("a short thread stays just under the title with the keyboard up, not pushed off the top",
+      l.scrollY === 0 && l.head.top >= 0 && l.first.top >= l.head.bottom && l.first.top < l.head.bottom + 40, JSON.stringify(l));
+    check("and the box is on the keyboard", Math.abs(l.bar.bottom - l.h) <= 2, JSON.stringify(l));
+    await page.screenshot({ path: path.join(SHOTS, "chat-phone-keyboard-short.png") });
+    check("no page threw an error", !errors.length, errors);
+    await ctx.close();
+  }
+
   await browser.close();
   console.log(failed ? `\n${failed} failed` : "\nall checks passed");
   process.exit(failed ? 1 : 0);
