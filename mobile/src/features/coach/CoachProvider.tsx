@@ -11,11 +11,11 @@ import { guardKinds } from '../../domain/replyGuard';
 import { kv } from '../../db/kv';
 import { failureKind, type FailureKind } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
+import { useEntitlement } from '../plus/EntitlementsProvider';
 import { CoachLimitReached, CoachUnavailable, type CoachApi } from './api';
 import { useMemory } from './MemoryProvider';
 import type { MemoryKind } from './memory';
 import { countSend, dayOf, limitFor, mergeThread, retain, type CoachMessage, type ContextTag, type Limit, type SendCount } from './model';
-import { isPlus } from './plus';
 import { CoachApiContext, defaultCoachApi } from './source';
 import { applyEvent, ERROR_WORDS, type Turn } from './sse';
 
@@ -64,6 +64,7 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
   const db = useDb();
   const memory = useMemory();
   const { flags } = useFlags();
+  const entitlement = useEntitlement();
   const on = flags.coach_enabled;
 
   const [messages, setMessages] = useState<CoachMessage[]>([]);
@@ -135,7 +136,10 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
 
   useEffect(() => () => abort.current?.abort(), []);
 
-  const limit = limitFor({ plus: isPlus(flags), dailyLimit: flags.coach_daily_limit, messages, now: clock(), capHit: capHit === dayOf(clock()), counted });
+  // Plus or a running free week: no daily limit (build prompt, sections 1 and 5.10).
+  // Until the cached entitlement is read none is applied either, so a Plus runner never
+  // sees the limit flash up; the server's 429 still stops a free runner's eleventh.
+  const limit = limitFor({ plus: entitlement.plus || !entitlement.ready, dailyLimit: flags.coach_daily_limit, messages, now: clock(), capHit: capHit === dayOf(clock()), counted });
 
   /** The server stored a question from this phone: one more of today's messages, kept through Clear conversation. */
   const countOne = useCallback(() => {

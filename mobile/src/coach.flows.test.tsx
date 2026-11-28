@@ -5,7 +5,7 @@
 //   2. From a run: the question carries the run's tag, and the reply its rep chart
 //   3. A proposal goes through the shared diff and the watch confirm, and nothing before
 //   4. "Not now" declines it on the server; nothing reaches the watch
-//   5. The free limit: 10 a day, the banner, the sheet, See Plus; Plus has none; the server's 429
+//   5. The free limit: 10 a day, the banner, the sheet, See Plus (the paywall, Coach row first); Plus or a free week has none; the server's 429
 //   6. Offline: the banner, sending off; a send that never left is marked, and Send again
 //   7. A reply that fails part way keeps its words, says why, and Try again asks again
 //   8. The phone's guard marks a reply that states a cause; it never rewrites it
@@ -41,6 +41,8 @@ import YouIndex from './app/(tabs)/you/index';
 import YouMemory from './app/(tabs)/you/memory';
 import YouMemoryClear from './app/(tabs)/you/memory-clear';
 import YouMemoryEdit from './app/(tabs)/you/memory-edit';
+import PlusPaywall from './app/plus/index';
+import PlusTrial from './app/plus/trial';
 import WatchConfirm from './app/watch/confirm';
 import { NotSignedIn } from './api/client';
 import { numbersIn, numbersOfPayload } from './domain/replyGuard';
@@ -51,6 +53,9 @@ import { PERSONA_PLAN } from './features/plan/fixture';
 import RUNS from './features/run/runs.fixture.json';
 import { PERSONA_TODAY } from './features/today/fixture';
 import type { ServerMessage } from './features/coach/model';
+import { FREE, type Entitlement } from './features/plus/entitlement';
+import { EntitlementsProvider } from './features/plus/EntitlementsProvider';
+import { FakeStore } from './features/plus/store';
 import { CoachApiContext } from './features/coach/source';
 import PROPOSALS from './features/watch/proposals.fixture.json';
 import { memoryStore } from './features/watch/store';
@@ -64,16 +69,21 @@ const ON: Flags = { ...DEFAULT_FLAGS, coach_enabled: true };
 let queue: WatchContext | null = null;
 function Probe() { queue = useWatch(); return null; }
 
-function app(coach: CoachApi, garmin = new FakeGarmin(), flags: Flags = ON) {
+// The server's entitlement: none (offline) unless a test gives one, so the runner is on Free.
+const noAnswer = async (): Promise<Entitlement> => { throw new Error('offline'); };
+
+function app(coach: CoachApi, garmin = new FakeGarmin(), flags: Flags = ON, entitlement: () => Promise<Entitlement> = noAnswer) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial="dark">
       <FlagsProvider initial={flags}>
-        <WatchProvider transport={garmin} store={memoryStore()} auto={false} pollEveryMs={0}>
-          <CoachApiContext.Provider value={coach}>
-            <Probe />
-            {children ?? <Stack screenOptions={{ headerShown: false }} />}
-          </CoachApiContext.Provider>
-        </WatchProvider>
+        <EntitlementsProvider store={new FakeStore()} fetcher={entitlement} verify={async () => null}>
+          <WatchProvider transport={garmin} store={memoryStore()} auto={false} pollEveryMs={0}>
+            <CoachApiContext.Provider value={coach}>
+              <Probe />
+              {children ?? <Stack screenOptions={{ headerShown: false }} />}
+            </CoachApiContext.Provider>
+          </WatchProvider>
+        </EntitlementsProvider>
       </FlagsProvider>
     </ThemeProvider>
   );
@@ -89,12 +99,13 @@ function app(coach: CoachApi, garmin = new FakeGarmin(), flags: Flags = ON) {
     '(tabs)/crew/index': CrewIndex,
     '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/memory': YouMemory,
     '(tabs)/you/memory-edit': YouMemoryEdit, '(tabs)/you/memory-clear': YouMemoryClear,
+    'plus/index': PlusPaywall, 'plus/trial': PlusTrial,
     'watch/confirm': WatchConfirm,
   };
 }
 
-async function openCoach(coach: CoachApi, garmin?: FakeGarmin, flags?: Flags) {
-  await renderRouter(app(coach, garmin, flags), { initialUrl: '/coach' });
+async function openCoach(coach: CoachApi, garmin?: FakeGarmin, flags?: Flags, entitlement?: () => Promise<Entitlement>) {
+  await renderRouter(app(coach, garmin, flags, entitlement), { initialUrl: '/coach' });
   return screen.findByTestId('coach');
 }
 
@@ -269,13 +280,35 @@ describe('5. The free limit', () => {
     await fireEvent.press(screen.getByTestId('coach-limit'));
     expect(await screen.findByTestId('coach-limit-sheet')).toHaveTextContent(/That’s today’s 10/);
     await fireEvent.press(screen.getByTestId('button-See Plus'));
-    expect(await screen.findByTestId('plan-next')).toBeTruthy();
+    // Daash Plus, with the Coach's row first and the same daily number as the sheet.
+    expect(await screen.findByTestId('paywall')).toBeTruthy();
+    const items = within(screen.getByTestId('plus-items'));
+    expect(items.getAllByLabelText(/, /)[0]).toBe(screen.getByTestId('plus-item-coach'));
+    expect(screen.getByTestId('plus-item-coach').props.accessibilityLabel).toBe('Coach without a daily limit, Free has 10 messages a day');
+    expect(screen.queryByTestId('coach-limit-sheet')).toBeNull();
   });
-  it('Plus: no limit and no count', async () => {
-    await openCoach(new FakeCoach({ messages: today10() }), undefined, { ...ON, plus: true });
+  it('Free (the entitlement says so): 10 a day, counted down', async () => {
+    await openCoach(new FakeCoach({ messages: today10().slice(0, 7) }), undefined, ON, async () => FREE);
+    expect(await screen.findByTestId('coach-remaining')).toHaveTextContent('3 left today');
+    expect(screen.queryByTestId('coach-limit')).toBeNull();
+  });
+  const until = () => Date.now() + 3 * 24 * 60 * 60 * 1000;
+  it.each([
+    ['Plus from the server', async (): Promise<Entitlement> => ({ ...FREE, tier: 'plus', source: 'server', expiresAt: null, willRenew: true })],
+    ['a running free week', async (): Promise<Entitlement> => ({ ...FREE, tier: 'trial', source: 'server', expiresAt: until(), willRenew: true })],
+    ['Plus in the flags', undefined],
+  ] as const)('%s: no limit and no count', async (_name, entitlement) => {
+    const flags = entitlement ? ON : { ...ON, plus: true };
+    await openCoach(new FakeCoach({ messages: today10() }), undefined, flags, entitlement);
     await screen.findByTestId('coach-thread');
     expect(screen.queryByTestId('coach-limit')).toBeNull();
     expect(screen.queryByTestId('coach-remaining')).toBeNull();
+    expect(screen.getByTestId('composer').props.editable).not.toBe(false);
+  });
+  it('a free week that has ended: back to 10 a day', async () => {
+    const ended = async (): Promise<Entitlement> => ({ ...FREE, tier: 'trial', source: 'server', expiresAt: Date.now() - 1000, willRenew: false });
+    await openCoach(new FakeCoach({ messages: today10() }), undefined, ON, ended);
+    expect(await screen.findByTestId('coach-limit')).toBeTruthy();
   });
   it('the server’s 429 counts: the question is marked and the banner shows', async () => {
     const fake = new FakeCoach({ failures: ['cap'] });

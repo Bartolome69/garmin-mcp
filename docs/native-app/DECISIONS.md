@@ -1019,12 +1019,9 @@ guard, 28 Nov. Built on `claude/native-app-m9`, alongside M10 (Plus).
     fine");
   - a proposal already made can still be reviewed and sent.
 
-  Plus has no limit and no count. `isPlus()` in `features/coach/plus.ts` is a
-  stub over `flags.plus`. **TODO(M10 integration):** swap it for M10's
-  entitlements, and `PLUS_HREF` for its paywall route (it goes to the
-  `/plan/next?kind=plus` placeholder, "Plus arrives in milestone 10", so the
-  free-to-Plus path ends there until then). Coach flow 5's See Plus step then
-  expects M10's paywall screen instead of `plan-next`.
+  Plus, or a running free week, has no limit and no count: the Coach reads
+  M10's `useEntitlement()` (see "Integration with milestones 9 and 10" below).
+  "See Plus" opens M10's paywall with `from=coach`.
 - **Offline.** A banner says "Offline · the Coach needs a connection. Your plan
   and runs still work", with Try again; sending is off and the cached thread
   shows. A send that never left is marked "Not sent. No connection." with "Send
@@ -1196,3 +1193,30 @@ guard, 28 Nov. Built on `claude/native-app-m9`, alongside M10 (Plus).
   - `replyGuard.test.ts`, and `tests/domain_test.py`'s guard checks;
   - every new route in the smoke test's SCREENS, light and dark, with the a11y
     checks.
+
+### Integration with milestones 9 and 10 (28 Nov)
+
+M10 and M11 were built in parallel off an early M9 commit; M9 was finished
+afterwards. The stack is now hardening → M9 → M10 → M11, each branch merged
+into the one above it.
+
+- **The Coach's limit reads the real entitlement.** M11's local stub
+  (`features/coach/plus.ts`, `isPlus()` over `flags.plus`) is gone;
+  `CoachProvider` reads `useEntitlement()`. Plus or a running free week: no
+  daily limit and no count. Free, or a free week that has ended: 10 a day (the
+  flags' `coach_daily_limit`). Until the cached entitlement is read no limit is
+  applied, so a Plus runner never sees the banner flash up; the server's 429
+  still stops a free runner's eleventh message.
+- **The limit sheet and the paywall point at each other.** "See Plus" on the
+  limit sheet opens Daash Plus (`openPaywall(router, 'coach')`, the runner's own
+  tap, never mid-flow) with the Coach's row, "Coach without a daily limit · Free
+  has 10 messages a day", first; both read the same flags number. The
+  paywall's opener check (`src/plus.flows.test.tsx`) now lists the limit sheet.
+- **You** has, in the prompt's order: Connections, then the Coach switch and
+  Coach memory (or Training preferences), then Plus. `YouView` takes the Coach
+  section as children and Plus as `plus`.
+- **The root** nests `FlagsProvider` (with the Coach choice store and the live
+  features fetcher from M11) → `EntitlementsProvider` → `WatchProvider`.
+- **Coach ON/OFF parity:** the paywall's Coach row exists only with the Coach
+  (like the tab), so its "10" is set aside in the parity check as chrome, not a
+  number that changes.

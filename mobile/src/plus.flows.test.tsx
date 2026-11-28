@@ -351,10 +351,10 @@ describe('19. Free stays whole', () => {
       .filter((f) => /usePlus|useEntitlement|openPaywall|['"]\/plus/.test(fs.readFileSync(f, 'utf8')));
     expect(gated.map((f) => path.relative(__dirname, f))).toEqual([]);
 
-    // The paywall opens only from a lock or You's Plus row, by the runner's tap.
+    // The paywall opens only from a lock, You's Plus row or the Coach's limit sheet, by the runner's tap.
     const all = walk(__dirname);
     const openers = all.filter((f) => /openPaywall\(/.test(fs.readFileSync(f, 'utf8'))).map((f) => path.relative(__dirname, f)).sort();
-    expect(openers).toEqual(['app/(tabs)/plan/index.tsx', 'app/(tabs)/you/index.tsx', 'app/(tabs)/you/priority.tsx',
+    expect(openers).toEqual(['app/(tabs)/coach/limit.tsx', 'app/(tabs)/plan/index.tsx', 'app/(tabs)/you/index.tsx', 'app/(tabs)/you/priority.tsx',
       'app/(tabs)/you/widgets.tsx', 'features/plus/open.ts'].sort());
     // Only the free week sheet buys.
     const buyers = all.filter((f) => /\.startTrial\(/.test(fs.readFileSync(f, 'utf8'))).map((f) => path.relative(__dirname, f));

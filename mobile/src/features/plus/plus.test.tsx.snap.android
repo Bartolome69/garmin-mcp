@@ -755,6 +755,7 @@ exports[`snapshot: paywall and free week sheet on android: paywall-android 1`] =
               "paddingVertical": 6,
             }
           }
+          testID="plus-item-coach"
         >
           <View
             accessible={false}

@@ -72,7 +72,13 @@ describe.each(['dark', 'light'] as const)(`Paywall on ${os}, %s`, (scheme) => {
 
 describe(`Paywall copy on ${os}`, () => {
   it('Coach on: the daily limit line, with the flags’ number', () => {
-    expect(plusItems(true, 12, os).at(-1)).toEqual({ title: 'Coach without a daily limit', sub: 'Free has 12 messages a day' });
+    expect(plusItems(true, 12, os).at(-1)).toEqual({ id: 'coach', title: 'Coach without a daily limit', sub: 'Free has 12 messages a day' });
+    // From the Coach's limit sheet the Coach's row comes first; the rest keep their order.
+    const led = plusItems(true, 12, os, 'coach');
+    expect(led[0].id).toBe('coach');
+    expect(led.slice(1)).toEqual(plusItems(true, 12, os).slice(0, -1));
+    // Asked to lead with the Coach while it's off: nothing to lead with, nothing added.
+    expect(plusItems(false, 12, os, 'coach')).toEqual(plusItems(false, 12, os));
     // Android phones have no lock screen widgets.
     expect(plusItems(false, 12, os).map((i) => i.title)).toEqual(
       ['Race prediction trend', 'Advanced plan styles', 'Advanced merge rules', os === 'android' ? 'Home screen widgets' : 'Home and lock screen widgets']);

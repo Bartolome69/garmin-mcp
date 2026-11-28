@@ -169,6 +169,7 @@ export const SCREENS: [string, string, string][] = [
   ['Widgets setup', '/you/widgets', 'widgets'],
   ['Plus feature to come (You)', '/you/coming', 'you-coming'],
   ['Plus (paywall)', '/plus?from=you', 'paywall'],
+  ['Plus (paywall) from the Coach’s limit', '/plus?from=coach', 'paywall'],
   ['Plus · free week sheet', '/plus/trial', 'trial-sheet'],
   ['Coach', '/coach', 'coach'],
   ['Coach · from a run', '/coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m', 'coach'],
@@ -312,7 +313,8 @@ function payloadFor(url: string): Set<string> {
 const COACH_TAB_NUMBERS = numbersOfPayload([RUN_CASES['2026-11-25-intervals'], PERSONA_PLAN, PROPOSALS,
   COACH_MESSAGES().map((m) => (m.role === 'assistant' || m.role === 'action' ? [m.chart, m.context, m.request] : [m.text, m.context]))]);
 // The Coach thread's own chrome, not training numbers: a day separator's clock time, and how many free messages are left today.
-const CHROME = new Set(['coach-day', 'coach-remaining']);
+// The paywall's Coach row ("Free has 10 messages a day") is there only with the Coach, like the tab: a feature's line, not a number that changes.
+const CHROME = new Set(['coach-day', 'coach-remaining', 'plus-item-coach']);
 type Where = 'plain' | 'slot' | 'tab';
 function numbersSplit(tree: unknown) {
   const out: Record<Where, string[]> = { plain: [], slot: [], tab: [] };

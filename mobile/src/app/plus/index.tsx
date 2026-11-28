@@ -7,7 +7,8 @@ import { restoreWords, useEntitlement } from '../../features/plus/EntitlementsPr
 import { PaywallView } from '../../features/plus/PaywallView';
 import { useFlags } from '../../flags/FlagsProvider';
 
-// Daash Plus, over whichever tab asked (a lock, or You's Plus row).
+// Daash Plus, over whichever tab asked (a lock, You's Plus row, or the Coach's limit sheet,
+// which puts the Coach's row first).
 export default function PaywallScreen() {
   const { from } = useLocalSearchParams<{ from?: string }>();
   const e = useEntitlement();
@@ -27,6 +28,7 @@ export default function PaywallScreen() {
     <PaywallView
       coach={flags.coach_enabled}
       coachLimit={flags.coach_daily_limit}
+      lead={from === 'coach' ? 'coach' : undefined}
       plus={e.plus}
       canManage={!!e.manageUrl}
       trialOffered={trialOffered}
