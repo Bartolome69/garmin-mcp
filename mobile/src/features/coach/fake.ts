@@ -10,7 +10,7 @@ import RUNS from '../run/runs.fixture.json';
 import type { RunVM } from '../run/model';
 import { CoachLimitReached, type CoachApi, type SendBody, type ThreadAnswer } from './api';
 import type { InlineChart, ServerMessage } from './model';
-import type { CoachEvent } from './sse';
+import { ERROR_WORDS, type CoachEvent } from './sse';
 
 export const STARTERS = ['Why Back off?', 'How’s my week?', 'Should I still do the tempo?', 'Make it easier'];
 
@@ -119,7 +119,7 @@ export class FakeCoach implements CoachApi {
     if (failure === 'error') {
       onEvent({ type: 'delta', text: s.text.split('. ')[0] + '.' });
       this.messages.push({ id, role: 'assistant', text: s.text.split('. ')[0] + '.', status: 'partial' });
-      onEvent({ type: 'error', code: 'provider', message: 'The AI service isn’t answering right now. Try again in a minute.' });
+      onEvent({ type: 'error', code: 'provider', message: ERROR_WORDS.provider });
       return;
     }
     const words = s.text.split(' ');

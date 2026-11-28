@@ -1,0 +1,3599 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`The Coach on android, dark one thread: older days collapsed, today with its tags, a reply with a chart and sources, a proposal card: coach-dark-android 1`] = `
+<View
+  onLayout={[Function]}
+  style={
+    {
+      "backgroundColor": "#161614",
+      "flex": 1,
+    }
+  }
+  testID="coach"
+>
+  <RCTScrollView
+    contentContainerStyle={
+      {
+        "gap": 10,
+        "padding": 16,
+      }
+    }
+    contentInsetAdjustmentBehavior="automatic"
+    keyboardDismissMode="interactive"
+    style={
+      {
+        "flex": 1,
+      }
+    }
+    testID="coach-thread"
+  >
+    <View>
+      <View
+        accessibilityLabel="Earlier · 2 messages since Wed. Show"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "borderColor": "#3A3936",
+            "borderRadius": 999,
+            "borderStyle": "dashed",
+            "borderWidth": 1,
+            "flexDirection": "row",
+            "gap": 8,
+            "justifyContent": "center",
+            "minHeight": 48,
+            "paddingHorizontal": 12,
+          }
+        }
+        testID="coach-earlier"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 12,
+                "lineHeight": 16,
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Earlier · 2 messages since Wed
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 12,
+                "lineHeight": 16,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "fontWeight": "600",
+              },
+            ]
+          }
+        >
+          Show
+        </Text>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "GeistMono_500Medium",
+              "fontSize": 12,
+              "letterSpacing": 0.6,
+              "lineHeight": 16,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#A6A59F",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            {
+              "alignSelf": "center",
+              "paddingVertical": 4,
+            },
+          ]
+        }
+        testID="coach-day"
+      >
+        Today · 07:00
+      </Text>
+      <View
+        style={
+          {
+            "alignSelf": "stretch",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="From Today · Back off"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "alignSelf": "flex-end",
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 999,
+              "flexDirection": "row",
+              "gap": 6,
+              "minHeight": 28,
+              "paddingHorizontal": 10,
+              "paddingVertical": 4,
+            }
+          }
+          testID="context-tag"
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#A6A59F",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 11,
+                  "fontWeight": "500",
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            From Today · Back off
+          </Text>
+        </View>
+        <View
+          style={
+            {
+              "alignSelf": "flex-end",
+              "backgroundColor": "#4A4844",
+              "borderBottomRightRadius": 6,
+              "borderRadius": 18,
+              "maxWidth": "85%",
+              "opacity": 1,
+              "paddingHorizontal": 14,
+              "paddingVertical": 12,
+            }
+          }
+          testID="question-3"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 16,
+                  "lineHeight": 24,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Should I still do the tempo? I feel fine.
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLiveRegion="none"
+        style={
+          {
+            "alignSelf": "flex-start",
+            "backgroundColor": "#222220",
+            "borderBottomLeftRadius": 6,
+            "borderColor": "#3A3936",
+            "borderRadius": 18,
+            "borderWidth": 1,
+            "maxWidth": "92%",
+            "padding": 14,
+            "paddingVertical": 12,
+          }
+        }
+        testID="coach-reply-4"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "SourceSerif4_400Regular",
+                "fontSize": 16,
+                "lineHeight": 24,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              undefined,
+            ]
+          }
+          testID="reply-text-4"
+        >
+          Your call. HRV has been under your range of 54–66 ms for two nights: 52 and 49 ms.
+        </Text>
+        <View
+          accessibilityLabel="HRV, last 7 nights: 64, 61, 60, 58, 56, 52, 49 ms. Below your range of 54 to 66 on the last 2."
+          accessibilityRole="image"
+          accessible={true}
+          style={
+            {
+              "backgroundColor": "#2C2B28",
+              "borderRadius": 12,
+              "gap": 4,
+              "marginTop": 8,
+              "padding": 10,
+              "paddingBottom": 6,
+            }
+          }
+          testID="chart-4"
+        >
+          <View
+            style={
+              {
+                "flexDirection": "row",
+                "gap": 8,
+                "justifyContent": "space-between",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "flexShrink": 1,
+                  },
+                ]
+              }
+            >
+              HRV, last 7 nights
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  {
+                    "fontVariant": [
+                      "tabular-nums",
+                    ],
+                  },
+                  undefined,
+                ]
+              }
+            >
+              range 54–66
+            </Text>
+          </View>
+          <RNSVGSvgViewAndroid
+            align="xMidYMid"
+            bbHeight={72}
+            bbWidth="100%"
+            focusable={false}
+            height={72}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 72,
+                  "width": "100%",
+                },
+              ]
+            }
+            vbHeight={72}
+            vbWidth={260}
+            width="100%"
+          >
+            <RNSVGGroup
+              fill={
+                {
+                  "payload": -16777216,
+                  "type": 0,
+                }
+              }
+            >
+              <RNSVGRect
+                fill={
+                  {
+                    "payload": 697090191,
+                    "type": 0,
+                  }
+                }
+                height={26.0633484162896}
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                width={260}
+                x={0}
+                y={13.538461538461533}
+              />
+              <RNSVGPath
+                d="M8 17.882352941176464 48.666666666666664 24.398190045248867 89.33333333333333 26.570135746606333 130 30.914027149321264 170.66666666666666 35.2579185520362 211.33333333333334 43.94570135746606 252 50.46153846153847"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": -723986,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={2}
+              />
+              <RNSVGCircle
+                cx={211.33333333333334}
+                cy={43.94570135746606}
+                fill={
+                  {
+                    "payload": -1522849,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                r={3.5}
+                stroke={
+                  {
+                    "payload": -723986,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1}
+              />
+              <RNSVGCircle
+                cx={252}
+                cy={50.46153846153847}
+                fill={
+                  {
+                    "payload": -1522849,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                r={3.5}
+                stroke={
+                  {
+                    "payload": -723986,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1}
+              />
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    8,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Sat"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    48.666666666666664,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Sun"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    89.33333333333333,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Mon"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    130,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Tue"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    170.66666666666666,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Wed"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    211.33333333333334,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Thu"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    252,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Fri"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+            </RNSVGGroup>
+          </RNSVGSvgViewAndroid>
+        </View>
+        <View
+          accessibilityLabel="Sources: HRV · Garmin, Sleep · Garmin"
+          accessible={true}
+          style={
+            {
+              "flexDirection": "row",
+              "flexWrap": "wrap",
+              "gap": 6,
+              "marginTop": 8,
+            }
+          }
+          testID="sources"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#3A3936",
+                "borderRadius": 6,
+                "borderWidth": 1,
+                "paddingHorizontal": 6,
+                "paddingVertical": 1,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              HRV · Garmin
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "borderColor": "#3A3936",
+                "borderRadius": 6,
+                "borderWidth": 1,
+                "paddingHorizontal": 6,
+                "paddingVertical": 1,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Sleep · Garmin
+            </Text>
+          </View>
+        </View>
+        <View
+          style={
+            {
+              "flexDirection": "row",
+              "gap": 10,
+              "marginTop": 10,
+            }
+          }
+        >
+          <View
+            accessibilityLabel="Helpful"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": true,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={7}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "#2C2B28",
+                "borderColor": "#F4F3EE",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "height": 34,
+                "justifyContent": "center",
+                "width": 34,
+              }
+            }
+            testID="thumb-up"
+          >
+            <View
+              accessible={false}
+              collapsable={false}
+              importantForAccessibility="no-hide-descendants"
+              style={
+                [
+                  {
+                    "height": 24,
+                    "width": 24,
+                  },
+                  undefined,
+                ]
+              }
+            >
+              <Text
+                aria-hidden={true}
+                style={
+                  {
+                    "color": "#F4F3EE",
+                    "fontFamily": "MaterialSymbols_400Regular",
+                    "fontSize": 24,
+                    "lineHeight": 24,
+                  }
+                }
+              >
+                
+              </Text>
+            </View>
+          </View>
+          <View
+            accessibilityLabel="Not helpful"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": false,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={7}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#3A3936",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "height": 34,
+                "justifyContent": "center",
+                "width": 34,
+              }
+            }
+            testID="thumb-down"
+          >
+            <View
+              accessible={false}
+              collapsable={false}
+              importantForAccessibility="no-hide-descendants"
+              style={
+                [
+                  {
+                    "height": 24,
+                    "width": 24,
+                  },
+                  undefined,
+                ]
+              }
+            >
+              <Text
+                aria-hidden={true}
+                style={
+                  {
+                    "color": "#A6A59F",
+                    "fontFamily": "MaterialSymbols_400Regular",
+                    "fontSize": 24,
+                    "lineHeight": 24,
+                  }
+                }
+              >
+                
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "alignSelf": "stretch",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignSelf": "flex-end",
+              "backgroundColor": "#4A4844",
+              "borderBottomRightRadius": 6,
+              "borderRadius": 18,
+              "maxWidth": "85%",
+              "opacity": 1,
+              "paddingHorizontal": 14,
+              "paddingVertical": 12,
+            }
+          }
+          testID="question-5"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 16,
+                  "lineHeight": 24,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Make it easier then.
+          </Text>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "alignSelf": "stretch",
+            "backgroundColor": "#222220",
+            "borderColor": "#3A3936",
+            "borderRadius": 16,
+            "borderWidth": 1,
+            "gap": 10,
+            "padding": 16,
+          }
+        }
+        testID="proposal-6"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#A6A59F",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Proposed change
+        </Text>
+        <View
+          style={
+            {
+              "gap": 4,
+            }
+          }
+          testID="proposal-days-6"
+        >
+          <View
+            accessibilityLabel="FRI 27: 3 × 2 km at threshold, becomes Easy 6 km"
+            accessible={true}
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 8,
+                "minHeight": 32,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={1.5}
+              style={
+                [
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 12,
+                    "letterSpacing": 0.6,
+                    "lineHeight": 16,
+                    "textTransform": "uppercase",
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "width": 52,
+                  },
+                ]
+              }
+            >
+              FRI 27
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              numberOfLines={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "flex": 1,
+                    "textDecorationLine": "line-through",
+                  },
+                ]
+              }
+            >
+              3 × 2 km at threshold
+            </Text>
+            <View
+              style={
+                {
+                  "backgroundColor": "#8CC08F",
+                  "borderColor": "#9A9993",
+                  "borderRadius": 2,
+                  "borderStyle": "dashed",
+                  "borderWidth": 0,
+                  "height": 16,
+                  "width": 4,
+                }
+              }
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              numberOfLines={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "flex": 1,
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Easy 6 km
+            </Text>
+          </View>
+        </View>
+        <View
+          style={
+            {
+              "flexDirection": "row",
+              "flexWrap": "wrap",
+              "gap": 8,
+            }
+          }
+        >
+          <View
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              [
+                {
+                  "alignItems": "center",
+                  "backgroundColor": "#DD2C25",
+                  "borderColor": "#DD2C25",
+                  "borderRadius": 999,
+                  "borderWidth": 1,
+                  "flexBasis": "auto",
+                  "flexDirection": "row",
+                  "flexGrow": 0,
+                  "gap": 6,
+                  "justifyContent": "center",
+                  "minHeight": 48,
+                  "opacity": 1,
+                  "paddingHorizontal": 14,
+                },
+                undefined,
+              ]
+            }
+            testID="button-Review 1 watch change"
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#FFFFFF",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                    "textAlign": "center",
+                  },
+                ]
+              }
+            >
+              Review 1 watch change
+            </Text>
+          </View>
+          <View
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              [
+                {
+                  "alignItems": "center",
+                  "backgroundColor": "transparent",
+                  "borderColor": "#A6A59F",
+                  "borderRadius": 999,
+                  "borderWidth": 1,
+                  "flexBasis": "auto",
+                  "flexDirection": "row",
+                  "flexGrow": 0,
+                  "gap": 6,
+                  "justifyContent": "center",
+                  "minHeight": 48,
+                  "opacity": 1,
+                  "paddingHorizontal": 14,
+                },
+                undefined,
+              ]
+            }
+            testID="button-Not now"
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                    "textAlign": "center",
+                  },
+                ]
+              }
+            >
+              Not now
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  </RCTScrollView>
+  <View
+    style={
+      {
+        "backgroundColor": "#161614",
+        "borderTopColor": "#3A3936",
+        "borderTopWidth": 1,
+        "gap": 6,
+        "paddingBottom": 10,
+        "paddingTop": 8,
+      }
+    }
+    testID="coach-dock"
+  >
+    <RCTScrollView
+      contentContainerStyle={
+        {
+          "gap": 8,
+          "paddingHorizontal": 16,
+        }
+      }
+      horizontal={true}
+      showsHorizontalScrollIndicator={false}
+      testID="coach-chips"
+    >
+      <View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": false,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+            }
+          }
+          testID="chip-Why Back off?"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#A6A59F",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "justifyContent": "center",
+                "minHeight": 34,
+                "paddingHorizontal": 14,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "500",
+                  },
+                ]
+              }
+            >
+              Why Back off?
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": false,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+            }
+          }
+          testID="chip-How’s my week?"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#A6A59F",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "justifyContent": "center",
+                "minHeight": 34,
+                "paddingHorizontal": 14,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "500",
+                  },
+                ]
+              }
+            >
+              How’s my week?
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": false,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+            }
+          }
+          testID="chip-Move Sunday"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#A6A59F",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "justifyContent": "center",
+                "minHeight": 34,
+                "paddingHorizontal": 14,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "500",
+                  },
+                ]
+              }
+            >
+              Move Sunday
+            </Text>
+          </View>
+        </View>
+      </View>
+    </RCTScrollView>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "backgroundColor": "#222220",
+          "borderColor": "#3A3936",
+          "borderRadius": 24,
+          "borderWidth": 1,
+          "flexDirection": "row",
+          "gap": 8,
+          "marginHorizontal": 16,
+          "minHeight": 56,
+          "paddingLeft": 16,
+          "paddingRight": 4,
+        }
+      }
+    >
+      <TextInput
+        accessibilityLabel="Message the Coach"
+        editable={true}
+        multiline={true}
+        onChangeText={[Function]}
+        placeholder="Ask the Coach"
+        placeholderTextColor="#A6A59F"
+        style={
+          {
+            "color": "#F4F3EE",
+            "flex": 1,
+            "fontSize": 16,
+            "maxHeight": 120,
+            "paddingVertical": 10,
+          }
+        }
+        testID="composer"
+        value=""
+      />
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "500",
+              "lineHeight": 16,
+            },
+            {
+              "color": "#A6A59F",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            undefined,
+          ]
+        }
+        testID="coach-remaining"
+      >
+        7 left today
+      </Text>
+      <View
+        accessibilityLabel="Send"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": true,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "height": 48,
+            "justifyContent": "center",
+            "opacity": 0.4,
+            "width": 48,
+          }
+        }
+        testID="coach-send"
+      >
+        <View
+          accessible={false}
+          collapsable={false}
+          importantForAccessibility="no-hide-descendants"
+          style={
+            [
+              {
+                "height": 24,
+                "width": 24,
+              },
+              undefined,
+            ]
+          }
+        >
+          <Text
+            aria-hidden={true}
+            style={
+              {
+                "color": "#A6A59F",
+                "fontFamily": "MaterialSymbols_400Regular",
+                "fontSize": 24,
+                "lineHeight": 24,
+              }
+            }
+          >
+            
+          </Text>
+        </View>
+      </View>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`The Coach on android, light one thread: older days collapsed, today with its tags, a reply with a chart and sources, a proposal card: coach-light-android 1`] = `
+<View
+  onLayout={[Function]}
+  style={
+    {
+      "backgroundColor": "#F5F4F0",
+      "flex": 1,
+    }
+  }
+  testID="coach"
+>
+  <RCTScrollView
+    contentContainerStyle={
+      {
+        "gap": 10,
+        "padding": 16,
+      }
+    }
+    contentInsetAdjustmentBehavior="automatic"
+    keyboardDismissMode="interactive"
+    style={
+      {
+        "flex": 1,
+      }
+    }
+    testID="coach-thread"
+  >
+    <View>
+      <View
+        accessibilityLabel="Earlier · 2 messages since Wed. Show"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "borderColor": "#DEDCD5",
+            "borderRadius": 999,
+            "borderStyle": "dashed",
+            "borderWidth": 1,
+            "flexDirection": "row",
+            "gap": 8,
+            "justifyContent": "center",
+            "minHeight": 48,
+            "paddingHorizontal": 12,
+          }
+        }
+        testID="coach-earlier"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 12,
+                "lineHeight": 16,
+              },
+              {
+                "color": "#5E5D57",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Earlier · 2 messages since Wed
+        </Text>
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 12,
+                "lineHeight": 16,
+              },
+              {
+                "color": "#161614",
+              },
+              false,
+              {
+                "fontWeight": "600",
+              },
+            ]
+          }
+        >
+          Show
+        </Text>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "GeistMono_500Medium",
+              "fontSize": 12,
+              "letterSpacing": 0.6,
+              "lineHeight": 16,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#5E5D57",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            {
+              "alignSelf": "center",
+              "paddingVertical": 4,
+            },
+          ]
+        }
+        testID="coach-day"
+      >
+        Today · 07:00
+      </Text>
+      <View
+        style={
+          {
+            "alignSelf": "stretch",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          accessibilityLabel="From Today · Back off"
+          accessible={true}
+          style={
+            {
+              "alignItems": "center",
+              "alignSelf": "flex-end",
+              "backgroundColor": "#ECEAE4",
+              "borderRadius": 999,
+              "flexDirection": "row",
+              "gap": 6,
+              "minHeight": 28,
+              "paddingHorizontal": 10,
+              "paddingVertical": 4,
+            }
+          }
+          testID="context-tag"
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#5E5D57",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 11,
+                  "fontWeight": "500",
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#5E5D57",
+                },
+                {
+                  "fontVariant": [
+                    "tabular-nums",
+                  ],
+                },
+                {
+                  "flexShrink": 1,
+                },
+              ]
+            }
+          >
+            From Today · Back off
+          </Text>
+        </View>
+        <View
+          style={
+            {
+              "alignSelf": "flex-end",
+              "backgroundColor": "#C9C6BE",
+              "borderBottomRightRadius": 6,
+              "borderRadius": 18,
+              "maxWidth": "85%",
+              "opacity": 1,
+              "paddingHorizontal": 14,
+              "paddingVertical": 12,
+            }
+          }
+          testID="question-3"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 16,
+                  "lineHeight": 24,
+                },
+                {
+                  "color": "#161614",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Should I still do the tempo? I feel fine.
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLiveRegion="none"
+        style={
+          {
+            "alignSelf": "flex-start",
+            "backgroundColor": "#FFFFFF",
+            "borderBottomLeftRadius": 6,
+            "borderColor": "#DEDCD5",
+            "borderRadius": 18,
+            "borderWidth": 1,
+            "maxWidth": "92%",
+            "padding": 14,
+            "paddingVertical": 12,
+          }
+        }
+        testID="coach-reply-4"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "SourceSerif4_400Regular",
+                "fontSize": 16,
+                "lineHeight": 24,
+              },
+              {
+                "color": "#161614",
+              },
+              false,
+              undefined,
+            ]
+          }
+          testID="reply-text-4"
+        >
+          Your call. HRV has been under your range of 54–66 ms for two nights: 52 and 49 ms.
+        </Text>
+        <View
+          accessibilityLabel="HRV, last 7 nights: 64, 61, 60, 58, 56, 52, 49 ms. Below your range of 54 to 66 on the last 2."
+          accessibilityRole="image"
+          accessible={true}
+          style={
+            {
+              "backgroundColor": "#ECEAE4",
+              "borderRadius": 12,
+              "gap": 4,
+              "marginTop": 8,
+              "padding": 10,
+              "paddingBottom": 6,
+            }
+          }
+          testID="chart-4"
+        >
+          <View
+            style={
+              {
+                "flexDirection": "row",
+                "gap": 8,
+                "justifyContent": "space-between",
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#5E5D57",
+                  },
+                  false,
+                  {
+                    "flexShrink": 1,
+                  },
+                ]
+              }
+            >
+              HRV, last 7 nights
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#5E5D57",
+                  },
+                  {
+                    "fontVariant": [
+                      "tabular-nums",
+                    ],
+                  },
+                  undefined,
+                ]
+              }
+            >
+              range 54–66
+            </Text>
+          </View>
+          <RNSVGSvgViewAndroid
+            align="xMidYMid"
+            bbHeight={72}
+            bbWidth="100%"
+            focusable={false}
+            height={72}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 72,
+                  "width": "100%",
+                },
+              ]
+            }
+            vbHeight={72}
+            vbWidth={260}
+            width="100%"
+          >
+            <RNSVGGroup
+              fill={
+                {
+                  "payload": -16777216,
+                  "type": 0,
+                }
+              }
+            >
+              <RNSVGRect
+                fill={
+                  {
+                    "payload": 438988848,
+                    "type": 0,
+                  }
+                }
+                height={26.0633484162896}
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                width={260}
+                x={0}
+                y={13.538461538461533}
+              />
+              <RNSVGPath
+                d="M8 17.882352941176464 48.666666666666664 24.398190045248867 89.33333333333333 26.570135746606333 130 30.914027149321264 170.66666666666666 35.2579185520362 211.33333333333334 43.94570135746606 252 50.46153846153847"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": -15329772,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={2}
+              />
+              <RNSVGCircle
+                cx={211.33333333333334}
+                cy={43.94570135746606}
+                fill={
+                  {
+                    "payload": -8431104,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                r={3.5}
+                stroke={
+                  {
+                    "payload": -15329772,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1}
+              />
+              <RNSVGCircle
+                cx={252}
+                cy={50.46153846153847}
+                fill={
+                  {
+                    "payload": -8431104,
+                    "type": 0,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                r={3.5}
+                stroke={
+                  {
+                    "payload": -15329772,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={1}
+              />
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -10592937,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    8,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Sat"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -10592937,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    48.666666666666664,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Sun"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -10592937,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    89.33333333333333,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Mon"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -10592937,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    130,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Tue"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -10592937,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    170.66666666666666,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Wed"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -10592937,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    211.33333333333334,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Thu"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -10592937,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 9,
+                    "textAnchor": "middle",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    252,
+                  ]
+                }
+                y={
+                  [
+                    70,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content="Fri"
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+            </RNSVGGroup>
+          </RNSVGSvgViewAndroid>
+        </View>
+        <View
+          accessibilityLabel="Sources: HRV · Garmin, Sleep · Garmin"
+          accessible={true}
+          style={
+            {
+              "flexDirection": "row",
+              "flexWrap": "wrap",
+              "gap": 6,
+              "marginTop": 8,
+            }
+          }
+          testID="sources"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#DEDCD5",
+                "borderRadius": 6,
+                "borderWidth": 1,
+                "paddingHorizontal": 6,
+                "paddingVertical": 1,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#5E5D57",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              HRV · Garmin
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "borderColor": "#DEDCD5",
+                "borderRadius": 6,
+                "borderWidth": 1,
+                "paddingHorizontal": 6,
+                "paddingVertical": 1,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#5E5D57",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Sleep · Garmin
+            </Text>
+          </View>
+        </View>
+        <View
+          style={
+            {
+              "flexDirection": "row",
+              "gap": 10,
+              "marginTop": 10,
+            }
+          }
+        >
+          <View
+            accessibilityLabel="Helpful"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": true,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={7}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "#ECEAE4",
+                "borderColor": "#161614",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "height": 34,
+                "justifyContent": "center",
+                "width": 34,
+              }
+            }
+            testID="thumb-up"
+          >
+            <View
+              accessible={false}
+              collapsable={false}
+              importantForAccessibility="no-hide-descendants"
+              style={
+                [
+                  {
+                    "height": 24,
+                    "width": 24,
+                  },
+                  undefined,
+                ]
+              }
+            >
+              <Text
+                aria-hidden={true}
+                style={
+                  {
+                    "color": "#161614",
+                    "fontFamily": "MaterialSymbols_400Regular",
+                    "fontSize": 24,
+                    "lineHeight": 24,
+                  }
+                }
+              >
+                
+              </Text>
+            </View>
+          </View>
+          <View
+            accessibilityLabel="Not helpful"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": false,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            hitSlop={7}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#DEDCD5",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "height": 34,
+                "justifyContent": "center",
+                "width": 34,
+              }
+            }
+            testID="thumb-down"
+          >
+            <View
+              accessible={false}
+              collapsable={false}
+              importantForAccessibility="no-hide-descendants"
+              style={
+                [
+                  {
+                    "height": 24,
+                    "width": 24,
+                  },
+                  undefined,
+                ]
+              }
+            >
+              <Text
+                aria-hidden={true}
+                style={
+                  {
+                    "color": "#5E5D57",
+                    "fontFamily": "MaterialSymbols_400Regular",
+                    "fontSize": 24,
+                    "lineHeight": 24,
+                  }
+                }
+              >
+                
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "alignSelf": "stretch",
+            "gap": 6,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignSelf": "flex-end",
+              "backgroundColor": "#C9C6BE",
+              "borderBottomRightRadius": 6,
+              "borderRadius": 18,
+              "maxWidth": "85%",
+              "opacity": 1,
+              "paddingHorizontal": 14,
+              "paddingVertical": 12,
+            }
+          }
+          testID="question-5"
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 16,
+                  "lineHeight": 24,
+                },
+                {
+                  "color": "#161614",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Make it easier then.
+          </Text>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "alignSelf": "stretch",
+            "backgroundColor": "#FFFFFF",
+            "borderColor": "#DEDCD5",
+            "borderRadius": 16,
+            "borderWidth": 1,
+            "gap": 10,
+            "padding": 16,
+          }
+        }
+        testID="proposal-6"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontFamily": "GeistMono_500Medium",
+                "fontSize": 12,
+                "letterSpacing": 0.6,
+                "lineHeight": 16,
+                "textTransform": "uppercase",
+              },
+              {
+                "color": "#5E5D57",
+              },
+              false,
+              undefined,
+            ]
+          }
+        >
+          Proposed change
+        </Text>
+        <View
+          style={
+            {
+              "gap": 4,
+            }
+          }
+          testID="proposal-days-6"
+        >
+          <View
+            accessibilityLabel="FRI 27: 3 × 2 km at threshold, becomes Easy 6 km"
+            accessible={true}
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 8,
+                "minHeight": 32,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={1.5}
+              style={
+                [
+                  {
+                    "fontFamily": "GeistMono_500Medium",
+                    "fontSize": 12,
+                    "letterSpacing": 0.6,
+                    "lineHeight": 16,
+                    "textTransform": "uppercase",
+                  },
+                  {
+                    "color": "#5E5D57",
+                  },
+                  false,
+                  {
+                    "width": 52,
+                  },
+                ]
+              }
+            >
+              FRI 27
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              numberOfLines={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#5E5D57",
+                  },
+                  false,
+                  {
+                    "flex": 1,
+                    "textDecorationLine": "line-through",
+                  },
+                ]
+              }
+            >
+              3 × 2 km at threshold
+            </Text>
+            <View
+              style={
+                {
+                  "backgroundColor": "#2A7030",
+                  "borderColor": "#8A8982",
+                  "borderRadius": 2,
+                  "borderStyle": "dashed",
+                  "borderWidth": 0,
+                  "height": 16,
+                  "width": 4,
+                }
+              }
+            />
+            <Text
+              maxFontSizeMultiplier={2}
+              numberOfLines={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#161614",
+                  },
+                  false,
+                  {
+                    "flex": 1,
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Easy 6 km
+            </Text>
+          </View>
+        </View>
+        <View
+          style={
+            {
+              "flexDirection": "row",
+              "flexWrap": "wrap",
+              "gap": 8,
+            }
+          }
+        >
+          <View
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              [
+                {
+                  "alignItems": "center",
+                  "backgroundColor": "#C8251E",
+                  "borderColor": "#C8251E",
+                  "borderRadius": 999,
+                  "borderWidth": 1,
+                  "flexBasis": "auto",
+                  "flexDirection": "row",
+                  "flexGrow": 0,
+                  "gap": 6,
+                  "justifyContent": "center",
+                  "minHeight": 48,
+                  "opacity": 1,
+                  "paddingHorizontal": 14,
+                },
+                undefined,
+              ]
+            }
+            testID="button-Review 1 watch change"
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#FFFFFF",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                    "textAlign": "center",
+                  },
+                ]
+              }
+            >
+              Review 1 watch change
+            </Text>
+          </View>
+          <View
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              [
+                {
+                  "alignItems": "center",
+                  "backgroundColor": "transparent",
+                  "borderColor": "#5E5D57",
+                  "borderRadius": 999,
+                  "borderWidth": 1,
+                  "flexBasis": "auto",
+                  "flexDirection": "row",
+                  "flexGrow": 0,
+                  "gap": 6,
+                  "justifyContent": "center",
+                  "minHeight": 48,
+                  "opacity": 1,
+                  "paddingHorizontal": 14,
+                },
+                undefined,
+              ]
+            }
+            testID="button-Not now"
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#161614",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                    "textAlign": "center",
+                  },
+                ]
+              }
+            >
+              Not now
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  </RCTScrollView>
+  <View
+    style={
+      {
+        "backgroundColor": "#F5F4F0",
+        "borderTopColor": "#DEDCD5",
+        "borderTopWidth": 1,
+        "gap": 6,
+        "paddingBottom": 10,
+        "paddingTop": 8,
+      }
+    }
+    testID="coach-dock"
+  >
+    <RCTScrollView
+      contentContainerStyle={
+        {
+          "gap": 8,
+          "paddingHorizontal": 16,
+        }
+      }
+      horizontal={true}
+      showsHorizontalScrollIndicator={false}
+      testID="coach-chips"
+    >
+      <View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": false,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+            }
+          }
+          testID="chip-Why Back off?"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#5E5D57",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "justifyContent": "center",
+                "minHeight": 34,
+                "paddingHorizontal": 14,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#161614",
+                  },
+                  false,
+                  {
+                    "fontWeight": "500",
+                  },
+                ]
+              }
+            >
+              Why Back off?
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": false,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+            }
+          }
+          testID="chip-How’s my week?"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#5E5D57",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "justifyContent": "center",
+                "minHeight": 34,
+                "paddingHorizontal": 14,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#161614",
+                  },
+                  false,
+                  {
+                    "fontWeight": "500",
+                  },
+                ]
+              }
+            >
+              How’s my week?
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": false,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+            }
+          }
+          testID="chip-Move Sunday"
+        >
+          <View
+            style={
+              {
+                "borderColor": "#5E5D57",
+                "borderRadius": 999,
+                "borderWidth": 1,
+                "justifyContent": "center",
+                "minHeight": 34,
+                "paddingHorizontal": 14,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 14,
+                    "lineHeight": 20,
+                  },
+                  {
+                    "color": "#161614",
+                  },
+                  false,
+                  {
+                    "fontWeight": "500",
+                  },
+                ]
+              }
+            >
+              Move Sunday
+            </Text>
+          </View>
+        </View>
+      </View>
+    </RCTScrollView>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "backgroundColor": "#FFFFFF",
+          "borderColor": "#DEDCD5",
+          "borderRadius": 24,
+          "borderWidth": 1,
+          "flexDirection": "row",
+          "gap": 8,
+          "marginHorizontal": 16,
+          "minHeight": 56,
+          "paddingLeft": 16,
+          "paddingRight": 4,
+        }
+      }
+    >
+      <TextInput
+        accessibilityLabel="Message the Coach"
+        editable={true}
+        multiline={true}
+        onChangeText={[Function]}
+        placeholder="Ask the Coach"
+        placeholderTextColor="#5E5D57"
+        style={
+          {
+            "color": "#161614",
+            "flex": 1,
+            "fontSize": 16,
+            "maxHeight": 120,
+            "paddingVertical": 10,
+          }
+        }
+        testID="composer"
+        value=""
+      />
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 11,
+              "fontWeight": "500",
+              "lineHeight": 16,
+            },
+            {
+              "color": "#5E5D57",
+            },
+            {
+              "fontVariant": [
+                "tabular-nums",
+              ],
+            },
+            undefined,
+          ]
+        }
+        testID="coach-remaining"
+      >
+        7 left today
+      </Text>
+      <View
+        accessibilityLabel="Send"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": true,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "height": 48,
+            "justifyContent": "center",
+            "opacity": 0.4,
+            "width": 48,
+          }
+        }
+        testID="coach-send"
+      >
+        <View
+          accessible={false}
+          collapsable={false}
+          importantForAccessibility="no-hide-descendants"
+          style={
+            [
+              {
+                "height": 24,
+                "width": 24,
+              },
+              undefined,
+            ]
+          }
+        >
+          <Text
+            aria-hidden={true}
+            style={
+              {
+                "color": "#5E5D57",
+                "fontFamily": "MaterialSymbols_400Regular",
+                "fontSize": 24,
+                "lineHeight": 24,
+              }
+            }
+          >
+            
+          </Text>
+        </View>
+      </View>
+    </View>
+  </View>
+</View>
+`;

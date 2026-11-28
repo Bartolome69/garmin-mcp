@@ -116,6 +116,10 @@ describe('the stream', () => {
     expect(p.end()).toEqual([{ event: 'delta', data: '{"text":\n"a"}' }]);
     expect(toEvent({ event: 'delta', data: 'not json' })).toBeNull();
     expect(toEvent({ event: 'mystery', data: '{}' })).toBeNull();
+    // The pilot's own error words say "AI service"; the app uses its own, by code.
+    expect(toEvent({ event: 'error', data: '{"code":"provider","message":"The AI service isn\u2019t answering right now."}' }))
+      .toEqual({ type: 'error', code: 'provider', message: 'The Coach isn’t answering right now. Try again in a minute.' });
+    expect(toEvent({ event: 'error', data: '{"code":"new_thing","message":"x"}' })).toMatchObject({ message: 'Something went wrong on our side. Try again.' });
   });
 
   it('events build the reply: the question gets the server’s id, words stream in, sources and the proposal land, the guard checks the end', () => {
@@ -134,7 +138,7 @@ describe('the stream', () => {
   });
   it('an error keeps what was written, marks it, and says what happened; a cause in it is flagged, never rewritten', () => {
     const start: CoachMessage[] = [msg('r', 'assistant', 'Because your sleep was short', NOW, { status: 'streaming' })];
-    const { thread } = applyEvent(start, { userId: 'u', replyId: 'r' }, { type: 'error', code: 'timeout', message: 'That took too long. Try again?' }, NOW);
+    const { thread } = applyEvent(start, { userId: 'u', replyId: 'r' }, toEvent({ event: 'error', data: '{"code":"timeout"}' })!, NOW);
     expect(thread[0]).toMatchObject({ status: 'partial', error: 'That took too long. Try again?', text: 'Because your sleep was short', flags: ['cause'] });
   });
 });

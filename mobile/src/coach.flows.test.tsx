@@ -13,6 +13,7 @@
 //  10. Saved to memory from the chat, edited in You
 //  11. You: Coach memory on, Training preferences off; edit, delete, add, clear
 //  12. Turning the Coach off in You hides the tab and the Coach blocks; on again brings them back
+//  13. Every number the Coach tab shows is one the server sent
 import { describe, expect, it } from '@jest/globals';
 import { router, Stack } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
@@ -40,10 +41,12 @@ import YouMemory from './app/(tabs)/you/memory';
 import YouMemoryClear from './app/(tabs)/you/memory-clear';
 import YouMemoryEdit from './app/(tabs)/you/memory-edit';
 import WatchConfirm from './app/watch/confirm';
+import { numbersIn, numbersOfPayload } from './domain/coachGuard';
 import type { CoachApi } from './features/coach/api';
 import { FakeCoach } from './features/coach/fake';
 import type { ServerMessage } from './features/coach/model';
 import { CoachApiContext } from './features/coach/source';
+import PROPOSALS from './features/watch/proposals.fixture.json';
 import { memoryStore } from './features/watch/store';
 import { FakeGarmin } from './features/watch/transport';
 import { useWatch, WatchProvider, type WatchContext } from './features/watch/WatchProvider';
@@ -280,7 +283,7 @@ describe('7. A reply that fails part way', () => {
     await openCoach(fake);
     await ask('How’s my week?');
     const reply = within(lastReply());
-    expect(reply.getByTestId(/^reply-error-/)).toHaveTextContent('The AI service isn’t answering right now. Try again in a minute.');
+    expect(reply.getByTestId(/^reply-error-/)).toHaveTextContent('The Coach isn’t answering right now. Try again in a minute.');
     expect(reply.getByText(/^This week you’ve run 28 of 54 km planned\.$/)).toBeTruthy();
     await fireEvent.press(reply.getByTestId('button-Try again'));
     expect(fake.sent.map((s) => s.text)).toEqual(['How’s my week?', 'How’s my week?']);
@@ -413,5 +416,34 @@ describe('12. The Coach switch in You', () => {
     await fireEvent(await screen.findByTestId('coach-switch'), 'valueChange', true);
     await act(async () => { router.push('/coach'); });
     expect(await screen.findByTestId('coach')).toBeTruthy();
+  });
+});
+
+describe('13. The Coach tab shows only the server’s numbers', () => {
+  it('every number in a reply, chart, proposal card or memory note is in what the server sent', async () => {
+    const fake = new FakeCoach();
+    const events: unknown[] = [];
+    const recorded: CoachApi = {
+      thread: () => fake.thread(), decide: (i, d) => fake.decide(i, d), feedback: (i, v) => fake.feedback(i, v), clear: () => fake.clear(),
+      send: (b, on) => fake.send(b, (e) => { events.push(e); on(e); }),
+    };
+    await openCoach(recorded);
+    for (const q of ['Should I still do the tempo?', 'Why was rep 6 hard on Wednesday?', 'Make it easier', 'I’m travelling 1 to 3 Dec', 'How’s my week?']) await ask(q);
+    await screen.findByTestId(/^proposal-days-/);
+    const payload = numbersOfPayload([fake.messages, events, PROPOSALS]);
+    const shown: string[] = [];
+    const walk = (n: unknown, on: boolean) => {
+      if (typeof n === 'string') { if (on) shown.push(...numbersIn(n)); return; }
+      if (!n || typeof n !== 'object') return;
+      if (Array.isArray(n)) { n.forEach((c) => walk(c, on)); return; }
+      const node = n as Node;
+      const id = typeof node.props?.testID === 'string' ? node.props.testID : '';
+      const here = on || /^(coach-reply-|proposal-|memory-note-)/.test(id);
+      if (here && typeof node.props?.accessibilityLabel === 'string') shown.push(...numbersIn(node.props.accessibilityLabel));
+      (node.children ?? []).forEach((c) => walk(c, here));
+    };
+    walk(screen.toJSON(), false);
+    expect(shown.length).toBeGreaterThan(20);
+    expect([...new Set(shown.filter((n) => !payload.has(n)))]).toEqual([]);
   });
 });

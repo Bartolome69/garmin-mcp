@@ -64,6 +64,18 @@ export function createSseParser() {
   };
 }
 
+/**
+ * The app's words for the pilot's error codes. The pilot says "The AI service isn't
+ * answering"; the app says "AI" only in the Coach's name and settings (section 12).
+ */
+export const ERROR_WORDS: Record<string, string> = {
+  timeout: 'That took too long. Try again?',
+  provider: 'The Coach isn’t answering right now. Try again in a minute.',
+  config: 'The Coach isn’t set up yet.',
+  bad_request: 'The Coach couldn’t take that message. Try rewording it.',
+  internal: 'Something went wrong on our side. Try again.',
+};
+
 export type CoachEvent =
   | { type: 'start'; userId: string; id: string }
   | { type: 'delta'; text: string }
@@ -89,7 +101,10 @@ export function toEvent(f: SseFrame): CoachEvent | null {
     case 'memory': return { type: 'memory', id: s(d.id), kind: s(d.kind), text: s(d.text) };
     case 'chart': return d.chart ? { type: 'chart', chart: d.chart as InlineChart } : null;
     case 'done': return { type: 'done', id: s(d.id), status: d.status === 'partial' ? 'partial' : 'done' };
-    case 'error': return { type: 'error', code: s(d.code) || 'internal', message: s(d.message) || 'Something went wrong on our side. Try again.' };
+    case 'error': {
+      const code = s(d.code) || 'internal';
+      return { type: 'error', code, message: ERROR_WORDS[code] ?? ERROR_WORDS.internal };
+    }
     default: return null;
   }
 }
