@@ -31,6 +31,8 @@ export type WidgetSnapshot = {
 };
 
 export const LOCKED_MESSAGE = 'Widgets come with Daash Plus. Open Daash to try it free.';
+/** Free after a free week or Plus has run out: the store won't offer the free week again. */
+export const LOCKED_USED_MESSAGE = 'Widgets come with Daash Plus. Open Daash to see Plus.';
 export const EMPTY_MESSAGE = 'Open Daash to load today.';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -84,14 +86,16 @@ export function buildSnapshot(input: {
   /** The cached plan's block, for the phase in the week title. Optional. */
   block?: BlockVM | null;
   plus: boolean;
+  /** Free, and the free week (or Plus) already used: no "try it free". */
+  trialUsed?: boolean;
   now: number;
 }): WidgetSnapshot {
-  const { today, block, plus, now } = input;
+  const { today, block, plus, trialUsed = false, now } = input;
   const base: WidgetSnapshot = {
     v: SNAPSHOT_VERSION, writtenAt: now, dataAt: today?.fetchedAt ?? null, updated: null, locked: !plus, message: null,
     readiness: null, session: null, countdown: null, week: null, lock: { circular: null, rectangular: null },
   };
-  if (!plus) return { ...base, dataAt: null, message: LOCKED_MESSAGE };
+  if (!plus) return { ...base, dataAt: null, message: trialUsed ? LOCKED_USED_MESSAGE : LOCKED_MESSAGE };
   if (!today) return { ...base, message: EMPTY_MESSAGE };
 
   const vm = today.data;

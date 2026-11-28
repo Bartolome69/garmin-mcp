@@ -72,9 +72,10 @@ describe.each(['dark', 'light'] as const)(`Paywall on ${os}, %s`, (scheme) => {
 
 describe(`Paywall copy on ${os}`, () => {
   it('Coach on: the daily limit line, with the flags’ number', () => {
-    expect(plusItems(true, 12).at(-1)).toEqual({ title: 'Coach without a daily limit', sub: 'Free has 12 messages a day' });
-    expect(plusItems(false, 12).map((i) => i.title)).toEqual(
-      ['Race prediction trend', 'Advanced plan styles', 'Advanced merge rules', 'Home and lock screen widgets']);
+    expect(plusItems(true, 12, os).at(-1)).toEqual({ title: 'Coach without a daily limit', sub: 'Free has 12 messages a day' });
+    // Android phones have no lock screen widgets.
+    expect(plusItems(false, 12, os).map((i) => i.title)).toEqual(
+      ['Race prediction trend', 'Advanced plan styles', 'Advanced merge rules', os === 'android' ? 'Home screen widgets' : 'Home and lock screen widgets']);
   });
 
   it('cancel words name the platform’s store', async () => {
@@ -117,7 +118,7 @@ describe(`Plus in You on ${os}`, () => {
     const a = sectionActions();
     await render(<ThemeProvider initial="dark"><PlusSection status={plusStatus({ ...FREE, lapsed: null }, READ, os, false)} plus={false} actions={a} /></ThemeProvider>);
     expect(screen.getByTestId('row-plus').props.accessibilityLabel).toBe('Daash Plus, Prediction trend, plan styles, widgets');
-    expect(screen.getByTestId('row-widgets').props.accessibilityLabel).toBe('Widgets, Plus. Home and lock screen');
+    expect(screen.getByTestId('row-widgets').props.accessibilityLabel).toBe(os === 'android' ? 'Widgets, Plus. Home screen' : 'Widgets, Plus. Home and lock screen');
     await fireEvent.press(screen.getByTestId('row-plus'));
     expect(a.open).toHaveBeenCalled();
     await fireEvent.press(screen.getByTestId('row-restore'));
@@ -146,7 +147,17 @@ describe.each(['dark', 'light'] as const)(`Widgets setup on ${os}, %s`, (scheme)
     expect(screen.getByTestId('widget-small').props.accessibilityLabel).toBe('Readiness 26 Back off. Today · Tempo, 3 × 2 km, on watch');
     expect(screen.getByTestId('widget-countdown').props.accessibilityLabel).toBe('London, 148 days, Sat 24 Apr');
     expect(screen.getByTestId('widget-medium').props.accessibilityLabel).toMatch(/^Week 4 of 21 · Base\. This week · 28 of 54 km\. M 23 Rest done/);
-    expect(screen.getByTestId('widget-lock').props.accessibilityLabel).toBe('Lock screen. 26 Back off. Back off · Tempo 3 × 2 km, On your watch · 10 km');
+    if (os === 'android') {
+      // Only the widgets Android gets: no lock screen, no At a Glance.
+      expect(screen.queryByTestId('widget-lock')).toBeNull();
+      expect(screen.getByTestId('widgets-intro').props.children).toMatch(/on your home screen\.$/);
+      expect(screen.getByTestId('widgets-how-words').props.children).toBe('Touch and hold your home screen, tap Widgets, then find Daash.');
+    } else {
+      expect(screen.getByTestId('widget-lock').props.accessibilityLabel).toBe('Lock screen. 26 Back off. Back off · Tempo 3 × 2 km, On your watch · 10 km');
+      expect(screen.getByTestId('widgets-intro').props.children).toMatch(/on your home and lock screen\.$/);
+      expect(screen.getByTestId('widgets-how-words').props.children).toMatch(/For the lock screen/);
+    }
+    expect(screen.queryByText(/At a Glance/)).toBeNull();
     expect(screen.getByText('Add a widget')).toBeTruthy();
     expect(screen.queryByTestId('widgets-locked')).toBeNull();
   });

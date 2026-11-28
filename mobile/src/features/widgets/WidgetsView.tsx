@@ -51,7 +51,22 @@ export function smallWords(s: WidgetSnapshot): string {
     s.session && `${s.session.line}, ${s.session.title}, ${s.session.watch}`, s.updated].filter(Boolean).join('. ');
 }
 
-export function WidgetPreviews({ s }: { s: WidgetSnapshot }) {
+/**
+ * Where the widgets go. Android has no lock screen widgets on phones, and At a
+ * Glance has no API for other apps' content: home screen only (DECISIONS, milestone 10).
+ */
+export function widgetPlaces(os: string): string {
+  return os === 'android' ? 'home screen' : 'home and lock screen';
+}
+
+/** How to add one, in the platform's own words. */
+export function addWidgetWords(os: string): string {
+  return os === 'android'
+    ? 'Touch and hold your home screen, tap Widgets, then find Daash.'
+    : 'Touch and hold your home screen, tap Edit, then Add Widget, and choose Daash. For the lock screen, touch and hold it and tap Customise.';
+}
+
+export function WidgetPreviews({ s, os = Platform.OS }: { s: WidgetSnapshot; os?: string }) {
   const { colors } = useTheme();
   if (s.message) {
     return (
@@ -107,7 +122,7 @@ export function WidgetPreviews({ s }: { s: WidgetSnapshot }) {
           <Updated s={s} />
         </Tile>
       ) : null}
-      {s.lock.circular || s.lock.rectangular ? (
+      {os !== 'android' && (s.lock.circular || s.lock.rectangular) ? (
         <Tile wide testID="widget-lock" label={['Lock screen', s.lock.circular && `${s.lock.circular.score ?? ''} ${s.lock.circular.word}`,
           s.lock.rectangular && `${s.lock.rectangular.line1}, ${s.lock.rectangular.line2}`].filter(Boolean).join('. ')}>
           <Text variant="caption" tone="muted" maxFontSizeMultiplier={1.2}>Lock screen</Text>
@@ -128,21 +143,19 @@ export function WidgetPreviews({ s }: { s: WidgetSnapshot }) {
 
 export function WidgetsView({ snapshot, plus, os = Platform.OS, onPlus }: { snapshot: WidgetSnapshot; plus: boolean; os?: string; onPlus: () => void }) {
   const { colors } = useTheme();
-  const how = os === 'android'
-    ? 'Touch and hold your home screen, tap Widgets, then find Daash. For At a Glance, touch and hold it and choose Customise.'
-    : 'Touch and hold your home screen, tap Edit, then Add Widget, and choose Daash. For the lock screen, touch and hold it and tap Customise.';
+  const places = widgetPlaces(os);
   return (
     <ScrollView testID="widgets" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ padding: 16, gap: 14 }}>
-      <Text variant="body" tone="muted">Readiness, today’s session, your week and the race countdown, on your home and lock screen.</Text>
-      {plus ? <WidgetPreviews s={snapshot} /> : (
-        <LockedPreview testID="widgets-locked" buttonTestID="widgets-see-plus" caption="Home and lock screen widgets are in Plus" onPress={onPlus}>
-          <WidgetPreviews s={snapshot} />
+      <Text testID="widgets-intro" variant="body" tone="muted">{`Readiness, today’s session, your week and the race countdown, on your ${places}.`}</Text>
+      {plus ? <WidgetPreviews s={snapshot} os={os} /> : (
+        <LockedPreview testID="widgets-locked" buttonTestID="widgets-see-plus" caption={`${places[0].toUpperCase()}${places.slice(1)} widgets are in Plus`} onPress={onPlus}>
+          <WidgetPreviews s={snapshot} os={os} />
         </LockedPreview>
       )}
       <Card testID="widgets-how">
         <Text variant="headline" accessibilityRole="header">{plus ? 'Add a widget' : 'Once you have Plus'}</Text>
-        <Text variant="subhead">{how}</Text>
+        <Text testID="widgets-how-words" variant="subhead">{addWidgetWords(os)}</Text>
       </Card>
       <Text variant="footnote" tone="muted">Widgets read cached data. When it’s old they show the time, never a blank.</Text>
     </ScrollView>

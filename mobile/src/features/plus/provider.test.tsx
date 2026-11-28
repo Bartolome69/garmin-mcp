@@ -18,7 +18,7 @@ import { memoryStore } from '../watch/store';
 import { FakeGarmin } from '../watch/transport';
 import { WatchProvider } from '../watch/WatchProvider';
 import { FakeWidgetBridge } from '../widgets/bridge';
-import { LOCKED_MESSAGE } from '../widgets/snapshot';
+import { LOCKED_MESSAGE, LOCKED_USED_MESSAGE } from '../widgets/snapshot';
 import { WidgetSync } from '../widgets/WidgetSync';
 import { FREE, type Entitlement } from './entitlement';
 import { EntitlementsProvider, useEntitlement, type EntitlementsState } from './EntitlementsProvider';
@@ -121,5 +121,14 @@ describe('WidgetSync', () => {
     const writes = bridge.written.length;
     await r.rerender(app(bridge, store));
     expect(bridge.written.length).toBe(writes);
+  });
+
+  it('Free after the free week ran out: the widgets don’t offer it again', async () => {
+    const bridge = new FakeWidgetBridge();
+    const now = Date.now();
+    const store = new FakeStore({ owned: [{ productId: PRODUCT_IDS.monthly, transactionId: 't', purchasedAt: now - 40 * DAY, expiresAt: now - 33 * DAY,
+      trial: true, willRenew: false, platform: 'app_store', receipt: 'r' }] });
+    await render(app(bridge, store));
+    await waitFor(() => expect(bridge.last?.message).toBe(LOCKED_USED_MESSAGE));
   });
 });

@@ -96,12 +96,11 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
     if (busy.current) return null;
     busy.current = true;
     try {
-      const [answer, held] = await Promise.all([
-        latest.current.fetcher().catch(() => null),
-        store.current().catch(() => null),
-      ]);
+      // What this phone's store holds counts at once, however slow the server is.
+      const held = store.current().then(setPurchases).catch(() => {});
+      const answer = await latest.current.fetcher().catch(() => null);
       if (answer) keepServer(answer);
-      if (held) setPurchases(held);
+      await held;
       return answer;
     } finally {
       busy.current = false;

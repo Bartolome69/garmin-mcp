@@ -615,7 +615,7 @@ exports[`snapshot: paywall and free week sheet on android: paywall-android 1`] =
           </View>
         </View>
         <View
-          accessibilityLabel="Home and lock screen widgets, Readiness, week and countdown"
+          accessibilityLabel="Home screen widgets, Readiness, week and countdown"
           accessible={true}
           style={
             {
@@ -680,7 +680,7 @@ exports[`snapshot: paywall and free week sheet on android: paywall-android 1`] =
                 ]
               }
             >
-              Home and lock screen widgets
+              Home screen widgets
             </Text>
             <Text
               maxFontSizeMultiplier={2}

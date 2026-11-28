@@ -23,7 +23,8 @@ export function WidgetSync({ bridge: given, clock = Date.now }: { bridge?: Widge
   const bridge = useMemo(() => given ?? defaultWidgetBridge(), [given]);
   const today = useToday();
   const watch = useWatch();
-  const { plus, ready } = useEntitlement();
+  const { plus, ready, entitlement } = useEntitlement();
+  const trialUsed = !plus && entitlement.lapsed != null;
   const db = useDb();
   const { flags } = useFlags();
   const [block, setBlock] = useState<PlanVM['block']>(null);
@@ -50,11 +51,11 @@ export function WidgetSync({ bridge: given, clock = Date.now }: { bridge?: Widge
     const data = today.data ? applyToToday(today.data, watch.applied, watch.ops) : null;
     // Still loading: keep what the widgets have rather than flash "Open Daash".
     if (plus && !data && !today.error) return;
-    const next = buildSnapshot({ today: data && today.fetchedAt != null ? { data, fetchedAt: today.fetchedAt } : null, block, plus, now: clock() });
+    const next = buildSnapshot({ today: data && today.fetchedAt != null ? { data, fetchedAt: today.fetchedAt } : null, block, plus, trialUsed, now: clock() });
     if (sameDrawing(last.current, next)) return;
     last.current = next;
     bridge.write(next).then(() => bridge.reload()).catch(() => { last.current = null; });
-  }, [today.data, today.fetchedAt, today.error, watch.applied, watch.ops, block, plus, ready, tick, bridge, clock]);
+  }, [today.data, today.fetchedAt, today.error, watch.applied, watch.ops, block, plus, trialUsed, ready, tick, bridge, clock]);
 
   return null;
 }

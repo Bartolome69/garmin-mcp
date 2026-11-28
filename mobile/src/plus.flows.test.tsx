@@ -146,7 +146,7 @@ describe('16. A locked feature → paywall → free week → unlocked', () => {
     await renderRouter(app(new FakeStore()), { initialUrl: '/plus?from=you' });
     const paywall = await screen.findByTestId('paywall');
     expect(within(paywall).queryByText(/Coach/)).toBeNull();
-    expect(within(paywall).getByLabelText('Home and lock screen widgets, Readiness, week and countdown')).toBeTruthy();
+    expect(within(paywall).getByLabelText(`${Platform.OS === 'android' ? 'Home screen' : 'Home and lock screen'} widgets, Readiness, week and countdown`)).toBeTruthy();
     expect(within(paywall).getByLabelText('Sending workouts to your watch')).toBeTruthy();
   });
 

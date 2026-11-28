@@ -16,12 +16,12 @@ import type { Product } from './store';
 export type PlusItem = { title: string; sub: string };
 
 /** What Plus adds (section 1). The Coach's line only with coach_enabled; its limit from the flags. */
-export function plusItems(coach: boolean, coachLimit: number): PlusItem[] {
+export function plusItems(coach: boolean, coachLimit: number, os: string = Platform.OS): PlusItem[] {
   return [
     { title: 'Race prediction trend', sub: 'and race-day projection' },
     { title: 'Advanced plan styles', sub: 'More shapes for your training block' },
     { title: 'Advanced merge rules', sub: 'Pick the source per metric, tune match windows' },
-    { title: 'Home and lock screen widgets', sub: 'Readiness, week and countdown' },
+    { title: os === 'android' ? 'Home screen widgets' : 'Home and lock screen widgets', sub: 'Readiness, week and countdown' },
     ...(coach ? [{ title: 'Coach without a daily limit', sub: `Free has ${coachLimit} messages a day` }] : []),
   ];
 }
@@ -79,7 +79,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
           <TrendPreview />
         </View>
         <View testID="plus-items" style={{ gap: 2 }}>
-          {plusItems(coach, coachLimit).map((i) => <Item key={i.title} icon="lock" title={i.title} sub={i.sub} />)}
+          {plusItems(coach, coachLimit, os).map((i) => <Item key={i.title} icon="lock" title={i.title} sub={i.sub} />)}
         </View>
         <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Always free</Text>
         <View testID="always-free" style={{ gap: 0 }}>
@@ -180,14 +180,16 @@ function Step({ when, what, first, last }: { when: string; what: string; first: 
 // -- You -------------------------------------------------------------------------------------
 
 /** You's Plus section (the You and YouPlus boards): the state, Widgets, and Restore or Manage. */
-export function PlusSection({ status, plus, canManage = plus, actions }: {
+export function PlusSection({ status, plus, canManage = plus, os = Platform.OS, actions }: {
   status: PlusStatus;
   plus: boolean;
   /** Somewhere to manage it (a store or daash.run). A grant from Daash has nowhere: no Manage row. */
   canManage?: boolean;
+  os?: string;
   actions: { open: () => void; widgets: () => void; restore: () => void; manage: () => void };
 }) {
   const { colors } = useTheme();
+  const places = os === 'android' ? 'Home screen' : 'Home and lock screen';
   const row = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10, minHeight: 56, paddingVertical: 10, paddingHorizontal: 14 };
   const line = { borderTopWidth: 1, borderTopColor: colors.hairline };
   return (
@@ -212,7 +214,7 @@ export function PlusSection({ status, plus, canManage = plus, actions }: {
           )}
         </Pressable>
         <Pressable testID="row-widgets" accessibilityRole="button" onPress={actions.widgets}
-          accessibilityLabel={plus ? 'Widgets, home and lock screen' : 'Widgets, Plus. Home and lock screen'} style={[row, line]}>
+          accessibilityLabel={plus ? `Widgets, ${places.toLowerCase()}` : `Widgets, Plus. ${places}`} style={[row, line]}>
           {plus ? null : <Icon name="lock" tone="muted" />}
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text variant="body">Widgets</Text>

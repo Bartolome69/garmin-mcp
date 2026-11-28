@@ -3,7 +3,7 @@ import { describe, expect, it } from '@jest/globals';
 import { PERSONA_PLAN } from '../plan/fixture';
 import { PERSONA_TODAY } from '../today/fixture';
 import type { TodayVM } from '../today/model';
-import { EMPTY_MESSAGE, LOCKED_MESSAGE, buildSnapshot, sameDrawing, updatedLabel, widgetWatchWords } from './snapshot';
+import { EMPTY_MESSAGE, LOCKED_MESSAGE, LOCKED_USED_MESSAGE, buildSnapshot, sameDrawing, updatedLabel, widgetWatchWords } from './snapshot';
 import { FakeWidgetBridge, NativeWidgetBridge, SNAPSHOT_KEY } from './bridge';
 
 // Local times: the persona's Friday 27 Nov, read at 07:02.
@@ -58,6 +58,13 @@ describe('widget snapshot (the P1-Widgets boards)', () => {
     const s = buildSnapshot({ today, plus: false, now: READ });
     expect(s).toMatchObject({ locked: true, message: LOCKED_MESSAGE, readiness: null, session: null, countdown: null, week: null, dataAt: null });
     expect(s.lock).toEqual({ circular: null, rectangular: null });
+  });
+
+  it('Free after the free week was used: no "try it free" the store won’t give', () => {
+    expect(buildSnapshot({ today, plus: false, trialUsed: true, now: READ }).message).toBe(LOCKED_USED_MESSAGE);
+    expect(LOCKED_USED_MESSAGE).not.toMatch(/free/i);
+    // Plus wins over an old free week.
+    expect(buildSnapshot({ today, plus: true, trialUsed: true, now: READ }).message).toBeNull();
   });
 
   it('nothing cached yet: says to open Daash', () => {
