@@ -1462,6 +1462,54 @@ Each says which milestone the code came from.
   names each `expo-*` package instead of a prefix (M12). `perf.test`'s header and
   PERFORMANCE.md say what is and isn't pinned (M12).
 
+### Completeness fixes (after the completeness review)
+
+- **The layout checks run every milestone, and in CI.** `npm run layout` (`scripts/layout.js`)
+  exports the web build with sample data (the persona, Coach on) and runs
+  `scripts/layout-check.js` (Today above the fold) and `scripts/plan-check.js` (the week fits,
+  the FAB covers no row, a 10-rep session fits). Nobody had re-run them since M4, so M11's
+  Coach card had pushed the session past the fold unseen. Playwright is now a pinned
+  devDependency (1.63.0, the version whose Chromium this container has), and `mobile.yml`
+  installs Chromium and runs `npm run layout`. The CI step hasn't run yet: check its first run.
+- **Session detail: the Coach's block comes last.** With the Coach on, "Coach · why this
+  session" pushed the watch row and Move / Swap / Skip off the screen (10 × 400 m ended at
+  829 of 658 pt). It now follows Move / Swap / Skip, so turning the Coach on adds a block
+  below and moves nothing above it (section 1). The board puts it above the watch row; the
+  prompt's "fits without scrolling" wins. Collapsing it to one line wasn't enough: even
+  collapsed, the card took about 84 pt and the screen ended near 726 pt. `plan.test.tsx`
+  checks the order. Measured with `npm run layout` at 390×844: 10 × 400 m ends at
+  **640 of 658 pt with the Coach on and off** (M4's figure).
+- **Today: "Sample data" sits in the kicker row, inside the scroll view.** It was drawn
+  above Today's ScrollView. On iOS (header hidden, no safe-area inset outside the scroll
+  view) it sat under the status bar, and it added 36 pt above the fold that layout-check
+  couldn't see. It now takes the place of the fetch time in the kicker row (for sample data
+  that time means nothing; Android's stale label in the header hides with it), so it adds
+  no height. The failure banner (Reconnect, signed out) moved inside the scroll view too,
+  above the header. `layout-check.js` now measures from the first thing drawn in the scroll
+  view, not the header. Today at 390×844, from the top of the first thing drawn: This week
+  ends at **700 of 702 pt with the Coach on** (sample data) and **599 with it off**; the
+  session card at 529 and 428. The Coach on leaves only 2 pt: a longer Coach line on a
+  phone with a larger system font may need the "Ask why" link beside the line rather than
+  under it (needs a device).
+- **The Coach with sample data talks only to its stand-in.** With
+  `EXPO_PUBLIC_DAASH_FIXTURE=1` and a token on the phone, the Coach tried the server first
+  and could have answered from the real account while every screen showed the persona.
+  `defaultCoachApi()` now returns the stand-in alone whenever sample data shows
+  (`coach.test.ts`).
+- **expo-notifications 58.1.9**, the version SDK 58 expects (`npx expo start` warned about
+  58.1.8). `expoGo.test.ts` now fails when any SDK package is behind
+  `expo/bundledNativeModules.json`.
+- **EXPO_GO.md** says that linking the GitHub repo to the Expo project (base directory
+  `mobile/`) is a one-time owner step, and that no run of the workflow has been seen yet.
+- **One wording per status, and one medical line.** The Remove from watch sheet now says
+  "marked Not on your watch", like every status line after it. Help shows the shared
+  `MEDICAL` line, so the app now spells it one way everywhere. That spelling is the server
+  engine's (`garmin_mcp/domain/adjust.py`), with straight apostrophes, because the diff
+  shows the server's disclaimer verbatim. The rest of the app's copy uses curly
+  apostrophes, but every string the engines send uses straight ones. *Owner decision:*
+  move the engines' copy to curly apostrophes in one pass (Python, the fixtures, then the
+  app's `MEDICAL`). Default: leave it as it is.
+
 ### Not built: recorded with the default taken
 
 - **Analytics (prompt section 11; HARDENING's deferred item).** Only `paywall_viewed` and
