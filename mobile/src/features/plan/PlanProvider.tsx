@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { kv } from '../../db/kv';
 import { useDb } from '../../db/DbContext';
+import { onPlanChanged } from '../../data/planChanged';
 import { useResource, type Cached, type Resource, type ResourceStore } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
 import { applyToPlan } from '../watch/apply';
@@ -45,6 +46,9 @@ export function PlanProvider({ children, fetcher }: { children: ReactNode; fetch
     save: (value) => kv(db).set(key, value),
   } : undefined, [db, key]);
   const resource = useResource(source, store);
+  const { refresh } = resource;
+  // A plan made elsewhere (onboarding from "Create a plan"): fetch it rather than keep the empty one.
+  useEffect(() => onPlanChanged(() => { refresh(); }), [refresh]);
   const watch = useWatch();
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [warned, setWarned] = useState(false);

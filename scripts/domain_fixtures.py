@@ -25,7 +25,7 @@ from datetime import datetime  # noqa: E402
 from datetime import timezone  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
 
-from garmin_mcp.domain import adjust, backtoback, connections, dedupe, paces, postrun, proposal  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, connections, dedupe, onboarding, paces, postrun, proposal  # noqa: E402
 from garmin_mcp.domain.model import Activity  # noqa: E402
 from garmin_mcp.domain.load import band  # noqa: E402
 from garmin_mcp.domain.model import Session  # noqa: E402
@@ -248,13 +248,54 @@ def dedupe_cases() -> list[dict]:
     return {"activities": [connections.activity_json(a) for a in acts], "cases": out}
 
 
+# The persona's last 12 weeks, as an import reads them: five runs most weeks near 48 km,
+# and a 10K of 43:30 on 12 Oct. Deterministic, so the fixture never drifts.
+def _persona_history() -> list:
+    runs = []
+    week = [(0, 8.0, 312), (1, 10.0, 300), (3, 9.0, 318), (4, 6.0, 325), (6, 16.0, 322)]
+    start = date(2026, 9, 7)
+    for w in range(12):
+        monday = start + timedelta(weeks=w)
+        for i, (d, km, pace) in enumerate(week):
+            day = monday + timedelta(days=d)
+            if day > TODAY or (w % 4 == 3 and i == 3):   # every fourth week one run fewer
+                continue
+            km2 = km + (w % 3) * 0.5 * (i == 4)
+            runs.append(onboarding.RecentRun(day, km2, km2 * (pace + (i % 2) * 6)))
+    runs = [r for r in runs if r.day != date(2026, 10, 12)]
+    runs.append(onboarding.RecentRun(date(2026, 10, 12), 10.0, 2610, race=True, name="Royal Parks 10K"))
+    return runs
+
+
+def onboarding_cases() -> dict:
+    """Onboarding for the persona: the import, the four questions, and the plan reveal, from the real engines."""
+    imported = onboarding.import_summary(_persona_history(), TODAY)
+    empty = onboarding.import_summary([], TODAY)
+    answered = onboarding.questions("exp", 5, "50to70")
+    goal = {"name": "London Marathon", "date": "2027-04-24", "km": 42.195, "target": "3:15"}
+    return {
+        "import": imported,
+        # Nothing on the watch in 12 weeks: the default 10K, said as such, and no usual week.
+        "import_empty": empty,
+        "questions": answered,
+        "questions_race": onboarding.questions("regular", 4, "30to50", 21.0975, 6300),
+        "reveal": onboarding.reveal(imported["answers"], imported["basis"], TODAY, goal, level="exp"),
+        "reveal_fit": onboarding.reveal(imported["answers"], imported["basis"], TODAY, None, level="exp"),
+        # No race to go on (nothing imported, or none answered): no prediction, and the line says so.
+        "reveal_empty": onboarding.reveal(empty["answers"], empty["basis"], TODAY, goal),
+        "reveal_questions": onboarding.reveal(answered["answers"], answered["basis"], TODAY, goal, level="exp"),
+    }
+
+
 FILES = {"paces.json": paces_cases, "backtoback.json": backtoback_cases, "proposals.json": proposal_cases,
-         "postrun.json": postrun_cases, "connections.json": connections_cases, "dedupe.json": dedupe_cases}
+         "postrun.json": postrun_cases, "connections.json": connections_cases, "dedupe.json": dedupe_cases,
+         "onboarding.json": onboarding_cases}
 # The app's development build reads its own copy: Metro bundles only what's inside mobile/.
 COPIES = {"proposals.json": ROOT / "mobile" / "src" / "features" / "watch" / "proposals.fixture.json",
           "postrun.json": ROOT / "mobile" / "src" / "features" / "run" / "runs.fixture.json",
           "connections.json": ROOT / "mobile" / "src" / "features" / "connections" / "connections.fixture.json",
-          "dedupe.json": ROOT / "mobile" / "src" / "domain" / "dedupe.fixture.json"}
+          "dedupe.json": ROOT / "mobile" / "src" / "domain" / "dedupe.fixture.json",
+          "onboarding.json": ROOT / "mobile" / "src" / "features" / "onboarding" / "onboarding.fixture.json"}
 
 
 def main(argv: list[str]) -> int:

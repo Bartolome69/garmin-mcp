@@ -5,7 +5,7 @@
 //   targets   every control is at least 44 pt (iOS) / 48 dp (Android), hit slop included
 //   clipping  no text sits inside a box of fixed height, which clips at large font sizes
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { act, renderRouter, screen } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { router, Stack } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Platform, StyleSheet } from 'react-native';
@@ -38,7 +38,18 @@ import YouPriority from './app/(tabs)/you/priority';
 import YouRequest from './app/(tabs)/you/request';
 import YouSee from './app/(tabs)/you/see';
 import YouTrouble from './app/(tabs)/you/trouble';
+import OnboardingGoal from './app/onboarding/goal';
+import OnboardingIndex from './app/onboarding/index';
+import OnboardingLanded from './app/onboarding/landed';
+import OnboardingPaces from './app/onboarding/paces';
+import OnboardingQuestions from './app/onboarding/questions';
+import OnboardingResult from './app/onboarding/result';
+import OnboardingReveal from './app/onboarding/reveal';
+import OnboardingTry from './app/onboarding/try';
+import { OnboardingStack } from './app/onboarding/_layout';
 import WatchConfirm from './app/watch/confirm';
+import { OnboardingProvider } from './features/onboarding/OnboardingProvider';
+import { CASES } from './features/onboarding/source';
 import { PERSONA_PLAN } from './features/plan/fixture';
 import { findSession } from './features/plan/model';
 import { skipProposal } from './features/watch/proposals';
@@ -77,6 +88,15 @@ function app(scheme: 'dark' | 'light') {
     '(tabs)/crew/_layout': CrewLayout, '(tabs)/crew/index': CrewIndex,
     '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/connections': YouConnections,
     '(tabs)/you/priority': YouPriority, '(tabs)/you/see': YouSee, '(tabs)/you/trouble': YouTrouble, '(tabs)/you/request': YouRequest,
+    // Onboarding part way through (the persona's goal, import and plan), so every step has what it shows.
+    'onboarding/_layout': () => (
+      <OnboardingProvider initial={{ goal: { kind: 'race', name: 'London Marathon', date: '2027-04-24', km: 42.195, target: '3:15' }, result: CASES.import, reveal: CASES.reveal }}>
+        <OnboardingStack />
+      </OnboardingProvider>
+    ),
+    'onboarding/index': OnboardingIndex, 'onboarding/try': OnboardingTry, 'onboarding/goal': OnboardingGoal,
+    'onboarding/paces': OnboardingPaces, 'onboarding/questions': OnboardingQuestions, 'onboarding/result': OnboardingResult,
+    'onboarding/reveal': OnboardingReveal, 'onboarding/landed': OnboardingLanded,
     'watch/confirm': WatchConfirm,
   };
 }
@@ -103,6 +123,15 @@ export const SCREENS: [string, string, string][] = [
   ['Request a device', '/you/request', 'request-sheet'],
   ['Coach', '/coach', 'coach'],
   ['Crew', '/crew', 'crew'],
+  ['Onboarding · welcome', '/onboarding', 'welcome'],
+  ['Onboarding · try', '/onboarding/try', 'try-card'],
+  ['Onboarding · goal', '/onboarding/goal', 'ob-goal'],
+  ['Onboarding · goal from Plan', '/onboarding/goal?from=plan', 'ob-goal'],
+  ['Onboarding · paces', '/onboarding/paces', 'ob-paces'],
+  ['Onboarding · questions', '/onboarding/questions', 'ob-questions'],
+  ['Onboarding · result', '/onboarding/result', 'ob-result'],
+  ['Onboarding · reveal', '/onboarding/reveal', 'ob-reveal'],
+  ['Onboarding · landed, sending', '/onboarding/landed', 'ob-landed'],
 ];
 const STAGED: [string, (id: string) => string, string][] = [
   ['New week (diff)', (id) => `/plan/new-week?id=${encodeURIComponent(id)}`, 'diff'],
@@ -190,6 +219,14 @@ describe.each(['light', 'dark'] as const)(`every screen on ${Platform.OS}, %s`, 
     await act(async () => { router.push(url(p.id)); });
     expect(await screen.findByTestId(id, {}, { timeout: 4000 })).toBeTruthy();
     findings[`${name} (${scheme})`] = audit(screen.toJSON());
+  });
+  it('Onboarding · landed, on the watch', async () => {
+    await renderRouter(app(scheme), { initialUrl: '/onboarding/reveal' });
+    await fireEvent.press(await screen.findByTestId('button-Send week 1 to my watch'));
+    await fireEvent.press(await screen.findByTestId(`button-Confirm and send ${CASES.reveal.week1.length} changes`));
+    await act(async () => { await queue!.pump(); });
+    expect(await screen.findByTestId('notify-ask', {}, { timeout: 4000 })).toBeTruthy();
+    findings[`Onboarding · landed (${scheme})`] = audit(screen.toJSON());
   });
 });
 

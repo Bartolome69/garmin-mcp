@@ -515,3 +515,192 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   - a reconnect page for providers other than Garmin
     (`/app/connect/intervals`, with the Intervals.icu adapter once its API docs
     are reachable).
+
+## Milestone 9: onboarding (try first, import or four questions, plan reveal, first workout lands), 28 Nov
+
+- **The server works the paces and the plan out; the app shows them.**
+  `garmin_mcp/domain/onboarding.py`:
+  - `import_summary()` reads 12 weeks of runs: best recent race (by its Riegel
+    10K), easy pace (the middle half of runs slower than steady), threshold
+    from the race through the pace engine, the usual week over the last 8
+    weeks, and the number of runs read;
+  - `questions()` does the same from the four answers;
+  - `reveal()` runs the existing plan builder (`plan_builder.py`, the PWA's) and
+    returns the phases, predicted against target, week 1 and each session's
+    `daash.workout.v1`.
+
+  No function takes a coach flag (tested with the other engines). The Coach's
+  "why this shape" note comes from the server and never carries a number of its
+  own; the rule's line ("Phases follow from your 20 weeks…") always shows,
+  because it carries numbers, and the Coach's note is added under it (the
+  prompt's "Coach ON adds"). The numbers, the rule's line included, are tested
+  equal either way.
+- **The four questions work on the phone**, before sign-up, with the shared
+  pace engine. `features/onboarding/model.ts` `questions()` is held to the
+  server's answers by `onboarding.json` (no race, and a recent half marathon).
+- **Nothing to read is said, not guessed.** An import with no runs in 12 weeks
+  says "No runs in the last 12 weeks", uses a 10K of 45:00 and says so, shows
+  no "0 km · 0 runs" usual week, and the result explains that Adjust goes to the
+  four questions. Too few easy runs to read a range takes the easy zone from the
+  race, or from the default 10K, and the note says which (it said "from the
+  race" with no race before).
+- **The goal step reads what people type.** A race day as "24 Apr 2027",
+  "24/04/2027" (day first) or "2027-04-24", read back as "Sat 24 Apr 2027";
+  days that don't exist and days not after today are refused in words. Targets
+  are h:mm for a half or a marathon and mm:ss for shorter races, as
+  `plan_builder.goal_secs` reads them, and must be a pace someone could run
+  (2:30 to 15:00 per km), so "45:00" for a half isn't read as 45 hours. No date
+  picker dependency was added; a native picker is a polish item.
+- **Week 1 goes to the watch only through the confirm sheet.** "Send week 1 to
+  my watch" stages one Add per session (each carrying its workout) and opens the
+  same watch confirm as every other write. The reveal moves on to the landing
+  only when the queue has a new batch for that proposal: Back on the sheet
+  sends nothing and stays on the plan, and a batch left from an earlier attempt
+  can't skip the sheet. The plan itself is saved by the server when it's made
+  (`changesPlan: false`); the watch only gets the week.
+- **The landing follows the send state**, from the watch queue:
+  - sending, then "arrives at the next sync" once Garmin has it;
+  - on the watch: the filled 56 pt success check (labelled "Done") and, only
+    now, the notification ask (section 8). "Allow notifications" asks the
+    system; the answer, or "Not now", is kept on the device, and the landing
+    reads it: a runner who answered once (Plan's "Create a plan" later) gets
+    "Go to Plan" instead of the ask;
+  - Not sent: the send state's own card (words, Resend, Trouble connecting?,
+    "Nothing changed on your watch").
+
+  "Go to Today" leaves before it lands; the runner is onboarded either way.
+  TODO(M12 or notifications): when the runner left before it landed, ask the
+  first time a workout lands later (Today owns that; not built here to keep out
+  of Today while M10 and M11 are in flight).
+- **The app's first screen** (`src/app/index.tsx`) reads `onboarded` from the
+  device's store: not set goes to the welcome, set goes to Today. It's runner
+  data, so `signOut()` clears it and a signed-out phone starts at the welcome
+  (with Sign in). A phone whose database fails to open starts at the welcome.
+- **Garmin not connected.** Connecting is the account (sign-in is Garmin's own
+  page, on the server). The import button reads "Connect Garmin" until the app
+  has a token, then "Import my runs". Not connected (or an expired Garmin
+  login), it opens Garmin's sign-in and says to come back and import. The four
+  questions need no account, but making the plan does: the reveal says
+  "Connect Garmin to make your plan", with "I've signed in" to try again.
+  Offline at either step says so; the answers are kept and the four questions
+  still work.
+- **Plan's "Create a plan"** (the empty Plan) opens onboarding's goal step with
+  `?from=plan`: Cancel goes back to Plan, and the landing ends on Plan ("Go to
+  Plan") instead of Today.
+- **Back on every step**, none before the welcome and none on the landing.
+  Changing the goal or the paces drops a plan made from the old ones; coming
+  back to a plan already made from the same answers doesn't remake it. A step
+  opened with nothing before it (a link to `/onboarding/reveal`) goes back to
+  the step it needs.
+- **Copy.** The board's landing line "The rest of week 1 follows each evening
+  before" is replaced by what actually happens: all of week 1 is sent at the
+  confirm, so the landing says "The other 3 sessions of week 1 follow as the
+  watch syncs", or "The rest of week 1 is on it too". Sessions that weren't
+  sent are never in that count: they're said ("2 sessions of week 1 weren't
+  sent. Nothing changed on your watch for those.") with Resend. Errors use the error
+  colour with an icon and words, never colour alone, and no exclamation marks.
+- **Conflicts with the boards** (the prompt wins):
+  - the Pass 0 boards' "How do you train?" asks for a long run day; the prompt's
+    four questions are experience, days a week, recent distance and a recent
+    race, so no long run day (the plan builder's default, Sunday, is used);
+  - the boards' welcome and try card go straight to the import; the prompt's
+    goal is step 1 of 4, so both go to the goal first;
+  - the Pass 0 "Connect your watch" and "Stay in the loop" steps are gone:
+    connecting happens at the import (or at the plan), and notifications are
+    asked only after the first workout lands. So the counter is "Step 1 of 3"
+    (goal), "Step 2 of 3" (paces, the questions and the result) and "Step 3 of
+    3" on the reveal (with the server's kicker), not the boards' "of 4";
+  - the removed Connect board carried section 1's "Daash is independent and not
+    endorsed by any watch maker."; it now sits wherever onboarding sends the
+    runner to Garmin's sign-in: the paces step, the reveal's Connect and
+    Reconnect states, and the welcome after Sign in;
+  - the boards' try card says "Like it? Send it to your watch.", but the
+    session tried isn't kept (Create free account goes to the goal), so it now
+    says "Like it? Make a plan that goes to your watch." and "This try isn't
+    saved".
+- **Analytics (section 11): deferred.** The app still has no analytics layer
+  (HARDENING.md). The events onboarding should send when it has one: each step
+  viewed (welcome, try, goal, paces, questions, result, reveal, landed),
+  try-builder used, import chosen (import or questions, and import failed by
+  kind), first workout landed, notification permission result (granted,
+  denied, not now). No health values (paces, races, kilometres) in payloads.
+- **Not done here, to keep to M9:** the Sign out button in You (HARDENING.md
+  put it with M9; `signOut()` is ready, but You is shared with M10 and M11), and
+  keeping onboarding's answers across the app being closed during Garmin's
+  sign-in (needed once the sign-in hands the app back a token).
+- **TODO(server):**
+  - `POST /app/api/v1/onboarding/import` returns `onboarding.import_summary()`
+    for the signed-in runner's last 12 weeks;
+  - `POST /app/api/v1/onboarding/plan {answers, basis, goal, coach}` returns
+    `onboarding.reveal()` and saves the plan (with the Coach's note when
+    `coach`);
+  - Garmin's sign-in hands the app its token back (a `daash://` link after
+    `/connect?app=native`), for Sign in, Connect Garmin and Reconnect.
+- **Needs a device build:** `expo-notifications` 58.1.8 (the permission ask). It
+  loads only when the ask happens; Jest mocks it. No config plugin is needed for
+  the permission alone.
+- **Tests:**
+  - `features/onboarding/onboarding.test.tsx`: the twin against the fixture,
+    race times, race days, the goal check, week 1's proposal, where week 1 is,
+    the provider, and every step's states;
+  - `src/onboarding.flows.test.tsx` over the real routes and watch queue: the
+    first screen both ways, welcome → try → goal → paces → result → reveal →
+    confirm → landed → Today, Back on the sheet, Not now, the Coach on, the four
+    questions with Adjust and back, nothing to import, offline, not connected
+    (import and plan), leaving before it lands, a failed send with Resend, and
+    Plan's Create a plan both ways;
+  - every onboarding route is in the smoke test's a11y checks, light and dark,
+    with the landing on the watch as well;
+  - `mobile/e2e/5-onboarding.yaml` for a device; flows 1 to 4 now open
+    `daash://today` to start past onboarding.
+- **Review fixes (28 Nov).**
+  - *The easy pace the runner confirmed is the plan's.* The import's easy
+    range (read from their runs) now travels in `basis.easy`, and `reveal()`
+    uses it for week 1's easy and long runs, so the result and the reveal show
+    the same range (tested in the domain checks and against the fixture).
+  - *No race, no prediction.* With nothing imported, or no race answered,
+    `basis.assumed` is true: the reveal shows the target but no "Predicted
+    now", and its line says "No prediction without a recent race; paces use a
+    10K of 45:00 for now." instead of "your 10K". An import with no runs says
+    "Phases follow from your 20 weeks." rather than "recent 0 km weeks". New
+    fixture cases `reveal_empty` and `reveal_questions`.
+  - *Sentence case:* "from your half marathon" (race names inside a sentence
+    are lower case, 5K and 10K as they are), in the engine and the twin.
+  - *Targets of 10 hours or more* need h:mm:ss, as `plan_builder.goal_secs`
+    reads two parts of 10 or more as mm:ss.
+  - *Slow replies.* A plan made for paces or a goal that have changed since
+    (Back, Adjust) is dropped by the provider (`revealFor`), never shown or
+    sent; choosing the four questions, or leaving the paces step, makes a slow
+    import stale so it can't push its result over them.
+  - *Plan after "Create a plan".* `data/planChanged.ts`: the landing tells Plan
+    and Today the plan changed and they refresh, so Plan shows the new plan,
+    not "No plan yet".
+  - *No back on the landing* on Android either: a `BackHandler` consumes it, so
+    week 1 can't be staged twice from the steps.
+  - *Sending* has the muted spinner and says "Sending to Garmin"; "next time it
+    syncs" is only said once Garmin has it. The reveal's Reconnect state has
+    its own words (no plan exists yet, so not "Your plan is safe") and "I've
+    signed in", like the signed-out state. The days-a-week chips are
+    MIN_TOUCH wide. The empty import's note uses the basis the server sent.
+  - *Sign in.* After Sign in the welcome shows "I've signed in": with a token,
+    the phone is marked onboarded and goes to Today; without one it says "Not
+    signed in yet". The first screen also sends a phone that has a token
+    (signed in before onboarding existed, or after Sign in) to Today.
+    TODO(server): the token hand-back is still needed for any of this to work
+    on a device.
+  - *Flow tests and Maestro* type a race day five months from the real clock,
+    not 24 Apr 2027.
+- **Open questions for the owner (defaults taken):**
+  - *Sign in for a runner with no plan on the server.* Default: Today, with
+    Plan's "Create a plan"; the alternative is to ask the server whether
+    there's a plan and send a runner without one to the goal step. Likewise a
+    runner who connected Garmin mid-onboarding and closed the app lands on
+    Today next launch (onboarding's answers aren't kept across closing yet).
+  - *A prediction from an assumed 10K.* Default: none shown. The alternative is
+    to show it labelled "from a 10K of 45:00", which is still a guess.
+  - *The session tried before sign-up.* Default: not kept (the card says so).
+    The alternative is to carry it in onboarding and offer it after the
+    landing, through the watch confirm.
+- **Needs a device build (added):** on Android the default notification
+  channel is made before the permission ask (Android 13+ shows no prompt
+  without one); check the prompt appears on a real Android 13+ phone.

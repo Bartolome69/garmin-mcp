@@ -1,0 +1,34 @@
+# Onboarding → first workout lands. A fresh install: the welcome, the try builder,
+# the goal, the import (the development build reads the persona's 12 weeks), the
+# plan, week 1 through the watch confirm, the landing, then the notification ask.
+appId: run.daash.app
+---
+- launchApp:
+    clearState: true
+- assertVisible: { id: "button-Set up my plan" }
+- tapOn: { id: "button-Try building a session" }
+- assertVisible: "Like it? Make a plan that goes to your watch."
+- tapOn: { id: "button-Create free account" }
+- assertVisible: "What are you training for?"
+- tapOn: { id: "race-name" }
+- inputText: "London Marathon"
+- tapOn: { id: "race-date" }
+# About five months out from the device's clock, so the step never sees a past day.
+# (The development build's plan is the persona's London fixture whatever the date.)
+- inputText: ${new Date(Date.now() + 150 * 86400000).toISOString().slice(0, 10)}
+- tapOn: { id: "race-target" }
+- inputText: "3:15"
+- hideKeyboard
+- tapOn: { id: "button-Continue" }
+- assertVisible: "Set your paces"
+- tapOn: { id: "button-Connect Garmin" }
+- assertVisible: "Found 56 runs since September"
+- tapOn: { id: "button-Looks right" }
+- assertVisible: "London Marathon, Sat 24 Apr"
+- tapOn: { id: "button-Send week 1 to my watch" }
+- assertVisible: "5 changes on your watch"
+- tapOn: { id: "button-Confirm and send 5 changes" }
+- extendedWaitUntil:
+    visible: "Allow notifications"
+    timeout: 90000
+- tapOn: { id: "button-Allow notifications" }

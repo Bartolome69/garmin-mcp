@@ -1,0 +1,516 @@
+// Onboarding (build prompt, section 5.13): welcome with try-first, the goal, paces
+// (import from the watch, recommended, or four questions), the result to confirm,
+// the plan reveal, and the first workout landing: a filled success check, and only
+// then the ask for notifications.
+import { useState, type ReactNode } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
+
+import type { FailureKind } from '../../data/resource';
+import { DAYS, mmss, shortDate, weekday } from '../../domain/format';
+import { useTheme } from '../../theme/ThemeProvider';
+import { Button, MIN_TOUCH } from '../../ui/Button';
+import { Card } from '../../ui/Card';
+import { Icon } from '../../ui/Icon';
+import { StructureBar } from '../../ui/session/StructureBar';
+import { TypeChip } from '../../ui/session/TypeChip';
+import { TYPE_TOKEN } from '../../ui/session/types';
+import { FAILURE_WORDS } from '../../ui/StateViews';
+import { Text } from '../../ui/Text';
+import { WatchCard } from '../watch/WatchCard';
+import {
+  DISTANCES, EXPERIENCE, WEEKLY, goalValid, parseRaceDate, raceName, raceSeconds,
+  type Experience, type Goal, type Landing, type PaceResult, type Reveal, type Weekly,
+} from './model';
+
+function Step({ kicker, title, sub, children, footer, testID }: { kicker?: string; title: string; sub?: string; children: ReactNode; footer?: ReactNode; testID: string }) {
+  const { colors } = useTheme();
+  return (
+    <View testID={testID} style={{ flex: 1, backgroundColor: colors.bg }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingTop: 24, gap: 12 }}>
+        {kicker ? <Text variant="kicker" tone="muted">{kicker}</Text> : null}
+        <Text variant="largeTitle" accessibilityRole="header">{title}</Text>
+        {sub ? <Text variant="body" tone="muted">{sub}</Text> : null}
+        {children}
+      </ScrollView>
+      {footer ? <View style={{ padding: 20, paddingBottom: 36, gap: 8 }}>{footer}</View> : null}
+    </View>
+  );
+}
+
+function Chip({ label, on, onPress, testID }: { label: string; on: boolean; onPress: () => void; testID: string }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable testID={testID} accessibilityRole="radio" accessibilityState={{ selected: on }} onPress={onPress} style={{ minHeight: MIN_TOUCH, minWidth: MIN_TOUCH, justifyContent: 'center' }}>
+      <View style={{ minHeight: 34, minWidth: MIN_TOUCH, alignItems: 'center', paddingHorizontal: 14, borderRadius: 999, justifyContent: 'center', backgroundColor: on ? colors.text : 'transparent',
+        borderWidth: 1, borderColor: on ? colors.text : colors.muted }}>
+        <Text variant="subhead" tone={on ? 'bg' : 'text'} style={{ fontWeight: '600' }}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function Field({ label, value, onChange, placeholder, testID, hint }: { label: string; value: string; onChange: (t: string) => void; placeholder: string; testID: string; hint?: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ gap: 4 }}>
+      <Text variant="footnote" tone="muted">{label}</Text>
+      <TextInput testID={testID} accessibilityLabel={label} accessibilityHint={hint} value={value} onChangeText={onChange} placeholder={placeholder}
+        placeholderTextColor={colors.muted} autoCorrect={false}
+        style={{ minHeight: 48, paddingHorizontal: 14, borderRadius: 12, backgroundColor: colors.sunken, color: colors.text, fontSize: 17 }} />
+    </View>
+  );
+}
+
+/** A problem in words with its icon, in the error colour (never colour alone). */
+function Problem({ testID, children }: { testID: string; children: string }) {
+  return (
+    <View testID={testID} accessible accessibilityLiveRegion="polite" accessibilityLabel={children} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+      <Icon name="error" tone="brandText" />
+      <Text variant="footnote" tone="brandText" style={{ flex: 1 }}>{children}</Text>
+    </View>
+  );
+}
+
+/** Section 1's neutral footer, wherever onboarding sends the runner to Garmin's sign-in. */
+export const INDEPENDENT = 'Daash is independent and not endorsed by any watch maker.';
+
+// -- welcome -------------------------------------------------------------------------------
+
+export function Welcome({ brand, onTry, onSetUp, onSignIn, signingIn = false, signInProblem = null, onSignedIn = () => {} }: {
+  brand: boolean; onTry: () => void; onSetUp: () => void; onSignIn: () => void;
+  /** Sign in was tapped: Garmin's page is open, and "I've signed in" checks for the account. */
+  signingIn?: boolean; signInProblem?: string | null; onSignedIn?: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <ScrollView testID="welcome" style={{ flex: 1, backgroundColor: colors.bg }}
+      contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 72, paddingBottom: 40, gap: 24, justifyContent: 'space-between' }}>
+      <View style={{ gap: 18 }}>
+        {/* The mark: decoration, so it doesn't grow with the text and isn't read out. */}
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+          style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: colors.sunken, alignItems: 'center', justifyContent: 'center' }}>
+          <Text variant="largeTitle" tone="brandText" maxFontSizeMultiplier={1} style={{ fontWeight: '800' }}>D</Text>
+        </View>
+        <Text variant="largeTitle" accessibilityRole="header">{'Plan the run.\nSend it to your watch.'}</Text>
+        <Text variant="body" tone="muted">Build a session in plain words and see it as steps. No account needed to try.</Text>
+        <Card style={{ gap: 8 }} testID="welcome-example">
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <TypeChip type="tempo" label="Tempo" />
+            <Text variant="footnote" tone="muted">example</Text>
+          </View>
+          <Text variant="headline">5 × 1 km at threshold, 2 min easy</Text>
+          <StructureBar type="tempo" parts={[{ part: 'wu', weight: 10 }, ...Array.from({ length: 5 }, (_, i) => [{ part: 'work' as const, weight: 4.4 }, ...(i < 4 ? [{ part: 'rec' as const, weight: 2 }] : [])]).flat(), { part: 'cd', weight: 10 }]} legend={[]} />
+        </Card>
+      </View>
+      <View style={{ gap: 10 }}>
+        <Button label="Try building a session" kind="primary" brand={brand} onPress={onTry} />
+        <Button label="Set up my plan" onPress={onSetUp} />
+        <Pressable testID="sign-in" accessibilityRole="button" onPress={onSignIn} style={{ minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
+          <Text variant="headline">Sign in</Text>
+        </Pressable>
+        {signingIn ? (
+          <View testID="signing-in" style={{ gap: 8 }}>
+            <Text variant="footnote" tone="muted" style={{ textAlign: 'center' }}>Sign in on Garmin’s page, then come back here.</Text>
+            <Button label="I’ve signed in" onPress={onSignedIn} />
+            {signInProblem ? <Problem testID="sign-in-problem">{signInProblem}</Problem> : null}
+            <Text variant="footnote" tone="muted" style={{ textAlign: 'center' }}>{INDEPENDENT}</Text>
+          </View>
+        ) : null}
+      </View>
+    </ScrollView>
+  );
+}
+
+/** The try builder's last card: what sending needs, and that it's free. */
+export function TryCard({ brand, onCreate }: { brand: boolean; onCreate: () => void }) {
+  return (
+    <Card testID="try-card" style={{ gap: 8 }}>
+      <Text variant="headline">Like it? Make a plan that goes to your watch.</Text>
+      <Text variant="footnote" tone="muted">A free account and a watch connection. Sending is always free. This try isn’t saved.</Text>
+      <Button label="Create free account" kind="primary" brand={brand} onPress={onCreate} />
+    </Card>
+  );
+}
+
+// -- step 1: the goal ----------------------------------------------------------------------
+
+/** "Sat 24 Apr 2027", to show the day a typed date was read as. */
+export const longDate = (iso: string) => `${DAYS[weekday(iso)]} ${shortDate(iso)} ${iso.slice(0, 4)}`;
+
+export function GoalStep({ initial, today, brand, onContinue }: { initial: Goal | null; today: string; brand: boolean; onContinue: (g: Goal) => void }) {
+  const { colors } = useTheme();
+  const race0 = initial?.kind === 'race' ? initial : null;
+  const [kind, setKind] = useState<'race' | 'fit'>(initial?.kind ?? 'race');
+  const [name, setName] = useState(race0?.name ?? '');
+  const [km, setKm] = useState(race0?.km ?? 42.195);
+  const [dateText, setDateText] = useState(race0 ? longDate(race0.date) : '');
+  const [target, setTarget] = useState(race0?.target ?? '');
+  const date = parseRaceDate(dateText);
+  const goal: Goal = kind === 'fit' ? { kind: 'fit' } : { kind: 'race', name: name.trim(), date: date ?? '', km, target: target.trim() || null };
+  const long = km >= 21;
+  const dateProblem = !dateText.trim() ? null
+    : !date ? 'Write the date as day, month and year, like 24 Apr 2027.'
+      : date <= today ? 'Pick a race day after today.' : null;
+  const targetProblem = target.trim() && raceSeconds(target, km) == null
+    ? `Write the target as ${long ? 'h:mm, like 3:15' : 'mm:ss, like 45:00'}.` : null;
+  const choice = (k: 'race' | 'fit', title: string, sub: string) => (
+    <Pressable testID={`goal-${k}`} accessibilityRole="radio" accessibilityState={{ selected: kind === k }} accessibilityLabel={`${title}. ${sub}`}
+      onPress={() => setKind(k)}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, minHeight: MIN_TOUCH, borderRadius: 16, backgroundColor: colors.surface,
+        borderWidth: 1, borderColor: kind === k ? colors.text : colors.hairline }}>
+      <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: kind === k ? colors.text : colors.muted, backgroundColor: kind === k ? colors.text : 'transparent' }} />
+      <View style={{ flex: 1 }}>
+        <Text variant="headline">{title}</Text>
+        <Text variant="footnote" tone="muted">{sub}</Text>
+      </View>
+    </Pressable>
+  );
+  return (
+    <Step testID="ob-goal" kicker="Step 1 of 3" title="What are you training for?"
+      footer={<Button label="Continue" kind="primary" brand={brand} disabled={!goalValid(goal, today)} onPress={() => onContinue(goal)} />}>
+      <View accessibilityRole="radiogroup" style={{ gap: 10 }}>
+        {choice('race', 'A race', 'Name, date and a target if you have one')}
+        {choice('fit', 'Just get fitter', 'Steady weeks, no race date')}
+      </View>
+      {kind === 'race' ? (
+        <Card style={{ gap: 12 }}>
+          <Field testID="race-name" label="Race" value={name} onChange={setName} placeholder="London Marathon" />
+          <View style={{ gap: 4 }}>
+            <Text variant="footnote" tone="muted">Distance</Text>
+            <View accessibilityRole="radiogroup" accessibilityLabel="Distance" style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 8 }}>
+              {DISTANCES.map((d) => <Chip key={d.label} testID={`distance-${d.label}`} label={d.label} on={km === d.km} onPress={() => setKm(d.km)} />)}
+            </View>
+          </View>
+          <Field testID="race-date" label="Date" value={dateText} onChange={setDateText} placeholder="24 Apr 2027" hint="Day, month and year" />
+          {date && !dateProblem ? <Text testID="race-date-read" variant="footnote" tone="muted">{longDate(date)}</Text> : null}
+          {dateProblem ? <Problem testID="date-problem">{dateProblem}</Problem> : null}
+          <Field testID="race-target" label="Target, optional" value={target} onChange={setTarget} placeholder={long ? '3:15' : '45:00'}
+            hint={long ? 'Hours and minutes' : 'Minutes and seconds'} />
+          {targetProblem ? <Problem testID="target-problem">{targetProblem}</Problem> : null}
+        </Card>
+      ) : null}
+    </Step>
+  );
+}
+
+// -- step 2: paces -------------------------------------------------------------------------
+
+/** Why the import didn't happen, in words, with what to do next. */
+export const IMPORT_PROBLEM: Record<FailureKind, string> = {
+  offline: 'You’re offline. Reading your runs needs a connection, or answer 4 questions instead.',
+  signedOut: 'Sign in on Garmin’s page, then come back here and import.',
+  reconnect: 'Garmin needs you to sign in again. Sign in on Garmin’s page, then import.',
+  server: 'Couldn’t read your runs just now. Try again, or answer 4 questions instead.',
+};
+
+export function PacesStep({ brand, busy, connected, problem, onImport, onQuestions }: {
+  brand: boolean; busy: boolean;
+  /** Signed in with Garmin already: the button reads the runs instead of connecting first. */
+  connected: boolean;
+  problem: FailureKind | null;
+  onImport: () => void; onQuestions: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Step testID="ob-paces" kicker="Step 2 of 3" title="Set your paces" sub="Fastest is to read your recent runs.">
+      <Card style={{ gap: 8, borderWidth: 1, borderColor: colors.text }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, justifyContent: 'center', overflow: 'hidden' }}>
+            <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.success, opacity: 0.18 }} />
+            <Text variant="caption" tone="success" style={{ fontWeight: '700' }}>Recommended</Text>
+          </View>
+          <Text variant="footnote" tone="muted">about 20 seconds</Text>
+        </View>
+        <Text variant="title">Import my recent runs from my watch</Text>
+        <Text variant="footnote" tone="muted">Reads the last 12 weeks to set easy, threshold and race paces.</Text>
+        <Button label={busy ? 'Reading your runs…' : connected ? 'Import my runs' : 'Connect Garmin'} kind="primary" brand={brand} disabled={busy} onPress={onImport} />
+        {problem ? <Problem testID="import-problem">{IMPORT_PROBLEM[problem]}</Problem> : null}
+      </Card>
+      <Pressable testID="questions" accessibilityRole="button" onPress={onQuestions}
+        style={{ gap: 6, padding: 16, minHeight: MIN_TOUCH, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
+        <Text variant="headline">Answer 4 questions instead</Text>
+        <Text variant="footnote" tone="muted">Experience, days a week, recent distance, a recent race</Text>
+      </Pressable>
+      <Text variant="footnote" tone="muted">Daash reads activities only for this. You can disconnect any time in You › Connections.</Text>
+      <Text testID="independent" variant="footnote" tone="muted">{INDEPENDENT}</Text>
+    </Step>
+  );
+}
+
+export function QuestionsStep({ brand, onContinue }: { brand: boolean; onContinue: (a: { experience: Experience; days: number; weekly: Weekly; race: { km: number; secs: number } | null }) => void }) {
+  const [experience, setExperience] = useState<Experience | null>(null);
+  const [days, setDays] = useState<number | null>(null);
+  const [weekly, setWeekly] = useState<Weekly | null>(null);
+  const [raceKm, setRaceKm] = useState<number | null>(null);
+  const [time, setTime] = useState('');
+  const secs = raceKm != null && time.trim() ? raceSeconds(time, raceKm) : null;
+  const raceOk = raceKm == null || !time.trim() || secs != null;
+  const ready = !!(experience && days && weekly && raceOk);
+  const group = (title: string, items: ReactNode) => (
+    <Card style={{ gap: 6 }}>
+      <Text variant="headline">{title}</Text>
+      <View accessibilityRole="radiogroup" accessibilityLabel={title} style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 8 }}>{items}</View>
+    </Card>
+  );
+  return (
+    <Step testID="ob-questions" kicker="Step 2 of 3" title="How do you train?"
+      footer={<Button label="Continue" kind="primary" brand={brand} disabled={!ready}
+        onPress={() => onContinue({ experience: experience!, days: days!, weekly: weekly!, race: raceKm != null && secs != null ? { km: raceKm, secs } : null })} />}>
+      {group('Experience', EXPERIENCE.map((e) => <Chip key={e.key} testID={`exp-${e.key}`} label={e.label} on={experience === e.key} onPress={() => setExperience(e.key)} />))}
+      {group('Days a week', [3, 4, 5, 6, 7].map((d) => <Chip key={d} testID={`days-${d}`} label={String(d)} on={days === d} onPress={() => setDays(d)} />))}
+      {group('A usual week lately', WEEKLY.map((w) => <Chip key={w.key} testID={`weekly-${w.key}`} label={w.label} on={weekly === w.key} onPress={() => setWeekly(w.key)} />))}
+      <Card style={{ gap: 8 }}>
+        <Text variant="headline">A recent race, optional</Text>
+        <View accessibilityRole="radiogroup" accessibilityLabel="A recent race" style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 8 }}>
+          {DISTANCES.map((d) => <Chip key={d.label} testID={`qrace-${d.label}`} label={d.label} on={raceKm === d.km} onPress={() => setRaceKm(raceKm === d.km ? null : d.km)} />)}
+        </View>
+        {raceKm != null ? <Field testID="race-time" label="Time" value={time} onChange={setTime} placeholder={raceKm >= 42 ? '3:30:00' : raceKm >= 21 ? '1:45:00' : raceKm >= 10 ? '45:00' : '22:00'} /> : null}
+        {!raceOk ? <Problem testID="time-problem">{raceKm != null && raceKm >= 21 ? 'Write the time as h:mm:ss, like 1:45:00.' : 'Write the time as mm:ss, like 45:00.'}</Problem> : null}
+      </Card>
+    </Step>
+  );
+}
+
+export function ResultStep({ result, device, brand, onAdjust, onRight }: { result: PaceResult; device: string | null; brand: boolean; onAdjust: () => void; onRight: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Step testID="ob-result" kicker="Step 2 of 3" title={result.title}
+      footer={(
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button label="Adjust" full onPress={onAdjust} />
+          <Button label="Looks right" kind="primary" brand={brand} full onPress={onRight} />
+        </View>
+      )}>
+      <View style={{ borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
+        {result.rows.map((r, i) => (
+          <View key={r.key} testID={`result-${r.key}`} accessible accessibilityLabel={`${r.label}, ${r.value.replace('–', ' to ')}, ${r.note}`}
+            style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: 14, borderTopWidth: i ? 1 : 0, borderTopColor: colors.hairline }}>
+            <View style={{ flexGrow: 1, flexShrink: 1 }}>
+              <Text variant="footnote" tone="muted">{r.label}</Text>
+              <Text variant="headline" numeric>{r.value}</Text>
+            </View>
+            <Text variant="footnote" tone="muted">{r.note}</Text>
+          </View>
+        ))}
+      </View>
+      {result.runs === 0 ? (
+        <Text testID="result-empty" variant="body" tone="muted">
+          {`Nothing to read from the last 12 weeks, so these paces use a ${raceName(result.basis.raceKm)} of ${mmss(result.basis.raceSeconds)}. Adjust to answer 4 questions for paces closer to yours.`}
+        </Text>
+      ) : null}
+      {result.source === 'import' ? <Text testID="result-connection" variant="footnote" tone="muted">{`Connected to Garmin${device ? ` · ${device}` : ''}`}</Text> : null}
+    </Step>
+  );
+}
+
+// -- the plan reveal --------------------------------------------------------------------------
+
+const RAMP = [0.25, 0.45, 0.7, 1];
+
+export function RevealView({ r, coach, brand, onSend }: { r: Reveal; coach: boolean; brand: boolean; onSend: () => void }) {
+  const { colors } = useTheme();
+  const total = r.phases.reduce((n, p) => n + p.weeks, 0);
+  const big = (value: string, label: string, testID: string) => (
+    <View testID={testID} accessible accessibilityLabel={`${label}, ${value}`} style={{ gap: 2 }}>
+      <Text variant="largeTitle" numeric style={{ fontWeight: '700' }}>{value}</Text>
+      <Text variant="footnote" tone="muted">{label}</Text>
+    </View>
+  );
+  return (
+    <Step testID="ob-reveal" kicker={`Step 3 of 3 · ${r.kicker}`} title={r.title}
+      footer={<Button label="Send week 1 to my watch" kind="primary" brand={brand} onPress={onSend} />}>
+      <Card style={{ gap: 12 }}>
+        <View testID="phases" accessible accessibilityRole="image" accessibilityLabel={`Phases: ${r.phases.map((p) => `${p.label} ${p.weeks} weeks`).join(', ')}`}
+          style={{ flexDirection: 'row', gap: 3 }}>
+          {r.phases.map((p, i) => (
+            <View key={p.label} style={{ flex: p.weeks / total, gap: 4, minWidth: 0 }}>
+              <View style={{ height: 10, borderRadius: 3, backgroundColor: colors.text, opacity: RAMP[i] ?? 1 }} />
+              <Text variant="footnote" style={{ fontWeight: '600' }} numberOfLines={1}>{p.label}</Text>
+              <Text variant="caption" tone="muted" numberOfLines={1}>{`${p.weeks} wks`}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={{ flexDirection: 'row', gap: 24, flexWrap: 'wrap' }}>
+          {r.predicted ? big(r.predicted, 'Predicted now', 'predicted') : null}
+          {r.target ? big(r.target, 'Target', 'target') : null}
+          {big(`${r.startKm}`, `km in week 1 · peak ${r.peakKm}`, 'volume')}
+        </View>
+      </Card>
+      {/* The rule's line always shows (it carries numbers); the Coach adds its note to it, never replaces it. */}
+      <Text testID="because" variant="footnote" tone="muted">{r.because}</Text>
+      {coach && r.coachNote ? (
+        <View testID="coach-note" style={{ gap: 4, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
+          <Text variant="kicker" tone="muted">Coach · why this shape</Text>
+          <Text variant="coach">{r.coachNote}</Text>
+        </View>
+      ) : null}
+      <Card testID="week1" style={{ gap: 0, paddingVertical: 6 }}>
+        <Text variant="kicker" tone="muted" style={{ paddingVertical: 6 }}>Week 1</Text>
+        {r.week1.map((s, i) => (
+          <View key={s.id} accessible accessibilityLabel={`${s.dow} ${s.day}, ${s.title}, ${s.sub.replace('–', ' to ')}`}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, borderTopWidth: i ? 1 : 0, borderTopColor: colors.hairline }}>
+            <View style={{ width: 34, alignItems: 'center' }}>
+              <Text variant="caption" tone="muted">{s.dow}</Text>
+              <Text variant="headline" numeric>{String(s.day)}</Text>
+            </View>
+            <View style={{ width: 4, alignSelf: 'stretch', marginVertical: 10, borderRadius: 2, backgroundColor: colors[TYPE_TOKEN[s.type]] }} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text variant="subhead" style={{ fontWeight: '600' }} numeric>{s.title}</Text>
+              <Text variant="footnote" tone="muted" numeric>{s.sub}</Text>
+            </View>
+          </View>
+        ))}
+      </Card>
+    </Step>
+  );
+}
+
+/** Before the plan is there: being made, or why not and the one thing to do. */
+export function RevealWait({ failure, brand, onRetry, onConnect }: { failure: FailureKind | null | 'loading'; brand: boolean; onRetry: () => void; onConnect: () => void }) {
+  const { colors } = useTheme();
+  const body = (title: string, text: string, actions: ReactNode) => (
+    <View testID="ob-reveal-wait" style={{ flex: 1, backgroundColor: colors.bg, padding: 20, paddingTop: 24, gap: 12 }}>
+      <Text variant="title" accessibilityRole="header">{title}</Text>
+      <Text variant="body" tone="muted">{text}</Text>
+      {actions}
+    </View>
+  );
+  if (failure === 'loading' || failure == null) {
+    return (
+      <View testID="ob-reveal-wait" accessible accessibilityLabel="Making your plan" accessibilityLiveRegion="polite" style={{ flex: 1, backgroundColor: colors.bg, padding: 20, paddingTop: 24, gap: 12 }}>
+        <Text variant="title">Making your plan…</Text>
+        {[120, 64, 220].map((h, i) => <View key={i} style={{ height: h, borderRadius: 12, backgroundColor: colors.surface }} />)}
+      </View>
+    );
+  }
+  // Connecting is the account: the plan is kept with it, and week 1 goes to the watch from there.
+  if (failure === 'signedOut') {
+    return body('Connect Garmin to make your plan', 'Your plan is kept with your account, and week 1 goes to your watch from there. You sign in on Garmin’s own page.', (
+      <>
+        <Button label="Connect Garmin" kind="primary" brand={brand} onPress={onConnect} />
+        <Button label="I’ve signed in" onPress={onRetry} />
+        <Text variant="footnote" tone="muted">{INDEPENDENT}</Text>
+      </>
+    ));
+  }
+  // No plan exists yet, so not the app-wide "Your plan is safe".
+  if (failure === 'reconnect') {
+    const w = FAILURE_WORDS.reconnect;
+    return body(w.title(''), 'Garmin needs you to sign in again before your plan is made. Your answers are kept.', (
+      <>
+        <Button label={w.action} kind="primary" brand={brand} onPress={onConnect} />
+        <Button label="I’ve signed in" onPress={onRetry} />
+        <Text variant="footnote" tone="muted">{INDEPENDENT}</Text>
+      </>
+    ));
+  }
+  return body('Your plan isn’t made yet', failure === 'offline' ? 'You’re offline. Your answers are kept; try again when you’re back online.'
+    : 'Daash didn’t answer. Your answers are kept; try again in a moment.', <Button label="Try again" onPress={onRetry} />);
+}
+
+// -- landed ----------------------------------------------------------------------------------
+
+export function SuccessCheck() {
+  const { colors } = useTheme();
+  return (
+    <Svg testID="success-check" width={56} height={56} viewBox="0 0 24 24" accessible accessibilityRole="image" accessibilityLabel="Done">
+      <Circle cx={12} cy={12} r={11} fill={colors.success} />
+      <Path d="M7 12.4l3.3 3.3 6.7-7.2" fill="none" stroke={colors.bg} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+const LONG_DAYS: Record<string, string> = { MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday', SUN: 'Sunday' };
+
+
+/** The rest of week 1 once the first is on the watch: those still on their way (never the failed ones). */
+export function restLine(pending: number, total: number, failed = 0): string {
+  if (pending > 0 && !failed) return pending === 1 ? ' The other session of week 1 follows as the watch syncs.' : ` The other ${pending} sessions of week 1 follow as the watch syncs.`;
+  if (pending > 0) return pending === 1 ? ' One more session of week 1 follows as the watch syncs.' : ` ${pending} more sessions of week 1 follow as the watch syncs.`;
+  return total > 1 && !failed ? ' The rest of week 1 is on it too.' : '';
+}
+
+/** Sessions of week 1 that weren't sent: said, never folded into "follows as the watch syncs". */
+export function failedLine(failed: number): string {
+  return failed === 1 ? 'One session of week 1 wasn’t sent. Nothing changed on your watch for it.'
+    : `${failed} sessions of week 1 weren’t sent. Nothing changed on your watch for those.`;
+}
+
+export function LandedView({ first, landing, brand, device, home = 'Today', ask = true, onResend, onTrouble, onAllow, onNotNow, onLeave }: {
+  first: Reveal['week1'][number]; landing: Landing; brand: boolean; device: string | null;
+  /** Where onboarding ends: Today, or Plan when it was started from Plan's "Create a plan". */
+  home?: 'Today' | 'Plan';
+  /** Whether to ask about notifications: true until answered once on this device; null while that's being read. */
+  ask?: boolean | null;
+  onResend: () => void; onTrouble: () => void; onAllow: () => void; onNotNow: () => void;
+  /** On to Today before it lands: the notification ask waits for a workout that has. */
+  onLeave: () => void;
+}) {
+  const { colors } = useTheme();
+  const day = LONG_DAYS[first.dow] ?? first.dow;
+  const page = (children: ReactNode) => (
+    <ScrollView testID="ob-landed" style={{ flex: 1, backgroundColor: colors.bg }}
+      contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 80, paddingBottom: 40, gap: 18 }}>
+      {children}
+    </ScrollView>
+  );
+  if (landing.state === 'landed') {
+    return page(
+      <>
+        <SuccessCheck />
+        <Text variant="largeTitle" accessibilityRole="header">{`${day}’s run is on your watch.`}</Text>
+        <Text testID="landed-detail" variant="body" tone="muted" numeric>
+          {`${first.title} landed on ${landing.device ?? 'your watch'} at ${landing.at}.${restLine(landing.rest, landing.total, landing.failed)}`}
+        </Text>
+        {landing.failed > 0 ? (
+          <View testID="landed-failed" style={{ gap: 8 }}>
+            <Problem testID="landed-failed-words">{failedLine(landing.failed)}</Problem>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <Button label="Resend" small onPress={onResend} />
+              <Button label="Trouble connecting?" small onPress={onTrouble} />
+            </View>
+          </View>
+        ) : null}
+        <View style={{ flexGrow: 1 }} />
+        {ask === true ? (
+          <Card testID="notify-ask" style={{ gap: 10 }}>
+            <Text variant="headline">Want a heads-up when sessions land or change?</Text>
+            <Text variant="footnote" tone="muted">Asked now, not at sign-up, because now you know what they’re for.</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <Button label="Not now" full onPress={onNotNow} />
+              <Button label="Allow notifications" kind="primary" brand={brand} full onPress={onAllow} />
+            </View>
+          </Card>
+        ) : ask === false ? <Button label={`Go to ${home}`} kind="primary" brand={brand} onPress={onLeave} /> : null}
+      </>,
+    );
+  }
+  if (landing.state === 'failed') {
+    return page(
+      <>
+        <Text variant="largeTitle" accessibilityRole="header">{`${day}’s run isn’t on your watch yet.`}</Text>
+        <WatchCard watch={{ state: 'failed', at: landing.at }} device={device} error={landing.error} retrying={landing.retrying} adjusted={false}
+          brand={brand} onSend={onResend} onResend={onResend} onRemove={() => {}} onTrouble={onTrouble} />
+        <View style={{ flexGrow: 1 }} />
+        <Button label={`Go to ${home}`} onPress={onLeave} />
+      </>,
+    );
+  }
+  const pending = landing.state === 'pending';
+  return page(
+    <>
+      <View testID="landed-waiting" accessible accessibilityLiveRegion="polite"
+        accessibilityLabel={pending ? `${day}’s run arrives at the next sync` : `Sending ${day}’s run to your watch`} style={{ gap: 12 }}>
+        {pending ? null : <ActivityIndicator testID="landed-spinner" size="small" color={colors.muted} style={{ alignSelf: 'flex-start' }} />}
+        <Text variant="largeTitle" accessibilityRole="header">{pending ? `${day}’s run arrives at the next sync.` : `Sending ${day}’s run to your watch…`}</Text>
+        <Text variant="body" tone="muted">
+          {pending ? 'Garmin has it. It shows on the watch next time it syncs with your phone. No need to wait here.'
+            : 'Sending to Garmin. No need to wait here.'}
+        </Text>
+      </View>
+      <View style={{ flexGrow: 1 }} />
+      <Button label={`Go to ${home}`} onPress={onLeave} />
+    </>,
+  );
+}

@@ -4,7 +4,7 @@
 //
 // Never guesses silently: anything the parser can't read is shown in place, with
 // its fix-it. A "Did you mean …?" fix-it is a button that makes that change.
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import type { Parsed, Problem } from '../../domain/parser';
@@ -90,7 +90,7 @@ function Chip({ label, on, onPress, testID, hint }: { label: string; on: boolean
 }
 
 export function BuilderView({ text, onText, parsed, built, basis, step, onStep, adjust, rule, coach, coachNote, days, day, onDay,
-  edit, onEditOpen, onEdit, onEditDone, onSave, brand = true, editing = false }: {
+  edit, onEditOpen, onEdit, onEditDone, onSave, brand = true, editing = false, trying, hint = HINT }: {
   text: string;
   onText: (t: string) => void;
   parsed: Parsed;
@@ -114,6 +114,9 @@ export function BuilderView({ text, onText, parsed, built, basis, step, onStep, 
   brand?: boolean;
   /** Editing a planned session: saving replaces it. */
   editing?: boolean;
+  /** Trying it before sign-up (onboarding): this in place of the day and Save and send. */
+  trying?: ReactNode;
+  hint?: string;
 }) {
   const { colors } = useTheme();
   const [picking, setPicking] = useState(false);
@@ -123,7 +126,7 @@ export function BuilderView({ text, onText, parsed, built, basis, step, onStep, 
   return (
     <ScrollView testID="builder" contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled"
       style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text variant="footnote" tone="muted">{HINT}</Text>
+      <Text variant="footnote" tone="muted">{hint}</Text>
       <TextInput testID="builder-input" accessibilityLabel="Workout" accessibilityHint={HINT}
         value={text} onChangeText={onText} editable={!edit} placeholder={PLACEHOLDER} placeholderTextColor={colors.muted}
         multiline autoCapitalize="none" autoCorrect={false} spellCheck={false}
@@ -170,7 +173,9 @@ export function BuilderView({ text, onText, parsed, built, basis, step, onStep, 
         </View>
       ) : null}
 
-      {built ? (
+      {built && trying ? trying : null}
+
+      {built && !trying ? (
         <View style={{ gap: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <Text variant="subhead" style={{ fontWeight: '600' }}>Day</Text>
@@ -190,7 +195,7 @@ export function BuilderView({ text, onText, parsed, built, basis, step, onStep, 
         </View>
       ) : null}
 
-      {empty ? null : (
+      {empty || trying ? null : (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <Button label={edit ? 'Done' : 'Edit steps'} full disabled={!built && !edit} onPress={edit ? onEditDone : onEditOpen} />
           <Button label="Save and send" kind="primary" brand={brand} full disabled={!built || !!edit} onPress={onSave} />
