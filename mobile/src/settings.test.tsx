@@ -1,10 +1,13 @@
 // You's settings (milestone 12): Sign out behind a confirm, the appearance override, the four
 // notification kinds and their copy (Notifications boards; no "Missed"), and the sketched rows.
 import { describe, expect, it } from '@jest/globals';
-import { fireEvent, screen, within } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
 
 import { DEFAULT_PREFS, headsUp, NOTIFICATION_KINDS, planUpdated, readPrefs, runSummary, sentToWatch } from './features/settings/notifications';
-import { openScreen, SCREENS } from './testing/screens';
+import { memoryStore, type WatchStore } from './features/watch/store';
+import { FakeGarmin, type WatchTransport } from './features/watch/transport';
+import type { WatchOp } from './features/watch/queue';
+import { app, openScreen, SCREENS, stagedProposal, watchQueue } from './testing/screens';
 
 const open = (name: string) => openScreen(SCREENS.find((c) => c.name === name)!);
 
@@ -55,6 +58,36 @@ describe('Sign out', () => {
     const confirm = within(sheet).getByTestId('button-Sign out');
     await fireEvent.press(confirm);
     expect(await screen.findByTestId('welcome', {}, { timeout: 5000 })).toBeTruthy();
+  });
+
+  it('forgets the watch queue: a send under way when signing out writes nothing back', async () => {
+    // Garmin answers only when told to, so the send is still under way at sign out.
+    const fake = new FakeGarmin();
+    let answer: () => void = () => {};
+    const garmin: WatchTransport = {
+      connection: () => fake.connection(),
+      synced: (ops) => fake.synced(ops),
+      send: (op) => new Promise((resolve, reject) => { answer = () => { fake.send(op).then(resolve, reject); }; }),
+    };
+    const saved: WatchOp[][] = [];
+    const inner = memoryStore();
+    const store: WatchStore = { load: () => inner.load(), save: async (ops) => { saved.push(ops); await inner.save(ops); } };
+    await renderRouter(app('dark', true, { garmin, watchStore: store }), { initialUrl: '/you' });
+    await screen.findByTestId('you');
+    const p = stagedProposal();
+    await act(async () => { watchQueue().stage(p); watchQueue().confirm(p.id); });
+    expect(watchQueue().ops.map((o) => o.state)).toEqual(['sending']);
+    let pumped!: Promise<void>;
+    await act(async () => { pumped = watchQueue().pump(); });
+
+    await fireEvent.press(screen.getByTestId('button-Sign out'));
+    await fireEvent.press(within(await screen.findByTestId('sign-out-sheet')).getByTestId('button-Sign out'));
+    await screen.findByTestId('welcome', {}, { timeout: 5000 });
+    const before = saved.length;
+    await act(async () => { answer(); await pumped; });
+    expect(watchQueue().ops).toEqual([]);
+    expect(watchQueue().toast).toBeNull();
+    expect(saved.length).toBe(before); // nothing written back after sign out
   });
 });
 

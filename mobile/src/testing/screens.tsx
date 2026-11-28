@@ -21,8 +21,8 @@ import { findSession } from '../features/plan/model';
 import { EntitlementsProvider } from '../features/plus/EntitlementsProvider';
 import { FakeStore } from '../features/plus/store';
 import { skipProposal } from '../features/watch/proposals';
-import { memoryStore } from '../features/watch/store';
-import { FakeGarmin } from '../features/watch/transport';
+import { memoryStore, type WatchStore } from '../features/watch/store';
+import { FakeGarmin, type WatchTransport } from '../features/watch/transport';
 import { useWatch, WatchProvider, type WatchContext } from '../features/watch/WatchProvider';
 import { DEFAULT_FLAGS } from '../flags/flags';
 import { FlagsProvider } from '../flags/FlagsProvider';
@@ -60,12 +60,12 @@ export function routeFiles(dir = APP_DIR, base = ''): string[] {
 /** Screens (not layouts) a runner can land on. The root index only redirects. */
 export const screenRoutes = () => routeFiles().filter((r) => !/(^|\/)_layout$/.test(r) && r !== 'index');
 
-export function app(scheme: 'dark' | 'light', coach = true, opts: { messages?: () => ServerMessage[]; api?: CoachApi } = {}) {
+export function app(scheme: 'dark' | 'light', coach = true, opts: { messages?: () => ServerMessage[]; api?: CoachApi; garmin?: WatchTransport; watchStore?: WatchStore } = {}) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial={scheme}>
       <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach }}>
         <EntitlementsProvider store={new FakeStore()} fetcher={async () => { throw new Error('offline'); }}>
-          <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false} pollEveryMs={0}>
+          <WatchProvider transport={opts.garmin ?? new FakeGarmin()} store={opts.watchStore ?? memoryStore()} auto={false} pollEveryMs={0}>
             <CoachApiContext.Provider value={opts.api ?? new FakeCoach({ messages: (opts.messages ?? COACH_MESSAGES)() })}>
               <Probe />
               {children ?? <Stack screenOptions={{ headerShown: false }} />}

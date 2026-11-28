@@ -34,6 +34,8 @@ export type WatchContext = {
   /** "Changed your mind? · Remove from watch", after a batch that put something on the watch went through. */
   toast: { batch: string } | null;
   dismissToast: () => void;
+  /** Sign out: forget every operation, draft and toast; a send already under way is dropped, not saved back. */
+  reset: () => void;
 };
 
 const Ctx = createContext<WatchContext | null>(null);
@@ -77,12 +79,14 @@ export function WatchProvider({ children, transport: given, store: givenStore, c
   // What was last said about each batch: a send is announced here, once per change, however
   // many screens show its status (and on iOS, which has no live regions).
   const said = useRef(new Map<string, string>());
+  // Bumped by reset: work begun before it (a pump waiting on Garmin) writes nothing after it.
+  const generation = useRef(0);
 
   useEffect(() => { store.load().then((loaded) => { opsRef.current = loaded; setOps(loaded); }).catch(() => {}); }, [store]);
 
   /** `quiet`: an automatic retry starting, not said (only what it comes to, if that's new). */
-  const update = useCallback(async (changed: WatchOp[], { quiet = false } = {}) => {
-    if (!changed.length) return;
+  const update = useCallback(async (changed: WatchOp[], { quiet = false, gen = generation.current } = {}) => {
+    if (!changed.length || gen !== generation.current) return;
     const byId = new Map(opsRef.current.map((o) => [o.id, o]));
     for (const o of changed) byId.set(o.id, o);
     opsRef.current = [...byId.values()];
@@ -107,27 +111,29 @@ export function WatchProvider({ children, transport: given, store: givenStore, c
   const pump = useCallback(async () => {
     if (pumping.current) { again.current = true; return; }
     pumping.current = true;
+    const gen = generation.current;
     try {
       do {
         again.current = false;
         for (const due of opsRef.current.filter((o) => isDue(o, clock()))) {
+          if (gen !== generation.current) return;
           let op = due.state === 'failed' ? resendOp(due, clock()) : due;
-          if (op !== due) await update([op], { quiet: true });
+          if (op !== due) await update([op], { quiet: true, gen });
           try {
             const r = await withTimeout(transport.send(op), SEND_TIMEOUT_MS);
             op = accepted(op, r.synced, clock());
           } catch (err) {
             op = err instanceof SendFailure ? failed(op, err.kind, clock(), err.detail) : failed(op, 'offline', clock());
           }
-          await update([op]);
+          await update([op], { gen });
         }
         const waiting = opsRef.current.filter((o) => o.state === 'changed_pending_sync');
         if (waiting.length && clock() - lastPoll.current >= pollEveryMs) {
           lastPoll.current = clock();
           const ids = new Set(await transport.synced(waiting).catch(() => [] as string[]));
-          await update(waiting.filter((o) => ids.has(o.id)).map((o) => onWatch(o, clock())));
+          await update(waiting.filter((o) => ids.has(o.id)).map((o) => onWatch(o, clock())), { gen });
         }
-      } while (again.current);
+      } while (again.current && gen === generation.current);
     } finally {
       pumping.current = false;
     }
@@ -166,6 +172,16 @@ export function WatchProvider({ children, transport: given, store: givenStore, c
     opFor: (sessionId) => latestFor(ops, sessionId),
     toast,
     dismissToast: () => setToast(null),
+    reset: () => {
+      generation.current += 1;
+      opsRef.current = [];
+      setOps([]);
+      setApplied([]);
+      drafts.current.clear();
+      toasted.current.clear();
+      said.current.clear();
+      setToast(null);
+    },
   }), [ops, transport, applied, fetchProposal, update, pump, auto, toast, clock]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
