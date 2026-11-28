@@ -4,14 +4,16 @@
 // "Clear memory". Also You's Coach section: the Coach's own switch (where "AI" may be
 // said, as its settings) and the row into these items.
 import { useState } from 'react';
-import { Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
+import { SwitchRow } from '../../ui/List';
 import { Text } from '../../ui/Text';
 import { MEDICAL } from '../watch/proposals';
 import { itemWords, kindLabel, kindsFor, visibleItems, type MemoryItem, type MemoryKind } from './memory';
+import { READABLE } from '../../ui/Screen';
 
 function List({ children, testID }: { children: React.ReactNode; testID?: string }) {
   const { colors } = useTheme();
@@ -27,7 +29,7 @@ export function MemoryView({ items, coach, actions }: {
   const shown = visibleItems(items, coach);
   return (
     <ScrollView testID="memory" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 12 }}>
       <Text variant="subhead" tone="muted">
         {coach ? 'Used only when you talk to the Coach. Edit or delete anything; nothing here changes your numbers.' : 'Kept on this phone. Edit or delete anything.'}
       </Text>
@@ -79,7 +81,7 @@ export function MemoryEditSheet({ item, coach, defaultKind, onSave, onDelete, on
   const [text, setText] = useState(item?.text ?? '');
   const label = kindLabel(kind, coach) ?? 'Note';
   return (
-    <ScrollView testID="memory-edit" style={{ backgroundColor: colors.surface }} contentContainerStyle={{ padding: 20, gap: 12 }} keyboardShouldPersistTaps="handled">
+    <ScrollView testID="memory-edit" style={{ backgroundColor: colors.surface }} contentContainerStyle={{ ...READABLE, padding: 20, gap: 12 }} keyboardShouldPersistTaps="handled">
       <Text variant="title" accessibilityRole="header">{item ? `Edit ${label.toLowerCase()}` : coach ? 'Add something to remember' : 'Add a preference'}</Text>
       {!item ? (
         <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -127,17 +129,11 @@ export function CoachSection({ available, coach, onToggle, onOpen }: {
   const { colors } = useTheme();
   return (
     <View style={{ gap: 10 }}>
-      <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>{available ? 'Coach' : 'Training'}</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>{available ? 'Coach' : 'Training'}</Text>
       <List>
         {available ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, minHeight: 60 }}>
-            <View style={{ flex: 1 }}>
-              <Text variant="body">Coach</Text>
-              <Text variant="footnote" tone="muted">Answers questions about your plan and runs. AI, run on Daash’s server. Off hides it everywhere; no number changes.</Text>
-            </View>
-            <Switch testID="coach-switch" value={coach} onValueChange={onToggle} accessibilityLabel="Coach"
-              trackColor={{ false: colors.button, true: colors.success }} thumbColor={colors.surface} />
-          </View>
+          <SwitchRow testID="coach-switch" title="Coach" label="Coach" value={coach} onChange={onToggle} minHeight={60}
+            sub="Answers questions about your plan and runs. AI, run on Daash’s server. Off hides it everywhere; no number changes." />
         ) : null}
         <Pressable testID="row-memory" accessibilityRole="button" onPress={onOpen}
           accessibilityLabel={coach ? 'Coach memory. What the Coach keeps in mind' : 'Training preferences. What you’ve told Daash'}

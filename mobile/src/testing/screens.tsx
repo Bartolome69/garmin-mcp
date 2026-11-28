@@ -1,0 +1,262 @@
+// Every screen of the app, for the tests that go over all of them (smoke, the snapshot
+// matrix, focus order). The route map is read from src/app on disk, so a new route is in
+// it without being listed here; SCREENS says how to open each one (a test fails when a
+// route on disk has no entry). Test-only: imports the testing library.
+import fs from 'fs';
+import path from 'path';
+import { act, cleanup, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { router, Stack } from 'expo-router';
+import type { ComponentType, ReactNode } from 'react';
+import { Dimensions, Platform } from 'react-native';
+
+import { OnboardingStack } from '../app/onboarding/_layout';
+import { FakeCoach } from '../features/coach/fake';
+import type { CoachApi } from '../features/coach/api';
+import type { ServerMessage } from '../features/coach/model';
+import { CoachApiContext } from '../features/coach/source';
+import { OnboardingProvider } from '../features/onboarding/OnboardingProvider';
+import { CASES } from '../features/onboarding/source';
+import { PERSONA_PLAN } from '../features/plan/fixture';
+import { findSession } from '../features/plan/model';
+import { EntitlementsProvider } from '../features/plus/EntitlementsProvider';
+import { FakeStore } from '../features/plus/store';
+import { skipProposal } from '../features/watch/proposals';
+import { memoryStore, type WatchStore } from '../features/watch/store';
+import { FakeGarmin, type WatchTransport } from '../features/watch/transport';
+import { useWatch, WatchProvider, type WatchContext } from '../features/watch/WatchProvider';
+import { DEFAULT_FLAGS } from '../flags/flags';
+import { FlagsProvider } from '../flags/FlagsProvider';
+import { ThemeProvider } from '../theme/ThemeProvider';
+import { dataMode, type DataMode } from './dataMode';
+
+let queue: WatchContext | null = null;
+function Probe() { queue = useWatch(); return null; }
+/** The watch queue of the app rendered last. */
+export const watchQueue = (): WatchContext => queue!;
+
+// The Coach for these screens: one exchange about Wednesday's run (with its chart), a memory
+// note and one pending proposal, written today, so the thread draws every kind of row.
+const at = () => Math.floor(Date.now() / 1000);
+export const COACH_MESSAGES = (): ServerMessage[] => [
+  { id: 1, role: 'user', text: 'Why did rep 6 feel harder?', status: 'sent', at: at(), context: { kind: 'run', id: '2026-11-25-intervals', label: 'About · Wed 25 · 6 × 800 m' } },
+  { id: 2, role: 'assistant', text: 'Rep pace averaged 4:01. Your peak heart rate on rep 6 was 172, 4 bpm above rep 5.', status: 'done', at: at(), sources: ['Run · Garmin'],
+    chart: { kind: 'bars', title: 'Peak heart rate per rep', unit: 'bpm', caption: 'bpm', labels: ['Rep 1', 'Rep 2', 'Rep 3', 'Rep 4', 'Rep 5', 'Rep 6'],
+      values: [164, 165, 166, 168, 168, 172], band: null, highlight: [5], summary: 'Peak heart rate per rep: 164, 165, 166, 168, 168, 172 bpm.' } },
+  { id: 3, role: 'user', text: 'I’m away 1 to 3 Dec. Make it easier then', status: 'sent', at: at() },
+  { id: 4, role: 'memory', text: 'Travelling 1 to 3 Dec', status: 'done', at: at() },
+  { id: 5, role: 'action', text: 'Make today easier: 3 × 2 km at threshold becomes Easy 6 km.', status: 'pending', tool: 'easier', request: { kind: 'easier' }, at: at() },
+];
+
+const APP_DIR = path.join(__dirname, '..', 'app');
+
+/** Every route file under src/app, as expo-router names it ('(tabs)/today/index', 'plus/trial', …). */
+export function routeFiles(dir = APP_DIR, base = ''): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const rel = base ? `${base}/${e.name}` : e.name;
+    if (e.isDirectory()) return routeFiles(path.join(dir, e.name), rel);
+    return /\.tsx?$/.test(e.name) && !/\.test\./.test(e.name) ? [rel.replace(/\.tsx?$/, '')] : [];
+  }).sort();
+}
+
+/** Screens (not layouts) a runner can land on. The root index only redirects. */
+export const screenRoutes = () => routeFiles().filter((r) => !/(^|\/)_layout$/.test(r) && r !== 'index');
+
+export function app(scheme: 'dark' | 'light', coach = true, opts: {
+  messages?: () => ServerMessage[]; api?: CoachApi; garmin?: WatchTransport; watchStore?: WatchStore;
+  /** Plus (the features flag the entitlement reads). */
+  plus?: boolean;
+} = {}) {
+  const Root = ({ children }: { children?: ReactNode }) => (
+    <ThemeProvider initial={scheme}>
+      <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach, plus: !!opts.plus }}>
+        <EntitlementsProvider store={new FakeStore()} fetcher={async () => { throw new Error('offline'); }}>
+          <WatchProvider transport={opts.garmin ?? new FakeGarmin()} store={opts.watchStore ?? memoryStore()} auto={false} pollEveryMs={0}>
+            <CoachApiContext.Provider value={opts.api ?? new FakeCoach({ messages: (opts.messages ?? COACH_MESSAGES)() })}>
+              <Probe />
+              {children ?? <Stack screenOptions={{ headerShown: false }} />}
+            </CoachApiContext.Provider>
+          </WatchProvider>
+        </EntitlementsProvider>
+      </FlagsProvider>
+    </ThemeProvider>
+  );
+  // Each route's whole module, not just its component: a layout's `unstable_settings` (the
+  // anchor a sheet opened by link sits over) is lost when only `default` is mapped.
+  const map: Record<string, ComponentType<any> | { default: ComponentType<any> }> = {};
+  for (const r of routeFiles()) {
+    if (r === '_layout' || r === 'index') continue;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    map[r] = require(path.join(APP_DIR, r));
+  }
+  map._layout = () => <Root />;
+  // Onboarding part way through (the persona's goal, import and plan), so every step has what it shows.
+  map['onboarding/_layout'] = () => (
+    <OnboardingProvider initial={{ goal: { kind: 'race', name: 'London Marathon', date: '2027-04-24', km: 42.195, target: '3:15' }, result: CASES.import, reveal: CASES.reveal }}>
+      <OnboardingStack />
+    </OnboardingProvider>
+  );
+  return map;
+}
+
+export type ScreenCase = {
+  name: string;
+  /** The route file it opens. */
+  route: string;
+  url: string;
+  /** The screen's root test id. */
+  id: string;
+  /** Needs a proposal staged first; url gets the proposal's id. */
+  staged?: boolean;
+  /** Drawn over the tab's first screen (a sheet): the screen behind has no brand fill. */
+  sheet?: boolean;
+  /** Opened from this screen (pushed over it) rather than straight from its link. */
+  from?: string;
+  /** Has a primary action (the one brand fill), on both platforms or only Android (Plan's FAB); screens without one have none. */
+  primary?: boolean | 'android';
+  /** Only with the Coach on (the Coach tab's own screens). */
+  coachOnly?: boolean;
+  /** On Plus (Plus features unlocked). */
+  plus?: boolean;
+  /** A part of the screen that isn't a route of its own: Plan's Block or Trends. */
+  tab?: 'Block' | 'Trends';
+  /** How the server answers Today's and Plan's sources (state cases; src/matrix/states.test.tsx mocks them). */
+  data?: DataMode;
+  /** The Coach's server for this case (state cases: empty, offline, streaming). */
+  coachApi?: () => CoachApi;
+  /** Something done once the screen is up (send a message, so the reply is streaming). */
+  setup?: () => Promise<void>;
+};
+
+export const SCREENS: ScreenCase[] = [
+  { name: 'Today', route: '(tabs)/today/index', url: '/today', id: 'today', primary: true },
+  { name: 'Readiness sheet', route: '(tabs)/today/readiness', url: '/today/readiness?signal=sleep', id: 'readiness-sheet', sheet: true },
+  { name: 'Other options', route: '(tabs)/today/options', url: '/today/options', id: 'options-sheet', sheet: true },
+  { name: 'Plan · Week', route: '(tabs)/plan/index', url: '/plan', id: 'week-title', primary: 'android' },
+  { name: 'Plan · Block', route: '(tabs)/plan/index', url: '/plan', id: 'block', tab: 'Block' },
+  { name: 'Plan · Trends', route: '(tabs)/plan/index', url: '/plan', id: 'trends', tab: 'Trends' },
+  { name: 'Plan · Trends (Plus)', route: '(tabs)/plan/index', url: '/plan', id: 'trends', tab: 'Trends', plus: true },
+  { name: 'Session detail', route: '(tabs)/plan/session/[id]', url: '/plan/session/2026-12-02-intervals', id: 'session', primary: true },
+  { name: 'Move sheet', route: '(tabs)/plan/move', url: '/plan/move?id=2026-12-02-intervals', id: 'move-sheet', sheet: true },
+  { name: 'Life happened', route: '(tabs)/plan/life', url: '/plan/life', id: 'life-sheet', sheet: true, primary: true },
+  { name: 'Builder', route: '(tabs)/plan/builder', url: '/plan/builder', id: 'builder' },
+  { name: 'Builder · edit', route: '(tabs)/plan/builder', url: '/plan/builder?id=2026-11-27-tempo', id: 'builder' },
+  { name: 'Post-run (Plan)', route: '(tabs)/plan/run/[id]', url: '/plan/run/2026-11-25-intervals', id: 'run' },
+  { name: 'Post-run (Today)', route: '(tabs)/today/run/[id]', url: '/today/run/2026-11-26-easy', id: 'run' },
+  { name: 'Plus feature to come', route: '(tabs)/plan/next', url: '/plan/next?kind=plan_styles', id: 'plan-next' },
+  { name: 'You', route: '(tabs)/you/index', url: '/you', id: 'you', primary: true },
+  { name: 'Connections', route: '(tabs)/you/connections', url: '/you/connections', id: 'connections' },
+  { name: 'Source priority', route: '(tabs)/you/priority', url: '/you/priority', id: 'priority' },
+  { name: 'What Daash can see', route: '(tabs)/you/see', url: '/you/see', id: 'see-sheet', sheet: true },
+  { name: 'Trouble connecting', route: '(tabs)/you/trouble', url: '/you/trouble', id: 'trouble-sheet', sheet: true },
+  { name: 'Request a device', route: '(tabs)/you/request', url: '/you/request', id: 'request-sheet', sheet: true },
+  { name: 'Widgets setup', route: '(tabs)/you/widgets', url: '/you/widgets', id: 'widgets' },
+  { name: 'Plus feature to come (You)', route: '(tabs)/you/coming', url: '/you/coming', id: 'you-coming' },
+  { name: 'Activities', route: '(tabs)/you/activities', url: '/you/activities', id: 'activities' },
+  { name: 'Post-run (You)', route: '(tabs)/you/run/[id]', url: '/you/run/2026-11-24-easy', id: 'run' },
+  { name: 'Units and zones', route: '(tabs)/you/training', url: '/you/training', id: 'training' },
+  { name: 'Notifications', route: '(tabs)/you/notifications', url: '/you/notifications', id: 'notifications' },
+  { name: 'Appearance', route: '(tabs)/you/appearance', url: '/you/appearance', id: 'appearance' },
+  { name: 'Privacy', route: '(tabs)/you/privacy', url: '/you/privacy', id: 'privacy' },
+  { name: 'Help', route: '(tabs)/you/help', url: '/you/help', id: 'help' },
+  { name: 'Sign out', route: '(tabs)/you/sign-out', url: '/you/sign-out', id: 'sign-out-sheet', sheet: true, primary: true },
+  { name: 'Plus (paywall)', route: 'plus/index', url: '/plus?from=you', id: 'paywall', primary: true },
+  { name: 'Plus (paywall) from the Coach’s limit', route: 'plus/index', url: '/plus?from=coach', id: 'paywall', primary: true },
+  { name: 'Plus · free week sheet', route: 'plus/trial', url: '/plus/trial', id: 'trial-sheet', sheet: true, primary: true, from: '/plus?from=you' },
+  { name: 'Coach', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true, primary: true },
+  { name: 'Coach · from a run', route: '(tabs)/coach/index', url: '/coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m', id: 'coach', coachOnly: true, primary: true },
+  { name: 'Coach · menu', route: '(tabs)/coach/menu', url: '/coach/menu', id: 'coach-menu', sheet: true, coachOnly: true },
+  { name: 'Coach · filter', route: '(tabs)/coach/filter', url: '/coach/filter', id: 'coach-filter-sheet', sheet: true, coachOnly: true },
+  { name: 'Coach · clear', route: '(tabs)/coach/clear', url: '/coach/clear', id: 'coach-clear-sheet', sheet: true, coachOnly: true, primary: true },
+  { name: 'Coach · limit', route: '(tabs)/coach/limit', url: '/coach/limit', id: 'coach-limit-sheet', sheet: true, coachOnly: true, primary: true },
+  { name: 'Coach memory', route: '(tabs)/you/memory', url: '/you/memory', id: 'memory' },
+  { name: 'Coach memory · edit', route: '(tabs)/you/memory-edit', url: '/you/memory-edit?id=persona-goal', id: 'memory-edit', sheet: true, primary: true },
+  { name: 'Coach memory · add', route: '(tabs)/you/memory-edit', url: '/you/memory-edit', id: 'memory-edit', sheet: true },
+  { name: 'Coach memory · clear', route: '(tabs)/you/memory-clear', url: '/you/memory-clear', id: 'memory-clear-sheet', sheet: true, coachOnly: true, primary: true },
+  { name: 'Crew', route: '(tabs)/crew/index', url: '/crew', id: 'crew' },
+  { name: 'Onboarding · welcome', route: 'onboarding/index', url: '/onboarding', id: 'welcome', primary: true },
+  { name: 'Onboarding · try', route: 'onboarding/try', url: '/onboarding/try', id: 'try-card', primary: true },
+  { name: 'Onboarding · goal', route: 'onboarding/goal', url: '/onboarding/goal', id: 'ob-goal', primary: true },
+  { name: 'Onboarding · goal from Plan', route: 'onboarding/goal', url: '/onboarding/goal?from=plan', id: 'ob-goal', primary: true },
+  { name: 'Onboarding · paces', route: 'onboarding/paces', url: '/onboarding/paces', id: 'ob-paces', primary: true },
+  { name: 'Onboarding · questions', route: 'onboarding/questions', url: '/onboarding/questions', id: 'ob-questions' },
+  { name: 'Onboarding · result', route: 'onboarding/result', url: '/onboarding/result', id: 'ob-result', primary: true },
+  { name: 'Onboarding · reveal', route: 'onboarding/reveal', url: '/onboarding/reveal', id: 'ob-reveal', primary: true },
+  { name: 'Onboarding · landed, sending', route: 'onboarding/landed', url: '/onboarding/landed', id: 'ob-landed' },
+  { name: 'New week (diff)', route: '(tabs)/plan/new-week', url: '/plan/new-week?id=', id: 'diff', staged: true, primary: true },
+  { name: 'New week from Today (diff)', route: '(tabs)/today/new-week', url: '/today/new-week?id=', id: 'diff', staged: true, primary: true },
+  { name: 'New week from the Coach (diff)', route: '(tabs)/coach/new-week', url: '/coach/new-week?id=', id: 'diff', staged: true, coachOnly: true, primary: true },
+  { name: 'Watch confirm', route: 'watch/confirm', url: '/watch/confirm?id=', id: 'confirm-sheet', staged: true, sheet: true, primary: true },
+];
+
+/**
+ * States that aren't routes of their own (the Skeleton, Offline, Syncing and Coach boards):
+ * a first answer that hasn't come, no connection, an expired Garmin sign-in, empty data, and
+ * the Coach empty, offline and streaming. Only the snapshot matrix walks these
+ * (src/matrix/states.test.tsx, which mocks the sources `data` steers).
+ */
+export const STATE_SCREENS: ScreenCase[] = [
+  { name: 'Today · loading', route: '(tabs)/today/index', url: '/today', id: 'today-loading', data: 'loading' },
+  { name: 'Today · offline', route: '(tabs)/today/index', url: '/today', id: 'today-error', data: 'offline' },
+  { name: 'Today · Garmin sign-in expired', route: '(tabs)/today/index', url: '/today', id: 'today-error', data: 'reconnect', primary: true },
+  { name: 'Today · nothing planned', route: '(tabs)/today/index', url: '/today', id: 'today', data: 'empty' },
+  { name: 'Plan · loading', route: '(tabs)/plan/index', url: '/plan', id: 'plan-loading', data: 'loading' },
+  { name: 'Plan · offline', route: '(tabs)/plan/index', url: '/plan', id: 'plan-error', data: 'offline' },
+  { name: 'Plan · no plan yet', route: '(tabs)/plan/index', url: '/plan', id: 'plan-empty', data: 'empty', primary: true },
+  { name: 'Coach · empty', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true,
+    coachApi: () => new FakeCoach({ messages: [] }) },
+  { name: 'Coach · offline', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true,
+    coachApi: () => new FakeCoach({ messages: COACH_MESSAGES(), offlineThread: true }) },
+  { name: 'Coach · streaming', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true, primary: true,
+    coachApi: () => new FakeCoach({ messages: COACH_MESSAGES(), hold: true }),
+    setup: async () => {
+      await fireEvent.changeText(screen.getByTestId('composer'), 'How was my week?');
+      await fireEvent.press(screen.getByTestId('coach-send'));
+      await screen.findByTestId('streaming');
+    } },
+];
+
+/** Plan's Week / Block / Trends: the segmented control on iOS, tabs on Android. */
+export async function selectPlanTab(t: 'Week' | 'Block' | 'Trends') {
+  const tabs = await screen.findByTestId('plan-tabs');
+  if (Platform.OS === 'ios') await fireEvent(tabs, 'valueChange', t);
+  else await fireEvent.press(screen.getByTestId(`plan-tab-${t}`));
+}
+
+/** The skipped Wednesday intervals, staged: what the staged screens show. */
+export const stagedProposal = () => skipProposal(findSession(PERSONA_PLAN, '2026-12-02-intervals')!);
+
+/** Opens a case's screen and waits for its root, in this window when one is given. */
+export async function openScreen(c: ScreenCase, scheme: 'dark' | 'light' = 'dark', coach = true, window?: WindowSize) {
+  // One app at a time: the last one is unmounted first (the testing library would only do it
+  // after the test, leaving every earlier tree alive and re-rendering), and only then is the
+  // window changed, so no earlier tree redraws for it.
+  await cleanup();
+  if (window) setWindow(window);
+  dataMode.current = c.data ?? 'ok';
+  const map = app(scheme, coach, { plus: c.plus, api: c.coachApi?.() });
+  if (c.staged) {
+    await renderRouter(map, { initialUrl: '/plan' });
+    await screen.findByTestId('week-title');
+    const p = stagedProposal();
+    await act(async () => { watchQueue().stage(p); });
+    await act(async () => { router.push(`${c.url}${encodeURIComponent(p.id)}`); });
+  } else if (c.from) {
+    await renderRouter(map, { initialUrl: c.from });
+    await act(async () => { router.push(c.url); });
+  } else {
+    await renderRouter(map, { initialUrl: c.url });
+  }
+  if (c.tab) await selectPlanTab(c.tab);
+  const root = await screen.findByTestId(c.id, {}, { timeout: 10000 });
+  if (!c.setup) return root;
+  await c.setup();
+  return screen.findByTestId(c.id);
+}
+
+/** The phone's window: width, height and text size (fontScale 2 is 200%). */
+export type WindowSize = { width?: number; height?: number; fontScale?: number };
+export function setWindow({ width = 390, height = 844, fontScale = 1 }: WindowSize = {}) {
+  const window = { width, height, scale: 3, fontScale };
+  // Before a render (not inside act: a synchronous act here leaves the next render empty).
+  Dimensions.set({ window, screen: window });
+}

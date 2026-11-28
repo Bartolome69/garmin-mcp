@@ -96,8 +96,14 @@ describe.each(['dark', 'light'] as const)(`Plan · Week on ${os}, %s`, (scheme) 
   it('rows read as one sentence for screen readers', async () => {
     await draw(PERSONA_PLAN, { scheme });
     expect(screen.getByLabelText('Fri 27, today, 3 × 2 km at threshold, Tempo · 10 km · 4:23–4:28 per km, On your watch')).toBeTruthy();
+    // The next week's page is drawn beside this one but hidden from screen readers (its days
+    // would be read under this week's heading) until it's the week on screen.
+    expect(screen.queryByLabelText('Mon 30, Rest day, Rest · Recovery')).toBeNull();
+    expect(screen.getByLabelText('Mon 30, Rest day, Rest · Recovery', { includeHiddenElements: true })).toBeTruthy();
+    await draw(PERSONA_PLAN, { scheme, index: weekIndexOf(PERSONA_PLAN, PERSONA_PLAN.currentWeek) + 1 });
     expect(screen.getByLabelText('Mon 30, Rest day, Rest · Recovery')).toBeTruthy();
     expect(screen.getByLabelText('Tue 1, 8 km easy, Easy · 8 km · 5:27–6:10 per km, Not on your watch')).toBeTruthy();
+    expect(screen.queryByLabelText(/^Fri 27, today/)).toBeNull();
   });
 });
 
@@ -362,6 +368,11 @@ describe(`Session detail on ${os}`, () => {
     expect(screen.getByText('Coach · why this session')).toBeTruthy();
     const onTexts = texts(on.toJSON()).filter((t) => t !== 'Coach · why this session' && !t.startsWith('Short reps'));
     expect(onTexts).toEqual(offTexts);
+    // The Coach's block comes after the watch row and Move / Swap / Skip, so turning it on
+    // moves nothing the 10-rep session needs on one screen (scripts/plan-check.js measures it).
+    const all = texts(on.toJSON());
+    expect(all.slice(0, offTexts.length)).toEqual(offTexts);
+    expect(all.slice(offTexts.length)[0]).toBe('Coach · why this session');
   });
 });
 

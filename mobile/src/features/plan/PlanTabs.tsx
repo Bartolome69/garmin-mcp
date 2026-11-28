@@ -6,6 +6,7 @@ import type { ComponentType } from 'react';
 import { Platform, Pressable, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
+import { MIN_TOUCH } from '../../ui/Button';
 import { Text } from '../../ui/Text';
 
 // The package's typings predate React 19's JSX types; the component itself is fine.
@@ -27,6 +28,8 @@ export function PlanTabs({ value, onChange, os = Platform.OS }: { value: PlanTab
           appearance={scheme === 'light' ? 'light' : 'dark'}
           onValueChange={(v) => onChange(v as PlanTab)}
           accessibilityLabel="Plan view"
+          // The system control is 32 pt; every control here is at least MIN_TOUCH tall.
+          style={{ height: MIN_TOUCH }}
         />
       </View>
     );

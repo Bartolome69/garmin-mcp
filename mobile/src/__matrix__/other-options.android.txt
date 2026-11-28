@@ -1,0 +1,13 @@
+# Other options · android
+# /today/options
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0 (behind the sheet: 0 on 1 screen)
+clipped: none
+cut to lines: none
+header "Other options for today"
+button "Go as planned. 3 × 2 km at 4:23–4:28 /km, as it is"
+button "Swap a day. Move the tempo, see the new week first"
+button "Rest and recover. Counts toward your active week"
+text "Your call. Any change to the watch is confirmed first."
+button "Cancel"

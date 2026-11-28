@@ -1,0 +1,21 @@
+# Onboarding · reveal · ios
+# /onboarding/reveal
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: Base (1 line); 6 wks (1 line); Build (1 line); 7 wks (1 line); Peak (1 line); 4 wks (1 line); Taper (1 line); 3 wks (1 line)
+text "Step 3 of 3 · Your plan · 20 weeks"
+header "London Marathon, Sat 24 Apr"
+image "Phases: Base 6 weeks, Build 7 weeks, Peak 4 weeks, Taper 3 weeks"
+group "Predicted now, 3:20"
+group "Target, 3:15"
+group "km in week 1 · peak 77, 48"
+text "Phases follow from your 20 weeks and recent 48 km weeks. Prediction uses your 10K of 43:30."
+header "Week 1"
+group "MON 7, Easy 8 km, Easy · 8 km · 5:10 to 5:20"
+group "TUE 8, Easy 7 km + strides, Easy · 8.4 km · 5:10 to 5:20"
+group "WED 9, Tempo 2 × 6 min, Tempo · 7.7 km"
+group "FRI 11, Easy 7 km, Easy · 7 km · 5:10 to 5:20"
+group "SUN 13, Long run 17 km, Long · 17 km · 5:10 to 5:20"
+button "Send week 1 to my watch"

@@ -53,20 +53,39 @@ export function LoadState({ what, failure, error, onRetry, testID }: {
 }
 
 /** Over cached content: Garmin's login expired, or the app is signed out. Offline is the "Updated …" label's job. */
-export function FailureBanner({ failure }: { failure: FailureKind | null }) {
+export function FailureBanner({ failure, style }: { failure: FailureKind | null; style?: object }) {
   const { colors } = useTheme();
   if (failure !== 'reconnect' && failure !== 'signedOut') return null;
   const w = FAILURE_WORDS[failure];
   return (
     <View testID="failure-banner" accessibilityLiveRegion="polite"
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12,
-        backgroundColor: colors.warningTint, borderWidth: 1, borderColor: colors.warning }}>
+      style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 12,
+        backgroundColor: colors.warningTint, borderWidth: 1, borderColor: colors.warning }, style]}>
       <Icon name="warning" tone="warning" />
       <View style={{ flex: 1 }}>
         <Text variant="subhead" style={{ fontWeight: '600' }}>{w.title('')}</Text>
         <Text variant="footnote" tone="muted">Showing what’s on your phone.</Text>
       </View>
       <Button label={w.action} small onPress={openGarminSignIn} />
+    </View>
+  );
+}
+
+/**
+ * Sample data is showing (data/sample.ts): a small neutral label on the first screen and in
+ * You, so the persona's numbers are never taken for the runner's own. No colour of its own.
+ * `inline`: no outline or margins, for a row that already exists (Today's kicker row), so the
+ * label adds no height above the fold.
+ */
+export function SampleDataLabel({ style, inline = false }: { style?: object; inline?: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View testID="sample-data" accessible accessibilityLabel="Sample data. These numbers are from a sample runner, not yours."
+      style={[inline ? { flexDirection: 'row', alignItems: 'center', gap: 4 } : { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
+        gap: 6, marginHorizontal: 16, marginTop: 8, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1,
+        borderColor: colors.muted }, style]}>
+      <Icon name="info" tone="muted" />
+      <Text variant="footnote" tone="text2">Sample data</Text>
     </View>
   );
 }

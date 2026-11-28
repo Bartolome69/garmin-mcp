@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useDb } from '../../db/DbContext';
 import { kv } from '../../db/kv';
 import { memoryItemsStore, personaMemory, sqlMemoryStore, type MemoryItem, type MemoryKind, type MemoryStore } from './memory';
+import { fixturesOn } from '../../data/sample';
 
 export type MemoryContext = {
   items: MemoryItem[];
@@ -15,7 +16,6 @@ export type MemoryContext = {
 };
 
 const Ctx = createContext<MemoryContext | null>(null);
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 const SEEDED = 'memory:seeded';
 
 export function MemoryProvider({ children, store: given, clock = Date.now, seed }: {
@@ -36,7 +36,7 @@ export function MemoryProvider({ children, store: given, clock = Date.now, seed 
       if (!list.length) {
         // Seeded once: a cleared memory stays clear.
         const seeded = seed ? false : db ? !!(await kv(db).get<boolean>(SEEDED).catch(() => true)) : !!given;
-        const start = seed ?? (USE_FIXTURE && !seeded ? personaMemory(clock()) : []);
+        const start = seed ?? (fixturesOn() && !seeded ? personaMemory(clock()) : []);
         for (const i of start) await store.put(i).catch(() => {});
         list = start;
       }

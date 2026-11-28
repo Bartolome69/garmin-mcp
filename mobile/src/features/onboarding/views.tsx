@@ -18,6 +18,7 @@ import { TYPE_TOKEN } from '../../ui/session/types';
 import { FAILURE_WORDS } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { WatchCard } from '../watch/WatchCard';
+import { READABLE } from '../../ui/Screen';
 import {
   DISTANCES, EXPERIENCE, WEEKLY, goalValid, parseRaceDate, raceName, raceSeconds,
   type Experience, type Goal, type Landing, type PaceResult, type Reveal, type Weekly,
@@ -27,7 +28,7 @@ function Step({ kicker, title, sub, children, footer, testID }: { kicker?: strin
   const { colors } = useTheme();
   return (
     <View testID={testID} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingTop: 24, gap: 12 }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ ...READABLE, padding: 20, paddingTop: 24, gap: 12 }}>
         {kicker ? <Text variant="kicker" tone="muted">{kicker}</Text> : null}
         <Text variant="largeTitle" accessibilityRole="header">{title}</Text>
         {sub ? <Text variant="body" tone="muted">{sub}</Text> : null}
@@ -62,10 +63,10 @@ function Field({ label, value, onChange, placeholder, testID, hint }: { label: s
   );
 }
 
-/** A problem in words with its icon, in the error colour (never colour alone). */
-function Problem({ testID, children }: { testID: string; children: string }) {
+/** A problem in words with its icon, in the error colour (never colour alone). `live: false` when something else says it. */
+function Problem({ testID, children, live = true }: { testID: string; children: string; live?: boolean }) {
   return (
-    <View testID={testID} accessible accessibilityLiveRegion="polite" accessibilityLabel={children} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+    <View testID={testID} accessible accessibilityLiveRegion={live ? 'polite' : undefined} accessibilityLabel={children} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
       <Icon name="error" tone="brandText" />
       <Text variant="footnote" tone="brandText" style={{ flex: 1 }}>{children}</Text>
     </View>
@@ -85,7 +86,7 @@ export function Welcome({ brand, onTry, onSetUp, onSignIn, signingIn = false, si
   const { colors } = useTheme();
   return (
     <ScrollView testID="welcome" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 72, paddingBottom: 40, gap: 24, justifyContent: 'space-between' }}>
+      contentContainerStyle={{ ...READABLE, flexGrow: 1, padding: 24, paddingTop: 72, paddingBottom: 40, gap: 24, justifyContent: 'space-between' }}>
       <View style={{ gap: 18 }}>
         {/* The mark: decoration, so it doesn't grow with the text and isn't read out. */}
         <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
@@ -100,7 +101,8 @@ export function Welcome({ brand, onTry, onSetUp, onSignIn, signingIn = false, si
             <Text variant="footnote" tone="muted">example</Text>
           </View>
           <Text variant="headline">5 × 1 km at threshold, 2 min easy</Text>
-          <StructureBar type="tempo" parts={[{ part: 'wu', weight: 10 }, ...Array.from({ length: 5 }, (_, i) => [{ part: 'work' as const, weight: 4.4 }, ...(i < 4 ? [{ part: 'rec' as const, weight: 2 }] : [])]).flat(), { part: 'cd', weight: 10 }]} legend={[]} />
+          <StructureBar type="tempo" parts={[{ part: 'wu', weight: 10 }, ...Array.from({ length: 5 }, (_, i) => [{ part: 'work' as const, weight: 4.4 }, ...(i < 4 ? [{ part: 'rec' as const, weight: 2 }] : [])]).flat(), { part: 'cd', weight: 10 }]} legend={[]}
+            label="Session structure: Warm-up, 5 × 1 km with 2 min easy between, Cool-down" />
         </Card>
       </View>
       <View style={{ gap: 10 }}>
@@ -341,12 +343,12 @@ export function RevealView({ r, coach, brand, onSend }: { r: Reveal; coach: bool
       <Text testID="because" variant="footnote" tone="muted">{r.because}</Text>
       {coach && r.coachNote ? (
         <View testID="coach-note" style={{ gap: 4, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
-          <Text variant="kicker" tone="muted">Coach · why this shape</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Coach · why this shape</Text>
           <Text variant="coach">{r.coachNote}</Text>
         </View>
       ) : null}
       <Card testID="week1" style={{ gap: 0, paddingVertical: 6 }}>
-        <Text variant="kicker" tone="muted" style={{ paddingVertical: 6 }}>Week 1</Text>
+        <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ paddingVertical: 6 }}>Week 1</Text>
         {r.week1.map((s, i) => (
           <View key={s.id} accessible accessibilityLabel={`${s.dow} ${s.day}, ${s.title}, ${s.sub.replace('–', ' to ')}`}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, borderTopWidth: i ? 1 : 0, borderTopColor: colors.hairline }}>
@@ -451,7 +453,7 @@ export function LandedView({ first, landing, brand, device, home = 'Today', ask 
   const day = LONG_DAYS[first.dow] ?? first.dow;
   const page = (children: ReactNode) => (
     <ScrollView testID="ob-landed" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 80, paddingBottom: 40, gap: 18 }}>
+      contentContainerStyle={{ ...READABLE, flexGrow: 1, padding: 24, paddingTop: 80, paddingBottom: 40, gap: 18 }}>
       {children}
     </ScrollView>
   );
@@ -465,7 +467,7 @@ export function LandedView({ first, landing, brand, device, home = 'Today', ask 
         </Text>
         {landing.failed > 0 ? (
           <View testID="landed-failed" style={{ gap: 8 }}>
-            <Problem testID="landed-failed-words">{failedLine(landing.failed)}</Problem>
+            <Problem testID="landed-failed-words" live={false}>{failedLine(landing.failed)}</Problem>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               <Button label="Resend" small onPress={onResend} />
               <Button label="Trouble connecting?" small onPress={onTrouble} />
@@ -500,7 +502,8 @@ export function LandedView({ first, landing, brand, device, home = 'Today', ask 
   const pending = landing.state === 'pending';
   return page(
     <>
-      <View testID="landed-waiting" accessible accessibilityLiveRegion="polite"
+      {/* The queue says each change of the send (WatchProvider): no live region here. */}
+      <View testID="landed-waiting" accessible
         accessibilityLabel={pending ? `${day}’s run arrives at the next sync` : `Sending ${day}’s run to your watch`} style={{ gap: 12 }}>
         {pending ? null : <ActivityIndicator testID="landed-spinner" size="small" color={colors.muted} style={{ alignSelf: 'flex-start' }} />}
         <Text variant="largeTitle" accessibilityRole="header">{pending ? `${day}’s run arrives at the next sync.` : `Sending ${day}’s run to your watch…`}</Text>

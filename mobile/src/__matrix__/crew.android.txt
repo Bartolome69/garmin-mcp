@@ -1,0 +1,15 @@
+# Crew · android
+# /crew
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Crew"
+header "Your crew"
+text "Friends in a crew see each other’s easy and long runs for the week. Rest days count."
+text "Crews are set up in Daash on the web for now. Your crew’s week shows here once the app can read it."
+header "In a crew"
+group "This week, Who’s running, and when"
+group "Nudge, A friendly nudge for a friend’s next run"
+group "Invite, Share the crew’s link. Friends without Garmin add their easy runs by hand."

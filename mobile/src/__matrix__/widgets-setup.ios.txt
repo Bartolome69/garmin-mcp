@@ -1,0 +1,14 @@
+# Widgets setup · ios
+# /you/widgets
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Widgets"
+text "Readiness, today’s session, your week and the race countdown, on your home and lock screen."
+button "See Plus. Home and lock screen widgets are in Plus"
+text "Home and lock screen widgets are in Plus"
+header "Once you have Plus"
+text "Touch and hold your home screen, tap Edit, then Add Widget, and choose Daash. For the lock screen, touch and hold it and tap Customise."
+text "Widgets read cached data. When it’s old they show the time, never a blank."

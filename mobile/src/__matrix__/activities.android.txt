@@ -1,0 +1,11 @@
+# Activities · android
+# /you/activities
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Activities"
+button "Easy, 9 km run club, Thu 26 Nov · 18:45, 9.2 km, 48:06"
+button "Intervals, 6 × 800 m, Wed 25 Nov · 06:30, 11.2 km, 57:04"
+button "Easy, 8 km easy + strides, Tue 24 Nov · 07:10, 8 km, 42:18"

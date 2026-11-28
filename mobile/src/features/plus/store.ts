@@ -9,6 +9,7 @@
 import { Platform } from 'react-native';
 
 import { TRIAL_DAYS } from './entitlement';
+import { fixturesOn } from '../../data/sample';
 
 export type Product = {
   id: string;
@@ -147,9 +148,8 @@ export class UnavailableStore implements Store {
   listen(): () => void { return () => {}; }
 }
 
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 
 /** The store this build talks to. TODO(device build): a StoreKit 2 / Play Billing store goes here. */
 export function defaultStore(): Store {
-  return USE_FIXTURE ? new FakeStore() : new UnavailableStore();
+  return fixturesOn() ? new FakeStore() : new UnavailableStore();
 }

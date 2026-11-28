@@ -18,6 +18,7 @@ import { StepsCard } from '../plan/StepsCard';
 import type { Basis } from '../plan/model';
 import { EditSteps, type EditState } from './EditSteps';
 import type { Built, DayChoice } from './model';
+import { READABLE } from '../../ui/Screen';
 
 export const HINT = 'Type it how you’d say it. Daash turns it into steps.';
 export const PLACEHOLDER = '5x1km at threshold, 2 min easy';
@@ -125,7 +126,7 @@ export function BuilderView({ text, onText, parsed, built, basis, step, onStep, 
   const empty = !text.trim();
   return (
     <ScrollView testID="builder" contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled"
-      style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
+      style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ ...READABLE, padding: 16, gap: 12 }}>
       <Text variant="footnote" tone="muted">{hint}</Text>
       <TextInput testID="builder-input" accessibilityLabel="Workout" accessibilityHint={HINT}
         value={text} onChangeText={onText} editable={!edit} placeholder={PLACEHOLDER} placeholderTextColor={colors.muted}
@@ -168,7 +169,7 @@ export function BuilderView({ text, onText, parsed, built, basis, step, onStep, 
 
       {coach && coachNote && built && !edit ? (
         <View testID="coach-note" style={{ gap: 6, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
-          <Text variant="kicker" tone="muted">Coach</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Coach</Text>
           <Text variant="coach">{coachNote}</Text>
         </View>
       ) : null}

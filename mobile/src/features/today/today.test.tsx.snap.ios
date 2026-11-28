@@ -4,10 +4,13 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 10,
+      "maxWidth": 680,
       "paddingBottom": 24,
       "paddingHorizontal": 16,
       "paddingTop": 8,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -1247,6 +1250,8 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
           />
         </View>
         <View
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
           style={
             {
               "flexDirection": "row",

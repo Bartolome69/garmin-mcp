@@ -1,0 +1,45 @@
+# Plus (paywall) from the Coach’s limit · ios
+# /plus?from=coach
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1
+clipped: none
+cut to lines: none
+button "Close"
+text "Daash Plus"
+header "See where your training is heading."
+image "A preview of the prediction trend and race-day projection"
+group "Coach without a daily limit, Free has 10 messages a day"
+group "Race prediction trend, and race-day projection"
+group "Advanced plan styles, More shapes for your training block, Coming in an update"
+group "Advanced merge rules, Pick the source per metric, tune match windows, Coming in an update"
+group "Home and lock screen widgets, Readiness, week and countdown"
+header "Always free"
+group "Plans, Today and readiness"
+group "Sending workouts to your watch"
+group "Connecting all your watches and apps"
+group "Post-run analysis and the workout builder"
+button "Try Plus free for 7 days"
+button "Restore purchases"
+text "Plus renews until you cancel. Cancel anytime in the App Store."
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+button "Close"
+text "Daash Plus"
+header "See where your training is heading."
+image "A preview of the prediction trend and race-day projection"
+group "Race prediction trend, and race-day projection"
+group "Advanced plan styles, More shapes for your training block, Coming in an update"
+group "Advanced merge rules, Pick the source per metric, tune match windows, Coming in an update"
+group "Home and lock screen widgets, Readiness, week and countdown"
+header "Always free"
+group "Plans, Today and readiness"
+group "Sending workouts to your watch"
+group "Connecting all your watches and apps"
+group "Post-run analysis and the workout builder"
+button "Try Plus free for 7 days"
+button "Restore purchases"
+text "Plus renews until you cancel. Cancel anytime in the App Store."

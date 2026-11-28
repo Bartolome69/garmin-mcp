@@ -54,7 +54,9 @@ exports[`snapshot on ios Block: plan-Block-ios 1`] = `
               {
                 "height": 32,
               },
-              undefined,
+              {
+                "height": 44,
+              },
             ]
           }
           testID="plan-tabs"
@@ -1277,7 +1279,9 @@ exports[`snapshot on ios Trends: plan-Trends-ios 1`] = `
               {
                 "height": 32,
               },
-              undefined,
+              {
+                "height": 44,
+              },
             ]
           }
           testID="plan-tabs"
@@ -2694,7 +2698,9 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
               {
                 "height": 32,
               },
-              undefined,
+              {
+                "height": 44,
+              },
             ]
           }
           testID="plan-tabs"
@@ -4003,6 +4009,7 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 },
               ]
             }
+            extraData="2026-11-23"
             getItem={[Function]}
             getItemCount={[Function]}
             getItemLayout={[Function]}
@@ -4060,6 +4067,8 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 }
               >
                 <View
+                  accessibilityElementsHidden={false}
+                  importantForAccessibility="auto"
                   style={
                     {
                       "paddingHorizontal": 16,
@@ -5640,6 +5649,8 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 }
               >
                 <View
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no-hide-descendants"
                   style={
                     {
                       "paddingHorizontal": 16,
@@ -7091,6 +7102,8 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 }
               >
                 <View
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no-hide-descendants"
                   style={
                     {
                       "paddingHorizontal": 16,
@@ -8746,8 +8759,11 @@ exports[`snapshot: session detail on ios: session-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 12,
+      "maxWidth": 680,
       "padding": 16,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -9095,6 +9111,8 @@ exports[`snapshot: session detail on ios: session-ios 1`] = `
         />
       </View>
       <View
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
         style={
           {
             "flexDirection": "row",
@@ -9201,6 +9219,7 @@ exports[`snapshot: session detail on ios: session-ios 1`] = `
         }
       >
         <Text
+          accessibilityRole="header"
           maxFontSizeMultiplier={2}
           style={
             [

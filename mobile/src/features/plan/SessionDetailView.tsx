@@ -3,6 +3,7 @@
 // range per km (or heart rate / power), "Based on your 10K of 43:30 (12 Oct)" with
 // Easier / Harder (the shared pace engine, 2% a step, the server's twin), the watch
 // status row with every send state (watch/WatchCard.tsx), and Move / Swap / Skip.
+// With the Coach on, "Coach · why this session" follows them, below the fold.
 // Changing targets or the day reaches the watch only through the confirm sheet.
 import { ScrollView, View } from 'react-native';
 
@@ -15,6 +16,7 @@ import { Text } from '../../ui/Text';
 import { WatchCard } from '../watch/WatchCard';
 import type { Basis, PlanSession } from './model';
 import { StepsCard } from './StepsCard';
+import { READABLE } from '../../ui/Screen';
 
 export { targetWords } from './StepsCard';
 
@@ -54,7 +56,7 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
   const watch = session.watch;
   return (
     <ScrollView testID="session" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 12 }}>
       <View style={{ gap: 6 }}>
         <TypeChip type={session.type} label={session.typeLabel} />
         <Text variant="title" accessibilityRole="header" numeric>{session.title}</Text>
@@ -74,18 +76,6 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
           </View>
         </View>
       ) : null}
-      {coach && d?.coachNote ? (
-        <View testID="coach-note" style={{ gap: 6, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
-          <Text variant="kicker" tone="muted">Coach · why this session</Text>
-          <Text variant="coach">{d.coachNote}</Text>
-          {actions.ask ? <Button label="Ask about this session" small onPress={actions.ask} style={{ alignSelf: 'flex-start' }} /> : null}
-        </View>
-      ) : coach && actions.ask ? (
-        // No note from the server for this session: the way into the Coach is still here.
-        <View testID="coach-ask" style={{ alignSelf: 'flex-start' }}>
-          <Button label="Ask about this session" small onPress={actions.ask} />
-        </View>
-      ) : null}
       {watch ? (
         <WatchCard watch={watch} device={device} error={error} retrying={retrying} adjusted={!!adjusted} brand={brand}
           onSend={actions.send} onResend={actions.resend} onRemove={actions.remove} onTrouble={actions.trouble} />
@@ -95,6 +85,20 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
           <Button label="Move" small full onPress={actions.move} />
           <Button label="Swap" small full onPress={actions.swap} />
           <Button label="Skip" small full onPress={actions.skip} />
+        </View>
+      ) : null}
+      {/* The Coach comes last (milestone 12 review): turning it on adds this block and moves
+          nothing above it, so the 10-rep session still fits on one screen with the Coach on. */}
+      {coach && d?.coachNote ? (
+        <View testID="coach-note" style={{ gap: 6, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Coach · why this session</Text>
+          <Text variant="coach">{d.coachNote}</Text>
+          {actions.ask ? <Button label="Ask about this session" small onPress={actions.ask} style={{ alignSelf: 'flex-start' }} /> : null}
+        </View>
+      ) : coach && actions.ask ? (
+        // No note from the server for this session: the way into the Coach is still here.
+        <View testID="coach-ask" style={{ alignSelf: 'flex-start' }}>
+          <Button label="Ask about this session" small onPress={actions.ask} />
         </View>
       ) : null}
     </ScrollView>

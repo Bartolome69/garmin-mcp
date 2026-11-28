@@ -1,5 +1,6 @@
 // You's stack (build prompt, section 4): You, then Connections and Source priority,
-// with the trust sheets, the widgets setup, and Coach memory or Training preferences with its sheets. Large titles on iOS, the Material 3 app bar on Android;
+// with the trust sheets, the widgets setup, Coach memory or Training preferences with its sheets,
+// then Activities, settings (units, notifications, appearance), privacy, help and Sign out. Large titles on iOS, the Material 3 app bar on Android;
 // navigation in the text colour, never brand.
 import { Stack } from 'expo-router';
 import { Platform } from 'react-native';
@@ -33,6 +34,14 @@ export default function YouLayout() {
         <Stack.Screen name="memory" options={{ title: 'Coach memory', headerBackTitle: 'You' }} />
         <Stack.Screen name="memory-edit" options={{ ...sheet, sheetAllowedDetents: [0.7, 1] }} />
         <Stack.Screen name="memory-clear" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
+        <Stack.Screen name="activities" options={{ title: 'Activities', headerBackTitle: 'You' }} />
+        <Stack.Screen name="run/[id]" options={{ title: 'Run', headerBackTitle: 'Activities' }} />
+        <Stack.Screen name="training" options={{ title: 'Units and zones', headerBackTitle: 'You' }} />
+        <Stack.Screen name="notifications" options={{ title: 'Notifications', headerBackTitle: 'You' }} />
+        <Stack.Screen name="appearance" options={{ title: 'Appearance', headerBackTitle: 'You' }} />
+        <Stack.Screen name="privacy" options={{ title: 'Privacy', headerBackTitle: 'You' }} />
+        <Stack.Screen name="help" options={{ title: 'Help', headerBackTitle: 'You' }} />
+        <Stack.Screen name="sign-out" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
       </Stack>
     </ConnectionsProvider>
   );

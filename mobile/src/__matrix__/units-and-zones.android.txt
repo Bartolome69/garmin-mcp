@@ -1,0 +1,13 @@
+# Units and zones · android
+# /you/training
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Units and zones"
+group "Units, From Garmin"
+group "Week starts, Monday"
+group "Heart rate zones, From Garmin"
+group "Goal race, Set when you make a plan"
+text "Change units and zones in Garmin Connect; Daash picks them up at the next sync."

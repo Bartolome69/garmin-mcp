@@ -1,0 +1,11 @@
+# Plan · offline · android
+# /plan
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Plan"
+header "Your plan isn’t on this phone yet"
+text "You’re offline. It loads as soon as you’re back online."
+button "Try again"

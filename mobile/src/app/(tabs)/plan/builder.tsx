@@ -16,8 +16,8 @@ import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
 import { MIN_TOUCH } from '../../../ui/Button';
 import { Text } from '../../../ui/Text';
+import { fixturesOn } from '../../../data/sample';
 
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 
 export default function BuilderScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -63,7 +63,7 @@ export default function BuilderScreen() {
       <BuilderView
         {...b.view}
         coach={flags.coach_enabled}
-        coachNote={flags.coach_enabled && USE_FIXTURE ? devCoachNote(vm, b.built, b.day) : null}
+        coachNote={flags.coach_enabled && fixturesOn() ? devCoachNote(vm, b.built, b.day) : null}
         onSave={save}
         brand={focused}
       />

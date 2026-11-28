@@ -1,0 +1,23 @@
+# Plan · Block · android
+# /plan
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Plan"
+tab "Week"
+tab "Block" [selected]
+tab "Trends"
+text "21 weeks to London"
+text "Sat 24 Apr"
+image "21 weeks: Base, weeks 1 to 7; Build, weeks 8 to 14; Peak, weeks 15 to 18; Taper, weeks 19 to 21. You're in week 4."
+text "Week 4 of 21 · 54 km"
+text "Peak week 17 · 98 km"
+header "Phases"
+group "Base, weeks 1 to 7, now. Easy volume, one quality session a week, strength twice"
+group "Build, weeks 8 to 14, from 4 Jan. Marathon-pace long runs, threshold on Wednesdays"
+group "Peak, weeks 15 to 18, from 15 Feb. The two longest runs, a race rehearsal in week 18"
+group "Taper, weeks 19 to 21, from 5 Apr. Volume down, sharpness kept"
+button "Advanced plan styles, Plus. More shapes for your block, beyond the standard one. Coming in an update."
+button "Change the plan"

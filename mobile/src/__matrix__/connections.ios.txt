@@ -1,0 +1,30 @@
+# Connections · ios
+# /you/connections
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Connections"
+group "Garmin, Live, Connected to Garmin · Forerunner 965 · synced 07:02"
+group "Activities, yes"
+group "Sleep and HRV, yes"
+group "Send workouts, yes"
+group "COROS, Via Intervals.icu, Reconnect needed · last synced Tue"
+button "Reconnect"
+group "Activities, yes"
+group "Sleep, no"
+group "Send workouts, no"
+group "Apple Watch, Via Apple Health, Reads only · synced 06:58"
+group "Activities, yes"
+group "Sleep, yes"
+group "Send workouts, no"
+button "Source priority, Garmin first · 2 duplicate runs merged"
+text "Polar, Suunto"
+text "Coming soon"
+button "Tell me when"
+text "Don’t see your device?"
+button "Request it"
+link "What Daash can and can’t see"
+link "Trouble connecting?"
+text "“Connected to” means you linked your own account. Daash is independent and not endorsed by any watch maker."

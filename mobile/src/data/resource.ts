@@ -2,6 +2,7 @@
 // from the device draws at once, then the server's answer replaces it. A failed
 // refresh keeps what's there and says so; nothing ever spins over content.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { NotSignedIn, Offline, ReconnectNeeded, TimedOut } from '../api/client';
 
@@ -37,10 +38,15 @@ export type ResourceOptions = {
    * asked for as soon as that fetch ends.
    */
   key?: string;
+  /**
+   * Ask again whenever the app comes back to the foreground (Today and Plan: a phone left
+   * overnight shows today, not yesterday). One refresh at a time, as always.
+   */
+  foreground?: boolean;
 };
 
 export function useResource<T>(fetcher: () => Promise<T>, store?: ResourceStore<T>, now: () => number = Date.now, opts: ResourceOptions = {}): Resource<T> {
-  const { enabled = true, key } = opts;
+  const { enabled = true, key, foreground = false } = opts;
   const [state, setState] = useState<{ data: T | null; fetchedAt: number | null; error: string | null; failure: FailureKind | null }>(
     { data: null, fetchedAt: null, error: null, failure: null });
   const [refreshing, setRefreshing] = useState(false);
@@ -110,6 +116,12 @@ export function useResource<T>(fetcher: () => Promise<T>, store?: ResourceStore<
     })();
     return () => { live = false; };
   }, [store, refresh, enabled, key]);
+
+  useEffect(() => {
+    if (!foreground) return;
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refresh(); });
+    return () => sub.remove();
+  }, [foreground, refresh]);
 
   return { ...state, refreshing, refresh };
 }

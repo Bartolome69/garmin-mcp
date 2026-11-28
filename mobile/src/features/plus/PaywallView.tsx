@@ -13,6 +13,7 @@ import { TrendPreview } from '../plan/TrendsView';
 import { storeName, trialTimeline, type PlusStatus } from './entitlement';
 import { COMING_NOTE } from './coming';
 import type { Product } from './store';
+import { READABLE } from '../../ui/Screen';
 
 /** soon: no engine yet; the paywall says it's coming rather than sell it as there. */
 export type PlusItem = { title: string; sub: string; soon?: boolean; id?: string };
@@ -74,7 +75,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
   const { colors } = useTheme();
   return (
     <View testID="paywall" style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 20, paddingTop: 12, gap: 14 }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ ...READABLE, padding: 20, paddingTop: 12, gap: 14 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
           <Pressable testID="paywall-close" accessibilityRole="button" accessibilityLabel="Close" onPress={actions.close}
             style={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
@@ -91,7 +92,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
         <View testID="plus-items" style={{ gap: 2 }}>
           {plusItems(coach, coachLimit, os, lead).map((i) => <Item key={i.title} testID={i.id ? `plus-item-${i.id}` : undefined} icon="lock" title={i.title} sub={i.sub} soon={i.soon} />)}
         </View>
-        <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Always free</Text>
+        <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>Always free</Text>
         <View testID="always-free" style={{ gap: 0 }}>
           {ALWAYS_FREE.map((t) => <Item key={t} icon="check" title={t} />)}
         </View>
@@ -134,7 +135,7 @@ export function TrialSheet({ product, loading, error, busy, outcome, brand, acti
   const trial = product ? product.trialDays != null : true;
   const steps = trialTimeline(product?.price ?? null, product?.period ?? 'month');
   return (
-    <ScrollView testID="trial-sheet" contentContainerStyle={{ padding: 20, paddingBottom: 32, gap: 14 }}>
+    <ScrollView testID="trial-sheet" contentContainerStyle={{ ...READABLE, padding: 20, paddingBottom: 32, gap: 14 }}>
       <Text variant="title" accessibilityRole="header">{trial ? 'How your free week works' : 'Daash Plus'}</Text>
       {trial ? (
         <View testID="trial-timeline" style={{ gap: 0 }}>
@@ -204,7 +205,7 @@ export function PlusSection({ status, plus, canManage = plus, os = Platform.OS, 
   const line = { borderTopWidth: 1, borderTopColor: colors.hairline };
   return (
     <View testID="you-plus" style={{ gap: 10 }}>
-      <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Plus</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>Plus</Text>
       <View style={{ borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
         <Pressable testID="row-plus" accessibilityRole="button" onPress={plus && canManage ? actions.manage : actions.open}
           accessibilityLabel={`${status.title}, ${status.sub}${status.badge ? `, ${status.badge}` : ''}`}

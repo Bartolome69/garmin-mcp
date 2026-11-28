@@ -1,0 +1,17 @@
+# Move sheet · android
+# /plan/move?id=2026-12-02-intervals
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0 (behind the sheet: 0 on 1 screen)
+clipped: none
+cut to lines: none
+header "Move 10 × 400 m"
+text "Your call. Any change to the watch is confirmed first."
+button "Mon 30"
+button "Tue 1"
+button "Wed 2" [disabled]
+button "Thu 3"
+button "Fri 4"
+button "Sat 5"
+button "Sun 6"
+button "Cancel"

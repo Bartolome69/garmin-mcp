@@ -55,7 +55,7 @@ export function StepsCard({ steps, type, basis, step, header, testID = 'steps' }
   return (
     <Card testID={testID} style={{ paddingVertical: 10, gap: 2 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingBottom: 6 }}>
-        {header ?? <Text variant="kicker" tone="muted">Steps</Text>}
+        {header ?? <Text variant="kicker" accessibilityRole="header" tone="muted">Steps</Text>}
         {unit && !header ? <Text variant="kicker" tone="muted" style={{ textTransform: 'none' }}>{unit}</Text> : null}
       </View>
       {steps.map((s, i) => (s.kind === 'repeat' ? (

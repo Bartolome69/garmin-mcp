@@ -14,6 +14,7 @@ import { Card } from '../../ui/Card';
 import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
 import type { DiffDay, DiffSession, LoadPair, Proposal } from './model';
+import { READABLE } from '../../ui/Screen';
 
 function Rail({ s }: { s: DiffSession | null }) {
   const { colors } = useTheme();
@@ -110,7 +111,7 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
   const nothing = !p.ops.length;
   return (
     <ScrollView testID="diff" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 14 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 14 }}>
       <View style={{ gap: 4 }}>
         {p.kicker ? <Text variant="kicker" tone="muted" testID="diff-kicker">{p.kicker}</Text> : null}
         <Text variant="title" accessibilityRole="header" testID="diff-title">{p.title}</Text>
@@ -130,7 +131,7 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
 
       {p.load ? (
         <Card style={{ gap: 6 }}>
-          <Text variant="kicker" tone="muted">Kilometres</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Kilometres</Text>
           <LoadChart load={p.load} />
           <Legend />
         </Card>
@@ -138,14 +139,14 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
 
       {p.rule ? (
         <View testID="diff-rule" style={{ gap: 2 }}>
-          <Text variant="kicker" tone="muted">Rule used</Text>
-          <Text variant="footnote" tone="muted">{`${p.rule}.`}</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Rule used</Text>
+          <Text variant="footnote" tone="muted">{/[.!?]$/.test(p.rule) ? p.rule : `${p.rule}.`}</Text>
         </View>
       ) : null}
 
       {coach && p.coachNote ? (
         <View testID="diff-coach" style={{ gap: 8, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
-          <Text variant="kicker" tone="muted">Coach</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Coach</Text>
           <Text variant="coach">{p.coachNote}</Text>
           <Pressable accessibilityRole="button" onPress={onAsk} style={{ alignSelf: 'flex-start', minHeight: MIN_TOUCH, justifyContent: 'center' }}>
             <View style={{ paddingHorizontal: 12, minHeight: 30, borderRadius: 999, borderWidth: 1, borderColor: colors.muted, justifyContent: 'center' }}>

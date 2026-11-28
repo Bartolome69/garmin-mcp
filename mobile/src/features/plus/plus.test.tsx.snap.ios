@@ -13,9 +13,12 @@ exports[`snapshot: paywall and free week sheet on ios: paywall-ios 1`] = `
   <RCTScrollView
     contentContainerStyle={
       {
+        "alignSelf": "center",
         "gap": 14,
+        "maxWidth": 680,
         "padding": 20,
         "paddingTop": 12,
+        "width": "100%",
       }
     }
     contentInsetAdjustmentBehavior="automatic"
@@ -768,6 +771,7 @@ exports[`snapshot: paywall and free week sheet on ios: paywall-ios 1`] = `
         </View>
       </View>
       <Text
+        accessibilityRole="header"
         maxFontSizeMultiplier={2}
         style={
           [
@@ -1224,9 +1228,12 @@ exports[`snapshot: paywall and free week sheet on ios: trial-sheet-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 14,
+      "maxWidth": 680,
       "padding": 20,
       "paddingBottom": 32,
+      "width": "100%",
     }
   }
   testID="trial-sheet"

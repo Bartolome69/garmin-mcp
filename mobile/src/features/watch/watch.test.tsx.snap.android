@@ -4,8 +4,11 @@ exports[`The shared diff on android snapshot on android: diff-android 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 14,
+      "maxWidth": 680,
       "padding": 16,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -647,6 +650,7 @@ exports[`The shared diff on android snapshot on android: diff-android 1`] = `
       }
     >
       <Text
+        accessibilityRole="header"
         maxFontSizeMultiplier={2}
         style={
           [
@@ -1248,6 +1252,7 @@ exports[`The shared diff on android snapshot on android: diff-android 1`] = `
       testID="diff-rule"
     >
       <Text
+        accessibilityRole="header"
         maxFontSizeMultiplier={2}
         style={
           [

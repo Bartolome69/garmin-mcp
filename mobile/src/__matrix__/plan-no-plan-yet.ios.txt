@@ -1,0 +1,12 @@
+# Plan · no plan yet · ios
+# /plan
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+header "Plan"
+header "No plan yet"
+text "Pick a race or a goal and Daash builds the weeks. Nothing goes to your watch until you confirm it."
+button "Create a plan"
+button "Or plan week by week"

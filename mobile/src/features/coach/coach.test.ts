@@ -17,6 +17,8 @@ import { contextFrom, countSend, dayOf, filterByTag, limitFor, mergeThread, reta
   type CoachMessage, type ServerMessage } from './model';
 import { applyEvent, createSseParser, toEvent, type CoachEvent, type Turn } from './sse';
 import { itemWords, kindLabel, kindsFor, visibleItems, personaMemory } from './memory';
+import { defaultCoachApi } from './source';
+import { setSampleDataForTests } from '../../data/sample';
 
 const NOW = new Date(2026, 10, 27, 9, 0).getTime();   // Fri 27 Nov, 09:00 local
 const H = 3_600_000;
@@ -260,5 +262,28 @@ describe('memory and preferences', () => {
     const chat = items.find((i) => i.source === 'chat')!;
     expect(itemWords(chat, true)).toBe('Left achilles · 12 Nov · you said in chat');
     expect(itemWords(chat, false)).toBe('Left achilles · 12 Nov');
+  });
+});
+
+describe('which Coach the app talks to', () => {
+  it('with sample data showing, only the stand-in, even with a token on the phone (never the real account)', async () => {
+    mockStore.set(ACCESS_KEY, 'token');
+    const realFetch = global.fetch;
+    const fetchSpy = jest.fn(async () => { throw new Error('the server must not be asked'); });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      setSampleDataForTests(true);
+      const api = defaultCoachApi();
+      expect(api).toBeInstanceOf(FakeCoach);
+      expect((await api.thread()).messages.length).toBeGreaterThan(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      // Real data: the server first (a development build falls back to the stand-in).
+      setSampleDataForTests(false);
+      expect(defaultCoachApi()).not.toBeInstanceOf(FakeCoach);
+    } finally {
+      global.fetch = realFetch;
+      setSampleDataForTests(null);
+      mockStore.delete(ACCESS_KEY);
+    }
   });
 });

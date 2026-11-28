@@ -1,0 +1,11 @@
+# Today · Garmin sign-in expired · android
+# /today
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+header "Today"
+header "Garmin needs you to sign in again"
+text "Your plan is safe. Sign in on Garmin’s page and Daash picks up where it left off."
+button "Reconnect"

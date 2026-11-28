@@ -3,13 +3,14 @@ import { useEffect, useState } from 'react';
 import { Alert, Platform, useWindowDimensions, View } from 'react-native';
 
 import { freshness } from '../../../data/freshness';
+import { sampleData } from '../../../data/sample';
 import { useToday } from '../../../features/today/TodayProvider';
-import { TodayEmpty, TodayView } from '../../../features/today/TodayView';
+import { TodayEmpty, TodayView, type TodayActions } from '../../../features/today/TodayView';
 import { applyToToday } from '../../../features/watch/apply';
 import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
-import { FailureBanner } from '../../../ui/StateViews';
+import { useStable, useStableActions } from '../../../ui/hooks';
 import { Text } from '../../../ui/Text';
 
 function useNow(everyMs = 60000) {
@@ -23,19 +24,43 @@ export default function TodayScreen() {
   const watch = useWatch();
   const { fetchedAt, refreshing, error, refresh } = today;
   // Confirmed changes and the watch queue's state, over the server's last answer.
-  const data = today.data ? applyToToday(today.data, watch.applied, watch.ops) : null;
+  // Kept the same object while what it draws is the same (a queue tick for another day doesn't redraw Today).
+  const data = useStable(today.data ? applyToToday(today.data, watch.applied, watch.ops) : null);
   const { flags } = useFlags();
   const { colors } = useTheme();
   const router = useRouter();
   // A screen behind an open sheet loses its brand fill (build prompt, section 2).
   const focused = useIsFocused();
   const { fontScale } = useWindowDimensions();
-  const fresh = freshness(fetchedAt, useNow());
+  const fresh = useStable(freshness(fetchedAt, useNow()));
+
+  // The same actions across renders (each reads the latest day), so TodayView stays memoised.
+  const actions = useStableActions<TodayActions>({
+    signal: (key) => router.push({ pathname: '/today/readiness', params: { signal: key } }),
+    how: () => router.push({ pathname: '/today/readiness', params: { signal: data!.readiness.signals.find((s) => s.status === 'low')?.key ?? 'sleep' } }),
+    recommended: async () => {
+      if (data!.readiness.recommended.kind !== 'easier') {
+        if (data!.session) router.push({ pathname: '/plan/session/[id]', params: { id: data!.session.id } });
+        return;
+      }
+      try {
+        const p = await watch.propose({ kind: 'easier' });
+        router.push({ pathname: '/today/new-week', params: { id: p.id } });
+      } catch (err) {
+        Alert.alert('Couldn’t work out an easier day', err instanceof Error ? err.message : 'Try again in a moment.');
+      }
+    },
+    options: () => router.push('/today/options'),
+    askWhy: () => router.push({ pathname: '/coach', params: { about: 'readiness', date: data!.date, label: data!.readiness.word ?? '' } }),
+    openSession: () => data?.session && router.push({ pathname: '/plan/session/[id]', params: { id: data!.session.id } }),
+    openRun: (id) => router.push({ pathname: '/today/run/[id]', params: { id } }),
+    refresh,
+  });
 
   if (!data) return <TodayEmpty error={error} failure={today.failure} onRetry={refresh} />;
   return (
     <>
-      {Platform.OS === 'android' && fresh?.stale ? (
+      {Platform.OS === 'android' && fresh?.stale && !sampleData() ? (
         <Stack.Screen options={{ headerRight: () => (
           <View accessible accessibilityLabel={fresh.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 }}>
             <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.text2 }} />
@@ -43,7 +68,6 @@ export default function TodayScreen() {
           </View>
         ) }} />
       ) : null}
-      <FailureBanner failure={today.failure} />
       <TodayView
         vm={data}
         coach={flags.coach_enabled}
@@ -52,27 +76,9 @@ export default function TodayScreen() {
         fresh={fresh}
         refreshing={refreshing}
         error={error}
-        actions={{
-          signal: (key) => router.push({ pathname: '/today/readiness', params: { signal: key } }),
-          how: () => router.push({ pathname: '/today/readiness', params: { signal: data.readiness.signals.find((s) => s.status === 'low')?.key ?? 'sleep' } }),
-          recommended: async () => {
-            if (data.readiness.recommended.kind !== 'easier') {
-              if (data.session) router.push({ pathname: '/plan/session/[id]', params: { id: data.session.id } });
-              return;
-            }
-            try {
-              const p = await watch.propose({ kind: 'easier' });
-              router.push({ pathname: '/today/new-week', params: { id: p.id } });
-            } catch (err) {
-              Alert.alert('Couldn’t work out an easier day', err instanceof Error ? err.message : 'Try again in a moment.');
-            }
-          },
-          options: () => router.push('/today/options'),
-          askWhy: () => router.push({ pathname: '/coach', params: { about: 'readiness', date: data.date, label: data.readiness.word ?? '' } }),
-          openSession: () => data.session && router.push({ pathname: '/plan/session/[id]', params: { id: data.session.id } }),
-          openRun: (id) => router.push({ pathname: '/today/run/[id]', params: { id } }),
-          refresh,
-        }}
+        actions={actions}
+        sample={sampleData()}
+        failure={today.failure}
       />
     </>
   );

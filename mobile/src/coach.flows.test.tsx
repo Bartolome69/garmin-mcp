@@ -47,6 +47,7 @@ import WatchConfirm from './app/watch/confirm';
 import { NotSignedIn } from './api/client';
 import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import type { CoachApi } from './features/coach/api';
+import { STOPPED } from './features/coach/CoachProvider';
 import { FakeCoach } from './features/coach/fake';
 import type { CoachEvent } from './features/coach/sse';
 import { PERSONA_PLAN } from './features/plan/fixture';
@@ -144,7 +145,10 @@ describe('1. Ask', () => {
     expect(screen.getByTestId('coach-send').props.accessibilityState).toEqual({ disabled: true });
     await ask('Should I still do the tempo?');
     expect(await screen.findByTestId('streaming')).toBeTruthy();
-    expect(screen.getByTestId('coach-send').props.accessibilityState).toEqual({ disabled: true });
+    // While it streams, Send is Stop (MIN_TOUCH, named), and the composer stays open.
+    expect(screen.queryByTestId('coach-send')).toBeNull();
+    expect(screen.getByTestId('coach-stop').props.accessibilityLabel).toBe('Stop');
+    expect(screen.getByTestId('composer').props.editable).toBe(true);
     await act(async () => { fake.release(); });
     const reply = within(lastReply());
     expect(screen.queryByTestId('streaming')).toBeNull();
@@ -154,6 +158,21 @@ describe('1. Ask', () => {
     expect(screen.getByTestId('coach-remaining')).toHaveTextContent('9 left today');
     expect(fake.sent).toEqual([{ text: 'Should I still do the tempo?', starter: false, context: null }]);
   });
+  it('Stop ends a reply that is streaming: what was written stays, marked stopped, and Send is back', async () => {
+    const fake = new FakeCoach({ hold: true });
+    await openCoach(fake);
+    await ask('Should I still do the tempo?');
+    await screen.findByTestId('streaming');
+    await fireEvent.press(screen.getByTestId('coach-stop'));
+    expect(screen.queryByTestId('streaming')).toBeNull();
+    expect(within(lastReply()).getByText(STOPPED)).toBeTruthy();
+    await act(async () => { fake.release(); }); // the held reply arriving late changes nothing
+    expect(within(lastReply()).getByText(STOPPED)).toBeTruthy();
+    expect(within(lastReply()).queryByText(/Below your range of 54 to 66/)).toBeNull();
+    expect(screen.getByTestId('coach-send')).toBeTruthy();
+    expect(screen.queryByTestId('coach-stop')).toBeNull();
+  });
+
   it('a prompt chip sends itself, marked as a starter; thumbs reach the server', async () => {
     const fake = new FakeCoach();
     await openCoach(fake);
@@ -526,7 +545,7 @@ describe('11. You: memory and preferences', () => {
   it('Coach off: the same items as Training preferences; niggles, no tone, no Clear memory, no Coach anywhere', async () => {
     await renderRouter(app(new FakeCoach(), undefined, DEFAULT_FLAGS), { initialUrl: '/you' });
     expect(await screen.findByTestId('row-memory')).toHaveTextContent(/Training preferences/);
-    expect(screen.queryByTestId('coach-switch')).toBeNull();
+    expect(screen.queryByTestId('coach-switch-row')).toBeNull();
     await fireEvent.press(screen.getByTestId('row-memory'));
     const view = await screen.findByTestId('memory');
     expect(within(view).getByLabelText('Niggles to plan around: Left achilles · 12 Nov')).toBeTruthy();
@@ -541,7 +560,7 @@ describe('12. The Coach switch in You', () => {
     await renderRouter(app(new FakeCoach()), { initialUrl: '/today' });
     expect(await screen.findByTestId('coach-line')).toBeTruthy();
     await act(async () => { router.push('/you'); });
-    await fireEvent(await screen.findByTestId('coach-switch'), 'valueChange', false);
+    await fireEvent.press(await screen.findByTestId('coach-switch-row'));
     expect(await screen.findByTestId('row-memory')).toHaveTextContent(/Training preferences/);
     await act(async () => { router.push('/today'); });
     await screen.findByTestId('today');
@@ -549,7 +568,7 @@ describe('12. The Coach switch in You', () => {
     await act(async () => { router.push('/coach'); });
     expect(screen.queryByTestId('coach')).toBeNull();
     await act(async () => { router.push('/you'); });
-    await fireEvent(await screen.findByTestId('coach-switch'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('coach-switch', { includeHiddenElements: true }), 'valueChange', true); // the switch itself still works
     await act(async () => { router.push('/coach'); });
     expect(await screen.findByTestId('coach')).toBeTruthy();
   });

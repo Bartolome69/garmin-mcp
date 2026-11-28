@@ -1,0 +1,46 @@
+# Onboarding · try · ios
+# /onboarding/try
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1
+clipped: none
+cut to lines: none
+header "Try it"
+text "Type a session. Paces use a 10K of 45:00 until you connect a watch."
+textfield "Workout" = 5x1km at threshold, 2 min easy
+group "Read as 5 repeats · 1 km at threshold · 2 min easy jog" (live polite)
+text "Tempo"
+text "9.9 km · about 53 min"
+group "Warm-up, 10 min easy (added), 5:39 to 6:23 per km"
+text "Repeat 5 times"
+group "1 km, Threshold, 4:32 to 4:37 per km"
+group "2 min, Easy jog"
+group "Cool-down, 10 min easy (added), 5:39 to 6:23 per km"
+text "Threshold from a 10K of 45:00 until a watch is connected"
+button "Easier"
+button "Harder"
+text "Like it? Make a plan that goes to your watch."
+text "A free account and a watch connection. Sending is always free. This try isn’t saved."
+button "Create free account"
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+header "Try it"
+text "Type a session. Paces use a 10K of 45:00 until you connect a watch."
+textfield "Workout" = 5x1km at threshold, 2 min easy
+group "Read as 5 repeats · 1 km at threshold · 2 min easy jog · parsed on your phone" (live polite)
+text "Tempo"
+text "9.9 km · about 53 min"
+group "Warm-up, 10 min easy (added), 5:39 to 6:23 per km"
+text "Repeat 5 times"
+group "1 km, Threshold, 4:32 to 4:37 per km"
+group "2 min, Easy jog"
+group "Cool-down, 10 min easy (added), 5:39 to 6:23 per km"
+text "Threshold from a 10K of 45:00 until a watch is connected"
+button "Easier"
+button "Harder"
+text "Like it? Make a plan that goes to your watch."
+text "A free account and a watch connection. Sending is always free. This try isn’t saved."
+button "Create free account"

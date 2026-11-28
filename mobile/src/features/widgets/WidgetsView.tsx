@@ -11,6 +11,7 @@ import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
 import type { Decision } from '../today/model';
 import type { WidgetSnapshot } from './snapshot';
+import { READABLE } from '../../ui/Screen';
 
 const DECISION_TONE: Record<Decision, 'success' | 'text2' | 'warning'> = { push: 'success', hold: 'text2', back_off: 'warning' };
 
@@ -141,18 +142,28 @@ export function WidgetPreviews({ s, os = Platform.OS }: { s: WidgetSnapshot; os?
   );
 }
 
-export function WidgetsView({ snapshot, plus, os = Platform.OS, onPlus }: { snapshot: WidgetSnapshot; plus: boolean; os?: string; onPlus: () => void }) {
+export function WidgetsView({ snapshot, plus, os = Platform.OS, onPlus, expoGo = false }: {
+  snapshot: WidgetSnapshot; plus: boolean; os?: string; onPlus: () => void;
+  /** In Expo Go there are no widgets to add: they need the App Store or Google Play build. */
+  expoGo?: boolean;
+}) {
   const { colors } = useTheme();
   const places = widgetPlaces(os);
   return (
     <ScrollView testID="widgets" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 14 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 14 }}>
       <Text testID="widgets-intro" variant="body" tone="muted">{`Readiness, today’s session, your week and the race countdown, on your ${places}.`}</Text>
       {plus ? <WidgetPreviews s={snapshot} os={os} /> : (
         <LockedPreview testID="widgets-locked" buttonTestID="widgets-see-plus" caption={`${places[0].toUpperCase()}${places.slice(1)} widgets are in Plus`} onPress={onPlus}>
           <WidgetPreviews s={snapshot} os={os} />
         </LockedPreview>
       )}
+      {expoGo ? (
+        <Card testID="widgets-expo-go">
+          <Text variant="headline" accessibilityRole="header">Not in this test app</Text>
+          <Text variant="subhead">{`Widgets need the ${os === 'android' ? 'Google Play' : 'App Store'} build of Daash. Expo Go can’t add them, so the previews here are all there is for now.`}</Text>
+        </Card>
+      ) : null}
       <Card testID="widgets-how">
         <Text variant="headline" accessibilityRole="header">{plus ? 'Add a widget' : 'Once you have Plus'}</Text>
         <Text testID="widgets-how-words" variant="subhead">{addWidgetWords(os)}</Text>

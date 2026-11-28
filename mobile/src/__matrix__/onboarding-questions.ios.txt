@@ -1,0 +1,18 @@
+# Onboarding · questions · ios
+# /onboarding/questions
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+text "Step 2 of 3"
+header "How do you train?"
+text "Experience"
+radiogroup "Experience"
+text "Days a week"
+radiogroup "Days a week"
+text "A usual week lately"
+radiogroup "A usual week lately"
+text "A recent race, optional"
+radiogroup "A recent race"
+button "Continue" [disabled]

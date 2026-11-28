@@ -1,0 +1,124 @@
+# You · ios
+# /you
+
+## light · 100% · Coach on | light · 200% · Coach on
+brand fills: 1
+clipped: none
+cut to lines: none
+header "You"
+text "COROS"
+text "Reconnect needed · last synced Tue"
+text "Your plan is safe. Runs from here wait until it’s back."
+button "Reconnect"
+header "Connections"
+button "Watches and apps, Connected to Garmin"
+header "Coach"
+switch "Coach" = on
+button "Coach memory. What the Coach keeps in mind"
+header "Plus"
+button "Daash Plus, Prediction trend, plan styles, widgets, Coach without a daily limit"
+button "Widgets, Plus. Home and lock screen"
+button "Restore purchases"
+header "Runs"
+button "Activities, Your recent runs"
+header "Settings"
+button "Units and zones, Units, week start, heart rate zones"
+button "Notifications, 4 of 4 on"
+button "Appearance, Light"
+header "Privacy"
+button "What Daash uses, Runs, sleep and readiness from Garmin"
+button "Help"
+button "Sign out"
+text "Daash"
+text "Daash is independent and not endorsed by any watch maker."
+
+## light · 100% · Coach off | light · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+header "You"
+text "COROS"
+text "Reconnect needed · last synced Tue"
+text "Your plan is safe. Runs from here wait until it’s back."
+button "Reconnect"
+header "Connections"
+button "Watches and apps, Connected to Garmin"
+header "Training"
+button "Training preferences. What you’ve told Daash"
+header "Plus"
+button "Daash Plus, Prediction trend, plan styles, widgets"
+button "Widgets, Plus. Home and lock screen"
+button "Restore purchases"
+header "Runs"
+button "Activities, Your recent runs"
+header "Settings"
+button "Units and zones, Units, week start, heart rate zones"
+button "Notifications, 4 of 4 on"
+button "Appearance, Light"
+header "Privacy"
+button "What Daash uses, Runs, sleep and readiness from Garmin"
+button "Help"
+button "Sign out"
+text "Daash"
+text "Daash is independent and not endorsed by any watch maker."
+
+## dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1
+clipped: none
+cut to lines: none
+header "You"
+text "COROS"
+text "Reconnect needed · last synced Tue"
+text "Your plan is safe. Runs from here wait until it’s back."
+button "Reconnect"
+header "Connections"
+button "Watches and apps, Connected to Garmin"
+header "Coach"
+switch "Coach" = on
+button "Coach memory. What the Coach keeps in mind"
+header "Plus"
+button "Daash Plus, Prediction trend, plan styles, widgets, Coach without a daily limit"
+button "Widgets, Plus. Home and lock screen"
+button "Restore purchases"
+header "Runs"
+button "Activities, Your recent runs"
+header "Settings"
+button "Units and zones, Units, week start, heart rate zones"
+button "Notifications, 4 of 4 on"
+button "Appearance, Dark"
+header "Privacy"
+button "What Daash uses, Runs, sleep and readiness from Garmin"
+button "Help"
+button "Sign out"
+text "Daash"
+text "Daash is independent and not endorsed by any watch maker."
+
+## dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+header "You"
+text "COROS"
+text "Reconnect needed · last synced Tue"
+text "Your plan is safe. Runs from here wait until it’s back."
+button "Reconnect"
+header "Connections"
+button "Watches and apps, Connected to Garmin"
+header "Training"
+button "Training preferences. What you’ve told Daash"
+header "Plus"
+button "Daash Plus, Prediction trend, plan styles, widgets"
+button "Widgets, Plus. Home and lock screen"
+button "Restore purchases"
+header "Runs"
+button "Activities, Your recent runs"
+header "Settings"
+button "Units and zones, Units, week start, heart rate zones"
+button "Notifications, 4 of 4 on"
+button "Appearance, Dark"
+header "Privacy"
+button "What Daash uses, Runs, sleep and readiness from Garmin"
+button "Help"
+button "Sign out"
+text "Daash"
+text "Daash is independent and not endorsed by any watch maker."

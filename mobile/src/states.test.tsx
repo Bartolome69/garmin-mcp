@@ -174,6 +174,8 @@ describe('cached content when the login expires', () => {
     expect(banner.getByText('Garmin needs you to sign in again')).toBeTruthy();
     expect(banner.getByText('Showing what’s on your phone.')).toBeTruthy();
     expect(screen.getByTestId('session-card')).toBeTruthy();
+    // Inside Today's scroll view, so on iOS it sits below the status bar with the rest.
+    expect(within(screen.getByTestId('today')).getByTestId('failure-banner')).toBeTruthy();
   });
   it('offline over cached content: no banner (the "Updated …" label says it), no crash', async () => {
     await renderRouter(app(), { initialUrl: '/today' });

@@ -1,0 +1,36 @@
+# Readiness sheet · ios
+# /today/readiness?signal=sleep
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0 (behind the sheet: 0 on 1 screen)
+clipped: none
+cut to lines: none
+header "Sleep · 4:45"
+text "2h under your usual"
+image "Sleep over the last 14 nights. Your usual 7:15. Last night 4:45 · 2h under."
+text "From your watch overnight. Daash compares last night with your own last 28 nights, not a population average."
+text "2 or 3 signals below usual"
+text "Back off"
+text "1 signal below usual"
+text "Hold"
+text "None below, load in range"
+text "Push"
+text "Readiness is worked out the same way with or without the Coach. Not medical advice."
+button "Done"
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 0 (behind the sheet: 0 on 1 screen)
+clipped: none
+cut to lines: none
+header "Sleep · 4:45"
+text "2h under your usual"
+image "Sleep over the last 14 nights. Your usual 7:15. Last night 4:45 · 2h under."
+text "From your watch overnight. Daash compares last night with your own last 28 nights, not a population average."
+text "2 or 3 signals below usual"
+text "Back off"
+text "1 signal below usual"
+text "Hold"
+text "None below, load in range"
+text "Push"
+text "Readiness is worked out by fixed rules from your own data. Not medical advice."
+button "Done"

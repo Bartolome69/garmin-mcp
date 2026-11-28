@@ -1,0 +1,18 @@
+# Onboarding · paces · ios
+# /onboarding/paces
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+text "Step 2 of 3"
+header "Set your paces"
+text "Fastest is to read your recent runs."
+text "Recommended"
+text "about 20 seconds"
+text "Import my recent runs from my watch"
+text "Reads the last 12 weeks to set easy, threshold and race paces."
+button "Connect Garmin"
+button "Answer 4 questions instead Experience, days a week, recent distance, a recent race"
+text "Daash reads activities only for this. You can disconnect any time in You › Connections."
+text "Daash is independent and not endorsed by any watch maker."

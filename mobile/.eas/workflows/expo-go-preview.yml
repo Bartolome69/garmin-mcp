@@ -1,0 +1,14 @@
+name: Expo Go preview
+on:
+  push:
+    branches: ['claude/native-app-m12']
+jobs:
+  publish:
+    name: Publish to Expo Go
+    type: update
+    environment: preview
+    env:
+      EXPO_PUBLIC_DAASH_FIXTURE: '1'
+    params:
+      branch: preview
+      platform: all

@@ -21,6 +21,8 @@ export function watchWords(state: WatchState, at: string | null): string {
 export function WatchStatus({ state, at }: { state: WatchState; at: string | null }) {
   const { colors } = useTheme();
   const words = watchWords(state, at);
+  // A send that moves on is said once, by the watch queue (WatchProvider), not by each
+  // status on screen: no live region here either, or TalkBack would say it again.
   const tone = state === 'on_watch' ? 'text2' : state === 'changed_pending_sync' ? 'warning'
     : state === 'failed' ? 'brandText' : 'muted';
   return (

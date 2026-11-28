@@ -84,6 +84,8 @@ const UI: [keyof typeof colors.dark, keyof typeof colors.dark][] = [
   ['muted', 'bg'], ['muted', 'surface'], ['text', 'surface'], ['brand', 'bg'],
   ['cEasy', 'surface'], ['cTempo', 'surface'], ['cInt', 'surface'], ['cLong', 'surface'], ['cStr', 'surface'],
   ['warning', 'surface'], ['success', 'surface'],
+  // A switch (ui/List switchColors): the off track on its row, the thumb on the off and on tracks.
+  ['muted', 'surface'], ['surface', 'muted'], ['surface', 'success'],
 ];
 
 describe.each(['dark', 'light'] as const)('contrast, %s', (mode) => {

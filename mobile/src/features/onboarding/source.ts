@@ -6,8 +6,8 @@
 import { postJson } from '../../api/client';
 import FIXTURE from './onboarding.fixture.json';
 import type { Goal, PaceResult, Reveal } from './model';
+import { fixturesOn } from '../../data/sample';
 
-const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 export const CASES = (FIXTURE as unknown as {
   cases: { import: PaceResult; import_empty: PaceResult; questions: PaceResult; questions_race: PaceResult; reveal: Reveal; reveal_fit: Reveal; reveal_empty: Reveal; reveal_questions: Reveal };
 }).cases;
@@ -19,7 +19,7 @@ export async function importRuns(): Promise<PaceResult> {
   try {
     return await postJson<PaceResult>('/app/api/v1/onboarding/import', {});
   } catch (err) {
-    if (USE_FIXTURE) return CASES.import;
+    if (fixturesOn()) return CASES.import;
     throw err;
   }
 }
@@ -29,7 +29,7 @@ export async function makePlan(result: PaceResult, goal: Goal, coach: boolean): 
   try {
     return await postJson<Reveal>('/app/api/v1/onboarding/plan', body);
   } catch (err) {
-    if (!USE_FIXTURE) throw err;
+    if (!fixturesOn()) throw err;
     const r = goal.kind === 'race' ? CASES.reveal : CASES.reveal_fit;
     return coach ? { ...r, coachNote: WHY } : r;
   }

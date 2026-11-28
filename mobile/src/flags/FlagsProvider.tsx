@@ -18,8 +18,10 @@ type FlagsState = {
   coachAvailable: boolean;
   coachOff: boolean;
   setCoachOff: (off: boolean) => void;
+  /** Sign out: back to the defaults until the next person's flags arrive. */
+  reset: () => void;
 };
-const FlagsContext = createContext<FlagsState>({ flags: DEFAULT_FLAGS, refresh: async () => {}, coachAvailable: false, coachOff: false, setCoachOff: () => {} });
+const FlagsContext = createContext<FlagsState>({ flags: DEFAULT_FLAGS, refresh: async () => {}, coachAvailable: false, coachOff: false, setCoachOff: () => {}, reset: () => {} });
 
 /**
  * Opens on the cached answer, then asks the server, on mount and whenever the
@@ -38,6 +40,7 @@ export function FlagsProvider({ children, store, fetcher, initial, choice, initi
   useEffect(() => { choice?.load().then((off) => { if (off != null) setOff(off); }).catch(() => {}); }, [choice]);
   const setCoachOff = useCallback((off: boolean) => { setOff(off); choice?.save(off).catch(() => {}); }, [choice]);
   const busy = useRef(false);
+  const reset = useCallback(() => { setFlags(DEFAULT_FLAGS); setOff(false); }, []);
 
   const refresh = useCallback(async () => {
     if (!fetcher || busy.current) return;
@@ -66,8 +69,8 @@ export function FlagsProvider({ children, store, fetcher, initial, choice, initi
   // Turning the Coach off hides the tab and every Coach block; no number on any screen changes.
   const value = useMemo<FlagsState>(() => ({
     flags: flags.coach_enabled && coachOff ? { ...flags, coach_enabled: false } : flags,
-    refresh, coachAvailable: flags.coach_enabled, coachOff, setCoachOff,
-  }), [flags, refresh, coachOff, setCoachOff]);
+    refresh, coachAvailable: flags.coach_enabled, coachOff, setCoachOff, reset,
+  }), [flags, refresh, coachOff, setCoachOff, reset]);
   return <FlagsContext.Provider value={value}>{children}</FlagsContext.Provider>;
 }
 

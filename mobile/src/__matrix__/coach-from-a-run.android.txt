@@ -1,0 +1,34 @@
+# Coach · from a run · android
+# /coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1
+clipped: none
+cut to lines: 3 × 2 km at threshold (2 lines); Easy 6 km (2 lines)
+header "Coach"
+header "Today · 12:18"
+group "About · Wed 25 · 6 × 800 m"
+text "Why did rep 6 feel harder?"
+text "Rep pace averaged 4:01. Your peak heart rate on rep 6 was 172, 4 bpm above rep 5."
+image "Peak heart rate per rep: 164, 165, 166, 168, 168, 172 bpm."
+group "Sources: Run · Garmin"
+button "Helpful"
+button "Not helpful"
+text "I’m away 1 to 3 Dec. Make it easier then"
+text "Saved to memory: Travelling 1 to 3 Dec"
+button "Edit memory: Travelling 1 to 3 Dec"
+header "Proposed change"
+group "FRI 27: 3 × 2 km at threshold, becomes Easy 6 km"
+button "Review 1 watch change"
+button "Not now"
+button "Why Back off?"
+button "How’s my week?"
+button "Should I still do the tempo?"
+button "Make it easier"
+group "About · Wed 25 · 6 × 800 m"
+button "Remove About · Wed 25 · 6 × 800 m"
+textfield "Message the Coach"
+text "8 left today"
+button "Send" [disabled]
+button "Search the conversation"
+button "Conversation options"

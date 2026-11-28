@@ -138,7 +138,7 @@ describe(`The watch confirm on ${os}`, () => {
     const { toJSON } = await drawConfirm(unwatchProposal([TEMPO]));
     expect(screen.getByText('Remove from your watch?')).toBeTruthy();
     expect(screen.getByLabelText('Remove, Fri 27, 3 × 2 km at threshold')).toBeTruthy();
-    expect(screen.getByText('It stays in your plan, marked Not on watch. You can send it again any time.')).toBeTruthy();
+    expect(screen.getByText('It stays in your plan, marked Not on your watch. You can send it again any time.')).toBeTruthy();
     expect(screen.getByTestId('button-Keep it')).toBeTruthy();
     expect(brandFills(toJSON())).toBe(1);
   });
@@ -216,5 +216,12 @@ describe(`Send states on ${os}`, () => {
     await fireEvent.press(screen.getByTestId('button-Trouble connecting?'));
     expect(onResend).toHaveBeenCalled();
     expect(onTrouble).toHaveBeenCalled();
+  });
+
+  // The queue says each change once, on both platforms (flows.test.tsx, flow 5); a live
+  // region here as well would have TalkBack say it a second time.
+  it.each(['not_sent', 'sending', 'changed_pending_sync', 'on_watch', 'failed'] as const)('%s carries no live region', async (state) => {
+    const { toJSON } = await draw({ state, at: '20:14' }, { error: 'Not sent. Garmin didn’t answer.' });
+    expect(nodes(toJSON()).filter((n) => n.props.accessibilityLiveRegion).map((n) => n.type)).toEqual([]);
   });
 });

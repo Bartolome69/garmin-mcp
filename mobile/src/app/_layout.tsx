@@ -1,6 +1,9 @@
 // The app's root: theme, flags, Plus, fonts and the local database, then the tabs.
-import { GeistMono_500Medium } from '@expo-google-fonts/geist-mono';
-import { SourceSerif4_400Regular, SourceSerif4_400Regular_Italic } from '@expo-google-fonts/source-serif-4';
+// Only the three faces the app uses: the packages' index files pull in every weight (about
+// 60 font files in each update a phone downloads).
+import { GeistMono_500Medium } from '@expo-google-fonts/geist-mono/500Medium';
+import { SourceSerif4_400Regular } from '@expo-google-fonts/source-serif-4/400Regular';
+import { SourceSerif4_400Regular_Italic } from '@expo-google-fonts/source-serif-4/400Regular_Italic';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -10,6 +13,7 @@ import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { getJson } from '../api/client';
+import { resolveSampleData, sampleData } from '../data/sample';
 import { openDb } from '../db/expo';
 import { DbContext } from '../db/DbContext';
 import { kv } from '../db/kv';
@@ -30,15 +34,19 @@ const COACH_OFF_KEY = 'coach:off';
 // {"chat": true} for the Coach's people, {} for everyone else). Null when signed out or
 // offline, so the cached answer stands. A development build can force the Coach on.
 // TODO(server): the v1 answer adds plus, coach_daily_limit and the rest of section 10.
-const flagsFetcher: FlagsFetcher = __DEV__ && process.env.EXPO_PUBLIC_DAASH_COACH === '1'
-  ? async () => ({ coach_enabled: true })
-  : () => getJson<unknown>('/app/api/features').catch(() => null);
+// Sample data (data/sample.ts) is the persona's, who has the Coach (the runner can switch it off in You).
+const flagsFetcher: FlagsFetcher = () => (sampleData() || (__DEV__ && process.env.EXPO_PUBLIC_DAASH_COACH === '1')
+  ? Promise.resolve({ coach_enabled: true })
+  : getJson<unknown>('/app/api/features').catch(() => null));
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({ GeistMono_500Medium, SourceSerif4_400Regular, SourceSerif4_400Regular_Italic });
   const [db, setDb] = useState<Db | null>(null);
   const [appearance, setAppearance] = useState<Appearance | null>(null);
+  // Whether this launch shows sample data, read before any provider asks (data/sample.ts).
+  const [sampleKnown, setSampleKnown] = useState(false);
 
+  useEffect(() => { resolveSampleData().finally(() => setSampleKnown(true)); }, []);
   useEffect(() => {
     openDb()
       .then(async (opened) => {
@@ -48,7 +56,7 @@ export default function RootLayout() {
       .catch(() => setAppearance('system'));
   }, []);
 
-  const ready = (fontsLoaded || !!fontError) && appearance !== null;
+  const ready = (fontsLoaded || !!fontError) && appearance !== null && sampleKnown;
   useEffect(() => { if (ready) SplashScreen.hideAsync().catch(() => {}); }, [ready]);
 
   const flagsStore = useMemo<FlagsStore | undefined>(() => db

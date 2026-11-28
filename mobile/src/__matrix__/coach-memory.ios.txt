@@ -1,0 +1,39 @@
+# Coach memory · ios
+# /you/memory
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Coach memory"
+text "Used only when you talk to the Coach. Edit or delete anything; nothing here changes your numbers."
+group "Goal: London Marathon · Sat 24 Apr · 3:15"
+button "Edit Goal"
+group "Training days: 6 a week · long run Sunday with the crew"
+button "Edit Training days"
+group "Injuries you mentioned: Left achilles · 12 Nov · you said in chat"
+button "Edit Injuries you mentioned"
+group "Preferences: Mornings · km · no treadmill intervals"
+button "Edit Preferences"
+group "Tone: Short answers, numbers first"
+button "Edit Tone"
+button "Add something to remember"
+button "Clear memory. Plan, runs and conversation stay"
+text "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Training preferences"
+text "Kept on this phone. Edit or delete anything."
+group "Goal: London Marathon · Sat 24 Apr · 3:15"
+button "Edit Goal"
+group "Training days: 6 a week · long run Sunday with the crew"
+button "Edit Training days"
+group "Niggles to plan around: Left achilles · 12 Nov"
+button "Edit Niggles to plan around"
+group "Preferences: Mornings · km · no treadmill intervals"
+button "Edit Preferences"
+button "Add a preference"
+text "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."

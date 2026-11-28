@@ -79,6 +79,21 @@ export function resend(op: WatchOp, now: number): WatchOp {
 
 export const isSettled = (op: WatchOp) => op.state === 'on_watch' || op.state === 'changed_pending_sync';
 
+/**
+ * What a screen reader says about a confirmed batch where it stands, the same words the
+ * screens show: "Sending to Forerunner 965", "Not sent. Garmin didn't answer.", "Changed ·
+ * arrives at next sync", "On your watch", or "Not on your watch" for a removal. Null for
+ * an empty batch.
+ */
+export function batchWords(ops: WatchOp[], device: string | null): string | null {
+  if (!ops.length) return null;
+  if (ops.some((o) => o.state === 'sending')) return `Sending to ${device ?? 'your watch'}`;
+  const failure = ops.find((o) => o.state === 'failed');
+  if (failure) return failure.error ?? 'Not sent.';
+  if (ops.every((o) => o.kind === 'remove')) return 'Not on your watch';
+  return ops.some((o) => o.state === 'changed_pending_sync') ? 'Changed · arrives at next sync' : 'On your watch';
+}
+
 const hhmm = (ms: number) => {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;

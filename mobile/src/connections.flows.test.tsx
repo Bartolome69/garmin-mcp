@@ -24,7 +24,6 @@ import PlanSession from './app/(tabs)/plan/session/[id]';
 import TodayLayout from './app/(tabs)/today/_layout';
 import TodayIndex from './app/(tabs)/today/index';
 import TodayNewWeek from './app/(tabs)/today/new-week';
-import TodayNext from './app/(tabs)/today/next';
 import TodayOptions from './app/(tabs)/today/options';
 import TodayReadiness from './app/(tabs)/today/readiness';
 import TodayRun from './app/(tabs)/today/run/[id]';
@@ -62,7 +61,6 @@ function app(garmin: FakeGarmin, flags: Flags = DEFAULT_FLAGS) {
     '(tabs)/today/readiness': TodayReadiness,
     '(tabs)/today/options': TodayOptions,
     '(tabs)/today/new-week': TodayNewWeek,
-    '(tabs)/today/next': TodayNext,
     '(tabs)/today/run/[id]': TodayRun,
     '(tabs)/plan/_layout': PlanLayout,
     '(tabs)/plan/index': PlanIndex,

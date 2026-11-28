@@ -7,8 +7,13 @@
 // An approximation of a phone (the web uses the browser's system font), not a
 // replacement for checking on one.
 //
-//   EXPO_PUBLIC_DAASH_FIXTURE=1 npx expo export --platform web --output-dir /tmp/web   (the persona, no sign-in)
-//   node scripts/layout-check.js /tmp/web [screenshots-dir]
+// Measured from the top of the first thing Today draws in its scroll view (the
+// "Sample data" label, a banner or the header, whichever comes first), not from the
+// header, so nothing drawn above the header can push This week out unseen.
+//
+//   npm run layout   (exports the web build with sample data, runs this and plan-check.js)
+//   or: EXPO_PUBLIC_DAASH_FIXTURE=1 npx expo export --platform web --output-dir /tmp/web
+//       node scripts/layout-check.js /tmp/web [screenshots-dir]
 
 const fs = require('fs');
 const http = require('http');
@@ -46,13 +51,19 @@ function serve() {
     await page.waitForSelector('[data-testid="week"]', { timeout: 20000 });
     await page.waitForTimeout(500);
     const box = async (id) => (await page.locator(`[data-testid="${id}"]`).first().boundingBox());
-    const session = await box('session-card'), week = await box('week'), header = await box('today-header');
+    const session = await box('session-card'), week = await box('week');
+    // The top of the first child of Today's scroll content with any height.
+    const top = await page.locator('[data-testid="today"]').first().evaluate((el) => {
+      const content = el.firstElementChild || el;
+      const first = Array.from(content.children).find((c) => c.getBoundingClientRect().height > 0) || content;
+      return { y: first.getBoundingClientRect().top, id: first.getAttribute('data-testid') || first.tagName.toLowerCase() };
+    });
     const scrolled = await page.evaluate(() => window.scrollY);
     const room = H - IOS_TOP - IOS_BOTTOM;
     for (const [name, b] of [['session card', session], ['This week', week]]) {
-      const bottom = Math.round(b.y + b.height - header.y);
+      const bottom = Math.round(b.y + b.height - top.y);
       const ok = bottom <= room;
-      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${scheme}: ${name} ends ${bottom} pt below the top of the header; room on an iPhone: ${room} pt`);
+      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${scheme}: ${name} ends ${bottom} pt below the top of the first thing drawn (${top.id}); room on an iPhone: ${room} pt`);
       if (!ok) failed++;
     }
     if (scrolled) { console.log(`  FAIL  ${scheme}: the page had scrolled (${scrolled})`); failed++; }

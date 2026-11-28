@@ -1,0 +1,17 @@
+# What Daash can see · android
+# /you/see
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0 (behind the sheet: 0 on 1 screen)
+clipped: none
+cut to lines: none
+header "What Daash can and can’t see"
+text "Garmin"
+text "Can: activities, sleep and hrv, send workouts."
+text "COROS via Intervals.icu"
+text "Can: activities."
+text "Can’t: sleep, send workouts."
+text "Health Connect"
+text "Can: activities, sleep."
+text "Can’t: send workouts."
+text "Daash only reads what you connect, only to plan and explain your training, and only puts a workout on your watch after you confirm it. Nothing is sold or shared. Disconnecting stops new data straight away."

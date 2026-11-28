@@ -15,6 +15,7 @@ import { DayRow } from './DayRow';
 import type { PlanSession, PlanVM, PlanWeek } from './model';
 import { canMove } from './moves';
 import type { Pending } from './PlanProvider';
+import { useReduceMotion } from '../../ui/motion';
 
 export type WeekActions = {
   open: (s: PlanSession) => void;
@@ -29,8 +30,10 @@ export type WeekActions = {
 
 type Layouts = Record<string, { y: number; h: number }>;
 
-function WeekPage({ week, today, width, actions, onDragging }: {
+function WeekPage({ week, today, width, actions, onDragging, offscreen }: {
   week: PlanWeek; today: string; width: number; actions: WeekActions; onDragging: (on: boolean) => void;
+  /** Not the week on screen: hidden from screen readers (its days would be read under this week's heading). */
+  offscreen: boolean;
 }) {
   const layouts = useRef<Layouts>({});
   const translate = useRef(new Animated.Value(0)).current;
@@ -70,7 +73,8 @@ function WeekPage({ week, today, width, actions, onDragging }: {
 
   const dayWord = (iso: string) => week.days.find((d) => d.date === iso)?.dow ?? '';
   return (
-    <View style={{ width, paddingHorizontal: 16 }} testID={`week-${week.start}`}>
+    <View style={{ width, paddingHorizontal: 16 }} testID={`week-${week.start}`}
+      importantForAccessibility={offscreen ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={offscreen}>
       {week.days.map((day, i) => {
         const rows = day.sessions.length ? day.sessions : [null];
         return (
@@ -121,11 +125,13 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
   const current = useMemo(() => vm.weeks.findIndex((w) => w.start === vm.currentWeek), [vm]);
   const week = vm.weeks[index] ?? vm.weeks[0];
 
+  // Reduce Motion: the week changes in place instead of sliding.
+  const reduceMotion = useReduceMotion();
   const go = useCallback((i: number) => {
     const to = Math.max(0, Math.min(vm.weeks.length - 1, i));
     onIndex(to);
-    list.current?.scrollToIndex({ index: to, animated: true });
-  }, [vm.weeks.length, onIndex]);
+    list.current?.scrollToIndex({ index: to, animated: !reduceMotion });
+  }, [vm.weeks.length, onIndex, reduceMotion]);
 
   useEffect(() => { list.current?.scrollToIndex({ index, animated: false }); }, [width]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -174,7 +180,8 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         onViewableItemsChanged={onViewable}
         viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-        renderItem={({ item }) => <WeekPage week={item} today={vm.today} width={width} actions={actions} onDragging={setDrag} />}
+        extraData={week.start}
+        renderItem={({ item }) => <WeekPage week={item} today={vm.today} width={width} actions={actions} onDragging={setDrag} offscreen={item.start !== week.start} />}
         accessibilityLabel="Weeks"
       />
 

@@ -48,6 +48,8 @@ export type EntitlementsState = {
   /** Where Plus is managed or cancelled (manageLink): null when not on Plus, or nothing to manage. */
   manageUrl: string | null;
   refresh: () => Promise<void>;
+  /** Sign out: forget the server's answer for the last runner (this phone's store purchases stay: they're the store account's). */
+  reset: () => void;
 };
 
 const KEY = 'entitlement';
@@ -110,6 +112,7 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
     }
   }, [store, keepServer]);
   const refresh = useCallback(async () => { await ask(); }, [ask]);
+  const reset = useCallback(() => { setServer(null); sent.current.clear(); }, []);
 
   useEffect(() => {
     let live = true;
@@ -184,8 +187,8 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
   }, [remindKey, reminder]); // eslint-disable-line react-hooks/exhaustive-deps
   const value = useMemo<EntitlementsState>(() => ({
     entitlement, plus, ready, products, productsError, loadProducts, startTrial, restore,
-    manageUrl: plus ? manageLink(entitlement.source, Platform.OS, entitlement.productId)?.url ?? null : null, refresh,
-  }), [same, ready, products, productsError, loadProducts, startTrial, restore, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
+    manageUrl: plus ? manageLink(entitlement.source, Platform.OS, entitlement.productId)?.url ?? null : null, refresh, reset,
+  }), [same, ready, products, productsError, loadProducts, startTrial, restore, refresh, reset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -203,7 +206,7 @@ export function useEntitlement(): EntitlementsState {
   return {
     entitlement, plus: entitlement.tier !== 'free', ready: true, products: null, productsError: null,
     loadProducts: async () => {}, startTrial: async () => failed, restore: async () => failed,
-    manageUrl: null, refresh: async () => {},
+    manageUrl: null, refresh: async () => {}, reset: () => {},
   };
 }
 

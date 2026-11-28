@@ -4,9 +4,12 @@ exports[`snapshot: post-run on android: run-android 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 10,
+      "maxWidth": 680,
       "padding": 16,
       "paddingTop": 4,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -2821,9 +2824,12 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 10,
+      "maxWidth": 680,
       "padding": 16,
       "paddingTop": 4,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -3007,6 +3013,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
         testID="debrief-toggle"
       >
         <Text
+          accessibilityRole="header"
           maxFontSizeMultiplier={2}
           style={
             [

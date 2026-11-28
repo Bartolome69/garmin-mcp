@@ -20,6 +20,8 @@ import { CoachApiContext, defaultCoachApi } from './source';
 import { applyEvent, ERROR_WORDS, type Turn } from './sse';
 
 export const THREAD_KEY = 'coach:thread';
+/** What a reply the runner stopped says under what it had written. */
+export const STOPPED = 'You stopped this reply.';
 /** Today's sends from this phone, apart from the thread: Clear conversation keeps it; signing out clears it (kv). */
 export const SENT_KEY = 'coach:sent';
 type Cached = { messages: CoachMessage[]; starters: string[] };
@@ -40,6 +42,8 @@ export type CoachContext = {
   /** One try; a failure leaves the message marked "Not sent" with "Send again". */
   send: (text: string, opts?: { starter?: boolean; context?: ContextTag | null }) => Promise<void>;
   sendAgain: (id: string) => Promise<void>;
+  /** Stop the reply that's streaming: what's written stays, marked stopped. */
+  stop: () => void;
   decline: (id: string) => Promise<void>;
   feedback: (id: string, value: 'up' | 'down') => Promise<void>;
   /** Clears the thread once the server has; false (and the thread kept) if it couldn't. */
@@ -163,22 +167,31 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
     setStreaming(true);
     const controller = new AbortController();
     abort.current = controller;
+    // Stop: the request is aborted, and the stream is let go even if the client didn't hear it.
+    const stopped = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('stopped'))));
+    stopped.catch(() => {});
     let started = false;
     try {
-      await api.send({ text: words, starter: !!opts?.starter, context: tag }, (e) => {
+      await Promise.race([api.send({ text: words, starter: !!opts?.starter, context: tag }, (e) => {
+        if (controller.signal.aborted) return;
         const r = applyEvent(ref.current, turn, e, clock());
         turn = r.turn;
         commit(r.thread, false);
         if (e.type === 'start') { started = true; countOne(); }
         if (e.type === 'memory') memory.add((e.kind as MemoryKind) || 'note', e.text, 'chat', e.id).catch(() => {});
-      }, controller.signal);
+      }, controller.signal), stopped]);
       // A stream that ended without "done" or "error": what was written stays, marked cut off.
       commit(ref.current.map((m) => (m.id === turn.replyId && m.status === 'streaming'
         ? { ...m, status: m.text ? 'partial' : 'failed', working: null, error: m.text ? null : 'The reply didn’t arrive. Try again.' } : m)));
       setFailure(null);
     } catch (err) {
       const kind = failureKind(err);
-      if (started) {
+      if (controller.signal.aborted) {
+        // The runner stopped it: what was written stays; nothing is said to have failed.
+        commit(ref.current.map((m) => (m.id === turn.replyId && m.status === 'streaming'
+          ? { ...m, status: m.text ? 'partial' : 'failed', working: null, error: STOPPED, text: m.text.trim(), flags: guardKinds(m.text) }
+          : m.id === turn.userId && m.status === 'sending' ? { ...m, status: 'sent' } : m)));
+      } else if (started) {
         // The server has the question (its `start` arrived), so it was sent; the stream broke after.
         // What was written stays, marked cut off, with Try again, as the server's own `error` event does.
         const why = err instanceof TimedOut ? ERROR_WORDS.timeout
@@ -206,6 +219,7 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
   const value = useMemo<CoachContext>(() => ({
     messages, starters, loaded, failure, error, streaming, limit, context, setContext, refresh,
     send: (text, opts) => send(text, opts),
+    stop: () => { abort.current?.abort(); },
     sendAgain: async (id) => {
       const m = ref.current.find((x) => x.id === id && x.status === 'not_sent');
       if (!m || streaming || limit.reached) return;

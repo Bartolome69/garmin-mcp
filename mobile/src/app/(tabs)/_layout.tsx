@@ -2,6 +2,7 @@
 // UITabBarController on iOS (only the selected tab bright, with its filled
 // symbol), a Material 3 navigation bar on Android. With coach_enabled off the
 // Coach tab is hidden, which also makes it unreachable, and the bar reflows to 4.
+// The bar hides while the software keyboard is up (milestone 12).
 import { NativeTabs } from 'expo-router/native-tabs';
 
 import { CoachProvider } from '../../features/coach/CoachProvider';
@@ -9,6 +10,8 @@ import { MemoryProvider } from '../../features/coach/MemoryProvider';
 import { tabsFor, type TabName } from '../../flags/flags';
 import { useFlags } from '../../flags/FlagsProvider';
 import { ICONS } from '../../ui/Icon';
+import { useRenderCount } from '../../ui/hooks';
+import { useKeyboardVisible } from '../../ui/keyboard';
 import { useTheme } from '../../theme/ThemeProvider';
 
 const TAB_LABELS: Record<TabName, string> = {
@@ -20,11 +23,17 @@ export default function TabsLayout() {
   const { colors } = useTheme();
   const { flags } = useFlags();
   const shown = new Set(tabsFor(flags));
+  // The tab bar hides while the keyboard is up (the Coach's composer sits on the keyboard, not on the bar).
+  // Only `visible`: every keyboard frame change (QuickType, emoji, switching keyboards) would redraw the whole tab tree.
+  const keyboardUp = useKeyboardVisible();
+  useRenderCount('TabsLayout');
   // The Coach's thread and memory sit over the tabs, so they outlive switching tabs; both do nothing with the Coach off.
   return (
     <MemoryProvider>
     <CoachProvider>
     <NativeTabs
+      hidden={keyboardUp}
+      disableHiddenAnimation={keyboardUp}
       backgroundColor={colors.bg}
       tintColor={colors.text}
       iconColor={{ default: colors.muted, selected: colors.text }}

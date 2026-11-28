@@ -43,3 +43,6 @@ yarn-error.*
 # widget colours, generated at prebuild by native/widgets/plugin
 /native/widgets/android/src/main/java/run/daash/widgets/DaashTokens.kt
 /targets/widgets/DaashTokens.swift
+
+# local env (see .env.example)
+.env

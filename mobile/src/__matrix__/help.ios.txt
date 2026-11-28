@@ -1,0 +1,13 @@
+# Help · ios
+# /you/help
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Help"
+button "Trouble connecting?, Steps for Garmin sign-in and syncing"
+button "What Daash can and can’t see"
+text "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."
+text "Daash"
+text "Daash is independent and not endorsed by any watch maker."
