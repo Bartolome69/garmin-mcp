@@ -347,7 +347,7 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
               </Pressable>
             );
           }
-          if (r.kind === 'day') return <Text key={`day-${i}`} variant="kicker" tone="muted" style={{ alignSelf: 'center', paddingVertical: 4 }} numeric>{r.label}</Text>;
+          if (r.kind === 'day') return <Text key={`day-${i}`} testID="coach-day" variant="kicker" tone="muted" style={{ alignSelf: 'center', paddingVertical: 4 }} numeric>{r.label}</Text>;
           const m = r.m;
           if (m.role === 'user') return <Question key={m.id} m={m} actions={actions} offline={offline} locked={locked} />;
           if (m.role === 'assistant') return <Reply key={m.id} m={m} actions={actions} />;

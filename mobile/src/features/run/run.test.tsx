@@ -6,6 +6,7 @@ import { Platform, StyleSheet } from 'react-native';
 
 import { ThemeProvider } from '../../theme/ThemeProvider';
 import { colors } from '../../theme/tokens';
+import { unmatchedNumbers } from '../../domain/coachGuard';
 import { numbersOf, type RunVM } from './model';
 import { RunView, scrubWords, shareText, stepScrub } from './RunView';
 import { fixtureRun } from './source';
@@ -161,7 +162,7 @@ describe(`Post-run on ${os}: the Coach`, () => {
     const { toJSON, onAsk } = await draw(REPS_COACH, { coach: true });
     const order = testIDs(toJSON()).filter((t) => ['route-map', 'debrief', 'planned'].includes(t));
     expect(order).toEqual(['route-map', 'debrief', 'planned']);
-    expect(screen.getByTestId('debrief-text')).toHaveTextContent(/^Reps were even, 3:58 to 4:04/);
+    expect(screen.getByTestId('debrief-text')).toHaveTextContent(/^Reps averaged 4:01, the fastest and slowest 6 s apart/);
     await fireEvent.press(screen.getByTestId('thumb-up'));
     expect(screen.getByTestId('thumb-up').props.accessibilityState).toEqual({ selected: true });
     await fireEvent.press(screen.getByTestId('ask-run'));
@@ -180,14 +181,9 @@ describe(`Post-run on ${os}: the Coach`, () => {
   });
 
   it('the debrief\'s numbers are the run\'s own: no number of its own', () => {
-    const said = REPS_COACH.coach!.debrief.match(/\d+(:\d\d)?/g)!;
+    // The Coach's numbers rule (domain/coachGuard): every number in it is in what the server sent for the run.
+    expect(unmatchedNumbers(REPS_COACH.coach!.debrief, REPS)).toEqual([]);
     const series = REPS.series;
-    const known = new Set<string>([
-      ...series.hr.map(String),
-      ...['3:58', '4:04'], // the fastest and slowest rep, as the takeaway's 6 s spread
-      '130', '6', '5', '4',
-    ]);
-    expect(said.every((n) => known.has(n))).toBe(true);
     expect(Math.max(...series.hr.filter((h): h is number => h != null))).toBe(172);
   });
 

@@ -121,8 +121,8 @@ export function MemoryClearSheet({ onClear, onKeep }: { onClear: () => void; onK
 }
 
 /** You's Coach section: the Coach's own switch (only when the server offers the Coach) and the memory or preferences row. */
-export function CoachSection({ available, coach, count, onToggle, onOpen }: {
-  available: boolean; coach: boolean; count: number; onToggle: (on: boolean) => void; onOpen: () => void;
+export function CoachSection({ available, coach, onToggle, onOpen }: {
+  available: boolean; coach: boolean; onToggle: (on: boolean) => void; onOpen: () => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -140,12 +140,12 @@ export function CoachSection({ available, coach, count, onToggle, onOpen }: {
           </View>
         ) : null}
         <Pressable testID="row-memory" accessibilityRole="button" onPress={onOpen}
-          accessibilityLabel={coach ? `Coach memory. ${count} things the Coach keeps in mind` : 'Training preferences. Daash plans around these'}
+          accessibilityLabel={coach ? 'Coach memory. What the Coach keeps in mind' : 'Training preferences. Daash plans around these'}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, minHeight: 60,
             borderTopWidth: available ? 1 : 0, borderTopColor: colors.hairline }}>
           <View style={{ flex: 1 }}>
             <Text variant="body">{coach ? 'Coach memory' : 'Training preferences'}</Text>
-            <Text variant="footnote" tone="muted">{coach ? `${count} thing${count === 1 ? '' : 's'} the Coach keeps in mind` : 'Daash plans around these'}</Text>
+            <Text variant="footnote" tone="muted">{coach ? 'What the Coach keeps in mind' : 'Daash plans around these'}</Text>
           </View>
           <Icon name="chevronRight" tone="muted" />
         </Pressable>

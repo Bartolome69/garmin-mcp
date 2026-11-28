@@ -78,12 +78,13 @@ describe(`The shared diff on ${os}`, () => {
     expect(brandFills(behind.toJSON())).toBe(0);
   });
 
-  it('Coach on: one observation in place of the rule, with "Ask about this"; every number the same', async () => {
+  it('Coach on: the rule stays and one observation is added, with "Ask about this"; every number the same', async () => {
     const off = await drawDiff(UNWELL);
     const offSubtitle = screen.getByTestId('diff-subtitle').props.children;
     const coached = fixtureProposal({ kind: 'life', reason: 'unwell', since: '2026-11-27' }, true)!;
     const { onAsk } = await drawDiff(coached, { coach: true });
-    expect(screen.queryByTestId('diff-rule')).toBeNull();
+    expect(within(screen.getByTestId('diff-rule')).getByText(`${coached.rule}.`)).toBeTruthy();
+    expect(coached.rule).toBe(UNWELL.rule);
     expect(within(screen.getByTestId('diff-coach')).getByText(coached.coachNote!)).toBeTruthy();
     expect(screen.getByTestId('diff-subtitle').props.children).toBe(offSubtitle);
     await fireEvent.press(screen.getByText('Ask about this'));

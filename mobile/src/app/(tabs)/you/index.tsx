@@ -1,8 +1,6 @@
 import { useIsFocused, useRouter } from 'expo-router';
 
-import { useMemory } from '../../../features/coach/MemoryProvider';
 import { CoachSection } from '../../../features/coach/MemoryView';
-import { visibleItems } from '../../../features/coach/memory';
 import { useConnections } from '../../../features/connections/ConnectionsProvider';
 import { YouView } from '../../../features/connections/ConnectionsView';
 import { reconnect } from '../../../features/connections/reconnect';
@@ -16,11 +14,10 @@ export default function YouScreen() {
   const router = useRouter();
   const focused = useIsFocused();
   const { flags, coachAvailable, setCoachOff } = useFlags();
-  const memory = useMemory();
   const coach = flags.coach_enabled;
   return (
     <YouView vm={c.vm} brand={focused} actions={{ connections: () => router.push('/you/connections'), reconnect }}>
-      <CoachSection available={coachAvailable} coach={coach} count={visibleItems(memory.items, coach).length}
+      <CoachSection available={coachAvailable} coach={coach}
         onToggle={(on) => setCoachOff(!on)} onOpen={() => router.push('/you/memory')} />
     </YouView>
   );

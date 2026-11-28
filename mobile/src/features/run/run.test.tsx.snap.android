@@ -3074,7 +3074,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
         }
         testID="debrief-text"
       >
-        Reps were even, 3:58 to 4:04, and your heart rate fell under 130 in every recovery. Rep 6 peaked at 172 bpm, 4 above rep 5.
+        Reps averaged 4:01, the fastest and slowest 6 s apart, and your heart rate fell under 130 in every recovery. Rep 6 peaked at 172 bpm, 4 above rep 5.
       </Text>
       <View
         style={
