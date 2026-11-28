@@ -1,13 +1,13 @@
 // The first workout lands: a filled success check, and only now the ask for
-// notifications (build prompt, sections 5.13 and 8). Then Today.
-import { useIsFocused, useRouter } from 'expo-router';
+// notifications (build prompt, sections 5.13 and 8). Then Today (or Plan, when
+// onboarding started from Plan's "Create a plan").
+import { Redirect, useIsFocused, useRouter } from 'expo-router';
 
 import { askNotifications } from '../../features/onboarding/notify';
 import { useOnboarding } from '../../features/onboarding/OnboardingProvider';
-import { LandedView, type Landing } from '../../features/onboarding/views';
+import { LandedView } from '../../features/onboarding/views';
+import { landingFor } from '../../features/onboarding/week1';
 import { useWatch } from '../../features/watch/WatchProvider';
-
-const hhmm = (t: number) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
 export default function LandedScreen() {
   const ob = useOnboarding();
@@ -16,17 +16,17 @@ export default function LandedScreen() {
   const focused = useIsFocused();
   const week = ob.reveal?.week1 ?? [];
   const first = week[0];
-  if (!first) return null;
-  const op = watch.opFor(first.id);
-  const others = week.slice(1).filter((s) => watch.opFor(s.id)?.state !== 'on_watch').length;
-  const landing: Landing = op?.state === 'on_watch'
-    ? { state: 'landed', at: hhmm(op.onWatchAt ?? Date.now()), device: watch.connection.device, rest: others }
-    : op?.state === 'failed' ? { state: 'failed', error: op.error ?? 'Not sent.' } : { state: 'sending' };
-  const done = async () => { await ob.finish(); router.replace('/today'); };
+  if (!first) return <Redirect href="/onboarding" />;
+  const landing = landingFor(week, watch.opFor, watch.connection.device) ?? { state: 'sending' as const };
+  const home = ob.origin === 'plan' ? 'Plan' : 'Today';
+  const done = async () => { await ob.finish(); router.dismissTo(home === 'Plan' ? '/plan' : '/today'); };
+  const batch = watch.opFor(first.id)?.batch;
   return (
-    <LandedView first={first} landing={landing} brand={focused}
-      onResend={() => watch.ops.filter((o) => o.state === 'failed').forEach((o) => watch.resend(o.id))}
-      onAllow={async () => { await askNotifications(); await done(); }}
-      onNotNow={done} />
+    <LandedView first={first} landing={landing} brand={focused} device={watch.connection.device} home={home}
+      onResend={() => watch.ops.filter((o) => o.batch === batch && o.state === 'failed').forEach((o) => watch.resend(o.id))}
+      onTrouble={() => router.push('/you/trouble')}
+      onAllow={async () => { await ob.rememberNotifications(await askNotifications()); await done(); }}
+      onNotNow={async () => { await ob.rememberNotifications('not_now'); await done(); }}
+      onLeave={done} />
   );
 }

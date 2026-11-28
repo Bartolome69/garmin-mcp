@@ -1,18 +1,16 @@
 // The plan reveal, then "Send week 1 to my watch": through the watch confirm like
-// every other write, and on to the first workout landing.
-import { useIsFocused, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+// every other write, and on to the first workout landing only once it's confirmed.
+import { Redirect, useIsFocused, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { failureKind, type FailureKind } from '../../data/resource';
 import { useOnboarding } from '../../features/onboarding/OnboardingProvider';
 import { makePlan } from '../../features/onboarding/source';
-import { RevealView } from '../../features/onboarding/views';
+import { RevealView, RevealWait } from '../../features/onboarding/views';
 import { weekOneProposal } from '../../features/onboarding/week1';
 import { useWatch } from '../../features/watch/WatchProvider';
 import { useFlags } from '../../flags/FlagsProvider';
-import { Button } from '../../ui/Button';
-import { Screen } from '../../ui/Screen';
-import { Text } from '../../ui/Text';
+import { openGarminSignIn } from '../../ui/StateViews';
 
 export default function RevealScreen() {
   const ob = useOnboarding();
@@ -20,38 +18,40 @@ export default function RevealScreen() {
   const { flags } = useFlags();
   const router = useRouter();
   const focused = useIsFocused();
-  const [error, setError] = useState<string | null>(null);
-  const [staged, setStaged] = useState<string | null>(null);
+  const [failure, setFailure] = useState<FailureKind | null>(null);
+  // The batches on the queue when week 1 was staged: a new one is this confirm's.
+  const staged = useRef<{ id: string; before: Set<string> } | null>(null);
   const moved = useRef(false);
+  const { result, goal, reveal, setReveal } = ob;
 
-  const load = () => {
-    if (!ob.result || !ob.goal) return;
-    setError(null);
-    makePlan(ob.result, ob.goal, flags.coach_enabled).then(ob.setReveal).catch(() => setError('Couldn’t make the plan just now.'));
-  };
-  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = useCallback(() => {
+    if (!result || !goal) return;
+    setFailure(null);
+    makePlan(result, goal, flags.coach_enabled).then(setReveal).catch((err) => setFailure(failureKind(err)));
+  }, [result, goal, flags.coach_enabled, setReveal]);
+  // A plan already made from these answers is kept; changed answers drop it (OnboardingProvider).
+  useEffect(() => { if (!reveal) load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Confirmed: on to the landing.
+  // Confirmed on the sheet: the queue has a new batch for week 1. Only then on to the landing.
   useEffect(() => {
-    if (!staged || moved.current) return;
-    if (watch.ops.some((o) => o.batch.startsWith(`${staged}@`))) { moved.current = true; router.replace('/onboarding/landed'); }
-  }, [staged, watch.ops, router]);
+    const s = staged.current;
+    if (!s || moved.current) return;
+    if (watch.ops.some((o) => o.batch.startsWith(`${s.id}@`) && !s.before.has(o.batch))) {
+      moved.current = true;
+      router.replace('/onboarding/landed');
+    }
+  }, [watch.ops, router]);
 
-  if (!ob.reveal) {
-    return (
-      <Screen testID="ob-reveal-wait">
-        <View style={{ gap: 12 }}>
-          <Text variant="body" tone="muted">{error ?? 'Making your plan…'}</Text>
-          {error ? <Button label="Try again" onPress={load} /> : null}
-        </View>
-      </Screen>
-    );
+  if (!result) return <Redirect href="/onboarding/paces" />;
+  if (!goal) return <Redirect href="/onboarding/goal" />;
+  if (!reveal) {
+    return <RevealWait failure={failure ?? 'loading'} brand={focused} onRetry={load} onConnect={openGarminSignIn} />;
   }
   return (
-    <RevealView r={ob.reveal} coach={flags.coach_enabled} brand={focused} busy={false} onSend={() => {
-      const p = weekOneProposal(ob.reveal!);
+    <RevealView r={reveal} coach={flags.coach_enabled} brand={focused} onSend={() => {
+      const p = weekOneProposal(reveal);
+      staged.current = { id: p.id, before: new Set(watch.ops.map((o) => o.batch)) };
       watch.stage(p);
-      setStaged(p.id);
       router.push({ pathname: '/watch/confirm', params: { id: p.id } });
     }} />
   );

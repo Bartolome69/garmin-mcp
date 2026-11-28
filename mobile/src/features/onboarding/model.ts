@@ -12,6 +12,8 @@ export type PaceRow = { key: 'race' | 'easy' | 'threshold' | 'week'; label: stri
 export type PaceResult = {
   source: 'import' | 'questions';
   title: string;                 // "Found 56 runs since September"
+  /** Runs read from the watch (import only): 0 says there was nothing to read. */
+  runs: number | null;
   rows: PaceRow[];
   basis: Basis;
   answers: { avg_km: number; longest_km: number; days: number; level?: string };
@@ -34,6 +36,13 @@ export type Reveal = {
   /** Coach on only, from the server: why this shape. Never a number of its own. */
   coachNote?: string | null;
 };
+/** Where week 1's first session is: the watch queue's state, in the words this screen needs. */
+export type Landing =
+  | { state: 'sending' }
+  | { state: 'pending' }                 // Garmin has it; the watch gets it at its next sync
+  | { state: 'landed'; at: string; device: string | null; rest: number; total: number }
+  | { state: 'failed'; error: string; at: string | null; retrying: boolean };
+
 export type Goal = { kind: 'race'; name: string; date: string; km: number; target: string | null } | { kind: 'fit' };
 
 export type Experience = 'new' | 'regular' | 'exp';
@@ -61,12 +70,39 @@ export function parseTime(text: string): number | null {
   return m[3] != null ? +m[1] * 3600 + +m[2] * 60 + +m[3] : +m[1] * 60 + +m[2];
 }
 
-/** A race time as entered: under 3 hours of h:mm for long races, mm:ss for short ones. */
+// A time a person could run the distance in: 2:30 to 15:00 per km. Anything else is a typo.
+const FASTEST_PER_KM = 150;
+const SLOWEST_PER_KM = 900;
+
+/**
+ * A race time as entered, in seconds, or null when it isn't one. Two parts are h:mm
+ * for a half or a marathon ("3:15" is 3 h 15, as plan_builder.goal_secs reads it)
+ * and mm:ss for shorter races; three parts are always h:mm:ss.
+ */
 export function raceSeconds(text: string, km: number): number | null {
-  const s = parseTime(text);
-  if (s == null) return null;
-  // "3:15" for a marathon is 3 h 15, not 3 min 15.
-  return km >= 21 && /^\s*\d{1,2}:\d{2}\s*$/.test(text) ? s * 60 : s;
+  const parsed = parseTime(text);
+  if (parsed == null || km <= 0) return null;
+  const s = km >= 21 && /^\s*\d{1,2}:\d{2}\s*$/.test(text) ? parsed * 60 : parsed;
+  const perKm = s / km;
+  return perKm >= FASTEST_PER_KM && perKm <= SLOWEST_PER_KM ? s : null;
+}
+
+const MONTH_WORDS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+/** A race day as typed: "2027-04-24", "24/04/2027" (day first) or "24 Apr 2027". ISO, or null when it isn't a real day. */
+export function parseRaceDate(text: string): string | null {
+  // A weekday in front ("Sat 24 Apr 2027", as the goal step shows a date it read) is fine.
+  const t = text.trim().toLowerCase().replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+/, '');
+  let y: number; let m: number; let d: number;
+  let r: RegExpExecArray | null;
+  if ((r = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t))) [y, m, d] = [+r[1], +r[2], +r[3]];
+  else if ((r = /^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$/.exec(t))) [d, m, y] = [+r[1], +r[2], +r[3]];
+  else if ((r = /^(\d{1,2})\s+([a-z]{3,9})\.?\s+(\d{4})$/.exec(t)) && MONTH_WORDS.includes(r[2].slice(0, 3))) {
+    [d, m, y] = [+r[1], MONTH_WORDS.indexOf(r[2].slice(0, 3)) + 1, +r[3]];
+  } else return null;
+  const day = new Date(Date.UTC(y, m - 1, d));
+  return day.getUTCFullYear() === y && day.getUTCMonth() === m - 1 && day.getUTCDate() === d ? iso(y, m, d) : null;
 }
 
 /** The four questions, on the device: the twin of onboarding.py questions(). */
@@ -78,6 +114,7 @@ export function questions(experience: Experience, days: number, weekly: Weekly, 
   return {
     source: 'questions',
     title: 'From your answers',
+    runs: null,
     rows: [
       { key: 'race', label: 'Best recent race', value: race ? `${raceName(race.km)} · ${mmss(race.secs)}` : 'None given',
         note: race ? 'from your answer' : `using a 10K of ${mmss(basis[1])}` },
@@ -90,9 +127,15 @@ export function questions(experience: Experience, days: number, weekly: Weekly, 
   };
 }
 
-/** The goal's words for a step: "London Marathon, 24 Apr 2027". */
-export function goalValid(g: Goal | null): boolean {
+/** Whether the goal can make a plan: a fitness goal, or a named race on a real day after today with a target that reads, if any. */
+export function goalValid(g: Goal | null, today: string): boolean {
   if (!g) return false;
   if (g.kind === 'fit') return true;
-  return g.name.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(g.date) && !Number.isNaN(Date.parse(g.date)) && g.km > 0;
+  return g.name.trim().length > 0 && g.km > 0 && parseRaceDate(g.date) === g.date && g.date > today
+    && (g.target == null || raceSeconds(g.target, g.km) != null);
+}
+
+/** Today on this phone, as YYYY-MM-DD in its own time zone. */
+export function localToday(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }

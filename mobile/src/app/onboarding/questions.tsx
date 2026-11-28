@@ -1,3 +1,4 @@
+// The four questions, worked out on the phone with the shared pace engine.
 import { useIsFocused, useRouter } from 'expo-router';
 
 import { questions } from '../../features/onboarding/model';

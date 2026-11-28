@@ -1,6 +1,6 @@
 // No plan yet (the board's "Empty plan"): what a plan is, and that nothing reaches
-// the watch without a confirm. "Create a plan" belongs to onboarding (milestone 9),
-// which passes onCreate; until then, sessions can still be planned one by one.
+// the watch without a confirm. "Create a plan" starts onboarding's plan steps (goal,
+// paces, reveal, week 1 to the watch); sessions can still be planned one by one.
 import { ScrollView, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
