@@ -1,0 +1,10 @@
+# Coach · filter · ios
+# /coach/filter
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0 (behind: 0)
+clipped: none
+cut to lines: none
+header "Filter by run or session"
+button "Wed 25 · 6 × 800 m. Run"
+button "Close"

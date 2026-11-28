@@ -1,0 +1,15 @@
+# New week from the Coach (diff) · ios
+# /coach/new-week?id=
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1
+clipped: none
+cut to lines: 10 × 400 m (2 lines); Rest (2 lines)
+header "New week"
+text "Skip · Wed 2"
+header "1 session comes off"
+text "9.5 km less this week."
+group "WED 2: 10 × 400 m, becomes Rest"
+header "Rule used"
+text "Skipped days count toward your active week like rest.."
+button "Review watch changes"

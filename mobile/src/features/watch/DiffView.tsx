@@ -130,7 +130,7 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
 
       {p.load ? (
         <Card style={{ gap: 6 }}>
-          <Text variant="kicker" tone="muted">Kilometres</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Kilometres</Text>
           <LoadChart load={p.load} />
           <Legend />
         </Card>
@@ -138,14 +138,14 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
 
       {p.rule ? (
         <View testID="diff-rule" style={{ gap: 2 }}>
-          <Text variant="kicker" tone="muted">Rule used</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Rule used</Text>
           <Text variant="footnote" tone="muted">{`${p.rule}.`}</Text>
         </View>
       ) : null}
 
       {coach && p.coachNote ? (
         <View testID="diff-coach" style={{ gap: 8, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
-          <Text variant="kicker" tone="muted">Coach</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Coach</Text>
           <Text variant="coach">{p.coachNote}</Text>
           <Pressable accessibilityRole="button" onPress={onAsk} style={{ alignSelf: 'flex-start', minHeight: MIN_TOUCH, justifyContent: 'center' }}>
             <View style={{ paddingHorizontal: 12, minHeight: 30, borderRadius: 999, borderWidth: 1, borderColor: colors.muted, justifyContent: 'center' }}>

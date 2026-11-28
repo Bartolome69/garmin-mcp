@@ -835,6 +835,7 @@ exports[`snapshot: paywall and free week sheet on android: paywall-android 1`] =
         </View>
       </View>
       <Text
+        accessibilityRole="header"
         maxFontSizeMultiplier={2}
         style={
           [

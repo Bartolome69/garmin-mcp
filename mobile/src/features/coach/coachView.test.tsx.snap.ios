@@ -394,7 +394,6 @@ exports[`The Coach on ios, dark one thread: older days collapsed, today with its
         style={null}
       >
         <View
-          accessibilityLiveRegion="none"
           style={
             {
               "alignSelf": "flex-start",
@@ -1255,6 +1254,7 @@ exports[`The Coach on ios, dark one thread: older days collapsed, today with its
           testID="proposal-6"
         >
           <Text
+            accessibilityRole="header"
             maxFontSizeMultiplier={2}
             style={
               [
@@ -2309,7 +2309,6 @@ exports[`The Coach on ios, light one thread: older days collapsed, today with it
         style={null}
       >
         <View
-          accessibilityLiveRegion="none"
           style={
             {
               "alignSelf": "flex-start",
@@ -3170,6 +3169,7 @@ exports[`The Coach on ios, light one thread: older days collapsed, today with it
           testID="proposal-6"
         >
           <Text
+            accessibilityRole="header"
             maxFontSizeMultiplier={2}
             style={
               [

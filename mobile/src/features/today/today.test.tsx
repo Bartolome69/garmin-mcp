@@ -10,7 +10,7 @@ import { ThemeProvider } from '../../theme/ThemeProvider';
 import { colors } from '../../theme/tokens';
 import { PERSONA_TODAY, PERSONA_TODAY_COACH } from './fixture';
 import { kickerText, numbersOf, type TodayVM } from './model';
-import { OptionsSheet, ReadinessSheet, SAME_EITHER_WAY } from './Sheets';
+import { OptionsSheet, ReadinessSheet, SAME_EITHER_WAY, FIXED_RULES } from './Sheets';
 import { TodayView, type TodayActions } from './TodayView';
 
 const os = Platform.OS;
@@ -154,6 +154,10 @@ describe(`Today's sheets on ${os}`, () => {
     }
     expect(screen.getByText(SAME_EITHER_WAY)).toBeTruthy();
     expect(SAME_EITHER_WAY).toBe('Readiness is worked out the same way with or without the Coach. Not medical advice.');
+    // With the Coach off nothing mentions it.
+    await render(<ThemeProvider initial="dark"><ReadinessSheet signal={hrv} coach={false} onDone={done} /></ThemeProvider>);
+    expect(screen.queryByText(SAME_EITHER_WAY)).toBeNull();
+    expect(screen.getByText(FIXED_RULES)).toBeTruthy();
     await fireEvent.press(screen.getByTestId('button-Done'));
     expect(done).toHaveBeenCalled();
   });

@@ -1,0 +1,10 @@
+# Builder · edit · android
+# /plan/builder?id=2026-11-27-tempo
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Edit workout"
+text "Type it how you’d say it. Daash turns it into steps."
+textfield "Workout"

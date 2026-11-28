@@ -1,0 +1,33 @@
+# Coach memory · add · ios
+# /you/memory-edit
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0 (behind: 0)
+clipped: none
+cut to lines: none
+header "Add something to remember"
+radio "Goal"
+radio "Training days"
+radio "Injuries you mentioned"
+radio "Preferences"
+radio "Travel"
+radio "Tone"
+radio "Added by you" [checked]
+textfield "Added by you"
+button "Save" [disabled]
+button "Cancel"
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 0 (behind: 0)
+clipped: none
+cut to lines: none
+header "Add a preference"
+radio "Goal"
+radio "Training days"
+radio "Niggles to plan around"
+radio "Preferences"
+radio "Travel"
+radio "Note" [checked]
+textfield "Note"
+button "Save" [disabled]
+button "Cancel"

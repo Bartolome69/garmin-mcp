@@ -190,7 +190,7 @@ export function YouView({ vm, brand, actions, children, plus, top, settings }: {
           <Button label="Reconnect" kind="primary" brand={brand} onPress={() => actions.reconnect(p)} />
         </Card>
       ))}
-      <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Connections</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>Connections</Text>
       <List>
         <Row testID="row-connections" title="Watches and apps" sub={vm ? youSummary(vm) : 'Not loaded yet'} onPress={actions.connections} chevron />
       </List>
@@ -262,7 +262,7 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
       <View testID="priority-list" style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
         {sources.map((p, i) => <PriorityRow key={p.key} index={i} count={sources.length} title={sourceName(p, os)} sub={p.reads} onMove={move} />)}
       </View>
-      <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Merged this month</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>Merged this month</Text>
       {vm.merges.length ? vm.merges.map((m) => (
         <Card key={m.id} testID={`merge-${m.id}`} style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
@@ -279,7 +279,7 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
       )) : <Text testID="no-merges" variant="footnote" tone="muted">No runs came twice this month.</Text>}
       {vm.keptApart.length ? (
         <>
-          <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Kept apart</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>Kept apart</Text>
           {vm.keptApart.map((pair) => (
             <Card key={pair.join('|')} testID={`apart-${pair.join('|')}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <Text variant="subhead" style={{ flex: 1 }} numeric>{`${mergeTitle(pair.join('|'), vm)} · both shown`}</Text>

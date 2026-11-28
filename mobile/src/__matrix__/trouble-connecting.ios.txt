@@ -1,0 +1,17 @@
+# Trouble connecting · ios
+# /you/trouble
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0 (behind: 0)
+clipped: none
+cut to lines: none
+header "Trouble connecting?"
+text "1"
+text "Open your watch’s own app and check the watch has synced there. Daash only sees what reaches it."
+text "2"
+text "If a card here says Reconnect needed, reconnect it. Your plan and sessions are kept while it’s off."
+text "3"
+text "A workout you sent shows on the watch after its next sync with your phone."
+text "4"
+text "Still stuck? Disconnect and connect again from this screen."
+button "Reconnect COROS"

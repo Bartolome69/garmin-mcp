@@ -2135,6 +2135,7 @@ exports[`snapshot: Source priority on ios: priority-ios 1`] = `
       </View>
     </View>
     <Text
+      accessibilityRole="header"
       maxFontSizeMultiplier={2}
       style={
         [

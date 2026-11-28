@@ -1,0 +1,15 @@
+# Plus · free week sheet · android
+# /plus/trial
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1 (behind: 0)
+clipped: none
+cut to lines: none
+header "How your free week works"
+group "Today: Everything in Plus unlocks"
+group "Day 5: We remind you the trial is ending"
+group "Day 7: £4.99 a month starts, unless you cancel"
+text "No payment due today. Cancel anytime."
+button "Start free week"
+button "Not now"
+text "Plans, Today and sending to your watch stay free either way."

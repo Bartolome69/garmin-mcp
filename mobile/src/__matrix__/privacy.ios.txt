@@ -1,0 +1,16 @@
+# Privacy · ios
+# /you/privacy
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Privacy"
+header "What Daash uses"
+group "Runs, sleep and readiness, From Garmin. Nothing is sold or shared."
+group "Kept on this phone, A copy of your plan and recent runs, so Daash opens offline. Sign out removes it."
+header "Export"
+group "Your runs, They’re in Garmin Connect, which exports them."
+header "Delete account"
+group "Delete account, Disconnects Garmin and deletes everything Daash keeps for you, crew included. Not in the app yet: sign out removes everything on this phone."
+text "Daash is independent and not endorsed by any watch maker."

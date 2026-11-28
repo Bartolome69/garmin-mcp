@@ -648,6 +648,7 @@ exports[`The shared diff on ios snapshot on ios: diff-ios 1`] = `
       }
     >
       <Text
+        accessibilityRole="header"
         maxFontSizeMultiplier={2}
         style={
           [
@@ -1246,6 +1247,7 @@ exports[`The shared diff on ios snapshot on ios: diff-ios 1`] = `
       testID="diff-rule"
     >
       <Text
+        accessibilityRole="header"
         maxFontSizeMultiplier={2}
         style={
           [

@@ -127,7 +127,7 @@ export function CoachSection({ available, coach, onToggle, onOpen }: {
   const { colors } = useTheme();
   return (
     <View style={{ gap: 10 }}>
-      <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>{available ? 'Coach' : 'Training'}</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>{available ? 'Coach' : 'Training'}</Text>
       <List>
         {available ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, minHeight: 60 }}>

@@ -2939,6 +2939,7 @@ exports[`snapshot: post-run with the Coach on ios: run-coach-ios 1`] = `
         testID="debrief-toggle"
       >
         <Text
+          accessibilityRole="header"
           maxFontSizeMultiplier={2}
           style={
             [

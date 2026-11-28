@@ -1,8 +1,10 @@
 // "Changed your mind? · Remove from watch", once, after a send went through. It
-// leads to the remove confirm for what that send put on the watch.
+// leads to the remove confirm for what that send put on the watch. It goes by itself after
+// 8 seconds, except with a screen reader on.
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 
+import { useScreenReader } from '../../ui/motion';
 import { unwatchProposal } from './proposals';
 import { SendToast } from './Sheets';
 import { useWatch } from './WatchProvider';
@@ -13,11 +15,13 @@ export function WatchToast() {
   const watch = useWatch();
   const router = useRouter();
   const toast = watch.toast;
+  // With VoiceOver or TalkBack on it stays until dismissed: 8 seconds isn't enough to reach it.
+  const screenReader = useScreenReader();
   useEffect(() => {
-    if (!toast) return;
+    if (!toast || screenReader) return;
     const t = setTimeout(watch.dismissToast, TOAST_MS);
     return () => clearTimeout(t);
-  }, [toast]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [toast, screenReader]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!toast) return null;
   const put = watch.ops.filter((o) => o.batch === toast.batch && o.kind !== 'remove' && o.after).map((o) => o.after!);
   return (

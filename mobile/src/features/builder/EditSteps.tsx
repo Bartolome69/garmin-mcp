@@ -36,7 +36,7 @@ export function EditSteps({ state, onChange, parsed }: { state: EditState; onCha
   const written = (k: 'warmup' | 'cooldown') => parsed.steps.some((s) => s.kind === k && !s.added);
   return (
     <Card testID="edit-steps" style={{ paddingVertical: 10, gap: 4 }}>
-      <Text variant="kicker" tone="muted">Steps</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted">Steps</Text>
       {quality && !written('warmup') ? (
         <Added which="warmup" on={state.add.warmup} words={added('warmup') ? stepWords(added('warmup')!) : null}
           onToggle={() => onChange({ ...state, add: { ...state.add, warmup: !state.add.warmup } })} />

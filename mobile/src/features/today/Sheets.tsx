@@ -8,6 +8,8 @@ import type { Signal, TodayOption } from './model';
 import { SignalChart } from './SignalChart';
 
 export const SAME_EITHER_WAY = 'Readiness is worked out the same way with or without the Coach. Not medical advice.';
+// With the Coach off nothing mentions a Coach (build prompt, section 1).
+export const FIXED_RULES = 'Readiness is worked out by fixed rules from your own data. Not medical advice.';
 const RULES: { when: string; word: string; tone: 'warning' | 'text2' | 'success' }[] = [
   { when: '2 or 3 signals below usual', word: 'Back off', tone: 'warning' },
   { when: '1 signal below usual', word: 'Hold', tone: 'text2' },
@@ -23,7 +25,7 @@ function SheetBody({ children, testID }: { children: React.ReactNode; testID: st
   );
 }
 
-export function ReadinessSheet({ signal, onDone }: { signal: Signal; onDone: () => void }) {
+export function ReadinessSheet({ signal, onDone, coach = true }: { signal: Signal; onDone: () => void; coach?: boolean }) {
   const { colors, derived } = useTheme();
   const badgeTone = signal.status === 'low' ? 'warning' : signal.status === 'usual' ? 'success' : 'muted';
   return (
@@ -44,7 +46,7 @@ export function ReadinessSheet({ signal, onDone }: { signal: Signal; onDone: () 
           </View>
         ))}
       </View>
-      <Text variant="footnote" tone="muted">{SAME_EITHER_WAY}</Text>
+      <Text variant="footnote" tone="muted">{coach ? SAME_EITHER_WAY : FIXED_RULES}</Text>
       <Button label="Done" onPress={onDone} />
     </SheetBody>
   );

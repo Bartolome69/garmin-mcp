@@ -15,6 +15,7 @@ import { DayRow } from './DayRow';
 import type { PlanSession, PlanVM, PlanWeek } from './model';
 import { canMove } from './moves';
 import type { Pending } from './PlanProvider';
+import { useReduceMotion } from '../../ui/motion';
 
 export type WeekActions = {
   open: (s: PlanSession) => void;
@@ -121,11 +122,13 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
   const current = useMemo(() => vm.weeks.findIndex((w) => w.start === vm.currentWeek), [vm]);
   const week = vm.weeks[index] ?? vm.weeks[0];
 
+  // Reduce Motion: the week changes in place instead of sliding.
+  const reduceMotion = useReduceMotion();
   const go = useCallback((i: number) => {
     const to = Math.max(0, Math.min(vm.weeks.length - 1, i));
     onIndex(to);
-    list.current?.scrollToIndex({ index: to, animated: true });
-  }, [vm.weeks.length, onIndex]);
+    list.current?.scrollToIndex({ index: to, animated: !reduceMotion });
+  }, [vm.weeks.length, onIndex, reduceMotion]);
 
   useEffect(() => { list.current?.scrollToIndex({ index, animated: false }); }, [width]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -101,8 +101,8 @@ export type ScreenCase = {
   staged?: boolean;
   /** Drawn over the tab's first screen (a sheet): the screen behind has no brand fill. */
   sheet?: boolean;
-  /** Has a primary action (the one brand fill); false for screens with none. */
-  primary?: boolean;
+  /** Has a primary action (the one brand fill), on both platforms or only Android (Plan's FAB); screens without one have none. */
+  primary?: boolean | 'android';
   /** Only with the Coach on (the Coach tab's own screens). */
   coachOnly?: boolean;
 };
@@ -111,16 +111,16 @@ export const SCREENS: ScreenCase[] = [
   { name: 'Today', route: '(tabs)/today/index', url: '/today', id: 'today', primary: true },
   { name: 'Readiness sheet', route: '(tabs)/today/readiness', url: '/today/readiness?signal=sleep', id: 'readiness-sheet', sheet: true },
   { name: 'Other options', route: '(tabs)/today/options', url: '/today/options', id: 'options-sheet', sheet: true },
-  { name: 'Plan · Week', route: '(tabs)/plan/index', url: '/plan', id: 'week-title' },
-  { name: 'Session detail', route: '(tabs)/plan/session/[id]', url: '/plan/session/2026-12-02-intervals', id: 'session' },
+  { name: 'Plan · Week', route: '(tabs)/plan/index', url: '/plan', id: 'week-title', primary: 'android' },
+  { name: 'Session detail', route: '(tabs)/plan/session/[id]', url: '/plan/session/2026-12-02-intervals', id: 'session', primary: true },
   { name: 'Move sheet', route: '(tabs)/plan/move', url: '/plan/move?id=2026-12-02-intervals', id: 'move-sheet', sheet: true },
-  { name: 'Life happened', route: '(tabs)/plan/life', url: '/plan/life', id: 'life-sheet', sheet: true },
+  { name: 'Life happened', route: '(tabs)/plan/life', url: '/plan/life', id: 'life-sheet', sheet: true, primary: true },
   { name: 'Builder', route: '(tabs)/plan/builder', url: '/plan/builder', id: 'builder' },
   { name: 'Builder · edit', route: '(tabs)/plan/builder', url: '/plan/builder?id=2026-11-27-tempo', id: 'builder' },
   { name: 'Post-run (Plan)', route: '(tabs)/plan/run/[id]', url: '/plan/run/2026-11-25-intervals', id: 'run' },
   { name: 'Post-run (Today)', route: '(tabs)/today/run/[id]', url: '/today/run/2026-11-26-easy', id: 'run' },
   { name: 'Plus feature to come', route: '(tabs)/plan/next', url: '/plan/next?kind=plan_styles', id: 'plan-next' },
-  { name: 'You', route: '(tabs)/you/index', url: '/you', id: 'you' },
+  { name: 'You', route: '(tabs)/you/index', url: '/you', id: 'you', primary: true },
   { name: 'Connections', route: '(tabs)/you/connections', url: '/you/connections', id: 'connections' },
   { name: 'Source priority', route: '(tabs)/you/priority', url: '/you/priority', id: 'priority' },
   { name: 'What Daash can see', route: '(tabs)/you/see', url: '/you/see', id: 'see-sheet', sheet: true },
@@ -135,34 +135,34 @@ export const SCREENS: ScreenCase[] = [
   { name: 'Appearance', route: '(tabs)/you/appearance', url: '/you/appearance', id: 'appearance' },
   { name: 'Privacy', route: '(tabs)/you/privacy', url: '/you/privacy', id: 'privacy' },
   { name: 'Help', route: '(tabs)/you/help', url: '/you/help', id: 'help' },
-  { name: 'Sign out', route: '(tabs)/you/sign-out', url: '/you/sign-out', id: 'sign-out-sheet', sheet: true },
-  { name: 'Plus (paywall)', route: 'plus/index', url: '/plus?from=you', id: 'paywall' },
-  { name: 'Plus (paywall) from the Coach’s limit', route: 'plus/index', url: '/plus?from=coach', id: 'paywall' },
-  { name: 'Plus · free week sheet', route: 'plus/trial', url: '/plus/trial', id: 'trial-sheet', sheet: true },
-  { name: 'Coach', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true },
-  { name: 'Coach · from a run', route: '(tabs)/coach/index', url: '/coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m', id: 'coach', coachOnly: true },
+  { name: 'Sign out', route: '(tabs)/you/sign-out', url: '/you/sign-out', id: 'sign-out-sheet', sheet: true, primary: true },
+  { name: 'Plus (paywall)', route: 'plus/index', url: '/plus?from=you', id: 'paywall', primary: true },
+  { name: 'Plus (paywall) from the Coach’s limit', route: 'plus/index', url: '/plus?from=coach', id: 'paywall', primary: true },
+  { name: 'Plus · free week sheet', route: 'plus/trial', url: '/plus/trial', id: 'trial-sheet', sheet: true, primary: true },
+  { name: 'Coach', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true, primary: true },
+  { name: 'Coach · from a run', route: '(tabs)/coach/index', url: '/coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m', id: 'coach', coachOnly: true, primary: true },
   { name: 'Coach · menu', route: '(tabs)/coach/menu', url: '/coach/menu', id: 'coach-menu', sheet: true, coachOnly: true },
   { name: 'Coach · filter', route: '(tabs)/coach/filter', url: '/coach/filter', id: 'coach-filter-sheet', sheet: true, coachOnly: true },
-  { name: 'Coach · clear', route: '(tabs)/coach/clear', url: '/coach/clear', id: 'coach-clear-sheet', sheet: true, coachOnly: true },
-  { name: 'Coach · limit', route: '(tabs)/coach/limit', url: '/coach/limit', id: 'coach-limit-sheet', sheet: true, coachOnly: true },
+  { name: 'Coach · clear', route: '(tabs)/coach/clear', url: '/coach/clear', id: 'coach-clear-sheet', sheet: true, coachOnly: true, primary: true },
+  { name: 'Coach · limit', route: '(tabs)/coach/limit', url: '/coach/limit', id: 'coach-limit-sheet', sheet: true, coachOnly: true, primary: true },
   { name: 'Coach memory', route: '(tabs)/you/memory', url: '/you/memory', id: 'memory' },
-  { name: 'Coach memory · edit', route: '(tabs)/you/memory-edit', url: '/you/memory-edit?id=persona-goal', id: 'memory-edit', sheet: true },
+  { name: 'Coach memory · edit', route: '(tabs)/you/memory-edit', url: '/you/memory-edit?id=persona-goal', id: 'memory-edit', sheet: true, primary: true },
   { name: 'Coach memory · add', route: '(tabs)/you/memory-edit', url: '/you/memory-edit', id: 'memory-edit', sheet: true },
-  { name: 'Coach memory · clear', route: '(tabs)/you/memory-clear', url: '/you/memory-clear', id: 'memory-clear-sheet', sheet: true },
+  { name: 'Coach memory · clear', route: '(tabs)/you/memory-clear', url: '/you/memory-clear', id: 'memory-clear-sheet', sheet: true, coachOnly: true, primary: true },
   { name: 'Crew', route: '(tabs)/crew/index', url: '/crew', id: 'crew' },
-  { name: 'Onboarding · welcome', route: 'onboarding/index', url: '/onboarding', id: 'welcome' },
-  { name: 'Onboarding · try', route: 'onboarding/try', url: '/onboarding/try', id: 'try-card' },
-  { name: 'Onboarding · goal', route: 'onboarding/goal', url: '/onboarding/goal', id: 'ob-goal' },
-  { name: 'Onboarding · goal from Plan', route: 'onboarding/goal', url: '/onboarding/goal?from=plan', id: 'ob-goal' },
-  { name: 'Onboarding · paces', route: 'onboarding/paces', url: '/onboarding/paces', id: 'ob-paces' },
+  { name: 'Onboarding · welcome', route: 'onboarding/index', url: '/onboarding', id: 'welcome', primary: true },
+  { name: 'Onboarding · try', route: 'onboarding/try', url: '/onboarding/try', id: 'try-card', primary: true },
+  { name: 'Onboarding · goal', route: 'onboarding/goal', url: '/onboarding/goal', id: 'ob-goal', primary: true },
+  { name: 'Onboarding · goal from Plan', route: 'onboarding/goal', url: '/onboarding/goal?from=plan', id: 'ob-goal', primary: true },
+  { name: 'Onboarding · paces', route: 'onboarding/paces', url: '/onboarding/paces', id: 'ob-paces', primary: true },
   { name: 'Onboarding · questions', route: 'onboarding/questions', url: '/onboarding/questions', id: 'ob-questions' },
-  { name: 'Onboarding · result', route: 'onboarding/result', url: '/onboarding/result', id: 'ob-result' },
-  { name: 'Onboarding · reveal', route: 'onboarding/reveal', url: '/onboarding/reveal', id: 'ob-reveal' },
+  { name: 'Onboarding · result', route: 'onboarding/result', url: '/onboarding/result', id: 'ob-result', primary: true },
+  { name: 'Onboarding · reveal', route: 'onboarding/reveal', url: '/onboarding/reveal', id: 'ob-reveal', primary: true },
   { name: 'Onboarding · landed, sending', route: 'onboarding/landed', url: '/onboarding/landed', id: 'ob-landed' },
-  { name: 'New week (diff)', route: '(tabs)/plan/new-week', url: '/plan/new-week?id=', id: 'diff', staged: true },
-  { name: 'New week from Today (diff)', route: '(tabs)/today/new-week', url: '/today/new-week?id=', id: 'diff', staged: true },
-  { name: 'New week from the Coach (diff)', route: '(tabs)/coach/new-week', url: '/coach/new-week?id=', id: 'diff', staged: true, coachOnly: true },
-  { name: 'Watch confirm', route: 'watch/confirm', url: '/watch/confirm?id=', id: 'confirm-sheet', staged: true, sheet: true },
+  { name: 'New week (diff)', route: '(tabs)/plan/new-week', url: '/plan/new-week?id=', id: 'diff', staged: true, primary: true },
+  { name: 'New week from Today (diff)', route: '(tabs)/today/new-week', url: '/today/new-week?id=', id: 'diff', staged: true, primary: true },
+  { name: 'New week from the Coach (diff)', route: '(tabs)/coach/new-week', url: '/coach/new-week?id=', id: 'diff', staged: true, coachOnly: true, primary: true },
+  { name: 'Watch confirm', route: 'watch/confirm', url: '/watch/confirm?id=', id: 'confirm-sheet', staged: true, sheet: true, primary: true },
 ];
 
 /** The skipped Wednesday intervals, staged: what the staged screens show. */
@@ -185,5 +185,6 @@ export async function openScreen(c: ScreenCase, scheme: 'dark' | 'light' = 'dark
 /** The phone's window: width, height and text size (fontScale 2 is 200%). */
 export function setWindow({ width = 390, height = 844, fontScale = 1 }: { width?: number; height?: number; fontScale?: number } = {}) {
   const window = { width, height, scale: 3, fontScale };
-  act(() => { Dimensions.set({ window, screen: window }); });
+  // Before a render (not inside act: a synchronous act here leaves the next render empty).
+  Dimensions.set({ window, screen: window });
 }

@@ -1,0 +1,20 @@
+# Life happened · android
+# /plan/life
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1 (behind: 0)
+clipped: none
+cut to lines: none
+header "What changed?"
+text "Pick one and Daash proposes a new week. Nothing changes until you confirm."
+radio "Not feeling 100%. Cold, tired, run down" [selected]
+radio "Niggle or injury. Something hurts when you run"
+radio "Travelling. Fewer days, maybe a treadmill"
+radio "Race moved. New date or distance"
+radio "Busy week. Fewer days free"
+text "Since"
+radio "Today" [selected]
+radio "Yesterday"
+button "Pick a date"
+button "See the new week"
+text "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."

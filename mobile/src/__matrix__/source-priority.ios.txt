@@ -1,0 +1,22 @@
+# Source priority · ios
+# /you/priority
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Source priority"
+text "When two sources send the same run, Daash keeps the one higher on this list and hides the other. Drag to reorder."
+group "1, Garmin, Activities, sleep, HRV"
+group "2, Apple Health, Activities, sleep"
+group "3, COROS via Intervals.icu, Activities"
+header "Merged this month"
+text "Thu 26 · 9.2 km"
+text "Kept Garmin"
+text "Also came from Apple Health. Started 12 s apart, distances 0.3% apart. Hidden, not deleted."
+button "These are different runs"
+text "Sun 22 · 16.0 km"
+text "Kept Garmin"
+text "Also came from COROS via Intervals.icu. Started 20 s apart, distances 0.3% apart. Hidden, not deleted."
+button "These are different runs"
+button "Advanced merge rules, Plus. Pick the source per metric, tune match windows. Coming in an update. Now: within 1 minute and ±2%."

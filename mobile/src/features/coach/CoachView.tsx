@@ -21,6 +21,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { keyboardOverlap, useKeyboard } from '../../ui/keyboard';
+import { useAnnounce } from '../../ui/motion';
 import { FailureBanner } from '../../ui/StateViews';
 import { WatchStatus } from '../../ui/session/WatchStatus';
 import { TYPE_TOKEN } from '../../ui/session/types';
@@ -105,13 +106,15 @@ const Reply = memo(function Reply({ m, actions }: { m: CoachMessage; actions: Co
   const { colors } = useTheme();
   const streaming = m.status === 'streaming';
   const note = flagWords(m.flags ?? []);
+  // Said once it's finished, not token by token (a live region on the text would read every word as it lands).
+  useAnnounce(!streaming && m.text ? `The Coach: ${m.text}` : null);
   return (
-    <View testID={`coach-reply-${m.id}`} accessibilityLiveRegion={streaming ? 'polite' : 'none'}
+    <View testID={`coach-reply-${m.id}`}
       style={{ alignSelf: 'flex-start', maxWidth: '92%', padding: 14, paddingVertical: 12, borderRadius: 18, borderBottomLeftRadius: 6,
         backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
       {m.text ? <Text variant="coach" testID={`reply-text-${m.id}`}>{m.text}</Text> : null}
       {streaming ? (
-        <View testID="streaming" accessible accessibilityLabel={m.working ?? 'Writing'} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: m.text ? 6 : 0 }}>
+        <View testID="streaming" accessible accessibilityLabel={m.working ?? 'Writing'} accessibilityLiveRegion="polite" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: m.text ? 6 : 0 }}>
           <ActivityIndicator size="small" color={colors.muted} />
           <Text variant="footnote" tone="muted">{m.working ?? 'Writing'}</Text>
         </View>
@@ -189,7 +192,7 @@ const Card = memo(function Card({ m, card, actions, brand }: { m: CoachMessage; 
   return (
     <View testID={`proposal-${m.id}`} style={{ alignSelf: 'stretch', gap: 10, padding: 16, borderRadius: 16, backgroundColor: colors.surface,
       borderWidth: 1, borderColor: colors.hairline }}>
-      <Text variant="kicker" tone="muted">Proposed change</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted">Proposed change</Text>
       {p && p.days.some((d) => d.changed) ? (
         <View testID={`proposal-days-${m.id}`} style={{ gap: 4 }}>
           {p.days.filter((d) => d.changed).map((d) => (

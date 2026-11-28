@@ -1,0 +1,11 @@
+# Coach memory · clear · android
+# /you/memory-clear
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1 (behind: 0)
+clipped: none
+cut to lines: none
+header "Clear memory?"
+text "Everything the Coach keeps in mind goes. Your plan, runs and the conversation stay."
+button "Clear memory"
+button "Keep it"

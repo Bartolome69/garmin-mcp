@@ -76,7 +76,7 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
       ) : null}
       {coach && d?.coachNote ? (
         <View testID="coach-note" style={{ gap: 6, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
-          <Text variant="kicker" tone="muted">Coach · why this session</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Coach · why this session</Text>
           <Text variant="coach">{d.coachNote}</Text>
           {actions.ask ? <Button label="Ask about this session" small onPress={actions.ask} style={{ alignSelf: 'flex-start' }} /> : null}
         </View>

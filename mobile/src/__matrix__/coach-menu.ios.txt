@@ -1,0 +1,14 @@
+# Coach · menu · ios
+# /coach/menu
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0 (behind: 0)
+clipped: none
+cut to lines: none
+header "One conversation"
+text "The Coach keeps one running conversation with you. Questions from a run or a session land here too, tagged so you can find them."
+button "Search the conversation. Find anything you asked"
+button "Filter by run or session. Questions tagged to a run or session"
+button "Memory. 5 things the Coach keeps in mind"
+button "Clear conversation. Memory and your plan stay"
+button "Close"

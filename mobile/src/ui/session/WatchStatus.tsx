@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import type { WatchState } from '../../features/today/model';
 import { Icon } from '../Icon';
+import { useAnnounce } from '../motion';
 import { Text } from '../Text';
 
 export function watchWords(state: WatchState, at: string | null): string {
@@ -21,10 +22,12 @@ export function watchWords(state: WatchState, at: string | null): string {
 export function WatchStatus({ state, at }: { state: WatchState; at: string | null }) {
   const { colors } = useTheme();
   const words = watchWords(state, at);
+  // A send that moves on (sending, then on the watch or not sent) is said when it happens.
+  useAnnounce(words);
   const tone = state === 'on_watch' ? 'text2' : state === 'changed_pending_sync' ? 'warning'
     : state === 'failed' ? 'brandText' : 'muted';
   return (
-    <View accessible accessibilityLabel={words} testID={`watch-${state}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+    <View accessible accessibilityLabel={words} accessibilityLiveRegion="polite" testID={`watch-${state}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
       {state === 'sending' ? <ActivityIndicator size="small" color={colors.muted} />
         : <Icon name={state === 'failed' ? 'error' : state === 'changed_pending_sync' ? 'sync' : 'onWatch'}
           tone={state === 'on_watch' ? 'muted' : tone} />}

@@ -1,0 +1,11 @@
+# Coach · clear · android
+# /coach/clear
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1 (behind: 0)
+clipped: none
+cut to lines: none
+header "Clear the conversation?"
+text "Every message in the thread goes. Memory and your plan stay, and nothing changes on your watch."
+button "Clear conversation"
+button "Keep it"

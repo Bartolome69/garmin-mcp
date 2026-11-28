@@ -1,0 +1,47 @@
+# Post-run (You) · ios
+# /you/run/2026-11-24-easy
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0
+clipped: none
+cut to lines: none
+image "Route map, 8 km. Hollow dot: start. Solid dot: finish."
+text "Easy"
+header "8 km easy + strides"
+text "Tue 24 Nov · 07:10"
+button "Ask about this run"
+group "Distance, plan 8.0 km, done 8.0 km, on plan"
+group "Pace, plan 5:27 to 6:10, done 5:12 avg, off plan"
+tab "Pace + HR" [selected]
+tab "Cadence"
+tab "Elev"
+adjustable "Pace by distance, around 5:12 per km. Heart rate by distance, from 134 to 149 bpm" = 4 km · 5:12 /km, 4 km · 136 bpm
+text "Heart rate zones"
+group "Zone 1, 0 minutes"
+group "Zone 2, 41 minutes"
+group "Zone 3, 2 minutes"
+group "Zone 4, 0 minutes"
+group "Zone 5, 0 minutes"
+button "Share"
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+image "Route map, 8 km. Hollow dot: start. Solid dot: finish."
+text "Easy"
+header "8 km easy + strides"
+text "Tue 24 Nov · 07:10"
+group "Distance, plan 8.0 km, done 8.0 km, on plan"
+group "Pace, plan 5:27 to 6:10, done 5:12 avg, off plan"
+tab "Pace + HR" [selected]
+tab "Cadence"
+tab "Elev"
+adjustable "Pace by distance, around 5:12 per km. Heart rate by distance, from 134 to 149 bpm" = 4 km · 5:12 /km, 4 km · 136 bpm
+text "Heart rate zones"
+group "Zone 1, 0 minutes"
+group "Zone 2, 41 minutes"
+group "Zone 3, 2 minutes"
+group "Zone 4, 0 minutes"
+group "Zone 5, 0 minutes"
+button "Share"

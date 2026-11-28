@@ -1,0 +1,16 @@
+# Onboarding · result · android
+# /onboarding/result
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+text "Step 2 of 3"
+header "Found 56 runs since September"
+group "Best recent race, 10K · 43:30, 12 Oct"
+group "Easy pace, 5:10 to 5:20 /km, from 55 runs"
+group "Threshold, 4:23 to 4:28 /km, from your 10K"
+group "Usual week, 48 km · 5 runs, last 8 weeks"
+text "Connected to Garmin · Forerunner 965"
+button "Adjust"
+button "Looks right"

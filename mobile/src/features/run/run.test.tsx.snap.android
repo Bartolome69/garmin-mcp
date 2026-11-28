@@ -3007,6 +3007,7 @@ exports[`snapshot: post-run with the Coach on android: run-coach-android 1`] = `
         testID="debrief-toggle"
       >
         <Text
+          accessibilityRole="header"
           maxFontSizeMultiplier={2}
           style={
             [

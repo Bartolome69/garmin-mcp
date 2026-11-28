@@ -1,0 +1,61 @@
+# Session detail · ios
+# /plan/session/2026-12-02-intervals
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1
+clipped: none
+cut to lines: none
+text "Intervals"
+header "10 × 400 m"
+text "Wed 2 Dec · 9.5 km · about 48 min"
+image "Session structure: Warm-up 15 min, 10 × 400 m · 200 m jog, Cool 10"
+text "Warm-up 15 min"
+text "10 × 400 m · 200 m jog"
+text "Cool 10"
+header "Steps"
+text "/km"
+group "Warm-up, 15 min easy, 5:27 to 6:10 per km"
+text "10 ×"
+group "400 m, Hard, controlled, 4:03 to 4:10 per km"
+group "200 m jog, Recover, easy"
+group "Cool-down, 10 min easy, 5:27 to 6:10 per km"
+text "Based on your 10K of 43:30 (12 Oct)"
+button "Easier"
+button "Harder"
+header "Coach · why this session"
+text "Short reps keep your speed ticking over while the volume builds. Easy days sit either side."
+button "Ask about this session"
+group "Not on your watch" (live polite)
+button "Send to watch"
+button "Move"
+button "Swap"
+button "Skip"
+button "Edit"
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+text "Intervals"
+header "10 × 400 m"
+text "Wed 2 Dec · 9.5 km · about 48 min"
+image "Session structure: Warm-up 15 min, 10 × 400 m · 200 m jog, Cool 10"
+text "Warm-up 15 min"
+text "10 × 400 m · 200 m jog"
+text "Cool 10"
+header "Steps"
+text "/km"
+group "Warm-up, 15 min easy, 5:27 to 6:10 per km"
+text "10 ×"
+group "400 m, Hard, controlled, 4:03 to 4:10 per km"
+group "200 m jog, Recover, easy"
+group "Cool-down, 10 min easy, 5:27 to 6:10 per km"
+text "Based on your 10K of 43:30 (12 Oct)"
+button "Easier"
+button "Harder"
+group "Not on your watch" (live polite)
+button "Send to watch"
+button "Move"
+button "Swap"
+button "Skip"
+button "Edit"

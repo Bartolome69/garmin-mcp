@@ -65,7 +65,7 @@ export function Debrief({ text, onAsk }: { text: string; onAsk: () => void }) {
       borderWidth: 1, borderColor: colors.hairline }}>
       <Pressable testID="debrief-toggle" accessibilityRole="button" accessibilityLabel="Coach debrief" accessibilityState={{ expanded: open }}
         onPress={() => setOpen(!open)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: MIN_TOUCH }}>
-        <Text variant="kicker" tone="muted">Coach debrief</Text>
+        <Text variant="kicker" accessibilityRole="header" tone="muted">Coach debrief</Text>
         <Icon name={open ? 'chevronUp' : 'chevronDown'} tone="muted" />
       </Pressable>
       {open ? (

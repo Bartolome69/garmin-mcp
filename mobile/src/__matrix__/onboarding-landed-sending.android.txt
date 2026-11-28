@@ -1,0 +1,9 @@
+# Onboarding · landed, sending · android
+# /onboarding/landed
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+group "Sending Monday’s run to your watch" (live polite)
+button "Go to Today"

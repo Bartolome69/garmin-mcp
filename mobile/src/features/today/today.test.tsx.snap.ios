@@ -1014,6 +1014,7 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
         </View>
         <View
           accessibilityLabel="On your watch · 20:14"
+          accessibilityLiveRegion="polite"
           accessible={true}
           style={
             {

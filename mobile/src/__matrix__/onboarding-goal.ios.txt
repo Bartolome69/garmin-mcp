@@ -1,0 +1,21 @@
+# Onboarding · goal · ios
+# /onboarding/goal
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+text "Step 1 of 3"
+header "What are you training for?"
+radio "A race. Name, date and a target if you have one" [selected]
+radio "Just get fitter. Steady weeks, no race date"
+text "Race"
+textfield "Race" = London Marathon
+text "Distance"
+radiogroup "Distance"
+text "Date"
+textfield "Date" = Sat 24 Apr 2027
+text "Sat 24 Apr 2027"
+text "Target, optional"
+textfield "Target, optional" = 3:15
+button "Continue"

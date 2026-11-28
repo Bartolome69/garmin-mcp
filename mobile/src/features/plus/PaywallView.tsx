@@ -91,7 +91,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
         <View testID="plus-items" style={{ gap: 2 }}>
           {plusItems(coach, coachLimit, os, lead).map((i) => <Item key={i.title} testID={i.id ? `plus-item-${i.id}` : undefined} icon="lock" title={i.title} sub={i.sub} soon={i.soon} />)}
         </View>
-        <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Always free</Text>
+        <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>Always free</Text>
         <View testID="always-free" style={{ gap: 0 }}>
           {ALWAYS_FREE.map((t) => <Item key={t} icon="check" title={t} />)}
         </View>
@@ -204,7 +204,7 @@ export function PlusSection({ status, plus, canManage = plus, os = Platform.OS, 
   const line = { borderTopWidth: 1, borderTopColor: colors.hairline };
   return (
     <View testID="you-plus" style={{ gap: 10 }}>
-      <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Plus</Text>
+      <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>Plus</Text>
       <View style={{ borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
         <Pressable testID="row-plus" accessibilityRole="button" onPress={plus && canManage ? actions.manage : actions.open}
           accessibilityLabel={`${status.title}, ${status.sub}${status.badge ? `, ${status.badge}` : ''}`}

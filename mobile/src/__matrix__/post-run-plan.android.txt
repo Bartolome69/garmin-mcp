@@ -1,0 +1,53 @@
+# Post-run (Plan) · android
+# /plan/run/2026-11-25-intervals
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0
+clipped: none
+cut to lines: none
+image "Route map, 11.2 km. Hollow dot: start. Solid dot: finish."
+button "Coach debrief" [expanded]
+text "Reps averaged 4:01, the fastest and slowest 6 s apart, and your heart rate fell under 130 in every recovery. Rep 6 peaked at 172 bpm, 4 above rep 5."
+button "Helpful"
+button "Not helpful"
+button "Ask about this run"
+text "Intervals"
+header "6 × 800 m"
+text "Wed 25 Nov · 06:30"
+group "Distance, plan 11.0 km, done 11.2 km, on plan"
+group "Rep pace, plan 3:58 to 4:08, done 4:01 avg, on plan"
+group "Reps, plan 6 × 800 m, done 6 of 6, on plan"
+tab "Pace + HR" [selected]
+tab "Cadence"
+tab "Elev"
+adjustable "Pace by distance, 6 reps around 4:01 per km. Heart rate by distance, from 118 to 172 bpm" = Rep 4 · 4:00 /km, Rep 4 · 168 bpm
+text "Heart rate zones"
+group "Zone 1, 15 minutes"
+group "Zone 2, 22 minutes"
+group "Zone 3, 2 minutes"
+group "Zone 4, 8 minutes"
+group "Zone 5, 9 minutes"
+button "Share"
+
+## light · 100% · Coach off | light · 200% · Coach off | dark · 100% · Coach off | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+image "Route map, 11.2 km. Hollow dot: start. Solid dot: finish."
+text "Intervals"
+header "6 × 800 m"
+text "Wed 25 Nov · 06:30"
+group "Distance, plan 11.0 km, done 11.2 km, on plan"
+group "Rep pace, plan 3:58 to 4:08, done 4:01 avg, on plan"
+group "Reps, plan 6 × 800 m, done 6 of 6, on plan"
+tab "Pace + HR" [selected]
+tab "Cadence"
+tab "Elev"
+adjustable "Pace by distance, 6 reps around 4:01 per km. Heart rate by distance, from 118 to 172 bpm" = Rep 4 · 4:00 /km, Rep 4 · 168 bpm
+text "Heart rate zones"
+group "Zone 1, 15 minutes"
+group "Zone 2, 22 minutes"
+group "Zone 3, 2 minutes"
+group "Zone 4, 8 minutes"
+group "Zone 5, 9 minutes"
+button "Share"

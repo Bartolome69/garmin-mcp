@@ -341,12 +341,12 @@ export function RevealView({ r, coach, brand, onSend }: { r: Reveal; coach: bool
       <Text testID="because" variant="footnote" tone="muted">{r.because}</Text>
       {coach && r.coachNote ? (
         <View testID="coach-note" style={{ gap: 4, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
-          <Text variant="kicker" tone="muted">Coach · why this shape</Text>
+          <Text variant="kicker" accessibilityRole="header" tone="muted">Coach · why this shape</Text>
           <Text variant="coach">{r.coachNote}</Text>
         </View>
       ) : null}
       <Card testID="week1" style={{ gap: 0, paddingVertical: 6 }}>
-        <Text variant="kicker" tone="muted" style={{ paddingVertical: 6 }}>Week 1</Text>
+        <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ paddingVertical: 6 }}>Week 1</Text>
         {r.week1.map((s, i) => (
           <View key={s.id} accessible accessibilityLabel={`${s.dow} ${s.day}, ${s.title}, ${s.sub.replace('–', ' to ')}`}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, borderTopWidth: i ? 1 : 0, borderTopColor: colors.hairline }}>

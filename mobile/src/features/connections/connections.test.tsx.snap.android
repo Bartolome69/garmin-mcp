@@ -2334,6 +2334,7 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
       </View>
     </View>
     <Text
+      accessibilityRole="header"
       maxFontSizeMultiplier={2}
       style={
         [

@@ -1,0 +1,11 @@
+# Coach · limit · ios
+# /coach/limit
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 1 (behind: 0)
+clipped: none
+cut to lines: none
+header "That’s today’s 10"
+text "Free Daash has 10 Coach messages a day. Your plan, runs and crew keep working, and a change the Coach already proposed can still be reviewed and sent. Plus removes the limit."
+button "See Plus"
+button "Tomorrow is fine"

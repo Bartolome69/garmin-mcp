@@ -1,0 +1,13 @@
+# Watch confirm · android
+# /watch/confirm?id=
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1 (behind: 0)
+clipped: none
+cut to lines: none
+header "1 change on your watch"
+text "This is exactly what Forerunner 965 gets. Nothing else on the watch changes."
+group "Remove, Wed 2, 10 × 400 m"
+group "Connected to Garmin · synced 07:02"
+button "Confirm and send 1 change"
+button "Back"

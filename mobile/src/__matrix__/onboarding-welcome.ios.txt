@@ -1,0 +1,16 @@
+# Onboarding · welcome · ios
+# /onboarding
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 1
+clipped: none
+cut to lines: none
+header "Plan the run. Send it to your watch."
+text "Build a session in plain words and see it as steps. No account needed to try."
+text "Tempo"
+text "example"
+text "5 × 1 km at threshold, 2 min easy"
+image "Session structure:"
+button "Try building a session"
+button "Set up my plan"
+button "Sign in"
