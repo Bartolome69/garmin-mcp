@@ -48,7 +48,7 @@ export function words(n: unknown): string[] {
   return kids(n).flatMap(words);
 }
 
-const SCREEN = /^RNSScreen$/;
+const SCREEN = /^RNS(Modal)?Screen$/; // a form sheet draws as RNSModalScreen
 const TAB = /^RNSTabsScreen/;
 
 /**

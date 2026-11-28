@@ -4,8 +4,9 @@
 //   - the screen says what it is before any action (a title, header or line of text first);
 //   - nothing focusable is unnamed, and no two controls share a name;
 //   - the primary action (the one brand fill) can be reached;
-//   - a sheet is a native sheet over its screen (the system keeps focus inside it and closes it
-//     with Escape or back) and the screen behind it offers nothing to press.
+//   - a sheet is a native form sheet over its screen (the system, not the app, keeps focus inside
+//     it and closes it with Escape or back: checked on a device, WALKTHROUGHS.md), and the screen
+//     drawn behind it keeps no brand fill.
 // The device run is docs/native-app/WALKTHROUGHS.md.
 import { describe, expect, it } from '@jest/globals';
 import fs from 'fs';
@@ -69,7 +70,8 @@ describe(`focus order on ${Platform.OS}`, () => {
     if (c.sheet) {
       // A native sheet: the system makes it modal for VoiceOver and TalkBack, and Escape / back closes it.
       expect(presentation(c.route)).toBe('formSheet');
-      // Whatever is behind it keeps no brand fill (it lost focus).
+      // Something is drawn behind it (else the next check proves nothing), and it keeps no brand fill (it lost focus).
+      expect(behind.length).toBeGreaterThan(0);
       expect(behind.flatMap((b) => all(b).filter((n: Node) => StyleSheet.flatten(n.props?.style)?.backgroundColor === colors.dark.brand))).toEqual([]);
     }
   });

@@ -2,7 +2,7 @@
 # /you/memory-clear
 
 ## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
-brand fills: 1 (behind: 0)
+brand fills: 1 (behind the sheet: 0 on 1 screen)
 clipped: none
 cut to lines: none
 header "Clear memory?"

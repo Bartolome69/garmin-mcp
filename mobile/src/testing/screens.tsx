@@ -4,7 +4,7 @@
 // route on disk has no entry). Test-only: imports the testing library.
 import fs from 'fs';
 import path from 'path';
-import { act, renderRouter, screen } from 'expo-router/testing-library';
+import { act, cleanup, renderRouter, screen } from 'expo-router/testing-library';
 import { router, Stack } from 'expo-router';
 import type { ComponentType, ReactNode } from 'react';
 import { Dimensions } from 'react-native';
@@ -75,11 +75,13 @@ export function app(scheme: 'dark' | 'light', coach = true, opts: { messages?: (
       </FlagsProvider>
     </ThemeProvider>
   );
-  const map: Record<string, ComponentType<any>> = {};
+  // Each route's whole module, not just its component: a layout's `unstable_settings` (the
+  // anchor a sheet opened by link sits over) is lost when only `default` is mapped.
+  const map: Record<string, ComponentType<any> | { default: ComponentType<any> }> = {};
   for (const r of routeFiles()) {
     if (r === '_layout' || r === 'index') continue;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    map[r] = require(path.join(APP_DIR, r)).default;
+    map[r] = require(path.join(APP_DIR, r));
   }
   map._layout = () => <Root />;
   // Onboarding part way through (the persona's goal, import and plan), so every step has what it shows.
@@ -102,6 +104,8 @@ export type ScreenCase = {
   staged?: boolean;
   /** Drawn over the tab's first screen (a sheet): the screen behind has no brand fill. */
   sheet?: boolean;
+  /** Opened from this screen (pushed over it) rather than straight from its link. */
+  from?: string;
   /** Has a primary action (the one brand fill), on both platforms or only Android (Plan's FAB); screens without one have none. */
   primary?: boolean | 'android';
   /** Only with the Coach on (the Coach tab's own screens). */
@@ -139,7 +143,7 @@ export const SCREENS: ScreenCase[] = [
   { name: 'Sign out', route: '(tabs)/you/sign-out', url: '/you/sign-out', id: 'sign-out-sheet', sheet: true, primary: true },
   { name: 'Plus (paywall)', route: 'plus/index', url: '/plus?from=you', id: 'paywall', primary: true },
   { name: 'Plus (paywall) from the Coach’s limit', route: 'plus/index', url: '/plus?from=coach', id: 'paywall', primary: true },
-  { name: 'Plus · free week sheet', route: 'plus/trial', url: '/plus/trial', id: 'trial-sheet', sheet: true, primary: true },
+  { name: 'Plus · free week sheet', route: 'plus/trial', url: '/plus/trial', id: 'trial-sheet', sheet: true, primary: true, from: '/plus?from=you' },
   { name: 'Coach', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true, primary: true },
   { name: 'Coach · from a run', route: '(tabs)/coach/index', url: '/coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m', id: 'coach', coachOnly: true, primary: true },
   { name: 'Coach · menu', route: '(tabs)/coach/menu', url: '/coach/menu', id: 'coach-menu', sheet: true, coachOnly: true },
@@ -169,14 +173,22 @@ export const SCREENS: ScreenCase[] = [
 /** The skipped Wednesday intervals, staged: what the staged screens show. */
 export const stagedProposal = () => skipProposal(findSession(PERSONA_PLAN, '2026-12-02-intervals')!);
 
-/** Opens a case's screen and waits for its root. */
-export async function openScreen(c: ScreenCase, scheme: 'dark' | 'light' = 'dark', coach = true) {
+/** Opens a case's screen and waits for its root, in this window when one is given. */
+export async function openScreen(c: ScreenCase, scheme: 'dark' | 'light' = 'dark', coach = true, window?: WindowSize) {
+  // One app at a time: the last one is unmounted first (the testing library would only do it
+  // after the test, leaving every earlier tree alive and re-rendering), and only then is the
+  // window changed, so no earlier tree redraws for it.
+  await cleanup();
+  if (window) setWindow(window);
   if (c.staged) {
     await renderRouter(app(scheme, coach), { initialUrl: '/plan' });
     await screen.findByTestId('week-title');
     const p = stagedProposal();
     await act(async () => { watchQueue().stage(p); });
     await act(async () => { router.push(`${c.url}${encodeURIComponent(p.id)}`); });
+  } else if (c.from) {
+    await renderRouter(app(scheme, coach), { initialUrl: c.from });
+    await act(async () => { router.push(c.url); });
   } else {
     await renderRouter(app(scheme, coach), { initialUrl: c.url });
   }
@@ -184,7 +196,8 @@ export async function openScreen(c: ScreenCase, scheme: 'dark' | 'light' = 'dark
 }
 
 /** The phone's window: width, height and text size (fontScale 2 is 200%). */
-export function setWindow({ width = 390, height = 844, fontScale = 1 }: { width?: number; height?: number; fontScale?: number } = {}) {
+export type WindowSize = { width?: number; height?: number; fontScale?: number };
+export function setWindow({ width = 390, height = 844, fontScale = 1 }: WindowSize = {}) {
   const window = { width, height, scale: 3, fontScale };
   // Before a render (not inside act: a synchronous act here leaves the next render empty).
   Dimensions.set({ window, screen: window });

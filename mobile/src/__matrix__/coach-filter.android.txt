@@ -2,7 +2,7 @@
 # /coach/filter
 
 ## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
-brand fills: 0 (behind: 0)
+brand fills: 0 (behind the sheet: 0 on 1 screen)
 clipped: none
 cut to lines: none
 header "Filter by run or session"

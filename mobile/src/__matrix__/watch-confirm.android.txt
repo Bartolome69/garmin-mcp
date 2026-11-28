@@ -2,7 +2,7 @@
 # /watch/confirm?id=
 
 ## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
-brand fills: 1 (behind: 0)
+brand fills: 1 (behind the sheet: 0 on 1 screen)
 clipped: none
 cut to lines: none
 header "1 change on your watch"

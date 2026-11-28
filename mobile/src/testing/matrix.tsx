@@ -80,8 +80,7 @@ function cases(group: string) {
     const reads = new Map<string, string[]>();
     const numbers: Partial<Record<string, string[]>> = {};
     for (const cell of cells) {
-      setWindow({ fontScale: cell.text });
-      await openScreen(c, cell.scheme, cell.coach);
+      await openScreen(c, cell.scheme, cell.coach, { fontScale: cell.text });
       const tree = screen.toJSON();
       const { front, behind } = locate(tree, c.id);
       const where = cellName(cell);
@@ -90,6 +89,7 @@ function cases(group: string) {
       const clip = clipped(front);
       const small = smallTargets(front);
       const coachBits = cell.coach ? [] : coachSurfaces(front);
+      if (c.sheet && !behind.length) problems.push(`${where}: nothing drawn behind the sheet`);
       if (behindFills) problems.push(`${where}: ${behindFills} brand fill(s) behind the screen`);
       const wantsOne = c.primary === true || c.primary === os;
       if (fills > 1 || (wantsOne && fills !== 1)) problems.push(`${where}: ${fills} brand fills${wantsOne ? ', expected 1' : ''}`);
@@ -99,7 +99,7 @@ function cases(group: string) {
       numbers[`${cell.scheme}|${cell.text}|${cell.coach}`] = plainNumbers(front);
       const title = headerTitle(front);
       const body = [
-        `brand fills: ${fills}${c.sheet ? ` (behind: ${behindFills})` : ''}`,
+        `brand fills: ${fills}${c.sheet ? ` (behind the sheet: ${behindFills} on ${behind.length} screen${behind.length === 1 ? '' : 's'})` : ''}`,
         `clipped: ${clip.length ? clip.join('; ') : 'none'}`,
         `cut to lines: ${truncated(front).join('; ') || 'none'}`,
         ...(title ? [`header "${title}"`] : []),

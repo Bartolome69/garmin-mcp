@@ -22,8 +22,7 @@ afterAll(() => setWindow());
 describe(`wide windows on ${Platform.OS}`, () => {
   it.each(WIDE.map((n) => [n, SCREENS.find((c) => c.name === n)!] as const))('%s keeps a readable column', async (_n, c) => {
     for (const [width, height] of [[1024, 768], [844, 390], [390, 844]]) {
-      setWindow({ width, height });
-      await openScreen(c);
+      await openScreen(c, 'dark', true, { width, height });
       const style = column(c.id);
       expect([width, style.maxWidth, style.alignSelf]).toEqual([width, MAX_CONTENT_WIDTH, 'center']);
     }
