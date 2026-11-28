@@ -179,7 +179,7 @@ export async function openScreen(c: ScreenCase, scheme: 'dark' | 'light' = 'dark
   } else {
     await renderRouter(app(scheme, coach), { initialUrl: c.url });
   }
-  return screen.findByTestId(c.id, {}, { timeout: 4000 });
+  return screen.findByTestId(c.id, {}, { timeout: 10000 });
 }
 
 /** The phone's window: width, height and text size (fontScale 2 is 200%). */

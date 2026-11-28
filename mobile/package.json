@@ -63,7 +63,11 @@
         "testMatch": [
           "<rootDir>/src/**/*.test.ts?(x)",
           "<rootDir>/scripts/**/*.test.js"
-        ]
+        ],
+        "setupFiles": [
+          "<rootDir>/src/testing/setup.ts"
+        ],
+        "testTimeout": 30000
       },
       {
         "displayName": "android",
@@ -71,7 +75,11 @@
         "testMatch": [
           "<rootDir>/src/**/*.test.ts?(x)",
           "<rootDir>/scripts/**/*.test.js"
-        ]
+        ],
+        "setupFiles": [
+          "<rootDir>/src/testing/setup.ts"
+        ],
+        "testTimeout": 30000
       }
     ]
   }

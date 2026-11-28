@@ -7,14 +7,20 @@
 // the composer, never over the thread. The Coach has no hue: a muted mono label, serif
 // prose and a neutral send button. The screen's one brand fill is the newest
 // proposal's "Review" button, and it loses it behind a sheet.
-import { useEffect, useRef, useState, type ComponentRef } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+//
+// The keyboard (milestone 12): the screen never moves. The header stays, the thread
+// (a virtualised list) shrinks and stays on the newest message, the composer sits on
+// the keyboard, and the tab bar hides while it's up. Each message row is memoised, so a
+// streamed token redraws only the reply it belongs to.
+import { memo, useCallback, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 
 import type { FailureKind } from '../../data/resource';
 import type { GuardKind } from '../../domain/replyGuard';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
+import { keyboardOverlap, useKeyboard } from '../../ui/keyboard';
 import { FailureBanner } from '../../ui/StateViews';
 import { WatchStatus } from '../../ui/session/WatchStatus';
 import { TYPE_TOKEN } from '../../ui/session/types';
@@ -95,7 +101,7 @@ function Thumb({ up, on, onPress }: { up: boolean; on: boolean; onPress: () => v
   );
 }
 
-function Reply({ m, actions }: { m: CoachMessage; actions: CoachActions }) {
+const Reply = memo(function Reply({ m, actions }: { m: CoachMessage; actions: CoachActions }) {
   const { colors } = useTheme();
   const streaming = m.status === 'streaming';
   const note = flagWords(m.flags ?? []);
@@ -135,9 +141,9 @@ function Reply({ m, actions }: { m: CoachMessage; actions: CoachActions }) {
       ) : null}
     </View>
   );
-}
+});
 
-function Question({ m, actions, blocked }: { m: CoachMessage; actions: CoachActions; blocked: boolean }) {
+const Question = memo(function Question({ m, actions, blocked }: { m: CoachMessage; actions: CoachActions; blocked: boolean }) {
   const { colors } = useTheme();
   return (
     <View style={{ gap: 6, alignSelf: 'stretch' }}>
@@ -157,11 +163,24 @@ function Question({ m, actions, blocked }: { m: CoachMessage; actions: CoachActi
       ) : null}
     </View>
   );
-}
+});
 
 const sessionWords = (s: DiffSession | null) => (s ? s.title : 'Rest');
+const sameCard = (a: CardState, b: CardState) => a.proposal === b.proposal && a.canReview === b.canReview
+  && a.batch?.state === b.batch?.state && a.batch?.at === b.batch?.at && a.batch?.error === b.batch?.error && a.batch?.opId === b.batch?.opId;
+const NO_CARD: CardState = { proposal: null, canReview: false, batch: null };
 
-function Card({ m, card, actions, brand }: { m: CoachMessage; card: CardState; actions: CoachActions; brand: boolean }) {
+/** The same actions object across renders, each calling the latest handler: memoised rows don't redraw for a new closure. */
+function useStableActions<T extends Record<string, (...args: never[]) => unknown>>(actions: T): T {
+  const latest = useRef(actions);
+  latest.current = actions;
+  return useMemo(() => Object.fromEntries(Object.keys(actions).map((k) => [k, (...args: never[]) => latest.current[k](...args)])) as T,
+    []); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+const rowKey = (r: ThreadRow, i: number) => (r.kind === 'message' ? r.m.id : r.kind === 'earlier' ? 'earlier' : `day-${r.label}-${i}`);
+
+const Card = memo(function Card({ m, card, actions, brand }: { m: CoachMessage; card: CardState; actions: CoachActions; brand: boolean }) {
   const { colors } = useTheme();
   const p = card.proposal;
   const n = p?.ops.length ?? 0;
@@ -218,9 +237,10 @@ function Card({ m, card, actions, brand }: { m: CoachMessage; card: CardState; a
       )}
     </View>
   );
-}
+}, (a, b) => a.m === b.m && a.brand === b.brand && a.actions === b.actions && sameCard(a.card, b.card));
 
-function MemoryNote({ m, onEdit }: { m: CoachMessage; onEdit: () => void }) {
+const MemoryNote = memo(function MemoryNote({ m, actions }: { m: CoachMessage; actions: CoachActions }) {
+  const onEdit = () => m.memoryId && actions.editMemory(m.memoryId);
   return (
     <View testID={`memory-note-${m.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', alignSelf: 'flex-start' }}>
       <Icon name="check" tone="muted" />
@@ -231,7 +251,7 @@ function MemoryNote({ m, onEdit }: { m: CoachMessage; onEdit: () => void }) {
       </Pressable>
     </View>
   );
-}
+});
 
 function Chip({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
   const { colors } = useTheme();
@@ -259,7 +279,7 @@ function Banner({ testID, children, onPress, label }: { testID: string; children
 }
 
 export function CoachView({ rows, empty, starters, limit, offline, streaming, context, searching, query, onQuery, filter, cards, latestPending,
-  brand, actions, loadFailed, authFailure = null }: {
+  brand, actions: given, loadFailed, authFailure = null }: {
   rows: ThreadRow[];
   /** No conversation yet (not a search with no results). */
   empty: boolean;
@@ -284,22 +304,72 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
 }) {
   const { colors } = useTheme();
   const [text, setText] = useState('');
-  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  const list = useRef<ComponentRef<typeof FlatList<ThreadRow>>>(null);
+  const actions = useStableActions(given);
   const locked = limit.reached;
   const blocked = offline || locked || !!authFailure;
   const canSend = !!text.trim() && !streaming && !blocked;
-  const last = rows[rows.length - 1];
-  const lastKey = last?.kind === 'message' ? `${last.m.id}:${last.m.text.length}:${last.m.status}` : String(rows.length);
-  useEffect(() => { if (!searching && !filter) scroll.current?.scrollToEnd?.({ animated: false }); }, [lastKey, searching, filter]);
+
+  // The keyboard: how far it covers this screen, from the screen's bottom edge in the window
+  // (measured; until it is, the window's own bottom). The dock is padded by that much.
+  const keyboard = useKeyboard();
+  const { height: windowHeight } = useWindowDimensions();
+  const root = useRef<ComponentRef<typeof View>>(null);
+  const [bottom, setBottom] = useState<number | null>(null);
+  const measure = useCallback((_e?: LayoutChangeEvent) => {
+    root.current?.measureInWindow?.((_x: number, y: number, _w: number, h: number) => { if (typeof h === 'number' && h > 0) setBottom(y + h); });
+  }, []);
+  const inset = keyboardOverlap(bottom ?? windowHeight, keyboard);
+
+  // Stay on the newest message while the runner is there: as replies stream in, and when the
+  // keyboard shrinks the list. Scrolling up to read stops it until they're back at the end.
+  const pinned = useRef(true);
+  const toEnd = useCallback(() => { if (pinned.current && !searching && !filter) list.current?.scrollToEnd?.({ animated: false }); }, [searching, filter]);
 
   const submit = (words: string, starter = false) => {
     if (!words.trim() || streaming || blocked) return;
+    pinned.current = true;
     actions.send(words, starter);
     if (!starter) setText('');
   };
 
+  const renderRow = ({ item: r }: { item: ThreadRow }) => {
+    if (r.kind === 'earlier') {
+      return (
+        <Pressable testID="coach-earlier" accessibilityRole="button" accessibilityLabel={`${r.label}. Show`} onPress={actions.showEarlier}
+          style={{ minHeight: MIN_TOUCH, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 12,
+            borderRadius: 999, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.hairline }}>
+          <Text variant="footnote" tone="muted">{r.label}</Text>
+          <Text variant="footnote" style={{ fontWeight: '600' }}>Show</Text>
+        </Pressable>
+      );
+    }
+    if (r.kind === 'day') return <Text testID="coach-day" variant="kicker" tone="muted" accessibilityRole="header" style={{ alignSelf: 'center', paddingVertical: 4 }} numeric>{r.label}</Text>;
+    const m = r.m;
+    if (m.role === 'user') return <Question m={m} actions={actions} blocked={blocked} />;
+    if (m.role === 'assistant') return <Reply m={m} actions={actions} />;
+    if (m.role === 'memory') return <MemoryNote m={m} actions={actions} />;
+    return <Card m={m} card={cards[m.id] ?? NO_CARD} actions={actions} brand={brand && latestPending === m.id} />;
+  };
+
+  const top = loadFailed && empty ? (
+    <View testID="coach-error" style={{ gap: 10 }}>
+      <Text variant="headline" accessibilityRole="header">Couldn’t open the conversation</Text>
+      <Text variant="body" tone="muted">{loadFailed}</Text>
+      <Button label="Try again" onPress={actions.retryLoad} style={{ alignSelf: 'flex-start' }} />
+    </View>
+  ) : empty ? (
+    <View testID="coach-empty" style={{ gap: 8, paddingTop: 8 }}>
+      <Text variant="kicker" tone="muted">Coach</Text>
+      <Text variant="coach">Ask about your plan, your runs or how today looks. The Coach reads the same numbers as the rest of Daash and proposes changes you can review.</Text>
+      <Text variant="footnote" tone="muted">{MEDICAL}</Text>
+    </View>
+  ) : (searching || filter) && !rows.length ? (
+    <Text variant="body" tone="muted" testID="coach-no-results">{searching ? (query.trim() ? 'Nothing in the conversation matches.' : 'Type to search the conversation.') : 'Nothing here yet.'}</Text>
+  ) : null;
+
   return (
-    <KeyboardAvoidingView testID="coach" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View ref={root} testID="coach" onLayout={measure} style={{ flex: 1, backgroundColor: colors.bg }}>
       {offline ? (
         <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
           <Banner testID="coach-offline" label="Offline">
@@ -326,45 +396,20 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
         </View>
       ) : null}
 
-      <ScrollView ref={scroll} testID="coach-thread" style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 10 }}
-        keyboardDismissMode="interactive" contentInsetAdjustmentBehavior="automatic">
-        {loadFailed && empty ? (
-          <View testID="coach-error" style={{ gap: 10 }}>
-            <Text variant="headline" accessibilityRole="header">Couldn’t open the conversation</Text>
-            <Text variant="body" tone="muted">{loadFailed}</Text>
-            <Button label="Try again" onPress={actions.retryLoad} style={{ alignSelf: 'flex-start' }} />
-          </View>
-        ) : empty ? (
-          <View testID="coach-empty" style={{ gap: 8, paddingTop: 8 }}>
-            <Text variant="kicker" tone="muted">Coach</Text>
-            <Text variant="coach">Ask about your plan, your runs or how today looks. The Coach reads the same numbers as the rest of Daash and proposes changes you can review.</Text>
-            <Text variant="footnote" tone="muted">{MEDICAL}</Text>
-          </View>
-        ) : null}
-        {(searching || filter) && !rows.length && !empty ? (
-          <Text variant="body" tone="muted" testID="coach-no-results">{searching ? (query.trim() ? 'Nothing in the conversation matches.' : 'Type to search the conversation.') : 'Nothing here yet.'}</Text>
-        ) : null}
-        {rows.map((r, i) => {
-          if (r.kind === 'earlier') {
-            return (
-              <Pressable key="earlier" testID="coach-earlier" accessibilityRole="button" accessibilityLabel={`${r.label}. Show`} onPress={actions.showEarlier}
-                style={{ minHeight: MIN_TOUCH, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 12,
-                  borderRadius: 999, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.hairline }}>
-                <Text variant="footnote" tone="muted">{r.label}</Text>
-                <Text variant="footnote" style={{ fontWeight: '600' }}>Show</Text>
-              </Pressable>
-            );
-          }
-          if (r.kind === 'day') return <Text key={`day-${i}`} testID="coach-day" variant="kicker" tone="muted" style={{ alignSelf: 'center', paddingVertical: 4 }} numeric>{r.label}</Text>;
-          const m = r.m;
-          if (m.role === 'user') return <Question key={m.id} m={m} actions={actions} blocked={blocked} />;
-          if (m.role === 'assistant') return <Reply key={m.id} m={m} actions={actions} />;
-          if (m.role === 'memory') return <MemoryNote key={m.id} m={m} onEdit={() => m.memoryId && actions.editMemory(m.memoryId)} />;
-          return <Card key={m.id} m={m} card={cards[m.id] ?? { proposal: null, canReview: false, batch: null }} actions={actions} brand={brand && latestPending === m.id} />;
-        })}
-      </ScrollView>
+      <FlatList ref={list} testID="coach-thread" data={rows} keyExtractor={rowKey} renderItem={renderRow}
+        ListHeaderComponent={top ?? undefined} style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, gap: 10, width: '100%', maxWidth: 720, alignSelf: 'center' }}
+        keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic"
+        initialNumToRender={20} windowSize={11} removeClippedSubviews={false}
+        onContentSizeChange={toEnd} onLayout={toEnd}
+        onScroll={(e) => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          pinned.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 48;
+        }}
+        scrollEventThrottle={64} />
 
-      <View testID="coach-dock" style={{ backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.hairline, paddingTop: 8, paddingBottom: 10, gap: 6 }}>
+      <View testID="coach-dock" style={{ backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.hairline, paddingTop: 8,
+        paddingBottom: inset ? inset + 8 : 10, gap: 6 }}>
         {locked ? (
           <View style={{ paddingHorizontal: 16 }}>
             <Banner testID="coach-limit" label={`You’ve used today’s ${limit.limit} free messages. See what Plus changes`} onPress={actions.limit}>
@@ -401,6 +446,6 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
           </Pressable>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
