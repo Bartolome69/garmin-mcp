@@ -1220,3 +1220,217 @@ into the one above it.
 - **Coach ON/OFF parity:** the paywall's Coach row exists only with the Coach
   (like the tab), so its "10" is set aside in the parity check as chrome, not a
   number that changes.
+
+## Milestone 12: accessibility, performance and polish
+
+Built on `claude/native-app-m11` (which holds every earlier milestone), 28 Nov.
+
+### Expo Go (the owner's next test)
+
+- **The app runs in the store Expo Go app on sample data.** `src/data/sample.ts` decides it:
+  sample data is on with `EXPO_PUBLIC_DAASH_FIXTURE=1`, or in Expo Go when no token was on
+  the phone at launch (read once, before the providers mount). Every source's fixture
+  fallback now asks `fixturesOn()` (development builds, as before, or sample data) instead
+  of a constant fixed at import time. A signed-in phone in Expo Go uses the real paths.
+- **Sample data says so.** A small neutral "Sample data" label (an outline and an info
+  mark, no colour of its own; spoken as "Sample data. These numbers are from a sample
+  runner, not yours.") on Today and at the top of You. The first screen skips the sign-in
+  wall and goes to Today; You has "Try onboarding" to walk the steps on the persona's
+  answers. Sample data has the Coach on, talking to its stand-in, the stand-in Garmin for
+  sends (nothing reaches a real watch) and the fake store for Plus.
+- **Only Expo Go's native modules.** `src/expoGo.test.ts` checks every dependency and every
+  import under `src/` against a list kept in the test (expo-*, react-native-svg, reanimated,
+  worklets, gesture-handler, screens, safe-area-context, segmented-control, expo-updates,
+  JavaScript-only packages), that native code outside Expo Go is only loaded through
+  `requireOptionalNativeModule` (just `DaashWidgets`, which falls back to writing nowhere),
+  and that the store is the fake or the unavailable one (no purchase library).
+- **Notifications in Expo Go:** permission and local notifications only. Push tokens are
+  asked for in one place (`features/settings/push.ts`, not called yet: TODO(server)), which
+  returns nothing in Expo Go, because Expo Go on Android has had no remote push since SDK 53
+  (asking throws there).
+- **Widgets setup in Expo Go** says widgets need the App Store / Google Play build.
+- **Publishing from GitHub.** `app.json` has `runtimeVersion: {policy: "appVersion"}`, the
+  project's `updates.url` and `extra.eas.projectId`; `expo-updates` 58.0.22 is a dependency
+  (Expo Go ships it; nothing in the app calls it). `eas.json` has development (needs
+  `expo-dev-client`, not installed), preview (APK) and production profiles.
+  `.eas/workflows/expo-go-preview.yml` publishes an update to branch `preview` on each push
+  to `claude/native-app-m12`. This container can't reach expo.dev, so the workflow hasn't
+  been seen to run. `npx expo config --type public` shows the three fields offline, and
+  `npx expo export` for both platforms succeeds.
+- **Smaller updates.** The fonts are imported by face, so a bundle carries three font files
+  instead of about sixty (the Material Symbols font comes with `expo-symbols`).
+- **The slug stays `daash`** (not confirmed: if the Expo project's slug differs, change it in
+  `app.json`). No `owner`.
+- **Docs:** `docs/native-app/EXPO_GO.md` (from a computer, from the phone, sample data on
+  and off, what needs a development build) and `mobile/.env.example`.
+
+### The Coach and the keyboard
+
+- **The screen never moves.** The Coach's composer sits directly on the keyboard; the header
+  stays; the thread shrinks and stays on the newest message; the tab bar hides while the
+  keyboard is up. `ui/keyboard.ts` keeps one keyboard state from the same events in Expo Go
+  and a store build (`keyboardWill*` on iOS, `keyboardDid*` on Android). The dock is padded
+  by how far the keyboard actually covers the screen, measured in the window, so it works
+  whether Android shrinks the window (`softwareKeyboardLayoutMode: "resize"`, now explicit
+  in `app.json`) or draws edge to edge under the keyboard. `KeyboardAvoidingView` (iOS only
+  before, and measuring against its parent rather than the window) is gone.
+- **The native tab bar can hide:** `NativeTabs` takes `hidden`, set while the keyboard is up
+  (with the hide animation off so the composer doesn't jump). Expo Go uses its own Android
+  manifest, so `softwareKeyboardLayoutMode` only applies in a build of our own; the overlap
+  measurement covers both.
+- **Kept scrolled to the end** with a normal `FlatList` that scrolls to the end on layout
+  and content changes while the runner is at the bottom, rather than an inverted list:
+  inverted lists have had reading-order problems with TalkBack and VoiceOver.
+- **Tests:** `src/keyboard.test.tsx` sends the real Keyboard events and checks the dock's
+  padding, the tab bar's hidden state, that the screen itself gets no offset, and that the
+  thread scrolls to the end when it shrinks. **Needs a device** (WALKTHROUGHS.md, flow 6).
+
+### The snapshot matrix and the walkthroughs
+
+- **Every screen × light/dark × iOS/Android × 100%/200% text × Coach on/off.** `src/matrix/`
+  (four suites, split by tab so Jest runs them side by side; the cases are in
+  `src/testing/screens.tsx`). Each cell is written as what a screen reader finds, in reading
+  order (role, name, value, state, live region), plus the brand fills and any clipped or
+  line-capped text, into one file per screen in `src/__matrix__/` (cells that read the same
+  are written once, listing every cell they stand for). 55 screens, about 820 cells; the
+  files are about 460 KB together. Rewrite with `npx jest src/matrix -u`.
+- **What every cell must hold:** one brand fill where the screen has a primary action (pinned
+  per screen, Android-only for Plan's FAB), at most one otherwise, none behind a sheet; no
+  scalable text in a box of fixed height; every control at least 44 pt / 48 dp; with the
+  Coach off, none of its blocks and no mention of it; the same numbers with the Coach on and
+  off. **The screen list comes from the routes on disk**: a route with no case fails.
+- **The test window is now a phone.** React Native's Jest preset reports a 750 × 1334 window
+  at 200% text, so every route test so far drew Today's large-text layout. `testing/setup.ts`
+  starts every test at 390 × 844, 100%, in UTC; the matrix sets 200% itself. Times are frozen
+  in the matrix (Fri 27 Nov, 12:18) so the files are the same on every run.
+- **Focus order:** `src/focus.test.tsx`, per screen: what it is before any action (a modal's
+  Close aside), nothing focusable unnamed, no two controls with the same name, the primary
+  action reachable, and each sheet a native form sheet (from its stack's options: the system
+  keeps VoiceOver and TalkBack inside it and closes it with Escape or back).
+- **`docs/native-app/WALKTHROUGHS.md`**: the VoiceOver and TalkBack script for the seven key
+  flows, with what a tester should hear, the keyboard check and reduce motion. All of it
+  needs a device run.
+- **Line caps at 200% are recorded, not failed.** Plan's week rows cap each line at two
+  lines (so the week still fits), the Coach card's and the diff's day rows likewise, and
+  the matrix lists them under "cut to lines". Everything is said in full to screen readers.
+
+### Accessibility fixes the matrix and walkthroughs found
+
+- The readiness sheet said "…with or without the Coach" with the Coach off. With it off it
+  now says "Readiness is worked out by fixed rules from your own data."
+- Clear memory was reachable with the Coach off (a link to `/you/memory-clear`); it now goes
+  to Training preferences, which has no Clear.
+- Section titles (Connections, Always free, Rule used, Steps, Week 1, the Coach's kickers…)
+  are headings, so heading navigation works.
+- Send status is announced when it changes (sending, on the watch, not sent), on both
+  platforms (Android live region and an announcement for iOS, which has no live regions).
+- The Coach's reply had a live region on its text, which would read every streamed word.
+  The "Reading your data" / "Writing" status is the live part now, and the finished reply is
+  announced once.
+- The "Changed your mind? · Remove from watch" toast doesn't time out while a screen reader
+  is on (8 seconds wasn't enough to reach it).
+- Reduce Motion: the Plan week changes in place instead of sliding.
+- The welcome's example structure bar said "Session structure:" with nothing after it.
+- Repeats are read as "Repeat 10 times" (the label already there; the matrix now reads Text
+  labels as a screen reader does).
+- The diff printed a server rule's full stop twice ("…like rest..").
+- `ui/motion.ts` (reduce motion, announcements, screen reader on) and `ui/List.tsx`
+  (grouped rows, section headings, switch rows) are shared.
+
+### Large layouts
+
+- **The "L" boards are light-mode boards, not landscape.** TodayL, PlanL, SessionL-android and
+  YouL-android are 390 × 844 light variants of Today, Plan, Session and You (the matrix covers
+  light on every screen). None shows two columns, so none were added. P3-Today-xl is Today at
+  200%, which the matrix covers (Today's stacked layout above 150%).
+- **Wide windows keep one readable column**: content is capped at 680 pt and centred
+  (`READABLE` in `ui/Screen.tsx`) on tablets, foldables and Android in landscape; phones are
+  unchanged. iOS is portrait, phone only (`supportsTablet: false`). `src/layout.test.tsx`
+  checks nine screens at 1024 × 768, 844 × 390 and 390 × 844. Plan's week pager is full width
+  by design (it pages by the window's width). A two-column tablet layout needs design.
+
+### Performance
+
+- **`docs/native-app/PERFORMANCE.md`** has the detail and the device checklist. Pinned by
+  `src/perf.test.tsx`: Today doesn't redraw on a watch-queue tick that doesn't touch what it
+  shows; a streamed token redraws only its reply; scrubbing a post-run chart doesn't redraw
+  the map or rebuild the lines. The Coach thread is virtualised. Nothing was timed on a
+  device.
+
+### Polish
+
+- **Sign out** (deferred from M9) is in You, behind a confirm sheet ("Sign out?", what goes,
+  "Nothing changes on your watch.", Sign out / Stay signed in). It uses `api/session`
+  `signOut` (the token and every runner table and kv key go; appearance stays) and ends at
+  the welcome.
+- **Appearance** (the prompt's dark-mode override in You, section 3): Same as the phone,
+  Light or Dark, kept on the device.
+- **You** now reads, after Plus: Runs (Activities), Settings (Units and zones,
+  Notifications, Appearance), Privacy (What Daash uses, Help), Sign out, the version and
+  "Daash is independent and not endorsed by any watch maker."
+- **Notification copy** for the four kinds of section 8 is in
+  `features/settings/notifications.ts`, with the boards' examples as tests ("Run done · 9.2 km
+  at 5:14 /km", "Sent to your watch", "Plan updated … Nothing sent to the watch yet."). With
+  the Coach on, the run summary's line is the debrief; its title and numbers are the same.
+- **Conflict, boards and prompt:** the Notifications boards have a "Missed: Full body (runner)
+  v4 · Yesterday's strength did not happen" notification. The prompt's four kinds don't
+  include it and rule out guilt copy, so there's no missed-session notification.
+- **Removed** `today/next`, a placeholder route nothing linked to ("Coming in a later
+  milestone").
+
+### Sketched routes
+
+Each is a real screen with the shared UI, the board's title and structure, reachable from
+where the Sitemap puts it, and a `// SKETCH:` line at the top. None writes to the watch.
+All are in the matrix, the focus test and the smoke list.
+
+| Route | Board | Still needs |
+|---|---|---|
+| `/crew` | Sitemap (Crew: This week · nudge · invite) | It was an empty screen. TODO(server): `GET /app/api/v1/crew` (this week's easy and long runs, the invite link, nudges); then the This week list, Invite (share the link) and Nudge. The crew itself stays the web feature (out of scope to redesign). |
+| `/you/activities` (and `/you/run/[id]`) | Sitemap ("Activities is reached from Today, Plan and You") | TODO(server): `GET /app/api/v1/runs` (12 weeks, each with the session id post-run opens by). Development builds and sample data list the persona's runs. A board for the list. Reached from You only so far; Today's week strip and Plan's done days already open runs. |
+| `/you/training` (Units and zones) | You-ios (Training) | TODO(server): `GET /app/api/v1/profile` (units, week start, heart rate zones, goal race from Garmin). Shows where each comes from, never the board's sample values. |
+| `/you/notifications` | Notifications-ios / -android, prompt section 8 | The four switches are kept on the phone (`notify:prefs`). TODO(server): the pushes themselves and `POST /app/api/v1/push-token` with these choices; a device build to see them. Doesn't know yet whether the system permission is off (the "off in your phone's settings" line is ready). |
+| `/you/privacy` | You-ios (Privacy) | TODO(server): `DELETE /app/api/v1/account` (disconnects Garmin, deletes the crew data too), then a confirm. Export stays Garmin Connect's. |
+| `/you/help` | You-ios footer ("Privacy · Help") | No board. Holds the trust sheets, the medical line and the version. Needs design and a support contact the owner chooses. |
+
+Not sketches: `/you/appearance` and `/you/sign-out` are finished.
+
+### Flows (prompt section 13)
+
+- The five end-to-end flows each have a flow test over the real routes and queue
+  (`src/flows.test.tsx` 1 to 4, `src/onboarding.flows.test.tsx` 2) and a Maestro flow in
+  `mobile/e2e/`; `src/e2e.test.ts` ties them together. **Maestro (or Detox) needs a device
+  and a development build**: a follow-up.
+
+### Open questions for the owner (defaults taken)
+
+- *An offline banner.* The Offline and Interaction boards show a banner under the title
+  ("Offline · showing Garmin data as of 11:53. Sending to the watch waits for a
+  connection."). The prompt says stale data shows "Updated 2h ago". Default: the "Updated"
+  label, plus the send state's own words when a send can't go. A banner is small to add.
+- *Sync progress.* The Syncing board shows "Syncing with Garmin… 2 of 7 sessions checked".
+  The app polls the queue but has no progress count from the server. Default: not shown.
+- *You's profile header and Assistants.* The You boards open with the runner's name, device
+  and sync line, and an Assistants section (Claude, ChatGPT connected). Neither has an
+  endpoint (TODO(server): profile; connected MCP clients). Default: not shown; Connections
+  carries the device and sync.
+- *Text above 200%.* Still capped at 200% (HARDENING's question 2). The matrix shows every
+  screen holds at 200%; larger sizes need the stacked layouts designed.
+- *Sample data in Expo Go.* Default: on whenever nobody's signed in, with the label. The
+  alternative is only with `EXPO_PUBLIC_DAASH_FIXTURE=1`.
+
+### Needs a device
+
+The VoiceOver and TalkBack walkthroughs (WALKTHROUGHS.md), the keyboard on both platforms,
+the performance checklist (PERFORMANCE.md), Maestro, the EAS workflow's first run and
+opening its update in Expo Go, and the notification permission on Android 13+.
+
+### Tests
+
+`src/matrix/*` (the matrix), `src/focus.test.tsx`, `src/keyboard.test.tsx`,
+`src/perf.test.tsx`, `src/layout.test.tsx`, `src/sample.test.tsx`, `src/expoGo.test.ts`,
+`src/settings.test.tsx`, `src/e2e.test.ts`. `src/smoke.test.tsx` now takes its screens and
+app from `src/testing/screens.tsx`, whose route map is read from `src/app`. Component
+snapshots changed for the header roles, live regions and the readable column (coach, today,
+plan, run, connections, plus, watch). Jest restarts a worker over 1.2 GB: the full suite
+reached the container's memory limit once.
