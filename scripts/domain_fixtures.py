@@ -305,6 +305,13 @@ REPLIES_OK = [
     "physio. The plan can ease off while you find out.",
     "Saved to memory: travelling 1 to 3 Dec. The long run stays on Sunday.",
     "Sleep was 4:45 last night, 2h under your usual 7:15.",
+    # Ordinary coaching words an earlier version of the rules flagged.
+    "Treat the first 2 km as a warm-up.",
+    "Want me to explain the paces?",
+    "Tell me if you need to move it.",
+    "You said you can never do intervals on Monday, so they're on Tuesdays.",
+    "The plan leads to race day on 14 March.",
+    "When you need to move a session, ask here or use Life happened.",
 ]
 REPLIES_BAD = [
     ("Because your HRV dropped, you are more tired than usual.", ["cause"]),
@@ -329,6 +336,15 @@ REPLIES_BAD = [
     ("You have to take Sunday off.", ["certainty"]),
     ("Skip the long run; it will make you faster for sure.", ["certainty"]),
     ("Because of your short sleep you should take it easy, and you might have a cold.", ["cause", "diagnosis"]),
+    # Causes and diagnoses an earlier version of the rules missed.
+    ("Your short sleep made the reps harder.", ["cause"]),
+    ("Poor sleep affected your HRV.", ["cause"]),
+    ("The late night is why rep 6 felt hard.", ["cause"]),
+    ("Your HRV dropped from the alcohol.", ["cause"]),
+    ("You are probably getting ill.", ["diagnosis"]),
+    ("This could be an early sign of a stress fracture.", ["diagnosis"]),
+    ("Treat the achilles with rest for a week.", ["medical"]),
+    ("Never skip the long run.", ["certainty"]),
 ]
 # The numbers rule: every number in a reply must be in what the model was given.
 REPLY_NUMBERS = [

@@ -42,8 +42,14 @@ describe('the Coach reply corpus', () => {
     expect(guardKinds("Daash doesn’t give medical advice. If you’re unwell or hurt, check with a doctor or physio.")).toEqual([]);
   });
   it('findings say what matched and where, in reading order', () => {
-    expect(checkReply('Because your HRV dropped, you are tired. You must rest.').map((f) => [f.kind, f.at, f.match]))
-      .toEqual([['cause', 0, 'Because your HRV'], ['certainty', 41, 'You must']]);
+    expect(checkReply('You must rest. Because your HRV dropped, you are tired.').map((f) => [f.kind, f.at, f.match]))
+      .toEqual([['certainty', 0, 'You must'], ['cause', 15, 'Because your HRV']]);
+  });
+  it('an offer is not an order, and a body signal can’t be the subject of a causal verb', () => {
+    expect(guardKinds('Tell me if you need to move it.')).toEqual([]);
+    expect(guardKinds('Treat the first 2 km as a warm-up.')).toEqual([]);
+    expect(guardKinds('Your short sleep made the reps harder.')).toEqual(['cause']);
+    expect(guardKinds('You are probably getting ill.')).toEqual(['diagnosis']);
   });
   it(`all ${corpus.numbers.length} number cases match the server`, () => {
     for (const n of corpus.numbers) {

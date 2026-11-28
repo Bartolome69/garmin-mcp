@@ -5,7 +5,9 @@
    "cause": [
     "\\b(?:because|due to|caused by|as a result of|thanks to|owing to|driven by)\\b(?:\\W+\\w+){0,5}?\\W+(?:sleep|slept|hrv|heart rate|hr|resting|stress|load|fatigue|tired|tiredness|recovery|readiness|legs|body|illness|cold|travel|travelling|alcohol|caffeine|nutrition|hydration|heat|night)\\b",
     "\\bin line with (?:your|the|this week's|last night's)\\b",
-    "\\b(?:explains?|explained|that's why|which is why|this is why|led to|leads to|leading to|resulted in|results in|caused|causes|causing|to blame)\\b",
+    "\\b(?:explains|explained|that's why|that is why|which is why|this is why|caused|causes|causing|to blame)\\b",
+    "\\b(?:sleep|slept|hrv|heart rate|hr|resting|stress|load|fatigue|tired|tiredness|recovery|readiness|legs|body|illness|cold|travel|travelling|alcohol|caffeine|nutrition|hydration|heat|night)\\b(?:\\W+\\w+){0,3}?\\W+(?:made|makes|making|affected|affects|affecting|led to|leads to|leading to|resulted in|results in|is why|was why|are why|were why|is the reason|was the reason)\\b",
+    "\\bfrom (?:the |your |all the |too much |that |this |last night's )?(?:alcohol|caffeine|drinks?|drinking|the heat|heat|late night|short night|poor sleep|short sleep|bad sleep|lack of sleep|illness|stress|travel|travelling|jet ?lag)\\b",
     "\\bso (?:you|your (?:legs|body|heart|hrv))\\b(?:\\W+\\w+){0,3}?\\W+(?:will|are|were|feel|felt|should|need)\\b",
     "\\bmeans? (?:you|your body) (?:are|were|is|need|needs|should)\\b"
    ],
@@ -15,21 +17,22 @@
     "\\brun(?:ning)? through (?:it|the pain|pain)\\b",
     "\\b(?:will|should) heal\\b",
     "\\b(?:safe|fine|ok|okay) to run (?:on|with) (?:it|an? (?:injury|niggle|cold|fever))\\b",
-    "\\btreat(?:ment|ing)? (?:it|the|your)\\b"
+    "\\btreat(?:ment|ing|s)? (?:for )?(?:the |your |that |an? )?(?:\\w+ )?(?:knee|knees|calf|calves|achilles|shin|shins|ankle|ankles|foot|feet|hamstring|hamstrings|hip|hips|back|quad|quads|glute|glutes|injury|niggle|pain|soreness|strain|sprain|blister|area)\\b"
    ],
    "diagnosis": [
     "\\byou(?:'ve| have| may have| might have| probably have| likely have| could have) (?:got )?(?:a stress fracture|stress fracture|tendinitis|tendonitis|shin splints|plantar fasciitis|an infection|infection|a virus|virus|a cold|the flu|flu|covid|anaemia|anemia|iron deficiency|overtraining syndrome|overtraining|overreaching|an injury|injury|a strain|strain|a sprain|sprain|illness|burnout)\\b",
     "\\b(?:sounds|looks|seems) like (?:a |an )?(?:a stress fracture|stress fracture|tendinitis|tendonitis|shin splints|plantar fasciitis|an infection|infection|a virus|virus|a cold|the flu|flu|covid|anaemia|anemia|iron deficiency|overtraining syndrome|overtraining|overreaching|an injury|injury|a strain|strain|a sprain|sprain|illness|burnout)\\b",
-    "\\byou(?:'re| are) (?:overtrained|overtraining|overreaching|ill|sick|injured|getting sick|coming down with)\\b",
-    "\\bsigns? of (?:overtraining|overreaching|illness|infection|injury|a cold|burnout|fatigue)\\b",
+    "\\byou(?:'re| are)(?: (?:probably|likely|maybe|possibly|definitely))? (?:overtrained|overtraining|overreaching|ill|sick|injured|getting ill|getting sick|coming down with)\\b",
+    "\\b(?:probably|likely|might be|may be|could be) (?:getting|coming down with) (?:ill|sick|a cold|the flu|flu|something)\\b",
+    "\\bsigns? of (?:(?:a stress fracture|stress fracture|tendinitis|tendonitis|shin splints|plantar fasciitis|an infection|infection|a virus|virus|a cold|the flu|flu|covid|anaemia|anemia|iron deficiency|overtraining syndrome|overtraining|overreaching|an injury|injury|a strain|strain|a sprain|sprain|illness|burnout)|fatigue)\\b",
     "\\b(?:it's|that's|its|thats) (?:(?:just|only|probably|likely) ){0,2}(?:a |an )?(?:strain|sprain|tendinitis|tendonitis|shin splints|cold|virus|infection)\\b"
    ],
    "certainty": [
-    "\\byou (?:must|have to|need to|should definitely)\\b",
+    "(?:^|[^\\w\\s']\\s*|\\b(?!(?:if|when|unless|whether|once|until|in case)\\b)\\w+\\s+)you (?:must|have to|need to|should definitely)\\b",
     "\\b(?:definitely|certainly|guaranteed?|without (?:a )?doubt|no doubt|for sure)\\b",
     "\\b100 ?%",
     "\\bwill (?:be fine|be ok|be okay|make you)\\b",
-    "\\b(?:always|never) (?:run|skip|do|train)\\b"
+    "(?:^|[.!?;:]\\s+|\\byou should )(?:always|never) (?:run|skip|do|train)\\b"
    ]
   },
   "replies": [
@@ -110,6 +113,36 @@
    },
    {
     "text": "Sleep was 4:45 last night, 2h under your usual 7:15.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Treat the first 2 km as a warm-up.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Want me to explain the paces?",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Tell me if you need to move it.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "You said you can never do intervals on Monday, so they're on Tuesdays.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "The plan leads to race day on 14 March.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "When you need to move a session, ask here or use Life happened.",
     "label": [],
     "kinds": []
    },
@@ -313,6 +346,78 @@
     "kinds": [
      "cause",
      "diagnosis"
+    ]
+   },
+   {
+    "text": "Your short sleep made the reps harder.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "Poor sleep affected your HRV.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "The late night is why rep 6 felt hard.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "Your HRV dropped from the alcohol.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "You are probably getting ill.",
+    "label": [
+     "diagnosis"
+    ],
+    "kinds": [
+     "diagnosis"
+    ]
+   },
+   {
+    "text": "This could be an early sign of a stress fracture.",
+    "label": [
+     "diagnosis"
+    ],
+    "kinds": [
+     "diagnosis"
+    ]
+   },
+   {
+    "text": "Treat the achilles with rest for a week.",
+    "label": [
+     "medical"
+    ],
+    "kinds": [
+     "medical"
+    ]
+   },
+   {
+    "text": "Never skip the long run.",
+    "label": [
+     "certainty"
+    ],
+    "kinds": [
+     "certainty"
     ]
    }
   ],

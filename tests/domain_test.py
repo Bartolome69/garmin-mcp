@@ -535,9 +535,9 @@ def coach_guard_checks() -> None:
           and coach_guard.kinds("Rep 6 peaked at 172 bpm, 4 above rep 5.") == [])
     check("curly apostrophes read the same as straight ones",
           coach_guard.kinds("That’s why your legs felt heavy.") == coach_guard.kinds("That's why your legs felt heavy.") == ["cause"])
-    found = coach_guard.check("Because your HRV dropped, you are tired. You must rest.")
+    found = coach_guard.check("You must rest. Because your HRV dropped, you are tired.")
     check("findings say what matched and where, in reading order",
-          [(f["kind"], f["at"]) for f in found] == [("cause", 0), ("certainty", 41)] and found[1]["match"] == "You must",
+          [(f["kind"], f["at"]) for f in found] == [("certainty", 0), ("cause", 15)] and found[0]["match"] == "You must",
           f"{found}")
     wrong = [(t, coach_guard.unmatched_numbers(t, p), label) for t, p, label in fx.REPLY_NUMBERS
              if coach_guard.unmatched_numbers(t, p) != label]

@@ -36,6 +36,15 @@ _BODY = (r"(?:sleep|slept|hrv|heart rate|hr|resting|stress|load|fatigue|tired|ti
 _CONDITIONS = (r"(?:a stress fracture|stress fracture|tendinitis|tendonitis|shin splints|plantar fasciitis|an infection|infection"
                r"|a virus|virus|a cold|the flu|flu|covid|anaemia|anemia|iron deficiency|overtraining syndrome|overtraining"
                r"|overreaching|an injury|injury|a strain|strain|a sprain|sprain|illness|burnout)")
+# What a reply must not say a number came "from": "your HRV dropped from the alcohol".
+_CAUSES = (r"(?:alcohol|caffeine|drinks?|drinking|the heat|heat|late night|short night|poor sleep|short sleep|bad sleep"
+           r"|lack of sleep|illness|stress|travel|travelling|jet ?lag)")
+# "Treat" is medical only next to a body part or an injury ("treat the achilles"), not "treat the first 2 km as a warm-up".
+_INJURY = (r"(?:knee|knees|calf|calves|achilles|shin|shins|ankle|ankles|foot|feet|hamstring|hamstrings|hip|hips|back|quad"
+           r"|quads|glute|glutes|injury|niggle|pain|soreness|strain|sprain|blister|area)")
+# What may come right before "you must / you need to": after a condition word ("tell me if you need to move it")
+# it's an offer, not an order. Without lookbehind, the match takes the word (or punctuation) before "you" with it.
+_NOT_AFTER = r"(?:^|[^\w\s']\s*|\b(?!(?:if|when|unless|whether|once|until|in case)\b)\w+\s+)"
 
 # Each rule is a regular expression in the subset Python and JavaScript read the same way
 # (no lookbehind, no named groups), matched case-insensitively on the reply with curly
@@ -44,8 +53,11 @@ RULES: dict[str, list[str]] = {
     "cause": [
         r"\b(?:because|due to|caused by|as a result of|thanks to|owing to|driven by)\b(?:\W+\w+){0,5}?\W+" + _BODY + r"\b",
         r"\bin line with (?:your|the|this week's|last night's)\b",
-        r"\b(?:explains?|explained|that's why|which is why|this is why|led to|leads to|leading to|resulted in|results in"
-        r"|caused|causes|causing|to blame)\b",
+        r"\b(?:explains|explained|that's why|that is why|which is why|this is why|caused|causes|causing|to blame)\b",
+        # A body signal or a day as the subject of a causal verb: "your short sleep made the reps harder".
+        r"\b" + _BODY + r"\b(?:\W+\w+){0,3}?\W+(?:made|makes|making|affected|affects|affecting|led to|leads to|leading to"
+        r"|resulted in|results in|is why|was why|are why|were why|is the reason|was the reason)\b",
+        r"\bfrom (?:the |your |all the |too much |that |this |last night's )?" + _CAUSES + r"\b",
         r"\bso (?:you|your (?:legs|body|heart|hrv))\b(?:\W+\w+){0,3}?\W+(?:will|are|were|feel|felt|should|need)\b",
         r"\bmeans? (?:you|your body) (?:are|were|is|need|needs|should)\b",
     ],
@@ -56,22 +68,25 @@ RULES: dict[str, list[str]] = {
         r"\brun(?:ning)? through (?:it|the pain|pain)\b",
         r"\b(?:will|should) heal\b",
         r"\b(?:safe|fine|ok|okay) to run (?:on|with) (?:it|an? (?:injury|niggle|cold|fever))\b",
-        r"\btreat(?:ment|ing)? (?:it|the|your)\b",
+        r"\btreat(?:ment|ing|s)? (?:for )?(?:the |your |that |an? )?(?:\w+ )?" + _INJURY + r"\b",
     ],
     "diagnosis": [
         r"\byou(?:'ve| have| may have| might have| probably have| likely have| could have) (?:got )?" + _CONDITIONS + r"\b",
         r"\b(?:sounds|looks|seems) like (?:a |an )?" + _CONDITIONS + r"\b",
-        r"\byou(?:'re| are) (?:overtrained|overtraining|overreaching|ill|sick|injured|getting sick|coming down with)\b",
-        r"\bsigns? of (?:overtraining|overreaching|illness|infection|injury|a cold|burnout|fatigue)\b",
+        r"\byou(?:'re| are)(?: (?:probably|likely|maybe|possibly|definitely))? (?:overtrained|overtraining|overreaching|ill|sick"
+        r"|injured|getting ill|getting sick|coming down with)\b",
+        r"\b(?:probably|likely|might be|may be|could be) (?:getting|coming down with) (?:ill|sick|a cold|the flu|flu|something)\b",
+        r"\bsigns? of (?:" + _CONDITIONS + r"|fatigue)\b",
         r"\b(?:it's|that's|its|thats) (?:(?:just|only|probably|likely) ){0,2}(?:a |an )?(?:strain|sprain|tendinitis|tendonitis"
         r"|shin splints|cold|virus|infection)\b",
     ],
     "certainty": [
-        r"\byou (?:must|have to|need to|should definitely)\b",
+        _NOT_AFTER + r"you (?:must|have to|need to|should definitely)\b",
         r"\b(?:definitely|certainly|guaranteed?|without (?:a )?doubt|no doubt|for sure)\b",
         r"\b100 ?%",
         r"\bwill (?:be fine|be ok|be okay|make you)\b",
-        r"\b(?:always|never) (?:run|skip|do|train)\b",
+        # An order ("Never skip the long run"), not the runner's own words ("I can never do intervals on Monday").
+        r"(?:^|[.!?;:]\s+|\byou should )(?:always|never) (?:run|skip|do|train)\b",
     ],
 }
 
