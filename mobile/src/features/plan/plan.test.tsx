@@ -96,8 +96,14 @@ describe.each(['dark', 'light'] as const)(`Plan · Week on ${os}, %s`, (scheme) 
   it('rows read as one sentence for screen readers', async () => {
     await draw(PERSONA_PLAN, { scheme });
     expect(screen.getByLabelText('Fri 27, today, 3 × 2 km at threshold, Tempo · 10 km · 4:23–4:28 per km, On your watch')).toBeTruthy();
+    // The next week's page is drawn beside this one but hidden from screen readers (its days
+    // would be read under this week's heading) until it's the week on screen.
+    expect(screen.queryByLabelText('Mon 30, Rest day, Rest · Recovery')).toBeNull();
+    expect(screen.getByLabelText('Mon 30, Rest day, Rest · Recovery', { includeHiddenElements: true })).toBeTruthy();
+    await draw(PERSONA_PLAN, { scheme, index: weekIndexOf(PERSONA_PLAN, PERSONA_PLAN.currentWeek) + 1 });
     expect(screen.getByLabelText('Mon 30, Rest day, Rest · Recovery')).toBeTruthy();
     expect(screen.getByLabelText('Tue 1, 8 km easy, Easy · 8 km · 5:27–6:10 per km, Not on your watch')).toBeTruthy();
+    expect(screen.queryByLabelText(/^Fri 27, today/)).toBeNull();
   });
 });
 

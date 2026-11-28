@@ -30,8 +30,10 @@ export type WeekActions = {
 
 type Layouts = Record<string, { y: number; h: number }>;
 
-function WeekPage({ week, today, width, actions, onDragging }: {
+function WeekPage({ week, today, width, actions, onDragging, offscreen }: {
   week: PlanWeek; today: string; width: number; actions: WeekActions; onDragging: (on: boolean) => void;
+  /** Not the week on screen: hidden from screen readers (its days would be read under this week's heading). */
+  offscreen: boolean;
 }) {
   const layouts = useRef<Layouts>({});
   const translate = useRef(new Animated.Value(0)).current;
@@ -71,7 +73,8 @@ function WeekPage({ week, today, width, actions, onDragging }: {
 
   const dayWord = (iso: string) => week.days.find((d) => d.date === iso)?.dow ?? '';
   return (
-    <View style={{ width, paddingHorizontal: 16 }} testID={`week-${week.start}`}>
+    <View style={{ width, paddingHorizontal: 16 }} testID={`week-${week.start}`}
+      importantForAccessibility={offscreen ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={offscreen}>
       {week.days.map((day, i) => {
         const rows = day.sessions.length ? day.sessions : [null];
         return (
@@ -177,7 +180,8 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         onViewableItemsChanged={onViewable}
         viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-        renderItem={({ item }) => <WeekPage week={item} today={vm.today} width={width} actions={actions} onDragging={setDrag} />}
+        extraData={week.start}
+        renderItem={({ item }) => <WeekPage week={item} today={vm.today} width={width} actions={actions} onDragging={setDrag} offscreen={item.start !== week.start} />}
         accessibilityLabel="Weeks"
       />
 

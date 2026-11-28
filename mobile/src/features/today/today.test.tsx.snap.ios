@@ -1250,6 +1250,8 @@ exports[`Today at 200% text on ios stacks the signals, clamps the explanation to
           />
         </View>
         <View
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
           style={
             {
               "flexDirection": "row",

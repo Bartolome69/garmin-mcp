@@ -4009,6 +4009,7 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 },
               ]
             }
+            extraData="2026-11-23"
             getItem={[Function]}
             getItemCount={[Function]}
             getItemLayout={[Function]}
@@ -4066,6 +4067,8 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 }
               >
                 <View
+                  accessibilityElementsHidden={false}
+                  importantForAccessibility="auto"
                   style={
                     {
                       "paddingHorizontal": 16,
@@ -5646,6 +5649,8 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 }
               >
                 <View
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no-hide-descendants"
                   style={
                     {
                       "paddingHorizontal": 16,
@@ -7097,6 +7102,8 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
                 }
               >
                 <View
+                  accessibilityElementsHidden={true}
+                  importantForAccessibility="no-hide-descendants"
                   style={
                     {
                       "paddingHorizontal": 16,
@@ -9104,6 +9111,8 @@ exports[`snapshot: session detail on ios: session-ios 1`] = `
         />
       </View>
       <View
+        accessibilityElementsHidden={true}
+        importantForAccessibility="no-hide-descendants"
         style={
           {
             "flexDirection": "row",

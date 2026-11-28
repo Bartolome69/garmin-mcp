@@ -1266,6 +1266,8 @@ exports[`Today at 200% text on android stacks the signals, clamps the explanatio
           />
         </View>
         <View
+          accessibilityElementsHidden={true}
+          importantForAccessibility="no-hide-descendants"
           style={
             {
               "flexDirection": "row",

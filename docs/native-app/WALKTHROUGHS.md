@@ -38,14 +38,17 @@ are left out below unless they matter.
 
 ## 1. Today → Make it easier → confirm → on the watch
 
-1. Today: *"Fri 27 Nov · Week 4 of 21"*, *"London in 148 days"* (heading), *"Garmin
-   readiness 26"*, *"Back off"*, *"Garmin readiness 26 · 2 of 3 below usual"*, *"How it
-   works"*, then the three signals: *"Sleep 4:45, 2h under. Opens details"*, *"HRV 49 ms,
-   below range. Opens details"*, *"Load 1.12, in range. Opens details"*, the explanation,
-   *"Ask why"* (Coach on only), *"Make it easier"*, *"Other options"*, then the session
-   (*"Tempo"*, *"On your watch · 20:14"*, *"3 × 2 km at threshold"*), the structure (*"Session
-   structure: Warm-up 15 min, 3 × 2 km · 2 min jog, Cool 10"*), and the week strip
-   (*"Easy, 24, done"* … *"Tempo, 27, planned, today"*).
+1. Today: *"Fri 27 Nov · Week 4 of 21"*, the time it was last updated, *"London in 148 days"*
+   (heading), *"Garmin readiness 26"*, *"Back off"*, *"Garmin readiness 26 · 2 of 3 below
+   usual"*, *"How it works"*, then the three signals: *"Sleep 4:45, 2h under. Opens details"*,
+   *"HRV 49 ms, below range. Opens details"*, *"Load 1.12, in range. Opens details"*, the
+   explanation, *"Ask why"* (Coach on only), *"Make it easier"*, *"Other options"*, then the
+   session (*"Tempo"*, *"On your watch · 20:14"*, *"3 × 2 km at threshold"*, *"Today · 10 km ·
+   about 52 min · 4:23–4:28 /km"*), the structure once, as one image (*"Session structure:
+   Warm-up 15 min, 3 × 2 km · 2 min jog, Cool 10"*; the words drawn under the bar aren't read
+   again), *"This week"*, *"28 of 54 km · 11 active weeks"*, and the week strip (*"Rest, 23,
+   rest day"*, *"Easy, 24, done"* … *"Tempo, 27, planned, today"* … *"Long run, 29,
+   planned"*).
 2. Double-tap *"Make it easier"*. The new week opens: *"New week"* (heading), what changes
    (each day as one element: *"FRI 27: 3 × 2 km at threshold, becomes Easy …"*), *"Rule used"*
    (heading) and the rule, then *"Review watch changes"*.
@@ -62,9 +65,13 @@ are left out below unless they matter.
 
 ## 2. Life happened → new week → confirm
 
-1. Plan: *"Plan"* (heading), *"Week 4 · Base"* (heading), *"Previous week"*, *"This week"*,
-   *"Next week"*, the week line, the days (*"Tue 24, 8 km easy + strides, Easy · 8.1 km · 5:12
-   per km, Done"* …), then *"Life happened"* and (Android) *"New workout"* last.
+1. Plan: *"Plan"* (heading), *"Plan view, Week"* (the Week / Block / Trends control),
+   *"Week 4 · Base"* (heading), *"Previous week"*, *"This week"*, *"Next week"*, the week line,
+   this week's seven days only (*"Mon 23, Rest day, Rest · Recovery, Done"*, *"Tue 24, 8 km easy
+   + strides, Easy · 8.1 km · 5:12 per km, Done"* … *"Sun 29, Long 18 km easy, …"*), *"Swipe for
+   other weeks. Hold and drag a session to move it."*, then *"Life happened"* and *"New
+   workout"* last. The weeks either side are drawn for swiping but not read; *"Next week"*
+   brings the next one's days, under its own heading.
 2. Double-tap *"Life happened"*. The sheet: *"What changed?"* (heading), the reasons as
    radio buttons, one *"selected"*: *"Not feeling 100%. Cold, tired, run down"*, *"Niggle or
    injury. Something hurts when you run"*, …; *"Since"*, *"Today"* (selected), *"Yesterday"*,
@@ -118,7 +125,7 @@ Use `EXPO_PUBLIC_DAASH_WATCH=fail` (the stand-in watch fails its first try).
    reply in order, source chips (*"Sources: Run · Garmin"*), charts as one summary
    (*"Peak heart rate per rep: 164, 165, 166, 168, 168, 172 bpm."*), *"Helpful"* / *"Not
    helpful"* (selected state said), then the prompt chips, the composer (*"Message the Coach"*,
-   *"7 left today"*) and *"Send"* (dimmed and said as unavailable when empty).
+   *"8 left today"*) and *"Send"* (dimmed and said as unavailable when empty).
 2. Type a question and send. While it streams you should hear *"Reading your data"* /
    *"Writing"* (a live status), **not** every word as it arrives. When it finishes, the reply
    is announced once: *"The Coach: …"*.
