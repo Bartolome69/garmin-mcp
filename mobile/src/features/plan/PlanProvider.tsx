@@ -51,7 +51,7 @@ export function PlanProvider({ children, fetcher }: { children: ReactNode; fetch
   // Nothing is read or fetched until Plus is known, so a Plus runner never gets the
   // Free plan first. Plus starting (or ending) changes the key: that plan's copy
   // draws and the server is asked again at once (data/resource.ts).
-  const resource = useResource(source, store, undefined, { enabled: ready, key });
+  const resource = useResource(source, store, undefined, { enabled: ready, key, foreground: true });
   const { refresh } = resource;
   // A plan made elsewhere (onboarding from "Create a plan"): fetch it rather than keep the empty one.
   useEffect(() => onPlanChanged(() => { refresh(); }), [refresh]);

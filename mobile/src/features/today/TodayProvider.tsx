@@ -20,7 +20,7 @@ export function TodayProvider({ children, fetcher }: { children: ReactNode; fetc
     load: () => kv(db).get<Cached<TodayVM>>(`today:${coach ? 'coach' : 'plain'}`),
     save: (value) => kv(db).set(`today:${coach ? 'coach' : 'plain'}`, value),
   } : undefined, [db, coach]);
-  const resource = useResource(source, store);
+  const resource = useResource(source, store, undefined, { foreground: true });
   const { refresh } = resource;
   // A plan made elsewhere (onboarding): today's session comes from it.
   useEffect(() => onPlanChanged(() => { refresh(); }), [refresh]);
