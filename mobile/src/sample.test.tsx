@@ -2,7 +2,7 @@
 // EXPO_PUBLIC_DAASH_FIXTURE=1, the app runs on the persona's fixtures, skips the sign-in
 // wall and says "Sample data" on Today and You. A signed-in phone uses the real paths.
 import { afterEach, describe, expect, it } from '@jest/globals';
-import { renderRouter, screen } from 'expo-router/testing-library';
+import { renderRouter, screen, within } from 'expo-router/testing-library';
 
 import Index from './app/index';
 import { fixturesOn, inExpoGo, resolveSampleData, sampleData, setExpoGoForTests, setSampleDataForTests } from './data/sample';
@@ -50,6 +50,16 @@ describe('the "Sample data" label', () => {
     await openScreen(you);
     expect(screen.getAllByTestId('sample-data').length).toBeGreaterThan(0);
     expect(screen.getByTestId('button-Try onboarding')).toBeTruthy();
+  });
+
+  it('on Today it sits in the kicker row inside the scroll view (safe area on iOS, no height above the fold)', async () => {
+    setSampleDataForTests(true);
+    await openScreen(today);
+    const header = within(screen.getByTestId('today-header'));
+    expect(header.getByTestId('sample-data')).toBeTruthy();
+    // It takes the place of the time the day was fetched, which means nothing for sample data.
+    expect(header.queryByTestId('freshness')).toBeNull();
+    expect(within(screen.getByTestId('today')).getByTestId('sample-data')).toBeTruthy();
   });
 
   it('isn’t there with real data', async () => {

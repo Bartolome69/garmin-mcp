@@ -11,7 +11,6 @@ import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { useStable, useStableActions } from '../../../ui/hooks';
-import { FailureBanner, SampleDataLabel } from '../../../ui/StateViews';
 import { Text } from '../../../ui/Text';
 
 function useNow(everyMs = 60000) {
@@ -61,7 +60,7 @@ export default function TodayScreen() {
   if (!data) return <TodayEmpty error={error} failure={today.failure} onRetry={refresh} />;
   return (
     <>
-      {Platform.OS === 'android' && fresh?.stale ? (
+      {Platform.OS === 'android' && fresh?.stale && !sampleData() ? (
         <Stack.Screen options={{ headerRight: () => (
           <View accessible accessibilityLabel={fresh.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4 }}>
             <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.text2 }} />
@@ -69,8 +68,6 @@ export default function TodayScreen() {
           </View>
         ) }} />
       ) : null}
-      {sampleData() ? <SampleDataLabel /> : null}
-      <FailureBanner failure={today.failure} />
       <TodayView
         vm={data}
         coach={flags.coach_enabled}
@@ -80,6 +77,8 @@ export default function TodayScreen() {
         refreshing={refreshing}
         error={error}
         actions={actions}
+        sample={sampleData()}
+        failure={today.failure}
       />
     </>
   );
