@@ -42,7 +42,8 @@ export type Reveal = {
 export type Landing =
   | { state: 'sending' }
   | { state: 'pending' }                 // Garmin has it; the watch gets it at its next sync
-  | { state: 'landed'; at: string; device: string | null; rest: number; total: number }
+  /** `rest`: the others still on their way; `failed`: the others that weren't sent. */
+  | { state: 'landed'; at: string; device: string | null; rest: number; failed: number; total: number }
   | { state: 'failed'; error: string; at: string | null; retrying: boolean };
 
 export type Goal = { kind: 'race'; name: string; date: string; km: number; target: string | null } | { kind: 'fit' };

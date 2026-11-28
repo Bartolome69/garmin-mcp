@@ -16,7 +16,7 @@ import {
 } from './model';
 import { NOTIFICATIONS_KEY, ONBOARDED_KEY, OnboardingProvider, useOnboarding, type OnboardingState } from './OnboardingProvider';
 import { CASES } from './source';
-import { GoalStep, LandedView, PacesStep, QuestionsStep, ResultStep, RevealView, RevealWait, restLine } from './views';
+import { failedLine, GoalStep, INDEPENDENT, LandedView, PacesStep, QuestionsStep, ResultStep, RevealView, RevealWait, restLine, TryCard, Welcome } from './views';
 import { landingFor, weekOneProposal } from './week1';
 import type { WatchOp } from '../watch/queue';
 
@@ -182,8 +182,18 @@ describe('where week 1 is', () => {
     expect(landingFor(week, (id) => (id === week[0].id ? op(id, {}) : null), null)).toEqual({ state: 'sending' });
     expect(landingFor(week, (id) => op(id, { state: 'changed_pending_sync' }), null)).toEqual({ state: 'pending' });
     expect(landingFor(week, (id) => op(id, { state: id === week[0].id ? 'on_watch' : 'changed_pending_sync', onWatchAt: at }), 'Forerunner 965'))
-      .toEqual({ state: 'landed', at: '20:14', device: 'Forerunner 965', rest: week.length - 1, total: week.length });
-    expect(landingFor(week, (id) => op(id, { state: 'on_watch', onWatchAt: at }), null)).toMatchObject({ rest: 0 });
+      .toEqual({ state: 'landed', at: '20:14', device: 'Forerunner 965', rest: week.length - 1, failed: 0, total: week.length });
+    expect(landingFor(week, (id) => op(id, { state: 'on_watch', onWatchAt: at }), null)).toMatchObject({ rest: 0, failed: 0 });
+  });
+  it('others that weren\'t sent are counted as failed, never as following at the next sync', () => {
+    const states: WatchOp['state'][] = ['on_watch', 'failed', 'changed_pending_sync', 'failed', 'on_watch', 'sending', 'failed'];
+    const landing = landingFor(week, (id) => op(id, { state: states[week.findIndex((s) => s.id === id)] ?? 'on_watch', onWatchAt: at }), null);
+    const others = states.slice(1, week.length);
+    expect(landing).toMatchObject({
+      state: 'landed',
+      failed: others.filter((x) => x === 'failed').length,
+      rest: others.filter((x) => x === 'changed_pending_sync' || x === 'sending').length,
+    });
   });
   it('failed: the queue\'s words, and whether Daash tries again on its own', () => {
     expect(landingFor(week, (id) => op(id, { state: 'failed', error: 'Not sent. Garmin didn\'t answer.', nextAttemptAt: 5, updatedAt: at }), null))
@@ -194,6 +204,13 @@ describe('where week 1 is', () => {
     expect(restLine(1, 2)).toBe(' The other session of week 1 follows as the watch syncs.');
     expect(restLine(0, 4)).toBe(' The rest of week 1 is on it too.');
     expect(restLine(0, 1)).toBe('');
+  });
+  it('with some not sent: those on their way, and the ones that weren\'t, in words', () => {
+    expect(restLine(2, 5, 2)).toBe(' 2 more sessions of week 1 follow as the watch syncs.');
+    expect(restLine(1, 5, 3)).toBe(' One more session of week 1 follows as the watch syncs.');
+    expect(restLine(0, 5, 4)).toBe('');
+    expect(failedLine(1)).toBe('One session of week 1 wasn’t sent. Nothing changed on your watch for it.');
+    expect(failedLine(3)).toBe('3 sessions of week 1 weren’t sent. Nothing changed on your watch for those.');
   });
 });
 
@@ -210,6 +227,32 @@ describe('the provider', () => {
     await act(async () => { ob!.setResult(CASES.questions); });
     expect(ob!.result).toBe(CASES.questions);
     expect(ob!.reveal).toBeNull();
+  });
+  it('a plan made from paces or a goal since changed is dropped (a slow reply after Back and Adjust)', async () => {
+    await render(<OnboardingProvider initial={{ goal: LONDON, result: CASES.import }}><Probe /></OnboardingProvider>);
+    const [oldResult, oldGoal] = [ob!.result!, ob!.goal!];
+    expect(ob!.current(oldResult, oldGoal)).toBe(true);
+    await act(async () => { ob!.setResult(CASES.questions); });
+    let kept = true;
+    await act(async () => { kept = ob!.revealFor(oldResult, oldGoal, CASES.reveal); });
+    expect(kept).toBe(false);
+    expect(ob!.reveal).toBeNull();
+    expect(ob!.current(oldResult, oldGoal)).toBe(false);
+    await act(async () => { kept = ob!.revealFor(CASES.questions, oldGoal, CASES.reveal_questions); });
+    expect(kept).toBe(true);
+    expect(ob!.reveal).toBe(CASES.reveal_questions);
+  });
+  it('the notification ask: not answered on a new device, answered once it is, and remembered next time', async () => {
+    const db = await migratedNodeDb();
+    const first = await render(<DbContext.Provider value={db}><OnboardingProvider><Probe /></OnboardingProvider></DbContext.Provider>);
+    await act(async () => {});
+    expect(ob!.notificationsAnswered).toBe(false);
+    await act(async () => { await ob!.rememberNotifications('not_now'); });
+    expect(ob!.notificationsAnswered).toBe(true);
+    await first.unmount();
+    await render(<DbContext.Provider value={db}><OnboardingProvider><Probe /></OnboardingProvider></DbContext.Provider>);
+    await act(async () => {});
+    expect(ob!.notificationsAnswered).toBe(true);
   });
   it('finishing marks the device onboarded; the notification answer is kept', async () => {
     const db = await migratedNodeDb();
@@ -332,6 +375,11 @@ describe('the result', () => {
     await render(wrap(<ResultStep result={CASES.import_empty} device={null} brand onAdjust={() => {}} onRight={() => {}} />));
     expect(screen.getByText('No runs in the last 12 weeks')).toBeTruthy();
     expect(screen.getByTestId('result-empty')).toHaveTextContent(/use a 10K of 45:00\. Adjust to answer 4 questions/);
+  });
+  it('the empty note says the basis the server sent, not a number of its own', async () => {
+    const r: PaceResult = { ...CASES.import_empty, basis: { ...CASES.import_empty.basis, raceSeconds: 2820 } };
+    await render(wrap(<ResultStep result={r} device={null} brand onAdjust={() => {}} onRight={() => {}} />));
+    expect(screen.getByTestId('result-empty')).toHaveTextContent(/use a 10K of 47:00\./);
     expect(screen.queryByTestId('result-week')).toBeNull();
     expect(screen.getByTestId('result-connection')).toHaveTextContent('Connected to Garmin');
   });
@@ -355,12 +403,24 @@ describe('the plan reveal', () => {
     await rerender(wrap(<RevealView r={{ ...CASES.reveal, coachNote: 'Base is long because your weeks have been steady.' }} coach brand onSend={() => {}} />));
     expect([words(), days()]).toEqual(off);
     expect(screen.getByTestId('coach-note')).toHaveTextContent(/Coach · why this shape/);
+    // The Coach adds its note; the rule's line, with its numbers, stays.
+    expect(screen.getByTestId('because')).toHaveTextContent(CASES.reveal.because);
   });
   it('no race: no prediction or target', async () => {
     await render(wrap(<RevealView r={CASES.reveal_fit} coach={false} brand onSend={() => {}} />));
     expect(screen.getByText('Your fitness plan')).toBeTruthy();
     expect(screen.queryByTestId('predicted')).toBeNull();
     expect(screen.queryByTestId('target')).toBeNull();
+  });
+  it('no race to go on: the target, no prediction, and the line says why', async () => {
+    await render(wrap(<RevealView r={CASES.reveal_empty} coach={false} brand onSend={() => {}} />));
+    expect(screen.queryByTestId('predicted')).toBeNull();
+    expect(screen.getByLabelText('Target, 3:15')).toBeTruthy();
+    expect(screen.getByTestId('because')).toHaveTextContent('Phases follow from your 20 weeks. No prediction without a recent race; paces use a 10K of 45:00 for now.');
+  });
+  it('step 3 of 3, with the server\'s kicker', async () => {
+    await render(wrap(<RevealView r={CASES.reveal} coach={false} brand onSend={() => {}} />));
+    expect(screen.getByText(`Step 3 of 3 · ${CASES.reveal.kicker}`)).toBeTruthy();
   });
   it('a Coach note never shows with the Coach off', async () => {
     await render(wrap(<RevealView r={{ ...CASES.reveal, coachNote: 'x' } as Reveal} coach={false} brand onSend={() => {}} />));
@@ -369,7 +429,7 @@ describe('the plan reveal', () => {
   it.each([
     ['loading', 'Making your plan…', []],
     ['signedOut', 'Connect Garmin to make your plan', ['button-Connect Garmin', 'button-I’ve signed in']],
-    ['reconnect', 'Garmin needs you to sign in again', ['button-Reconnect']],
+    ['reconnect', 'Garmin needs you to sign in again', ['button-Reconnect', 'button-I’ve signed in']],
     ['offline', 'Your plan isn’t made yet', ['button-Try again']],
     ['server', 'Your plan isn’t made yet', ['button-Try again']],
   ] as const)('before the plan, %s: says so, with the one thing to do', async (failure, title, buttons) => {
@@ -377,7 +437,13 @@ describe('the plan reveal', () => {
     await render(wrap(<RevealWait failure={failure} brand onRetry={onRetry} onConnect={onConnect} />));
     expect(screen.getByText(title)).toBeTruthy();
     for (const b of buttons) await fireEvent.press(screen.getByTestId(b));
-    if (failure === 'signedOut') expect([onConnect.mock.calls.length, onRetry.mock.calls.length]).toEqual([1, 1]);
+    if (failure === 'signedOut' || failure === 'reconnect') {
+      expect([onConnect.mock.calls.length, onRetry.mock.calls.length]).toEqual([1, 1]);
+      expect(screen.getByText(INDEPENDENT)).toBeTruthy();
+    }
+    // No plan exists yet: not the app-wide "Your plan is safe".
+    if (failure === 'reconnect') expect(screen.getByText('Garmin needs you to sign in again before your plan is made. Your answers are kept.')).toBeTruthy();
+    expect(screen.queryByText(/Your plan is safe/)).toBeNull();
     if (failure === 'offline') expect(screen.getByText(/You’re offline/)).toBeTruthy();
   });
 });
@@ -388,7 +454,7 @@ describe('the landing', () => {
   const handlers = () => ({ onResend: jest.fn(), onTrouble: jest.fn(), onAllow: jest.fn(), onNotNow: jest.fn(), onLeave: jest.fn() });
   it('landed: the filled success check, 56 pt, labelled; only now the notification ask', async () => {
     const h = handlers();
-    await render(wrap(<LandedView first={first} landing={{ state: 'landed', at: '20:14', device: 'Forerunner 965', rest: 2, total: 4 }} brand device="Forerunner 965" {...h} />));
+    await render(wrap(<LandedView first={first} landing={{ state: 'landed', at: '20:14', device: 'Forerunner 965', rest: 2, failed: 0, total: 4 }} brand device="Forerunner 965" {...h} />));
     const check = screen.getByTestId('success-check');
     expect([check.props.width, check.props.height, check.props.accessibilityLabel]).toEqual([56, 56, 'Done']);
     expect(screen.getByText(`${day}’s run is on your watch.`)).toBeTruthy();
@@ -397,6 +463,30 @@ describe('the landing', () => {
     await fireEvent.press(screen.getByTestId('button-Not now'));
     expect([h.onAllow.mock.calls.length, h.onNotNow.mock.calls.length]).toEqual([1, 1]);
     expect(brandFills()).toBe(1);
+  });
+  it('asked once already on this device: no ask again, straight on', async () => {
+    const h = handlers();
+    await render(wrap(<LandedView first={first} landing={{ state: 'landed', at: '20:14', device: null, rest: 0, failed: 0, total: 4 }} ask={false} home="Plan" brand device={null} {...h} />));
+    expect(screen.getByTestId('success-check')).toBeTruthy();
+    expect(screen.queryByTestId('notify-ask')).toBeNull();
+    await fireEvent.press(screen.getByTestId('button-Go to Plan'));
+    expect(h.onLeave).toHaveBeenCalled();
+    expect(brandFills()).toBe(1);
+  });
+  it('some of week 1 not sent: said in words with Resend, not "follows as the watch syncs"', async () => {
+    const h = handlers();
+    await render(wrap(<LandedView first={first} landing={{ state: 'landed', at: '20:14', device: 'Forerunner 965', rest: 1, failed: 2, total: 4 }} brand device="Forerunner 965" {...h} />));
+    expect(screen.getByTestId('landed-detail')).toHaveTextContent(`${first.title} landed on Forerunner 965 at 20:14. One more session of week 1 follows as the watch syncs.`);
+    expect(screen.getByTestId('landed-failed-words').props.accessibilityLabel).toBe('2 sessions of week 1 weren’t sent. Nothing changed on your watch for those.');
+    await fireEvent.press(screen.getByTestId('button-Resend'));
+    expect(h.onResend).toHaveBeenCalled();
+    expect(brandFills()).toBe(1);
+  });
+  it('sending: a muted spinner, and nothing said about the watch until Garmin has it', async () => {
+    await render(wrap(<LandedView first={first} landing={{ state: 'sending' }} brand device={null} {...handlers()} />));
+    expect(screen.getByTestId('landed-spinner')).toBeTruthy();
+    expect(screen.getByText('Sending to Garmin. No need to wait here.')).toBeTruthy();
+    expect(screen.queryByText(/next time it syncs/)).toBeNull();
   });
   it.each(['sending', 'pending'] as const)('%s: no check and no ask yet; going on is fine', async (state) => {
     const h = handlers();
@@ -416,5 +506,34 @@ describe('the landing', () => {
     await fireEvent.press(screen.getByTestId('button-Trouble connecting?'));
     expect([h.onResend.mock.calls.length, h.onTrouble.mock.calls.length]).toEqual([1, 1]);
     expect(screen.queryByTestId('notify-ask')).toBeNull();
+  });
+});
+
+describe('the welcome and the try card', () => {
+  it('Sign in opens Garmin\'s page; then "I\'ve signed in", with the independence line', async () => {
+    const onSignedIn = jest.fn();
+    const { rerender } = await render(wrap(<Welcome brand onTry={() => {}} onSetUp={() => {}} onSignIn={() => {}} />));
+    expect(screen.queryByTestId('signing-in')).toBeNull();
+    await rerender(wrap(<Welcome brand onTry={() => {}} onSetUp={() => {}} onSignIn={() => {}} signingIn signInProblem="Not signed in yet." onSignedIn={onSignedIn} />));
+    expect(screen.getByText(INDEPENDENT)).toBeTruthy();
+    expect(screen.getByTestId('sign-in-problem').props.accessibilityLabel).toBe('Not signed in yet.');
+    await fireEvent.press(screen.getByTestId('button-I’ve signed in'));
+    expect(onSignedIn).toHaveBeenCalled();
+    expect(brandFills()).toBe(1);
+  });
+  it('the try card promises a plan, not to send the session tried (it isn\'t kept)', async () => {
+    await render(wrap(<TryCard brand onCreate={() => {}} />));
+    expect(screen.getByText('Like it? Make a plan that goes to your watch.')).toBeTruthy();
+    expect(screen.queryByText(/Send it to your watch/)).toBeNull();
+  });
+  it('the days-a-week chips are at least MIN_TOUCH wide', async () => {
+    await render(wrap(<QuestionsStep brand onContinue={() => {}} />));
+    const { MIN_TOUCH } = require('../../ui/Button') as typeof import('../../ui/Button');
+    for (const d of [3, 4, 5, 6, 7]) expect(StyleSheet.flatten(screen.getByTestId(`days-${d}`).props.style).minWidth).toBeGreaterThanOrEqual(MIN_TOUCH);
+  });
+  it('the paces step carries the independence line, as the removed Connect step did', async () => {
+    await render(wrap(<PacesStep brand busy={false} connected={false} problem={null} onImport={() => {}} onQuestions={() => {}} />));
+    expect(screen.getByTestId('independent')).toHaveTextContent(INDEPENDENT);
+    expect(screen.getByText('Step 2 of 3')).toBeTruthy();
   });
 });
