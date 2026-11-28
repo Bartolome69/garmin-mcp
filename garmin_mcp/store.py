@@ -90,6 +90,10 @@ MIGRATIONS = (
     "ALTER TABLE oauth_tokens ADD COLUMN used_at INTEGER",
     "ALTER TABLE oauth_tokens ADD COLUMN retired TEXT",
     "CREATE INDEX IF NOT EXISTS oauth_tokens_parent ON oauth_tokens (parent_hash)",
+    # Nov 27: where this person's data comes from (providers/registry.py).
+    # NULL is the default provider, Garmin, which is everyone until another
+    # provider exists and they choose it.
+    "ALTER TABLE users ADD COLUMN default_provider TEXT",
 )
 
 # Bart's friends using Daash, named from a chat (garmin_official's friends
@@ -301,6 +305,29 @@ CREATE INDEX IF NOT EXISTS chat_messages_person ON chat_messages (person, create
 # Everyone who has ever connected, one row a person, kept when they disconnect
 # (Nov 13), for the front page's count. Keyed like watch_sends. A trigger fills
 # it on every new users row, whichever sign-in made it.
+# Nov 27: a person's link to a data provider other than Garmin (providers/).
+# Garmin keeps its own tables (users for the Connect session, official_links
+# for the official API); every provider after it keeps its link here. The
+# credentials (OAuth tokens, or an API key where the provider has no OAuth)
+# are encrypted like Garmin's. `status` is connected or error; last_error is
+# the provider's last refusal in words, for the connection card. The
+# provider's app-level OAuth client (id and secret) is a Fly secret, not a row.
+PROVIDER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS provider_connections (
+    user_token       TEXT NOT NULL,
+    provider         TEXT NOT NULL,
+    auth             TEXT NOT NULL,
+    credentials_enc  BLOB NOT NULL,
+    external_id      TEXT,
+    status           TEXT NOT NULL DEFAULT 'connected',
+    last_error       TEXT,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    PRIMARY KEY (user_token, provider)
+);
+CREATE INDEX IF NOT EXISTS provider_connections_external ON provider_connections (provider, external_id);
+"""
+
 PEOPLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS people_ever (
     person        TEXT PRIMARY KEY,
@@ -422,6 +449,8 @@ class User:
     # fresh sign-in mints a new token but the same fingerprint, which is what
     # makes it the right thing to count a person by.
     email_hash: str | None = None
+    # Where their data comes from (providers/registry.py); None is the default, Garmin.
+    default_provider: str | None = None
 
 
 def _cipher() -> Fernet:
@@ -474,6 +503,7 @@ def _connect() -> sqlite3.Connection:
     conn.executescript(WEEKLY_SKIPS_SCHEMA)
     conn.executescript(OAUTH_RETIRED_SCHEMA)
     conn.executescript(CUT_OFF_SCHEMA)
+    conn.executescript(PROVIDER_SCHEMA)
     conn.executescript(CHAT_SCHEMA)
     for statement in MIGRATIONS:
         try:
@@ -670,6 +700,8 @@ def delete_user(user_token: str) -> bool:
         gone = conn.execute(
             "DELETE FROM users WHERE user_token = ?", (user_token,)
         ).rowcount > 0
+        # Their links to other providers, credentials and all.
+        conn.execute("DELETE FROM provider_connections WHERE user_token = ?", (user_token,))
     from . import garmin_cache  # what Garmin said about them goes too
     garmin_cache.forget(user_token)
     return gone
@@ -1003,7 +1035,7 @@ def mark_kept_alive(user_token: str) -> None:
 def get_user(user_token: str) -> User | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT user_token, email_masked, created_at, email_hash "
+            "SELECT user_token, email_masked, created_at, email_hash, default_provider "
             "FROM users WHERE user_token = ?",
             (user_token,),
         ).fetchone()
@@ -2238,6 +2270,105 @@ def token_for_owner(owner: str) -> str | None:
         return found[-1]
     return owner if get_user(owner) is not None else None
 
+
+# --------------------------------------------------------------------------
+# Data providers (providers/): the default one, and links to the others
+# --------------------------------------------------------------------------
+
+
+def set_default_provider(user_token: str, provider: str | None) -> bool:
+    """Choose where this person's data comes from; None goes back to the default."""
+    with _connect() as conn:
+        return conn.execute("UPDATE users SET default_provider = ? WHERE user_token = ?",
+                            (provider, user_token)).rowcount > 0
+
+
+@dataclass(frozen=True)
+class ProviderConnection:
+    user_token: str
+    provider: str
+    auth: str  # "oauth" or "api_key"
+    credentials: dict
+    external_id: str | None
+    status: str  # "connected" or "error"
+    last_error: str | None
+    created_at: int
+    updated_at: int
+
+
+def save_provider_connection(user_token: str, provider: str, auth: str, credentials: dict,
+                             external_id: str | None = None) -> None:
+    """Link (or re-link) a person to a provider. The credentials are encrypted."""
+    if auth not in ("oauth", "api_key"):
+        raise ValueError(f"unknown auth {auth!r}")
+    now = int(time.time())
+    blob = _cipher().encrypt(json.dumps(credentials).encode())
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO provider_connections (user_token, provider, auth, credentials_enc, external_id, "
+            "status, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'connected', NULL, ?, ?) "
+            "ON CONFLICT (user_token, provider) DO UPDATE SET auth = excluded.auth, "
+            "credentials_enc = excluded.credentials_enc, external_id = excluded.external_id, "
+            "status = 'connected', last_error = NULL, updated_at = excluded.updated_at",
+            (user_token, provider, auth, blob, external_id, now, now))
+
+
+def _provider_connection(row: tuple | None) -> ProviderConnection | None:
+    if not row:
+        return None
+    user_token, provider, auth, blob, external_id, status, last_error, created_at, updated_at = row
+    try:
+        credentials = json.loads(_cipher().decrypt(blob))
+    except InvalidToken:
+        return None  # sealed with a key that's gone: as good as not linked
+    return ProviderConnection(user_token, provider, auth, credentials, external_id, status, last_error,
+                              created_at, updated_at)
+
+
+_PROVIDER_COLUMNS = ("user_token, provider, auth, credentials_enc, external_id, status, last_error, "
+                     "created_at, updated_at")
+
+
+def provider_connection(user_token: str, provider: str) -> ProviderConnection | None:
+    with _connect() as conn:
+        row = conn.execute(f"SELECT {_PROVIDER_COLUMNS} FROM provider_connections "
+                           "WHERE user_token = ? AND provider = ?", (user_token, provider)).fetchone()
+    return _provider_connection(row)
+
+
+def provider_connections(user_token: str) -> list[ProviderConnection]:
+    with _connect() as conn:
+        rows = conn.execute(f"SELECT {_PROVIDER_COLUMNS} FROM provider_connections "
+                            "WHERE user_token = ? ORDER BY provider", (user_token,)).fetchall()
+    return [c for c in map(_provider_connection, rows) if c is not None]
+
+
+def update_provider_credentials(user_token: str, provider: str, credentials: dict) -> bool:
+    """New tokens after a refresh, keeping everything else."""
+    blob = _cipher().encrypt(json.dumps(credentials).encode())
+    with _connect() as conn:
+        return conn.execute("UPDATE provider_connections SET credentials_enc = ?, updated_at = ? "
+                            "WHERE user_token = ? AND provider = ?",
+                            (blob, int(time.time()), user_token, provider)).rowcount > 0
+
+
+def mark_provider_error(user_token: str, provider: str, error: str | None) -> bool:
+    """Note the provider's last refusal (None clears it and marks the link connected again)."""
+    with _connect() as conn:
+        return conn.execute("UPDATE provider_connections SET status = ?, last_error = ?, updated_at = ? "
+                            "WHERE user_token = ? AND provider = ?",
+                            ("error" if error else "connected", error, int(time.time()), user_token,
+                             provider)).rowcount > 0
+
+
+def delete_provider_connection(user_token: str, provider: str) -> bool:
+    """Unlink a provider. If it was their default, they go back to the default provider."""
+    with _connect() as conn:
+        gone = conn.execute("DELETE FROM provider_connections WHERE user_token = ? AND provider = ?",
+                            (user_token, provider)).rowcount > 0
+        conn.execute("UPDATE users SET default_provider = NULL WHERE user_token = ? AND default_provider = ?",
+                     (user_token, provider))
+    return gone
 
 # -- the in-app chat pilot (Nov 27, chat_pilot.py) -------------------------------
 

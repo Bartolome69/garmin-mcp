@@ -1685,6 +1685,8 @@ async def main() -> int:
               [e["properties"]["tool"] for e in calls] == ["get_activities", "get_readiness", "get_sleep_data", "schedule_workout"]
               and all(e["properties"].get("login_route") == "password" and e["properties"].get("client") == "Claude"
                       and e["properties"].get("hours_since_connect") is not None for e in calls), str(calls)[:300])
+        check("each tool_called names the provider that answered: Garmin, for everyone",
+              all(e["properties"].get("provider") == "garmin" for e in calls), str([e["properties"].get("provider") for e in calls]))
         check("a refused call is ok: false, an expected refusal, and sends nothing to the watch",
               calls[-1]["properties"].get("ok") is False and calls[-1]["properties"].get("error_kind") == "expected"
               and not [e for e in SENT[before:] if e["event"] == "workout_sent_to_watch"], str(calls[-1]))

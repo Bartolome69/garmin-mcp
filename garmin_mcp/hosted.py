@@ -42,7 +42,7 @@ from starlette.background import BackgroundTask
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from . import analytics, backfill, crews, geo, hooks, oauth, official, official_data, preview, push, signup_guard, store, support_mail, telemetry, tracing, weekly
-from . import memwatch
+from . import memwatch, providers
 from . import day_ranges, tools_v2
 from . import app as app_routes
 from . import server as server_mod
@@ -1524,6 +1524,8 @@ def _after_tool_for(user_token: str, user: store.User, alone: bool = False, clie
             _LATENCY.note(seconds * 1000, who=person)
         analytics.capture("tool_called", person, drop_empty({
             "tool": name, "ok": not error, "success": not error, "error_kind": kind,
+            # Which provider answered (providers/, Nov 27): "garmin" for everyone for now.
+            "provider": providers.current_name(),
             "card_refresh": auto or None,
             "error_category": error_category(error), "held": held or None,
             "error_check": (strength_check(error) if name == "create_strength_workout"
@@ -5805,9 +5807,13 @@ class SessionBinding:
         listed_token = server_mod.use_listed(named == oauth.LISTED_PATH)
         # Gemini, the Gemini CLI and Grok draw no cards: their answers ask for words instead.
         cards_token = server_mod.use_cards(app not in NO_CARDS)
+        # Where their data comes from (providers/): Garmin unless they chose
+        # another provider that's registered.
+        provider_token = providers.use(user.default_provider)
         try:
             await self.app(scope, receive, send)
         finally:
+            providers.reset(provider_token)
             server_mod.reset_cards(cards_token)
             server_mod.reset_listed(listed_token)
             server_mod.reset_alone(alone_token)

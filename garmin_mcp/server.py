@@ -55,7 +55,9 @@ from . import day_ranges, tools_v2
 from . import gate as gate_mod
 from . import session as session_mod
 from .session import GarminError, GarminNotFound, mask_email, session
-from .official_client import NotOnOfficial, OfficialClient
+from .official_client import OfficialClient
+from . import providers
+from .providers.garmin import NOT_ON_OFFICIAL, GarminProvider
 from .workouts import (
     SPORTS,
     WorkoutError,
@@ -1358,32 +1360,15 @@ def _official_client() -> Any:
     return OfficialClient(token, garmin_user, alone=not store.has_connect(token))
 
 
-# Said by any tool that needs Garmin Connect, to someone who signed up through
-# Garmin's own page and so has no Connect session for it to fall back on.
-NOT_ON_OFFICIAL = (
-    "Not available on this connection: Daash reads this account through Garmin's official "
-    "API, and Garmin doesn't share that through it. Answer from what Daash can read here "
-    "(activities and their laps, sleep, the day, the plan), and for workout targets use "
-    "paces, heart rate in bpm or watts rather than zones or a share of FTP."
-)
+# Garmin behind the provider interface (providers/garmin.py), and the default
+# provider: every Garmin call below goes through the current provider, which is
+# Garmin for everyone until another provider is registered and chosen.
+GARMIN = providers.register(GarminProvider(lambda: _official_client(), session))
 
 
 def _run(fn: Callable[[Any], Any]) -> Any:
-    """fn against the official API where the account asks for it, else Garmin Connect.
-
-    A call the official API has no answer for (readiness, gear, the all-day
-    heart rate) still goes to Connect while the account has both: this is the
-    preview, and nothing the person already had should stop working. An
-    account that signed up through Garmin's page has no Connect to go to.
-    """
-    client = _official_client()
-    if client is not None:
-        try:
-            return client.run(fn)
-        except NotOnOfficial:
-            if client.alone:
-                raise GarminError(NOT_ON_OFFICIAL) from None
-    return session.run(fn)
+    """fn against the current provider's client (Garmin: official API or Connect)."""
+    return providers.current().run(fn)
 
 
 async def _call(fn: Callable[[Any], Any]) -> Any:
@@ -1415,14 +1400,7 @@ def _calendar_memory(year: int, month: int, today: date_cls | None = None) -> fl
 
 
 def _remembered(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
-    client = _official_client()
-    if client is not None:
-        try:
-            return client.run(fn)
-        except NotOnOfficial:
-            if client.alone:
-                raise GarminError(NOT_ON_OFFICIAL) from None
-    return session.remembered(key, ttl, fn)
+    return providers.current().remembered(key, ttl, fn)
 
 
 async def _read(key: Any, ttl: float, fn: Callable[[Any], Any]) -> Any:
@@ -1626,12 +1604,12 @@ def tool_errors(fn):
                 try:
                     return await fn(*args, **kwargs)
                 finally:
-                    session.forget()
+                    providers.current().forget()
                     with contextlib.suppress(Exception):
                         garmin_cache.after_write(session_mod.current_session().owner, fn.__name__)
             return await fn(*args, **kwargs)
         except (GarminError, DateError, WorkoutError, training_plan.PlanError, crews.CrewError, ActivityError,
-                official.OfficialError) as exc:
+                official.OfficialError, providers.NotSupported) as exc:
             return {"error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - a tool must never crash the server
             log.exception("Tool %s failed", fn.__name__)
