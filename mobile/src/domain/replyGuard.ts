@@ -5,9 +5,9 @@
 // rewrites a reply or its numbers.
 //
 // The rules aren't written here: they're read from the corpus file the Python guard
-// writes (coach_replies.fixture.json, by scripts/domain_fixtures.py), so the two
+// writes (replies.fixture.json, by scripts/domain_fixtures.py), so the two
 // sides can't drift. Pure: no React, no network.
-import FIXTURE from './coach_replies.fixture.json';
+import FIXTURE from './replies.fixture.json';
 
 export type GuardKind = 'cause' | 'medical' | 'diagnosis' | 'certainty';
 export const GUARD_KINDS: GuardKind[] = ['cause', 'medical', 'diagnosis', 'certainty'];

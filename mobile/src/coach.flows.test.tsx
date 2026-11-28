@@ -41,7 +41,7 @@ import YouMemory from './app/(tabs)/you/memory';
 import YouMemoryClear from './app/(tabs)/you/memory-clear';
 import YouMemoryEdit from './app/(tabs)/you/memory-edit';
 import WatchConfirm from './app/watch/confirm';
-import { numbersIn, numbersOfPayload } from './domain/coachGuard';
+import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import type { CoachApi } from './features/coach/api';
 import { FakeCoach } from './features/coach/fake';
 import type { ServerMessage } from './features/coach/model';

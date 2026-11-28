@@ -9,8 +9,8 @@ import { describe, expect, it } from '@jest/globals';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { checkReply, guardKinds, numbersIn, RULES, unmatchedNumbers } from './coachGuard';
-import COPY from './coach_replies.fixture.json';
+import { checkReply, guardKinds, numbersIn, RULES, unmatchedNumbers } from './replyGuard';
+import COPY from './replies.fixture.json';
 
 type Corpus = {
   rules: Record<string, string[]>;

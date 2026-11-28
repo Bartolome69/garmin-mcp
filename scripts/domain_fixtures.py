@@ -285,7 +285,7 @@ def onboarding_cases() -> dict:
 # The Coach's reply corpus (build prompt, sections 1, 5.10 and 12): replies a Coach may
 # send, and replies it must not, each labelled by hand with the kinds a reader would
 # flag. The Python guard must give exactly these labels (tests/domain_test.py); the
-# app's twin must give what the Python guard gives (mobile/src/domain/coachGuard.test.ts).
+# app's twin must give what the Python guard gives (mobile/src/domain/replyGuard.test.ts).
 REPLIES_OK = [
     "Rep 6 peaked at 172 bpm, 4 above rep 5.",
     "HRV has been under your range of 54–66 ms for two nights: 52 and 49 ms.",
@@ -360,7 +360,7 @@ COPIES = {"proposals.json": ROOT / "mobile" / "src" / "features" / "watch" / "pr
           "connections.json": ROOT / "mobile" / "src" / "features" / "connections" / "connections.fixture.json",
           "dedupe.json": ROOT / "mobile" / "src" / "domain" / "dedupe.fixture.json",
           "onboarding.json": ROOT / "mobile" / "src" / "features" / "onboarding" / "onboarding.fixture.json",
-          "coach_replies.json": ROOT / "mobile" / "src" / "domain" / "coach_replies.fixture.json"}
+          "coach_replies.json": ROOT / "mobile" / "src" / "domain" / "replies.fixture.json"}
 
 
 def main(argv: list[str]) -> int:

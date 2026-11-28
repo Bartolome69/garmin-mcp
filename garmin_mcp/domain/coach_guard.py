@@ -14,7 +14,7 @@ And the numbers rule: every number in a reply must be one the model was given
 (`unmatched_numbers`), or the reply is regenerated.
 
 Pure and deterministic: no model, no network. The app has a twin
-(mobile/src/domain/coachGuard.ts) that runs on received replies as a second
+(mobile/src/domain/replyGuard.ts) that runs on received replies as a second
 line; both are held to the same corpus (fixtures/coach_replies.json, written by
 scripts/domain_fixtures.py), and the twin reads its rules from that file's
 `rules`, so the two can't drift. TODO(server): chat_pilot.py (on main) runs

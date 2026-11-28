@@ -11,7 +11,7 @@
 //   chart   {chart}                   TODO(server): a chart built from a tool's numbers
 //   done    {id, status}              finished (status "partial": cut off)
 //   error   {code, message}           the turn failed; what was written stays
-import { guardKinds } from '../../domain/coachGuard';
+import { guardKinds } from '../../domain/replyGuard';
 import type { Proposal } from '../watch/model';
 import type { ProposalRequest } from '../watch/proposals';
 import { addSource, type CoachMessage, type InlineChart } from './model';

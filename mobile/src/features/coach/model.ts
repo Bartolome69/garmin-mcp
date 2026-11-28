@@ -4,7 +4,7 @@
 // source chips and, where the server sends one, a chart drawn by the app from the
 // server's numbers. Plan changes are proposals that open the shared diff and the
 // watch confirm. Pure: no React, no network, no clock of its own.
-import { guardKinds, type GuardKind } from '../../domain/coachGuard';
+import { guardKinds, type GuardKind } from '../../domain/replyGuard';
 import { DAYS, parseDate, weekday } from '../../domain/format';
 import type { Proposal } from '../watch/model';
 import type { ProposalRequest } from '../watch/proposals';
@@ -56,7 +56,7 @@ export type CoachMessage = {
   error?: string | null;
   /** While a reply is being written: what the Coach is reading ("Checking readiness"). */
   working?: string | null;
-  /** The phone's second-line check on a finished reply (domain/coachGuard). */
+  /** The phone's second-line check on a finished reply (domain/replyGuard). */
   flags?: GuardKind[];
   /** "Saved to memory": the memory item it made. */
   memoryId?: string | null;

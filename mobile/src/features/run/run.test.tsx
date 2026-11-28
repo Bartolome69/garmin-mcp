@@ -6,7 +6,7 @@ import { Platform, StyleSheet } from 'react-native';
 
 import { ThemeProvider } from '../../theme/ThemeProvider';
 import { colors } from '../../theme/tokens';
-import { unmatchedNumbers } from '../../domain/coachGuard';
+import { unmatchedNumbers } from '../../domain/replyGuard';
 import { numbersOf, type RunVM } from './model';
 import { RunView, scrubWords, shareText, stepScrub } from './RunView';
 import { fixtureRun } from './source';
@@ -181,7 +181,7 @@ describe(`Post-run on ${os}: the Coach`, () => {
   });
 
   it('the debrief\'s numbers are the run\'s own: no number of its own', () => {
-    // The Coach's numbers rule (domain/coachGuard): every number in it is in what the server sent for the run.
+    // The Coach's numbers rule (domain/replyGuard): every number in it is in what the server sent for the run.
     expect(unmatchedNumbers(REPS_COACH.coach!.debrief, REPS)).toEqual([]);
     const series = REPS.series;
     expect(Math.max(...series.hr.filter((h): h is number => h != null))).toBe(172);

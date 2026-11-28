@@ -56,7 +56,7 @@ import OnboardingReveal from './app/onboarding/reveal';
 import OnboardingTry from './app/onboarding/try';
 import { OnboardingStack } from './app/onboarding/_layout';
 import WatchConfirm from './app/watch/confirm';
-import { numbersIn, numbersOfPayload } from './domain/coachGuard';
+import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import ONBOARDING from './features/onboarding/onboarding.fixture.json';
 import RUNS from './features/run/runs.fixture.json';
 import { PERSONA_TODAY_COACH } from './features/today/fixture';

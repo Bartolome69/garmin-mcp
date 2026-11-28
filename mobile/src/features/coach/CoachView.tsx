@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 
-import type { GuardKind } from '../../domain/coachGuard';
+import type { GuardKind } from '../../domain/replyGuard';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
