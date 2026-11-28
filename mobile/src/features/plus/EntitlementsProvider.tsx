@@ -15,11 +15,16 @@ import { defaultStore, PRODUCT_IDS, StoreError, type Product, type Purchase, typ
 
 export type Resolved = ReturnType<typeof resolve>;
 export type TrialOutcome = { kind: 'started' | 'pending' | 'cancelled' } | { kind: 'failed'; message: string };
-export type RestoreOutcome = { kind: 'restored' | 'nothing' } | { kind: 'failed'; message: string };
+/**
+ * restored: Plus or a running free week is back. ended: the store found purchases,
+ * but every one has run out (the free week used, or Plus cancelled and over).
+ */
+export type RestoreOutcome = { kind: 'restored' | 'nothing' } | { kind: 'ended'; tier: 'trial' | 'plus' } | { kind: 'failed'; message: string };
 
 /** Restore's outcome, in words. */
 export function restoreWords(r: RestoreOutcome): string {
   if (r.kind === 'failed') return r.message;
+  if (r.kind === 'ended') return r.tier === 'trial' ? 'Your free week has ended.' : 'Your Plus has ended.';
   return r.kind === 'restored' ? 'Purchases restored.' : 'No purchases found for this account.';
 }
 
@@ -64,8 +69,8 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
   const [products, setProducts] = useState<Product[] | null>(null);
   const [productsError, setProductsError] = useState<string | null>(null);
   const busy = useRef(false);
-  const latest = useRef({ fetcher, verify, db });
-  latest.current = { fetcher, verify, db };
+  const latest = useRef({ fetcher, verify, db, clock });
+  latest.current = { fetcher, verify, db, clock };
 
   const keepServer = useCallback((e: Entitlement) => {
     setServer(e);
@@ -74,18 +79,21 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
 
   // Each transaction goes to the server once (the store's listener and the purchase both report it).
   const sent = useRef(new Set<string>());
-  const verifyAll = useCallback(async (list: Purchase[]) => {
+  const verifyAll = useCallback(async (list: Purchase[]): Promise<Entitlement[]> => {
+    const checked: Entitlement[] = [];
     for (const p of list.filter((x) => !sent.current.has(x.transactionId))) {
       sent.current.add(p.transactionId);
       const e = await latest.current.verify(p);
-      if (e && e.tier !== 'free') keepServer(e);
+      if (e && e.tier !== 'free') { keepServer(e); checked.push(e); }
       // Not checked (offline): try again with the next restore or purchase.
       else sent.current.delete(p.transactionId);
     }
+    return checked;
   }, [keepServer]);
 
-  const refresh = useCallback(async () => {
-    if (busy.current) return;
+  /** Asks the server and the store; answers the server's entitlement (null: no answer, or already asking). */
+  const ask = useCallback(async (): Promise<Entitlement | null> => {
+    if (busy.current) return null;
     busy.current = true;
     try {
       const [answer, held] = await Promise.all([
@@ -94,10 +102,12 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
       ]);
       if (answer) keepServer(answer);
       if (held) setPurchases(held);
+      return answer;
     } finally {
       busy.current = false;
     }
   }, [store, keepServer]);
+  const refresh = useCallback(async () => { await ask(); }, [ask]);
 
   useEffect(() => {
     let live = true;
@@ -142,13 +152,18 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
     try {
       const list = await store.restore();
       setPurchases(list);
-      await verifyAll(list);
-      await refresh();
-      return { kind: list.length ? 'restored' : 'nothing' };
+      const checked = await verifyAll(list);
+      const answer = await ask();
+      // Restored only if something unlocks now; purchases that have all run out say so.
+      const now = latest.current.clock();
+      const found = resolve([...checked, answer, ...list.map(fromPurchase)], now);
+      if (found.tier !== 'free') return { kind: 'restored' };
+      if (found.lapsed) return { kind: 'ended', tier: found.lapsed.tier === 'trial' ? 'trial' : 'plus' };
+      return { kind: 'nothing' };
     } catch (err) {
       return { kind: 'failed', message: err instanceof StoreError ? err.message : 'The store didn’t answer. Try again in a moment.' };
     }
-  }, [store, verifyAll, refresh]);
+  }, [store, verifyAll, ask]);
 
   const entitlement = resolve([server, flags.plus ? parseEntitlement(true) : null, ...purchases.map(fromPurchase)], clock());
   const plus = entitlement.tier !== 'free';

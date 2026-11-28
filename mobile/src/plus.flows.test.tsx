@@ -226,6 +226,17 @@ describe('17. Plus in You', () => {
     open.mockRestore();
   });
 
+  it('Restore that finds only a free week that ended says so, and stays Free', async () => {
+    const now = Date.now();
+    const store = new FakeStore({ owned: [{ productId: PRODUCT_IDS.monthly, transactionId: 't', purchasedAt: now - 40 * 86400000, expiresAt: now - 33 * 86400000,
+      trial: true, willRenew: false, platform: 'app_store', receipt: 'r' }] });
+    await renderRouter(app(store), { initialUrl: '/you' });
+    await fireEvent.press(await screen.findByTestId('row-restore'));
+    expect(await screen.findByTestId('restore-message')).toHaveTextContent('Your free week has ended.');
+    expect(screen.queryByTestId('plus-badge')).toBeNull();
+    expect(screen.getByTestId('row-restore')).toBeTruthy();
+  });
+
   it('Restore with nothing to restore says so', async () => {
     await renderRouter(app(new FakeStore()), { initialUrl: '/you' });
     await fireEvent.press(await screen.findByTestId('row-restore'));
