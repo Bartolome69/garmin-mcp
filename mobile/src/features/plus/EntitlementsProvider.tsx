@@ -63,10 +63,15 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
     if (latest.current.db) kv(latest.current.db).set(KEY, e).catch(() => {});
   }, []);
 
+  // Each transaction goes to the server once (the store's listener and the purchase both report it).
+  const sent = useRef(new Set<string>());
   const verifyAll = useCallback(async (list: Purchase[]) => {
-    for (const p of list) {
+    for (const p of list.filter((x) => !sent.current.has(x.transactionId))) {
+      sent.current.add(p.transactionId);
       const e = await latest.current.verify(p);
       if (e && e.tier !== 'free') keepServer(e);
+      // Not checked (offline): try again with the next restore or purchase.
+      else sent.current.delete(p.transactionId);
     }
   }, [keepServer]);
 
