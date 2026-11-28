@@ -55,13 +55,29 @@ describe('the four questions on the phone: the server\'s answers, exactly', () =
   it('race names: the standard distances by name, anything else in km', () => {
     expect([raceName(5), raceName(10), raceName(21.0975), raceName(42.195), raceName(15)]).toEqual(['5K', '10K', 'Half marathon', 'Marathon', '15 km']);
   });
+  it('inside a sentence, in sentence case', () => {
+    expect([raceName(10, true), raceName(21.0975, true), raceName(42.195, true)]).toEqual(['10K', 'half marathon', 'marathon']);
+    expect(CASES.questions_race.rows.find((r) => r.key === 'threshold')!.note).toBe('from your half marathon');
+  });
 });
 
 describe('the server\'s import, as the app reads it', () => {
   it('the persona: 56 runs, the 10K of 43:30, a usual week', () => {
     expect(CASES.import.runs).toBe(56);
     expect(CASES.import.rows.map((r) => r.key)).toEqual(['race', 'easy', 'threshold', 'week']);
-    expect(CASES.import.basis).toEqual({ raceKm: 10, raceSeconds: 2610, raceDate: '2026-10-12' });
+    expect(CASES.import.basis).toEqual({ raceKm: 10, raceSeconds: 2610, raceDate: '2026-10-12', easy: [310, 320], assumed: false });
+  });
+  it('the plan\'s easy runs use the easy pace the runner confirmed', () => {
+    const row = CASES.import.rows.find((r) => r.key === 'easy')!.value.replace(' /km', '');
+    const easy = CASES.reveal.week1.filter((s) => s.type === 'easy' || s.type === 'long');
+    expect(easy.length).toBeGreaterThan(0);
+    for (const s of easy) expect(s.sub.split(' · ').pop()).toBe(row);
+  });
+  it.each(['reveal_empty', 'reveal_questions'] as const)('%s: no race to go on, so no prediction, and the assumed 10K isn\'t called theirs', (key) => {
+    const r = CASES[key];
+    expect(r.predicted).toBeNull();
+    expect(r.because).toContain('No prediction without a recent race; paces use a 10K of 45:00 for now.');
+    expect(r.because).not.toMatch(/your 10K| 0 km/);
   });
   it('nothing to read: zero runs, the default 10K, no usual week', () => {
     expect(CASES.import_empty.runs).toBe(0);
@@ -86,6 +102,8 @@ describe('race times', () => {
     expect(raceSeconds('45:00', 21.0975)).toBeNull();     // 45 hours
     expect(raceSeconds('0:30', 5)).toBeNull();            // 30 seconds
     expect(raceSeconds('11:30', 42.195)).toBeNull();      // 11 h 30 is slower than 15:00 /km
+    expect(raceSeconds('10:15', 42.195)).toBeNull();      // the server reads two parts of 10 or more as mm:ss
+    expect(raceSeconds('10:15:00', 42.195)).toBe(36900);
     expect(raceSeconds('fast', 10)).toBeNull();
     expect(raceSeconds('', 10)).toBeNull();
     expect(raceSeconds('45:00', 0)).toBeNull();

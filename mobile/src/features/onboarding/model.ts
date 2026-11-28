@@ -8,6 +8,8 @@ import type { Basis } from '../plan/model';
 import type { SessionType } from '../today/model';
 import type { WorkoutV1 } from '../builder/model';
 
+/** The race the paces come from; `easy` is the range read from the runs (the plan's easy runs use it); `assumed`: no real race, so no prediction. */
+export type OnboardingBasis = Basis & { easy: [number, number] | null; assumed: boolean };
 export type PaceRow = { key: 'race' | 'easy' | 'threshold' | 'week'; label: string; value: string; note: string };
 export type PaceResult = {
   source: 'import' | 'questions';
@@ -15,7 +17,7 @@ export type PaceResult = {
   /** Runs read from the watch (import only): 0 says there was nothing to read. */
   runs: number | null;
   rows: PaceRow[];
-  basis: Basis;
+  basis: OnboardingBasis;
   answers: { avg_km: number; longest_km: number; days: number; level?: string };
 };
 export type RevealSession = {
@@ -58,9 +60,11 @@ const EXPERIENCE_10K: Record<Experience, number> = { new: 3600, regular: 52 * 60
 const WEEKLY_KM: Record<Weekly, number> = { under30: 20, '30to50': 40, '50to70': 60, '70plus': 75 };
 const RACE_NAMES: [number, string][] = [[5, '5K'], [10, '10K'], [21.0975, 'Half marathon'], [42.195, 'Marathon']];
 
-export function raceName(km: number): string {
+/** "10K", "Half marathon"; `mid` for inside a sentence ("from your half marathon"). */
+export function raceName(km: number, mid = false): string {
   const [near, name] = RACE_NAMES.reduce((a, b) => (Math.abs(b[0] - km) < Math.abs(a[0] - km) ? b : a));
-  return Math.abs(near - km) / near < 0.03 ? name : `${km} km`;
+  const n = Math.abs(near - km) / near < 0.03 ? name : `${km} km`;
+  return mid && !/^\d/.test(n) ? n.toLowerCase() : n;
 }
 
 /** "3:15", "45:00", "1:52:30" → seconds; null when it isn't a time. */
@@ -77,12 +81,15 @@ const SLOWEST_PER_KM = 900;
 /**
  * A race time as entered, in seconds, or null when it isn't one. Two parts are h:mm
  * for a half or a marathon ("3:15" is 3 h 15, as plan_builder.goal_secs reads it)
- * and mm:ss for shorter races; three parts are always h:mm:ss.
+ * and mm:ss for shorter races; three parts are always h:mm:ss. goal_secs reads two
+ * parts as h:mm only under 10 hours, so 10 hours or more needs all three.
  */
 export function raceSeconds(text: string, km: number): number | null {
   const parsed = parseTime(text);
   if (parsed == null || km <= 0) return null;
-  const s = km >= 21 && /^\s*\d{1,2}:\d{2}\s*$/.test(text) ? parsed * 60 : parsed;
+  const twoParts = /^\s*(\d{1,2}):\d{2}\s*$/.exec(text);
+  if (km >= 21 && twoParts && +twoParts[1] >= 10) return null;
+  const s = km >= 21 && twoParts ? parsed * 60 : parsed;
   const perKm = s / km;
   return perKm >= FASTEST_PER_KM && perKm <= SLOWEST_PER_KM ? s : null;
 }
@@ -119,10 +126,10 @@ export function questions(experience: Experience, days: number, weekly: Weekly, 
       { key: 'race', label: 'Best recent race', value: race ? `${raceName(race.km)} · ${mmss(race.secs)}` : 'None given',
         note: race ? 'from your answer' : `using a 10K of ${mmss(basis[1])}` },
       { key: 'easy', label: 'Easy pace', value: range(z.easy), note: race ? 'from the race' : 'from the 10K above' },
-      { key: 'threshold', label: 'Threshold', value: range(z.threshold), note: race ? `from your ${raceName(basis[0])}` : 'from the 10K above' },
+      { key: 'threshold', label: 'Threshold', value: range(z.threshold), note: race ? `from your ${raceName(basis[0], true)}` : 'from the 10K above' },
       { key: 'week', label: 'Usual week', value: `${km} km · ${days} runs`, note: 'from your answers' },
     ],
-    basis: { raceKm: basis[0], raceSeconds: basis[1], raceDate: null },
+    basis: { raceKm: basis[0], raceSeconds: basis[1], raceDate: null, easy: null, assumed: !race },
     answers: { avg_km: km, longest_km: Math.round(km * 0.3 * 10) / 10, days: Math.max(3, Math.min(7, days)), level: experience },
   };
 }
