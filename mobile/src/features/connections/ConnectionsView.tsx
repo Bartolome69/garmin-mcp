@@ -155,7 +155,11 @@ export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated 
 // -- You -----------------------------------------------------------------------------------
 
 /** You (build prompt, section 4): a provider needing a reconnect comes first, with the screen's one brand fill. */
-export function YouView({ vm, brand, actions }: { vm: ConnectionsVM | null; brand: boolean; actions: { connections: () => void; reconnect: (p: Provider) => void } }) {
+export function YouView({ vm, brand, actions, children }: {
+  vm: ConnectionsVM | null; brand: boolean; actions: { connections: () => void; reconnect: (p: Provider) => void };
+  /** You's other sections (the Coach and Training preferences, milestone 11), after Connections. */
+  children?: React.ReactNode;
+}) {
   const { colors } = useTheme();
   const broken = vm?.providers.filter((p) => p.state === 'reconnect') ?? [];
   return (
@@ -181,6 +185,7 @@ export function YouView({ vm, brand, actions }: { vm: ConnectionsVM | null; bran
       <List>
         <Row testID="row-connections" title="Watches and apps" sub={vm ? youSummary(vm) : 'Not loaded yet'} onPress={actions.connections} chevron />
       </List>
+      {children}
     </ScrollView>
   );
 }

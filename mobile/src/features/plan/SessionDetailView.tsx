@@ -29,6 +29,8 @@ export const MAX_STEP = 3;
 export type SessionActions = {
   send: () => void; resend: () => void; remove: () => void; trouble: () => void;
   move: () => void; swap: () => void; skip: () => void;
+  /** Coach on: ask the Coach about this session (the question carries its tag). */
+  ask?: () => void;
 };
 
 export function SessionDetailView({ session, basis, coach, step, onStep, device = null, error = null, retrying = false, brand = true, actions }: {
@@ -76,6 +78,7 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
         <View testID="coach-note" style={{ gap: 6, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
           <Text variant="kicker" tone="muted">Coach · why this session</Text>
           <Text variant="coach">{d.coachNote}</Text>
+          {actions.ask ? <Button label="Ask about this session" small onPress={actions.ask} style={{ alignSelf: 'flex-start' }} /> : null}
         </View>
       ) : null}
       {watch ? (

@@ -28,7 +28,7 @@ export function RunScreen({ id, fetcher }: { id: string; fetcher?: Parameters<ty
       ) : undefined }} />
       {vm ? (
         <RunView vm={vm} coach={flags.coach_enabled}
-          onAsk={() => router.push({ pathname: '/coach', params: { run: vm.sessionId ?? vm.id } })} />
+          onAsk={() => router.push({ pathname: '/coach', params: { run: vm.sessionId ?? vm.id, label: `${vm.when.split(' ').slice(0, 2).join(' ')} · ${vm.title}` } })} />
       ) : (
         <LoadState what="this run" failure={run.failure} error={run.error} onRetry={run.refresh} testID="run-missing" />
       )}

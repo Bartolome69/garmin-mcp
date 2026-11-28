@@ -2,6 +2,7 @@ import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-route
 import { useEffect, useState } from 'react';
 import { Pressable } from 'react-native';
 
+import { DAYS, parseDate, weekday } from '../../../../domain/format';
 import { parseWorkout } from '../../../../domain/parser';
 import { sessionText } from '../../../../features/builder/model';
 import { findSession } from '../../../../features/plan/model';
@@ -13,6 +14,8 @@ import { useFlags } from '../../../../flags/FlagsProvider';
 import { Screen } from '../../../../ui/Screen';
 import { MIN_TOUCH } from '../../../../ui/Button';
 import { Text } from '../../../../ui/Text';
+
+const dayLabel = (iso: string) => `${DAYS[weekday(iso)]} ${parseDate(iso).d}`;
 
 export default function SessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -62,6 +65,7 @@ export default function SessionScreen() {
           resend: () => watch.ops.filter((o) => o.sessionId === id && o.state === 'failed').forEach((o) => watch.resend(o.id)),
           remove: () => confirm(unwatchProposal([session])),
           trouble: () => router.push('/you/trouble'),
+          ask: () => router.push({ pathname: '/coach', params: { session: id, label: `${dayLabel(session.date)} · ${session.title}` } }),
           move: () => router.push({ pathname: '/plan/move', params: { id } }),
           swap: () => router.push({ pathname: '/plan/move', params: { id, mode: 'swap' } }),
           skip: () => {

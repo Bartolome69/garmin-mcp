@@ -37,6 +37,8 @@ export const ICONS = {
   thumbDown: { ios: 'hand.thumbsdown', android: 'thumb_down' },
   chevronDown: { ios: 'chevron.down', android: 'expand_more' },
   chevronUp: { ios: 'chevron.up', android: 'expand_less' },
+  search: { ios: 'magnifyingglass', android: 'search' },
+  link: { ios: 'link', android: 'link' },
 } as const satisfies Record<string, { ios: SFSymbol; iosSelected?: SFSymbol; android: AndroidSymbol }>;
 
 export type IconName = keyof typeof ICONS;
