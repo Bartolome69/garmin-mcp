@@ -150,7 +150,8 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
       setFailure(null);
     } catch (err) {
       // Nothing reached the Coach (or it said no): the question stays, marked, with Send again. No retry here.
-      const why = err instanceof CoachLimitReached ? err.message : err instanceof Error ? err.message : 'Not sent.';
+      const why = err instanceof CoachLimitReached ? err.message : failureKind(err) === 'offline' ? 'No connection.'
+        : err instanceof Error ? err.message : '';
       commit(ref.current.filter((m) => m.id !== turn.replyId)
         .map((m) => (m.id === turn.userId ? { ...m, status: 'not_sent', error: why } : m)));
       if (err instanceof CoachLimitReached) setCapHit(dayOf(clock()));

@@ -251,7 +251,7 @@ function Banner({ testID, children, onPress, label }: { testID: string; children
   );
   return onPress
     ? <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}>{body}</Pressable>
-    : <View testID={testID} accessible accessibilityLabel={label} accessibilityLiveRegion="polite">{body}</View>;
+    : <View testID={testID} accessibilityLiveRegion="polite">{body}</View>;
 }
 
 export function CoachView({ rows, empty, starters, limit, offline, streaming, context, searching, query, onQuery, filter, cards, latestPending,
@@ -295,8 +295,9 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
     <KeyboardAvoidingView testID="coach" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.bg }}>
       {offline ? (
         <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-          <Banner testID="coach-offline" label="Offline. The Coach needs a connection. Your plan and runs still work.">
+          <Banner testID="coach-offline" label="Offline">
             <Text variant="subhead">Offline · the Coach needs a connection. Your plan and runs still work.</Text>
+            <Button label="Try again" small onPress={actions.retryLoad} style={{ alignSelf: 'flex-start', marginTop: 6 }} />
           </Banner>
         </View>
       ) : null}
@@ -304,7 +305,7 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 8 }}>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderRadius: 12, backgroundColor: colors.sunken, minHeight: MIN_TOUCH }}>
             <Icon name="search" tone="muted" />
-            <TextInput testID="coach-search" value={query} onChangeText={onQuery} placeholder="Search the conversation" placeholderTextColor={colors.muted}
+            <TextInput testID="coach-search-input" value={query} onChangeText={onQuery} placeholder="Search the conversation" placeholderTextColor={colors.muted}
               autoFocus accessibilityLabel="Search the conversation" style={{ flex: 1, color: colors.text, fontSize: 16, minHeight: MIN_TOUCH }} />
           </View>
           <Button label="Done" small onPress={actions.endSearch} />
