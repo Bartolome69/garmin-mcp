@@ -120,6 +120,7 @@ export default function CoachScreen() {
         actions={{
           send: (text, starter) => { coach.send(text, { starter }); },
           sendAgain: (id) => { coach.sendAgain(id); },
+          stop: () => { coach.stop(); },
           retry: (replyId) => {
             const i = coach.messages.findIndex((m) => m.id === replyId);
             const q = [...coach.messages.slice(0, i)].reverse().find((m) => m.role === 'user');

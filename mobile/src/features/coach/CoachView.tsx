@@ -44,6 +44,8 @@ export type CardState = {
 export type CoachActions = {
   send: (text: string, starter?: boolean) => void;
   sendAgain: (id: string) => void;
+  /** While a reply streams, Send becomes Stop (the composer stays open). */
+  stop: () => void;
   retry: (replyId: string) => void;
   removeContext: () => void;
   feedback: (id: string, value: 'up' | 'down') => void;
@@ -438,11 +440,18 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
           {limit.remaining != null && !locked ? (
             <Text variant="caption" tone="muted" numeric testID="coach-remaining">{`${limit.remaining} left today`}</Text>
           ) : null}
-          <Pressable testID="coach-send" accessibilityRole="button" accessibilityLabel="Send" accessibilityState={{ disabled: !canSend }}
-            disabled={!canSend} onPress={() => submit(text)}
-            style={{ width: MIN_TOUCH, height: MIN_TOUCH, alignItems: 'center', justifyContent: 'center', opacity: canSend ? 1 : 0.4 }}>
-            <Icon name="send" context="toolbar" tone={canSend ? 'text' : 'muted'} />
-          </Pressable>
+          {streaming ? (
+            <Pressable testID="coach-stop" accessibilityRole="button" accessibilityLabel="Stop" onPress={actions.stop}
+              style={{ width: MIN_TOUCH, height: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="stop" context="toolbar" />
+            </Pressable>
+          ) : (
+            <Pressable testID="coach-send" accessibilityRole="button" accessibilityLabel="Send" accessibilityState={{ disabled: !canSend }}
+              disabled={!canSend} onPress={() => submit(text)}
+              style={{ width: MIN_TOUCH, height: MIN_TOUCH, alignItems: 'center', justifyContent: 'center', opacity: canSend ? 1 : 0.4 }}>
+              <Icon name="send" context="toolbar" tone={canSend ? 'text' : 'muted'} />
+            </Pressable>
+          )}
         </View>
       </View>
     </View>

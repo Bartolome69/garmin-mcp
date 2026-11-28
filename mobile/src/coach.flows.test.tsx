@@ -47,6 +47,7 @@ import WatchConfirm from './app/watch/confirm';
 import { NotSignedIn } from './api/client';
 import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import type { CoachApi } from './features/coach/api';
+import { STOPPED } from './features/coach/CoachProvider';
 import { FakeCoach } from './features/coach/fake';
 import type { CoachEvent } from './features/coach/sse';
 import { PERSONA_PLAN } from './features/plan/fixture';
@@ -144,7 +145,10 @@ describe('1. Ask', () => {
     expect(screen.getByTestId('coach-send').props.accessibilityState).toEqual({ disabled: true });
     await ask('Should I still do the tempo?');
     expect(await screen.findByTestId('streaming')).toBeTruthy();
-    expect(screen.getByTestId('coach-send').props.accessibilityState).toEqual({ disabled: true });
+    // While it streams, Send is Stop (MIN_TOUCH, named), and the composer stays open.
+    expect(screen.queryByTestId('coach-send')).toBeNull();
+    expect(screen.getByTestId('coach-stop').props.accessibilityLabel).toBe('Stop');
+    expect(screen.getByTestId('composer').props.editable).toBe(true);
     await act(async () => { fake.release(); });
     const reply = within(lastReply());
     expect(screen.queryByTestId('streaming')).toBeNull();
@@ -154,6 +158,21 @@ describe('1. Ask', () => {
     expect(screen.getByTestId('coach-remaining')).toHaveTextContent('9 left today');
     expect(fake.sent).toEqual([{ text: 'Should I still do the tempo?', starter: false, context: null }]);
   });
+  it('Stop ends a reply that is streaming: what was written stays, marked stopped, and Send is back', async () => {
+    const fake = new FakeCoach({ hold: true });
+    await openCoach(fake);
+    await ask('Should I still do the tempo?');
+    await screen.findByTestId('streaming');
+    await fireEvent.press(screen.getByTestId('coach-stop'));
+    expect(screen.queryByTestId('streaming')).toBeNull();
+    expect(within(lastReply()).getByText(STOPPED)).toBeTruthy();
+    await act(async () => { fake.release(); }); // the held reply arriving late changes nothing
+    expect(within(lastReply()).getByText(STOPPED)).toBeTruthy();
+    expect(within(lastReply()).queryByText(/Below your range of 54 to 66/)).toBeNull();
+    expect(screen.getByTestId('coach-send')).toBeTruthy();
+    expect(screen.queryByTestId('coach-stop')).toBeNull();
+  });
+
   it('a prompt chip sends itself, marked as a starter; thumbs reach the server', async () => {
     const fake = new FakeCoach();
     await openCoach(fake);

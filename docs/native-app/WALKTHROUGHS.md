@@ -128,7 +128,8 @@ Use `EXPO_PUBLIC_DAASH_WATCH=fail` (the stand-in watch fails its first try).
    *"8 left today"*) and *"Send"* (dimmed and said as unavailable when empty).
 2. Type a question and send. While it streams you should hear *"Reading your data"* /
    *"Writing"* (a live status), **not** every word as it arrives. When it finishes, the reply
-   is announced once: *"The Coach: …"*.
+   is announced once: *"The Coach: …"*. While it streams, *"Send"* is *"Stop"*: double-tap it
+   and the reply keeps what it had written, with *"You stopped this reply."*
 3. A proposal card: *"Proposed change"* (heading), each changed day as one element, *"Review 1
    watch change"*, *"Not now"*. *"Review"* opens the same diff and confirm as flow 1.
 4. **Keyboard** (check on both platforms, with and without a screen reader): with the

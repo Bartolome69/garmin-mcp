@@ -30,6 +30,6 @@ button "Should I still do the tempo?" [disabled]
 button "Make it easier" [disabled]
 textfield "Message the Coach"
 text "7 left today"
-button "Send" [disabled]
+button "Stop"
 button "Search the conversation"
 button "Conversation options"

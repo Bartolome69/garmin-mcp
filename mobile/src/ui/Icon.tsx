@@ -22,6 +22,7 @@ export const ICONS = {
   add: { ios: 'plus', android: 'add' },
   more: { ios: 'ellipsis', android: 'more_horiz' },
   send: { ios: 'arrow.up', android: 'send' },
+  stop: { ios: 'stop.fill', android: 'stop' },
   lock: { ios: 'lock', android: 'lock' },
   error: { ios: 'exclamationmark.circle', android: 'error' },
   sync: { ios: 'arrow.triangle.2.circlepath', android: 'sync' },
