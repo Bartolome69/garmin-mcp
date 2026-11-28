@@ -62,6 +62,7 @@ import RUNS from './features/run/runs.fixture.json';
 import { PERSONA_TODAY_COACH } from './features/today/fixture';
 import PROPOSALS from './features/watch/proposals.fixture.json';
 import { FakeCoach } from './features/coach/fake';
+import type { ServerMessage } from './features/coach/model';
 import { CoachApiContext } from './features/coach/source';
 import { OnboardingProvider } from './features/onboarding/OnboardingProvider';
 import { CASES } from './features/onboarding/source';
@@ -79,16 +80,19 @@ import { MIN_TOUCH } from './ui/Button';
 let queue: WatchContext | null = null;
 function Probe() { queue = useWatch(); return null; }
 
-// The Coach for these screens: one exchange about Wednesday's run (with its chart) and one
-// pending proposal, so the thread draws every kind of row.
-const coachThread = () => new FakeCoach({ messages: [
-  { id: 1, role: 'user', text: 'Why did rep 6 feel harder?', status: 'sent', context: { kind: 'run', id: '2026-11-25-intervals', label: 'About · Wed 25 · 6 × 800 m' } },
-  { id: 2, role: 'assistant', text: 'Rep pace averaged 4:01. Your peak heart rate on rep 6 was 172, 4 bpm above rep 5.', status: 'done', sources: ['Run · Garmin'],
+// The Coach for these screens: one exchange about Wednesday's run (with its chart), a memory
+// note and one pending proposal, written today, so the thread draws every kind of row.
+const at = () => Math.floor(Date.now() / 1000);
+const COACH_MESSAGES = (): ServerMessage[] => [
+  { id: 1, role: 'user', text: 'Why did rep 6 feel harder?', status: 'sent', at: at(), context: { kind: 'run', id: '2026-11-25-intervals', label: 'About · Wed 25 · 6 × 800 m' } },
+  { id: 2, role: 'assistant', text: 'Rep pace averaged 4:01. Your peak heart rate on rep 6 was 172, 4 bpm above rep 5.', status: 'done', at: at(), sources: ['Run · Garmin'],
     chart: { kind: 'bars', title: 'Peak heart rate per rep', unit: 'bpm', caption: 'bpm', labels: ['Rep 1', 'Rep 2', 'Rep 3', 'Rep 4', 'Rep 5', 'Rep 6'],
       values: [164, 165, 166, 168, 168, 172], band: null, highlight: [5], summary: 'Peak heart rate per rep: 164, 165, 166, 168, 168, 172 bpm.' } },
-  { id: 3, role: 'user', text: 'Make it easier then', status: 'sent' },
-  { id: 4, role: 'action', text: 'Make today easier: 3 × 2 km at threshold becomes Easy 6 km.', status: 'pending', tool: 'easier', request: { kind: 'easier' } },
-] });
+  { id: 3, role: 'user', text: 'I’m away 1 to 3 Dec. Make it easier then', status: 'sent', at: at() },
+  { id: 4, role: 'memory', text: 'Travelling 1 to 3 Dec', status: 'done', at: at() },
+  { id: 5, role: 'action', text: 'Make today easier: 3 × 2 km at threshold becomes Easy 6 km.', status: 'pending', tool: 'easier', request: { kind: 'easier' }, at: at() },
+];
+const coachThread = () => new FakeCoach({ messages: COACH_MESSAGES() });
 
 function app(scheme: 'dark' | 'light', coach = true) {
   const Root = ({ children }: { children?: ReactNode }) => (
@@ -277,38 +281,53 @@ describe.each(['light', 'dark'] as const)(`every screen on ${Platform.OS}, %s`, 
 // shows from the server. Read from what's drawn: text and what screen readers are told.
 // The Coach tab itself ('coach') counts as a Coach block: native tabs draw every tab's screen.
 const COACH_SLOTS = new Set(['coach', 'coach-line', 'ask-why', 'coach-note', 'coach-ask', 'debrief', 'diff-coach']);
-// What the server sends these screens (the development fixtures stand in for it).
-const SERVER_NUMBERS = numbersOfPayload([PERSONA_TODAY_COACH, PERSONA_PLAN_COACH, RUNS, PROPOSALS, ONBOARDING]);
+// What the server sends each screen (the development fixtures stand in for it): a Coach block
+// is checked against its own screen's data, not every fixture at once.
+const RUN_CASES = (RUNS as unknown as { cases: Record<string, unknown> }).cases;
+function payloadFor(url: string): Set<string> {
+  const run = /\/run\/([^/?]+)/.exec(url)?.[1];
+  if (run) return numbersOfPayload(RUN_CASES[run]);
+  if (url.startsWith('/today')) return numbersOfPayload(PERSONA_TODAY_COACH);
+  if (url.startsWith('/plan')) return numbersOfPayload([PERSONA_PLAN_COACH, PROPOSALS]);
+  if (url.startsWith('/onboarding')) return numbersOfPayload(ONBOARDING);
+  return new Set();
+}
+// The Coach tab (drawn on every screen by native tabs) against what its own thread was sent as
+// data: the run the question was about, the plan and its proposals, the thread's charts and tags,
+// and the runner's own words (questions, memory). Never a reply's words.
+const COACH_TAB_NUMBERS = numbersOfPayload([RUN_CASES['2026-11-25-intervals'], PERSONA_PLAN, PROPOSALS,
+  COACH_MESSAGES().map((m) => (m.role === 'assistant' || m.role === 'action' ? [m.chart, m.context, m.request] : [m.text, m.context]))]);
 // The Coach thread's own chrome, not training numbers: a day separator's clock time, and how many free messages are left today.
 const CHROME = new Set(['coach-day', 'coach-remaining']);
+type Where = 'plain' | 'slot' | 'tab';
 function numbersSplit(tree: unknown) {
-  const plain: string[] = [];
-  const coach: string[] = [];
-  const walk = (n: unknown, inCoach: boolean) => {
-    if (typeof n === 'string') { (inCoach ? coach : plain).push(...numbersIn(n)); return; }
+  const out: Record<Where, string[]> = { plain: [], slot: [], tab: [] };
+  const walk = (n: unknown, where: Where) => {
+    if (typeof n === 'string') { out[where].push(...numbersIn(n)); return; }
     if (!n || typeof n !== 'object') return;
-    if (Array.isArray(n)) { n.forEach((c) => walk(c, inCoach)); return; }
+    if (Array.isArray(n)) { n.forEach((c) => walk(c, where)); return; }
     const node = n as Node;
     if (CHROME.has(node.props?.testID)) return;
-    const here = inCoach || COACH_SLOTS.has(node.props?.testID);
+    const id = node.props?.testID;
+    const here: Where = where !== 'plain' ? where : id === 'coach' ? 'tab' : COACH_SLOTS.has(id) ? 'slot' : 'plain';
     for (const said of [node.props?.accessibilityLabel, node.props?.accessibilityValue?.text]) {
-      if (typeof said === 'string') (here ? coach : plain).push(...numbersIn(said));
+      if (typeof said === 'string') out[here].push(...numbersIn(said));
     }
     (node.children ?? []).forEach((c) => walk(c, here));
   };
-  walk(tree, false);
-  return { plain, coach };
+  walk(tree, 'plain');
+  return { plain: out.plain, coach: [...out.slot, ...out.tab], slot: out.slot, tab: out.tab };
 }
 
 describe(`Coach on and off on ${Platform.OS}: every screen's numbers are the same`, () => {
   // The Coach's own screens don't exist with it off (the tab is hidden and unreachable).
   const PARITY = SCREENS.filter(([, url]) => !url.startsWith('/coach'));
-  const seen: Record<string, Partial<Record<'on' | 'off', ReturnType<typeof numbersSplit>>>> = {};
+  const seen: Record<string, Partial<Record<'on' | 'off', ReturnType<typeof numbersSplit>>> & { url?: string }> = {};
   const cases = PARITY.flatMap(([name, url, id]) => (['on', 'off'] as const).map((mode) => [`${name} · Coach ${mode}`, name, url, id, mode] as const));
   it.each(cases)('%s', async (_label, name, url, id, mode) => {
     await renderRouter(app('dark', mode === 'on'), { initialUrl: url });
     await screen.findByTestId(id, {}, { timeout: 4000 });
-    (seen[name] ??= {})[mode] = numbersSplit(screen.toJSON());
+    (seen[name] ??= { url })[mode] = numbersSplit(screen.toJSON());
   });
   it.each((['on', 'off'] as const).map((mode) => [`Staged diff · Coach ${mode}`, mode] as const))('%s', async (_label, mode) => {
     await renderRouter(app('dark', mode === 'on'), { initialUrl: '/plan' });
@@ -317,7 +336,7 @@ describe(`Coach on and off on ${Platform.OS}: every screen's numbers are the sam
     await act(async () => { queue!.stage(p); });
     await act(async () => { router.push(`/plan/new-week?id=${encodeURIComponent(p.id)}`); });
     await screen.findByTestId('diff', {}, { timeout: 4000 });
-    (seen['New week (diff)'] ??= {})[mode] = numbersSplit(screen.toJSON());
+    (seen['New week (diff)'] ??= { url: '/plan/new-week' })[mode] = numbersSplit(screen.toJSON());
   });
   it('every number is identical with the Coach on and off, on every screen', () => {
     const names = Object.keys(seen);
@@ -331,11 +350,25 @@ describe(`Coach on and off on ${Platform.OS}: every screen's numbers are the sam
     expect(differ).toEqual([]);
     expect(names.filter((n) => seen[n].off?.coach.length)).toEqual([]);
   });
-  it('a Coach block shows no number that isn’t on the screen or in what the server sent', () => {
-    const invented = Object.entries(seen).map(([n, s]) => [n, (s.on?.coach ?? []).filter((x) => !s.on?.plain.includes(x) && !SERVER_NUMBERS.has(x))] as const)
-      .filter(([, xs]) => xs.length);
+  it('a Coach block shows no number that isn’t on its screen or in what the server sent that screen', () => {
+    const invented = Object.entries(seen).map(([n, s]) => {
+      const payload = payloadFor(s.url ?? '');
+      const slot = (s.on?.slot ?? []).filter((x) => !s.on?.plain.includes(x) && !payload.has(x));
+      const tab = (s.on?.tab ?? []).filter((x) => !COACH_TAB_NUMBERS.has(x));
+      return [n, [...new Set([...slot, ...tab])]] as const;
+    }).filter(([, xs]) => xs.length);
     expect(invented).toEqual([]);
-    expect(Object.values(seen).some((s) => s.on?.coach.length)).toBe(true); // the check saw Coach blocks with numbers
+    expect(Object.values(seen).some((s) => s.on?.slot.length)).toBe(true); // the check saw Coach blocks with numbers
+    expect(Object.values(seen).some((s) => s.on?.tab.length)).toBe(true);
+  });
+  it('the check fails a Coach block with a number that isn’t in its data', () => {
+    const tree = { type: 'View', props: {}, children: [
+      { type: 'Text', props: { testID: 'coach-line' }, children: ['HRV 87 ms, under your range.'] },
+      { type: 'View', props: { testID: 'coach' }, children: [{ type: 'Text', props: {}, children: ['Your resting heart rate was 41.'] }] },
+    ] };
+    const split = numbersSplit(tree);
+    expect(split.slot.filter((x) => !payloadFor('/today').has(x))).toEqual(['87']);
+    expect(split.tab.filter((x) => !COACH_TAB_NUMBERS.has(x))).toEqual(['41']);
   });
 });
 

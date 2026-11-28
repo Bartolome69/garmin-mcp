@@ -46,6 +46,10 @@ import { NotSignedIn } from './api/client';
 import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import type { CoachApi } from './features/coach/api';
 import { FakeCoach } from './features/coach/fake';
+import type { CoachEvent } from './features/coach/sse';
+import { PERSONA_PLAN } from './features/plan/fixture';
+import RUNS from './features/run/runs.fixture.json';
+import { PERSONA_TODAY } from './features/today/fixture';
 import type { ServerMessage } from './features/coach/model';
 import { CoachApiContext } from './features/coach/source';
 import PROPOSALS from './features/watch/proposals.fixture.json';
@@ -115,6 +119,7 @@ function words(tree: unknown): string[] {
   return out;
 }
 
+const RUN = (RUNS as unknown as { cases: Record<string, unknown> }).cases['2026-11-25-intervals'];
 const lastReply = () => screen.getAllByTestId(/^coach-reply-/).at(-1)!;
 /** Now, in the server's seconds: a thread written today (the pilot sends no time; the v1 does). */
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -518,17 +523,8 @@ describe('12. The Coach switch in You', () => {
 });
 
 describe('13. The Coach tab shows only the server’s numbers', () => {
-  it('every number in a reply, chart, proposal card or memory note is in what the server sent', async () => {
-    const fake = new FakeCoach();
-    const events: unknown[] = [];
-    const recorded: CoachApi = {
-      thread: () => fake.thread(), decide: (i, d) => fake.decide(i, d), feedback: (i, v) => fake.feedback(i, v), clear: () => fake.clear(),
-      send: (b, on) => fake.send(b, (e) => { events.push(e); on(e); }),
-    };
-    await openCoach(recorded);
-    for (const q of ['Should I still do the tempo?', 'Why was rep 6 hard on Wednesday?', 'Make it easier', 'I’m travelling 1 to 3 Dec', 'How’s my week?']) await ask(q);
-    await screen.findByTestId(/^proposal-days-/);
-    const payload = numbersOfPayload([fake.messages, events, PROPOSALS]);
+  /** Numbers drawn inside replies, charts, proposal cards and memory notes: text and what screen readers are told. */
+  const coachNumbers = (tree: unknown): string[] => {
     const shown: string[] = [];
     const walk = (n: unknown, on: boolean) => {
       if (typeof n === 'string') { if (on) shown.push(...numbersIn(n)); return; }
@@ -540,8 +536,46 @@ describe('13. The Coach tab shows only the server’s numbers', () => {
       if (here && typeof node.props?.accessibilityLabel === 'string') shown.push(...numbersIn(node.props.accessibilityLabel));
       (node.children ?? []).forEach((c) => walk(c, here));
     };
-    walk(screen.toJSON(), false);
+    walk(tree, false);
+    return shown;
+  };
+  /**
+   * What the numbers may come from: the data the Coach read (the persona's Today, Wednesday's
+   * run, the plan and its proposals), the structured parts of what the server sent (charts,
+   * tags, proposals), and the runner's own questions. Never the reply's words: a number the
+   * model wrote must be in the data, not merely in its own reply.
+   */
+  const dataNumbers = (fake: FakeCoach, events: CoachEvent[]) => numbersOfPayload([
+    PERSONA_TODAY, RUN, PERSONA_PLAN, PROPOSALS,
+    fake.sent.map((b) => [b.text, b.context]),
+    events.map((e) => (e.type === 'chart' ? e.chart : e.type === 'pending' ? [e.proposal, e.request] : null)),
+    fake.messages.filter((m) => m.role === 'user').map((m) => m.text),
+    fake.messages.map((m) => [m.chart, m.context, m.proposal, m.request]),
+  ]);
+  const recording = (fake: FakeCoach, events: CoachEvent[]): CoachApi => ({
+    thread: () => fake.thread(), decide: (i, d) => fake.decide(i, d), feedback: (i, v) => fake.feedback(i, v), clear: () => fake.clear(),
+    send: (b, on) => fake.send(b, (e) => { events.push(e); on(e); }),
+  });
+
+  it('every number in a reply, chart, proposal card or memory note is in the data or what the server sent as data', async () => {
+    const fake = new FakeCoach();
+    const events: CoachEvent[] = [];
+    await openCoach(recording(fake, events));
+    for (const q of ['Should I still do the tempo?', 'Why was rep 6 hard on Wednesday?', 'Make it easier', 'I’m travelling 1 to 3 Dec', 'How’s my week?']) await ask(q);
+    await screen.findByTestId(/^proposal-days-/);
+    const shown = coachNumbers(screen.toJSON());
     expect(shown.length).toBeGreaterThan(20);
+    const payload = dataNumbers(fake, events);
     expect([...new Set(shown.filter((n) => !payload.has(n)))]).toEqual([]);
+  });
+  it('a reply with a number that isn’t in the data fails the check', async () => {
+    const fake = new FakeCoach({ messages: [
+      { id: 1, role: 'user', text: 'How was my sleep?', status: 'sent', at: nowS() },
+      { id: 2, role: 'assistant', text: 'Your resting heart rate was 41, and HRV 87 ms.', status: 'done', at: nowS() },
+    ] });
+    await openCoach(fake);
+    await screen.findByTestId('coach-reply-2');
+    const payload = dataNumbers(fake, []);
+    expect([...new Set(coachNumbers(screen.toJSON()).filter((n) => !payload.has(n)))]).toEqual(['41', '87']);
   });
 });
