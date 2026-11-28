@@ -46,8 +46,12 @@ export function MemoryProvider({ children, store: given, clock = Date.now, seed 
     return () => { live = false; };
   }, [store]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const save = useCallback(async (next: MemoryItem[], changed: MemoryItem | null, removed: string | null) => {
-    setItems(next);
+  // The current items, so two changes before a render (two memory events in one reply) both stay.
+  const ref = useRef<MemoryItem[]>([]);
+  ref.current = items;
+  const save = useCallback(async (change: (cur: MemoryItem[]) => MemoryItem[], changed: MemoryItem | null, removed: string | null) => {
+    ref.current = change(ref.current);
+    setItems(change);
     if (changed) await store.put(changed).catch(() => {});
     if (removed) await store.remove(removed).catch(() => {});
   }, [store]);
@@ -59,17 +63,17 @@ export function MemoryProvider({ children, store: given, clock = Date.now, seed 
       if (!words) return null;
       const now = clock();
       const item: MemoryItem = { id: id ?? `m${now}-${n.current++}`, kind, text: words, source, createdAt: now, updatedAt: now };
-      await save([...items.filter((i) => i.id !== item.id), item], item, null);
+      await save((cur) => [...cur.filter((i) => i.id !== item.id), item], item, null);
       return item;
     },
     update: async (id, patch) => {
-      const old = items.find((i) => i.id === id);
+      const old = ref.current.find((i) => i.id === id);
       if (!old) return;
       const item = { ...old, ...patch, text: (patch.text ?? old.text).trim() || old.text, updatedAt: clock() };
-      await save(items.map((i) => (i.id === id ? item : i)), item, null);
+      await save((cur) => cur.map((i) => (i.id === id ? item : i)), item, null);
     },
-    remove: async (id) => { await save(items.filter((i) => i.id !== id), null, id); },
-    clear: async () => { setItems([]); await store.clear().catch(() => {}); },
+    remove: async (id) => { await save((cur) => cur.filter((i) => i.id !== id), null, id); },
+    clear: async () => { ref.current = []; setItems([]); await store.clear().catch(() => {}); },
   }), [items, loaded, save, store, clock]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

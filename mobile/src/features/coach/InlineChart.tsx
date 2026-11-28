@@ -1,10 +1,11 @@
 // A chart inside a Coach reply (build prompt, section 5.10). The app draws it from the
 // numbers the server sent with the reply, never from the reply's words: a line (a
 // signal by night, with the runner's own range shaded) or bars (one per rep). Marked
-// points are said in the summary as well, so colour is never the only cue; a screen
+// points are said in the summary as well, and drawn with a shape (a ringed point, an
+// outlined bar with a dot and a bold value), so colour is never the only cue; a screen
 // reader hears the summary.
 import { View } from 'react-native';
-import Svg, { Circle, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import { useTheme } from '../../theme/ThemeProvider';
 import { Text } from '../../ui/Text';
@@ -45,11 +46,16 @@ export function InlineChartView({ chart, testID }: { chart: InlineChart; testID?
               ? <Circle key={i} cx={x(i)} cy={y(v)} r={3.5} fill={colors.warning} stroke={colors.text} strokeWidth={1} /> : null))}
           </>
         ) : chart.values.map((v, i) => (v == null ? null : (
-          <Rect key={i} x={i * slot + slot * 0.2} y={y(v)} width={slot * 0.6} height={BASE - y(v)} rx={2}
-            fill={marked.has(i) ? colors.text : colors.button} />
+          // A marked bar: darker, outlined, with a dot above it and its value in bold, so colour isn't the only cue.
+          <G key={i} testID={marked.has(i) ? `bar-marked-${i}` : `bar-${i}`}>
+            <Rect x={i * slot + slot * 0.2} y={y(v)} width={slot * 0.6} height={BASE - y(v)} rx={2}
+              fill={marked.has(i) ? colors.text : colors.button} stroke={marked.has(i) ? colors.warning : 'none'} strokeWidth={marked.has(i) ? 2 : 0} />
+            {marked.has(i) ? <Circle cx={i * slot + slot / 2} cy={Math.max(3, y(v) - 5)} r={2.5} fill={colors.warning} /> : null}
+          </G>
         )))}
         {chart.labels.map((l, i) => (
-          <SvgText key={i} x={chart.kind === 'bars' ? i * slot + slot / 2 : x(i)} y={H - 2} textAnchor="middle" fill={colors.muted} fontSize={9}>
+          <SvgText key={i} x={chart.kind === 'bars' ? i * slot + slot / 2 : x(i)} y={H - 2} textAnchor="middle" fontSize={9}
+            fill={marked.has(i) ? colors.text : colors.muted} fontWeight={marked.has(i) ? '700' : '400'}>
             {chart.kind === 'bars' ? `${chart.values[i] ?? ''}` : l}
           </SvgText>
         ))}

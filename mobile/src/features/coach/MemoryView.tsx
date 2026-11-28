@@ -29,7 +29,7 @@ export function MemoryView({ items, coach, actions }: {
     <ScrollView testID="memory" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ padding: 16, gap: 12 }}>
       <Text variant="subhead" tone="muted">
-        {coach ? 'Used only when you talk to the Coach. Edit or delete anything; nothing here changes your numbers.' : 'Daash plans around these. Edit anything.'}
+        {coach ? 'Used only when you talk to the Coach. Edit or delete anything; nothing here changes your numbers.' : 'Kept on this phone. Edit or delete anything.'}
       </Text>
       {shown.length ? (
         <List testID="memory-list">
@@ -140,12 +140,12 @@ export function CoachSection({ available, coach, onToggle, onOpen }: {
           </View>
         ) : null}
         <Pressable testID="row-memory" accessibilityRole="button" onPress={onOpen}
-          accessibilityLabel={coach ? 'Coach memory. What the Coach keeps in mind' : 'Training preferences. Daash plans around these'}
+          accessibilityLabel={coach ? 'Coach memory. What the Coach keeps in mind' : 'Training preferences. What you’ve told Daash'}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, minHeight: 60,
             borderTopWidth: available ? 1 : 0, borderTopColor: colors.hairline }}>
           <View style={{ flex: 1 }}>
             <Text variant="body">{coach ? 'Coach memory' : 'Training preferences'}</Text>
-            <Text variant="footnote" tone="muted">{coach ? 'What the Coach keeps in mind' : 'Daash plans around these'}</Text>
+            <Text variant="footnote" tone="muted">{coach ? 'What the Coach keeps in mind' : 'What you’ve told Daash'}</Text>
           </View>
           <Icon name="chevronRight" tone="muted" />
         </Pressable>

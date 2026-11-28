@@ -2,15 +2,19 @@
 // CoachOffline, P1-Coach-confirm): one thread in dark and light (this suite runs once per
 // platform), the one brand fill, no hue on the Coach, the send button, and the states.
 import { describe, expect, it, jest } from '@jest/globals';
-import { fireEvent, render, screen, within } from '@testing-library/react-native';
-import { Platform, StyleSheet } from 'react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { Platform, StyleSheet, Text as RNText } from 'react-native';
 
 import { ThemeProvider } from '../../theme/ThemeProvider';
 import { colors } from '../../theme/tokens';
 import FIXTURE from '../watch/proposals.fixture.json';
 import type { Proposal } from '../watch/model';
 import { CoachView, type CardState, type CoachActions } from './CoachView';
-import { HRV_CHART } from './fake';
+import { InlineChartView } from './InlineChart';
+import { HRV_CHART, REP_HR_CHART } from './fake';
+import { memoryItemsStore } from './memory';
+import { MemoryProvider, useMemory, type MemoryContext } from './MemoryProvider';
+import { MIN_TOUCH } from '../../ui/Button';
 import { threadRows, type CoachMessage, type Limit } from './model';
 
 const os = Platform.OS;
@@ -29,7 +33,7 @@ const THREAD: CoachMessage[] = [
 const FREE: Limit = { limit: 10, remaining: 7, reached: false };
 
 function draw({ scheme = 'dark' as 'dark' | 'light', messages = THREAD, limit = FREE, offline = false, streaming = false, brand = true,
-  showEarlier = false, cards = { 6: { proposal: EASIER, canReview: true, batch: null } } as Record<string, CardState> } = {}) {
+  showEarlier = false, authFailure = null as 'signedOut' | 'reconnect' | null, cards = { 6: { proposal: EASIER, canReview: true, batch: null } } as Record<string, CardState> } = {}) {
   const actions = Object.fromEntries(['send', 'sendAgain', 'retry', 'removeContext', 'feedback', 'review', 'decline', 'inPlan', 'resend', 'showEarlier',
     'limit', 'editMemory', 'retryLoad', 'endSearch', 'clearFilter'].map((k) => [k, jest.fn()])) as unknown as CoachActions;
   const latest = Object.entries(cards).filter(([, c]) => !c.batch && c.canReview).map(([k]) => k).at(-1) ?? null;
@@ -37,7 +41,7 @@ function draw({ scheme = 'dark' as 'dark' | 'light', messages = THREAD, limit = 
     <ThemeProvider initial={scheme}>
       <CoachView rows={threadRows(messages, NOW, showEarlier)} empty={!messages.length} starters={['Why Back off?', 'How’s my week?', 'Move Sunday']}
         limit={limit} offline={offline} streaming={streaming} context={null} searching={false} query="" onQuery={() => {}} filter={null}
-        cards={cards} latestPending={latest} brand={brand} actions={actions} loadFailed={null} />
+        cards={cards} latestPending={latest} brand={brand} actions={actions} loadFailed={null} authFailure={authFailure} />
     </ThemeProvider>,
   ).then((u) => ({ ...u, actions }));
 }
@@ -124,5 +128,47 @@ describe(`The Coach's states on ${os}`, () => {
     const { toJSON } = await draw();
     const words = nodes(toJSON()).flatMap((n) => (n.children ?? []).filter((c): c is string => typeof c === 'string'));
     expect(words.join(' ')).not.toMatch(/\bAI\b/);
+  });
+  it('signed out over a cached thread: the sign-in banner, the thread still there, no Send again, sending off', async () => {
+    const unsent: CoachMessage = { id: 'local:0', role: 'user', text: 'And Sunday?', status: 'not_sent', at: NOW - 60_000, error: '' };
+    await draw({ authFailure: 'signedOut', messages: [...THREAD, unsent] });
+    expect(screen.getByTestId('failure-banner')).toHaveTextContent(/You’re signed out/);
+    expect(screen.getByTestId('question-5')).toBeTruthy();
+    expect(screen.queryByTestId('button-Send again')).toBeNull();
+    await fireEvent.changeText(screen.getByTestId('composer'), 'Hello');
+    expect(screen.getByTestId('coach-send').props.accessibilityState).toEqual({ disabled: true });
+  });
+  it('“Saved to memory” has an Edit at least MIN_TOUCH square', async () => {
+    await draw({ messages: [...THREAD, { id: 'memory:m1', role: 'memory', text: 'Travelling 1 to 3 Dec', status: 'done', at: NOW - 30_000, memoryId: 'm1' }] });
+    const edit = screen.getByLabelText('Edit memory: Travelling 1 to 3 Dec');
+    const style = StyleSheet.flatten(edit.props.style) as { minWidth?: number; minHeight?: number };
+    expect(style.minWidth).toBeGreaterThanOrEqual(MIN_TOUCH);
+    expect(style.minHeight).toBeGreaterThanOrEqual(MIN_TOUCH);
+  });
+});
+
+describe('the inline chart', () => {
+  it('a marked bar has a shape as well as a colour: an outline and a dot', async () => {
+    const { toJSON } = await render(<ThemeProvider initial="dark"><InlineChartView chart={REP_HR_CHART} testID="chart" /></ThemeProvider>);
+    const last = REP_HR_CHART.values.length - 1;
+    const marked = nodes(toJSON()).find((n) => n.props.testID === `bar-marked-${last}`);
+    const plain = nodes(toJSON()).find((n) => n.props.testID === 'bar-0');
+    // Outlined, with a dot above it; an unmarked bar has neither.
+    expect(nodes(marked).some((n) => n.type === 'RNSVGRect' && n.props.strokeWidth === 2)).toBe(true);
+    expect(nodes(marked).some((n) => n.type === 'RNSVGCircle')).toBe(true);
+    expect(nodes(plain).some((n) => n.type === 'RNSVGCircle' || n.props.strokeWidth === 2)).toBe(false);
+  });
+});
+
+describe('memory', () => {
+  it('two changes before a render both stay (two memory events in one reply)', async () => {
+    let ctx: MemoryContext | null = null;
+    function Probe() { ctx = useMemory(); return <RNText>{String(ctx.items.length)}</RNText>; }
+    await render(<MemoryProvider store={memoryItemsStore()} seed={[]}><Probe /></MemoryProvider>);
+    await waitFor(() => expect(ctx!.loaded).toBe(true));
+    await act(async () => { await Promise.all([ctx!.add('travel', 'Travelling 1 to 3 Dec', 'chat', 'a'), ctx!.add('note', 'Treadmill only', 'chat', 'b')]); });
+    expect(ctx!.items.map((i) => i.id)).toEqual(['a', 'b']);
+    await act(async () => { await Promise.all([ctx!.update('a', { text: 'Travelling 1 to 4 Dec' }), ctx!.remove('b')]); });
+    expect(ctx!.items.map((i) => i.text)).toEqual(['Travelling 1 to 4 Dec']);
   });
 });

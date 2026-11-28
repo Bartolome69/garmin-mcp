@@ -498,6 +498,7 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -547,6 +548,7 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -596,6 +598,7 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -645,6 +648,7 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -694,6 +698,7 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -736,13 +741,14 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
                 dy={[]}
                 fill={
                   {
-                    "payload": -5855841,
+                    "payload": -723986,
                     "type": 0,
                   }
                 }
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "700",
                     "textAnchor": "middle",
                   }
                 }
@@ -785,13 +791,14 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
                 dy={[]}
                 fill={
                   {
-                    "payload": -5855841,
+                    "payload": -723986,
                     "type": 0,
                   }
                 }
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "700",
                     "textAnchor": "middle",
                   }
                 }
@@ -2297,6 +2304,7 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -2346,6 +2354,7 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -2395,6 +2404,7 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -2444,6 +2454,7 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -2493,6 +2504,7 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "400",
                     "textAnchor": "middle",
                   }
                 }
@@ -2535,13 +2547,14 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
                 dy={[]}
                 fill={
                   {
-                    "payload": -10592937,
+                    "payload": -15329772,
                     "type": 0,
                   }
                 }
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "700",
                     "textAnchor": "middle",
                   }
                 }
@@ -2584,13 +2597,14 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
                 dy={[]}
                 fill={
                   {
-                    "payload": -10592937,
+                    "payload": -15329772,
                     "type": 0,
                   }
                 }
                 font={
                   {
                     "fontSize": 9,
+                    "fontWeight": "700",
                     "textAnchor": "middle",
                   }
                 }
