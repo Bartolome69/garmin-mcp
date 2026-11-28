@@ -138,7 +138,7 @@ describe(`The watch confirm on ${os}`, () => {
     const { toJSON } = await drawConfirm(unwatchProposal([TEMPO]));
     expect(screen.getByText('Remove from your watch?')).toBeTruthy();
     expect(screen.getByLabelText('Remove, Fri 27, 3 × 2 km at threshold')).toBeTruthy();
-    expect(screen.getByText('It stays in your plan, marked Not on watch. You can send it again any time.')).toBeTruthy();
+    expect(screen.getByText('It stays in your plan, marked Not on your watch. You can send it again any time.')).toBeTruthy();
     expect(screen.getByTestId('button-Keep it')).toBeTruthy();
     expect(brandFills(toJSON())).toBe(1);
   });

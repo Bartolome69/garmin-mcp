@@ -13,6 +13,7 @@ import { ListGroup, ListRow, SectionTitle, SwitchRow } from '../../ui/List';
 import { TypeChip } from '../../ui/session/TypeChip';
 import { Text } from '../../ui/Text';
 import type { RunListItem } from '../run/source';
+import { MEDICAL } from '../watch/proposals';
 import { NOTIFICATION_KINDS, type NotificationKind, type NotificationPrefs } from './notifications';
 import { READABLE } from '../../ui/Screen';
 
@@ -147,7 +148,8 @@ export function HelpView({ actions }: { actions: { trouble: () => void; see: () 
         <ListRow testID="help-trouble" title="Trouble connecting?" sub="Steps for Garmin sign-in and syncing" onPress={actions.trouble} />
         <ListRow testID="help-see" title="What Daash can and can’t see" onPress={actions.see} />
       </ListGroup>
-      <Text variant="footnote" tone="muted">Daash doesn’t give medical advice. If you’re unwell or hurt, check with a doctor or physio.</Text>
+      {/* The same words as every other screen that says it (the server's engine has them). */}
+      <Text testID="help-medical" variant="footnote" tone="muted">{MEDICAL}</Text>
       <Text variant="footnote" tone="muted">{APP_VERSION}</Text>
       <Text variant="footnote" tone="muted">{INDEPENDENT}</Text>
     </Page>

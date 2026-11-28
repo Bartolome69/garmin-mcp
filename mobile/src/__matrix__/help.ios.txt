@@ -8,6 +8,6 @@ cut to lines: none
 header "Help"
 button "Trouble connecting?, Steps for Garmin sign-in and syncing"
 button "What Daash can and can’t see"
-text "Daash doesn’t give medical advice. If you’re unwell or hurt, check with a doctor or physio."
+text "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."
 text "Daash"
 text "Daash is independent and not endorsed by any watch maker."

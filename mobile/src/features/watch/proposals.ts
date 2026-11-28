@@ -155,7 +155,7 @@ export function sendProposal(s: PlanSession, step = 0, targets = 'as planned'): 
   };
 }
 
-/** Remove from watch: off the watch, still in the plan, marked Not on watch. */
+/** Remove from watch: off the watch, still in the plan, marked Not on your watch. */
 export function unwatchProposal(sessions: SessionLike[], batch?: string): Proposal {
   return {
     id: `unwatch:${batch ?? sessions.map((s) => s.id).join(',')}`, source: 'unwatch',

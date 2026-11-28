@@ -55,7 +55,7 @@ export function ConfirmSheet({ p, connection, onConfirm, onBack }: {
             </Line>
           ))}
         </List>
-        <Text variant="footnote" tone="muted">It stays in your plan, marked Not on watch. You can send it again any time.</Text>
+        <Text variant="footnote" tone="muted">It stays in your plan, marked Not on your watch. You can send it again any time.</Text>
         <Button label="Remove from watch" kind="primary" onPress={onConfirm} />
         <Button label="Keep it" onPress={onBack} />
       </View>

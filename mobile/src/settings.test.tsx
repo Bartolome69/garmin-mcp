@@ -115,3 +115,11 @@ describe('You lists every setting', () => {
     expect(await screen.findByTestId('run')).toBeTruthy();
   });
 });
+
+describe('copy that says the same thing says it the same way', () => {
+  it('Help’s medical line is the shared one (Life happened, the Coach and memory use it too)', async () => {
+    const { MEDICAL } = require('./features/watch/proposals') as typeof import('./features/watch/proposals');
+    await open('Help');
+    expect(within(screen.getByTestId('help')).getByTestId('help-medical')).toHaveTextContent(MEDICAL);
+  });
+});

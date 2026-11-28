@@ -231,7 +231,7 @@ describe('4. Remove from watch', () => {
     const sheet = within(await screen.findByTestId('confirm-sheet'));
     expect(sheet.getByText('Remove from your watch?')).toBeTruthy();
     expect(sheet.getByLabelText('Remove, Wed 2, 10 × 400 m')).toBeTruthy();
-    expect(sheet.getByText('It stays in your plan, marked Not on watch. You can send it again any time.')).toBeTruthy();
+    expect(sheet.getByText('It stays in your plan, marked Not on your watch. You can send it again any time.')).toBeTruthy();
     await fireEvent.press(sheet.getByTestId('button-Remove from watch'));
     await pump();
     expect(g.sent.map((o) => o.kind)).toEqual(['add', 'remove']);
