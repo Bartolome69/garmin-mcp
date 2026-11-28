@@ -1260,8 +1260,8 @@ Built on `claude/native-app-m11` (which holds every earlier milestone), 28 Nov.
   `npx expo export` for both platforms succeeds.
 - **Smaller updates.** The fonts are imported by face, so a bundle carries three font files
   instead of about sixty (the Material Symbols font comes with `expo-symbols`).
-- **The slug stays `daash`** (not confirmed: if the Expo project's slug differs, change it in
-  `app.json`). No `owner`.
+- **Slug and owner:** the slug is `daash` and the owner is `bartolome69s-team`, matching
+  the Expo project the owner linked (`expo.dev/accounts/bartolome69s-team/projects/daash`).
 - **Docs:** `docs/native-app/EXPO_GO.md` (from a computer, from the phone, sample data on
   and off, what needs a development build) and `mobile/.env.example`.
 

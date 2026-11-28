@@ -101,7 +101,7 @@ describe('Expo Go', () => {
   it('app.json loads EAS updates in Expo Go (runtimeVersion by appVersion, the project’s update URL)', () => {
     const { expo } = JSON.parse(read('app.json'));
     expect(expo.slug).toBe('daash');
-    expect(expo.owner).toBeUndefined();
+    expect(expo.owner).toBe('bartolome69s-team');
     expect(expo.runtimeVersion).toEqual({ policy: 'appVersion' });
     expect(expo.updates.url).toBe('https://u.expo.dev/5ff0354e-22b6-417a-b6f3-9fc7e7278439');
     expect(expo.extra.eas.projectId).toBe('5ff0354e-22b6-417a-b6f3-9fc7e7278439');

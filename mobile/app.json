@@ -2,6 +2,7 @@
   "expo": {
     "name": "Daash",
     "slug": "daash",
+    "owner": "bartolome69s-team",
     "scheme": "daash",
     "version": "0.1.0",
     "runtimeVersion": {
