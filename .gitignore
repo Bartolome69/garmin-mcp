@@ -17,3 +17,6 @@ tests/signup-test.sqlite3*
 # Left behind by an earlier local run of the plan tooling.
 plan-config.json
 .shots/
+
+# Screenshots the browser tests save (tests/app_chat_test.js, app_pwa_test.js, app_match_test.js).
+garmin-screens/
