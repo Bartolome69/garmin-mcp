@@ -716,7 +716,8 @@ def _plan_head(plan: Mapping[str, Any], monday: date) -> list[str]:
     phase = next((p.get("label") for p in plan.get("phases") or [] if isinstance(p, Mapping) and week_no
                   and (p.get("from_week") or 0) <= week_no <= (p.get("to_week") or 0)), None)
     if cur:
-        head = f"Plan: {app_routes._display(cur.get('name')) or 'the current plan'}"
+        named = cur.get("name") or cur.get("label")
+        head = f"Plan: {app_routes._display(named) if named else 'the current plan'}"
         if cur.get("starts") and cur.get("ends"):
             head += f", {_short_date(cur['starts'])} to {_short_date(cur['ends'])}"
         if cur.get("week") and cur.get("weeks_total"):
@@ -793,16 +794,14 @@ def _fitness_lines(found: Any) -> list[str]:
     if lt.get("heart_rate_bpm") or lt.get("pace_per_km"):
         bits.append("lactate threshold " + " at ".join(str(x).replace(" ", "") if i else f"{x:g} bpm"
                                                        for i, x in enumerate((lt.get("heart_rate_bpm"), lt.get("pace_per_km"))) if x))
-    vo2 = found.get("vo2_max")
-    if isinstance(vo2, Mapping) and vo2.get("value"):
-        bits.append(f"VO2 max {vo2['value']:g}")
-    elif isinstance(vo2, (int, float)):
-        bits.append(f"VO2 max {vo2:g}")
+    vo2 = found.get("vo2max")
+    if isinstance(vo2, (int, float)):
+        bits.append(f"VO2 max {vo2:g}" + (f" (fitness age {found['fitness_age']:g})"
+                                           if isinstance(found.get("fitness_age"), (int, float)) else ""))
     for key, label in (("endurance_score", "endurance score"), ("hill_score", "hill score")):
         v = found.get(key)
-        v = v.get("value") if isinstance(v, Mapping) else v
-        if isinstance(v, (int, float)):
-            bits.append(f"{label} {v:g}")
+        if isinstance(v, Mapping) and isinstance(v.get("score"), (int, float)):
+            bits.append(f"{label} {v['score']:g}" + (f" ({str(v['class']).lower()})" if v.get("class") else ""))
     hr = ((found.get("zones") or {}).get("heart_rate") or {})
     if hr.get("zones"):
         bits.append("heart rate zones " + ", ".join(f"Z{z.get('zone')} {z['bpm'][0]}-{z['bpm'][1]}"
@@ -859,15 +858,45 @@ async def _quietly(coro: Any, seconds: float) -> Any:
         return {"error": type(exc).__name__}
 
 
-async def build_system(cfg: Mapping[str, Any]) -> tuple[str, Any]:
+# Garmin's fitness markers move once a day at most, and reading them is ten calls: kept an hour
+# per person (Nov 28), read after the plan so they never crowd it out of its time.
+FITNESS_TTL = 3600
+_FITNESS: dict[str, tuple[float, Any]] = {}
+
+
+async def _fitness_for(person: str | None, seconds: float) -> Any:
+    now = time.monotonic()
+    kept = _FITNESS.get(person) if person else None
+    if kept and now - kept[0] < FITNESS_TTL:
+        return kept[1]
+    found = await _quietly(server_mod.get_fitness(), seconds)
+    if person and isinstance(found, Mapping) and not found.get("error"):
+        if len(_FITNESS) > 5000:
+            _FITNESS.clear()
+        _FITNESS[person] = (now, found)
+    return found
+
+
+def _lines(fn: Any, *args: Any) -> list[str]:
+    """One part of the context; a shape it can't read leaves that part out, never the turn."""
+    try:
+        out = fn(*args)
+        return [out] if isinstance(out, str) else list(out)
+    except Exception as exc:  # noqa: BLE001 - the model can still ask the tool
+        log.warning("chat context part failed: %s %s", getattr(fn, "__name__", fn), type(exc).__name__)
+        return []
+
+
+async def build_system(cfg: Mapping[str, Any], person: str | None = None) -> tuple[str, Any]:
     """The compact system prompt, and the plan it read (kept for this request's summaries)."""
     today = _today()
     seconds = min(10, cfg["tool_timeout"])
-    plan, activities, readiness, fitness = await asyncio.gather(
+    plan, activities, readiness = await asyncio.gather(
         _quietly(server_mod.get_plan(), seconds), _quietly(server_mod.get_activities(limit=6), seconds),
-        _quietly(server_mod.get_readiness(), seconds), _quietly(server_mod.get_fitness(), seconds))
-    context = "\n".join(_plan_lines(plan, today) + _activity_lines(activities) + [_readiness_line(readiness)]
-                        + _fitness_lines(fitness))
+        _quietly(server_mod.get_readiness(), seconds))
+    fitness = await _fitness_for(person, min(6, seconds))
+    context = "\n".join(_lines(_plan_lines, plan, today) + _lines(_activity_lines, activities)
+                        + _lines(_readiness_line, readiness) + _lines(_fitness_lines, fitness))
     when = f"{app_routes.DAY_NAMES[today.weekday()]} {today.day} {datetime(2000, today.month, 1).strftime('%B')} {today.year}"
     return PROMPT.format(today=when, context=context), plan
 
@@ -1008,7 +1037,7 @@ class Turn:
         user_id = store.chat_add(thread, self.person, "user", "sent", self.text, starter=self.starter)
         self.assistant_id = store.chat_add(thread, self.person, "assistant", "streaming", "", model=cfg["model"])
         await self.emit("start", {"user_id": user_id, "id": self.assistant_id})
-        system, plan = await asyncio.wait_for(build_system(cfg), max(1.0, self.left()))
+        system, plan = await asyncio.wait_for(build_system(cfg, self.user_token), max(1.0, self.left()))
         history = _history(earlier, max(0, cfg["context_messages"] - 1)) + [{"role": "user", "text": self.text}]
         provider = make_provider(cfg, system, tool_specs(self.user_token), history)
         timeout = httpx.Timeout(cfg["provider_timeout"], connect=10.0)

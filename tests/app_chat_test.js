@@ -172,6 +172,21 @@ async function open(browser, { chat, device = "iPhone 13", history = [] }) {
     l = await layout();
     check("a growing box keeps the newest message in view", l.lastBottom <= l.bar.top + 1 && Math.abs(l.bar.bottom - l.h) <= 2, JSON.stringify(l));
 
+    // Turned sideways with the keyboard still up: still the keyboard, the tabs stay aside. A phone's
+    // screen keeps its size when the page shrinks (the test browser's doesn't), so it's pinned here.
+    await page.evaluate(([w, h]) => {
+      Object.defineProperty(screen, "width", { get: () => (innerWidth > innerHeight ? h : w), configurable: true });
+      Object.defineProperty(screen, "height", { get: () => (innerWidth > innerHeight ? w : h), configurable: true });
+    }, [full.width, full.height]);
+    await page.setViewportSize({ width: full.height, height: full.width - 250 });
+    await page.waitForTimeout(400);
+    l = await layout();
+    check("turning the phone with the keyboard up keeps the tabs aside", l.kb && !l.tabs.shown && Math.abs(l.bar.bottom - l.h) <= 2, JSON.stringify(l));
+    check("and on its side the box keeps to a third, so the newest message still shows",
+      l.bar.bottom - l.bar.top <= l.h * 0.3 + 24 && l.lastBottom > 0 && l.lastBottom <= l.bar.top + 1, JSON.stringify(l));
+    await page.setViewportSize({ width: full.width, height: full.height - 330 });
+    await page.waitForTimeout(300);
+
     // The keyboard goes down: the tabs come back under the box.
     await page.fill("#chat-input", "");
     await page.evaluate(() => document.activeElement.blur());

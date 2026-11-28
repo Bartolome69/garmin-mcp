@@ -3906,7 +3906,10 @@ function drawChat() {
       <textarea id="chat-input" class="field" rows="1" maxlength="2000" placeholder="Ask about your training" aria-label="Message"></textarea>
       <button type="submit" class="pill light" id="chat-send" ${CS.busy ? "disabled" : ""}>${CS.busy ? "…" : "Send"}</button></div></form></div>`;
   const input = $("chat-input");
-  const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; };
+  const grow = () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, parseFloat(getComputedStyle(input).maxHeight) || 140) + "px";
+  };
   input.addEventListener("input", () => { const near = chatNear(); grow(); if (near) scrollChat(true); });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("chat-form").requestSubmit(); } });
   $("chat-form").onsubmit = (e) => { e.preventDefault(); const t = input.value.trim(); if (!t || CS.busy) return; input.value = ""; grow(); chatSend(t, false); };
@@ -3952,22 +3955,30 @@ function scrollChat(now) {
 // up when something you type into has focus and the visible height has dropped well below
 // the tallest seen at this width; then body.kb puts the tabs aside. If you were reading the
 // newest message, it stays in view as the space changes.
-const KB = { width: 0, tallest: 0 };
+// The tallest height is kept per width, so turning the phone with the keyboard up compares
+// against that orientation's own full height, not a height the keyboard already took from.
+const KB = { tallest: new Map() };
 function viewportSync() {
   const vv = window.visualViewport;
   const h = Math.round(vv ? vv.height : window.innerHeight);
   const top = Math.round(vv ? vv.offsetTop : 0);
-  if (window.innerWidth !== KB.width) { KB.width = window.innerWidth; KB.tallest = 0; }
-  KB.tallest = Math.max(KB.tallest, h, window.innerHeight);
   const el = document.activeElement;
   const typing = !!el && (el.tagName === "TEXTAREA" || el.isContentEditable
     || (el.tagName === "INPUT" && !["button", "checkbox", "radio", "range", "submit", "reset", "file", "color"].includes(el.type)));
+  const width = window.innerWidth;
+  // A width first seen while typing hasn't shown its full height yet: guess it from the screen.
+  const other = Math.abs(screen.width - width) <= Math.abs(screen.height - width) ? screen.height : screen.width;
+  const seen = KB.tallest.get(width) ?? (typing ? Math.max(h, Math.round(other || 0)) : 0);
+  const tallest = Math.max(seen, typing ? 0 : h, typing ? 0 : window.innerHeight);
+  KB.tallest.set(width, tallest);
   const chat = document.body.dataset.screen === "chat" && $("chat-log");
   const near = chat && chatNear();
   const root = document.documentElement.style;
   root.setProperty("--vvh", h + "px");
   root.setProperty("--vvt", top + "px");
-  document.body.classList.toggle("kb", typing && KB.tallest - h > 120);
+  document.body.classList.toggle("kb", typing && tallest - h > 120);
+  const input = chat && $("chat-input");
+  if (input && input.value) input.dispatchEvent(new Event("input"));
   if (near) scrollChat(true);
 }
 function watchViewport() {

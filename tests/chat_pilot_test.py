@@ -274,12 +274,39 @@ def context_checks() -> None:
 
     fit = {"race_predictions": {"5k": {"time": "19m 10s"}, "half_marathon": {"time": "1h 29m 30s"}},
            "race_predictions_as_of": "2026-11-27", "lactate_threshold": {"heart_rate_bpm": 168, "pace_per_km": "4:05 /km"},
-           "vo2_max": {"value": 57}, "zones": {"heart_rate": {"max_hr": 188, "resting_hr": 45,
+           # The keys metrics.shape_fitness really gives.
+           "vo2max": 57.2, "fitness_age": 31, "endurance_score": {"score": 6512, "class": "Well trained"},
+           "hill_score": {"score": 46, "class": "Recreational"}, "zones": {"heart_rate": {"max_hr": 188, "resting_hr": 45,
                                                               "zones": [{"zone": 1, "bpm": [95, 130]}, {"zone": 2, "bpm": [131, 150]}]}}}
     said = chat_pilot._fitness_lines(fit)[0]
     check("fitness markers go in the prompt: predictions, threshold, VO2 max, zones",
           "5k 19m 10s" in said and "half 1h 29m 30s" in said and "168 bpm at 4:05/km" in said
-          and "VO2 max 57" in said and "Z2 131-150" in said and "max 188, resting 45" in said, said)
+          and "VO2 max 57.2 (fitness age 31)" in said and "endurance score 6512 (well trained)" in said
+          and "hill score 46 (recreational)" in said and "Z2 131-150" in said and "max 188, resting 45" in said, said)
+    named = {**plan, "current_plan": {k: v for k, v in plan["current_plan"].items() if k != "name"}}
+    check("a plan without a name goes by its code, not \"Workout\"",
+          "Plan: MAR," in "\n".join(chat_pilot._plan_lines(named, today)))
+    check("a part of the context that can't be read is left out, not the turn",
+          chat_pilot._lines(chat_pilot._fitness_lines, {"race_predictions": {"5k": "odd"}, "lactate_threshold": {"heart_rate_bpm": "x"}}) == [])
+
+    import asyncio
+    reads = []
+
+    async def counted_fitness() -> dict:
+        reads.append(1)
+        return fit
+
+    real_fitness = chat_pilot.server_mod.get_fitness
+    chat_pilot.server_mod.get_fitness = counted_fitness
+    try:
+        chat_pilot._FITNESS.clear()
+        asyncio.run(chat_pilot._fitness_for("someone", 5))
+        again = asyncio.run(chat_pilot._fitness_for("someone", 5))
+        asyncio.run(chat_pilot._fitness_for("someone else", 5))
+        check("fitness is read once an hour per person, not on every message", len(reads) == 2 and again == fit, str(len(reads)))
+    finally:
+        chat_pilot.server_mod.get_fitness = real_fitness
+        chat_pilot._FITNESS.clear()
     check("fitness that couldn't be read says so", "not available" in chat_pilot._fitness_lines({"error": "Timeout"})[0])
 
     text = chat_pilot._compact("get_plan", plan, 3000, today)

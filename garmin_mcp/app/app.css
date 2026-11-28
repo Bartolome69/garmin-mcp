@@ -968,6 +968,10 @@ body:not(.desk) .chat-wrap .chat-bar { position: static; flex-shrink: 0; }
 body.kb:not(.desk) .chat-wrap { padding-bottom: 0; }
 body.kb:not(.desk) .chat-wrap > .section-head { padding-top: calc(10px + env(safe-area-inset-top)); padding-bottom: 8px; }
 body.kb:not(.desk) .chat-wrap > .section-head .kicker { display: none; }
+/* Very little room (a phone on its side with the keyboard up): the box keeps to a third of it and
+   the title steps aside too, so the newest message still shows. */
+body:not(.desk) .chat-wrap .chat-bar .field { max-height: min(140px, calc(var(--vvh, 100dvh) * 0.3)); }
+@media (max-height: 340px) { body.kb:not(.desk) .chat-wrap > .section-head { display: none; } }
 /* Any screen: while the keyboard is up the tabs step aside, so what you're typing into sits on it. */
 body.kb nav.tabs { display: none; }
 .msg { max-width: 88%; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
