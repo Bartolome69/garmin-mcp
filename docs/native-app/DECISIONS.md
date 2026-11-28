@@ -535,9 +535,22 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   provider (a screen's own test) it falls back to the flags' `plus`. Plan asks
   the server again when Plus changes, so the trend appears straight after the
   free week starts.
+- **Plus isn't known until the cached answer is read (review fix).** Before,
+  every Plus runner was Free for the first render after a launch: Plan fetched
+  the Free plan (no trend) and saved it under the Plus key, and `WidgetSync`
+  wrote the Plus message over the widgets. The provider now has `ready` (the
+  cached answer read, found or not, or anything that unlocks already known);
+  Plan doesn't read or fetch and the widgets aren't written until then.
+  `useResource` takes the variant `key` (Plan's `plan:plain:plus`) and an
+  `enabled` switch: when the key changes, that variant's cached copy draws, a
+  fetch for the old one still on its way is saved under the old key only, and
+  the new one is asked for as soon as it ends. The store's own purchases now
+  count without waiting for a slow server. Source priority's lock can still
+  show for a moment on a cold launch (its data and the cached answer are both
+  kv reads); not worth a gate.
 - **The store, behind an interface, with no library yet.** `features/plus/store.ts`
   is the `Store` interface (products with the store's own localized price
-  strings, purchase, restore, current, listen, the manage URL), `FakeStore`
+  strings, purchase, restore, current, listen), `FakeStore`
   for development and tests, and `UnavailableStore` for a release build until
   a store library is added: it offers nothing and says "Daash Plus isn't on sale
   in this version yet." No price is written anywhere in the app; a test scans
@@ -573,6 +586,25 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   through. You haven't been charged." Someone who has had the free week sees
   "Get Plus" and the price from today instead. Started: the sheet and the
   paywall close, back on the feature that was locked, now open.
+- **The day 5 reminder is Daash's (review fix).** The sheet says "We remind
+  you", and the stores don't reliably send one. `features/plus/reminder.ts`
+  sets a local notification (expo-notifications, already a dependency) two
+  days before a renewing free week ends: "Your free week ends in 2 days · Plus
+  starts Sat 5 Dec unless you cancel in the App Store." It's set when the free
+  week starts (from this phone or the server), taken away once Plus is bought
+  or the free week is cancelled or over, and never set or cleared before the
+  cached answer is read. It never asks for permission (that stays after the
+  first workout lands), so it shows only for runners who allowed
+  notifications. Needs a device build to see it fire.
+- **Open question for the owner: the reminder without notifications.**
+  Default taken: a local notification only, plus TODO(server) a day 5 email
+  to the account's address, so "We remind you" holds for runners who said no
+  to notifications. Until the email exists, someone who declined
+  notifications gets no reminder; the copy stays as on the board.
+- **Restore says what it found (review fix).** "Purchases restored." only when
+  Plus or a running free week is back; purchases that have all run out say
+  "Your free week has ended." or "Your Plus has ended."; nothing at all says
+  "No purchases found for this account."
 - **Never mid-flow.** The paywall is a root screen opened only by
   `openPaywall()`, from a lock (Trends, Block, Source priority, Widgets) or
   You's Plus row. A test lists exactly those callers, that only the free week
@@ -610,13 +642,30 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   locked as the prompt asks; on Plus the rows open "…come with your Plus and
   arrive in an update." Selling them before they exist is the owner's call;
   the default keeps the locks so the designs hold.
-- **Plus in You (You, YouPlus boards).** A Plus section above Connections.
+- **Review fix: the paywall doesn't sell them as there.** The paywall items,
+  Block's row and Source priority's row now say "Coming in an update", so
+  nobody pays for something that isn't built (store review also asks that
+  what's sold is delivered). Merge rules' placeholder for a Plus runner is
+  `/you/coming`, in You's own stack, rather than jumping into Plan's. Leaving
+  them off the paywall entirely is the other option; the owner decides when
+  the engines are scheduled.
+- **Plus in You (You, YouPlus boards).** A Plus section below Connections.
   Free: "Daash Plus · Prediction trend, plan styles, widgets" (plus "Coach
   without a daily limit" with the Coach on) and "Get Plus". Trial: "Free week ·
   Plus starts Sat 5 Dec" with a Trial badge. Plus: "Since Nov · manage in the
-  App Store / Google Play / daash.run" with an Active badge. Then Widgets, and
-  Restore purchases (Free) or Manage subscription (the store's subscriptions
-  page).
+  App Store / in Google Play / on daash.run" with an Active badge. Then
+  Widgets, and Restore purchases (Free) or Manage subscription.
+- **Conflict, prompt and boards: where Plus sits in You.** The Plus-ios and
+  YouPlus boards put Plus above Connections; the prompt (section 4) orders You
+  as Connections, Coach memory or Training preferences, then Plus. The prompt
+  wins: Plus is below Connections (and goes below Training preferences or
+  Coach memory when they arrive).
+- **Manage goes where the money goes (review fix).** `manageLink()` picks the
+  place from the entitlement's source: a web subscription opens the daash.run
+  account page, an App Store or Play subscription that store's subscriptions
+  page (whichever phone it's opened on). A grant from Daash (the flags'
+  `plus`, or a server answer that names no source) has nowhere to manage it:
+  no Manage row or button, and You says "Since Nov".
 - **Widgets read a snapshot, never the server.** `features/widgets/snapshot.ts`
   builds what every widget draws from the phone's cached Today (with the watch
   queue's state applied) and the cached plan's block: the readiness word,
@@ -627,8 +676,10 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   rectangular lines. Old data says "Updated 07:02", "Updated yesterday" or
   "Updated 26 Nov" (times, not "2h ago": a widget isn't redrawn every minute),
   and a session from an earlier day is named by its day. Free gets "Widgets come
-  with Daash Plus. Open Daash to try it free." and no data; nothing cached gets
-  "Open Daash to load today." Never a blank.
+  with Daash Plus. Open Daash to try it free." and no data, or "…Open Daash to
+  see Plus." once a free week or Plus has run out (the store won't give the
+  free week again); nothing cached gets "Open Daash to load today." Never a
+  blank.
 - **`WidgetSync`** (under Today's provider) rebuilds the snapshot whenever Today,
   the queue or Plus changes, and every 15 minutes, and writes it through the
   `WidgetBridge` only when it draws something different, then reloads the
@@ -657,14 +708,23 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   no public API for other apps' content, and phones have no lock screen widgets;
   Android gets the three home screen widgets. Glance has no arc, so the 2×2
   shows the number and the word in the decision's colour instead of a ring.
+  The setup screen, the paywall and You say so on Android (review fix): "home
+  screen" rather than "home and lock screen", no At a Glance instructions, and
+  no lock screen preview; a test checks the Android copy names only those.
 - **Analytics.** `analytics/analytics.ts` is a small `track()` with two events,
   `paywall_viewed {from, coach}` and `trial_started {product, trial}`; any key
   that looks like a health value is dropped. Nothing is sent yet: a later
   milestone points the sink at PostHog.
 - **TODO(server):**
   - `GET /app/api/v1/entitlements` answers `{tier, expires_at, source, since,
-    will_renew, product_id}` from checked receipts and web subscriptions (or the
-    features endpoint carries the same object as `plus`);
+    will_renew, product_id}` from checked receipts and web subscriptions, and
+    always names the `source` (app_store, play or web) when there's a
+    subscription behind it, or Manage has nowhere to go. The features flags'
+    `plus` stays a plain boolean (a grant); the flags parser drops anything
+    else, so the full answer comes only from this endpoint;
+  - the daash.run account page (`https://daash.run/account` in the app) where a
+    web subscription is managed, before anything is sold on the web;
+  - a day 5 email for a renewing free week (see the open question above);
   - `POST /app/api/v1/entitlements/verify {platform, product_id,
     transaction_id, receipt}` checks a purchase with Apple or Google and answers
     the entitlement it records;

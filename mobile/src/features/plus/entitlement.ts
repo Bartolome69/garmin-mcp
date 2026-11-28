@@ -2,9 +2,9 @@
 // Pure: no React, no network, no clock of its own (every check takes `now`).
 //
 // Where an answer can come from, most trusted first:
-//   server     the server's answer (GET /app/api/v1/entitlements, or `plus` in the
-//              features flags), which checks receipts with the stores and knows web
-//              subscriptions
+//   server     the server's answer (GET /app/api/v1/entitlements, or the features
+//              flags' bare `plus: true` as a grant), which checks receipts with the
+//              stores and knows web subscriptions
 //   app_store  a transaction StoreKit holds on this phone (signed by Apple)
 //   play       a purchase Google Play holds on this phone
 // A purchase on this phone unlocks at once; the server's answer replaces it once
