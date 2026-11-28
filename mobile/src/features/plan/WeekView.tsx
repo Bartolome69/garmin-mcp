@@ -8,7 +8,7 @@ import { Animated, FlatList, Platform, Pressable, View } from 'react-native';
 
 import { addDays } from '../../domain/format';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button } from '../../ui/Button';
+import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { Text } from '../../ui/Text';
 import { DayRow } from './DayRow';
@@ -146,15 +146,15 @@ export function WeekView({ vm, index, onIndex, pending, proposalText, width, os 
           <Text variant="headline" accessibilityRole="header" testID="week-title" style={{ flexShrink: 1 }}>{week.title}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Pressable testID="week-prev" accessibilityRole="button" accessibilityLabel="Previous week" disabled={index === 0}
-              onPress={() => go(index - 1)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: index === 0 ? 0.35 : 1 }}>
+              onPress={() => go(index - 1)} style={{ width: MIN_TOUCH, height: MIN_TOUCH, alignItems: 'center', justifyContent: 'center', opacity: index === 0 ? 0.35 : 1 }}>
               <Icon name="chevronLeft" context="toolbar" />
             </Pressable>
             <Pressable testID="week-this" accessibilityRole="button" accessibilityLabel="This week" onPress={() => go(current)}
-              style={{ minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' }}>
+              style={{ minHeight: MIN_TOUCH, paddingHorizontal: 8, justifyContent: 'center' }}>
               <Text variant="subhead" tone="muted" style={{ fontWeight: '600' }}>This week</Text>
             </Pressable>
             <Pressable testID="week-next" accessibilityRole="button" accessibilityLabel="Next week" disabled={index === vm.weeks.length - 1}
-              onPress={() => go(index + 1)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: index === vm.weeks.length - 1 ? 0.35 : 1 }}>
+              onPress={() => go(index + 1)} style={{ width: MIN_TOUCH, height: MIN_TOUCH, alignItems: 'center', justifyContent: 'center', opacity: index === vm.weeks.length - 1 ? 0.35 : 1 }}>
               <Icon name="chevronRight" context="toolbar" />
             </Pressable>
           </View>

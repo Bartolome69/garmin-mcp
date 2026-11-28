@@ -14,6 +14,7 @@ import { findSession } from '../../../features/plan/model';
 import { usePlan } from '../../../features/plan/PlanProvider';
 import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
+import { MIN_TOUCH } from '../../../ui/Button';
 import { Text } from '../../../ui/Text';
 
 const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
@@ -52,7 +53,8 @@ export default function BuilderScreen() {
         ...(Platform.OS === 'ios' ? {
           headerBackVisible: false,
           headerLeft: () => (
-            <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
+            <Pressable accessibilityRole="button" onPress={() => router.back()}
+              style={{ minHeight: MIN_TOUCH, minWidth: MIN_TOUCH, justifyContent: 'center' }}>
               <Text variant="body">Cancel</Text>
             </Pressable>
           ),

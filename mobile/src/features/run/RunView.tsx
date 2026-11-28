@@ -10,6 +10,7 @@ import Svg, { Circle, G, Line, Path, Polyline, Rect, Text as SvgText } from 'rea
 
 import { mmss } from '../../domain/format';
 import { useTheme } from '../../theme/ThemeProvider';
+import { MIN_TOUCH } from '../../ui/Button';
 import { FONT_FILES } from '../../theme/typography';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
@@ -52,7 +53,7 @@ export function Debrief({ text, onAsk }: { text: string; onAsk: () => void }) {
     const on = rated === which;
     return (
       <Pressable testID={`thumb-${which}`} accessibilityRole="button" accessibilityLabel={which === 'up' ? 'Helpful' : 'Not helpful'}
-        accessibilityState={{ selected: on }} onPress={() => setRated(on ? null : which)} hitSlop={5}
+        accessibilityState={{ selected: on }} onPress={() => setRated(on ? null : which)} hitSlop={(MIN_TOUCH - 34) / 2}
         style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: on ? colors.text : colors.hairline,
           backgroundColor: on ? colors.sunken : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
         <Icon name={which === 'up' ? 'thumbUp' : 'thumbDown'} tone={on ? 'text' : 'muted'} />
@@ -63,7 +64,7 @@ export function Debrief({ text, onAsk }: { text: string; onAsk: () => void }) {
     <View testID="debrief" style={{ gap: 8, padding: 14, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.surface,
       borderWidth: 1, borderColor: colors.hairline }}>
       <Pressable testID="debrief-toggle" accessibilityRole="button" accessibilityLabel="Coach debrief" accessibilityState={{ expanded: open }}
-        onPress={() => setOpen(!open)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 24 }}>
+        onPress={() => setOpen(!open)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: MIN_TOUCH }}>
         <Text variant="kicker" tone="muted">Coach debrief</Text>
         <Icon name={open ? 'chevronUp' : 'chevronDown'} tone="muted" />
       </Pressable>
@@ -72,7 +73,7 @@ export function Debrief({ text, onAsk }: { text: string; onAsk: () => void }) {
           <Text testID="debrief-text" variant="coach">{text}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', gap: 6 }}>{thumb('up')}{thumb('down')}</View>
-            <Pressable testID="ask-run" accessibilityRole="button" onPress={onAsk} style={{ minHeight: 44, justifyContent: 'center' }}>
+            <Pressable testID="ask-run" accessibilityRole="button" onPress={onAsk} style={{ minHeight: MIN_TOUCH, justifyContent: 'center' }}>
               <View style={{ minHeight: 32, paddingHorizontal: 12, borderRadius: 999, justifyContent: 'center', borderWidth: 1, borderColor: colors.muted }}>
                 <Text variant="subhead" style={{ fontWeight: '600' }}>Ask about this run</Text>
               </View>
@@ -220,8 +221,8 @@ export function Charts({ vm, km, onScrub }: { vm: RunVM; km: number; onScrub: (k
           const on = t.key === tab;
           return (
             <Pressable key={t.key} testID={`metric-${t.key}`} accessibilityRole="tab" accessibilityState={{ selected: on }}
-              onPress={() => setTab(t.key)} style={{ flex: 1, minHeight: 44, justifyContent: 'center' }}>
-              <View style={{ height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.text : 'transparent' }}>
+              onPress={() => setTab(t.key)} style={{ flex: 1, minHeight: MIN_TOUCH, justifyContent: 'center' }}>
+              <View style={{ minHeight: 32, paddingVertical: 4, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? colors.text : 'transparent' }}>
                 <Text variant="footnote" tone={on ? 'bg' : 'muted'} style={{ fontWeight: '600' }}>{t.label}</Text>
               </View>
             </Pressable>

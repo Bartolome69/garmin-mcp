@@ -11,6 +11,7 @@ import { sendProposal, skipProposal, unwatchProposal } from '../../../../feature
 import { useWatch } from '../../../../features/watch/WatchProvider';
 import { useFlags } from '../../../../flags/FlagsProvider';
 import { Screen } from '../../../../ui/Screen';
+import { MIN_TOUCH } from '../../../../ui/Button';
 import { Text } from '../../../../ui/Text';
 
 export default function SessionScreen() {
@@ -23,7 +24,6 @@ export default function SessionScreen() {
   const [step, setStep] = useState(0);
   const session = plan.shown ? findSession(plan.shown, id) : null;
   const op = watch.opFor(id);
-  const next = (kind: string) => router.push({ pathname: '/plan/next', params: { kind, id } });
   const confirm = (p: Parameters<typeof watch.stage>[0]) => { watch.stage(p); router.push({ pathname: '/watch/confirm', params: { id: p.id } }); };
   // New targets, once sent, are what's on the watch: the steps go back to as planned.
   useEffect(() => { if (op?.batch.startsWith('adjust:')) setStep(0); }, [op?.batch]);
@@ -39,7 +39,8 @@ export default function SessionScreen() {
     <>
       {/* Edit opens the builder with the session in it; saving replaces it. No other top-right action. */}
       <Stack.Screen options={{ headerRight: editable ? () => (
-        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/plan/builder', params: { id } })} hitSlop={12}>
+        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/plan/builder', params: { id } })}
+          style={{ minHeight: MIN_TOUCH, minWidth: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' }}>
           <Text variant="body">Edit</Text>
         </Pressable>
       ) : undefined }} />

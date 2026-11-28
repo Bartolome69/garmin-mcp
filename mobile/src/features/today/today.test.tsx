@@ -65,7 +65,7 @@ describe.each(['dark', 'light'] as const)(`Today on ${os}, %s`, (scheme) => {
     expect(screen.getByText('3 × 2 km at threshold')).toBeTruthy();
     expect(screen.getByLabelText('On your watch · 20:14')).toBeTruthy();
     expect(screen.getByTestId('week')).toBeTruthy();
-    expect(screen.getAllByLabelText(/^(Rest|Easy|Int|Tempo|Str|Long), \d+, (rest day|done|planned)/)).toHaveLength(7);
+    expect(screen.getAllByLabelText(/^(Rest|Easy|Intervals|Tempo|Strength|Long run), \d+, (rest day|done|planned)/)).toHaveLength(7);
   });
 
   it('Back off is the warning word on the warning tint', async () => {

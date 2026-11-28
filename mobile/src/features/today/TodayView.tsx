@@ -3,8 +3,9 @@
 import { Platform, RefreshControl, ScrollView, View } from 'react-native';
 
 import type { Freshness } from '../../data/freshness';
+import type { FailureKind } from '../../data/resource';
 import { useTheme } from '../../theme/ThemeProvider';
-import { Button } from '../../ui/Button';
+import { LoadState } from '../../ui/StateViews';
 import { Card } from '../../ui/Card';
 import { Text } from '../../ui/Text';
 import { kickerText, type SignalKey, type TodayVM } from './model';
@@ -74,20 +75,9 @@ export function TodayView({ vm, coach, brand, fontScale, fresh, refreshing, erro
 }
 
 /** First open with nothing cached yet: the shapes of the cards, never a spinner over content. */
-export function TodayEmpty({ error, onRetry }: { error: string | null; onRetry: () => void }) {
-  const { colors } = useTheme();
-  if (!error) {
-    return (
-      <View testID="today-loading" accessibilityLabel="Loading today" style={{ flex: 1, backgroundColor: colors.bg, padding: 16, gap: 10 }}>
-        {[140, 170, 110].map((h, i) => <View key={i} style={{ height: h, borderRadius: 12, backgroundColor: colors.surface }} />)}
-      </View>
-    );
-  }
-  return (
-    <View testID="today-error" style={{ flex: 1, backgroundColor: colors.bg, padding: 16, gap: 12, justifyContent: 'center' }}>
-      <Text variant="headline">Couldn{'’'}t load today</Text>
-      <Text variant="body" tone="muted">{error}</Text>
-      <Button label="Try again" onPress={onRetry} />
-    </View>
-  );
+/** No day to draw yet: a skeleton while it loads, or why not (offline, Garmin sign-in, signed out, the server). */
+export function TodayEmpty({ error, onRetry, failure = null, what = 'today', testID = 'today' }: {
+  error: string | null; onRetry: () => void; failure?: FailureKind | null; what?: string; testID?: string;
+}) {
+  return <LoadState what={what} failure={failure} error={error} onRetry={onRetry} testID={testID} />;
 }

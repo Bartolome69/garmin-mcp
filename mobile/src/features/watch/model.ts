@@ -49,6 +49,8 @@ export type OpDraft = {
   withWhat: string | null;       // a replace: what it becomes
   before: DiffSession | null;
   after: DiffSession | null;
+  /** What an add or replace from the builder puts on the watch (daash.workout.v1). */
+  workout?: { schema: 'daash.workout.v1'; name: string; sport: string; steps: unknown[] } & Record<string, unknown>;
 };
 
 export type Proposal = {

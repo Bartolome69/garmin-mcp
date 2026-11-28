@@ -5,12 +5,15 @@
 import { Pressable, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
+import { typeStyle } from '../../theme/typography';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Text } from '../../ui/Text';
 import type { Decision, Readiness, Signal, SignalKey } from './model';
 
 const DECISION_TONE = { push: 'success', hold: 'text2', back_off: 'warning' } as const;
+
+const FOOTNOTE_LINE = typeStyle('footnote').lineHeight ?? 18;
 
 export function ReadinessRing({ decision, score, large }: { decision: Decision | null; score: number | null; large?: boolean }) {
   const { colors } = useTheme();
@@ -81,12 +84,14 @@ export function ReadinessStrip({ readiness, coach, brand, xl, onSignal, onRecomm
         ))}
       </View>
       {coach && r.coachLine ? (
-        <Text variant="coach" tone="text2" numberOfLines={xl ? 2 : undefined} testID="coach-line">
-          {r.coachLine}{' '}
-          <Text variant="footnote" tone="text" accessibilityRole="link" onPress={onAskWhy} style={{ textDecorationLine: 'underline' }}>
-            Ask why
-          </Text>
-        </Text>
+        <View style={{ gap: 2 }}>
+          <Text variant="coach" tone="text2" numberOfLines={xl ? 2 : undefined} testID="coach-line">{r.coachLine}</Text>
+          {/* Its own control rather than a link inside the line, so it has a full-size target. */}
+          <Pressable testID="ask-why" accessibilityRole="link" onPress={onAskWhy} hitSlop={{ top: (MIN_TOUCH - FOOTNOTE_LINE) / 2, bottom: (MIN_TOUCH - FOOTNOTE_LINE) / 2 }}
+            style={{ alignSelf: 'flex-start', minWidth: MIN_TOUCH }}>
+            <Text variant="footnote" style={{ textDecorationLine: 'underline' }}>Ask why</Text>
+          </Pressable>
+        </View>
       ) : null}
       <View style={{ flexDirection: xl ? 'column' : 'row', gap: 8, marginTop: 2 }}>
         <Button label={r.recommended.label} kind="primary" brand={brand} full={!xl} onPress={onRecommended} />

@@ -18,7 +18,7 @@ export function Fab({ label, icon, onPress, brand = true, testID }: {
       accessibilityLabel={label}
       onPress={onPress}
       style={({ pressed }) => ({
-        position: 'absolute', right: 16, bottom: 16, height: 56, borderRadius: 16, paddingLeft: 16, paddingRight: 20,
+        position: 'absolute', right: 16, bottom: 16, minHeight: 56, borderRadius: 16, paddingLeft: 16, paddingRight: 20,
         flexDirection: 'row', alignItems: 'center', gap: 10, elevation: 6, opacity: pressed ? 0.85 : 1,
         backgroundColor: brand ? colors.brand : colors.sunken,
       })}
