@@ -183,11 +183,12 @@ export function YouView({ vm, brand, actions, plus }: {
           <Button label="Reconnect" kind="primary" brand={brand} onPress={() => actions.reconnect(p)} />
         </Card>
       ))}
-      {plus}
       <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Connections</Text>
       <List>
         <Row testID="row-connections" title="Watches and apps" sub={vm ? youSummary(vm) : 'Not loaded yet'} onPress={actions.connections} chevron />
       </List>
+      {/* The prompt's order (section 4): Connections, then Coach memory or Training preferences, then Plus. */}
+      {plus}
     </ScrollView>
   );
 }

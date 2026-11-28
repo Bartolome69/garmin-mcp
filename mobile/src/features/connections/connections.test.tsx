@@ -3,7 +3,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { useState } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { ThemeProvider } from '../../theme/ThemeProvider';
 import { colors } from '../../theme/tokens';
@@ -130,6 +130,14 @@ describe(`You on ${os}`, () => {
     expect(screen.getByLabelText('Watches and apps, Connected to Garmin')).toBeTruthy();
     const behind = await render(<ThemeProvider initial="dark"><YouView vm={VM} brand={false} actions={{ connections: jest.fn(), reconnect }} /></ThemeProvider>);
     expect(brandFills(behind.toJSON(), 'dark')).toBe(0);
+  });
+  it('Plus comes after Connections (the prompt’s order, section 4)', async () => {
+    const { toJSON } = await render(<ThemeProvider initial="dark">
+      <YouView vm={VM} brand actions={{ connections: jest.fn(), reconnect: jest.fn() }} plus={<View testID="plus-slot" />} />
+    </ThemeProvider>);
+    const tree = JSON.stringify(toJSON());
+    expect(tree.indexOf('row-connections')).toBeGreaterThan(-1);
+    expect(tree.indexOf('plus-slot')).toBeGreaterThan(tree.indexOf('row-connections'));
   });
   it('all connected: no trust card', async () => {
     const fine: ConnectionsVM = { ...VM, providers: VM.providers.map((p) => ({ ...p, state: 'live' as const })) };
