@@ -30,7 +30,7 @@ export const FREE: Entitlement = { tier: 'free', expiresAt: null, source: 'none'
 
 const DAY = 24 * 60 * 60 * 1000;
 export const TRIAL_DAYS = 7;
-/** The store reminds the runner before the trial ends (the trial sheet's "Day 5"). */
+/** The day of the free week Daash reminds the runner it's ending (the trial sheet's "Day 5"; features/plus/reminder.ts). */
 export const REMINDER_DAY = 5;
 
 /** Whether this answer unlocks Plus now. */
@@ -101,7 +101,7 @@ export function daysLeft(e: Entitlement, now: number): number | null {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const dayWords = (t: number) => { const d = new Date(t); return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+export const dayWords = (t: number) => { const d = new Date(t); return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
 /**
  * The daash.run page where a web subscription is managed or cancelled.

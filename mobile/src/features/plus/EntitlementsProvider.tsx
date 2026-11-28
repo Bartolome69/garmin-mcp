@@ -10,6 +10,7 @@ import { useDb } from '../../db/DbContext';
 import { kv } from '../../db/kv';
 import { useFlags } from '../../flags/FlagsProvider';
 import { fromPurchase, manageLink, parseEntitlement, resolve, type Entitlement } from './entitlement';
+import { notificationReminder, trialReminder, type TrialReminder } from './reminder';
 import { fetchEntitlement, verifyPurchase } from './source';
 import { defaultStore, PRODUCT_IDS, StoreError, type Product, type Purchase, type Store } from './store';
 
@@ -52,9 +53,11 @@ export type EntitlementsState = {
 const KEY = 'entitlement';
 const Ctx = createContext<EntitlementsState | null>(null);
 
-export function EntitlementsProvider({ children, store: given, fetcher = fetchEntitlement, verify = verifyPurchase, clock = Date.now }: {
+export function EntitlementsProvider({ children, store: given, fetcher = fetchEntitlement, verify = verifyPurchase, reminder = notificationReminder, clock = Date.now }: {
   children: ReactNode;
   store?: Store;
+  /** The day 5 reminder that the free week is ending. */
+  reminder?: TrialReminder;
   fetcher?: () => Promise<Entitlement>;
   verify?: (p: Purchase) => Promise<Entitlement | null>;
   clock?: () => number;
@@ -169,6 +172,16 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
   // The cached answer read, or anything that unlocks already known (a purchase, the flags).
   const ready = cacheRead || plus;
   const same = JSON.stringify(entitlement);
+
+  // Day 5 of a renewing free week: set once it starts, taken away once it's bought,
+  // cancelled or over. Not before the cached answer is read, so a launch doesn't clear it.
+  const remind = ready ? trialReminder(entitlement, clock(), Platform.OS) : undefined;
+  const remindKey = remind === undefined ? null : JSON.stringify(remind);
+  useEffect(() => {
+    if (remind === undefined) return;
+    if (remind) reminder.set(remind);
+    else reminder.clear();
+  }, [remindKey, reminder]); // eslint-disable-line react-hooks/exhaustive-deps
   const value = useMemo<EntitlementsState>(() => ({
     entitlement, plus, ready, products, productsError, loadProducts, startTrial, restore,
     manageUrl: plus ? manageLink(entitlement.source, Platform.OS, entitlement.productId)?.url ?? null : null, refresh,

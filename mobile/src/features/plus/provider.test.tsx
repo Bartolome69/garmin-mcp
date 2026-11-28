@@ -22,6 +22,7 @@ import { LOCKED_MESSAGE, LOCKED_USED_MESSAGE } from '../widgets/snapshot';
 import { WidgetSync } from '../widgets/WidgetSync';
 import { FREE, type Entitlement } from './entitlement';
 import { EntitlementsProvider, useEntitlement, type EntitlementsState } from './EntitlementsProvider';
+import { FakeReminder } from './reminder';
 import { FakeStore, PRODUCT_IDS, type Purchase } from './store';
 
 const DAY = 86400000;
@@ -74,6 +75,29 @@ describe('EntitlementsProvider', () => {
     expect(state!.entitlement.tier).toBe('trial');
     await waitFor(() => expect(verified).toHaveLength(1));
     await waitFor(async () => expect(await kv(db).get('entitlement')).toEqual(checked));
+  });
+
+  it('starting the free week sets the day 5 reminder; buying Plus takes it away', async () => {
+    const reminder = new FakeReminder();
+    const store = new FakeStore({ clock: () => NOW });
+    await render(<Harness db={null}><EntitlementsProvider store={store} fetcher={never} verify={async () => null} reminder={reminder} clock={() => NOW}><Probe /></EntitlementsProvider></Harness>);
+    await waitFor(() => expect(reminder.calls).toEqual(['clear']));
+    await act(async () => { await state!.loadProducts(); await state!.startTrial(); });
+    await waitFor(() => expect(reminder.current?.at).toBe(NOW + 5 * DAY));
+    expect(reminder.current?.title).toBe('Your free week ends in 2 days');
+    await act(async () => {
+      store.deliver({ productId: PRODUCT_IDS.yearly, transactionId: 'y', purchasedAt: NOW, expiresAt: NOW + 365 * DAY, trial: false, willRenew: true, platform: 'app_store', receipt: 'r' });
+    });
+    await waitFor(() => expect(reminder.current).toBeNull());
+  });
+
+  it('a launch doesn’t clear the reminder before the cached free week is read', async () => {
+    const db = await migratedNodeDb();
+    await kv(db).set('entitlement', { tier: 'trial', expiresAt: NOW + 6 * DAY, source: 'server', since: NOW - DAY, willRenew: true, productId: null });
+    const reminder = new FakeReminder();
+    await render(<Harness db={db}><EntitlementsProvider store={new FakeStore()} fetcher={never} reminder={reminder} clock={() => NOW}><Probe /></EntitlementsProvider></Harness>);
+    await waitFor(() => expect(reminder.current?.at).toBe(NOW + 4 * DAY));
+    expect(reminder.calls).toEqual(['set']);
   });
 
   it('the features flags’ plus still unlocks (the server switching it on for someone)', async () => {

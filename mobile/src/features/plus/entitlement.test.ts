@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
+import { trialReminder } from './reminder';
 import { daysLeft, FREE, fromPurchase, isActive, manageLink, parseEntitlement, plusStatus, resolve, trialTimeline, WEB_ACCOUNT_URL, type Entitlement } from './entitlement';
 import { FakeStore, PRODUCT_IDS, StoreError, UnavailableStore } from './store';
 
@@ -56,6 +57,23 @@ describe('entitlement', () => {
       { tier: 'trial', source: 'play', since: NOW, willRenew: true });
     expect(fromPurchase({ productId: 'p', purchasedAt: NOW, expiresAt: null, trial: false, willRenew: false, platform: 'app_store' })).toMatchObject(
       { tier: 'plus', source: 'app_store', willRenew: false });
+  });
+
+  it('the day 5 reminder: two days before a renewing free week ends, and only then', () => {
+    const t: Entitlement = { tier: 'trial', expiresAt: NOW + 7 * DAY, source: 'app_store', since: NOW, willRenew: true, productId: PRODUCT_IDS.monthly };
+    const r = trialReminder(t, NOW, 'ios');
+    expect(r?.at).toBe(NOW + 5 * DAY);
+    expect(r?.title).toBe('Your free week ends in 2 days');
+    expect(r?.body).toBe('Plus starts Sat 5 Dec unless you cancel in the App Store.');
+    expect(trialReminder({ ...t, source: 'play' }, NOW, 'ios')?.body).toMatch(/cancel in Google Play\.$/);
+    expect(trialReminder({ ...t, source: 'server' }, NOW, 'ios')?.body).toBe('Plus starts Sat 5 Dec unless you cancel.');
+    // Nothing to remind about: cancelled, past day 5, over, Plus, Free.
+    expect(trialReminder({ ...t, willRenew: false }, NOW, 'ios')).toBeNull();
+    expect(trialReminder(t, NOW + 5 * DAY + 1, 'ios')).toBeNull();
+    expect(trialReminder(t, NOW + 8 * DAY, 'ios')).toBeNull();
+    expect(trialReminder({ ...t, tier: 'plus' }, NOW, 'ios')).toBeNull();
+    expect(trialReminder(FREE, NOW, 'ios')).toBeNull();
+    expect(trialReminder({ ...t, expiresAt: null }, NOW, 'ios')).toBeNull();
   });
 
   it('Manage goes where the money goes: daash.run for the web, the store it was bought in, nowhere for a grant', () => {
