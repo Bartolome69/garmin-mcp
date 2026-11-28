@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UNVERIFIED: never built (docs/native-app/DECISIONS.md, milestone 10). Merged into the app's manifest. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <receiver android:name="run.daash.widgets.TodayWidgetReceiver" android:exported="true" android:label="Today">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/daash_widget_today" />
+    </receiver>
+    <receiver android:name="run.daash.widgets.WeekWidgetReceiver" android:exported="true" android:label="This week">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/daash_widget_week" />
+    </receiver>
+    <receiver android:name="run.daash.widgets.CountdownWidgetReceiver" android:exported="true" android:label="Race countdown">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/daash_widget_countdown" />
+    </receiver>
+  </application>
+</manifest>

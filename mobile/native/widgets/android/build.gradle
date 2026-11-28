@@ -1,0 +1,26 @@
+// UNVERIFIED: never built (docs/native-app/DECISIONS.md, milestone 10).
+// The DaashWidgets Expo module with its Glance widgets. Versions are the stable
+// releases current when this was written; confirm them with the device build.
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
+
+group = 'run.daash.widgets'
+version = '0.1.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+
+android {
+  namespace 'run.daash.widgets'
+  defaultConfig { minSdkVersion 26 }
+  buildFeatures { compose true }
+}
+
+dependencies {
+  implementation 'androidx.glance:glance-appwidget:1.1.1'
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+}

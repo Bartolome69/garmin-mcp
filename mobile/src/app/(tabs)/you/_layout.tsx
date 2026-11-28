@@ -1,5 +1,5 @@
 // You's stack (build prompt, section 4): You, then Connections and Source priority,
-// with the trust sheets. Large titles on iOS, the Material 3 app bar on Android;
+// with the trust sheets, and the widgets setup. Large titles on iOS, the Material 3 app bar on Android;
 // navigation in the text colour, never brand.
 import { Stack } from 'expo-router';
 import { Platform } from 'react-native';
@@ -25,6 +25,8 @@ export default function YouLayout() {
         <Stack.Screen name="index" options={{ title: 'You', headerLargeTitle: Platform.OS === 'ios', headerLargeTitleShadowVisible: false }} />
         <Stack.Screen name="connections" options={{ title: 'Connections', headerBackTitle: 'You' }} />
         <Stack.Screen name="priority" options={{ title: 'Source priority', headerBackTitle: 'Connections' }} />
+        <Stack.Screen name="widgets" options={{ title: 'Widgets', headerBackTitle: 'You' }} />
+        <Stack.Screen name="coming" options={{ title: 'Advanced merge rules', headerBackTitle: 'Source priority' }} />
         <Stack.Screen name="see" options={sheet} />
         <Stack.Screen name="trouble" options={sheet} />
         <Stack.Screen name="request" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />

@@ -1,4 +1,4 @@
-// The app's root: theme, flags, fonts and the local database, then the tabs.
+// The app's root: theme, flags, Plus, fonts and the local database, then the tabs.
 import { GeistMono_500Medium } from '@expo-google-fonts/geist-mono';
 import { SourceSerif4_400Regular, SourceSerif4_400Regular_Italic } from '@expo-google-fonts/source-serif-4';
 import { useFonts } from 'expo-font';
@@ -14,6 +14,7 @@ import { DbContext } from '../db/DbContext';
 import { kv } from '../db/kv';
 import type { Db } from '../db/types';
 import { FlagsProvider, type FlagsFetcher, type FlagsStore } from '../flags/FlagsProvider';
+import { EntitlementsProvider } from '../features/plus/EntitlementsProvider';
 import { WatchToast } from '../features/watch/WatchToast';
 import { WatchProvider } from '../features/watch/WatchProvider';
 import { ThemeProvider, useTheme, type Appearance } from '../theme/ThemeProvider';
@@ -56,9 +57,11 @@ export default function RootLayout() {
       <DbContext.Provider value={db}>
         <ThemeProvider initial={appearance} onChange={(a) => { if (db) kv(db).set(APPEARANCE_KEY, a); }}>
           <FlagsProvider store={flagsStore} fetcher={devFetcher}>
-            <WatchProvider>
-              <Root />
-            </WatchProvider>
+            <EntitlementsProvider>
+              <WatchProvider>
+                <Root />
+              </WatchProvider>
+            </EntitlementsProvider>
           </FlagsProvider>
         </ThemeProvider>
       </DbContext.Provider>
@@ -76,6 +79,12 @@ function Root() {
         <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
         {/* The watch confirm, over whichever tab asked: a sheet with a grabber. */}
         <Stack.Screen name="watch/confirm" options={{
+          presentation: 'formSheet', sheetGrabberVisible: true, sheetAllowedDetents: 'fitToContents',
+          sheetCornerRadius: Platform.OS === 'android' ? 28 : undefined, contentStyle: { backgroundColor: colors.surface },
+        }} />
+        {/* Daash Plus, over whichever tab asked, and its trial sheet over it. */}
+        <Stack.Screen name="plus/index" options={{ presentation: Platform.OS === 'ios' ? 'modal' : 'card' }} />
+        <Stack.Screen name="plus/trial" options={{
           presentation: 'formSheet', sheetGrabberVisible: true, sheetAllowedDetents: 'fitToContents',
           sheetCornerRadius: Platform.OS === 'android' ? 28 : undefined, contentStyle: { backgroundColor: colors.surface },
         }} />

@@ -1,0 +1,1870 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`snapshot: paywall and free week sheet on android: paywall-android 1`] = `
+<View
+  style={
+    {
+      "backgroundColor": "#161614",
+      "flex": 1,
+    }
+  }
+  testID="paywall"
+>
+  <RCTScrollView
+    contentContainerStyle={
+      {
+        "gap": 14,
+        "padding": 20,
+        "paddingTop": 12,
+      }
+    }
+    contentInsetAdjustmentBehavior="automatic"
+  >
+    <View>
+      <View
+        style={
+          {
+            "flexDirection": "row",
+            "justifyContent": "flex-end",
+          }
+        }
+      >
+        <View
+          accessibilityLabel="Close"
+          accessibilityRole="button"
+          accessibilityState={
+            {
+              "busy": undefined,
+              "checked": undefined,
+              "disabled": undefined,
+              "expanded": undefined,
+              "selected": undefined,
+            }
+          }
+          accessibilityValue={
+            {
+              "max": undefined,
+              "min": undefined,
+              "now": undefined,
+              "text": undefined,
+            }
+          }
+          accessible={true}
+          collapsable={false}
+          focusable={true}
+          onBlur={[Function]}
+          onClick={[Function]}
+          onFocus={[Function]}
+          onResponderGrant={[Function]}
+          onResponderMove={[Function]}
+          onResponderRelease={[Function]}
+          onResponderTerminate={[Function]}
+          onResponderTerminationRequest={[Function]}
+          onStartShouldSetResponder={[Function]}
+          style={
+            {
+              "alignItems": "center",
+              "justifyContent": "center",
+              "minHeight": 48,
+              "minWidth": 48,
+            }
+          }
+          testID="paywall-close"
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#A6A59F",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+        </View>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "GeistMono_500Medium",
+              "fontSize": 12,
+              "letterSpacing": 0.6,
+              "lineHeight": 16,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#A6A59F",
+            },
+            false,
+            undefined,
+          ]
+        }
+      >
+        Daash Plus
+      </Text>
+      <Text
+        accessibilityRole="header"
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 28,
+              "lineHeight": 36,
+            },
+            {
+              "color": "#F4F3EE",
+            },
+            false,
+            undefined,
+          ]
+        }
+      >
+        See where your training is heading.
+      </Text>
+      <View
+        accessibilityLabel="A preview of the prediction trend and race-day projection"
+        accessibilityRole="image"
+        accessible={true}
+        style={
+          {
+            "opacity": 0.35,
+          }
+        }
+        testID="paywall-preview"
+      >
+        <View
+          style={
+            [
+              {
+                "backgroundColor": "#222220",
+                "borderColor": "#3A3936",
+                "borderRadius": 12,
+                "borderWidth": 1,
+                "gap": 8,
+                "padding": 14,
+              },
+              undefined,
+            ]
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 16,
+                  "fontWeight": "500",
+                  "lineHeight": 24,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Prediction trend
+          </Text>
+          <RNSVGSvgViewAndroid
+            accessibilityLabel=""
+            accessibilityRole="image"
+            accessible={true}
+            align="xMidYMid"
+            bbHeight={90}
+            bbWidth="100%"
+            focusable={false}
+            height={90}
+            meetOrSlice={0}
+            minX={0}
+            minY={0}
+            style={
+              [
+                {
+                  "backgroundColor": "transparent",
+                  "borderWidth": 0,
+                },
+                {
+                  "flex": 0,
+                  "height": 90,
+                  "width": "100%",
+                },
+              ]
+            }
+            vbHeight={90}
+            vbWidth={320}
+            width="100%"
+          >
+            <RNSVGGroup
+              fill={
+                {
+                  "payload": -16777216,
+                  "type": 0,
+                }
+              }
+            >
+              <RNSVGPath
+                d="M0 64.88888888888889 40 57.77777777777778 80 50.666666666666664 120 41.18518518518518 160 36.44444444444444 200 29.333333333333332 240 22.22222222222222"
+                fill={null}
+                propList={
+                  [
+                    "fill",
+                    "stroke",
+                    "strokeWidth",
+                  ]
+                }
+                stroke={
+                  {
+                    "payload": -723986,
+                    "type": 0,
+                  }
+                }
+                strokeWidth={2.4}
+              />
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 10,
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    0,
+                  ]
+                }
+                y={
+                  [
+                    88,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content=""
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+              <RNSVGText
+                content={null}
+                dx={[]}
+                dy={[]}
+                fill={
+                  {
+                    "payload": -5855841,
+                    "type": 0,
+                  }
+                }
+                font={
+                  {
+                    "fontSize": 10,
+                    "textAnchor": "end",
+                  }
+                }
+                propList={
+                  [
+                    "fill",
+                  ]
+                }
+                rotate={[]}
+                x={
+                  [
+                    316,
+                  ]
+                }
+                y={
+                  [
+                    88,
+                  ]
+                }
+              >
+                <RNSVGTSpan
+                  content=""
+                  dx={[]}
+                  dy={[]}
+                  fill={
+                    {
+                      "payload": -16777216,
+                      "type": 0,
+                    }
+                  }
+                  font={{}}
+                  rotate={[]}
+                  x={[]}
+                  y={[]}
+                />
+              </RNSVGText>
+            </RNSVGGroup>
+          </RNSVGSvgViewAndroid>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "gap": 2,
+          }
+        }
+        testID="plus-items"
+      >
+        <View
+          accessibilityLabel="Race prediction trend, and race-day projection"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#F4F3EE",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Race prediction trend
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              and race-day projection
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityLabel="Advanced plan styles, More shapes for your training block, Coming in an update"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#F4F3EE",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Advanced plan styles
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              More shapes for your training block
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#E2E1DB",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Coming in an update
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityLabel="Advanced merge rules, Pick the source per metric, tune match windows, Coming in an update"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#F4F3EE",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Advanced merge rules
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Pick the source per metric, tune match windows
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 11,
+                    "fontWeight": "500",
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#E2E1DB",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Coming in an update
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityLabel="Home screen widgets, Readiness, week and countdown"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#F4F3EE",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Home screen widgets
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Readiness, week and countdown
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityLabel="Coach without a daily limit, Free has 10 messages a day"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#F4F3EE",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Coach without a daily limit
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  undefined,
+                ]
+              }
+            >
+              Free has 10 messages a day
+            </Text>
+          </View>
+        </View>
+      </View>
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontFamily": "GeistMono_500Medium",
+              "fontSize": 12,
+              "letterSpacing": 0.6,
+              "lineHeight": 16,
+              "textTransform": "uppercase",
+            },
+            {
+              "color": "#A6A59F",
+            },
+            false,
+            {
+              "marginTop": 6,
+            },
+          ]
+        }
+      >
+        Always free
+      </Text>
+      <View
+        style={
+          {
+            "gap": 0,
+          }
+        }
+        testID="always-free"
+      >
+        <View
+          accessibilityLabel="Plans, Today and readiness"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#8CC08F",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Plans, Today and readiness
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityLabel="Sending workouts to your watch"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#8CC08F",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Sending workouts to your watch
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityLabel="Connecting all your watches and apps"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#8CC08F",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Connecting all your watches and apps
+            </Text>
+          </View>
+        </View>
+        <View
+          accessibilityLabel="Post-run analysis and the workout builder"
+          accessible={true}
+          style={
+            {
+              "alignItems": "flex-start",
+              "flexDirection": "row",
+              "gap": 12,
+              "paddingVertical": 6,
+            }
+          }
+        >
+          <View
+            accessible={false}
+            collapsable={false}
+            importantForAccessibility="no-hide-descendants"
+            style={
+              [
+                {
+                  "height": 24,
+                  "width": 24,
+                },
+                undefined,
+              ]
+            }
+          >
+            <Text
+              aria-hidden={true}
+              style={
+                {
+                  "color": "#8CC08F",
+                  "fontFamily": "MaterialSymbols_400Regular",
+                  "fontSize": 24,
+                  "lineHeight": 24,
+                }
+              }
+            >
+              
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "flex": 1,
+                "gap": 2,
+              }
+            }
+          >
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 16,
+                    "lineHeight": 24,
+                  },
+                  {
+                    "color": "#F4F3EE",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Post-run analysis and the workout builder
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  </RCTScrollView>
+  <View
+    style={
+      {
+        "borderTopColor": "#3A3936",
+        "borderTopWidth": 1,
+        "gap": 6,
+        "paddingBottom": 28,
+        "paddingHorizontal": 20,
+        "paddingTop": 8,
+      }
+    }
+  >
+    <View
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onBlur={[Function]}
+      onClick={[Function]}
+      onFocus={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        [
+          {
+            "alignItems": "center",
+            "backgroundColor": "#DD2C25",
+            "borderColor": "#DD2C25",
+            "borderRadius": 999,
+            "borderWidth": 1,
+            "flexBasis": "auto",
+            "flexDirection": "row",
+            "flexGrow": 0,
+            "gap": 6,
+            "justifyContent": "center",
+            "minHeight": 48,
+            "opacity": 1,
+            "paddingHorizontal": 18,
+          },
+          undefined,
+        ]
+      }
+      testID="button-Try Plus free for 7 days"
+    >
+      <Text
+        maxFontSizeMultiplier={2}
+        style={
+          [
+            {
+              "fontSize": 16,
+              "fontWeight": "500",
+              "lineHeight": 24,
+            },
+            {
+              "color": "#FFFFFF",
+            },
+            false,
+            {
+              "fontWeight": "600",
+              "textAlign": "center",
+            },
+          ]
+        }
+      >
+        Try Plus free for 7 days
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "columnGap": 16,
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "justifyContent": "center",
+        }
+      }
+    >
+      <View
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "justifyContent": "center",
+            "minHeight": 48,
+          }
+        }
+        testID="paywall-restore"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 12,
+                "lineHeight": 16,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "textDecorationLine": "underline",
+              },
+            ]
+          }
+        >
+          Restore purchases
+        </Text>
+      </View>
+    </View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 11,
+            "fontWeight": "500",
+            "lineHeight": 16,
+          },
+          {
+            "color": "#A6A59F",
+          },
+          false,
+          {
+            "textAlign": "center",
+          },
+        ]
+      }
+    >
+      Plus renews until you cancel. Cancel anytime in Google Play.
+    </Text>
+  </View>
+</View>
+`;
+
+exports[`snapshot: paywall and free week sheet on android: trial-sheet-android 1`] = `
+<RCTScrollView
+  contentContainerStyle={
+    {
+      "gap": 14,
+      "padding": 20,
+      "paddingBottom": 32,
+    }
+  }
+  testID="trial-sheet"
+>
+  <View>
+    <Text
+      accessibilityRole="header"
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 22,
+            "lineHeight": 28,
+          },
+          {
+            "color": "#F4F3EE",
+          },
+          false,
+          undefined,
+        ]
+      }
+    >
+      How your free week works
+    </Text>
+    <View
+      style={
+        {
+          "gap": 0,
+        }
+      }
+      testID="trial-timeline"
+    >
+      <View
+        accessibilityLabel="Today: Everything in Plus unlocks"
+        accessible={true}
+        style={
+          {
+            "flexDirection": "row",
+            "gap": 12,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "width": 14,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "transparent",
+                "flex": 1,
+                "width": 2,
+              }
+            }
+          />
+          <View
+            style={
+              {
+                "backgroundColor": "#F4F3EE",
+                "borderColor": "#F4F3EE",
+                "borderRadius": 6,
+                "borderWidth": 2,
+                "height": 12,
+                "width": 12,
+              }
+            }
+          />
+          <View
+            style={
+              {
+                "backgroundColor": "#3A3936",
+                "flex": 1,
+                "width": 2,
+              }
+            }
+          />
+        </View>
+        <View
+          style={
+            {
+              "flex": 1,
+              "gap": 2,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 14,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "700",
+                },
+              ]
+            }
+          >
+            Today
+          </Text>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            Everything in Plus unlocks
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="Day 5: We remind you the trial is ending"
+        accessible={true}
+        style={
+          {
+            "flexDirection": "row",
+            "gap": 12,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "width": 14,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#3A3936",
+                "flex": 1,
+                "width": 2,
+              }
+            }
+          />
+          <View
+            style={
+              {
+                "backgroundColor": "#222220",
+                "borderColor": "#F4F3EE",
+                "borderRadius": 6,
+                "borderWidth": 2,
+                "height": 12,
+                "width": 12,
+              }
+            }
+          />
+          <View
+            style={
+              {
+                "backgroundColor": "#3A3936",
+                "flex": 1,
+                "width": 2,
+              }
+            }
+          />
+        </View>
+        <View
+          style={
+            {
+              "flex": 1,
+              "gap": 2,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 14,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "700",
+                },
+              ]
+            }
+          >
+            Day 5
+          </Text>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            We remind you the trial is ending
+          </Text>
+        </View>
+      </View>
+      <View
+        accessibilityLabel="Day 7: 4,99 € a month starts, unless you cancel"
+        accessible={true}
+        style={
+          {
+            "flexDirection": "row",
+            "gap": 12,
+          }
+        }
+      >
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "width": 14,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "backgroundColor": "#3A3936",
+                "flex": 1,
+                "width": 2,
+              }
+            }
+          />
+          <View
+            style={
+              {
+                "backgroundColor": "#222220",
+                "borderColor": "#F4F3EE",
+                "borderRadius": 6,
+                "borderWidth": 2,
+                "height": 12,
+                "width": 12,
+              }
+            }
+          />
+          <View
+            style={
+              {
+                "backgroundColor": "transparent",
+                "flex": 1,
+                "width": 2,
+              }
+            }
+          />
+        </View>
+        <View
+          style={
+            {
+              "flex": 1,
+              "gap": 2,
+              "paddingVertical": 8,
+            }
+          }
+        >
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 14,
+                  "lineHeight": 20,
+                },
+                {
+                  "color": "#F4F3EE",
+                },
+                false,
+                {
+                  "fontWeight": "700",
+                },
+              ]
+            }
+          >
+            Day 7
+          </Text>
+          <Text
+            maxFontSizeMultiplier={2}
+            style={
+              [
+                {
+                  "fontSize": 12,
+                  "lineHeight": 16,
+                },
+                {
+                  "color": "#A6A59F",
+                },
+                false,
+                undefined,
+              ]
+            }
+          >
+            4,99 € a month starts, unless you cancel
+          </Text>
+        </View>
+      </View>
+    </View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 14,
+            "lineHeight": 20,
+          },
+          {
+            "color": "#F4F3EE",
+          },
+          false,
+          {
+            "fontWeight": "600",
+          },
+        ]
+      }
+    >
+      No payment due today. Cancel anytime.
+    </Text>
+    <View
+      style={
+        {
+          "gap": 8,
+        }
+      }
+    >
+      <View
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "backgroundColor": "#DD2C25",
+              "borderColor": "#DD2C25",
+              "borderRadius": 999,
+              "borderWidth": 1,
+              "flexBasis": "auto",
+              "flexDirection": "row",
+              "flexGrow": 0,
+              "gap": 6,
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+              "paddingHorizontal": 18,
+            },
+            undefined,
+          ]
+        }
+        testID="button-Start free week"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 16,
+                "fontWeight": "500",
+                "lineHeight": 24,
+              },
+              {
+                "color": "#FFFFFF",
+              },
+              false,
+              {
+                "fontWeight": "600",
+                "textAlign": "center",
+              },
+            ]
+          }
+        >
+          Start free week
+        </Text>
+      </View>
+      <View
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "backgroundColor": "transparent",
+              "borderColor": "#A6A59F",
+              "borderRadius": 999,
+              "borderWidth": 1,
+              "flexBasis": "auto",
+              "flexDirection": "row",
+              "flexGrow": 0,
+              "gap": 6,
+              "justifyContent": "center",
+              "minHeight": 48,
+              "opacity": 1,
+              "paddingHorizontal": 18,
+            },
+            undefined,
+          ]
+        }
+        testID="button-Not now"
+      >
+        <Text
+          maxFontSizeMultiplier={2}
+          style={
+            [
+              {
+                "fontSize": 16,
+                "fontWeight": "500",
+                "lineHeight": 24,
+              },
+              {
+                "color": "#F4F3EE",
+              },
+              false,
+              {
+                "fontWeight": "600",
+                "textAlign": "center",
+              },
+            ]
+          }
+        >
+          Not now
+        </Text>
+      </View>
+    </View>
+    <Text
+      maxFontSizeMultiplier={2}
+      style={
+        [
+          {
+            "fontSize": 12,
+            "lineHeight": 16,
+          },
+          {
+            "color": "#A6A59F",
+          },
+          false,
+          {
+            "textAlign": "center",
+          },
+        ]
+      }
+    >
+      Plans, Today and sending to your watch stay free either way.
+    </Text>
+  </View>
+</RCTScrollView>
+`;

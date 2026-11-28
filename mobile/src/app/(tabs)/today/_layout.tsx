@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { Platform } from 'react-native';
 
 import { TodayProvider } from '../../../features/today/TodayProvider';
+import { WidgetSync } from '../../../features/widgets/WidgetSync';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 // A sheet opened straight from a link sits over the tab's first screen, not on its own.
@@ -21,6 +22,8 @@ export default function TodayLayout() {
   };
   return (
     <TodayProvider>
+      {/* The widgets read what Today draws. */}
+      <WidgetSync />
       <Stack screenOptions={{
         headerShadowVisible: false,
         headerStyle: { backgroundColor: colors.bg },
