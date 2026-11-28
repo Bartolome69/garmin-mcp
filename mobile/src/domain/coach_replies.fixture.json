@@ -1,0 +1,411 @@
+{
+ "_generated": "scripts/domain_fixtures.py; do not edit",
+ "cases": {
+  "rules": {
+   "cause": [
+    "\\b(?:because|due to|caused by|as a result of|thanks to|owing to|driven by)\\b(?:\\W+\\w+){0,5}?\\W+(?:sleep|slept|hrv|heart rate|hr|resting|stress|load|fatigue|tired|tiredness|recovery|readiness|legs|body|illness|cold|travel|travelling|alcohol|caffeine|nutrition|hydration|heat|night)\\b",
+    "\\bin line with (?:your|the|this week's|last night's)\\b",
+    "\\b(?:explains?|explained|that's why|which is why|this is why|led to|leads to|leading to|resulted in|results in|caused|causes|causing|to blame)\\b",
+    "\\bso (?:you|your (?:legs|body|heart|hrv))\\b(?:\\W+\\w+){0,3}?\\W+(?:will|are|were|feel|felt|should|need)\\b",
+    "\\bmeans? (?:you|your body) (?:are|were|is|need|needs|should)\\b"
+   ],
+   "medical": [
+    "\\b(?:ibuprofen|paracetamol|acetaminophen|naproxen|aspirin|painkillers?|anti-?inflammator(?:y|ies)|antibiotics?|supplements?|iron tablets|cortisone)\\b",
+    "\\b(?:ice|heat|massage|foam roll|stretch|strap|tape) (?:it|the (?:area|knee|calf|achilles|shin|ankle|foot|hamstring))\\b",
+    "\\brun(?:ning)? through (?:it|the pain|pain)\\b",
+    "\\b(?:will|should) heal\\b",
+    "\\b(?:safe|fine|ok|okay) to run (?:on|with) (?:it|an? (?:injury|niggle|cold|fever))\\b",
+    "\\btreat(?:ment|ing)? (?:it|the|your)\\b"
+   ],
+   "diagnosis": [
+    "\\byou(?:'ve| have| may have| might have| probably have| likely have| could have) (?:got )?(?:a stress fracture|stress fracture|tendinitis|tendonitis|shin splints|plantar fasciitis|an infection|infection|a virus|virus|a cold|the flu|flu|covid|anaemia|anemia|iron deficiency|overtraining syndrome|overtraining|overreaching|an injury|injury|a strain|strain|a sprain|sprain|illness|burnout)\\b",
+    "\\b(?:sounds|looks|seems) like (?:a |an )?(?:a stress fracture|stress fracture|tendinitis|tendonitis|shin splints|plantar fasciitis|an infection|infection|a virus|virus|a cold|the flu|flu|covid|anaemia|anemia|iron deficiency|overtraining syndrome|overtraining|overreaching|an injury|injury|a strain|strain|a sprain|sprain|illness|burnout)\\b",
+    "\\byou(?:'re| are) (?:overtrained|overtraining|overreaching|ill|sick|injured|getting sick|coming down with)\\b",
+    "\\bsigns? of (?:overtraining|overreaching|illness|infection|injury|a cold|burnout|fatigue)\\b",
+    "\\b(?:it's|that's|its|thats) (?:(?:just|only|probably|likely) ){0,2}(?:a |an )?(?:strain|sprain|tendinitis|tendonitis|shin splints|cold|virus|infection)\\b"
+   ],
+   "certainty": [
+    "\\byou (?:must|have to|need to|should definitely)\\b",
+    "\\b(?:definitely|certainly|guaranteed?|without (?:a )?doubt|no doubt|for sure)\\b",
+    "\\b100 ?%",
+    "\\bwill (?:be fine|be ok|be okay|make you)\\b",
+    "\\b(?:always|never) (?:run|skip|do|train)\\b"
+   ]
+  },
+  "replies": [
+   {
+    "text": "Rep 6 peaked at 172 bpm, 4 above rep 5.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "HRV has been under your range of 54\u201366 ms for two nights: 52 and 49 ms.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Pace held at 4:01, and your peak heart rate on rep 6 was 172, 4 bpm above rep 5. You slept 4:45 and 5:10 the two nights before. Next week's plan doesn't change.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Your call. Sleep was 2h under your usual and HRV is below your range. If you go, the plan's target is 4:23\u20134:28 /km.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Easy means easy, and this was. Nothing to change for tomorrow.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "I've proposed making today easier: the tempo becomes Easy 6 km. It's waiting for your confirm.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "This week you've run 28 of 54 km planned.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "You don't need to change anything this week.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Readiness is 26, Garmin's score. Two of three signals are below your usual.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "The tempo is your only hard day left this week.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Your resting heart rate was 48, 3 above your 30-day average.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Thursday's run club was 9 km at 5:14 /km, faster than your easy range of 5:27\u20136:10.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "You mentioned your achilles. Daash doesn\u2019t give medical advice. If you\u2019re unwell or hurt, check with a doctor or physio. The plan can ease off while you find out.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Saved to memory: travelling 1 to 3 Dec. The long run stays on Sunday.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Sleep was 4:45 last night, 2h under your usual 7:15.",
+    "label": [],
+    "kinds": []
+   },
+   {
+    "text": "Because your HRV dropped, you are more tired than usual.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "Rep 6 was slower, in line with your short sleep.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "Your heart rate was high due to the heat and your poor sleep.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "The short night explains the higher heart rate.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "That's why your legs felt heavy on Wednesday.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "Friday was easy, so your legs will be fine.",
+    "label": [
+     "cause",
+     "certainty"
+    ],
+    "kinds": [
+     "cause",
+     "certainty"
+    ]
+   },
+   {
+    "text": "Low HRV means you are fatigued.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "Your fatigue is caused by too much load.",
+    "label": [
+     "cause"
+    ],
+    "kinds": [
+     "cause"
+    ]
+   },
+   {
+    "text": "It sounds like shin splints.",
+    "label": [
+     "diagnosis"
+    ],
+    "kinds": [
+     "diagnosis"
+    ]
+   },
+   {
+    "text": "You might have a stress fracture.",
+    "label": [
+     "diagnosis"
+    ],
+    "kinds": [
+     "diagnosis"
+    ]
+   },
+   {
+    "text": "You\u2019re overtrained.",
+    "label": [
+     "diagnosis"
+    ],
+    "kinds": [
+     "diagnosis"
+    ]
+   },
+   {
+    "text": "These are signs of overtraining.",
+    "label": [
+     "diagnosis"
+    ],
+    "kinds": [
+     "diagnosis"
+    ]
+   },
+   {
+    "text": "It's probably just a strain.",
+    "label": [
+     "diagnosis"
+    ],
+    "kinds": [
+     "diagnosis"
+    ]
+   },
+   {
+    "text": "Take ibuprofen and ice it after the run.",
+    "label": [
+     "medical"
+    ],
+    "kinds": [
+     "medical"
+    ]
+   },
+   {
+    "text": "You can run through the pain if it's mild.",
+    "label": [
+     "medical"
+    ],
+    "kinds": [
+     "medical"
+    ]
+   },
+   {
+    "text": "Ice the achilles and it should heal in a week.",
+    "label": [
+     "medical"
+    ],
+    "kinds": [
+     "medical"
+    ]
+   },
+   {
+    "text": "You must do the tempo today.",
+    "label": [
+     "certainty"
+    ],
+    "kinds": [
+     "certainty"
+    ]
+   },
+   {
+    "text": "This will definitely get you under 3:15.",
+    "label": [
+     "certainty"
+    ],
+    "kinds": [
+     "certainty"
+    ]
+   },
+   {
+    "text": "You need to rest for three days.",
+    "label": [
+     "certainty"
+    ],
+    "kinds": [
+     "certainty"
+    ]
+   },
+   {
+    "text": "You have to take Sunday off.",
+    "label": [
+     "certainty"
+    ],
+    "kinds": [
+     "certainty"
+    ]
+   },
+   {
+    "text": "Skip the long run; it will make you faster for sure.",
+    "label": [
+     "certainty"
+    ],
+    "kinds": [
+     "certainty"
+    ]
+   },
+   {
+    "text": "Because of your short sleep you should take it easy, and you might have a cold.",
+    "label": [
+     "cause",
+     "diagnosis"
+    ],
+    "kinds": [
+     "cause",
+     "diagnosis"
+    ]
+   }
+  ],
+  "numbers": [
+   {
+    "text": "Rep 6 peaked at 172 bpm, 4 above rep 5.",
+    "payload": {
+     "laps": [
+      {
+       "label": "Rep 5",
+       "hr_peak": 168
+      },
+      {
+       "label": "Rep 6",
+       "hr_peak": 172
+      }
+     ],
+     "delta_bpm": 4
+    },
+    "label": [],
+    "unmatched": []
+   },
+   {
+    "text": "Rep 6 peaked at 175 bpm.",
+    "payload": {
+     "laps": [
+      {
+       "label": "Rep 6",
+       "hr_peak": 172
+      }
+     ]
+    },
+    "label": [
+     "175"
+    ],
+    "unmatched": [
+     "175"
+    ]
+   },
+   {
+    "text": "HRV 49 ms, below your range of 54\u201366.",
+    "payload": {
+     "hrv": {
+      "last": 49,
+      "band": [
+       54,
+       66
+      ]
+     }
+    },
+    "label": [],
+    "unmatched": []
+   },
+   {
+    "text": "Pace held at 4:01.",
+    "payload": {
+     "reps": {
+      "avg": "4:01 /km"
+     }
+    },
+    "label": [],
+    "unmatched": []
+   },
+   {
+    "text": "If you go, cap reps at 4:30 /km.",
+    "payload": {
+     "target": "4:23\u20134:28 /km"
+    },
+    "label": [
+     "4:30"
+    ],
+    "unmatched": [
+     "4:30"
+    ]
+   },
+   {
+    "text": "Sleep was 4:45, against 7:15 usual. Synced 07:02.",
+    "payload": {
+     "sleep": "4:45",
+     "usual": "7:15",
+     "synced": "7:02"
+    },
+    "label": [],
+    "unmatched": []
+   },
+   {
+    "text": "You ran 6 km of a planned 6.0.",
+    "payload": {
+     "km": 6.0
+    },
+    "label": [],
+    "unmatched": []
+   }
+  ]
+ }
+}
