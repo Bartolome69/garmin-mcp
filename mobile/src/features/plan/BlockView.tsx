@@ -7,6 +7,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { PlusRow } from '../../ui/Locked';
+import { COMING_NOTE } from '../plus/coming';
 import { Text } from '../../ui/Text';
 import type { BlockVM } from './model';
 
@@ -83,7 +84,7 @@ export function BlockView({ block, onChange, plus = false, onPlanStyles }: {
       </Card>
       {onPlanStyles ? (
         <PlusRow testID="plan-styles" title="Advanced plan styles" plus={plus} onPress={onPlanStyles}
-          sub={plus ? 'More shapes for your block. Arriving in an update.' : 'More shapes for your block, beyond the standard one'} />
+          sub={plus ? `More shapes for your block. ${COMING_NOTE}.` : `More shapes for your block, beyond the standard one. ${COMING_NOTE}.`} />
       ) : null}
       <Button label="Change the plan" onPress={onChange} />
     </View>

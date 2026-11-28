@@ -1189,7 +1189,7 @@ exports[`snapshot on android Block: plan-Block-android 1`] = `
           </View>
           <View
             accessibilityHint="Opens Daash Plus"
-            accessibilityLabel="Advanced plan styles, Plus. More shapes for your block, beyond the standard one"
+            accessibilityLabel="Advanced plan styles, Plus. More shapes for your block, beyond the standard one. Coming in an update."
             accessibilityRole="button"
             accessibilityState={
               {
@@ -1304,7 +1304,7 @@ exports[`snapshot on android Block: plan-Block-android 1`] = `
                   ]
                 }
               >
-                More shapes for your block, beyond the standard one
+                More shapes for your block, beyond the standard one. Coming in an update.
               </Text>
             </View>
             <Text

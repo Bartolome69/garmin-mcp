@@ -13,6 +13,7 @@ import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
 import { PlusRow } from '../../ui/Locked';
+import { COMING_NOTE } from '../plus/coming';
 import { openGarminSignIn } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { badgeWords, mergeTitle, mergeWords, prioritySummary, sourceName, youSummary, type ConnectionsVM, type Provider } from './model';
@@ -278,7 +279,7 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
         </>
       ) : null}
       <PlusRow testID="advanced" title="Advanced merge rules" plus={plus} onPress={actions.plus}
-        sub={`Pick the source per metric, tune match windows. Now: within ${vm.match.startWithinSeconds / 60 === 1 ? '1 minute' : `${vm.match.startWithinSeconds} s`} and ±${vm.match.distanceWithinPct}%.`} />
+        sub={`Pick the source per metric, tune match windows. ${COMING_NOTE}. Now: within ${vm.match.startWithinSeconds / 60 === 1 ? '1 minute' : `${vm.match.startWithinSeconds} s`} and ±${vm.match.distanceWithinPct}%.`} />
     </ScrollView>
   );
 }

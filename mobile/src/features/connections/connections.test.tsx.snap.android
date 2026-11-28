@@ -2744,7 +2744,7 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
     </View>
     <View
       accessibilityHint="Opens Daash Plus"
-      accessibilityLabel="Advanced merge rules, Plus. Pick the source per metric, tune match windows. Now: within 1 minute and ±2%."
+      accessibilityLabel="Advanced merge rules, Plus. Pick the source per metric, tune match windows. Coming in an update. Now: within 1 minute and ±2%."
       accessibilityRole="button"
       accessibilityState={
         {
@@ -2859,7 +2859,7 @@ exports[`snapshot: Source priority on android: priority-android 1`] = `
             ]
           }
         >
-          Pick the source per metric, tune match windows. Now: within 1 minute and ±2%.
+          Pick the source per metric, tune match windows. Coming in an update. Now: within 1 minute and ±2%.
         </Text>
       </View>
       <Text

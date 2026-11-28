@@ -26,6 +26,7 @@ export default function YouLayout() {
         <Stack.Screen name="connections" options={{ title: 'Connections', headerBackTitle: 'You' }} />
         <Stack.Screen name="priority" options={{ title: 'Source priority', headerBackTitle: 'Connections' }} />
         <Stack.Screen name="widgets" options={{ title: 'Widgets', headerBackTitle: 'You' }} />
+        <Stack.Screen name="coming" options={{ title: 'Advanced merge rules', headerBackTitle: 'Source priority' }} />
         <Stack.Screen name="see" options={sheet} />
         <Stack.Screen name="trouble" options={sheet} />
         <Stack.Screen name="request" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />

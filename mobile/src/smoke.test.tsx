@@ -22,6 +22,7 @@ import PlanLife from './app/(tabs)/plan/life';
 import PlanMove from './app/(tabs)/plan/move';
 import PlanNewWeek from './app/(tabs)/plan/new-week';
 import PlanNext from './app/(tabs)/plan/next';
+import YouComing from './app/(tabs)/you/coming';
 import PlanRun from './app/(tabs)/plan/run/[id]';
 import PlanSession from './app/(tabs)/plan/session/[id]';
 import TodayLayout from './app/(tabs)/today/_layout';
@@ -84,7 +85,7 @@ function app(scheme: 'dark' | 'light') {
     '(tabs)/crew/_layout': CrewLayout, '(tabs)/crew/index': CrewIndex,
     '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/connections': YouConnections,
     '(tabs)/you/priority': YouPriority, '(tabs)/you/see': YouSee, '(tabs)/you/trouble': YouTrouble, '(tabs)/you/request': YouRequest,
-    '(tabs)/you/widgets': YouWidgets,
+    '(tabs)/you/widgets': YouWidgets, '(tabs)/you/coming': YouComing,
     'plus/index': PlusPaywall, 'plus/trial': PlusTrial,
     'watch/confirm': WatchConfirm,
   };
@@ -111,6 +112,7 @@ export const SCREENS: [string, string, string][] = [
   ['Trouble connecting', '/you/trouble', 'trouble-sheet'],
   ['Request a device', '/you/request', 'request-sheet'],
   ['Widgets setup', '/you/widgets', 'widgets'],
+  ['Plus feature to come (You)', '/you/coming', 'you-coming'],
   ['Plus (paywall)', '/plus?from=you', 'paywall'],
   ['Plus · free week sheet', '/plus/trial', 'trial-sheet'],
   ['Coach', '/coach', 'coach'],

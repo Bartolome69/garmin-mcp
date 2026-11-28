@@ -202,7 +202,7 @@ describe(`Source priority on ${os}`, () => {
   it('advanced merge rules are Plus: shown, locked, with today\'s rule in words', async () => {
     const plus = jest.fn();
     await render(<ThemeProvider initial="dark"><PriorityHarness plus={plus} /></ThemeProvider>);
-    expect(screen.getByText('Pick the source per metric, tune match windows. Now: within 1 minute and ±2%.')).toBeTruthy();
+    expect(screen.getByText('Pick the source per metric, tune match windows. Coming in an update. Now: within 1 minute and ±2%.')).toBeTruthy();
     expect(screen.getByTestId('advanced-plus')).toHaveTextContent('Plus');
     expect(screen.getByTestId('advanced').props.accessibilityLabel).toMatch(/^Advanced merge rules, Plus\./);
     await fireEvent.press(screen.getByTestId('advanced'));

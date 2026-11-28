@@ -11,16 +11,18 @@ import { Icon } from '../../ui/Icon';
 import { Text } from '../../ui/Text';
 import { TrendPreview } from '../plan/TrendsView';
 import { storeName, trialTimeline, type PlusStatus } from './entitlement';
+import { COMING_NOTE } from './coming';
 import type { Product } from './store';
 
-export type PlusItem = { title: string; sub: string };
+/** soon: no engine yet; the paywall says it's coming rather than sell it as there. */
+export type PlusItem = { title: string; sub: string; soon?: boolean };
 
 /** What Plus adds (section 1). The Coach's line only with coach_enabled; its limit from the flags. */
 export function plusItems(coach: boolean, coachLimit: number, os: string = Platform.OS): PlusItem[] {
   return [
     { title: 'Race prediction trend', sub: 'and race-day projection' },
-    { title: 'Advanced plan styles', sub: 'More shapes for your training block' },
-    { title: 'Advanced merge rules', sub: 'Pick the source per metric, tune match windows' },
+    { title: 'Advanced plan styles', sub: 'More shapes for your training block', soon: true },
+    { title: 'Advanced merge rules', sub: 'Pick the source per metric, tune match windows', soon: true },
     { title: os === 'android' ? 'Home screen widgets' : 'Home and lock screen widgets', sub: 'Readiness, week and countdown' },
     ...(coach ? [{ title: 'Coach without a daily limit', sub: `Free has ${coachLimit} messages a day` }] : []),
   ];
@@ -34,13 +36,15 @@ export const ALWAYS_FREE = [
   'Post-run analysis and the workout builder',
 ];
 
-function Item({ title, sub, icon }: { title: string; sub?: string; icon: 'lock' | 'check' }) {
+function Item({ title, sub, soon = false, icon }: { title: string; sub?: string; soon?: boolean; icon: 'lock' | 'check' }) {
+  const words = [title, sub, soon ? COMING_NOTE : null].filter(Boolean).join(', ');
   return (
-    <View accessible accessibilityLabel={sub ? `${title}, ${sub}` : title} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingVertical: 6 }}>
+    <View accessible accessibilityLabel={words} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingVertical: 6 }}>
       <Icon name={icon} tone={icon === 'check' ? 'success' : 'text'} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="body" style={{ fontWeight: '600' }}>{title}</Text>
         {sub ? <Text variant="footnote" tone="muted">{sub}</Text> : null}
+        {soon ? <Text variant="caption" tone="text2" style={{ fontWeight: '600' }}>{COMING_NOTE}</Text> : null}
       </View>
     </View>
   );
@@ -79,7 +83,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
           <TrendPreview />
         </View>
         <View testID="plus-items" style={{ gap: 2 }}>
-          {plusItems(coach, coachLimit, os).map((i) => <Item key={i.title} icon="lock" title={i.title} sub={i.sub} />)}
+          {plusItems(coach, coachLimit, os).map((i) => <Item key={i.title} icon="lock" title={i.title} sub={i.sub} soon={i.soon} />)}
         </View>
         <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Always free</Text>
         <View testID="always-free" style={{ gap: 0 }}>

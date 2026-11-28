@@ -14,7 +14,7 @@ export default function PriorityScreen() {
   return (
     <PriorityView vm={c.vm} plus={plus} actions={{
       reorder: c.setPriority, keepApart: c.keepApart, mergeAgain: c.mergeAgain,
-      plus: () => (plus ? router.push({ pathname: '/plan/next', params: { kind: 'merge_rules' } }) : openPaywall(router, 'merge_rules')),
+      plus: () => (plus ? router.push('/you/coming') : openPaywall(router, 'merge_rules')),
     }} />
   );
 }

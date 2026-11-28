@@ -32,6 +32,7 @@ import YouIndex from './app/(tabs)/you/index';
 import YouPriority from './app/(tabs)/you/priority';
 import YouConnections from './app/(tabs)/you/connections';
 import YouWidgets from './app/(tabs)/you/widgets';
+import YouComing from './app/(tabs)/you/coming';
 import PlusPaywall from './app/plus/index';
 import PlusTrial from './app/plus/trial';
 import WatchConfirm from './app/watch/confirm';
@@ -71,7 +72,7 @@ function app(store: Store, { flags = DEFAULT_FLAGS, garmin = new FakeGarmin(), f
     '(tabs)/plan/new-week': PlanNewWeek, '(tabs)/plan/session/[id]': PlanSession,
     '(tabs)/plan/builder': PlanBuilder, '(tabs)/plan/life': PlanLife, '(tabs)/plan/move': PlanMove, '(tabs)/plan/run/[id]': PlanRun,
     '(tabs)/coach/index': CoachIndex, '(tabs)/crew/index': CrewIndex,
-    '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/widgets': YouWidgets,
+    '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/widgets': YouWidgets, '(tabs)/you/coming': YouComing,
     '(tabs)/you/priority': YouPriority, '(tabs)/you/connections': YouConnections,
     'plus/index': PlusPaywall, 'plus/trial': PlusTrial,
     'watch/confirm': WatchConfirm,
@@ -135,6 +136,17 @@ describe('16. A locked feature → paywall → free week → unlocked', () => {
     expect(await screen.findByTestId('priority')).toBeTruthy();
     await screen.findByLabelText(/^Advanced merge rules\. /);
     expect(screen.queryByTestId('advanced-plus')).toBeNull();
+    // No engine yet: it says so, in You's own stack (not the Plan tab's).
+    await fireEvent.press(screen.getByTestId('advanced'));
+    expect(await screen.findByTestId('you-coming')).toHaveTextContent('Advanced merge rules come with your Plus and arrive in an update.');
+    expect(screen.queryByTestId('plan-next')).toBeNull();
+  });
+
+  it('the paywall says which Plus features are still to come', async () => {
+    await renderRouter(app(new FakeStore()), { initialUrl: '/plus?from=you' });
+    expect(await screen.findByLabelText('Advanced plan styles, More shapes for your training block, Coming in an update')).toBeTruthy();
+    expect(screen.getByLabelText('Advanced merge rules, Pick the source per metric, tune match windows, Coming in an update')).toBeTruthy();
+    expect(screen.getByLabelText('Race prediction trend, and race-day projection')).toBeTruthy();
   });
 
   it('with the Coach on, the paywall adds the daily limit, from the flags; with it off, never', async () => {

@@ -418,7 +418,7 @@ exports[`snapshot: paywall and free week sheet on ios: paywall-ios 1`] = `
           </View>
         </View>
         <View
-          accessibilityLabel="Advanced plan styles, More shapes for your training block"
+          accessibilityLabel="Advanced plan styles, More shapes for your training block, Coming in an update"
           accessible={true}
           style={
             {
@@ -492,10 +492,30 @@ exports[`snapshot: paywall and free week sheet on ios: paywall-ios 1`] = `
             >
               More shapes for your training block
             </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#E2E1DB",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Coming in an update
+            </Text>
           </View>
         </View>
         <View
-          accessibilityLabel="Advanced merge rules, Pick the source per metric, tune match windows"
+          accessibilityLabel="Advanced merge rules, Pick the source per metric, tune match windows, Coming in an update"
           accessible={true}
           style={
             {
@@ -568,6 +588,26 @@ exports[`snapshot: paywall and free week sheet on ios: paywall-ios 1`] = `
               }
             >
               Pick the source per metric, tune match windows
+            </Text>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 12,
+                    "lineHeight": 16,
+                  },
+                  {
+                    "color": "#E2E1DB",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+            >
+              Coming in an update
             </Text>
           </View>
         </View>

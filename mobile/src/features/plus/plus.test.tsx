@@ -44,7 +44,7 @@ describe.each(['dark', 'light'] as const)(`Paywall on ${os}, %s`, (scheme) => {
     expect(screen.getByText('Daash Plus')).toBeTruthy();
     expect(screen.getByText('See where your training is heading.')).toBeTruthy();
     expect(screen.getByTestId('paywall-preview').props.accessibilityLabel).toBe('A preview of the prediction trend and race-day projection');
-    for (const i of plusItems(false, 10)) expect(screen.getByLabelText(`${i.title}, ${i.sub}`)).toBeTruthy();
+    for (const i of plusItems(false, 10)) expect(screen.getByLabelText(`${i.title}, ${i.sub}${i.soon ? ', Coming in an update' : ''}`)).toBeTruthy();
     for (const t of ALWAYS_FREE) expect(within(screen.getByTestId('always-free')).getByLabelText(t)).toBeTruthy();
     expect(screen.queryByText(/Coach/)).toBeNull();
     expect(brandFills(toJSON(), scheme)).toBe(1);
