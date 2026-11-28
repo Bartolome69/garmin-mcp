@@ -276,7 +276,7 @@ describe.each(['light', 'dark'] as const)(`every screen on ${Platform.OS}, %s`, 
 // set aside (they're absent when off); every number they show must be one the screen already
 // shows from the server. Read from what's drawn: text and what screen readers are told.
 // The Coach tab itself ('coach') counts as a Coach block: native tabs draw every tab's screen.
-const COACH_SLOTS = new Set(['coach', 'coach-line', 'ask-why', 'coach-note', 'debrief', 'diff-coach']);
+const COACH_SLOTS = new Set(['coach', 'coach-line', 'ask-why', 'coach-note', 'coach-ask', 'debrief', 'diff-coach']);
 // What the server sends these screens (the development fixtures stand in for it).
 const SERVER_NUMBERS = numbersOfPayload([PERSONA_TODAY_COACH, PERSONA_PLAN_COACH, RUNS, PROPOSALS, ONBOARDING]);
 // The Coach thread's own chrome, not training numbers: a day separator's clock time, and how many free messages are left today.

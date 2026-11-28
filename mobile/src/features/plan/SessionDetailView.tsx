@@ -80,6 +80,11 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
           <Text variant="coach">{d.coachNote}</Text>
           {actions.ask ? <Button label="Ask about this session" small onPress={actions.ask} style={{ alignSelf: 'flex-start' }} /> : null}
         </View>
+      ) : coach && actions.ask ? (
+        // No note from the server for this session: the way into the Coach is still here.
+        <View testID="coach-ask" style={{ alignSelf: 'flex-start' }}>
+          <Button label="Ask about this session" small onPress={actions.ask} />
+        </View>
       ) : null}
       {watch ? (
         <WatchCard watch={watch} device={device} error={error} retrying={retrying} adjusted={!!adjusted} brand={brand}

@@ -164,6 +164,23 @@ describe('2. From a run', () => {
     expect(within(lastReply()).getByLabelText('Peak heart rate per rep: 164, 165, 166, 168, 168, 172 bpm.')).toBeTruthy();
     expect(screen.queryByTestId('context-remove')).toBeNull();
   });
+  it('a run with no debrief and a session with no note still open the Coach with their tag', async () => {
+    const fake = new FakeCoach();
+    await renderRouter(app(fake), { initialUrl: '/plan' });
+    await screen.findByTestId('week-title');
+    await act(async () => { router.push({ pathname: '/plan/run/[id]', params: { id: '2026-11-24-easy' } }); });
+    await screen.findByTestId('run');
+    expect(screen.queryByTestId('debrief')).toBeNull();
+    await fireEvent.press(within(screen.getByTestId('coach-ask')).getByTestId('ask-run'));
+    expect((await screen.findByTestId('context-tag')).props.accessibilityLabel).toMatch(/^About · Tue 24 · /);
+    await act(async () => { router.push({ pathname: '/plan/session/[id]', params: { id: '2026-11-29-long' } }); });
+    await screen.findByTestId('coach-ask');
+    expect(screen.queryByTestId('coach-note')).toBeNull();
+    await fireEvent.press(within(screen.getByTestId('coach-ask')).getByTestId('button-Ask about this session'));
+    expect((await screen.findByTestId('context-tag')).props.accessibilityLabel).toMatch(/^About · .*Sun 29.*Long/i);
+    await ask('Can I do this one slower?');
+    expect(fake.sent[0].context).toMatchObject({ kind: 'session', id: '2026-11-29-long' });
+  });
   it('a tag can be removed before sending', async () => {
     const fake = new FakeCoach();
     await renderRouter(app(fake), { initialUrl: '/coach?about=readiness&label=Back%20off' });
