@@ -10,7 +10,7 @@ import type { Cached } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
 import type { PlanVM } from '../plan/model';
 import type { TodayVM } from '../today/model';
-import { usePlus } from '../plus/EntitlementsProvider';
+import { useEntitlement, usePlus } from '../plus/EntitlementsProvider';
 import { useToday } from '../today/TodayProvider';
 import { applyToToday } from '../watch/apply';
 import { useWatch } from '../watch/WatchProvider';
@@ -23,7 +23,7 @@ export function WidgetSync({ bridge: given, clock = Date.now }: { bridge?: Widge
   const bridge = useMemo(() => given ?? defaultWidgetBridge(), [given]);
   const today = useToday();
   const watch = useWatch();
-  const plus = usePlus();
+  const { plus, ready } = useEntitlement();
   const db = useDb();
   const { flags } = useFlags();
   const [block, setBlock] = useState<PlanVM['block']>(null);
@@ -45,6 +45,8 @@ export function WidgetSync({ bridge: given, clock = Date.now }: { bridge?: Widge
   }, []);
 
   useEffect(() => {
+    // Plus not known yet (the cached answer still being read): a Plus runner's widgets keep what they have.
+    if (!ready) return;
     const data = today.data ? applyToToday(today.data, watch.applied, watch.ops) : null;
     // Still loading: keep what the widgets have rather than flash "Open Daash".
     if (plus && !data && !today.error) return;
@@ -52,7 +54,7 @@ export function WidgetSync({ bridge: given, clock = Date.now }: { bridge?: Widge
     if (sameDrawing(last.current, next)) return;
     last.current = next;
     bridge.write(next).then(() => bridge.reload()).catch(() => { last.current = null; });
-  }, [today.data, today.fetchedAt, today.error, watch.applied, watch.ops, block, plus, tick, bridge, clock]);
+  }, [today.data, today.fetchedAt, today.error, watch.applied, watch.ops, block, plus, ready, tick, bridge, clock]);
 
   return null;
 }

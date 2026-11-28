@@ -27,6 +27,12 @@ export type EntitlementsState = {
   entitlement: Resolved;
   /** Plus or a running trial: every Plus feature unlocks. */
   plus: boolean;
+  /**
+   * False until the answer kept on the device has been read (found or not). Until
+   * then `plus` is false only because nothing is known yet: Plan doesn't fetch and
+   * the widgets aren't written, so a Plus runner never gets the Free versions.
+   */
+  ready: boolean;
   /** The store's products with its own prices; null until asked. */
   products: Product[] | null;
   productsError: string | null;
@@ -51,6 +57,8 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
   const { flags } = useFlags();
   const store = useMemo(() => given ?? defaultStore(), [given]);
   const [server, setServer] = useState<Entitlement | null>(null);
+  // Nothing to read without a database: known at once.
+  const [cacheRead, setCacheRead] = useState(!db);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [products, setProducts] = useState<Product[] | null>(null);
   const [productsError, setProductsError] = useState<string | null>(null);
@@ -92,7 +100,14 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
 
   useEffect(() => {
     let live = true;
-    if (db) kv(db).get<Entitlement>(KEY).then((e) => { if (live && e) setServer((now) => now ?? e); }).catch(() => {});
+    if (db) {
+      kv(db).get<Entitlement>(KEY)
+        .then((e) => { if (live && e) setServer((now) => now ?? e); })
+        .catch(() => {})
+        .finally(() => { if (live) setCacheRead(true); });
+    } else {
+      setCacheRead(true);
+    }
     refresh();
     const unlisten = store.listen((list) => { setPurchases(list); verifyAll(list); });
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') refresh(); });
@@ -136,10 +151,12 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
 
   const entitlement = resolve([server, flags.plus ? parseEntitlement(true) : null, ...purchases.map(fromPurchase)], clock());
   const plus = entitlement.tier !== 'free';
+  // The cached answer read, or anything that unlocks already known (a purchase, the flags).
+  const ready = cacheRead || plus;
   const same = JSON.stringify(entitlement);
   const value = useMemo<EntitlementsState>(() => ({
-    entitlement, plus, products, productsError, loadProducts, startTrial, restore, manageUrl: store.manageUrl(), refresh,
-  }), [same, products, productsError, loadProducts, startTrial, restore, store, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
+    entitlement, plus, ready, products, productsError, loadProducts, startTrial, restore, manageUrl: store.manageUrl(), refresh,
+  }), [same, ready, products, productsError, loadProducts, startTrial, restore, store, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -155,7 +172,7 @@ export function useEntitlement(): EntitlementsState {
   const entitlement = resolve([flags.plus ? parseEntitlement(true) : null], Date.now());
   const failed = { kind: 'failed' as const, message: 'Purchases aren’t available here.' };
   return {
-    entitlement, plus: entitlement.tier !== 'free', products: null, productsError: null,
+    entitlement, plus: entitlement.tier !== 'free', ready: true, products: null, productsError: null,
     loadProducts: async () => {}, startTrial: async () => failed, restore: async () => failed,
     manageUrl: '', refresh: async () => {},
   };
