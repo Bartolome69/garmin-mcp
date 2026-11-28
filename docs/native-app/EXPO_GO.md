@@ -5,9 +5,15 @@ sample data. Purchases, widgets and remote push need a development build (below)
 
 ## From your phone (no computer)
 
-Each push to `claude/native-app-m12` publishes an update for Expo Go, through the Expo
-workflow in `mobile/.eas/workflows/expo-go-preview.yml` (the GitHub repo is linked to the
-Expo project, base directory `mobile/`).
+Once it's set up, each push to `claude/native-app-m12` publishes an update for Expo Go,
+through the Expo workflow in `mobile/.eas/workflows/expo-go-preview.yml`.
+
+- **One-time owner step:** on expo.dev, open the project's GitHub settings, link this
+  repository and set the base directory to `mobile/`. Until that's done, pushes publish
+  nothing.
+- **Not yet seen to run:** the workflow was written in a container that can't reach
+  expo.dev, so no run of it has been checked. Look at the first run in the **Workflows**
+  tab after linking; if it fails, the computer route below still works.
 
 1. On expo.dev, open the project, then **Updates**.
 2. Open the latest update on branch **preview**, and open it in Expo Go (or scan its QR
@@ -45,11 +51,12 @@ token yet, so in Expo Go the app runs on the fixtures (the London persona):
 
 With sample data on:
 
-- Today and You show a small neutral **Sample data** label, so test numbers are never
-  mistaken for real ones;
+- Today (in the kicker row, where the time it was fetched would go) and You show a small
+  neutral **Sample data** label, so test numbers are never mistaken for real ones;
 - the first screen goes straight to Today (no sign-in wall); You has **Try onboarding**
   to walk through onboarding on the persona's answers;
-- the Coach is on and talks to its stand-in (the fake client), never the server's model;
+- the Coach is on and talks only to its stand-in (the fake client), never the server's
+  model, even when a token is on the phone (`features/coach/source.ts`);
 - sending to the watch goes to the stand-in Garmin (`FakeGarmin`): nothing reaches a real
   watch, but every send state (sending, on the watch, failed and Resend) shows;
 - Plus uses the fake store: the free week starts without paying anything.

@@ -1,12 +1,14 @@
-// Which Coach the app talks to. A store build: the server's (api.ts). A development
-// build (and the layout check's web build) falls back to the persona's stand-in
-// (fake.ts) when the server can't be reached or has no Coach for this account, as
-// every other screen's data does.
+// Which Coach the app talks to. A store build: the server's (api.ts). With sample data
+// showing (data/sample.ts: Expo Go, the layout check's web build), only the persona's
+// stand-in (fake.ts), even with a token on the phone: the screens show the persona, so
+// the Coach must not answer from the runner's real account. A development build tries
+// the server and falls back to the stand-in when it can't be reached or has no Coach
+// for this account, as every other screen's data does.
 import { createContext } from 'react';
 
 import { serverCoachApi, type CoachApi } from './api';
 import { devThread, FakeCoach } from './fake';
-import { fixturesOn } from '../../data/sample';
+import { fixturesOn, sampleData } from '../../data/sample';
 
 
 /** Tests hand the provider their own Coach here. */
@@ -32,8 +34,10 @@ function withFallback(server: CoachApi, fake: CoachApi): CoachApi {
 }
 
 let shared: CoachApi | null = null;
+let sample: CoachApi | null = null;
 
 export function defaultCoachApi(): CoachApi {
+  if (sampleData()) return (sample ??= new FakeCoach({ messages: devThread(Date.now()) }));
   if (!shared) shared = fixturesOn() ? withFallback(serverCoachApi(), new FakeCoach({ messages: devThread(Date.now()) })) : serverCoachApi();
   return shared;
 }
