@@ -273,7 +273,10 @@ def onboarding_cases() -> dict:
     goal = {"name": "London Marathon", "date": "2027-04-24", "km": 42.195, "target": "3:15"}
     return {
         "import": imported,
+        # Nothing on the watch in 12 weeks: the default 10K, said as such, and no usual week.
+        "import_empty": onboarding.import_summary([], TODAY),
         "questions": onboarding.questions("exp", 5, "50to70"),
+        "questions_race": onboarding.questions("regular", 4, "30to50", 21.0975, 6300),
         "reveal": onboarding.reveal(imported["answers"], imported["basis"], TODAY, goal, level="exp"),
         "reveal_fit": onboarding.reveal(imported["answers"], imported["basis"], TODAY, None, level="exp"),
     }

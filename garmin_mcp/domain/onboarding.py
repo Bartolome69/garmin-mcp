@@ -25,7 +25,7 @@ from typing import Any, Sequence
 
 from .. import plan_builder
 from . import paces as pace_engine
-from .model import DAYS, MONTHS, mmss, short_date
+from .model import DAYS, mmss, short_date
 
 WEEKS_READ = 12
 USUAL_WEEKS = 8
@@ -90,12 +90,17 @@ def import_summary(runs: Sequence[RecentRun], today: date) -> dict[str, Any]:
     n = sum(len(w) for w in weeks) / USUAL_WEEKS
     longest = max((r.km for w in weeks for r in w), default=0)
     first = recent[0].day if recent else today
+    enough = len(easy_runs) >= 3
+    # Too few easy runs to read a range: the race's easy zone, or the default 10K's, said as such.
+    easy_note = f"from {len(easy_runs)} runs" if enough else (f"from your {_race_name(best.km)}" if best else "from the 10K above")
     return {
         "source": "import",
         "title": f"Found {len(recent)} runs since {MONTHS_LONG[first.month - 1]}" if recent else "No runs in the last 12 weeks",
+        "runs": len(recent),
         "rows": _rows((best.km, best.secs, best.day, best.name) if best else None, basis,
-                      _range(easy_runs) if len(easy_runs) >= 3 else None,
-                      f"from {len(easy_runs)} runs" if len(easy_runs) >= 3 else "from the race", (km, n), f"last {USUAL_WEEKS} weeks", "import"),
+                      _range(easy_runs) if enough else None, easy_note,
+                      # No runs in the last 8 weeks: no usual week to show, rather than "0 km · 0 runs".
+                      (km, n) if n else None, f"last {USUAL_WEEKS} weeks", "import"),
         "basis": {"raceKm": basis[0], "raceSeconds": basis[1], "raceDate": best.day.isoformat() if best else None},
         "answers": {"avg_km": round(km, 1), "longest_km": round(longest, 1), "days": max(3, min(7, round(n)))},
     }
@@ -110,6 +115,7 @@ def questions(experience: str, days: int, weekly: str, race_km: float | None = N
     return {
         "source": "questions",
         "title": "From your answers",
+        "runs": None,
         "rows": _rows(race, basis, None, "from the race" if race else "from the 10K above", (km, days), "from your answers", "questions"),
         "basis": {"raceKm": basis[0], "raceSeconds": basis[1], "raceDate": None},
         "answers": {"avg_km": km, "longest_km": round(km * 0.3, 1), "days": max(3, min(7, days)), "level": level},
@@ -171,7 +177,3 @@ def reveal(answers: dict[str, Any], basis: dict[str, Any], today: date, goal: di
                     + (f" Prediction uses your {race_name} of {mmss(basis['raceSeconds'])}." if goal else "")),
         "week1": week1,
     }
-
-
-def month_word(m: int) -> str:
-    return MONTHS[m - 1]

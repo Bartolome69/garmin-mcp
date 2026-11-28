@@ -4,6 +4,7 @@
   "import": {
    "source": "import",
    "title": "Found 56 runs since September",
+   "runs": 56,
    "rows": [
     {
      "key": "race",
@@ -41,9 +42,45 @@
     "days": 5
    }
   },
+  "import_empty": {
+   "source": "import",
+   "title": "No runs in the last 12 weeks",
+   "runs": 0,
+   "rows": [
+    {
+     "key": "race",
+     "label": "Best recent race",
+     "value": "None in 12 weeks",
+     "note": "using a 10K of 45:00"
+    },
+    {
+     "key": "easy",
+     "label": "Easy pace",
+     "value": "5:39\u20136:23 /km",
+     "note": "from the 10K above"
+    },
+    {
+     "key": "threshold",
+     "label": "Threshold",
+     "value": "4:32\u20134:37 /km",
+     "note": "from the 10K above"
+    }
+   ],
+   "basis": {
+    "raceKm": 10.0,
+    "raceSeconds": 2700.0,
+    "raceDate": null
+   },
+   "answers": {
+    "avg_km": 0.0,
+    "longest_km": 0,
+    "days": 3
+   }
+  },
   "questions": {
    "source": "questions",
    "title": "From your answers",
+   "runs": null,
    "rows": [
     {
      "key": "race",
@@ -80,6 +117,48 @@
     "longest_km": 18.0,
     "days": 5,
     "level": "exp"
+   }
+  },
+  "questions_race": {
+   "source": "questions",
+   "title": "From your answers",
+   "runs": null,
+   "rows": [
+    {
+     "key": "race",
+     "label": "Best recent race",
+     "value": "Half marathon \u00b7 1:45:00",
+     "note": "from your answer"
+    },
+    {
+     "key": "easy",
+     "label": "Easy pace",
+     "value": "5:58\u20136:45 /km",
+     "note": "from the race"
+    },
+    {
+     "key": "threshold",
+     "label": "Threshold",
+     "value": "4:46\u20134:52 /km",
+     "note": "from your Half marathon"
+    },
+    {
+     "key": "week",
+     "label": "Usual week",
+     "value": "40 km \u00b7 4 runs",
+     "note": "from your answers"
+    }
+   ],
+   "basis": {
+    "raceKm": 21.0975,
+    "raceSeconds": 6300.0,
+    "raceDate": null
+   },
+   "answers": {
+    "avg_km": 40,
+    "longest_km": 12.0,
+    "days": 4,
+    "level": "regular"
    }
   },
   "reveal": {
