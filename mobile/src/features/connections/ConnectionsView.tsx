@@ -157,18 +157,23 @@ export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated 
 // -- You -----------------------------------------------------------------------------------
 
 /** You (build prompt, section 4): a provider needing a reconnect comes first, with the screen's one brand fill. */
-export function YouView({ vm, brand, actions, children, plus }: {
+export function YouView({ vm, brand, actions, children, plus, top, settings }: {
   vm: ConnectionsVM | null; brand: boolean; actions: { connections: () => void; reconnect: (p: Provider) => void };
   /** You's other sections (the Coach and Training preferences, milestone 11), after Connections. */
   children?: React.ReactNode;
-  /** You's Plus section (the YouPlus board), last. */
+  /** You's Plus section (the YouPlus board). */
   plus?: React.ReactNode;
+  /** Above everything: the "Sample data" label when it shows. */
+  top?: React.ReactNode;
+  /** Activities, settings, privacy, help and Sign out, last (milestone 12). */
+  settings?: React.ReactNode;
 }) {
   const { colors } = useTheme();
   const broken = vm?.providers.filter((p) => p.state === 'reconnect') ?? [];
   return (
     <ScrollView testID="you" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 10 }}>
+      contentContainerStyle={{ padding: 16, gap: 10, width: '100%', maxWidth: 680, alignSelf: 'center' }}>
+      {top}
       {broken.map((p) => (
         <Card key={p.key} testID={`trust-${p.key}`} style={{ gap: 8, borderWidth: 1, borderColor: colors.warning }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -192,6 +197,7 @@ export function YouView({ vm, brand, actions, children, plus }: {
       {/* The prompt's order (section 4): Connections, then Coach memory or Training preferences, then Plus. */}
       {children}
       {plus}
+      {settings}
     </ScrollView>
   );
 }
