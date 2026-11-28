@@ -499,9 +499,40 @@ def onboarding_checks() -> None:
           all(s["workout"]["schema"] == "daash.workout.v1" and s["workout"]["steps"] for s in r["week1"]) and len(r["week1"]) >= 3)
     check("onboarding: no race, a fitness plan with no prediction",
           c["reveal_fit"]["title"] == "Your fitness plan" and c["reveal_fit"]["predicted"] is None)
-    empty = onboarding.import_summary([], TODAY)
+    empty = c["import_empty"]
+    er = {r["key"]: r for r in empty["rows"]}
     check("onboarding: no runs read says so and uses the default 10K",
-          empty["title"] == "No runs in the last 12 weeks" and empty["basis"]["raceSeconds"] == 45 * 60)
+          empty["title"] == "No runs in the last 12 weeks" and empty["basis"]["raceSeconds"] == 45 * 60 and empty["runs"] == 0)
+    check("onboarding: with no runs, easy pace says where it comes from and there's no usual week",
+          er["easy"]["note"] == "from the 10K above" and er["race"]["value"] == "None in 12 weeks" and "week" not in er, str(er))
+    check("onboarding: the import counts the runs it read", c["import"]["runs"] == 56)
+    two = [onboarding.RecentRun(TODAY - timedelta(days=d), 8, 8 * 330) for d in (3, 10)]
+    thin = {r["key"]: r for r in onboarding.import_summary(two, TODAY)["rows"]}
+    check("onboarding: too few easy runs to read a range uses the 10K, not a race that isn't there",
+          thin["easy"]["note"] == "from the 10K above", thin["easy"]["note"])
+    qr = {r["key"]: r for r in c["questions_race"]["rows"]}
+    check("onboarding: a recent race in the four questions sets the paces",
+          qr["race"]["value"] == "Half marathon · 1:45:00" and qr["threshold"]["note"] == "from your half marathon"
+          and c["questions_race"]["basis"]["raceSeconds"] == 6300)
+    check("onboarding: race names inside a sentence are in sentence case",
+          onboarding._race_name(42.195, mid=True) == "marathon" and onboarding._race_name(10, mid=True) == "10K"
+          and onboarding._race_name(42.195) == "Marathon")
+    easy_row = rows["easy"]["value"].removesuffix(" /km")
+    easy_subs = {s["sub"].split(" · ")[-1] for s in r["week1"] if s["type"] in ("easy", "long")}
+    check("onboarding: the plan's easy runs use the easy pace the runner confirmed", easy_subs == {easy_row}, f"{easy_subs} vs {easy_row}")
+    check("onboarding: a real race is said as the runner's own", r["because"].endswith("Prediction uses your 10K of 43:30."), r["because"])
+    for key in ("reveal_empty", "reveal_questions"):
+        rv = c[key]
+        check(f"onboarding: {key}: no race to go on, no prediction, and it doesn't call the assumed 10K theirs",
+              rv["predicted"] is None and rv["target"] == "3:15" and "your 10K" not in rv["because"]
+              and "No prediction without a recent race; paces use a 10K of 45:00 for now." in rv["because"], rv["because"])
+    check("onboarding: nothing imported says no '0 km weeks'",
+          "0 km" not in c["reveal_empty"]["because"] and c["reveal_empty"]["because"].startswith("Phases follow from your 20 weeks."),
+          c["reveal_empty"]["because"])
+    check("onboarding: the import's basis carries the confirmed easy range and whether the race is assumed",
+          c["import"]["basis"]["easy"] == [310, 320] and c["import"]["basis"]["assumed"] is False
+          and empty["basis"]["assumed"] is True and c["questions"]["basis"]["assumed"] is True
+          and c["questions_race"]["basis"]["assumed"] is False)
 
 
 def config_checks() -> None:

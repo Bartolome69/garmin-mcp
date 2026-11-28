@@ -4,6 +4,7 @@ import { useIsFocused, useRouter } from 'expo-router';
 
 import { BuilderView } from '../../features/builder/BuilderView';
 import { useBuilder } from '../../features/builder/useBuilder';
+import { localToday } from '../../features/onboarding/model';
 import { TryCard } from '../../features/onboarding/views';
 import { useFlags } from '../../flags/FlagsProvider';
 
@@ -13,7 +14,7 @@ export default function TryScreen() {
   const router = useRouter();
   const focused = useIsFocused();
   const { flags } = useFlags();
-  const b = useBuilder({ vm: null, today: new Date().toISOString().slice(0, 10), initial: TRY_EXAMPLE });
+  const b = useBuilder({ vm: null, today: localToday(), initial: TRY_EXAMPLE });
   return (
     <BuilderView {...b.view} coach={flags.coach_enabled} coachNote={null} onSave={() => {}} brand={focused}
       hint="Type a session. Paces use a 10K of 45:00 until you connect a watch."

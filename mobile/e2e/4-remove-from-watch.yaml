@@ -1,6 +1,8 @@
 appId: run.daash.app
 ---
 - launchApp
+# Past onboarding (5-onboarding.yaml covers it): straight to the tabs.
+- openLink: "daash://today"
 - tapOn: "Plan"
 - tapOn: { id: "open-2026-11-27-tempo" }
 - assertVisible: "On your watch · 20:14"

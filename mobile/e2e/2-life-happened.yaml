@@ -1,6 +1,8 @@
 appId: run.daash.app
 ---
 - launchApp
+# Past onboarding (5-onboarding.yaml covers it): straight to the tabs.
+- openLink: "daash://today"
 - tapOn: "Plan"
 - tapOn: { id: "button-Life happened" }
 - assertVisible: "What changed?"

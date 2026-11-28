@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { kv } from '../../db/kv';
 import { useDb } from '../../db/DbContext';
+import { onPlanChanged } from '../../data/planChanged';
 import { useResource, type Cached, type Resource, type ResourceStore } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
 import { useEntitlement } from '../plus/EntitlementsProvider';
@@ -51,6 +52,9 @@ export function PlanProvider({ children, fetcher }: { children: ReactNode; fetch
   // Free plan first. Plus starting (or ending) changes the key: that plan's copy
   // draws and the server is asked again at once (data/resource.ts).
   const resource = useResource(source, store, undefined, { enabled: ready, key });
+  const { refresh } = resource;
+  // A plan made elsewhere (onboarding from "Create a plan"): fetch it rather than keep the empty one.
+  useEffect(() => onPlanChanged(() => { refresh(); }), [refresh]);
   const watch = useWatch();
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [warned, setWarned] = useState(false);

@@ -37,7 +37,9 @@ export default function PlanScreen() {
 
   if (!vm) return <TodayEmpty error={plan.error} failure={plan.failure} what="your plan" testID="plan" onRetry={plan.refresh} />;
   // A new runner with no plan: the empty state, not a blank week.
-  if (!vm.weeks.length) return <EmptyPlan brand={focused} onWeekByWeek={() => router.push('/plan/builder')} />;
+  if (!vm.weeks.length) {
+    return <EmptyPlan brand={focused} onCreate={() => router.push('/onboarding/goal?from=plan')} onWeekByWeek={() => router.push('/plan/builder')} />;
+  }
   const shownIndex = index ?? weekIndexOf(vm, vm.currentWeek);
   const next = (kind: string, extra: Record<string, string> = {}) => router.push({ pathname: '/plan/next', params: { kind, ...extra } });
   return (

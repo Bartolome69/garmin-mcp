@@ -3,7 +3,9 @@
 The build prompt's E2E flows (section 13) for a device or simulator, with
 [Maestro](https://maestro.mobile.dev). **Not run in this repo's CI**: it has no
 simulator. The same four flows run on every push as Jest integration tests over
-the real routes and watch queue (`src/flows.test.tsx`); keep the two in step.
+the real routes and watch queue (`src/flows.test.tsx`, and `src/onboarding.flows.test.tsx`
+for onboarding); keep the two in step. Flows 1 to 4 open `daash://today` to start past
+onboarding; flow 5 starts from a fresh install.
 
 Run against a development build, which shows the design's persona and sends to
 a stand-in Garmin (`EXPO_PUBLIC_DAASH_WATCH=fail` makes the first send fail):
@@ -18,3 +20,4 @@ maestro test e2e/
 | Life happened → new week → confirm | `2-life-happened.yaml` |
 | Send fails → Resend | `3-send-fail-resend.yaml` (needs `EXPO_PUBLIC_DAASH_WATCH=fail`) |
 | Remove from watch | `4-remove-from-watch.yaml` |
+| Onboarding → first workout lands | `5-onboarding.yaml` (clears the app's data first) |
