@@ -287,7 +287,21 @@ describe(`Plan · Block and Trends on ${os}`, () => {
     expect(screen.getByTestId('trend-locked')).toBeTruthy();
     expect(screen.queryByLabelText(/Race day/)).toBeNull(); // no Plus numbers behind the lock
     await fireEvent.press(screen.getByTestId('see-plus'));
-    expect(a.plus).toHaveBeenCalled();
+    expect(a.plus).toHaveBeenCalledWith('trend');
+  });
+
+  it('Block: advanced plan styles are Plus, shown and locked, never hidden', async () => {
+    const { a } = await draw(PERSONA_PLAN, { tab: 'Block' });
+    expect(screen.getByTestId('plan-styles').props.accessibilityLabel).toMatch(/^Advanced plan styles, Plus\./);
+    expect(screen.getByTestId('plan-styles-plus')).toHaveTextContent('Plus');
+    await fireEvent.press(screen.getByTestId('plan-styles'));
+    expect(a.plus).toHaveBeenCalledWith('plan_styles');
+  });
+
+  it('Block (Plus): plan styles unlocked, no lock', async () => {
+    await draw(PERSONA_PLAN, { tab: 'Block', plus: true });
+    expect(screen.queryByTestId('plan-styles-plus')).toBeNull();
+    expect(screen.getByTestId('plan-styles').props.accessibilityLabel).toMatch(/^Advanced plan styles\. /);
   });
 
   it('Trends (Plus): the trend and race-day projection', async () => {

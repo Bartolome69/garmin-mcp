@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
+import { PlusRow } from '../../ui/Locked';
 import { Text } from '../../ui/Text';
 import type { BlockVM } from './model';
 
@@ -17,7 +18,11 @@ export function phaseBarLabel(b: BlockVM): string {
   return `${b.totalWeeks} weeks: ${phases}. You're in week ${b.currentWeek}.`;
 }
 
-export function BlockView({ block, onChange }: { block: BlockVM | null; onChange: () => void }) {
+export function BlockView({ block, onChange, plus = false, onPlanStyles }: {
+  block: BlockVM | null; onChange: () => void;
+  /** Advanced plan styles are Plus: shown, locked for Free, never hidden. */
+  plus?: boolean; onPlanStyles?: () => void;
+}) {
   const { colors } = useTheme();
   if (!block) {
     return (
@@ -76,6 +81,10 @@ export function BlockView({ block, onChange }: { block: BlockVM | null; onChange
           );
         })}
       </Card>
+      {onPlanStyles ? (
+        <PlusRow testID="plan-styles" title="Advanced plan styles" plus={plus} onPress={onPlanStyles}
+          sub={plus ? 'More shapes for your block. Arriving in an update.' : 'More shapes for your block, beyond the standard one'} />
+      ) : null}
       <Button label="Change the plan" onPress={onChange} />
     </View>
   );

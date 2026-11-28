@@ -12,6 +12,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
+import { PlusRow } from '../../ui/Locked';
 import { openGarminSignIn } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { badgeWords, mergeTitle, mergeWords, prioritySummary, sourceName, youSummary, type ConnectionsVM, type Provider } from './model';
@@ -155,7 +156,11 @@ export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated 
 // -- You -----------------------------------------------------------------------------------
 
 /** You (build prompt, section 4): a provider needing a reconnect comes first, with the screen's one brand fill. */
-export function YouView({ vm, brand, actions }: { vm: ConnectionsVM | null; brand: boolean; actions: { connections: () => void; reconnect: (p: Provider) => void } }) {
+export function YouView({ vm, brand, actions, plus }: {
+  vm: ConnectionsVM | null; brand: boolean; actions: { connections: () => void; reconnect: (p: Provider) => void };
+  /** You's Plus section (the YouPlus board), above Connections. */
+  plus?: React.ReactNode;
+}) {
   const { colors } = useTheme();
   const broken = vm?.providers.filter((p) => p.state === 'reconnect') ?? [];
   return (
@@ -177,6 +182,7 @@ export function YouView({ vm, brand, actions }: { vm: ConnectionsVM | null; bran
           <Button label="Reconnect" kind="primary" brand={brand} onPress={() => actions.reconnect(p)} />
         </Card>
       ))}
+      {plus}
       <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Connections</Text>
       <List>
         <Row testID="row-connections" title="Watches and apps" sub={vm ? youSummary(vm) : 'Not loaded yet'} onPress={actions.connections} chevron />
@@ -271,16 +277,8 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
           ))}
         </>
       ) : null}
-      <Pressable testID="advanced" accessibilityRole="button" onPress={actions.plus}
-        accessibilityLabel={plus ? 'Advanced merge rules' : 'Advanced merge rules, Plus. Per-metric sources and custom match windows.'}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, minHeight: MIN_TOUCH, borderRadius: 12, borderWidth: 1, borderColor: colors.hairline }}>
-        <Icon name="lock" tone="muted" />
-        <View style={{ flex: 1 }}>
-          <Text variant="body">Advanced merge rules</Text>
-          <Text variant="footnote" tone="muted">{`Per-metric sources and custom match windows. Now: within ${vm.match.startWithinSeconds / 60 === 1 ? '1 minute' : `${vm.match.startWithinSeconds} s`} and ±${vm.match.distanceWithinPct}%.`}</Text>
-        </View>
-        <Text variant="footnote" tone="muted" style={{ fontWeight: '600' }}>Plus</Text>
-      </Pressable>
+      <PlusRow testID="advanced" title="Advanced merge rules" plus={plus} onPress={actions.plus}
+        sub={`Pick the source per metric, tune match windows. Now: within ${vm.match.startWithinSeconds / 60 === 1 ? '1 minute' : `${vm.match.startWithinSeconds} s`} and ±${vm.match.distanceWithinPct}%.`} />
     </ScrollView>
   );
 }

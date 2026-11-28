@@ -6,7 +6,8 @@ import { Text } from '../../../ui/Text';
 // Where Plan's actions lead, until the milestones that build them. Nothing is
 // written to the watch from here.
 const COMING: Record<string, string> = {
-  plus: 'Plus arrives in milestone 10.',
+  plan_styles: 'Advanced plan styles come with your Plus and arrive in an update.',
+  merge_rules: 'Advanced merge rules come with your Plus and arrive in an update.',
 };
 
 export default function PlanNext() {

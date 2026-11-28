@@ -15,7 +15,9 @@ import { PlanTabs, type PlanTab } from './PlanTabs';
 import { TrendsView } from './TrendsView';
 import { WeekView, type WeekActions } from './WeekView';
 
-export type PlanActions = WeekActions & { refresh: () => void; trim: () => void; plus: () => void; change: () => void };
+export type PlanActions = WeekActions & { refresh: () => void; trim: () => void;
+  /** Opens the paywall; `from` names the locked feature tapped. */
+  plus: (from: string) => void; change: () => void };
 
 export function PlanView({ vm, tab, onTab, index, onIndex, pending, proposalText, plus, brand, fresh, refreshing, width, os = Platform.OS, actions }: {
   vm: PlanVM;
@@ -58,9 +60,9 @@ export function PlanView({ vm, tab, onTab, index, onIndex, pending, proposalText
             <WeekView vm={vm} index={index} onIndex={onIndex} pending={pending} proposalText={proposalText} width={width} os={os} brand={brand}
               actions={actions} onDragging={setDragging} />
           ) : tab === 'Block' ? (
-            <BlockView block={vm.block} onChange={actions.change} />
+            <BlockView block={vm.block} onChange={actions.change} plus={plus} onPlanStyles={() => actions.plus('plan_styles')} />
           ) : (
-            <TrendsView vm={vm.trends} plus={plus} onTrim={actions.trim} onPlus={actions.plus} />
+            <TrendsView vm={vm.trends} plus={plus} onTrim={actions.trim} onPlus={() => actions.plus('trend')} />
           )}
         </View>
       </ScrollView>

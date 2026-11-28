@@ -2542,7 +2542,8 @@ exports[`snapshot: Source priority on ios: priority-ios 1`] = `
       </View>
     </View>
     <View
-      accessibilityLabel="Advanced merge rules, Plus. Per-metric sources and custom match windows."
+      accessibilityHint="Opens Daash Plus"
+      accessibilityLabel="Advanced merge rules, Plus. Pick the source per metric, tune match windows. Now: within 1 minute and ±2%."
       accessibilityRole="button"
       accessibilityState={
         {
@@ -2576,6 +2577,7 @@ exports[`snapshot: Source priority on ios: priority-ios 1`] = `
       style={
         {
           "alignItems": "center",
+          "backgroundColor": "transparent",
           "borderColor": "#3A3936",
           "borderRadius": 12,
           "borderWidth": 1,
@@ -2645,7 +2647,7 @@ exports[`snapshot: Source priority on ios: priority-ios 1`] = `
             ]
           }
         >
-          Per-metric sources and custom match windows. Now: within 1 minute and ±2%.
+          Pick the source per metric, tune match windows. Now: within 1 minute and ±2%.
         </Text>
       </View>
       <Text
@@ -2665,6 +2667,7 @@ exports[`snapshot: Source priority on ios: priority-ios 1`] = `
             },
           ]
         }
+        testID="advanced-plus"
       >
         Plus
       </Text>

@@ -6,6 +6,7 @@ import { kv } from '../../db/kv';
 import { useDb } from '../../db/DbContext';
 import { useResource, type Cached, type Resource, type ResourceStore } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
+import { usePlus } from '../plus/EntitlementsProvider';
 import { applyToPlan } from '../watch/apply';
 import { useWatch } from '../watch/WatchProvider';
 import type { PlanVM } from './model';
@@ -37,7 +38,9 @@ const PlanContext = createContext<PlanState | null>(null);
 export function PlanProvider({ children, fetcher }: { children: ReactNode; fetcher?: () => Promise<PlanVM> }) {
   const db = useDb();
   const { flags } = useFlags();
-  const { coach_enabled: coach, plus } = flags;
+  const coach = flags.coach_enabled;
+  // Plus or a running free week: the server adds the prediction trend.
+  const plus = usePlus();
   const key = `plan:${coach ? 'coach' : 'plain'}:${plus ? 'plus' : 'free'}`;
   const source = useMemo(() => fetcher ?? planSource(coach, plus), [fetcher, coach, plus]);
   const store = useMemo<ResourceStore<PlanVM> | undefined>(() => db ? {

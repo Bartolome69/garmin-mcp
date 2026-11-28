@@ -17,6 +17,12 @@ export type Resolved = ReturnType<typeof resolve>;
 export type TrialOutcome = { kind: 'started' | 'pending' | 'cancelled' } | { kind: 'failed'; message: string };
 export type RestoreOutcome = { kind: 'restored' | 'nothing' } | { kind: 'failed'; message: string };
 
+/** Restore's outcome, in words. */
+export function restoreWords(r: RestoreOutcome): string {
+  if (r.kind === 'failed') return r.message;
+  return r.kind === 'restored' ? 'Purchases restored.' : 'No purchases found for this account.';
+}
+
 export type EntitlementsState = {
   entitlement: Resolved;
   /** Plus or a running trial: every Plus feature unlocks. */

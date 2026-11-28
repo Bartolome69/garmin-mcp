@@ -12,7 +12,8 @@ import { PlanView } from '../../../features/plan/PlanView';
 import { TodayEmpty } from '../../../features/today/TodayView';
 import { moveProposal } from '../../../features/watch/proposals';
 import { useWatch } from '../../../features/watch/WatchProvider';
-import { useFlags } from '../../../flags/FlagsProvider';
+import { usePlus } from '../../../features/plus/EntitlementsProvider';
+import { openPaywall } from '../../../features/plus/open';
 import { FailureBanner } from '../../../ui/StateViews';
 
 function useNow(everyMs = 60000) {
@@ -24,7 +25,7 @@ function useNow(everyMs = 60000) {
 export default function PlanScreen() {
   const plan = usePlan();
   const watch = useWatch();
-  const { flags } = useFlags();
+  const plus = usePlus();
   const router = useRouter();
   // A screen behind an open sheet loses its brand fill (build prompt, section 2).
   const focused = useIsFocused();
@@ -50,7 +51,7 @@ export default function PlanScreen() {
       onIndex={setIndex}
       pending={plan.pending}
       proposalText={plan.proposal ? proposalWords(vm, plan.proposal) : null}
-      plus={flags.plus}
+      plus={plus}
       brand={focused}
       fresh={fresh}
       refreshing={plan.refreshing}
@@ -82,7 +83,8 @@ export default function PlanScreen() {
             Alert.alert('Couldn’t work out the trim', err instanceof Error ? err.message : 'Try again in a moment.');
           }
         },
-        plus: () => next('plus'),
+        // A lock opens Plus; once unlocked, a Plus feature still to arrive says so.
+        plus: (from) => (plus ? next(from) : openPaywall(router, from)),
         change: () => router.push('/plan/life'),
       }}
     />

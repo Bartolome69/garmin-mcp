@@ -1010,6 +1010,137 @@ exports[`snapshot on ios Block: plan-Block-ios 1`] = `
             </View>
           </View>
           <View
+            accessibilityHint="Opens Daash Plus"
+            accessibilityLabel="Advanced plan styles, Plus. More shapes for your block, beyond the standard one"
+            accessibilityRole="button"
+            accessibilityState={
+              {
+                "busy": undefined,
+                "checked": undefined,
+                "disabled": undefined,
+                "expanded": undefined,
+                "selected": undefined,
+              }
+            }
+            accessibilityValue={
+              {
+                "max": undefined,
+                "min": undefined,
+                "now": undefined,
+                "text": undefined,
+              }
+            }
+            accessible={true}
+            collapsable={false}
+            focusable={true}
+            onBlur={[Function]}
+            onClick={[Function]}
+            onFocus={[Function]}
+            onResponderGrant={[Function]}
+            onResponderMove={[Function]}
+            onResponderRelease={[Function]}
+            onResponderTerminate={[Function]}
+            onResponderTerminationRequest={[Function]}
+            onStartShouldSetResponder={[Function]}
+            style={
+              {
+                "alignItems": "center",
+                "backgroundColor": "transparent",
+                "borderColor": "#3A3936",
+                "borderRadius": 12,
+                "borderWidth": 1,
+                "flexDirection": "row",
+                "gap": 10,
+                "minHeight": 44,
+                "padding": 14,
+              }
+            }
+            testID="plan-styles"
+          >
+            <ViewManagerAdapter_SymbolModule
+              accessible={false}
+              animated={false}
+              colors={[]}
+              importantForAccessibility="no-hide-descendants"
+              name="lock"
+              size={17}
+              style={
+                {
+                  "height": 17,
+                  "width": 17,
+                }
+              }
+              tint={4289111455}
+              tintColor="#A6A59F"
+              type="monochrome"
+            />
+            <View
+              style={
+                {
+                  "flex": 1,
+                }
+              }
+            >
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 17,
+                      "lineHeight": 22,
+                    },
+                    {
+                      "color": "#F4F3EE",
+                    },
+                    false,
+                    undefined,
+                  ]
+                }
+              >
+                Advanced plan styles
+              </Text>
+              <Text
+                maxFontSizeMultiplier={2}
+                style={
+                  [
+                    {
+                      "fontSize": 13,
+                      "lineHeight": 18,
+                    },
+                    {
+                      "color": "#A6A59F",
+                    },
+                    false,
+                    undefined,
+                  ]
+                }
+              >
+                More shapes for your block, beyond the standard one
+              </Text>
+            </View>
+            <Text
+              maxFontSizeMultiplier={2}
+              style={
+                [
+                  {
+                    "fontSize": 13,
+                    "lineHeight": 18,
+                  },
+                  {
+                    "color": "#A6A59F",
+                  },
+                  false,
+                  {
+                    "fontWeight": "600",
+                  },
+                ]
+              }
+              testID="plan-styles-plus"
+            >
+              Plus
+            </Text>
+          </View>
+          <View
             accessibilityRole="button"
             accessibilityState={
               {
@@ -2185,6 +2316,7 @@ exports[`snapshot on ios Trends: plan-Trends-ios 1`] = `
             <View
               accessibilityElementsHidden={true}
               importantForAccessibility="no-hide-descendants"
+              pointerEvents="none"
               style={
                 {
                   "opacity": 0.3,
