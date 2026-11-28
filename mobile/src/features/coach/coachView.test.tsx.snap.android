@@ -1858,6 +1858,7 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
             "flex": 1,
             "fontSize": 16,
             "maxHeight": 120,
+            "minHeight": 48,
             "paddingVertical": 10,
           }
         }
@@ -3823,6 +3824,7 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
             "flex": 1,
             "fontSize": 16,
             "maxHeight": 120,
+            "minHeight": 48,
             "paddingVertical": 10,
           }
         }

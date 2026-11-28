@@ -98,9 +98,10 @@ function element(n: Node): A11yElement {
   const v = p.accessibilityValue;
   const value = v?.text ?? (typeof v?.now === 'number' ? `${v.now}${typeof v.max === 'number' ? ` of ${v.max}` : ''}` : undefined)
     ?? (n.type === 'RNCSegmentedControl' && Array.isArray(p.values) ? `${p.values[p.selectedIndex ?? 0]} (${p.values.join(', ')})` : undefined)
-    ?? (n.type === 'TextInput' && p.value ? String(p.value) : undefined) ?? (/Switch$/.test(n.type) ? (p.value ? 'on' : 'off') : undefined);
+    ?? (n.type === 'TextInput' && p.value ? String(p.value) : undefined) ?? (/Switch$/.test(n.type) ? ((p.value ?? p.on) ? 'on' : 'off') : undefined)
+    ?? (role === 'switch' && p.accessibilityState ? (p.accessibilityState.checked ? 'on' : 'off') : undefined);
   const st = p.accessibilityState ?? {};
-  const state = Object.entries(st).filter(([, on]) => on === true || on === 'mixed').map(([k]) => k);
+  const state = Object.entries(st).filter(([k, on]) => (on === true || on === 'mixed') && !(role === 'switch' && k === 'checked')).map(([k]) => k);
   if (p.disabled === true && !state.includes('disabled')) state.push('disabled');
   const live = p.accessibilityLiveRegion && p.accessibilityLiveRegion !== 'none' ? p.accessibilityLiveRegion : undefined;
   return { role, label, ...(value ? { value } : {}), ...(state.length ? { state } : {}), ...(live ? { live } : {}), ...(p.testID ? { id: p.testID } : {}) };
@@ -117,7 +118,9 @@ export function a11yElements(tree: unknown): A11yElement[] {
     if (/^RNSVG/.test(n.type)) return; // drawings: said by the labelled element around them
     const focusable = p.accessible === true || FOCUSABLE_TYPES.has(n.type) || /Switch$/.test(n.type)
       || (!!p.accessibilityRole && p.accessibilityRole !== 'none' && (n.type === 'Text' || !!p.onClick || !!p.onPress || !!p.accessibilityLabel));
-    if (focusable) { const e = element(n); if (e.label || e.role !== 'group') out.push(e); return; }
+    // A focusable element with no name is kept (the checks flag it), unless it holds nothing
+    // a screen reader could reach and does nothing (a plain accessible wrapper).
+    if (focusable) { const e = element(n); if (e.label || e.role !== 'group' || isControl(n)) out.push(e); return; }
     if (n.type === 'Text') {
       // A Text is read as its label when it has one ("Repeat 10 times" for "10 ×").
       const t = String(p.accessibilityLabel ?? words(n).join('')).replace(/\s+/g, ' ').trim();
@@ -142,22 +145,62 @@ export const line = (e: A11yElement) => `${e.role} "${e.label}"${e.value ? ` = $
 
 // -- checks ------------------------------------------------------------------------------------
 
-const CONTROL = new Set(['button', 'link', 'radio', 'tab', 'checkbox', 'switch', 'adjustable', 'menuitem', 'togglebutton']);
-export const isControl = (n: Node) => CONTROL.has(n.props?.accessibilityRole) && !!(n.props.onClick || n.props.onResponderGrant || n.props.onPress);
-const slop = (h: unknown) => (typeof h === 'number' ? 2 * h : h && typeof h === 'object' ? ((h as { top?: number }).top ?? 0) + ((h as { bottom?: number }).bottom ?? 0) : 0);
+const PRESS = ['onClick', 'onPress', 'onLongPress', 'onResponderGrant'] as const;
+const NOT_CONTROLS = /^(RCTScrollView|AndroidHorizontalScrollView|RCTScrollContentView|AndroidHorizontalScrollContentView|RNSScreen.*|RNSModalScreen)$/;
+/**
+ * Something a finger can work: a native switch, slider or text field, or any view or text
+ * that answers a press (with or without a role: a Pressable with no role is still a target).
+ */
+export const isControl = (n: Node) => {
+  if (/Switch$|^TextInput$|Slider$/.test(n.type)) return true;
+  if (NOT_CONTROLS.test(n.type)) return false;
+  return PRESS.some((k) => typeof n.props?.[k] === 'function') || typeof n.props?.onChange === 'function' || typeof n.props?.onValueChange === 'function';
+};
+const slopV = (h: unknown) => (typeof h === 'number' ? 2 * h : h && typeof h === 'object' ? ((h as { top?: number }).top ?? 0) + ((h as { bottom?: number }).bottom ?? 0) : 0);
+const slopH = (h: unknown) => (typeof h === 'number' ? 2 * h : h && typeof h === 'object' ? ((h as { left?: number }).left ?? 0) + ((h as { right?: number }).right ?? 0) : 0);
 const describeNode = (n: Node) => n.props.testID ?? n.props.accessibilityLabel ?? words(n).join(' ').slice(0, 40) ?? n.type;
+// A native switch's own frame when nothing sizes it: UISwitch is 51 × 31 pt.
+const SWITCH = { width: 51, height: 31 };
 
-/** Controls under MIN_TOUCH tall (hit slop counted). */
+/**
+ * Controls smaller than MIN_TOUCH, tall or (where the width is set) wide, hit slop counted.
+ * A control inside another one isn't checked on its own: the outer one is the target (a
+ * switch row's switch).
+ */
 export function smallTargets(tree: unknown): string[] {
   const out: string[] = [];
-  for (const n of all(tree)) {
-    if (!isControl(n)) continue;
+  const check = (n: Node) => {
     const s = StyleSheet.flatten(n.props.style) ?? {};
+    const sw = /Switch$/.test(n.type);
     const inner = all(n).map((x) => StyleSheet.flatten(x.props?.style) ?? {});
-    const height = Math.max(s.minHeight ?? 0, s.height ?? 0, ...inner.map((x) => Math.max(x.minHeight ?? 0, x.height ?? 0, x.lineHeight ?? 0))) + slop(n.props.hitSlop);
-    if (height < MIN_TOUCH) out.push(`${describeNode(n)}: ${height}`);
-  }
+    const height = Math.max(s.minHeight ?? 0, s.height ?? 0, sw ? SWITCH.height : 0,
+      ...inner.map((x) => Math.max(x.minHeight ?? 0, x.height ?? 0, x.lineHeight ?? 0))) + slopV(n.props.hitSlop);
+    // Width only where it's set on the control itself (a row or text button takes the width it needs).
+    const set = [s.width, s.minWidth].filter((w): w is number => typeof w === 'number');
+    const width = sw && !set.length ? SWITCH.width : set.length ? Math.max(...set) + slopH(n.props.hitSlop) : Infinity;
+    if (height < MIN_TOUCH || width < MIN_TOUCH) out.push(`${describeNode(n)}: ${width === Infinity ? '' : `${width} × `}${height}`);
+  };
+  const walk = (n: unknown) => {
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (!isNode(n)) return;
+    if (isControl(n)) { check(n); return; }
+    kids(n).forEach(walk);
+  };
+  walk(tree);
   return [...new Set(out)];
+}
+
+// Names two controls may share on purpose: a row of choices repeated per item (each sits under its own heading).
+export const SHARED_NAMES = new Set(['Reconnect', 'Helpful', 'Not helpful', 'Edit', 'Remove', 'Request it', 'These are different runs']);
+const NAMED_ROLES = new Set(['button', 'link', 'radio', 'tab', 'checkbox', 'switch', 'adjustable', 'menuitem', 'tablist']);
+
+/** Focusable elements a screen reader would land on and find nothing to say. */
+export const unnamed = (els: A11yElement[]) => els.filter((e) => e.role !== 'text' && !e.label).map((e) => `${e.role} ${e.id ?? ''}`.trim());
+
+/** Controls that share a name (a screen reader can't tell them apart), bar SHARED_NAMES. */
+export function sharedNames(els: A11yElement[]): string[] {
+  const names = els.filter((e) => NAMED_ROLES.has(e.role)).map((e) => e.label);
+  return [...new Set(names.filter((n, i) => names.indexOf(n) !== i && !SHARED_NAMES.has(n)))];
 }
 
 const scales = (t: Node) => t.props.allowFontScaling !== false && !(t.props.maxFontSizeMultiplier && t.props.maxFontSizeMultiplier <= 1.5);

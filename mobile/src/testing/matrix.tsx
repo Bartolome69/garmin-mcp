@@ -9,7 +9,9 @@
 // Every cell must hold:
 //   - one brand fill on a screen with a primary action, at most one otherwise, none behind a sheet;
 //   - no scalable text in a box of fixed height (it clips at 200%);
-//   - every control at least MIN_TOUCH tall;
+//   - every control (anything that answers a press, a switch or a text field, role or not) at
+//     least MIN_TOUCH tall, and wide where its width is set;
+//   - nothing focusable without a name, and no two controls with the same one;
 //   - with the Coach off, nothing of the Coach's (its blocks or its name);
 //   - the same numbers with the Coach on and off.
 // The screens come from the routes on disk: a route with no entry in SCREENS fails
@@ -20,7 +22,7 @@ import path from 'path';
 import { screen } from 'expo-router/testing-library';
 import { Platform } from 'react-native';
 
-import { a11yElements, brandFills, clipped, coachSurfaces, headerTitle, line, locate, plainNumbers, smallTargets, truncated } from './a11y';
+import { a11yElements, brandFills, clipped, coachSurfaces, headerTitle, line, locate, plainNumbers, sharedNames, smallTargets, truncated, unnamed } from './a11y';
 import { openScreen, SCREENS, screenRoutes, setWindow, type ScreenCase } from './screens';
 import { MIN_TOUCH } from '../ui/Button';
 
@@ -96,6 +98,10 @@ function cases(group: string) {
       if (clip.length) problems.push(`${where}: clipped ${clip.join('; ')}`);
       if (small.length) problems.push(`${where}: under ${MIN_TOUCH}: ${small.join('; ')}`);
       if (coachBits.length) problems.push(`${where}: Coach off but shows ${coachBits.join('; ')}`);
+      const els = a11yElements(front);
+      const nameless = unnamed(els), twice = sharedNames(els);
+      if (nameless.length) problems.push(`${where}: no name: ${nameless.join('; ')}`);
+      if (twice.length) problems.push(`${where}: controls share a name: ${twice.join('; ')}`);
       numbers[`${cell.scheme}|${cell.text}|${cell.coach}`] = plainNumbers(front);
       const title = headerTitle(front);
       const body = [
@@ -103,7 +109,7 @@ function cases(group: string) {
         `clipped: ${clip.length ? clip.join('; ') : 'none'}`,
         `cut to lines: ${truncated(front).join('; ') || 'none'}`,
         ...(title ? [`header "${title}"`] : []),
-        ...a11yElements(front).map(line),
+        ...els.map(line),
       ].join('\n');
       reads.set(body, [...(reads.get(body) ?? []), where]);
     }

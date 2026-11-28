@@ -22,21 +22,42 @@ export function ListGroup({ children, testID }: { children: ReactNode; testID?: 
   );
 }
 
-/** A row with a switch: the switch carries the row's name and its on/off state. */
-export function SwitchRow({ title, sub, value, onChange, testID, disabled = false }: {
-  title: string; sub?: string; value: boolean; onChange: (on: boolean) => void; testID: string; disabled?: boolean;
+/**
+ * A switch's colours: the off track muted (at least 3:1 on the surface it sits on; the
+ * button grey was 1.7:1, and in dark mode the off thumb matched the row), the on track
+ * success, the thumb the surface (3:1 on both tracks). tokens.source.test.ts checks the pairs.
+ */
+export const switchColors = (colors: { muted: string; success: string; surface: string }) => ({
+  trackColor: { false: colors.muted, true: colors.success },
+  ios_backgroundColor: colors.muted,
+  thumbColor: colors.surface,
+});
+
+/**
+ * A row with a switch. The whole row is the control (role switch, its name and on/off
+ * state, at least 56 tall): the native switch alone is 31 pt tall on iOS. The switch inside
+ * still toggles when touched, and is hidden from screen readers (the row says it).
+ */
+export function SwitchRow({ title, sub, label, value, onChange, testID, disabled = false, minHeight = 56 }: {
+  title: string; sub?: string;
+  /** What a screen reader says, when not the title and the line under it. */
+  label?: string;
+  value: boolean; onChange: (on: boolean) => void; testID: string; disabled?: boolean; minHeight?: number;
 }) {
   const { colors } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingVertical: 10, paddingHorizontal: 14 }}>
-      <View style={{ flex: 1, minWidth: 0 }} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+    <Pressable testID={`${testID}-row`} onPress={() => onChange(!value)} disabled={disabled}
+      accessibilityRole="switch" accessibilityLabel={label ?? (sub ? `${title}. ${sub}` : title)}
+      accessibilityState={{ checked: value, disabled }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight, paddingVertical: 10, paddingHorizontal: 14 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         <Text variant="body">{title}</Text>
         {sub ? <Text variant="footnote" tone="muted">{sub}</Text> : null}
       </View>
-      <Switch testID={testID} value={value} onValueChange={onChange} disabled={disabled}
-        accessibilityLabel={sub ? `${title}. ${sub}` : title} accessibilityRole="switch"
-        trackColor={{ false: colors.button, true: colors.success }} thumbColor={colors.surface} />
-    </View>
+      <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+        <Switch testID={testID} value={value} onValueChange={onChange} disabled={disabled} {...switchColors(colors)} />
+      </View>
+    </Pressable>
   );
 }
 

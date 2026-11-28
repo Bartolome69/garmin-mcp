@@ -526,7 +526,7 @@ describe('11. You: memory and preferences', () => {
   it('Coach off: the same items as Training preferences; niggles, no tone, no Clear memory, no Coach anywhere', async () => {
     await renderRouter(app(new FakeCoach(), undefined, DEFAULT_FLAGS), { initialUrl: '/you' });
     expect(await screen.findByTestId('row-memory')).toHaveTextContent(/Training preferences/);
-    expect(screen.queryByTestId('coach-switch')).toBeNull();
+    expect(screen.queryByTestId('coach-switch-row')).toBeNull();
     await fireEvent.press(screen.getByTestId('row-memory'));
     const view = await screen.findByTestId('memory');
     expect(within(view).getByLabelText('Niggles to plan around: Left achilles · 12 Nov')).toBeTruthy();
@@ -541,7 +541,7 @@ describe('12. The Coach switch in You', () => {
     await renderRouter(app(new FakeCoach()), { initialUrl: '/today' });
     expect(await screen.findByTestId('coach-line')).toBeTruthy();
     await act(async () => { router.push('/you'); });
-    await fireEvent(await screen.findByTestId('coach-switch'), 'valueChange', false);
+    await fireEvent.press(await screen.findByTestId('coach-switch-row'));
     expect(await screen.findByTestId('row-memory')).toHaveTextContent(/Training preferences/);
     await act(async () => { router.push('/today'); });
     await screen.findByTestId('today');
@@ -549,7 +549,7 @@ describe('12. The Coach switch in You', () => {
     await act(async () => { router.push('/coach'); });
     expect(screen.queryByTestId('coach')).toBeNull();
     await act(async () => { router.push('/you'); });
-    await fireEvent(await screen.findByTestId('coach-switch'), 'valueChange', true);
+    await fireEvent(screen.getByTestId('coach-switch', { includeHiddenElements: true }), 'valueChange', true); // the switch itself still works
     await act(async () => { router.push('/coach'); });
     expect(await screen.findByTestId('coach')).toBeTruthy();
   });

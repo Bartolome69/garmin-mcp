@@ -14,7 +14,7 @@ import path from 'path';
 import { screen } from 'expo-router/testing-library';
 import { Platform, StyleSheet } from 'react-native';
 
-import { a11yElements, all, headerTitle, locate, words, type Node } from './testing/a11y';
+import { a11yElements, all, headerTitle, locate, sharedNames, unnamed, words, type Node } from './testing/a11y';
 import { openScreen, SCREENS } from './testing/screens';
 import { colors } from './theme/tokens';
 
@@ -39,8 +39,6 @@ function presentation(route: string): string | null {
   return null;
 }
 
-// Names two controls may share on purpose: a row of choices repeated per item (each sits under its own heading).
-const SHARED_NAMES = new Set(['Reconnect', 'Helpful', 'Not helpful', 'Edit', 'Remove', 'Request it', 'These are different runs']);
 
 describe(`focus order on ${Platform.OS}`, () => {
   it.each(SCREENS.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -55,10 +53,9 @@ describe(`focus order on ${Platform.OS}`, () => {
     const firstWords = els.findIndex((e) => e.role === 'header' || e.role === 'text' || e.role === 'group' || e.role === 'image');
     expect({ title, before: firstWords >= 0 && (firstControl < 0 || firstWords < firstControl) || !!title }).toEqual({ title, before: true });
 
-    // Named, and not twice.
-    expect(els.filter((e) => e.role !== 'text' && !e.label).map((e) => `${e.role} ${e.id ?? ''}`)).toEqual([]);
-    const names = els.filter((e) => CONTROL_ROLES.has(e.role) && e.role !== 'textfield').map((e) => e.label);
-    expect(names.filter((n, i) => names.indexOf(n) !== i && !SHARED_NAMES.has(n))).toEqual([]);
+    // Named, and not twice (the matrix checks this in every cell too).
+    expect(unnamed(els)).toEqual([]);
+    expect(sharedNames(els)).toEqual([]);
 
     // The primary action is focusable.
     const brand = all(front).filter((n: Node) => StyleSheet.flatten(n.props?.style)?.backgroundColor === colors.dark.brand);

@@ -31,9 +31,14 @@ describe('notifications', () => {
     expect(on.body).toBe('Easy means easy, and this was.');
   });
 
-  it('the screen has a switch per kind, each named', async () => {
+  it('the screen has a switch per kind, each named; the whole row is the switch', async () => {
     await open('Notifications');
-    for (const k of NOTIFICATION_KINDS) expect(screen.getByTestId(`notify-${k.kind}`).props.accessibilityLabel).toBe(`${k.title}. ${k.sub}`);
+    for (const k of NOTIFICATION_KINDS) {
+      const row = screen.getByTestId(`notify-${k.kind}-row`);
+      expect([row.props.accessibilityRole, row.props.accessibilityLabel, row.props.accessibilityState.checked]).toEqual(['switch', `${k.title}. ${k.sub}`, true]);
+    }
+    await fireEvent.press(screen.getByTestId('notify-headsUp-row'));
+    expect(screen.getByTestId('notify-headsUp-row').props.accessibilityState.checked).toBe(false);
   });
 });
 

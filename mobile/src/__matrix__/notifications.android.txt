@@ -6,8 +6,8 @@ brand fills: 0
 clipped: none
 cut to lines: none
 header "Notifications"
-switch "Session heads-up. The evening before" = off
-switch "Sent to your watch. When a change reaches Garmin" = off
-switch "Run summary. When a run comes back from Garmin" = off
-switch "Plan updated. When a future session changes" = off
+switch "Session heads-up. The evening before" = on
+switch "Sent to your watch. When a change reaches Garmin" = on
+switch "Run summary. When a run comes back from Garmin" = on
+switch "Plan updated. When a future session changes" = on
 text "No reminders about streaks or sessions you didn’t do. Rest days count."

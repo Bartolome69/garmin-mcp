@@ -13,9 +13,7 @@ button "Reconnect"
 header "Connections"
 button "Watches and apps, Connected to Garmin"
 header "Coach"
-text "Coach"
-text "Answers questions about your plan and runs. AI, run on Daash’s server. Off hides it everywhere; no number changes."
-switch "Coach" = off
+switch "Coach" = on
 button "Coach memory. What the Coach keeps in mind"
 header "Plus"
 button "Daash Plus, Prediction trend, plan styles, widgets, Coach without a daily limit"
@@ -76,9 +74,7 @@ button "Reconnect"
 header "Connections"
 button "Watches and apps, Connected to Garmin"
 header "Coach"
-text "Coach"
-text "Answers questions about your plan and runs. AI, run on Daash’s server. Off hides it everywhere; no number changes."
-switch "Coach" = off
+switch "Coach" = on
 button "Coach memory. What the Coach keeps in mind"
 header "Plus"
 button "Daash Plus, Prediction trend, plan styles, widgets, Coach without a daily limit"

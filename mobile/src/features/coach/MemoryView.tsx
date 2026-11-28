@@ -4,11 +4,12 @@
 // "Clear memory". Also You's Coach section: the Coach's own switch (where "AI" may be
 // said, as its settings) and the row into these items.
 import { useState } from 'react';
-import { Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
+import { SwitchRow } from '../../ui/List';
 import { Text } from '../../ui/Text';
 import { MEDICAL } from '../watch/proposals';
 import { itemWords, kindLabel, kindsFor, visibleItems, type MemoryItem, type MemoryKind } from './memory';
@@ -131,14 +132,8 @@ export function CoachSection({ available, coach, onToggle, onOpen }: {
       <Text variant="kicker" accessibilityRole="header" tone="muted" style={{ marginTop: 6 }}>{available ? 'Coach' : 'Training'}</Text>
       <List>
         {available ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, minHeight: 60 }}>
-            <View style={{ flex: 1 }}>
-              <Text variant="body">Coach</Text>
-              <Text variant="footnote" tone="muted">Answers questions about your plan and runs. AI, run on Daash’s server. Off hides it everywhere; no number changes.</Text>
-            </View>
-            <Switch testID="coach-switch" value={coach} onValueChange={onToggle} accessibilityLabel="Coach"
-              trackColor={{ false: colors.button, true: colors.success }} thumbColor={colors.surface} />
-          </View>
+          <SwitchRow testID="coach-switch" title="Coach" label="Coach" value={coach} onChange={onToggle} minHeight={60}
+            sub="Answers questions about your plan and runs. AI, run on Daash’s server. Off hides it everywhere; no number changes." />
         ) : null}
         <Pressable testID="row-memory" accessibilityRole="button" onPress={onOpen}
           accessibilityLabel={coach ? 'Coach memory. What the Coach keeps in mind' : 'Training preferences. What you’ve told Daash'}

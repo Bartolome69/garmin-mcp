@@ -54,7 +54,9 @@ exports[`snapshot on ios Block: plan-Block-ios 1`] = `
               {
                 "height": 32,
               },
-              undefined,
+              {
+                "height": 44,
+              },
             ]
           }
           testID="plan-tabs"
@@ -1277,7 +1279,9 @@ exports[`snapshot on ios Trends: plan-Trends-ios 1`] = `
               {
                 "height": 32,
               },
-              undefined,
+              {
+                "height": 44,
+              },
             ]
           }
           testID="plan-tabs"
@@ -2694,7 +2698,9 @@ exports[`snapshot on ios Week: plan-Week-ios 1`] = `
               {
                 "height": 32,
               },
-              undefined,
+              {
+                "height": 44,
+              },
             ]
           }
           testID="plan-tabs"

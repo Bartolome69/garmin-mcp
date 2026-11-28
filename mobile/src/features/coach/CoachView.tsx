@@ -434,7 +434,7 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
           backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline, minHeight: MIN_TOUCH + 8 }}>
           <TextInput testID="composer" value={text} onChangeText={setText} multiline editable={!locked}
             placeholder={offline ? 'The Coach needs a connection' : 'Ask the Coach'} placeholderTextColor={colors.muted}
-            accessibilityLabel="Message the Coach" style={{ flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10, maxHeight: 120 }} />
+            accessibilityLabel="Message the Coach" style={{ flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10, minHeight: MIN_TOUCH, maxHeight: 120 }} />
           {limit.remaining != null && !locked ? (
             <Text variant="caption" tone="muted" numeric testID="coach-remaining">{`${limit.remaining} left today`}</Text>
           ) : null}

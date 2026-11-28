@@ -1820,6 +1820,7 @@ exports[`The Coach on ios, dark one thread: older days collapsed, today with its
             "flex": 1,
             "fontSize": 16,
             "maxHeight": 120,
+            "minHeight": 44,
             "paddingVertical": 10,
           }
         }
@@ -3735,6 +3736,7 @@ exports[`The Coach on ios, light one thread: older days collapsed, today with it
             "flex": 1,
             "fontSize": 16,
             "maxHeight": 120,
+            "minHeight": 44,
             "paddingVertical": 10,
           }
         }
