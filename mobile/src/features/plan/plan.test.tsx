@@ -368,6 +368,11 @@ describe(`Session detail on ${os}`, () => {
     expect(screen.getByText('Coach · why this session')).toBeTruthy();
     const onTexts = texts(on.toJSON()).filter((t) => t !== 'Coach · why this session' && !t.startsWith('Short reps'));
     expect(onTexts).toEqual(offTexts);
+    // The Coach's block comes after the watch row and Move / Swap / Skip, so turning it on
+    // moves nothing the 10-rep session needs on one screen (scripts/plan-check.js measures it).
+    const all = texts(on.toJSON());
+    expect(all.slice(0, offTexts.length)).toEqual(offTexts);
+    expect(all.slice(offTexts.length)[0]).toBe('Coach · why this session');
   });
 });
 

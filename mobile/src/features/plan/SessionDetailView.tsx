@@ -3,6 +3,7 @@
 // range per km (or heart rate / power), "Based on your 10K of 43:30 (12 Oct)" with
 // Easier / Harder (the shared pace engine, 2% a step, the server's twin), the watch
 // status row with every send state (watch/WatchCard.tsx), and Move / Swap / Skip.
+// With the Coach on, "Coach · why this session" follows them, below the fold.
 // Changing targets or the day reaches the watch only through the confirm sheet.
 import { ScrollView, View } from 'react-native';
 
@@ -75,6 +76,19 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
           </View>
         </View>
       ) : null}
+      {watch ? (
+        <WatchCard watch={watch} device={device} error={error} retrying={retrying} adjusted={!!adjusted} brand={brand}
+          onSend={actions.send} onResend={actions.resend} onRemove={actions.remove} onTrouble={actions.trouble} />
+      ) : null}
+      {!session.done && session.type !== 'rest' ? (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button label="Move" small full onPress={actions.move} />
+          <Button label="Swap" small full onPress={actions.swap} />
+          <Button label="Skip" small full onPress={actions.skip} />
+        </View>
+      ) : null}
+      {/* The Coach comes last (milestone 12 review): turning it on adds this block and moves
+          nothing above it, so the 10-rep session still fits on one screen with the Coach on. */}
       {coach && d?.coachNote ? (
         <View testID="coach-note" style={{ gap: 6, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
           <Text variant="kicker" accessibilityRole="header" tone="muted">Coach · why this session</Text>
@@ -85,17 +99,6 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
         // No note from the server for this session: the way into the Coach is still here.
         <View testID="coach-ask" style={{ alignSelf: 'flex-start' }}>
           <Button label="Ask about this session" small onPress={actions.ask} />
-        </View>
-      ) : null}
-      {watch ? (
-        <WatchCard watch={watch} device={device} error={error} retrying={retrying} adjusted={!!adjusted} brand={brand}
-          onSend={actions.send} onResend={actions.resend} onRemove={actions.remove} onTrouble={actions.trouble} />
-      ) : null}
-      {!session.done && session.type !== 'rest' ? (
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button label="Move" small full onPress={actions.move} />
-          <Button label="Swap" small full onPress={actions.swap} />
-          <Button label="Skip" small full onPress={actions.skip} />
         </View>
       ) : null}
     </ScrollView>
