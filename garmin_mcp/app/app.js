@@ -3901,13 +3901,13 @@ function drawChat() {
   $("screen").innerHTML = `<div class="chat-wrap">
     <header class="section-head" style="align-items:center"><div class="stack-tight"><span class="kicker">Pilot · only you can see this</span><h1 class="headline">Chat</h1></div>
       <button type="button" class="pill" id="chat-new" style="height:36px;font-size:13.5px" ${CS.busy ? "disabled" : ""}>New chat</button></header>
-    <div class="chat-log" id="chat-log">${chatLog()}</div></div>
+    <div class="chat-log" id="chat-log">${chatLog()}</div>
     <form class="chat-bar" id="chat-form" autocomplete="off"><div class="chat-bar-in">
       <textarea id="chat-input" class="field" rows="1" maxlength="2000" placeholder="Ask about your training" aria-label="Message"></textarea>
-      <button type="submit" class="pill light" id="chat-send" ${CS.busy ? "disabled" : ""}>${CS.busy ? "…" : "Send"}</button></div></form>`;
+      <button type="submit" class="pill light" id="chat-send" ${CS.busy ? "disabled" : ""}>${CS.busy ? "…" : "Send"}</button></div></form></div>`;
   const input = $("chat-input");
   const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; };
-  input.addEventListener("input", grow);
+  input.addEventListener("input", () => { const near = chatNear(); grow(); if (near) scrollChat(true); });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("chat-form").requestSubmit(); } });
   $("chat-form").onsubmit = (e) => { e.preventDefault(); const t = input.value.trim(); if (!t || CS.busy) return; input.value = ""; grow(); chatSend(t, false); };
   $("chat-new").onclick = chatNew;
@@ -3922,7 +3922,7 @@ function drawLog() {
   chatFrame = requestAnimationFrame(() => {
     const log = $("chat-log");
     if (!log) return;
-    const near = window.innerHeight + window.scrollY >= document.body.scrollHeight - 160;
+    const near = chatNear();
     log.innerHTML = chatLog();
     const send = $("chat-send"), fresh_ = $("chat-new");
     if (send) { send.disabled = CS.busy; send.textContent = CS.busy ? "…" : "Send"; }
@@ -3931,9 +3931,55 @@ function drawLog() {
   });
 }
 
+// On a phone the messages scroll inside their own column (Nov 28); on a desk the page scrolls.
+function chatScroller() {
+  const log = $("chat-log");
+  return log && getComputedStyle(log).overflowY === "auto" ? log : document.scrollingElement;
+}
+function chatNear() {
+  const s = chatScroller();
+  return s.scrollHeight - s.scrollTop - s.clientHeight < 160;
+}
 function scrollChat(now) {
-  const go = () => window.scrollTo({ top: document.body.scrollHeight, behavior: now ? "auto" : "smooth" });
+  const go = () => { const s = chatScroller(); s.scrollTo({ top: s.scrollHeight, behavior: now ? "auto" : "smooth" }); };
   now ? go() : requestAnimationFrame(go);
+}
+
+// -- the on-screen keyboard (Nov 28) -------------------------------------------
+// The visible height and its top go to --vvh / --vvt, so the chat column is exactly what
+// you can see. Android shrinks the page for the keyboard (interactive-widget in index.html);
+// iOS shrinks only the visual viewport and slides it, which --vvt follows. The keyboard is
+// up when something you type into has focus and the visible height has dropped well below
+// the tallest seen at this width; then body.kb puts the tabs aside. If you were reading the
+// newest message, it stays in view as the space changes.
+const KB = { width: 0, tallest: 0 };
+function viewportSync() {
+  const vv = window.visualViewport;
+  const h = Math.round(vv ? vv.height : window.innerHeight);
+  const top = Math.round(vv ? vv.offsetTop : 0);
+  if (window.innerWidth !== KB.width) { KB.width = window.innerWidth; KB.tallest = 0; }
+  KB.tallest = Math.max(KB.tallest, h, window.innerHeight);
+  const el = document.activeElement;
+  const typing = !!el && (el.tagName === "TEXTAREA" || el.isContentEditable
+    || (el.tagName === "INPUT" && !["button", "checkbox", "radio", "range", "submit", "reset", "file", "color"].includes(el.type)));
+  const chat = document.body.dataset.screen === "chat" && $("chat-log");
+  const near = chat && chatNear();
+  const root = document.documentElement.style;
+  root.setProperty("--vvh", h + "px");
+  root.setProperty("--vvt", top + "px");
+  document.body.classList.toggle("kb", typing && KB.tallest - h > 120);
+  if (near) scrollChat(true);
+}
+function watchViewport() {
+  const vv = window.visualViewport;
+  const sync = () => requestAnimationFrame(viewportSync);
+  vv?.addEventListener("resize", sync);
+  vv?.addEventListener("scroll", sync);
+  window.addEventListener("resize", sync);
+  document.addEventListener("focusin", sync);
+  // The keyboard goes down a moment after focus leaves; check again once it has.
+  document.addEventListener("focusout", () => { sync(); setTimeout(sync, 300); });
+  viewportSync();
 }
 
 function chatClick(e) {
@@ -4204,6 +4250,7 @@ async function start() {
   if (message) return signInView(message);
   window.addEventListener("hashchange", route);
   route();
+  watchViewport();
   pullToRefresh();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).catch(() => {});
 }
