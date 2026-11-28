@@ -130,7 +130,7 @@ describe(`Plus in You on ${os}`, () => {
     const a = sectionActions();
     const status = plusStatus({ tier: 'plus', expiresAt: null, source: 'web', since: new Date(2026, 10, 3).getTime(), willRenew: true, productId: null }, READ, os, false);
     await render(<ThemeProvider initial="dark"><PlusSection status={status} plus actions={a} /></ThemeProvider>);
-    expect(screen.getByTestId('plus-status')).toHaveTextContent('Since Nov · manage in daash.run');
+    expect(screen.getByTestId('plus-status')).toHaveTextContent('Since Nov · manage on daash.run');
     expect(screen.getByTestId('plus-badge')).toHaveTextContent('Active');
     await fireEvent.press(screen.getByTestId('row-manage'));
     expect(a.manage).toHaveBeenCalled();

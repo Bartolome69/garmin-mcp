@@ -36,6 +36,7 @@ import PlusPaywall from './app/plus/index';
 import PlusTrial from './app/plus/trial';
 import WatchConfirm from './app/watch/confirm';
 import { setAnalyticsSink } from './analytics/analytics';
+import { WEB_ACCOUNT_URL, type Entitlement } from './features/plus/entitlement';
 import { EntitlementsProvider } from './features/plus/EntitlementsProvider';
 import { FakeStore, PRODUCT_IDS, UnavailableStore, type Store } from './features/plus/store';
 import { memoryStore } from './features/watch/store';
@@ -49,11 +50,11 @@ const offline = async () => { throw new Error('offline'); };
 let queue: WatchContext | null = null;
 function Probe() { queue = useWatch(); return null; }
 
-function app(store: Store, { flags = DEFAULT_FLAGS, garmin = new FakeGarmin() }: { flags?: Flags; garmin?: FakeGarmin } = {}) {
+function app(store: Store, { flags = DEFAULT_FLAGS, garmin = new FakeGarmin(), fetcher = offline }: { flags?: Flags; garmin?: FakeGarmin; fetcher?: () => Promise<Entitlement> } = {}) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial="dark">
       <FlagsProvider initial={flags}>
-        <EntitlementsProvider store={store} fetcher={offline} verify={async () => null}>
+        <EntitlementsProvider store={store} fetcher={fetcher} verify={async () => null}>
           <WatchProvider transport={garmin} store={memoryStore()} auto={false} pollEveryMs={0}>
             <Probe />
             {children ?? <Stack screenOptions={{ headerShown: false }} />}
@@ -180,7 +181,7 @@ describe('17. Plus in You', () => {
     expect(screen.getByTestId('plus-status').props.children).toMatch(/^Free week · Plus starts /);
   });
 
-  it('Restore purchases brings back what the store holds, and Manage opens the store', async () => {
+  it('Restore purchases brings back what the store holds, and Manage opens the store it was bought in', async () => {
     const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never);
     const now = Date.now();
     const bought = { productId: PRODUCT_IDS.monthly, transactionId: 't1', purchasedAt: now - 86400000, expiresAt: now + 29 * 86400000,
@@ -193,7 +194,35 @@ describe('17. Plus in You', () => {
     expect(await screen.findByTestId('restore-message')).toHaveTextContent('Purchases restored.');
     expect(screen.getByTestId('plus-badge')).toHaveTextContent('Active');
     await fireEvent.press(screen.getByTestId('row-manage'));
-    expect(open).toHaveBeenCalledWith(store.manageUrl());
+    // An App Store subscription is managed at Apple, whichever phone it's opened on.
+    expect(open).toHaveBeenCalledWith('https://apps.apple.com/account/subscriptions');
+    open.mockRestore();
+  });
+
+  it('a web subscription is managed on daash.run, never at the phone’s store', async () => {
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never);
+    const web = async () => ({ tier: 'plus' as const, expiresAt: null, source: 'web' as const, since: Date.UTC(2026, 10, 3), willRenew: true, productId: null });
+    await renderRouter(app(new FakeStore(), { fetcher: web }), { initialUrl: '/you' });
+    expect(await screen.findByTestId('plus-badge')).toHaveTextContent('Active');
+    expect(screen.getByTestId('plus-status').props.children).toMatch(/manage on daash\.run$/);
+    await fireEvent.press(screen.getByTestId('row-manage'));
+    expect(open).toHaveBeenCalledWith(WEB_ACCOUNT_URL);
+    open.mockClear();
+    await fireEvent.press(screen.getByTestId('row-plus'));
+    expect(open).toHaveBeenCalledWith(WEB_ACCOUNT_URL);
+    open.mockRestore();
+  });
+
+  it('Plus granted by Daash (the features flags): no store to manage it in, so no Manage', async () => {
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined as never);
+    await renderRouter(app(new FakeStore(), { flags: { ...DEFAULT_FLAGS, plus: true } }), { initialUrl: '/you' });
+    expect(await screen.findByTestId('plus-badge')).toHaveTextContent('Active');
+    expect(screen.getByTestId('plus-status').props.children).not.toMatch(/App Store|Google Play/);
+    expect(screen.queryByTestId('row-manage')).toBeNull();
+    await fireEvent.press(screen.getByTestId('row-plus'));
+    expect(await screen.findByTestId('paywall-have')).toBeTruthy();
+    expect(screen.queryByTestId('button-Manage subscription')).toBeNull();
+    expect(open).not.toHaveBeenCalled();
     open.mockRestore();
   });
 

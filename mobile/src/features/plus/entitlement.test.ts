@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { daysLeft, FREE, fromPurchase, isActive, parseEntitlement, plusStatus, resolve, trialTimeline, type Entitlement } from './entitlement';
+import { daysLeft, FREE, fromPurchase, isActive, manageLink, parseEntitlement, plusStatus, resolve, trialTimeline, WEB_ACCOUNT_URL, type Entitlement } from './entitlement';
 import { FakeStore, PRODUCT_IDS, StoreError, UnavailableStore } from './store';
 
 const DAY = 86400000;
@@ -58,16 +58,29 @@ describe('entitlement', () => {
       { tier: 'plus', source: 'app_store', willRenew: false });
   });
 
+  it('Manage goes where the money goes: daash.run for the web, the store it was bought in, nowhere for a grant', () => {
+    expect(manageLink('web', 'ios')).toEqual({ where: 'daash.run', prep: 'on', url: WEB_ACCOUNT_URL });
+    expect(manageLink('web', 'android')?.url).toBe(WEB_ACCOUNT_URL);
+    expect(manageLink('app_store', 'android')?.url).toBe('https://apps.apple.com/account/subscriptions');
+    expect(manageLink('play', 'ios', PRODUCT_IDS.monthly)?.url).toBe(`https://play.google.com/store/account/subscriptions?package=run.daash.app&sku=${PRODUCT_IDS.monthly}`);
+    expect(manageLink('server', 'ios')).toBeNull();
+    expect(manageLink('none', 'android')?.where).toBe('Google Play');
+    expect(manageLink('none', 'ios')?.where).toBe('the App Store');
+  });
+
   it('You says what the runner has and where to manage it (the YouPlus board)', () => {
     expect(plusStatus({ ...FREE, lapsed: null }, NOW, 'ios', false)).toEqual({ title: 'Daash Plus', sub: 'Prediction trend, plan styles, widgets', badge: null });
     expect(plusStatus({ ...FREE, lapsed: null }, NOW, 'ios', true).sub).toContain('Coach without a daily limit');
     expect(plusStatus({ ...FREE, lapsed: trial }, NOW + 8 * DAY, 'ios', false).sub).toMatch(/^Your free week ended/);
     expect(plusStatus(trial, NOW, 'ios', false)).toEqual({ title: 'Daash Plus', sub: 'Free week · Plus starts Sat 5 Dec', badge: 'Trial' });
     expect(plusStatus({ ...trial, willRenew: false }, NOW, 'ios', false).sub).toBe('Free week · ends Sat 5 Dec');
-    expect(plusStatus({ ...plus, source: 'web' }, NOW, 'ios', false)).toEqual({ title: 'Daash Plus', sub: 'Since Nov · manage in daash.run', badge: 'Active' });
+    expect(plusStatus({ ...plus, source: 'web' }, NOW, 'ios', false)).toEqual({ title: 'Daash Plus', sub: 'Since Nov · manage on daash.run', badge: 'Active' });
     expect(plusStatus({ ...plus, source: 'play' }, NOW, 'android', false).sub).toBe('Since Nov · manage in Google Play');
-    expect(plusStatus({ ...plus, source: 'server' }, NOW, 'ios', false).sub).toBe('Since Nov · manage in the App Store');
-    expect(plusStatus({ ...plus, willRenew: false }, NOW, 'ios', false).sub).toBe('Ends Mon 28 Dec · manage in the App Store');
+    // A grant from Daash: nothing at a store to manage.
+    expect(plusStatus({ ...plus, source: 'server' }, NOW, 'ios', false).sub).toBe('Since Nov');
+    expect(plusStatus({ ...plus, source: 'server', since: null }, NOW, 'ios', false).sub).toBe('On your Daash account');
+    expect(plusStatus({ ...plus, source: 'app_store' }, NOW, 'android', false).sub).toBe('Since Nov · manage in the App Store');
+    expect(plusStatus({ ...plus, source: 'app_store', willRenew: false }, NOW, 'ios', false).sub).toBe('Ends Mon 28 Dec · manage in the App Store');
   });
 
   it('the trial timeline takes its price from the store, never its own', () => {

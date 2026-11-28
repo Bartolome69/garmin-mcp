@@ -28,6 +28,7 @@ export default function PaywallScreen() {
       coach={flags.coach_enabled}
       coachLimit={flags.coach_daily_limit}
       plus={e.plus}
+      canManage={!!e.manageUrl}
       trialOffered={trialOffered}
       brand={focused}
       message={message}

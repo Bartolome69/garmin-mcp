@@ -3,13 +3,13 @@
 // unlocks at once and is handed to the server to check. Only the paywall's trial
 // sheet buys, and only when the runner presses "Start free week".
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { track } from '../../analytics/analytics';
 import { useDb } from '../../db/DbContext';
 import { kv } from '../../db/kv';
 import { useFlags } from '../../flags/FlagsProvider';
-import { fromPurchase, parseEntitlement, resolve, type Entitlement } from './entitlement';
+import { fromPurchase, manageLink, parseEntitlement, resolve, type Entitlement } from './entitlement';
 import { fetchEntitlement, verifyPurchase } from './source';
 import { defaultStore, PRODUCT_IDS, StoreError, type Product, type Purchase, type Store } from './store';
 
@@ -39,7 +39,8 @@ export type EntitlementsState = {
   loadProducts: () => Promise<void>;
   startTrial: (productId?: string) => Promise<TrialOutcome>;
   restore: () => Promise<RestoreOutcome>;
-  manageUrl: string;
+  /** Where Plus is managed or cancelled (manageLink): null when not on Plus, or nothing to manage. */
+  manageUrl: string | null;
   refresh: () => Promise<void>;
 };
 
@@ -155,8 +156,9 @@ export function EntitlementsProvider({ children, store: given, fetcher = fetchEn
   const ready = cacheRead || plus;
   const same = JSON.stringify(entitlement);
   const value = useMemo<EntitlementsState>(() => ({
-    entitlement, plus, ready, products, productsError, loadProducts, startTrial, restore, manageUrl: store.manageUrl(), refresh,
-  }), [same, ready, products, productsError, loadProducts, startTrial, restore, store, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
+    entitlement, plus, ready, products, productsError, loadProducts, startTrial, restore,
+    manageUrl: plus ? manageLink(entitlement.source, Platform.OS, entitlement.productId)?.url ?? null : null, refresh,
+  }), [same, ready, products, productsError, loadProducts, startTrial, restore, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -174,7 +176,7 @@ export function useEntitlement(): EntitlementsState {
   return {
     entitlement, plus: entitlement.tier !== 'free', ready: true, products: null, productsError: null,
     loadProducts: async () => {}, startTrial: async () => failed, restore: async () => failed,
-    manageUrl: '', refresh: async () => {},
+    manageUrl: null, refresh: async () => {},
   };
 }
 

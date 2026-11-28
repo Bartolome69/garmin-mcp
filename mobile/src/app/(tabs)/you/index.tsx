@@ -26,7 +26,7 @@ export default function YouScreen() {
     <YouView vm={c.vm} brand={focused} actions={{ connections: () => router.push('/you/connections'), reconnect }}
       plus={(
         <>
-          <PlusSection status={status} plus={e.plus} actions={{
+          <PlusSection status={status} plus={e.plus} canManage={!!e.manageUrl} actions={{
             open: () => openPaywall(router, 'you'),
             widgets: () => router.push('/you/widgets'),
             restore: async () => {

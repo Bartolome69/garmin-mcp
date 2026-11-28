@@ -10,7 +10,7 @@ import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { Text } from '../../ui/Text';
 import { TrendPreview } from '../plan/TrendsView';
-import { manageWhere, trialTimeline, type PlusStatus } from './entitlement';
+import { storeName, trialTimeline, type PlusStatus } from './entitlement';
 import type { Product } from './store';
 
 export type PlusItem = { title: string; sub: string };
@@ -46,7 +46,7 @@ function Item({ title, sub, icon }: { title: string; sub?: string; icon: 'lock' 
   );
 }
 
-export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, message, os = Platform.OS, actions }: {
+export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, message, os = Platform.OS, canManage = true, actions }: {
   coach: boolean;
   coachLimit: number;
   /** Already on Plus or a trial: no offer, just where to manage it. */
@@ -57,6 +57,8 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
   /** The outcome of Restore, in words. */
   message?: string | null;
   os?: string;
+  /** On Plus with somewhere to manage it (a store or daash.run); a grant from Daash has nowhere. */
+  canManage?: boolean;
   actions: { start: () => void; close: () => void; restore: () => void; manage: () => void };
 }) {
   const { colors } = useTheme();
@@ -89,7 +91,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
         {plus ? (
           <>
             <Text testID="paywall-have" variant="subhead" style={{ textAlign: 'center' }}>You have Daash Plus.</Text>
-            <Button label="Manage subscription" onPress={actions.manage} />
+            {canManage ? <Button label="Manage subscription" onPress={actions.manage} /> : null}
           </>
         ) : (
           <Button label={trialOffered === false ? 'Get Plus' : 'Try Plus free for 7 days'} kind="primary" brand={brand} onPress={actions.start} />
@@ -100,7 +102,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
           </Pressable>
         </View>
         <Text variant="caption" tone="muted" style={{ textAlign: 'center' }}>
-          {`Plus renews until you cancel. Cancel anytime in ${manageWhere('none', os)}.`}
+          {`Plus renews until you cancel. Cancel anytime in ${storeName(os)}.`}
         </Text>
       </View>
     </View>
@@ -178,9 +180,11 @@ function Step({ when, what, first, last }: { when: string; what: string; first: 
 // -- You -------------------------------------------------------------------------------------
 
 /** You's Plus section (the You and YouPlus boards): the state, Widgets, and Restore or Manage. */
-export function PlusSection({ status, plus, actions }: {
+export function PlusSection({ status, plus, canManage = plus, actions }: {
   status: PlusStatus;
   plus: boolean;
+  /** Somewhere to manage it (a store or daash.run). A grant from Daash has nowhere: no Manage row. */
+  canManage?: boolean;
   actions: { open: () => void; widgets: () => void; restore: () => void; manage: () => void };
 }) {
   const { colors } = useTheme();
@@ -190,9 +194,9 @@ export function PlusSection({ status, plus, actions }: {
     <View testID="you-plus" style={{ gap: 10 }}>
       <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Plus</Text>
       <View style={{ borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
-        <Pressable testID="row-plus" accessibilityRole="button" onPress={plus ? actions.manage : actions.open}
+        <Pressable testID="row-plus" accessibilityRole="button" onPress={plus && canManage ? actions.manage : actions.open}
           accessibilityLabel={`${status.title}, ${status.sub}${status.badge ? `, ${status.badge}` : ''}`}
-          accessibilityHint={plus ? `Manage your subscription` : 'Opens Daash Plus'} style={row}>
+          accessibilityHint={plus && canManage ? 'Manage your subscription' : 'Opens Daash Plus'} style={row}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text variant="body">{status.title}</Text>
             <Text testID="plus-status" variant="footnote" tone="muted">{status.sub}</Text>
@@ -216,9 +220,11 @@ export function PlusSection({ status, plus, actions }: {
           </View>
           <Icon name="chevronRight" tone="muted" />
         </Pressable>
-        <Pressable testID={plus ? 'row-manage' : 'row-restore'} accessibilityRole="button" onPress={plus ? actions.manage : actions.restore} style={[row, line]}>
-          <Text variant="body" style={{ flex: 1 }}>{plus ? 'Manage subscription' : 'Restore purchases'}</Text>
-        </Pressable>
+        {plus && !canManage ? null : (
+          <Pressable testID={plus ? 'row-manage' : 'row-restore'} accessibilityRole="button" onPress={plus ? actions.manage : actions.restore} style={[row, line]}>
+            <Text variant="body" style={{ flex: 1 }}>{plus ? 'Manage subscription' : 'Restore purchases'}</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );

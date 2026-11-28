@@ -51,17 +51,9 @@ export interface Store {
   current(): Promise<Purchase[]>;
   /** Purchases that arrive later (a renewal, Ask to Buy approved, bought on another device). */
   listen(cb: (purchases: Purchase[]) => void): () => void;
-  /** Where the runner manages or cancels: the store's own subscriptions page. */
-  manageUrl(): string;
 }
 
 export const PRODUCT_IDS = { monthly: 'run.daash.plus.monthly', yearly: 'run.daash.plus.yearly' } as const;
-
-export function manageUrlFor(os: string): string {
-  return os === 'android'
-    ? `https://play.google.com/store/account/subscriptions?package=run.daash.app&sku=${PRODUCT_IDS.monthly}`
-    : 'https://apps.apple.com/account/subscriptions';
-}
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -144,7 +136,6 @@ export class FakeStore implements Store {
     this.listeners.forEach((l) => l(this.owned));
   }
 
-  manageUrl(): string { return manageUrlFor(this.platform === 'play' ? 'android' : 'ios'); }
 }
 
 /** A build without a store library: no products, and buying says why instead of failing silently. */
@@ -154,7 +145,6 @@ export class UnavailableStore implements Store {
   async restore(): Promise<Purchase[]> { return []; }
   async current(): Promise<Purchase[]> { return []; }
   listen(): () => void { return () => {}; }
-  manageUrl(): string { return manageUrlFor(Platform.OS); }
 }
 
 const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';

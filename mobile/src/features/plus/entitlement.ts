@@ -103,11 +103,35 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const dayWords = (t: number) => { const d = new Date(t); return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 
-/** Where the runner manages or cancels it, in words. */
-export function manageWhere(source: EntitlementSource, os: string): string {
-  if (source === 'app_store') return 'the App Store';
-  if (source === 'play') return 'Google Play';
-  if (source === 'web') return 'daash.run';
+/**
+ * The daash.run page where a web subscription is managed or cancelled.
+ * TODO(server): the page itself, before any subscription is sold on the web.
+ */
+export const WEB_ACCOUNT_URL = 'https://daash.run/account';
+const APP_STORE_SUBSCRIPTIONS = 'https://apps.apple.com/account/subscriptions';
+const PLAY_SUBSCRIPTIONS = 'https://play.google.com/store/account/subscriptions?package=run.daash.app';
+
+export type ManageLink = { where: string; prep: 'in' | 'on'; url: string };
+
+/**
+ * Where the runner manages or cancels it: the place the money goes through. A
+ * web subscription on daash.run, a store's on that store's subscriptions page
+ * (whichever phone it's opened on). A grant from Daash with no store or web
+ * subscription behind it (the features flags' `plus`, or a server answer that
+ * names no source) has nothing to manage: null. No source yet (Free): this
+ * phone's store, where a purchase would go.
+ */
+export function manageLink(source: EntitlementSource, os: string, productId: string | null = null): ManageLink | null {
+  if (source === 'web') return { where: 'daash.run', prep: 'on', url: WEB_ACCOUNT_URL };
+  if (source === 'server') return null;
+  if (source === 'play' || (source === 'none' && os === 'android')) {
+    return { where: 'Google Play', prep: 'in', url: productId ? `${PLAY_SUBSCRIPTIONS}&sku=${encodeURIComponent(productId)}` : PLAY_SUBSCRIPTIONS };
+  }
+  return { where: 'the App Store', prep: 'in', url: APP_STORE_SUBSCRIPTIONS };
+}
+
+/** Where a purchase on this phone would be cancelled, in words (the paywall's footnote). */
+export function storeName(os: string): string {
   return os === 'android' ? 'Google Play' : 'the App Store';
 }
 
@@ -124,9 +148,11 @@ export function plusStatus(e: Entitlement & { lapsed?: Entitlement | null }, now
     };
   }
   if (e.tier === 'plus' && isActive(e, now)) {
-    const since = e.since != null ? `Since ${MONTHS[new Date(e.since).getMonth()]} · ` : '';
-    const ending = !e.willRenew && e.expiresAt != null ? `Ends ${dayWords(e.expiresAt)} · ` : '';
-    return { title: 'Daash Plus', sub: `${ending || since}manage in ${manageWhere(e.source, os)}`, badge: 'Active' };
+    const since = e.since != null ? `Since ${MONTHS[new Date(e.since).getMonth()]}` : null;
+    const ending = !e.willRenew && e.expiresAt != null ? `Ends ${dayWords(e.expiresAt)}` : null;
+    const link = manageLink(e.source, os, e.productId);
+    const sub = [ending ?? since, link ? `manage ${link.prep} ${link.where}` : null].filter(Boolean).join(' · ');
+    return { title: 'Daash Plus', sub: sub || 'On your Daash account', badge: 'Active' };
   }
   const offer = coach ? 'Prediction trend, plan styles, widgets, Coach without a daily limit' : 'Prediction trend, plan styles, widgets';
   if (e.lapsed) return { title: 'Daash Plus', sub: `${e.lapsed.tier === 'trial' ? 'Your free week ended' : 'Plus ended'} · ${offer}`, badge: null };
