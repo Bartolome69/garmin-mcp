@@ -5,19 +5,23 @@
 // Does nothing while coach_enabled is off: no request, nothing drawn.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { Offline, TimedOut } from '../../api/client';
 import { useDb } from '../../db/DbContext';
+import { guardKinds } from '../../domain/replyGuard';
 import { kv } from '../../db/kv';
 import { failureKind, type FailureKind } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
 import { CoachLimitReached, CoachUnavailable, type CoachApi } from './api';
 import { useMemory } from './MemoryProvider';
 import type { MemoryKind } from './memory';
-import { dayOf, limitFor, mergeThread, retain, type CoachMessage, type ContextTag, type Limit } from './model';
+import { countSend, dayOf, limitFor, mergeThread, retain, type CoachMessage, type ContextTag, type Limit, type SendCount } from './model';
 import { isPlus } from './plus';
 import { CoachApiContext, defaultCoachApi } from './source';
-import { applyEvent, type Turn } from './sse';
+import { applyEvent, ERROR_WORDS, type Turn } from './sse';
 
 export const THREAD_KEY = 'coach:thread';
+/** Today's sends from this phone, apart from the thread: Clear conversation keeps it; signing out clears it (kv). */
+export const SENT_KEY = 'coach:sent';
 type Cached = { messages: CoachMessage[]; starters: string[] };
 
 export type CoachContext = {
@@ -38,7 +42,8 @@ export type CoachContext = {
   sendAgain: (id: string) => Promise<void>;
   decline: (id: string) => Promise<void>;
   feedback: (id: string, value: 'up' | 'down') => Promise<void>;
-  clear: () => Promise<void>;
+  /** Clears the thread once the server has; false (and the thread kept) if it couldn't. */
+  clear: () => Promise<boolean>;
   /** A proposal card's staged proposal, so the card can follow it through the watch queue. */
   linkProposal: (messageId: string, proposalId: string) => void;
   searching: boolean;
@@ -69,6 +74,8 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
   const [error, setError] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [capHit, setCapHit] = useState<string | null>(null);
+  const [counted, setCounted] = useState<SendCount | null>(null);
+  const countedRef = useRef<SendCount | null>(null);
   const [context, setContext] = useState<ContextTag | null>(null);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -89,7 +96,7 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
       setFailure(null);
       setError(null);
       if (answer.starters?.length) setStarters(answer.starters);
-      const merged = retain(mergeThread(ref.current, answer.messages ?? [], clock()), clock());
+      const merged = retain(mergeThread(ref.current, answer.messages ?? []), clock());
       ref.current = merged;
       setMessages(merged);
       if (db) await kv(db).set(THREAD_KEY, { messages: merged, starters: answer.starters ?? [] } satisfies Cached).catch(() => {});
@@ -106,6 +113,13 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
     if (!on) return;
     let live = true;
     (async () => {
+      const sent = db ? await kv(db).get<SendCount>(SENT_KEY).catch(() => null) : null;
+      if (live && sent) {
+        const mine = countedRef.current;
+        const next = mine && mine.day === sent.day ? { day: sent.day, count: Math.max(mine.count, sent.count) } : mine ?? sent;
+        countedRef.current = next;
+        setCounted(next);
+      }
       const cached = db ? await kv(db).get<Cached>(THREAD_KEY).catch(() => null) : null;
       if (live && cached && !ref.current.length) {
         const kept = retain(cached.messages ?? [], clock());
@@ -121,7 +135,15 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
 
   useEffect(() => () => abort.current?.abort(), []);
 
-  const limit = limitFor({ plus: isPlus(flags), dailyLimit: flags.coach_daily_limit, messages, now: clock(), capHit: capHit === dayOf(clock()) });
+  const limit = limitFor({ plus: isPlus(flags), dailyLimit: flags.coach_daily_limit, messages, now: clock(), capHit: capHit === dayOf(clock()), counted });
+
+  /** The server stored a question from this phone: one more of today's messages, kept through Clear conversation. */
+  const countOne = useCallback(() => {
+    const next = countSend(countedRef.current, clock());
+    countedRef.current = next;
+    setCounted(next);
+    if (db) kv(db).set(SENT_KEY, next).catch(() => {});
+  }, [clock, db]);
 
   const send = useCallback(async (text: string, opts?: { starter?: boolean; context?: ContextTag | null }) => {
     const words = text.trim();
@@ -137,11 +159,13 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
     setStreaming(true);
     const controller = new AbortController();
     abort.current = controller;
+    let started = false;
     try {
       await api.send({ text: words, starter: !!opts?.starter, context: tag }, (e) => {
         const r = applyEvent(ref.current, turn, e, clock());
         turn = r.turn;
         commit(r.thread, false);
+        if (e.type === 'start') { started = true; countOne(); }
         if (e.type === 'memory') memory.add((e.kind as MemoryKind) || 'note', e.text, 'chat', e.id).catch(() => {});
       }, controller.signal);
       // A stream that ended without "done" or "error": what was written stays, marked cut off.
@@ -149,18 +173,31 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
         ? { ...m, status: m.text ? 'partial' : 'failed', working: null, error: m.text ? null : 'The reply didn’t arrive. Try again.' } : m)));
       setFailure(null);
     } catch (err) {
-      // Nothing reached the Coach (or it said no): the question stays, marked, with Send again. No retry here.
-      const why = err instanceof CoachLimitReached ? err.message : failureKind(err) === 'offline' ? 'No connection.'
-        : err instanceof Error ? err.message : '';
-      commit(ref.current.filter((m) => m.id !== turn.replyId)
-        .map((m) => (m.id === turn.userId ? { ...m, status: 'not_sent', error: why } : m)));
-      if (err instanceof CoachLimitReached) setCapHit(dayOf(clock()));
-      else if (failureKind(err) === 'offline') setFailure('offline');
+      const kind = failureKind(err);
+      if (started) {
+        // The server has the question (its `start` arrived), so it was sent; the stream broke after.
+        // What was written stays, marked cut off, with Try again, as the server's own `error` event does.
+        const why = err instanceof TimedOut ? ERROR_WORDS.timeout
+          : kind === 'offline' ? 'The connection dropped before the reply finished. Try again.'
+            : 'The reply stopped before it finished. Try again.';
+        commit(ref.current.map((m) => (m.id === turn.replyId && m.status === 'streaming'
+          ? { ...m, status: m.text ? 'partial' : 'failed', working: null, error: why, text: m.text.trim(), flags: guardKinds(m.text) }
+          : m)));
+        if (err instanceof Offline) setFailure('offline');
+      } else {
+        // Nothing reached the Coach (or it said no): the question stays, marked, with Send again. No retry here.
+        const why = err instanceof CoachLimitReached ? err.message : kind === 'offline' ? 'No connection.'
+          : err instanceof Error ? err.message : '';
+        commit(ref.current.filter((m) => m.id !== turn.replyId)
+          .map((m) => (m.id === turn.userId ? { ...m, status: 'not_sent', error: why } : m)));
+        if (err instanceof CoachLimitReached) setCapHit(dayOf(clock()));
+        else if (kind === 'offline' || kind === 'signedOut' || kind === 'reconnect') setFailure(kind);
+      }
     } finally {
       setStreaming(false);
       abort.current = null;
     }
-  }, [api, clock, commit, context, failure, limit.reached, memory, streaming]);
+  }, [api, clock, commit, context, countOne, failure, limit.reached, memory, streaming]);
 
   const value = useMemo<CoachContext>(() => ({
     messages, starters, loaded, failure, error, streaming, limit, context, setContext, refresh,
@@ -181,12 +218,17 @@ export function CoachProvider({ children, clock = Date.now }: { children: ReactN
       await api.feedback(id, value).catch(() => {});
     },
     clear: async () => {
-      // Clear conversation: the thread goes; memory and the plan stay.
-      await api.clear().catch(() => {});
+      // Clear conversation: the thread goes once the server's has (else the next load brings it back);
+      // memory, the plan and today's message count stay.
+      try { await api.clear(); } catch (err) {
+        if (failureKind(err) === 'offline') setFailure('offline');
+        return false;
+      }
       commit([]);
       setFilter(null);
       setQuery('');
       setSearching(false);
+      return true;
     },
     linkProposal: (messageId, proposalId) => {
       commit(ref.current.map((m) => (m.id === messageId ? { ...m, proposalId } : m)));

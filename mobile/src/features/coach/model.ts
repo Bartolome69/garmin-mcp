@@ -40,8 +40,13 @@ export type CoachMessage = {
   role: Role;
   text: string;
   status: MessageStatus;
-  /** When it was written (ms). The pilot doesn't send it yet: first seen on this phone. */
-  at: number;
+  /**
+   * When it was written (ms). null: not known. The pilot sends no time, so a message
+   * this phone didn't write or see written has none; it collapses into "Earlier" and
+   * never counts toward today's limit (never "now", which would put a whole web thread
+   * under Today and use up the free messages on first open).
+   */
+  at: number | null;
   context?: ContextTag | null;
   sources?: string[];
   chart?: InlineChart | null;
@@ -82,7 +87,7 @@ export type ServerMessage = {
 const ROLES: Role[] = ['user', 'assistant', 'action', 'memory'];
 
 /** The server's thread over what the phone has: the server's words and statuses win, the phone keeps what only it knows. */
-export function mergeThread(local: CoachMessage[], server: ServerMessage[], now: number): CoachMessage[] {
+export function mergeThread(local: CoachMessage[], server: ServerMessage[]): CoachMessage[] {
   const byId = new Map(local.map((m) => [m.id, m]));
   const fromServer = server.filter((s) => ROLES.includes(s.role as Role)).map((s): CoachMessage => {
     const id = String(s.id);
@@ -93,7 +98,7 @@ export function mergeThread(local: CoachMessage[], server: ServerMessage[], now:
       ...mine,
       id, role, text,
       status: (s.status as MessageStatus) ?? 'done',
-      at: s.at != null ? s.at * 1000 : mine?.at ?? now,
+      at: s.at != null ? s.at * 1000 : mine?.at ?? null,
       feedback: s.feedback ?? mine?.feedback ?? null,
       tool: s.tool ?? mine?.tool ?? null,
       context: s.context ?? mine?.context ?? null,
@@ -109,7 +114,15 @@ export function mergeThread(local: CoachMessage[], server: ServerMessage[], now:
   const seen = new Set(fromServer.map((m) => m.id));
   // Kept from the phone: memory notes, and messages that never reached the server.
   const onlyHere = local.filter((m) => !seen.has(m.id) && (m.role === 'memory' || m.status === 'not_sent'));
-  return [...fromServer, ...onlyHere].sort((a, b) => a.at - b.at);
+  // The server's order stands (its messages may have no time); each phone-only message goes
+  // before the first message written after it, else at the end.
+  const out = [...fromServer];
+  for (const m of onlyHere) {
+    const j = m.at == null ? -1 : out.findIndex((x) => x.at != null && x.at > (m.at as number));
+    if (j < 0) out.push(m);
+    else out.splice(j, 0, m);
+  }
+  return out;
 }
 
 // -- retention, days, the collapsed past ------------------------------------------------
@@ -117,10 +130,16 @@ export function mergeThread(local: CoachMessage[], server: ServerMessage[], now:
 export const RETAIN_DAYS = 14;
 const DAY_MS = 86_400_000;
 
-/** The phone keeps the last 14 days of the thread (build prompt, section 16's default); memory carries the rest. */
+/**
+ * The phone keeps the last 14 days of the thread (build prompt, section 16's default); memory carries the rest.
+ * A message with no time can't be judged here: it stays while the server still sends it (TODO(server): `at`).
+ */
 export function retain(messages: CoachMessage[], now: number, days = RETAIN_DAYS): CoachMessage[] {
-  return messages.filter((m) => m.at >= now - days * DAY_MS);
+  return messages.filter((m) => m.at == null || m.at >= now - days * DAY_MS);
 }
+
+/** Written before today, or at a time the phone doesn't know. */
+const isEarlier = (m: CoachMessage, today: string) => m.at == null || dayOf(m.at) < today;
 
 /** Local calendar day, as YYYY-MM-DD. */
 export function dayOf(ms: number): string {
@@ -146,17 +165,21 @@ export type ThreadRow =
  */
 export function threadRows(messages: CoachMessage[], now: number, showEarlier: boolean): ThreadRow[] {
   const today = dayOf(now);
-  const earlier = messages.filter((m) => dayOf(m.at) < today);
+  const earlier = messages.filter((m) => isEarlier(m, today));
   const rows: ThreadRow[] = [];
   if (earlier.length && !showEarlier) {
-    rows.push({ kind: 'earlier', count: earlier.length, label: `Earlier · ${earlier.length} message${earlier.length === 1 ? '' : 's'} since ${DAYS[weekday(dayOf(earlier[0].at))]}` });
+    const first = earlier.find((m) => m.at != null);
+    // "since Mon" only when every earlier message has a time: an undated one may be older.
+    const since = first?.at != null && earlier.every((m) => m.at != null) ? ` since ${DAYS[weekday(dayOf(first.at))]}` : '';
+    rows.push({ kind: 'earlier', count: earlier.length, label: `Earlier · ${earlier.length} message${earlier.length === 1 ? '' : 's'}${since}` });
   }
-  let day = '';
+  let day: string | null = null;
   for (const m of messages) {
-    if (!showEarlier && dayOf(m.at) < today) continue;
-    if (dayOf(m.at) !== day) {
-      day = dayOf(m.at);
-      rows.push({ kind: 'day', label: `${day === today ? 'Today' : dayWords(m.at)} · ${hhmm(m.at)}` });
+    if (!showEarlier && isEarlier(m, today)) continue;
+    const d = m.at == null ? '' : dayOf(m.at);
+    if (d !== day) {
+      day = d;
+      rows.push({ kind: 'day', label: m.at == null ? 'Earlier' : `${d === today ? 'Today' : dayWords(m.at)} · ${hhmm(m.at)}` });
     }
     rows.push({ kind: 'message', m });
   }
@@ -165,20 +188,39 @@ export function threadRows(messages: CoachMessage[], now: number, showEarlier: b
 
 // -- the daily limit ------------------------------------------------------------------------
 
-/** Messages the runner sent today (a message that never reached the server doesn't count). */
+/** Messages in the thread known to be sent today (one that never reached the server, or with no time, doesn't count). */
 export function sentToday(messages: CoachMessage[], now: number): number {
   const today = dayOf(now);
-  return messages.filter((m) => m.role === 'user' && m.status !== 'not_sent' && dayOf(m.at) === today).length;
+  return messages.filter((m) => m.role === 'user' && m.status !== 'not_sent' && m.at != null && dayOf(m.at) === today).length;
 }
+
+/**
+ * Today's sends from this phone, counted apart from the thread (kv), so clearing the
+ * conversation doesn't hand back the free messages. Cleared only by signing out.
+ */
+export type SendCount = { day: string; count: number };
+
+/** One more send counted (the server stored the question: its `start` event). */
+export function countSend(c: SendCount | null, now: number): SendCount {
+  const day = dayOf(now);
+  return { day, count: c && c.day === day ? c.count + 1 : 1 };
+}
+
+export const countToday = (c: SendCount | null, now: number) => (c && c.day === dayOf(now) ? c.count : 0);
 
 export type Limit = { limit: number | null; remaining: number | null; reached: boolean };
 
-/** Free: the daily limit (10 by default, from the server's flags); Plus: none. The server's 429 also counts. */
-export function limitFor({ plus, dailyLimit, messages, now, capHit }: {
-  plus: boolean; dailyLimit: number; messages: CoachMessage[]; now: number; capHit: boolean;
+/**
+ * Free: the daily limit (10 by default, from the server's flags); Plus: none. Used today is
+ * the larger of this phone's own count and the thread's dated messages from today (which,
+ * once the server sends `at`, include another device's). The server's 429 also counts.
+ */
+export function limitFor({ plus, dailyLimit, messages, now, capHit, counted = null }: {
+  plus: boolean; dailyLimit: number; messages: CoachMessage[]; now: number; capHit: boolean; counted?: SendCount | null;
 }): Limit {
   if (plus) return { limit: null, remaining: null, reached: false };
-  const remaining = Math.max(0, dailyLimit - sentToday(messages, now));
+  const used = Math.max(sentToday(messages, now), countToday(counted, now));
+  const remaining = Math.max(0, dailyLimit - used);
   return { limit: dailyLimit, remaining: capHit ? 0 : remaining, reached: capHit || remaining === 0 };
 }
 

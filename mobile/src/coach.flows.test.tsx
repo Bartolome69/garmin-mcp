@@ -41,6 +41,7 @@ import YouMemory from './app/(tabs)/you/memory';
 import YouMemoryClear from './app/(tabs)/you/memory-clear';
 import YouMemoryEdit from './app/(tabs)/you/memory-edit';
 import WatchConfirm from './app/watch/confirm';
+import { NotSignedIn } from './api/client';
 import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import type { CoachApi } from './features/coach/api';
 import { FakeCoach } from './features/coach/fake';
@@ -114,6 +115,8 @@ function words(tree: unknown): string[] {
 }
 
 const lastReply = () => screen.getAllByTestId(/^coach-reply-/).at(-1)!;
+/** Now, in the server's seconds: a thread written today (the pilot sends no time; the v1 does). */
+const nowS = () => Math.floor(Date.now() / 1000);
 
 describe('1. Ask', () => {
   it('the reply streams in, then shows its chart and source chips; the free count goes down', async () => {
@@ -196,8 +199,8 @@ describe('3. A proposal', () => {
   });
   it('the card’s Review is the screen’s one brand fill; a proposal the server can’t describe is finished in Plan', async () => {
     const fake = new FakeCoach({ messages: [
-      { id: 1, role: 'user', text: 'Move my long run', status: 'sent' },
-      { id: 2, role: 'action', text: 'Move “Long 18 km easy” from Sun 29 Nov to Sat 28 Nov. The watch follows.', status: 'pending', tool: 'move_session' },
+      { id: 1, role: 'user', text: 'Move my long run', status: 'sent', at: nowS() },
+      { id: 2, role: 'action', text: 'Move “Long 18 km easy” from Sun 29 Nov to Sat 28 Nov. The watch follows.', status: 'pending', tool: 'move_session', at: nowS() },
     ] });
     await openCoach(fake);
     const card = within(await screen.findByTestId('proposal-2'));
@@ -221,11 +224,11 @@ describe('4. Not now', () => {
   });
 });
 
-const today10: ServerMessage[] = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, role: 'user', text: `Question ${i + 1}`, status: 'sent' }));
+const today10 = (): ServerMessage[] => Array.from({ length: 10 }, (_, i) => ({ id: i + 1, role: 'user', text: `Question ${i + 1}`, status: 'sent', at: nowS() }));
 
 describe('5. The free limit', () => {
   it('10 a day: the banner, no chips, no sending; the sheet; See Plus', async () => {
-    const fake = new FakeCoach({ messages: today10 });
+    const fake = new FakeCoach({ messages: today10() });
     await openCoach(fake);
     expect(await screen.findByTestId('coach-limit')).toBeTruthy();
     expect(screen.queryByTestId('coach-chips')).toBeNull();
@@ -236,7 +239,7 @@ describe('5. The free limit', () => {
     expect(await screen.findByTestId('plan-next')).toBeTruthy();
   });
   it('Plus: no limit and no count', async () => {
-    await openCoach(new FakeCoach({ messages: today10 }), undefined, { ...ON, plus: true });
+    await openCoach(new FakeCoach({ messages: today10() }), undefined, { ...ON, plus: true });
     await screen.findByTestId('coach-thread');
     expect(screen.queryByTestId('coach-limit')).toBeNull();
     expect(screen.queryByTestId('coach-remaining')).toBeNull();
@@ -248,6 +251,30 @@ describe('5. The free limit', () => {
     expect(await screen.findByTestId(/^not-sent-/)).toHaveTextContent('Not sent. That’s today’s limit of 10 messages. It resets at midnight.');
     expect(screen.getByTestId('coach-limit')).toBeTruthy();
     expect(screen.queryByTestId('button-Send again')).toBeNull();
+  });
+  it('a web thread with no times (the pilot’s) uses none of today’s messages and folds into Earlier', async () => {
+    const web: ServerMessage[] = Array.from({ length: 12 }, (_, i) => [
+      { id: 2 * i + 1, role: 'user', text: `Web question ${i + 1}`, status: 'sent' },
+      { id: 2 * i + 2, role: 'assistant', text: `Web answer ${i + 1}`, status: 'done' },
+    ]).flat();
+    await openCoach(new FakeCoach({ messages: web }));
+    expect(await screen.findByTestId('coach-earlier')).toHaveTextContent(/Earlier · 24 messages/);
+    expect(screen.queryByTestId('coach-limit')).toBeNull();
+    expect(screen.getByTestId('coach-remaining')).toHaveTextContent('10 left today');
+    expect(screen.queryByTestId('question-1')).toBeNull();
+  });
+  it('clearing the conversation doesn’t give back today’s messages', async () => {
+    const fake = new FakeCoach();
+    await openCoach(fake);
+    for (let i = 0; i < 10; i++) await ask(`How’s my week, part ${i + 1}?`);
+    expect(await screen.findByTestId('coach-limit')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('coach-more'));
+    await fireEvent.press(await screen.findByTestId('menu-clear'));
+    await fireEvent.press(await screen.findByTestId('button-Clear conversation'));
+    expect(await screen.findByTestId('coach-empty')).toBeTruthy();
+    expect(fake.cleared).toBe(1);
+    expect(screen.getByTestId('coach-limit')).toBeTruthy();
+    expect(screen.getByTestId('composer').props.editable).toBe(false);
   });
 });
 
@@ -289,17 +316,49 @@ describe('7. A reply that fails part way', () => {
     expect(fake.sent.map((s) => s.text)).toEqual(['How’s my week?', 'How’s my week?']);
     expect(within(lastReply()).queryByTestId(/^reply-error-/)).toBeNull();
   });
+  it('the connection drops after the server stored the question: the question was sent, the words so far stay', async () => {
+    const fake = new FakeCoach({ failures: ['drop'] });
+    await openCoach(fake);
+    await ask('How’s my week?');
+    const reply = within(lastReply());
+    expect(reply.getByTestId(/^reply-error-/)).toHaveTextContent('The connection dropped before the reply finished. Try again.');
+    expect(reply.getByText(/^This week you’ve run 28 of 54 km/)).toBeTruthy();
+    expect(screen.queryByTestId(/^not-sent-/)).toBeNull();
+    expect(screen.queryByTestId('button-Send again')).toBeNull();
+    expect(screen.getByTestId('coach-remaining')).toHaveTextContent('9 left today');
+    expect(fake.sent).toHaveLength(1);
+  });
+});
+
+describe('7b. Signed out', () => {
+  it('a send that finds the sign-in gone says so with Sign in; no Send again, sending off', async () => {
+    const fake = new FakeCoach({ messages: [
+      { id: 1, role: 'user', text: 'How’s my week?', status: 'sent', at: nowS() },
+      { id: 2, role: 'assistant', text: 'This week you’ve run 28 of 54 km planned.', status: 'done', at: nowS() },
+    ] });
+    const api: CoachApi = { thread: () => fake.thread(), decide: (i, d) => fake.decide(i, d), feedback: (i, v) => fake.feedback(i, v),
+      clear: () => fake.clear(), send: async () => { throw new NotSignedIn(); } };
+    await openCoach(api);
+    await screen.findByTestId('question-1');
+    await ask('And the tempo?');
+    expect(await screen.findByTestId('failure-banner')).toHaveTextContent(/You’re signed out/);
+    expect(screen.getByTestId('question-1')).toBeTruthy();
+    expect(screen.getByTestId(/^not-sent-/)).toBeTruthy();
+    expect(screen.queryByTestId('button-Send again')).toBeNull();
+    await fireEvent.changeText(screen.getByTestId('composer'), 'Hello');
+    expect(screen.getByTestId('coach-send').props.accessibilityState).toEqual({ disabled: true });
+  });
 });
 
 describe('8. The guard', () => {
   it('a reply stating a cause is marked as an observation, its words unchanged; a medical claim gets the medical line', async () => {
     await openCoach(new FakeCoach({ messages: [
-      { id: 1, role: 'user', text: 'Why was rep 6 slow?', status: 'sent' },
-      { id: 2, role: 'assistant', text: 'Rep 6 was slower, in line with your short sleep.', status: 'done' },
-      { id: 3, role: 'user', text: 'My achilles hurts', status: 'sent' },
-      { id: 4, role: 'assistant', text: 'It sounds like tendinitis. Ice it after runs.', status: 'done' },
-      { id: 5, role: 'user', text: 'And the tempo?', status: 'sent' },
-      { id: 6, role: 'assistant', text: 'Rep 6 peaked at 172 bpm, 4 above rep 5.', status: 'done' },
+      { id: 1, role: 'user', text: 'Why was rep 6 slow?', status: 'sent', at: nowS() },
+      { id: 2, role: 'assistant', text: 'Rep 6 was slower, in line with your short sleep.', status: 'done', at: nowS() },
+      { id: 3, role: 'user', text: 'My achilles hurts', status: 'sent', at: nowS() },
+      { id: 4, role: 'assistant', text: 'It sounds like tendinitis. Ice it after runs.', status: 'done', at: nowS() },
+      { id: 5, role: 'user', text: 'And the tempo?', status: 'sent', at: nowS() },
+      { id: 6, role: 'assistant', text: 'Rep 6 peaked at 172 bpm, 4 above rep 5.', status: 'done', at: nowS() },
     ] }));
     expect(await screen.findByText('Rep 6 was slower, in line with your short sleep.')).toBeTruthy();
     expect(screen.getByTestId('flag-2').props.accessibilityLabel).toBe('Read this as an observation. Daash can’t tell what caused it, or what will happen.');
@@ -310,10 +369,10 @@ describe('8. The guard', () => {
 
 describe('9. The ⋯ menu', () => {
   const thread: ServerMessage[] = [
-    { id: 1, role: 'user', text: 'Why did rep 6 feel harder?', status: 'sent', context: { kind: 'run', id: 'r1', label: 'About · Wed 25 · 6 × 800 m' } },
-    { id: 2, role: 'assistant', text: 'Rep 6 peaked at 172 bpm.', status: 'done' },
-    { id: 3, role: 'user', text: 'Should I still do the tempo?', status: 'sent' },
-    { id: 4, role: 'assistant', text: 'Your call.', status: 'done' },
+    { id: 1, role: 'user', text: 'Why did rep 6 feel harder?', status: 'sent', at: nowS(), context: { kind: 'run', id: 'r1', label: 'About · Wed 25 · 6 × 800 m' } },
+    { id: 2, role: 'assistant', text: 'Rep 6 peaked at 172 bpm.', status: 'done', at: nowS() },
+    { id: 3, role: 'user', text: 'Should I still do the tempo?', status: 'sent', at: nowS() },
+    { id: 4, role: 'assistant', text: 'Your call.', status: 'done', at: nowS() },
   ];
   it('search finds words; filter keeps one run’s questions; clear asks first, and memory stays', async () => {
     const fake = new FakeCoach({ messages: thread });
@@ -346,6 +405,17 @@ describe('9. The ⋯ menu', () => {
     expect(fake.cleared).toBe(1);
     await act(async () => { router.push('/you/memory'); });
     expect(within(await screen.findByTestId('memory-list')).getByText('London Marathon · Sat 24 Apr · 3:15')).toBeTruthy();
+  });
+  it('a clear the server couldn’t make keeps the thread and says so', async () => {
+    const fake = new FakeCoach({ messages: thread, clearFails: true });
+    await openCoach(fake);
+    await fireEvent.press(await screen.findByTestId('coach-more'));
+    await fireEvent.press(await screen.findByTestId('menu-clear'));
+    await fireEvent.press(await screen.findByTestId('button-Clear conversation'));
+    expect(await screen.findByTestId('coach-clear-error')).toHaveTextContent(/Couldn’t clear the conversation\. It’s still here\. Try again in a moment\./);
+    await fireEvent.press(screen.getByTestId('button-Keep it'));
+    expect(await screen.findByTestId('question-1')).toBeTruthy();
+    expect(fake.messages).toHaveLength(4);
   });
 });
 

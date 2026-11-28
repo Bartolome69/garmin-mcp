@@ -65,12 +65,25 @@ export function FilterSheet({ tags, onPick, onClose }: { tags: ContextTag[]; onP
   );
 }
 
-export function ClearSheet({ onClear, onKeep }: { onClear: () => void; onKeep: () => void }) {
+export function ClearSheet({ onClear, onKeep, error = null, busy = false, offline = false }: {
+  onClear: () => void; onKeep: () => void;
+  /** The server couldn't clear it: the thread is kept, and this says so. */
+  error?: string | null;
+  busy?: boolean;
+  /** Clearing needs the server (else the thread comes back on the next load). */
+  offline?: boolean;
+}) {
   return (
     <View testID="coach-clear-sheet" style={{ padding: 20, gap: 12 }}>
       <Text variant="title" accessibilityRole="header">Clear the conversation?</Text>
       <Text variant="body" tone="muted">Every message in the thread goes. Memory and your plan stay, and nothing changes on your watch.</Text>
-      <Button label="Clear conversation" kind="primary" onPress={onClear} />
+      {error || offline ? (
+        <View testID="coach-clear-error" accessible accessibilityLiveRegion="polite" style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          <Icon name="error" tone="brandText" />
+          <Text variant="footnote" tone="brandText" style={{ flex: 1 }}>{error ?? 'Clearing needs a connection. The conversation is still here.'}</Text>
+        </View>
+      ) : null}
+      <Button label={busy ? 'Clearing…' : 'Clear conversation'} kind="primary" onPress={onClear} disabled={busy || offline} />
       <Button label="Keep it" onPress={onKeep} />
     </View>
   );

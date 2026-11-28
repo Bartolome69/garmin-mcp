@@ -67,13 +67,20 @@ export type FakeCoachOptions = {
   /** The thread the server starts with. */
   messages?: ServerMessage[];
   starters?: string[];
-  /** What the next sends do, in order: 'offline' (never reached Daash), 'cap' (the 429), 'error' (the stream's error event). */
-  failures?: ('offline' | 'cap' | 'error')[];
+  /**
+   * What the next sends do, in order: 'offline' (never reached Daash), 'cap' (the 429), 'error' (the stream's
+   * error event), 'drop' (the server stored the question and began the reply, then the connection dropped).
+   */
+  failures?: Failure[];
   /** Hold every reply after its first words until release(): to see a reply streaming. */
   hold?: boolean;
   /** No answer at all for the thread (offline on open). */
   offlineThread?: boolean;
+  /** /new fails (offline): the thread stays on the server. */
+  clearFails?: boolean;
 };
+
+type Failure = 'offline' | 'cap' | 'error' | 'drop';
 
 export class FakeCoach implements CoachApi {
   messages: ServerMessage[];
@@ -82,11 +89,12 @@ export class FakeCoach implements CoachApi {
   decisions: [string, string][] = [];
   feedbacks: [string, string][] = [];
   cleared = 0;
-  private failures: ('offline' | 'cap' | 'error')[];
+  private failures: Failure[];
   private nextId: number;
   private hold: boolean;
   private releases: (() => void)[] = [];
   offlineThread: boolean;
+  clearFails: boolean;
 
   constructor(o: FakeCoachOptions = {}) {
     this.messages = [...(o.messages ?? [])];
@@ -94,6 +102,7 @@ export class FakeCoach implements CoachApi {
     this.failures = [...(o.failures ?? [])];
     this.hold = !!o.hold;
     this.offlineThread = !!o.offlineThread;
+    this.clearFails = !!o.clearFails;
     this.nextId = 100 + this.messages.length;
   }
 
@@ -125,6 +134,10 @@ export class FakeCoach implements CoachApi {
     const words = s.text.split(' ');
     const half = Math.max(1, Math.floor(words.length / 2));
     onEvent({ type: 'delta', text: `${words.slice(0, half).join(' ')} ` });
+    if (failure === 'drop') {
+      this.messages.push({ id, role: 'assistant', text: words.slice(0, half).join(' '), status: 'partial' });
+      throw new Offline();
+    }
     if (this.hold) await new Promise<void>((r) => this.releases.push(r));
     onEvent({ type: 'delta', text: words.slice(half).join(' ') });
     if (s.chart) onEvent({ type: 'chart', chart: s.chart });
@@ -151,7 +164,11 @@ export class FakeCoach implements CoachApi {
     if (m) m.feedback = value;
   }
 
-  async clear() { this.cleared += 1; this.messages = []; }
+  async clear() {
+    if (this.clearFails) throw new Offline();
+    this.cleared += 1;
+    this.messages = [];
+  }
 }
 
 /** The persona's thread in a development build: one exchange about Wednesday's run, two days ago. */

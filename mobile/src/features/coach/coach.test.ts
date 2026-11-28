@@ -13,8 +13,8 @@ jest.mock('expo-secure-store', () => ({
 import { ACCESS_KEY, ApiError, NotSignedIn, Offline } from '../../api/client';
 import { CoachLimitReached, CoachUnavailable, readStream, serverCoachApi, type StreamResponse } from './api';
 import { FakeCoach, HRV_CHART, REP_HR_CHART, scriptFor } from './fake';
-import { contextFrom, dayOf, filterByTag, limitFor, mergeThread, retain, searchThread, sentToday, tagKey, tagsOf, threadRows,
-  type CoachMessage } from './model';
+import { contextFrom, countSend, dayOf, filterByTag, limitFor, mergeThread, retain, searchThread, sentToday, tagKey, tagsOf, threadRows,
+  type CoachMessage, type ServerMessage } from './model';
 import { applyEvent, createSseParser, toEvent, type CoachEvent, type Turn } from './sse';
 import { itemWords, kindLabel, kindsFor, visibleItems, personaMemory } from './memory';
 
@@ -58,7 +58,7 @@ describe('the thread', () => {
     const local = [msg('2', 'assistant', 'old words', NOW - H, { chart: HRV_CHART, sources: ['HRV · Garmin'] }),
       msg('local:1', 'user', 'never sent', NOW, { status: 'not_sent' })];
     const merged = mergeThread(local, [{ id: 2, role: 'assistant', text: 'Because your HRV dropped, you are tired.', status: 'done', feedback: 'up' },
-      { id: 9, role: 'action', text: 'Move it', status: 'expired', tool: 'move_session' }, { id: 10, role: 'system', text: 'x', status: 'done' }], NOW);
+      { id: 9, role: 'action', text: 'Move it', status: 'expired', tool: 'move_session' }, { id: 10, role: 'system', text: 'x', status: 'done' }]);
     expect(merged.map((m) => [m.id, m.status])).toEqual([['2', 'done'], ['9', 'expired'], ['local:1', 'not_sent']]);
     expect(merged[0]).toMatchObject({ text: 'Because your HRV dropped, you are tired.', chart: HRV_CHART, sources: ['HRV · Garmin'], feedback: 'up', flags: ['cause'] });
   });
@@ -76,6 +76,40 @@ describe('the daily limit', () => {
     expect(limitFor({ plus: true, dailyLimit: 10, messages: sent(40), now: NOW, capHit: true })).toEqual({ limit: null, remaining: null, reached: false });
   });
   it('local days', () => { expect(dayOf(NOW)).toBe('2026-11-27'); });
+
+  // The pilot's GET /app/api/chat sends no time. A runner with a web thread opening the
+  // phone for the first time hasn't used today's messages, and their thread isn't "Today".
+  const pilot: ServerMessage[] = Array.from({ length: 12 }, (_, i) => [
+    { id: 2 * i + 1, role: 'user', text: `q${i}`, status: 'sent' },
+    { id: 2 * i + 2, role: 'assistant', text: `a${i}`, status: 'done' },
+  ]).flat();
+  it('a pilot thread with no times: nothing counts toward today, it all collapses into Earlier, and retention keeps it', () => {
+    const merged = mergeThread([], pilot);
+    expect(merged.every((m) => m.at == null)).toBe(true);
+    expect(merged.map((m) => m.id)).toEqual(pilot.map((m) => String(m.id)));
+    expect(limitFor({ plus: false, dailyLimit: 10, messages: merged, now: NOW, capHit: false })).toEqual({ limit: 10, remaining: 10, reached: false });
+    expect(threadRows(merged, NOW, false)).toEqual([{ kind: 'earlier', count: 24, label: 'Earlier · 24 messages' }]);
+    expect(threadRows(merged, NOW, true)[0]).toEqual({ kind: 'day', label: 'Earlier' });
+    expect(retain(merged, NOW)).toHaveLength(24);
+  });
+  it('messages this phone sent keep their time through a merge; undated ones come first', () => {
+    const local = [msg('25', 'user', 'today’s', NOW - H)];
+    const merged = mergeThread(local, [...pilot, { id: 25, role: 'user', text: 'today’s', status: 'sent' }]);
+    expect(merged[merged.length - 1]).toMatchObject({ id: '25', at: NOW - H });
+    expect(sentToday(merged, NOW)).toBe(1);
+    const rows = threadRows(merged, NOW, false);
+    expect(rows.map((r) => r.kind)).toEqual(['earlier', 'day', 'message']);
+  });
+  it('today’s sends are counted apart from the thread: clearing the thread doesn’t give them back; a new day does', () => {
+    let c = null as ReturnType<typeof countSend> | null;
+    for (let i = 0; i < 10; i++) c = countSend(c, NOW);
+    expect(c).toEqual({ day: '2026-11-27', count: 10 });
+    expect(limitFor({ plus: false, dailyLimit: 10, messages: [], now: NOW, capHit: false, counted: c })).toEqual({ limit: 10, remaining: 0, reached: true });
+    expect(limitFor({ plus: false, dailyLimit: 10, messages: [], now: NOW + 24 * H, capHit: false, counted: c }).remaining).toBe(10);
+    expect(countSend(c, NOW + 24 * H)).toEqual({ day: '2026-11-28', count: 1 });
+    // The larger of the two counts: the thread's dated messages (another device, once the server sends times) or this phone's.
+    expect(limitFor({ plus: false, dailyLimit: 10, messages: sent(6), now: NOW, capHit: false, counted: { day: '2026-11-27', count: 2 } }).remaining).toBe(4);
+  });
 });
 
 describe('context tags from the entry points', () => {

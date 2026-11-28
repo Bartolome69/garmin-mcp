@@ -10,10 +10,12 @@
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 
+import type { FailureKind } from '../../data/resource';
 import type { GuardKind } from '../../domain/replyGuard';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
+import { FailureBanner } from '../../ui/StateViews';
 import { WatchStatus } from '../../ui/session/WatchStatus';
 import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
@@ -134,7 +136,7 @@ function Reply({ m, actions }: { m: CoachMessage; actions: CoachActions }) {
   );
 }
 
-function Question({ m, actions, offline, locked }: { m: CoachMessage; actions: CoachActions; offline: boolean; locked: boolean }) {
+function Question({ m, actions, blocked }: { m: CoachMessage; actions: CoachActions; blocked: boolean }) {
   const { colors } = useTheme();
   return (
     <View style={{ gap: 6, alignSelf: 'stretch' }}>
@@ -149,7 +151,7 @@ function Question({ m, actions, offline, locked }: { m: CoachMessage; actions: C
             <Icon name="error" tone="brandText" />
             <Text variant="footnote" tone="brandText" testID={`not-sent-${m.id}`}>{`Not sent. ${m.error ?? ''}`.trim()}</Text>
           </View>
-          {!offline && !locked ? <Button label="Send again" small onPress={() => actions.sendAgain(m.id)} /> : null}
+          {!blocked ? <Button label="Send again" small onPress={() => actions.sendAgain(m.id)} /> : null}
         </View>
       ) : null}
     </View>
@@ -222,7 +224,7 @@ function MemoryNote({ m, onEdit }: { m: CoachMessage; onEdit: () => void }) {
       <Icon name="check" tone="muted" />
       <Text variant="footnote" tone="muted" style={{ flexShrink: 1 }}>{`Saved to memory: ${m.text}`}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel={`Edit memory: ${m.text}`} onPress={onEdit}
-        style={{ minHeight: MIN_TOUCH, justifyContent: 'center', paddingHorizontal: 4 }}>
+        style={{ minHeight: MIN_TOUCH, minWidth: MIN_TOUCH, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
         <Text variant="footnote" tone="brandText" style={{ fontWeight: '600' }}>Edit</Text>
       </Pressable>
     </View>
@@ -255,7 +257,7 @@ function Banner({ testID, children, onPress, label }: { testID: string; children
 }
 
 export function CoachView({ rows, empty, starters, limit, offline, streaming, context, searching, query, onQuery, filter, cards, latestPending,
-  brand, actions, loadFailed }: {
+  brand, actions, loadFailed, authFailure = null }: {
   rows: ThreadRow[];
   /** No conversation yet (not a search with no results). */
   empty: boolean;
@@ -275,18 +277,21 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
   actions: CoachActions;
   /** The thread couldn't load and nothing is cached. */
   loadFailed: string | null;
+  /** Signed out, or Garmin needs a new sign-in: said over the thread, cached or not, with its own button; nothing can be sent. */
+  authFailure?: Extract<FailureKind, 'signedOut' | 'reconnect'> | null;
 }) {
   const { colors } = useTheme();
   const [text, setText] = useState('');
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const locked = limit.reached;
-  const canSend = !!text.trim() && !streaming && !offline && !locked;
+  const blocked = offline || locked || !!authFailure;
+  const canSend = !!text.trim() && !streaming && !blocked;
   const last = rows[rows.length - 1];
   const lastKey = last?.kind === 'message' ? `${last.m.id}:${last.m.text.length}:${last.m.status}` : String(rows.length);
   useEffect(() => { if (!searching && !filter) scroll.current?.scrollToEnd?.({ animated: false }); }, [lastKey, searching, filter]);
 
   const submit = (words: string, starter = false) => {
-    if (!words.trim() || streaming || offline || locked) return;
+    if (!words.trim() || streaming || blocked) return;
     actions.send(words, starter);
     if (!starter) setText('');
   };
@@ -301,6 +306,7 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
           </Banner>
         </View>
       ) : null}
+      <FailureBanner failure={authFailure} />
       {searching ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 8 }}>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderRadius: 12, backgroundColor: colors.sunken, minHeight: MIN_TOUCH }}>
@@ -349,7 +355,7 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
           }
           if (r.kind === 'day') return <Text key={`day-${i}`} testID="coach-day" variant="kicker" tone="muted" style={{ alignSelf: 'center', paddingVertical: 4 }} numeric>{r.label}</Text>;
           const m = r.m;
-          if (m.role === 'user') return <Question key={m.id} m={m} actions={actions} offline={offline} locked={locked} />;
+          if (m.role === 'user') return <Question key={m.id} m={m} actions={actions} blocked={blocked} />;
           if (m.role === 'assistant') return <Reply key={m.id} m={m} actions={actions} />;
           if (m.role === 'memory') return <MemoryNote key={m.id} m={m} onEdit={() => m.memoryId && actions.editMemory(m.memoryId)} />;
           return <Card key={m.id} m={m} card={cards[m.id] ?? { proposal: null, canReview: false, batch: null }} actions={actions} brand={brand && latestPending === m.id} />;
@@ -366,7 +372,7 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
           </View>
         ) : starters.length && !searching ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} testID="coach-chips" contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
-            {starters.map((s) => <Chip key={s} label={s} disabled={streaming || offline} onPress={() => submit(s, true)} />)}
+            {starters.map((s) => <Chip key={s} label={s} disabled={streaming || offline || !!authFailure} onPress={() => submit(s, true)} />)}
           </ScrollView>
         ) : null}
         {context ? (

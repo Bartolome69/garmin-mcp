@@ -115,7 +115,8 @@ export default function CoachScreen() {
         cards={cards}
         latestPending={latestPending}
         brand={focused}
-        loadFailed={coach.loaded && coach.failure && coach.failure !== 'offline' ? coach.error ?? 'Daash didn’t answer. Try again in a moment.' : null}
+        loadFailed={coach.loaded && coach.failure === 'server' ? coach.error ?? 'Daash didn’t answer. Try again in a moment.' : null}
+        authFailure={coach.failure === 'signedOut' || coach.failure === 'reconnect' ? coach.failure : null}
         actions={{
           send: (text, starter) => { coach.send(text, { starter }); },
           sendAgain: (id) => { coach.sendAgain(id); },
