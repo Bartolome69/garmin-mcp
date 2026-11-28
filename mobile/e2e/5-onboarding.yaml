@@ -7,13 +7,15 @@ appId: run.daash.app
     clearState: true
 - assertVisible: { id: "button-Set up my plan" }
 - tapOn: { id: "button-Try building a session" }
-- assertVisible: "Like it? Send it to your watch."
+- assertVisible: "Like it? Make a plan that goes to your watch."
 - tapOn: { id: "button-Create free account" }
 - assertVisible: "What are you training for?"
 - tapOn: { id: "race-name" }
 - inputText: "London Marathon"
 - tapOn: { id: "race-date" }
-- inputText: "24 Apr 2027"
+# About five months out from the device's clock, so the step never sees a past day.
+# (The development build's plan is the persona's London fixture whatever the date.)
+- inputText: ${new Date(Date.now() + 150 * 86400000).toISOString().slice(0, 10)}
 - tapOn: { id: "race-target" }
 - inputText: "3:15"
 - hideKeyboard
