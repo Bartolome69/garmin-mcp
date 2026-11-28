@@ -353,6 +353,24 @@ jobs:
             *) echo "    FAIL: issuer is '$issuer', expected $public"; exit 1 ;;
           esac
 
+          # Where a client looks first when someone pastes .../mcp (RFC 9728).
+          # It must name /mcp itself and point at our sign-in server; the root
+          # address is what older clients still read, so it must keep answering.
+          echo "--- $public/.well-known/oauth-protected-resource/mcp"
+          meta="$(curl -fsS --max-time 20 "$public/.well-known/oauth-protected-resource/mcp" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("resource",""), (d.get("authorization_servers") or [""])[0])')"
+          case "$meta" in
+            "$public/mcp $public/") echo "    ok: resource and sign-in server are $meta" ;;
+            *) echo "    FAIL: got '$meta', expected '$public/mcp $public/'"; exit 1 ;;
+          esac
+          echo "--- $public/.well-known/oauth-protected-resource"
+          root="$(curl -fsS --max-time 20 "$public/.well-known/oauth-protected-resource" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("resource",""))')"
+          case "$root" in
+            "$public"*) echo "    ok: resource is $root" ;;
+            *) echo "    FAIL: resource is '$root', expected it under $public"; exit 1 ;;
+          esac
+
       # And once more with what is now live, the whole image this time.
       - name: Sign in to Garmin with what is now live
         env:
