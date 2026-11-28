@@ -115,7 +115,8 @@ export function a11yElements(tree: unknown): A11yElement[] {
     if (Array.isArray(n)) { n.forEach(walk); return; }
     if (!isNode(n) || hidden(n)) return;
     const p = n.props ?? {};
-    if (/^RNSVG/.test(n.type)) return; // drawings: said by the labelled element around them
+    // Drawings: an accessible, labelled SVG (a chart) is one element; the rest is said by the labelled element around it.
+    if (/^RNSVG/.test(n.type)) { if (p.accessible && p.accessibilityLabel) out.push(element(n)); return; }
     const focusable = p.accessible === true || FOCUSABLE_TYPES.has(n.type) || /Switch$/.test(n.type)
       || (!!p.accessibilityRole && p.accessibilityRole !== 'none' && (n.type === 'Text' || !!p.onClick || !!p.onPress || !!p.accessibilityLabel));
     // A focusable element with no name is kept (the checks flag it), unless it holds nothing

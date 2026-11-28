@@ -1,0 +1,23 @@
+# Plan · Trends (Plus) · android
+# /plan
+
+## light · 100% · Coach on | light · 100% · Coach off | light · 200% · Coach on | light · 200% · Coach off | dark · 100% · Coach on | dark · 100% · Coach off | dark · 200% · Coach on | dark · 200% · Coach off
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Plan"
+tab "Week"
+tab "Block"
+tab "Trends" [selected]
+header "Training load"
+text "Next 5 weeks planned"
+image "Weekly training load against your target band: 4 weeks done, this week, and 5 planned. Week 7 is above the band."
+text "Week 7 is 18% above your target band."
+link "Trim week 7"
+header "Predicted London time"
+text "from your runs"
+group "Today 3:20:40"
+group "Your target 3:15"
+header "Prediction trend"
+text "12 weeks"
+image "Predicted time over 12 weeks, from Sep 3:27 to 3:20:40 now. Race day · 3:14 if on plan."

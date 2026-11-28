@@ -4,10 +4,10 @@
 // route on disk has no entry). Test-only: imports the testing library.
 import fs from 'fs';
 import path from 'path';
-import { act, cleanup, renderRouter, screen } from 'expo-router/testing-library';
+import { act, cleanup, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { router, Stack } from 'expo-router';
 import type { ComponentType, ReactNode } from 'react';
-import { Dimensions } from 'react-native';
+import { Dimensions, Platform } from 'react-native';
 
 import { OnboardingStack } from '../app/onboarding/_layout';
 import { FakeCoach } from '../features/coach/fake';
@@ -27,6 +27,7 @@ import { useWatch, WatchProvider, type WatchContext } from '../features/watch/Wa
 import { DEFAULT_FLAGS } from '../flags/flags';
 import { FlagsProvider } from '../flags/FlagsProvider';
 import { ThemeProvider } from '../theme/ThemeProvider';
+import { dataMode, type DataMode } from './dataMode';
 
 let queue: WatchContext | null = null;
 function Probe() { queue = useWatch(); return null; }
@@ -60,10 +61,14 @@ export function routeFiles(dir = APP_DIR, base = ''): string[] {
 /** Screens (not layouts) a runner can land on. The root index only redirects. */
 export const screenRoutes = () => routeFiles().filter((r) => !/(^|\/)_layout$/.test(r) && r !== 'index');
 
-export function app(scheme: 'dark' | 'light', coach = true, opts: { messages?: () => ServerMessage[]; api?: CoachApi; garmin?: WatchTransport; watchStore?: WatchStore } = {}) {
+export function app(scheme: 'dark' | 'light', coach = true, opts: {
+  messages?: () => ServerMessage[]; api?: CoachApi; garmin?: WatchTransport; watchStore?: WatchStore;
+  /** Plus (the features flag the entitlement reads). */
+  plus?: boolean;
+} = {}) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial={scheme}>
-      <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach }}>
+      <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach, plus: !!opts.plus }}>
         <EntitlementsProvider store={new FakeStore()} fetcher={async () => { throw new Error('offline'); }}>
           <WatchProvider transport={opts.garmin ?? new FakeGarmin()} store={opts.watchStore ?? memoryStore()} auto={false} pollEveryMs={0}>
             <CoachApiContext.Provider value={opts.api ?? new FakeCoach({ messages: (opts.messages ?? COACH_MESSAGES)() })}>
@@ -110,6 +115,16 @@ export type ScreenCase = {
   primary?: boolean | 'android';
   /** Only with the Coach on (the Coach tab's own screens). */
   coachOnly?: boolean;
+  /** On Plus (Plus features unlocked). */
+  plus?: boolean;
+  /** A part of the screen that isn't a route of its own: Plan's Block or Trends. */
+  tab?: 'Block' | 'Trends';
+  /** How the server answers Today's and Plan's sources (state cases; src/matrix/states.test.tsx mocks them). */
+  data?: DataMode;
+  /** The Coach's server for this case (state cases: empty, offline, streaming). */
+  coachApi?: () => CoachApi;
+  /** Something done once the screen is up (send a message, so the reply is streaming). */
+  setup?: () => Promise<void>;
 };
 
 export const SCREENS: ScreenCase[] = [
@@ -117,6 +132,9 @@ export const SCREENS: ScreenCase[] = [
   { name: 'Readiness sheet', route: '(tabs)/today/readiness', url: '/today/readiness?signal=sleep', id: 'readiness-sheet', sheet: true },
   { name: 'Other options', route: '(tabs)/today/options', url: '/today/options', id: 'options-sheet', sheet: true },
   { name: 'Plan · Week', route: '(tabs)/plan/index', url: '/plan', id: 'week-title', primary: 'android' },
+  { name: 'Plan · Block', route: '(tabs)/plan/index', url: '/plan', id: 'block', tab: 'Block' },
+  { name: 'Plan · Trends', route: '(tabs)/plan/index', url: '/plan', id: 'trends', tab: 'Trends' },
+  { name: 'Plan · Trends (Plus)', route: '(tabs)/plan/index', url: '/plan', id: 'trends', tab: 'Trends', plus: true },
   { name: 'Session detail', route: '(tabs)/plan/session/[id]', url: '/plan/session/2026-12-02-intervals', id: 'session', primary: true },
   { name: 'Move sheet', route: '(tabs)/plan/move', url: '/plan/move?id=2026-12-02-intervals', id: 'move-sheet', sheet: true },
   { name: 'Life happened', route: '(tabs)/plan/life', url: '/plan/life', id: 'life-sheet', sheet: true, primary: true },
@@ -170,6 +188,40 @@ export const SCREENS: ScreenCase[] = [
   { name: 'Watch confirm', route: 'watch/confirm', url: '/watch/confirm?id=', id: 'confirm-sheet', staged: true, sheet: true, primary: true },
 ];
 
+/**
+ * States that aren't routes of their own (the Skeleton, Offline, Syncing and Coach boards):
+ * a first answer that hasn't come, no connection, an expired Garmin sign-in, empty data, and
+ * the Coach empty, offline and streaming. Only the snapshot matrix walks these
+ * (src/matrix/states.test.tsx, which mocks the sources `data` steers).
+ */
+export const STATE_SCREENS: ScreenCase[] = [
+  { name: 'Today · loading', route: '(tabs)/today/index', url: '/today', id: 'today-loading', data: 'loading' },
+  { name: 'Today · offline', route: '(tabs)/today/index', url: '/today', id: 'today-error', data: 'offline' },
+  { name: 'Today · Garmin sign-in expired', route: '(tabs)/today/index', url: '/today', id: 'today-error', data: 'reconnect', primary: true },
+  { name: 'Today · nothing planned', route: '(tabs)/today/index', url: '/today', id: 'today', data: 'empty' },
+  { name: 'Plan · loading', route: '(tabs)/plan/index', url: '/plan', id: 'plan-loading', data: 'loading' },
+  { name: 'Plan · offline', route: '(tabs)/plan/index', url: '/plan', id: 'plan-error', data: 'offline' },
+  { name: 'Plan · no plan yet', route: '(tabs)/plan/index', url: '/plan', id: 'plan-empty', data: 'empty', primary: true },
+  { name: 'Coach · empty', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true,
+    coachApi: () => new FakeCoach({ messages: [] }) },
+  { name: 'Coach · offline', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true,
+    coachApi: () => new FakeCoach({ messages: COACH_MESSAGES(), offlineThread: true }) },
+  { name: 'Coach · streaming', route: '(tabs)/coach/index', url: '/coach', id: 'coach', coachOnly: true, primary: true,
+    coachApi: () => new FakeCoach({ messages: COACH_MESSAGES(), hold: true }),
+    setup: async () => {
+      await fireEvent.changeText(screen.getByTestId('composer'), 'How was my week?');
+      await fireEvent.press(screen.getByTestId('coach-send'));
+      await screen.findByTestId('streaming');
+    } },
+];
+
+/** Plan's Week / Block / Trends: the segmented control on iOS, tabs on Android. */
+export async function selectPlanTab(t: 'Week' | 'Block' | 'Trends') {
+  const tabs = await screen.findByTestId('plan-tabs');
+  if (Platform.OS === 'ios') await fireEvent(tabs, 'valueChange', t);
+  else await fireEvent.press(screen.getByTestId(`plan-tab-${t}`));
+}
+
 /** The skipped Wednesday intervals, staged: what the staged screens show. */
 export const stagedProposal = () => skipProposal(findSession(PERSONA_PLAN, '2026-12-02-intervals')!);
 
@@ -180,19 +232,25 @@ export async function openScreen(c: ScreenCase, scheme: 'dark' | 'light' = 'dark
   // window changed, so no earlier tree redraws for it.
   await cleanup();
   if (window) setWindow(window);
+  dataMode.current = c.data ?? 'ok';
+  const map = app(scheme, coach, { plus: c.plus, api: c.coachApi?.() });
   if (c.staged) {
-    await renderRouter(app(scheme, coach), { initialUrl: '/plan' });
+    await renderRouter(map, { initialUrl: '/plan' });
     await screen.findByTestId('week-title');
     const p = stagedProposal();
     await act(async () => { watchQueue().stage(p); });
     await act(async () => { router.push(`${c.url}${encodeURIComponent(p.id)}`); });
   } else if (c.from) {
-    await renderRouter(app(scheme, coach), { initialUrl: c.from });
+    await renderRouter(map, { initialUrl: c.from });
     await act(async () => { router.push(c.url); });
   } else {
-    await renderRouter(app(scheme, coach), { initialUrl: c.url });
+    await renderRouter(map, { initialUrl: c.url });
   }
-  return screen.findByTestId(c.id, {}, { timeout: 10000 });
+  if (c.tab) await selectPlanTab(c.tab);
+  const root = await screen.findByTestId(c.id, {}, { timeout: 10000 });
+  if (!c.setup) return root;
+  await c.setup();
+  return screen.findByTestId(c.id);
 }
 
 /** The phone's window: width, height and text size (fontScale 2 is 200%). */

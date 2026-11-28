@@ -1,4 +1,6 @@
-// The full snapshot matrix (build prompt, section 13; milestone 12): every screen ×
+// The full snapshot matrix (build prompt, section 13; milestone 12): every screen (and
+// Plan's Block and Trends, and the loading, offline, expired, empty and streaming states in
+// STATE_SCREENS) ×
 // {light, dark} × {iOS, Android: this suite runs once per Jest project} × {100%, 200% text}
 // × {Coach on, Coach off}. Each cell is snapshotted as what a screen reader finds (role,
 // name, value, state, in reading order), with the brand-fill count and any clipping, not as a
@@ -14,6 +16,10 @@
 //   - nothing focusable without a name, and no two controls with the same one;
 //   - with the Coach off, nothing of the Coach's (its blocks or its name);
 //   - the same numbers with the Coach on and off.
+// 200% text: the test renderer doesn't measure or wrap text, so the 200% cells check what
+// the code does at that size (layouts that switch on fontScale, text that scales, nothing
+// scalable in a box of fixed height), not where real text would wrap or clip. Device check:
+// docs/native-app/WALKTHROUGHS.md.
 // The screens come from the routes on disk: a route with no entry in SCREENS fails
 // (src/matrix/today.test.tsx). The suites are split by tab so Jest runs them side by side.
 import { afterAll, beforeAll, describe, expect, it, jest } from '@jest/globals';
@@ -23,7 +29,7 @@ import { screen } from 'expo-router/testing-library';
 import { Platform } from 'react-native';
 
 import { a11yElements, brandFills, clipped, coachSurfaces, headerTitle, line, locate, plainNumbers, sharedNames, smallTargets, truncated, unnamed } from './a11y';
-import { openScreen, SCREENS, screenRoutes, setWindow, type ScreenCase } from './screens';
+import { openScreen, SCREENS, screenRoutes, setWindow, STATE_SCREENS, type ScreenCase } from './screens';
 import { MIN_TOUCH } from '../ui/Button';
 
 const DIR = path.join(__dirname, '..', '__matrix__');
@@ -64,19 +70,20 @@ export function coverage() {
 
   // Several cases can share a file name only by mistake.
   it('one file per screen', () => {
-    const names = SCREENS.map((c) => slug(c.name));
+    const names = [...SCREENS, ...STATE_SCREENS].map((c) => slug(c.name));
     expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
   });
 }
 
-export function runMatrix(group: 'today' | 'plan' | 'you' | 'more') {
+export function runMatrix(group: 'today' | 'plan' | 'you' | 'more' | 'states') {
   beforeAll(() => { jest.spyOn(Date, 'now').mockReturnValue(MATRIX_NOW); setWindow(); });
   afterAll(() => { jest.restoreAllMocks(); setWindow(); });
   describe(`the snapshot matrix on ${os}: ${group}`, () => { cases(group); });
 }
 
 function cases(group: string) {
-  it.each(SCREENS.filter((c) => groupOf(c) === group).map((c) => [c.name, c] as const))('%s', async (_name, c: ScreenCase) => {
+  const list = group === 'states' ? STATE_SCREENS : SCREENS.filter((c) => groupOf(c) === group);
+  it.each(list.map((c) => [c.name, c] as const))('%s', async (_name, c: ScreenCase) => {
     const cells = CELLS.filter((cell) => cell.coach || !c.coachOnly);
     const problems: string[] = [];
     const reads = new Map<string, string[]>();

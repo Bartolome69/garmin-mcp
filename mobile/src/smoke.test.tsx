@@ -1,13 +1,13 @@
 // Every screen (src/testing/screens.tsx), rendered over the real routes with fixture data, in
 // light and dark, on iOS and Android (this suite runs once per platform). Each must
 // render without an error, and each passes three accessibility checks on what it draws:
-//   names     every control has something a screen reader can say
+//   names     everything a screen reader can focus has something to say
 //   targets   every control is at least 44 pt (iOS) / 48 dp (Android), hit slop included
 //   clipping  no text sits inside a box of fixed height, which clips at large font sizes
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { router } from 'expo-router';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform } from 'react-native';
 
 import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import ONBOARDING from './features/onboarding/onboarding.fixture.json';
@@ -17,56 +17,26 @@ import { PERSONA_TODAY_COACH } from './features/today/fixture';
 import { PERSONA_PLAN, PERSONA_PLAN_COACH } from './features/plan/fixture';
 import PROPOSALS from './features/watch/proposals.fixture.json';
 import { app, COACH_MESSAGES, openScreen, SCREENS, stagedProposal, watchQueue } from './testing/screens';
+import { a11yElements, clipped, hidden, smallTargets, unnamed } from './testing/a11y';
 import { MIN_TOUCH } from './ui/Button';
 
 type Node = { type: string; props: Record<string, any>; children: (Node | string)[] | null };
-const all = (tree: unknown): Node[] => {
-  const out: Node[] = [];
-  const walk = (n: unknown) => {
-    if (!n || typeof n !== 'object') return;
-    if (Array.isArray(n)) { n.forEach(walk); return; }
-    out.push(n as Node);
-    ((n as Node).children ?? []).forEach(walk);
-  };
-  walk(tree);
-  return out;
-};
-const texts = (n: Node): string[] => (n.children ?? []).flatMap((c) => (typeof c === 'string' ? [c] : texts(c)));
-const CONTROL = new Set(['button', 'link', 'radio', 'tab', 'checkbox', 'switch', 'adjustable', 'menuitem']);
-const isControl = (n: Node) => CONTROL.has(n.props.accessibilityRole) && (n.props.onClick || n.props.onResponderGrant || n.props.onPress);
-const describeNode = (n: Node) => n.props.testID ?? n.props.accessibilityLabel ?? texts(n).join(' ').slice(0, 40) ?? n.type;
-const slop = (h: unknown) => (typeof h === 'number' ? 2 * h : h && typeof h === 'object' ? ((h as { top?: number }).top ?? 0) + ((h as { bottom?: number }).bottom ?? 0) : 0);
 
 /** The checks' findings for what's on screen now. */
 export function audit(tree: unknown) {
-  const nodes = all(tree);
-  const names: string[] = [];
-  const targets: string[] = [];
-  const clipping: string[] = [];
-  for (const n of nodes) {
-    if (isControl(n)) {
-      const label = n.props.accessibilityLabel ?? texts(n).filter((t) => /\w/.test(t)).join(' ');
-      if (!label) names.push(`${n.props.accessibilityRole} ${n.props.testID ?? '(no id)'}`);
-      // The control's height, or the tallest box inside it when the control itself is the hit area wrapper.
-      const s = StyleSheet.flatten(n.props.style) ?? {};
-      const inner = all(n).map((x) => StyleSheet.flatten(x.props?.style) ?? {});
-      // A control that's only words is as tall as their line.
-      const height = Math.max(s.minHeight ?? 0, s.height ?? 0, ...inner.map((x) => Math.max(x.minHeight ?? 0, x.height ?? 0, x.lineHeight ?? 0))) + slop(n.props.hitSlop);
-      if (height < MIN_TOUCH) targets.push(`${describeNode(n)}: ${height}`);
-    }
-    const s = StyleSheet.flatten(n.props?.style) ?? {};
-    if (n.type === 'View' && typeof s.height === 'number' && s.height < 80) {
-      const words = all(n).filter((x) => x !== n && x.type === 'Text' && x.props.allowFontScaling !== false && !(x.props.maxFontSizeMultiplier && x.props.maxFontSizeMultiplier <= 1.5) && texts(x).some((t) => /\w/.test(t)));
-      if (words.length) clipping.push(`${describeNode(n)}: height ${s.height}`);
-    }
-  }
-  // Charts: every drawing is itself labelled or sits inside a labelled element (its one-line summary).
+  // The same checks as the snapshot matrix (src/testing/a11y.ts): anything that answers a
+  // press, role or not, a switch or a text field is a control; width counts where it's set.
+  const names = unnamed(a11yElements(tree));
+  const targets = smallTargets(tree);
+  const clipping = clipped(tree);
+  // Charts: every drawing is itself labelled or sits inside a labelled element (its one-line
+  // summary), or is hidden from screen readers (a locked preview's made-up chart).
   const charts: string[] = [];
   const walk = (n: unknown, labelled: boolean) => {
     if (!n || typeof n !== 'object') return;
     if (Array.isArray(n)) { n.forEach((c) => walk(c, labelled)); return; }
     const node = n as Node;
-    const here = labelled || !!(node.props?.accessibilityLabel && (node.props.accessible || node.props.accessibilityRole));
+    const here = labelled || (!!node.props && hidden(node)) || !!(node.props?.accessibilityLabel && (node.props.accessible || node.props.accessibilityRole));
     if (/^RNSVG(SvgView|Svg)/.test(node.type)) { drawings += 1; if (!here) charts.push(node.props.testID ?? '(unnamed chart)'); }
     (node.children ?? []).forEach((c) => walk(c, here));
   };

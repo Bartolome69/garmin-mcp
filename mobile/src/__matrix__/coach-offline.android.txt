@@ -1,0 +1,18 @@
+# Coach · offline · android
+# /coach
+
+## light · 100% · Coach on | light · 200% · Coach on | dark · 100% · Coach on | dark · 200% · Coach on
+brand fills: 0
+clipped: none
+cut to lines: none
+header "Coach"
+text "Offline · the Coach needs a connection. Your plan and runs still work."
+button "Try again"
+text "Coach"
+text "Ask about your plan, your runs or how today looks. The Coach reads the same numbers as the rest of Daash and proposes changes you can review."
+text "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio."
+textfield "Message the Coach"
+text "10 left today"
+button "Send" [disabled]
+button "Search the conversation"
+button "Conversation options"
