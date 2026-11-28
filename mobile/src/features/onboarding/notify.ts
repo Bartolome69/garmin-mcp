@@ -5,9 +5,11 @@
 // channel, so the default one is made first (needs a device build to see).
 import { Platform } from 'react-native';
 
+import { notificationsModule } from '../../data/notifications';
+
 export async function askNotifications(os: string = Platform.OS): Promise<'granted' | 'denied'> {
   try {
-    const Notifications = require('expo-notifications') as typeof import('expo-notifications');
+    const Notifications = notificationsModule();
     if (os === 'android') {
       await Notifications.setNotificationChannelAsync('default', { name: 'Daash', importance: Notifications.AndroidImportance.DEFAULT });
     }

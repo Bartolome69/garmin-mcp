@@ -10,10 +10,14 @@ import path from 'path';
 const ROOT = path.join(__dirname, '..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-// What Expo Go (SDK 58) ships natively, or packages that are JavaScript only.
+// What Expo Go (SDK 58) ships natively, or packages that are JavaScript only. Each expo-*
+// package by name, not by prefix: community expo-* modules (expo-iap, say) need a
+// development build, so adding one has to be a decision made here. The Google Fonts
+// packages are only font files.
 const EXPO_GO: (string | RegExp)[] = [
-  'expo', /^expo-(?!dev-client$|dev-launcher$|dev-menu$)[a-z0-9-]+$/, /^@expo\//, /^@expo-google-fonts\//,
-  'expo-updates',
+  'expo', 'expo-asset', 'expo-constants', 'expo-font', 'expo-linking', 'expo-notifications', 'expo-router',
+  'expo-secure-store', 'expo-splash-screen', 'expo-sqlite', 'expo-status-bar', 'expo-symbols', 'expo-system-ui',
+  'expo-updates', '@expo/metro-runtime', /^@expo-google-fonts\//,
   'react', 'react-dom', 'react-native', 'react-native-web',
   'react-native-svg', 'react-native-reanimated', 'react-native-worklets', 'react-native-gesture-handler',
   'react-native-screens', 'react-native-safe-area-context', '@react-native-segmented-control/segmented-control',
@@ -40,6 +44,10 @@ const code = (text: string) => text
   .replace(/^import type [^;]+;/gm, '');
 
 describe('Expo Go', () => {
+  it('a community expo-* module or another @expo/ package is not let through by its name', () => {
+    expect(['expo-iap', 'expo-dev-client', '@expo/vector-icons-pro'].filter(allowed)).toEqual([]);
+  });
+
   it('every dependency in package.json is one Expo Go ships (or JavaScript only)', () => {
     const deps = Object.keys(JSON.parse(read('package.json')).dependencies);
     expect(deps.filter((d) => !allowed(d))).toEqual([]);

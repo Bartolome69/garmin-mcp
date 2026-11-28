@@ -4,7 +4,7 @@
 // The stores don't reliably send one, so Daash does. It shows only where the
 // runner has allowed notifications (asked after the first workout lands, never
 // here); TODO(server): an email on day 5 so the promise holds without that.
-import type * as NotificationsModule from 'expo-notifications';
+import { notificationsModule } from '../../data/notifications';
 
 import { dayWords, isActive, manageLink, REMINDER_DAY, TRIAL_DAYS, type Entitlement } from './entitlement';
 
@@ -37,11 +37,7 @@ export interface TrialReminder {
   clear(): Promise<void>;
 }
 
-// Loaded when first used, so a build or test without the native module still opens.
-function notifications(): typeof NotificationsModule {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('expo-notifications');
-}
+const notifications = notificationsModule;
 
 export const notificationReminder: TrialReminder = {
   async set(r) {

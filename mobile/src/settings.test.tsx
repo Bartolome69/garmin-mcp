@@ -3,7 +3,8 @@
 import { describe, expect, it } from '@jest/globals';
 import { act, fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
 
-import { DEFAULT_PREFS, headsUp, NOTIFICATION_KINDS, planUpdated, readPrefs, runSummary, sentToWatch } from './features/settings/notifications';
+import { headsUp, planUpdated, runSummary, sentToWatch } from './features/settings/notificationCopy';
+import { DEFAULT_PREFS, NOTIFICATION_KINDS, readPrefs } from './features/settings/notifications';
 import { memoryStore, type WatchStore } from './features/watch/store';
 import { FakeGarmin, type WatchTransport } from './features/watch/transport';
 import type { WatchOp } from './features/watch/queue';
