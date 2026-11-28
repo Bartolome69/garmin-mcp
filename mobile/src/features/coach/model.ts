@@ -271,6 +271,23 @@ export function addSource(sources: string[] | undefined, tool: string): string[]
   return chip && !list.includes(chip) ? [...list, chip] : list;
 }
 
+// -- finishing a proposal in Plan ----------------------------------------------------------
+
+/**
+ * Where "Do it in Plan" goes for a proposal the phone can't stage (the pilot's `pending`
+ * carries only the tool's name and a summary), and what to do there. TODO(server): the v1's
+ * `pending` carries `request` or `proposal`, and the card opens the shared diff instead.
+ */
+export function inPlanFor(tool: string | null | undefined): { href: '/plan' | '/plan/builder'; label: string; hint: string } {
+  if (tool === 'create_workout' || tool === 'create_strength_workout' || tool === 'update_workout') {
+    return { href: '/plan/builder', label: 'Build it in Plan', hint: 'Build this workout in Plan, with the change above. It goes through the same review there.' };
+  }
+  if (tool === 'move_session' || tool === 'schedule_workout' || tool === 'unschedule_workout' || tool === 'delete_workout') {
+    return { href: '/plan', label: 'Do it in Plan', hint: 'In Plan, open the session above and use Move, Swap or Skip. It goes through the same review there.' };
+  }
+  return { href: '/plan', label: 'Do it in Plan', hint: 'Finish this in Plan: it goes through the same review there.' };
+}
+
 // -- context tags from the entry points ----------------------------------------------------
 
 /** The tag a question carries when the Coach opens from somewhere: /coach?run=…&label=…, ?about=readiness, ?session=…. */

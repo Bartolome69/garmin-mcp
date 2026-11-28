@@ -23,7 +23,7 @@ import type { WatchState } from '../today/model';
 import type { DiffSession, Proposal } from '../watch/model';
 import { MEDICAL } from '../watch/proposals';
 import { InlineChartView } from './InlineChart';
-import type { CoachMessage, ContextTag, Limit, ThreadRow } from './model';
+import { inPlanFor, type CoachMessage, type ContextTag, type Limit, type ThreadRow } from './model';
 
 /** Where a proposal card stands: still to review, or following its watch operations. */
 export type CardState = {
@@ -40,7 +40,8 @@ export type CoachActions = {
   feedback: (id: string, value: 'up' | 'down') => void;
   review: (m: CoachMessage) => void;
   decline: (id: string) => void;
-  inPlan: () => void;
+  /** Finish a proposal in Plan (inPlanFor says where and what to do there). */
+  inPlan: (m: CoachMessage) => void;
   resend: (opId: string) => void;
   showEarlier: () => void;
   limit: () => void;
@@ -165,6 +166,7 @@ function Card({ m, card, actions, brand }: { m: CoachMessage; card: CardState; a
   const p = card.proposal;
   const n = p?.ops.length ?? 0;
   const pending = m.status === 'pending' && !card.batch;
+  const inPlan = inPlanFor(m.tool);
   return (
     <View testID={`proposal-${m.id}`} style={{ alignSelf: 'stretch', gap: 10, padding: 16, borderRadius: 16, backgroundColor: colors.surface,
       borderWidth: 1, borderColor: colors.hairline }}>
@@ -192,7 +194,7 @@ function Card({ m, card, actions, brand }: { m: CoachMessage; card: CardState; a
               {card.batch.error ? <Text variant="footnote" tone="brandText">{card.batch.error}</Text> : null}
               <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                 <Button label="Resend" kind="primary" brand={brand} small onPress={() => card.batch?.opId && actions.resend(card.batch.opId)} />
-                <Button label="Do it in Plan" small onPress={actions.inPlan} />
+                <Button label="Do it in Plan" small onPress={() => actions.inPlan(m)} />
               </View>
               <Text variant="footnote" tone="muted">Nothing changed on your watch.</Text>
             </>
@@ -200,11 +202,11 @@ function Card({ m, card, actions, brand }: { m: CoachMessage; card: CardState; a
         </View>
       ) : pending ? (
         <>
-          {!card.canReview ? <Text variant="footnote" tone="muted">Finish this in Plan: it goes through the same review there.</Text> : null}
+          {!card.canReview ? <Text variant="footnote" tone="muted" testID={`proposal-hint-${m.id}`}>{inPlan.hint}</Text> : null}
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
             {card.canReview
               ? <Button label={n ? `Review ${n} watch change${n === 1 ? '' : 's'}` : 'Review the change'} kind="primary" brand={brand} small onPress={() => actions.review(m)} />
-              : <Button label="Do it in Plan" small onPress={actions.inPlan} />}
+              : <Button label={inPlan.label} small onPress={() => actions.inPlan(m)} />}
             <Button label="Not now" small onPress={() => actions.decline(m.id)} />
           </View>
         </>

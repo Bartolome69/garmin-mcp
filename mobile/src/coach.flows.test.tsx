@@ -30,6 +30,7 @@ import CoachNewWeek from './app/(tabs)/coach/new-week';
 import CrewIndex from './app/(tabs)/crew/index';
 import PlanLayout from './app/(tabs)/plan/_layout';
 import PlanIndex from './app/(tabs)/plan/index';
+import PlanBuilder from './app/(tabs)/plan/builder';
 import PlanNext from './app/(tabs)/plan/next';
 import PlanRun from './app/(tabs)/plan/run/[id]';
 import PlanSession from './app/(tabs)/plan/session/[id]';
@@ -76,7 +77,7 @@ function app(coach: CoachApi, garmin = new FakeGarmin(), flags: Flags = ON) {
     _layout: () => <Root />,
     '(tabs)/_layout': TabsLayout,
     '(tabs)/today/_layout': TodayLayout, '(tabs)/today/index': TodayIndex,
-    '(tabs)/plan/_layout': PlanLayout, '(tabs)/plan/index': PlanIndex, '(tabs)/plan/next': PlanNext,
+    '(tabs)/plan/_layout': PlanLayout, '(tabs)/plan/index': PlanIndex, '(tabs)/plan/next': PlanNext, '(tabs)/plan/builder': PlanBuilder,
     '(tabs)/plan/run/[id]': PlanRun, '(tabs)/plan/session/[id]': PlanSession,
     '(tabs)/coach/_layout': CoachLayout, '(tabs)/coach/index': CoachIndex, '(tabs)/coach/menu': CoachMenu,
     '(tabs)/coach/filter': CoachFilter, '(tabs)/coach/clear': CoachClear, '(tabs)/coach/limit': CoachLimit,
@@ -221,9 +222,19 @@ describe('3. A proposal', () => {
     ] });
     await openCoach(fake);
     const card = within(await screen.findByTestId('proposal-2'));
-    expect(card.getByText('Finish this in Plan: it goes through the same review there.')).toBeTruthy();
+    expect(card.getByTestId('proposal-hint-2')).toHaveTextContent('In Plan, open the session above and use Move, Swap or Skip. It goes through the same review there.');
     await fireEvent.press(card.getByTestId('button-Do it in Plan'));
     expect(await screen.findByTestId('week-title')).toBeTruthy();
+  });
+  it('a new workout the server can’t describe is built in Plan’s builder', async () => {
+    await openCoach(new FakeCoach({ messages: [
+      { id: 1, role: 'user', text: 'Add strides on Saturday', status: 'sent', at: nowS() },
+      { id: 2, role: 'action', text: 'Create “Easy 6 km + strides” on Sat 28 Nov.', status: 'pending', tool: 'create_workout', at: nowS() },
+    ] }));
+    const card = within(await screen.findByTestId('proposal-2'));
+    expect(card.getByTestId('proposal-hint-2')).toHaveTextContent(/^Build this workout in Plan/);
+    await fireEvent.press(card.getByTestId('button-Build it in Plan'));
+    expect(await screen.findByTestId('builder')).toBeTruthy();
   });
 });
 

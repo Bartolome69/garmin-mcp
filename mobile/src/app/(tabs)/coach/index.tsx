@@ -4,7 +4,7 @@ import { Pressable, View } from 'react-native';
 
 import { useCoach } from '../../../features/coach/CoachProvider';
 import { CoachView, type CardState } from '../../../features/coach/CoachView';
-import { contextFrom, filterByTag, hhmm, searchThread, tagKey, threadRows, type CoachMessage } from '../../../features/coach/model';
+import { contextFrom, filterByTag, hhmm, inPlanFor, searchThread, tagKey, threadRows, type CoachMessage } from '../../../features/coach/model';
 import type { WatchOp } from '../../../features/watch/queue';
 import { useWatch } from '../../../features/watch/WatchProvider';
 import { useFlags } from '../../../flags/FlagsProvider';
@@ -129,7 +129,7 @@ export default function CoachScreen() {
           feedback: (id, v) => { coach.feedback(id, v); },
           review: (m) => { review(m); },
           decline: (id) => { coach.decline(id); },
-          inPlan: () => router.push('/plan'),
+          inPlan: (m) => router.push(inPlanFor(m.tool).href),
           resend: (opId) => watch.resend(opId),
           showEarlier: () => coach.setShowEarlier(true),
           limit: () => router.push('/coach/limit'),
