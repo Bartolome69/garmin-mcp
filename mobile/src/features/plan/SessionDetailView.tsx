@@ -15,6 +15,7 @@ import { Text } from '../../ui/Text';
 import { WatchCard } from '../watch/WatchCard';
 import type { Basis, PlanSession } from './model';
 import { StepsCard } from './StepsCard';
+import { READABLE } from '../../ui/Screen';
 
 export { targetWords } from './StepsCard';
 
@@ -54,7 +55,7 @@ export function SessionDetailView({ session, basis, coach, step, onStep, device 
   const watch = session.watch;
   return (
     <ScrollView testID="session" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 12 }}>
       <View style={{ gap: 6 }}>
         <TypeChip type={session.type} label={session.typeLabel} />
         <Text variant="title" accessibilityRole="header" numeric>{session.title}</Text>

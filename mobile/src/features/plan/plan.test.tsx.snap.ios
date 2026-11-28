@@ -8746,8 +8746,11 @@ exports[`snapshot: session detail on ios: session-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 12,
+      "maxWidth": 680,
       "padding": 16,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"

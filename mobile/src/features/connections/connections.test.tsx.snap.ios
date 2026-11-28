@@ -4,8 +4,11 @@ exports[`snapshot: Connections on ios: connections-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 10,
+      "maxWidth": 680,
       "padding": 16,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -1642,8 +1645,11 @@ exports[`snapshot: Source priority on ios: priority-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 12,
+      "maxWidth": 680,
       "padding": 16,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"

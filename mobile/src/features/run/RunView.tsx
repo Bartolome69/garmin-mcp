@@ -4,7 +4,7 @@
 // scrub line shared by every metric (Cadence and Elevation as further tabs), one
 // rule-based takeaway under each chart, and the HR zones card (a text-opacity ramp,
 // labelled). Every number is the server's (model.ts); this file only draws it.
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, G, Line, Path, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
@@ -17,13 +17,17 @@ import { Icon } from '../../ui/Icon';
 import { TypeChip } from '../../ui/session/TypeChip';
 import { Text } from '../../ui/Text';
 import { lapAt, pointAt, type Chart, type Metric, type RunVM, type Takeaway } from './model';
+import { useRenderCount } from '../../ui/hooks';
+import { READABLE } from '../../ui/Screen';
 
 // -- route --------------------------------------------------------------------------------
 
 const MAP_W = 350, MAP_H = 110, MAP_PAD = 14;
 
-export function RouteMap({ route, km }: { route: NonNullable<RunVM['route']>; km: number }) {
+// Memoised: scrubbing the charts redraws the screen, never the map (its path is only the route's).
+export const RouteMap = memo(function RouteMap({ route, km }: { route: NonNullable<RunVM['route']>; km: number }) {
   const { colors } = useTheme();
+  useRenderCount('RouteMap');
   const ex = route.aspect >= 1 ? 1 : route.aspect;
   const ey = route.aspect >= 1 ? 1 / route.aspect : 1;
   const s = Math.min((MAP_W - 2 * MAP_PAD) / ex, (MAP_H - 2 * MAP_PAD) / ey);
@@ -41,7 +45,7 @@ export function RouteMap({ route, km }: { route: NonNullable<RunVM['route']>; km
       </Svg>
     </View>
   );
-}
+});
 
 // -- Coach debrief ------------------------------------------------------------------------
 
@@ -156,6 +160,25 @@ function TakeawayRow({ t, metric }: { t: Takeaway; metric: Metric }) {
   );
 }
 
+/** The chart's line as point lists, broken at gaps in the readings. */
+export function linePoints(vm: RunVM, metric: Metric, chart: Chart): string[] {
+  const dom = chart.domain!;
+  const total = vm.totalKm || 1;
+  const x = (k: number) => LEFT + (k / total) * (RIGHT - LEFT);
+  const y = (v: number) => {
+    const f = (v - dom.min) / (dom.max - dom.min || 1);
+    return chart.inverted ? TOP + f * (BOTTOM - TOP) : BOTTOM - f * (BOTTOM - TOP);
+  };
+  const runs: string[][] = [[]];
+  vm.series[metric].forEach((v, i) => {
+    if (v == null) { if (runs[runs.length - 1].length) runs.push([]); return; }
+    runs[runs.length - 1].push(`${x(vm.series.km[i]).toFixed(1)},${y(v).toFixed(1)}`);
+  });
+  linePoints.calls += 1;
+  return runs.filter((r) => r.length > 1).map((r) => r.join(' '));
+}
+linePoints.calls = 0;
+
 function ChartSvg({ vm, metric, chart, km }: { vm: RunVM; metric: Metric; chart: Chart; km: number }) {
   const { colors } = useTheme();
   const dom = chart.domain!;
@@ -165,12 +188,9 @@ function ChartSvg({ vm, metric, chart, km }: { vm: RunVM; metric: Metric; chart:
     const f = (v - dom.min) / (dom.max - dom.min || 1);
     return chart.inverted ? TOP + f * (BOTTOM - TOP) : BOTTOM - f * (BOTTOM - TOP);
   };
-  // A gap in the readings breaks the line rather than joining across it.
-  const runs: string[][] = [[]];
-  vm.series[metric].forEach((v, i) => {
-    if (v == null) { if (runs[runs.length - 1].length) runs.push([]); return; }
-    runs[runs.length - 1].push(`${x(vm.series.km[i]).toFixed(1)},${y(v).toFixed(1)}`);
-  });
+  // A gap in the readings breaks the line rather than joining across it. Worked out once per
+  // run and metric: scrubbing moves only the marker, not the line (memoised; see PERFORMANCE.md).
+  const runs = useMemo(() => linePoints(vm, metric, chart), [vm, metric, chart]);
   const i = pointAt(vm, km);
   const v = vm.series[metric][i];
   const sx = x(vm.series.km[i]);
@@ -187,8 +207,8 @@ function ChartSvg({ vm, metric, chart, km }: { vm: RunVM; metric: Metric; chart:
           <SvgText x={LEFT - 4} y={y(t.value) + 3} textAnchor="end" fill={colors.muted} fontSize={10} fontFamily={FONT_FILES.mono}>{t.label}</SvgText>
         </G>
       ))}
-      {runs.filter((r) => r.length > 1).map((r, k) => (
-        <Polyline key={k} points={r.join(' ')} fill="none" stroke={colors.text} strokeWidth={2} strokeLinejoin="round" />
+      {runs.map((r, k) => (
+        <Polyline key={k} points={r} fill="none" stroke={colors.text} strokeWidth={2} strokeLinejoin="round" />
       ))}
       <Line testID={`scrub-${metric}`} x1={sx} y1={TOP} x2={sx} y2={BOTTOM} stroke={colors.text} strokeWidth={1.2} />
       {v != null ? <Circle cx={sx} cy={y(v)} r={4} fill={colors.text} /> : null}
@@ -295,7 +315,7 @@ export function RunView({ vm, coach, onAsk }: { vm: RunVM; coach: boolean; onAsk
   const [km, setKm] = useState(vm.scrubKm);
   return (
     <ScrollView testID="run" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, paddingTop: 4, gap: 10 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, paddingTop: 4, gap: 10 }}>
       {vm.route ? <RouteMap route={vm.route} km={vm.totalKm} /> : null}
       {coach && vm.coach?.debrief ? <Debrief text={vm.coach.debrief} onAsk={onAsk} /> : null}
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>

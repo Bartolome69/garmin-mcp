@@ -4,8 +4,11 @@ exports[`snapshot: a refusal on ios: builder-refused-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 12,
+      "maxWidth": 680,
       "padding": 16,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -453,8 +456,11 @@ exports[`snapshot: the builder on ios: builder-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 12,
+      "maxWidth": 680,
       "padding": 16,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"

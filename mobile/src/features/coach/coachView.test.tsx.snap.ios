@@ -16,7 +16,7 @@ exports[`The Coach on ios, dark one thread: older days collapsed, today with its
       {
         "alignSelf": "center",
         "gap": 10,
-        "maxWidth": 720,
+        "maxWidth": 680,
         "padding": 16,
         "width": "100%",
       }
@@ -1931,7 +1931,7 @@ exports[`The Coach on ios, light one thread: older days collapsed, today with it
       {
         "alignSelf": "center",
         "gap": 10,
-        "maxWidth": 720,
+        "maxWidth": 680,
         "padding": 16,
         "width": "100%",
       }

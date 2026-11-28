@@ -4,9 +4,12 @@ exports[`snapshot: post-run on ios: run-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 10,
+      "maxWidth": 680,
       "padding": 16,
       "paddingTop": 4,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"
@@ -2753,9 +2756,12 @@ exports[`snapshot: post-run with the Coach on ios: run-coach-ios 1`] = `
 <RCTScrollView
   contentContainerStyle={
     {
+      "alignSelf": "center",
       "gap": 10,
+      "maxWidth": 680,
       "padding": 16,
       "paddingTop": 4,
+      "width": "100%",
     }
   }
   contentInsetAdjustmentBehavior="automatic"

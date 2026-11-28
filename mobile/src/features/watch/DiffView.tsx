@@ -14,6 +14,7 @@ import { Card } from '../../ui/Card';
 import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
 import type { DiffDay, DiffSession, LoadPair, Proposal } from './model';
+import { READABLE } from '../../ui/Screen';
 
 function Rail({ s }: { s: DiffSession | null }) {
   const { colors } = useTheme();
@@ -110,7 +111,7 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
   const nothing = !p.ops.length;
   return (
     <ScrollView testID="diff" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 14 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 14 }}>
       <View style={{ gap: 4 }}>
         {p.kicker ? <Text variant="kicker" tone="muted" testID="diff-kicker">{p.kicker}</Text> : null}
         <Text variant="title" accessibilityRole="header" testID="diff-title">{p.title}</Text>

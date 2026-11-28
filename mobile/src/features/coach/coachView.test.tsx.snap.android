@@ -16,7 +16,7 @@ exports[`The Coach on android, dark one thread: older days collapsed, today with
       {
         "alignSelf": "center",
         "gap": 10,
-        "maxWidth": 720,
+        "maxWidth": 680,
         "padding": 16,
         "width": "100%",
       }
@@ -1981,7 +1981,7 @@ exports[`The Coach on android, light one thread: older days collapsed, today wit
       {
         "alignSelf": "center",
         "gap": 10,
-        "maxWidth": 720,
+        "maxWidth": 680,
         "padding": 16,
         "width": "100%",
       }

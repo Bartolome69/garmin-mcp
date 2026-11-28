@@ -17,6 +17,7 @@ import { COMING_NOTE } from '../plus/coming';
 import { openGarminSignIn } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { badgeWords, mergeTitle, mergeWords, prioritySummary, sourceName, youSummary, type ConnectionsVM, type Provider } from './model';
+import { READABLE } from '../../ui/Screen';
 
 export const DISCLAIMER = '“Connected to” means you linked your own account. Daash is independent and not endorsed by any watch maker.';
 
@@ -127,7 +128,7 @@ export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated 
   const told = asked.includes(`tell:${coming}`);
   return (
     <ScrollView testID="connections" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 10 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 10 }}>
       {updated ? <Text testID="connections-updated" variant="footnote" tone="muted">{updated}</Text> : null}
       {vm.providers.map((p) => <ProviderCard key={p.key} p={p} os={os} onReconnect={actions.reconnect} />)}
       {!vm.providers.length ? (
@@ -172,7 +173,7 @@ export function YouView({ vm, brand, actions, children, plus, top, settings }: {
   const broken = vm?.providers.filter((p) => p.state === 'reconnect') ?? [];
   return (
     <ScrollView testID="you" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 10, width: '100%', maxWidth: 680, alignSelf: 'center' }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 10 }}>
       {top}
       {broken.map((p) => (
         <Card key={p.key} testID={`trust-${p.key}`} style={{ gap: 8, borderWidth: 1, borderColor: colors.warning }}>
@@ -257,7 +258,7 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
   const kept = (key: string) => { const p = vm.providers.find((x) => x.key === key); return p ? sourceName(p, os) : key; };
   return (
     <ScrollView testID="priority" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 12 }}>
       <Text variant="footnote" tone="muted">When two sources send the same run, Daash keeps the one higher on this list and hides the other. Drag to reorder.</Text>
       <View testID="priority-list" style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden' }}>
         {sources.map((p, i) => <PriorityRow key={p.key} index={i} count={sources.length} title={sourceName(p, os)} sub={p.reads} onMove={move} />)}
@@ -298,7 +299,7 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
 
 export function SeeSheet({ vm, os = Platform.OS }: { vm: ConnectionsVM; os?: string }) {
   return (
-    <ScrollView testID="see-sheet" contentContainerStyle={{ padding: 20, gap: 12 }}>
+    <ScrollView testID="see-sheet" contentContainerStyle={{ ...READABLE, padding: 20, gap: 12 }}>
       <Text variant="title" accessibilityRole="header">What Daash can and can’t see</Text>
       {vm.providers.map((p) => {
         const can = p.caps.filter((c) => c.on).map((c) => c.label.toLowerCase());
@@ -319,7 +320,7 @@ export function SeeSheet({ vm, os = Platform.OS }: { vm: ConnectionsVM; os?: str
 export function TroubleSheet({ vm, onReconnect }: { vm: ConnectionsVM; onReconnect: (p: Provider) => void }) {
   const broken = vm.providers.filter((p) => p.state === 'reconnect');
   return (
-    <ScrollView testID="trouble-sheet" contentContainerStyle={{ padding: 20, gap: 12 }}>
+    <ScrollView testID="trouble-sheet" contentContainerStyle={{ ...READABLE, padding: 20, gap: 12 }}>
       <Text variant="title" accessibilityRole="header">Trouble connecting?</Text>
       {[
         'Open your watch’s own app and check the watch has synced there. Daash only sees what reaches it.',

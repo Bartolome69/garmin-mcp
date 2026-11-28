@@ -18,6 +18,7 @@ import { TYPE_TOKEN } from '../../ui/session/types';
 import { FAILURE_WORDS } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { WatchCard } from '../watch/WatchCard';
+import { READABLE } from '../../ui/Screen';
 import {
   DISTANCES, EXPERIENCE, WEEKLY, goalValid, parseRaceDate, raceName, raceSeconds,
   type Experience, type Goal, type Landing, type PaceResult, type Reveal, type Weekly,
@@ -27,7 +28,7 @@ function Step({ kicker, title, sub, children, footer, testID }: { kicker?: strin
   const { colors } = useTheme();
   return (
     <View testID={testID} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingTop: 24, gap: 12 }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ ...READABLE, padding: 20, paddingTop: 24, gap: 12 }}>
         {kicker ? <Text variant="kicker" tone="muted">{kicker}</Text> : null}
         <Text variant="largeTitle" accessibilityRole="header">{title}</Text>
         {sub ? <Text variant="body" tone="muted">{sub}</Text> : null}
@@ -85,7 +86,7 @@ export function Welcome({ brand, onTry, onSetUp, onSignIn, signingIn = false, si
   const { colors } = useTheme();
   return (
     <ScrollView testID="welcome" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 72, paddingBottom: 40, gap: 24, justifyContent: 'space-between' }}>
+      contentContainerStyle={{ ...READABLE, flexGrow: 1, padding: 24, paddingTop: 72, paddingBottom: 40, gap: 24, justifyContent: 'space-between' }}>
       <View style={{ gap: 18 }}>
         {/* The mark: decoration, so it doesn't grow with the text and isn't read out. */}
         <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
@@ -451,7 +452,7 @@ export function LandedView({ first, landing, brand, device, home = 'Today', ask 
   const day = LONG_DAYS[first.dow] ?? first.dow;
   const page = (children: ReactNode) => (
     <ScrollView testID="ob-landed" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ flexGrow: 1, padding: 24, paddingTop: 80, paddingBottom: 40, gap: 18 }}>
+      contentContainerStyle={{ ...READABLE, flexGrow: 1, padding: 24, paddingTop: 80, paddingBottom: 40, gap: 18 }}>
       {children}
     </ScrollView>
   );

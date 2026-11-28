@@ -14,6 +14,7 @@ import { TypeChip } from '../../ui/session/TypeChip';
 import { Text } from '../../ui/Text';
 import type { RunListItem } from '../run/source';
 import { NOTIFICATION_KINDS, type NotificationKind, type NotificationPrefs } from './notifications';
+import { READABLE } from '../../ui/Screen';
 
 export const INDEPENDENT = 'Daash is independent and not endorsed by any watch maker.';
 export const APP_VERSION = `Daash ${Constants.expoConfig?.version ?? ''}`.trim();
@@ -22,7 +23,7 @@ function Page({ testID, children }: { testID: string; children: React.ReactNode 
   const { colors } = useTheme();
   return (
     <ScrollView testID={testID} contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 10, width: '100%', maxWidth: 680, alignSelf: 'center' }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 10 }}>
       {children}
     </ScrollView>
   );

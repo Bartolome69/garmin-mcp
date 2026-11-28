@@ -12,7 +12,7 @@
 // (a virtualised list) shrinks and stays on the newest message, the composer sits on
 // the keyboard, and the tab bar hides while it's up. Each message row is memoised, so a
 // streamed token redraws only the reply it belongs to.
-import { memo, useCallback, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { memo, useCallback, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 
 import type { FailureKind } from '../../data/resource';
@@ -21,6 +21,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { keyboardOverlap, useKeyboard } from '../../ui/keyboard';
+import { useRenderCount, useStableActions } from '../../ui/hooks';
 import { useAnnounce } from '../../ui/motion';
 import { FailureBanner } from '../../ui/StateViews';
 import { WatchStatus } from '../../ui/session/WatchStatus';
@@ -31,6 +32,7 @@ import type { DiffSession, Proposal } from '../watch/model';
 import { MEDICAL } from '../watch/proposals';
 import { InlineChartView } from './InlineChart';
 import { inPlanFor, type CoachMessage, type ContextTag, type Limit, type ThreadRow } from './model';
+import { READABLE } from '../../ui/Screen';
 
 /** Where a proposal card stands: still to review, or following its watch operations. */
 export type CardState = {
@@ -106,6 +108,7 @@ const Reply = memo(function Reply({ m, actions }: { m: CoachMessage; actions: Co
   const { colors } = useTheme();
   const streaming = m.status === 'streaming';
   const note = flagWords(m.flags ?? []);
+  useRenderCount(`coach-row:${m.id}`);
   // Said once it's finished, not token by token (a live region on the text would read every word as it lands).
   useAnnounce(!streaming && m.text ? `The Coach: ${m.text}` : null);
   return (
@@ -147,6 +150,7 @@ const Reply = memo(function Reply({ m, actions }: { m: CoachMessage; actions: Co
 });
 
 const Question = memo(function Question({ m, actions, blocked }: { m: CoachMessage; actions: CoachActions; blocked: boolean }) {
+  useRenderCount(`coach-row:${m.id}`);
   const { colors } = useTheme();
   return (
     <View style={{ gap: 6, alignSelf: 'stretch' }}>
@@ -172,14 +176,6 @@ const sessionWords = (s: DiffSession | null) => (s ? s.title : 'Rest');
 const sameCard = (a: CardState, b: CardState) => a.proposal === b.proposal && a.canReview === b.canReview
   && a.batch?.state === b.batch?.state && a.batch?.at === b.batch?.at && a.batch?.error === b.batch?.error && a.batch?.opId === b.batch?.opId;
 const NO_CARD: CardState = { proposal: null, canReview: false, batch: null };
-
-/** The same actions object across renders, each calling the latest handler: memoised rows don't redraw for a new closure. */
-function useStableActions<T extends Record<string, (...args: never[]) => unknown>>(actions: T): T {
-  const latest = useRef(actions);
-  latest.current = actions;
-  return useMemo(() => Object.fromEntries(Object.keys(actions).map((k) => [k, (...args: never[]) => latest.current[k](...args)])) as T,
-    []); // eslint-disable-line react-hooks/exhaustive-deps
-}
 
 const rowKey = (r: ThreadRow, i: number) => (r.kind === 'message' ? r.m.id : r.kind === 'earlier' ? 'earlier' : `day-${r.label}-${i}`);
 
@@ -401,7 +397,7 @@ export function CoachView({ rows, empty, starters, limit, offline, streaming, co
 
       <FlatList ref={list} testID="coach-thread" data={rows} keyExtractor={rowKey} renderItem={renderRow}
         ListHeaderComponent={top ?? undefined} style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, gap: 10, width: '100%', maxWidth: 720, alignSelf: 'center' }}
+        contentContainerStyle={{ ...READABLE, padding: 16, gap: 10 }}
         keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic"
         initialNumToRender={20} windowSize={11} removeClippedSubviews={false}
         onContentSizeChange={toEnd} onLayout={toEnd}

@@ -80,6 +80,7 @@
         ]
       }
     ],
-    "testTimeout": 30000
+    "testTimeout": 30000,
+    "workerIdleMemoryLimit": "1200MB"
   }
 }

@@ -11,6 +11,7 @@ import { TYPE_TOKEN } from '../../ui/session/types';
 import { Text } from '../../ui/Text';
 import type { Decision } from '../today/model';
 import type { WidgetSnapshot } from './snapshot';
+import { READABLE } from '../../ui/Screen';
 
 const DECISION_TONE: Record<Decision, 'success' | 'text2' | 'warning'> = { push: 'success', hold: 'text2', back_off: 'warning' };
 
@@ -150,7 +151,7 @@ export function WidgetsView({ snapshot, plus, os = Platform.OS, onPlus, expoGo =
   const places = widgetPlaces(os);
   return (
     <ScrollView testID="widgets" contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ padding: 16, gap: 14 }}>
+      contentContainerStyle={{ ...READABLE, padding: 16, gap: 14 }}>
       <Text testID="widgets-intro" variant="body" tone="muted">{`Readiness, today’s session, your week and the race countdown, on your ${places}.`}</Text>
       {plus ? <WidgetPreviews s={snapshot} os={os} /> : (
         <LockedPreview testID="widgets-locked" buttonTestID="widgets-see-plus" caption={`${places[0].toUpperCase()}${places.slice(1)} widgets are in Plus`} onPress={onPlus}>

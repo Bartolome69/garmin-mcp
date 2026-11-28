@@ -11,6 +11,7 @@ import { Dimensions } from 'react-native';
 
 import { OnboardingStack } from '../app/onboarding/_layout';
 import { FakeCoach } from '../features/coach/fake';
+import type { CoachApi } from '../features/coach/api';
 import type { ServerMessage } from '../features/coach/model';
 import { CoachApiContext } from '../features/coach/source';
 import { OnboardingProvider } from '../features/onboarding/OnboardingProvider';
@@ -59,13 +60,13 @@ export function routeFiles(dir = APP_DIR, base = ''): string[] {
 /** Screens (not layouts) a runner can land on. The root index only redirects. */
 export const screenRoutes = () => routeFiles().filter((r) => !/(^|\/)_layout$/.test(r) && r !== 'index');
 
-export function app(scheme: 'dark' | 'light', coach = true, opts: { messages?: () => ServerMessage[] } = {}) {
+export function app(scheme: 'dark' | 'light', coach = true, opts: { messages?: () => ServerMessage[]; api?: CoachApi } = {}) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial={scheme}>
       <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach }}>
         <EntitlementsProvider store={new FakeStore()} fetcher={async () => { throw new Error('offline'); }}>
           <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false} pollEveryMs={0}>
-            <CoachApiContext.Provider value={new FakeCoach({ messages: (opts.messages ?? COACH_MESSAGES)() })}>
+            <CoachApiContext.Provider value={opts.api ?? new FakeCoach({ messages: (opts.messages ?? COACH_MESSAGES)() })}>
               <Probe />
               {children ?? <Stack screenOptions={{ headerShown: false }} />}
             </CoachApiContext.Provider>
