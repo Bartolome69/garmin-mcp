@@ -25,7 +25,7 @@ from datetime import datetime  # noqa: E402
 from datetime import timezone  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
 
-from garmin_mcp.domain import adjust, backtoback, connections, dedupe, onboarding, paces, postrun, proposal  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, coach_guard, connections, dedupe, onboarding, paces, postrun, proposal  # noqa: E402
 from garmin_mcp.domain.model import Activity  # noqa: E402
 from garmin_mcp.domain.load import band  # noqa: E402
 from garmin_mcp.domain.model import Session  # noqa: E402
@@ -287,15 +287,101 @@ def onboarding_cases() -> dict:
     }
 
 
+# The Coach's reply corpus (build prompt, sections 1, 5.10 and 12): replies a Coach may
+# send, and replies it must not, each labelled by hand with the kinds a reader would
+# flag. The Python guard must give exactly these labels (tests/domain_test.py); the
+# app's twin must give what the Python guard gives (mobile/src/domain/replyGuard.test.ts).
+REPLIES_OK = [
+    "Rep 6 peaked at 172 bpm, 4 above rep 5.",
+    "HRV has been under your range of 54–66 ms for two nights: 52 and 49 ms.",
+    "Pace held at 4:01, and your peak heart rate on rep 6 was 172, 4 bpm above rep 5. You slept 4:45 and 5:10 the two "
+    "nights before. Next week's plan doesn't change.",
+    "Your call. Sleep was 2h under your usual and HRV is below your range. If you go, the plan's target is 4:23–4:28 /km.",
+    "Easy means easy, and this was. Nothing to change for tomorrow.",
+    "Daash doesn't give medical advice. If you're unwell or hurt, check with a doctor or physio.",
+    "I've proposed making today easier: the tempo becomes Easy 6 km. It's waiting for your confirm.",
+    "This week you've run 28 of 54 km planned.",
+    "You don't need to change anything this week.",
+    "Readiness is 26, Garmin's score. Two of three signals are below your usual.",
+    "The tempo is your only hard day left this week.",
+    "Your resting heart rate was 48, 3 above your 30-day average.",
+    "Thursday's run club was 9 km at 5:14 /km, faster than your easy range of 5:27–6:10.",
+    "You mentioned your achilles. Daash doesn’t give medical advice. If you’re unwell or hurt, check with a doctor or "
+    "physio. The plan can ease off while you find out.",
+    "Saved to memory: travelling 1 to 3 Dec. The long run stays on Sunday.",
+    "Sleep was 4:45 last night, 2h under your usual 7:15.",
+    # Ordinary coaching words an earlier version of the rules flagged.
+    "Treat the first 2 km as a warm-up.",
+    "Want me to explain the paces?",
+    "Tell me if you need to move it.",
+    "You said you can never do intervals on Monday, so they're on Tuesdays.",
+    "The plan leads to race day on 14 March.",
+    "When you need to move a session, ask here or use Life happened.",
+]
+REPLIES_BAD = [
+    ("Because your HRV dropped, you are more tired than usual.", ["cause"]),
+    ("Rep 6 was slower, in line with your short sleep.", ["cause"]),
+    ("Your heart rate was high due to the heat and your poor sleep.", ["cause"]),
+    ("The short night explains the higher heart rate.", ["cause"]),
+    ("That's why your legs felt heavy on Wednesday.", ["cause"]),
+    ("Friday was easy, so your legs will be fine.", ["cause", "certainty"]),
+    ("Low HRV means you are fatigued.", ["cause"]),
+    ("Your fatigue is caused by too much load.", ["cause"]),
+    ("It sounds like shin splints.", ["diagnosis"]),
+    ("You might have a stress fracture.", ["diagnosis"]),
+    ("You’re overtrained.", ["diagnosis"]),
+    ("These are signs of overtraining.", ["diagnosis"]),
+    ("It's probably just a strain.", ["diagnosis"]),
+    ("Take ibuprofen and ice it after the run.", ["medical"]),
+    ("You can run through the pain if it's mild.", ["medical"]),
+    ("Ice the achilles and it should heal in a week.", ["medical"]),
+    ("You must do the tempo today.", ["certainty"]),
+    ("This will definitely get you under 3:15.", ["certainty"]),
+    ("You need to rest for three days.", ["certainty"]),
+    ("You have to take Sunday off.", ["certainty"]),
+    ("Skip the long run; it will make you faster for sure.", ["certainty"]),
+    ("Because of your short sleep you should take it easy, and you might have a cold.", ["cause", "diagnosis"]),
+    # Causes and diagnoses an earlier version of the rules missed.
+    ("Your short sleep made the reps harder.", ["cause"]),
+    ("Poor sleep affected your HRV.", ["cause"]),
+    ("The late night is why rep 6 felt hard.", ["cause"]),
+    ("Your HRV dropped from the alcohol.", ["cause"]),
+    ("You are probably getting ill.", ["diagnosis"]),
+    ("This could be an early sign of a stress fracture.", ["diagnosis"]),
+    ("Treat the achilles with rest for a week.", ["medical"]),
+    ("Never skip the long run.", ["certainty"]),
+]
+# The numbers rule: every number in a reply must be in what the model was given.
+REPLY_NUMBERS = [
+    ("Rep 6 peaked at 172 bpm, 4 above rep 5.",
+     {"laps": [{"label": "Rep 5", "hr_peak": 168}, {"label": "Rep 6", "hr_peak": 172}], "delta_bpm": 4}, []),
+    ("Rep 6 peaked at 175 bpm.", {"laps": [{"label": "Rep 6", "hr_peak": 172}]}, ["175"]),
+    ("HRV 49 ms, below your range of 54–66.", {"hrv": {"last": 49, "band": [54, 66]}}, []),
+    ("Pace held at 4:01.", {"reps": {"avg": "4:01 /km"}}, []),
+    ("If you go, cap reps at 4:30 /km.", {"target": "4:23–4:28 /km"}, ["4:30"]),
+    ("Sleep was 4:45, against 7:15 usual. Synced 07:02.", {"sleep": "4:45", "usual": "7:15", "synced": "7:02"}, []),
+    ("You ran 6 km of a planned 6.0.", {"km": 6.0}, []),
+]
+
+
+def coach_reply_cases() -> dict:
+    replies = [{"text": t, "label": [], "kinds": coach_guard.kinds(t)} for t in REPLIES_OK]
+    replies += [{"text": t, "label": label, "kinds": coach_guard.kinds(t)} for t, label in REPLIES_BAD]
+    nums = [{"text": t, "payload": payload, "label": label, "unmatched": coach_guard.unmatched_numbers(t, payload)}
+            for t, payload, label in REPLY_NUMBERS]
+    return {"rules": coach_guard.RULES, "replies": replies, "numbers": nums}
+
+
 FILES = {"paces.json": paces_cases, "backtoback.json": backtoback_cases, "proposals.json": proposal_cases,
          "postrun.json": postrun_cases, "connections.json": connections_cases, "dedupe.json": dedupe_cases,
-         "onboarding.json": onboarding_cases}
+         "onboarding.json": onboarding_cases, "coach_replies.json": coach_reply_cases}
 # The app's development build reads its own copy: Metro bundles only what's inside mobile/.
 COPIES = {"proposals.json": ROOT / "mobile" / "src" / "features" / "watch" / "proposals.fixture.json",
           "postrun.json": ROOT / "mobile" / "src" / "features" / "run" / "runs.fixture.json",
           "connections.json": ROOT / "mobile" / "src" / "features" / "connections" / "connections.fixture.json",
           "dedupe.json": ROOT / "mobile" / "src" / "domain" / "dedupe.fixture.json",
-          "onboarding.json": ROOT / "mobile" / "src" / "features" / "onboarding" / "onboarding.fixture.json"}
+          "onboarding.json": ROOT / "mobile" / "src" / "features" / "onboarding" / "onboarding.fixture.json",
+          "coach_replies.json": ROOT / "mobile" / "src" / "domain" / "replies.fixture.json"}
 
 
 def main(argv: list[str]) -> int:

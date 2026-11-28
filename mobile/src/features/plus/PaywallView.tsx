@@ -15,17 +15,21 @@ import { COMING_NOTE } from './coming';
 import type { Product } from './store';
 
 /** soon: no engine yet; the paywall says it's coming rather than sell it as there. */
-export type PlusItem = { title: string; sub: string; soon?: boolean };
+export type PlusItem = { title: string; sub: string; soon?: boolean; id?: string };
 
-/** What Plus adds (section 1). The Coach's line only with coach_enabled; its limit from the flags. */
-export function plusItems(coach: boolean, coachLimit: number, os: string = Platform.OS): PlusItem[] {
-  return [
+/**
+ * What Plus adds (section 1). The Coach's line only with coach_enabled; its limit from the flags.
+ * `lead`: the item the runner came for goes first (the Coach's limit sheet opens this with "coach").
+ */
+export function plusItems(coach: boolean, coachLimit: number, os: string = Platform.OS, lead?: string): PlusItem[] {
+  const items: PlusItem[] = [
     { title: 'Race prediction trend', sub: 'and race-day projection' },
     { title: 'Advanced plan styles', sub: 'More shapes for your training block', soon: true },
     { title: 'Advanced merge rules', sub: 'Pick the source per metric, tune match windows', soon: true },
     { title: os === 'android' ? 'Home screen widgets' : 'Home and lock screen widgets', sub: 'Readiness, week and countdown' },
-    ...(coach ? [{ title: 'Coach without a daily limit', sub: `Free has ${coachLimit} messages a day` }] : []),
+    ...(coach ? [{ id: 'coach', title: 'Coach without a daily limit', sub: `Free has ${coachLimit} messages a day` }] : []),
   ];
+  return lead ? [...items.filter((i) => i.id === lead), ...items.filter((i) => i.id !== lead)] : items;
 }
 
 /** What stays free either way. */
@@ -36,10 +40,10 @@ export const ALWAYS_FREE = [
   'Post-run analysis and the workout builder',
 ];
 
-function Item({ title, sub, soon = false, icon }: { title: string; sub?: string; soon?: boolean; icon: 'lock' | 'check' }) {
+function Item({ title, sub, soon = false, icon, testID }: { title: string; sub?: string; soon?: boolean; icon: 'lock' | 'check'; testID?: string }) {
   const words = [title, sub, soon ? COMING_NOTE : null].filter(Boolean).join(', ');
   return (
-    <View accessible accessibilityLabel={words} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingVertical: 6 }}>
+    <View testID={testID} accessible accessibilityLabel={words} style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingVertical: 6 }}>
       <Icon name={icon} tone={icon === 'check' ? 'success' : 'text'} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="body" style={{ fontWeight: '600' }}>{title}</Text>
@@ -50,9 +54,11 @@ function Item({ title, sub, soon = false, icon }: { title: string; sub?: string;
   );
 }
 
-export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, message, os = Platform.OS, canManage = true, actions }: {
+export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, message, os = Platform.OS, canManage = true, lead, actions }: {
   coach: boolean;
   coachLimit: number;
+  /** The Plus item the runner came for, shown first ("coach" from the Coach's limit sheet). */
+  lead?: string;
   /** Already on Plus or a trial: no offer, just where to manage it. */
   plus: boolean;
   /** Whether the store still offers this person the free week (null: not known yet, assume so). */
@@ -83,7 +89,7 @@ export function PaywallView({ coach, coachLimit, plus, trialOffered, brand, mess
           <TrendPreview />
         </View>
         <View testID="plus-items" style={{ gap: 2 }}>
-          {plusItems(coach, coachLimit, os).map((i) => <Item key={i.title} icon="lock" title={i.title} sub={i.sub} soon={i.soon} />)}
+          {plusItems(coach, coachLimit, os, lead).map((i) => <Item key={i.title} testID={i.id ? `plus-item-${i.id}` : undefined} icon="lock" title={i.title} sub={i.sub} soon={i.soon} />)}
         </View>
         <Text variant="kicker" tone="muted" style={{ marginTop: 6 }}>Always free</Text>
         <View testID="always-free" style={{ gap: 0 }}>

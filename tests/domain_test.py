@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from garmin_mcp.domain import adjust, backtoback, config, connections, dedupe, load, onboarding, paces, postrun, predict, proposal, readiness, takeaways  # noqa: E402
+from garmin_mcp.domain import adjust, backtoback, coach_guard, config, connections, dedupe, load, onboarding, paces, postrun, predict, proposal, readiness, takeaways  # noqa: E402
 from garmin_mcp.domain.model import Activity, Session, mmss  # noqa: E402
 
 failures: list[str] = []
@@ -535,6 +535,38 @@ def onboarding_checks() -> None:
           and c["questions_race"]["basis"]["assumed"] is False)
 
 
+# -- the Coach's reply guard ----------------------------------------------------------------
+
+def coach_guard_checks() -> None:
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import domain_fixtures as fx  # the corpus, labelled by hand
+
+    wrong = [t for t in fx.REPLIES_OK if coach_guard.kinds(t)]
+    check(f"the corpus's {len(fx.REPLIES_OK)} good replies pass (observations, the medical line, proposals)",
+          len(fx.REPLIES_OK) >= 15 and not wrong, f"flagged: {wrong}")
+    wrong = [(t, coach_guard.kinds(t), label) for t, label in fx.REPLIES_BAD if coach_guard.kinds(t) != label]
+    check(f"the corpus's {len(fx.REPLIES_BAD)} bad replies get exactly their hand labels",
+          len(fx.REPLIES_BAD) >= 20 and not wrong, f"{wrong}")
+    for kind in coach_guard.KINDS:
+        check(f"the corpus has bad replies of kind {kind}", sum(kind in label for _, label in fx.REPLIES_BAD) >= 3)
+    check("the build prompt's own examples: a cause flagged, the observation not",
+          coach_guard.kinds("In line with your short sleep.") == ["cause"]
+          and coach_guard.kinds("Rep 6 peaked at 172 bpm, 4 above rep 5.") == [])
+    check("curly apostrophes read the same as straight ones",
+          coach_guard.kinds("That’s why your legs felt heavy.") == coach_guard.kinds("That's why your legs felt heavy.") == ["cause"])
+    found = coach_guard.check("You must rest. Because your HRV dropped, you are tired.")
+    check("findings say what matched and where, in reading order",
+          [(f["kind"], f["at"]) for f in found] == [("certainty", 0), ("cause", 15)] and found[0]["match"] == "You must",
+          f"{found}")
+    wrong = [(t, coach_guard.unmatched_numbers(t, p), label) for t, p, label in fx.REPLY_NUMBERS
+             if coach_guard.unmatched_numbers(t, p) != label]
+    check("every number in a reply is checked against what the model was given", not wrong, f"{wrong}")
+    check("numbers are compared as written, without leading zeros or a trailing .0",
+          coach_guard.numbers("Synced 07:02, 6.0 km, 4:01 /km") == ["7:02", "6", "4:01"])
+    rules = json.loads((ROOT / "garmin_mcp" / "domain" / "fixtures" / "coach_replies.json").read_text())["cases"]["rules"]
+    check("the fixture carries the rules the app's twin reads", rules == coach_guard.RULES)
+
+
 def config_checks() -> None:
     check("bad config JSON keeps the defaults", config.load_config("{not json") == config.DEFAULT)
     c = config.load_config(json.dumps({"merge": {"start_within_seconds": 90, "nope": 1}, "readiness": {"hrv_low_percentile": "x"}}))
@@ -546,7 +578,8 @@ def config_checks() -> None:
     check("the server's defaults match the app's flag defaults",
           (r.sleep_short_hours, r.load_ratio_low, r.load_ratio_high, r.hrv_low_percentile, m.start_within_seconds,
            m.distance_within_pct) == tuple(flags_defaults.values()))
-    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal, postrun, connections, onboarding)
+    modules = (readiness, load, backtoback, adjust, paces, predict, dedupe, takeaways, proposal, postrun, connections, onboarding,
+               coach_guard)
     params = [p for mod in modules for _, fn in inspect.getmembers(mod, inspect.isfunction)
               if fn.__module__ == mod.__name__ for p in inspect.signature(fn).parameters]
     source = " ".join(inspect.getsource(mod) for mod in modules)
@@ -567,6 +600,7 @@ def main() -> int:
     postrun_checks()
     connections_checks()
     onboarding_checks()
+    coach_guard_checks()
     config_checks()
     print()
     if failures:

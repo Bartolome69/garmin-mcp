@@ -11,8 +11,13 @@ import type { ReactNode } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
 import TabsLayout from './app/(tabs)/_layout';
+import CoachClear from './app/(tabs)/coach/clear';
+import CoachFilter from './app/(tabs)/coach/filter';
 import CoachLayout from './app/(tabs)/coach/_layout';
 import CoachIndex from './app/(tabs)/coach/index';
+import CoachLimit from './app/(tabs)/coach/limit';
+import CoachMenu from './app/(tabs)/coach/menu';
+import CoachNewWeek from './app/(tabs)/coach/new-week';
 import CrewLayout from './app/(tabs)/crew/_layout';
 import CrewIndex from './app/(tabs)/crew/index';
 import PlanLayout from './app/(tabs)/plan/_layout';
@@ -35,6 +40,9 @@ import TodayRun from './app/(tabs)/today/run/[id]';
 import YouLayout from './app/(tabs)/you/_layout';
 import YouConnections from './app/(tabs)/you/connections';
 import YouIndex from './app/(tabs)/you/index';
+import YouMemory from './app/(tabs)/you/memory';
+import YouMemoryClear from './app/(tabs)/you/memory-clear';
+import YouMemoryEdit from './app/(tabs)/you/memory-edit';
 import YouPriority from './app/(tabs)/you/priority';
 import YouRequest from './app/(tabs)/you/request';
 import YouSee from './app/(tabs)/you/see';
@@ -54,9 +62,17 @@ import OnboardingResult from './app/onboarding/result';
 import OnboardingReveal from './app/onboarding/reveal';
 import OnboardingTry from './app/onboarding/try';
 import { OnboardingStack } from './app/onboarding/_layout';
+import { numbersIn, numbersOfPayload } from './domain/replyGuard';
+import ONBOARDING from './features/onboarding/onboarding.fixture.json';
+import RUNS from './features/run/runs.fixture.json';
+import { PERSONA_TODAY_COACH } from './features/today/fixture';
+import PROPOSALS from './features/watch/proposals.fixture.json';
+import { FakeCoach } from './features/coach/fake';
+import type { ServerMessage } from './features/coach/model';
+import { CoachApiContext } from './features/coach/source';
 import { OnboardingProvider } from './features/onboarding/OnboardingProvider';
 import { CASES } from './features/onboarding/source';
-import { PERSONA_PLAN } from './features/plan/fixture';
+import { PERSONA_PLAN, PERSONA_PLAN_COACH } from './features/plan/fixture';
 import { findSession } from './features/plan/model';
 import { skipProposal } from './features/watch/proposals';
 import { memoryStore } from './features/watch/store';
@@ -70,14 +86,30 @@ import { MIN_TOUCH } from './ui/Button';
 let queue: WatchContext | null = null;
 function Probe() { queue = useWatch(); return null; }
 
-function app(scheme: 'dark' | 'light') {
+// The Coach for these screens: one exchange about Wednesday's run (with its chart), a memory
+// note and one pending proposal, written today, so the thread draws every kind of row.
+const at = () => Math.floor(Date.now() / 1000);
+const COACH_MESSAGES = (): ServerMessage[] => [
+  { id: 1, role: 'user', text: 'Why did rep 6 feel harder?', status: 'sent', at: at(), context: { kind: 'run', id: '2026-11-25-intervals', label: 'About · Wed 25 · 6 × 800 m' } },
+  { id: 2, role: 'assistant', text: 'Rep pace averaged 4:01. Your peak heart rate on rep 6 was 172, 4 bpm above rep 5.', status: 'done', at: at(), sources: ['Run · Garmin'],
+    chart: { kind: 'bars', title: 'Peak heart rate per rep', unit: 'bpm', caption: 'bpm', labels: ['Rep 1', 'Rep 2', 'Rep 3', 'Rep 4', 'Rep 5', 'Rep 6'],
+      values: [164, 165, 166, 168, 168, 172], band: null, highlight: [5], summary: 'Peak heart rate per rep: 164, 165, 166, 168, 168, 172 bpm.' } },
+  { id: 3, role: 'user', text: 'I’m away 1 to 3 Dec. Make it easier then', status: 'sent', at: at() },
+  { id: 4, role: 'memory', text: 'Travelling 1 to 3 Dec', status: 'done', at: at() },
+  { id: 5, role: 'action', text: 'Make today easier: 3 × 2 km at threshold becomes Easy 6 km.', status: 'pending', tool: 'easier', request: { kind: 'easier' }, at: at() },
+];
+const coachThread = () => new FakeCoach({ messages: COACH_MESSAGES() });
+
+function app(scheme: 'dark' | 'light', coach = true) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial={scheme}>
-      <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: true }}>
+      <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach }}>
         <EntitlementsProvider store={new FakeStore()} fetcher={async () => { throw new Error('offline'); }}>
           <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false} pollEveryMs={0}>
-            <Probe />
-            {children ?? <Stack screenOptions={{ headerShown: false }} />}
+            <CoachApiContext.Provider value={coachThread()}>
+              <Probe />
+              {children ?? <Stack screenOptions={{ headerShown: false }} />}
+            </CoachApiContext.Provider>
           </WatchProvider>
         </EntitlementsProvider>
       </FlagsProvider>
@@ -92,10 +124,13 @@ function app(scheme: 'dark' | 'light') {
     '(tabs)/plan/_layout': PlanLayout, '(tabs)/plan/index': PlanIndex, '(tabs)/plan/builder': PlanBuilder, '(tabs)/plan/life': PlanLife,
     '(tabs)/plan/move': PlanMove, '(tabs)/plan/new-week': PlanNewWeek, '(tabs)/plan/next': PlanNext, '(tabs)/plan/run/[id]': PlanRun,
     '(tabs)/plan/session/[id]': PlanSession,
-    '(tabs)/coach/_layout': CoachLayout, '(tabs)/coach/index': CoachIndex,
+    '(tabs)/coach/_layout': CoachLayout, '(tabs)/coach/index': CoachIndex, '(tabs)/coach/menu': CoachMenu,
+    '(tabs)/coach/filter': CoachFilter, '(tabs)/coach/clear': CoachClear, '(tabs)/coach/limit': CoachLimit,
+    '(tabs)/coach/new-week': CoachNewWeek,
     '(tabs)/crew/_layout': CrewLayout, '(tabs)/crew/index': CrewIndex,
     '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/connections': YouConnections,
     '(tabs)/you/priority': YouPriority, '(tabs)/you/see': YouSee, '(tabs)/you/trouble': YouTrouble, '(tabs)/you/request': YouRequest,
+    '(tabs)/you/memory': YouMemory, '(tabs)/you/memory-edit': YouMemoryEdit, '(tabs)/you/memory-clear': YouMemoryClear,
     '(tabs)/you/widgets': YouWidgets, '(tabs)/you/coming': YouComing,
     'plus/index': PlusPaywall, 'plus/trial': PlusTrial,
     // Onboarding part way through (the persona's goal, import and plan), so every step has what it shows.
@@ -134,8 +169,18 @@ export const SCREENS: [string, string, string][] = [
   ['Widgets setup', '/you/widgets', 'widgets'],
   ['Plus feature to come (You)', '/you/coming', 'you-coming'],
   ['Plus (paywall)', '/plus?from=you', 'paywall'],
+  ['Plus (paywall) from the Coach’s limit', '/plus?from=coach', 'paywall'],
   ['Plus · free week sheet', '/plus/trial', 'trial-sheet'],
   ['Coach', '/coach', 'coach'],
+  ['Coach · from a run', '/coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m', 'coach'],
+  ['Coach · menu', '/coach/menu', 'coach-menu'],
+  ['Coach · filter', '/coach/filter', 'coach-filter-sheet'],
+  ['Coach · clear', '/coach/clear', 'coach-clear-sheet'],
+  ['Coach · limit', '/coach/limit', 'coach-limit-sheet'],
+  ['Coach memory', '/you/memory', 'memory'],
+  ['Coach memory · edit', '/you/memory-edit?id=persona-goal', 'memory-edit'],
+  ['Coach memory · add', '/you/memory-edit', 'memory-edit'],
+  ['Coach memory · clear', '/you/memory-clear', 'memory-clear-sheet'],
   ['Crew', '/crew', 'crew'],
   ['Onboarding · welcome', '/onboarding', 'welcome'],
   ['Onboarding · try', '/onboarding/try', 'try-card'],
@@ -149,6 +194,7 @@ export const SCREENS: [string, string, string][] = [
 ];
 const STAGED: [string, (id: string) => string, string][] = [
   ['New week (diff)', (id) => `/plan/new-week?id=${encodeURIComponent(id)}`, 'diff'],
+  ['New week from the Coach (diff)', (id) => `/coach/new-week?id=${encodeURIComponent(id)}`, 'diff'],
   ['Watch confirm', (id) => `/watch/confirm?id=${encodeURIComponent(id)}`, 'confirm-sheet'],
 ];
 
@@ -241,6 +287,104 @@ describe.each(['light', 'dark'] as const)(`every screen on ${Platform.OS}, %s`, 
     await act(async () => { await queue!.pump(); });
     expect(await screen.findByTestId('notify-ask', {}, { timeout: 4000 })).toBeTruthy();
     findings[`Onboarding · landed (${scheme})`] = audit(screen.toJSON());
+  });
+});
+
+// -- Coach on and off (build prompt, sections 1 and 6) -------------------------------------
+// Every screen's numbers are identical with coach_enabled on and off. The Coach's blocks are
+// set aside (they're absent when off); every number they show must be one the screen already
+// shows from the server. Read from what's drawn: text and what screen readers are told.
+// The Coach tab itself ('coach') counts as a Coach block: native tabs draw every tab's screen.
+const COACH_SLOTS = new Set(['coach', 'coach-line', 'ask-why', 'coach-note', 'coach-ask', 'debrief', 'diff-coach']);
+// What the server sends each screen (the development fixtures stand in for it): a Coach block
+// is checked against its own screen's data, not every fixture at once.
+const RUN_CASES = (RUNS as unknown as { cases: Record<string, unknown> }).cases;
+function payloadFor(url: string): Set<string> {
+  const run = /\/run\/([^/?]+)/.exec(url)?.[1];
+  if (run) return numbersOfPayload(RUN_CASES[run]);
+  if (url.startsWith('/today')) return numbersOfPayload(PERSONA_TODAY_COACH);
+  if (url.startsWith('/plan')) return numbersOfPayload([PERSONA_PLAN_COACH, PROPOSALS]);
+  if (url.startsWith('/onboarding')) return numbersOfPayload(ONBOARDING);
+  return new Set();
+}
+// The Coach tab (drawn on every screen by native tabs) against what its own thread was sent as
+// data: the run the question was about, the plan and its proposals, the thread's charts and tags,
+// and the runner's own words (questions, memory). Never a reply's words.
+const COACH_TAB_NUMBERS = numbersOfPayload([RUN_CASES['2026-11-25-intervals'], PERSONA_PLAN, PROPOSALS,
+  COACH_MESSAGES().map((m) => (m.role === 'assistant' || m.role === 'action' ? [m.chart, m.context, m.request] : [m.text, m.context]))]);
+// The Coach thread's own chrome, not training numbers: a day separator's clock time, and how many free messages are left today.
+// The paywall's Coach row ("Free has 10 messages a day") is there only with the Coach, like the tab: a feature's line, not a number that changes.
+const CHROME = new Set(['coach-day', 'coach-remaining', 'plus-item-coach']);
+type Where = 'plain' | 'slot' | 'tab';
+function numbersSplit(tree: unknown) {
+  const out: Record<Where, string[]> = { plain: [], slot: [], tab: [] };
+  const walk = (n: unknown, where: Where) => {
+    if (typeof n === 'string') { out[where].push(...numbersIn(n)); return; }
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n)) { n.forEach((c) => walk(c, where)); return; }
+    const node = n as Node;
+    if (CHROME.has(node.props?.testID)) return;
+    const id = node.props?.testID;
+    const here: Where = where !== 'plain' ? where : id === 'coach' ? 'tab' : COACH_SLOTS.has(id) ? 'slot' : 'plain';
+    for (const said of [node.props?.accessibilityLabel, node.props?.accessibilityValue?.text]) {
+      if (typeof said === 'string') out[here].push(...numbersIn(said));
+    }
+    (node.children ?? []).forEach((c) => walk(c, here));
+  };
+  walk(tree, 'plain');
+  return { plain: out.plain, coach: [...out.slot, ...out.tab], slot: out.slot, tab: out.tab };
+}
+
+describe(`Coach on and off on ${Platform.OS}: every screen's numbers are the same`, () => {
+  // The Coach's own screens don't exist with it off (the tab is hidden and unreachable).
+  const PARITY = SCREENS.filter(([, url]) => !url.startsWith('/coach'));
+  const seen: Record<string, Partial<Record<'on' | 'off', ReturnType<typeof numbersSplit>>> & { url?: string }> = {};
+  const cases = PARITY.flatMap(([name, url, id]) => (['on', 'off'] as const).map((mode) => [`${name} · Coach ${mode}`, name, url, id, mode] as const));
+  it.each(cases)('%s', async (_label, name, url, id, mode) => {
+    await renderRouter(app('dark', mode === 'on'), { initialUrl: url });
+    await screen.findByTestId(id, {}, { timeout: 4000 });
+    (seen[name] ??= { url })[mode] = numbersSplit(screen.toJSON());
+  });
+  it.each((['on', 'off'] as const).map((mode) => [`Staged diff · Coach ${mode}`, mode] as const))('%s', async (_label, mode) => {
+    await renderRouter(app('dark', mode === 'on'), { initialUrl: '/plan' });
+    await screen.findByTestId('week-title');
+    const p = skipProposal(findSession(PERSONA_PLAN, '2026-12-02-intervals')!);
+    await act(async () => { queue!.stage(p); });
+    await act(async () => { router.push(`/plan/new-week?id=${encodeURIComponent(p.id)}`); });
+    await screen.findByTestId('diff', {}, { timeout: 4000 });
+    (seen['New week (diff)'] ??= { url: '/plan/new-week' })[mode] = numbersSplit(screen.toJSON());
+  });
+  it('every number is identical with the Coach on and off, on every screen', () => {
+    const names = Object.keys(seen);
+    expect(names.length).toBe(PARITY.length + 1);
+    // Said as what one side has that the other doesn't (each number counted), then as the order.
+    const minus = (a: string[], b: string[]) => { const left = [...b]; return a.filter((x) => { const i = left.indexOf(x); if (i < 0) return true; left.splice(i, 1); return false; }); };
+    const differ = names.filter((n) => JSON.stringify(seen[n].on?.plain) !== JSON.stringify(seen[n].off?.plain)).map((n) => {
+      const on = seen[n].on?.plain ?? [], off = seen[n].off?.plain ?? [];
+      return { screen: n, onlyOn: minus(on, off), onlyOff: minus(off, on), sameNumbersOtherOrder: !minus(on, off).length && !minus(off, on).length };
+    });
+    expect(differ).toEqual([]);
+    expect(names.filter((n) => seen[n].off?.coach.length)).toEqual([]);
+  });
+  it('a Coach block shows no number that isn’t on its screen or in what the server sent that screen', () => {
+    const invented = Object.entries(seen).map(([n, s]) => {
+      const payload = payloadFor(s.url ?? '');
+      const slot = (s.on?.slot ?? []).filter((x) => !s.on?.plain.includes(x) && !payload.has(x));
+      const tab = (s.on?.tab ?? []).filter((x) => !COACH_TAB_NUMBERS.has(x));
+      return [n, [...new Set([...slot, ...tab])]] as const;
+    }).filter(([, xs]) => xs.length);
+    expect(invented).toEqual([]);
+    expect(Object.values(seen).some((s) => s.on?.slot.length)).toBe(true); // the check saw Coach blocks with numbers
+    expect(Object.values(seen).some((s) => s.on?.tab.length)).toBe(true);
+  });
+  it('the check fails a Coach block with a number that isn’t in its data', () => {
+    const tree = { type: 'View', props: {}, children: [
+      { type: 'Text', props: { testID: 'coach-line' }, children: ['HRV 87 ms, under your range.'] },
+      { type: 'View', props: { testID: 'coach' }, children: [{ type: 'Text', props: {}, children: ['Your resting heart rate was 41.'] }] },
+    ] };
+    const split = numbersSplit(tree);
+    expect(split.slot.filter((x) => !payloadFor('/today').has(x))).toEqual(['87']);
+    expect(split.tab.filter((x) => !COACH_TAB_NUMBERS.has(x))).toEqual(['41']);
   });
 });
 

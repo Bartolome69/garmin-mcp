@@ -9,11 +9,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { getJson } from '../api/client';
 import { openDb } from '../db/expo';
 import { DbContext } from '../db/DbContext';
 import { kv } from '../db/kv';
 import type { Db } from '../db/types';
-import { FlagsProvider, type FlagsFetcher, type FlagsStore } from '../flags/FlagsProvider';
+import { FlagsProvider, type CoachChoiceStore, type FlagsFetcher, type FlagsStore } from '../flags/FlagsProvider';
 import { EntitlementsProvider } from '../features/plus/EntitlementsProvider';
 import { WatchToast } from '../features/watch/WatchToast';
 import { WatchProvider } from '../features/watch/WatchProvider';
@@ -23,12 +24,15 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const APPEARANCE_KEY = 'appearance';
 const FLAGS_KEY = 'flags';
+const COACH_OFF_KEY = 'coach:off';
 
-// TODO(M3): the signed-in API client asks GET /app/api/v1/features. Until then
-// flags come from the cache, and a development build can force the Coach tab on.
-const devFetcher: FlagsFetcher | undefined = __DEV__ && process.env.EXPO_PUBLIC_DAASH_COACH === '1'
+// The server's flags for this person: GET /app/api/features (the chat pilot's, on main:
+// {"chat": true} for the Coach's people, {} for everyone else). Null when signed out or
+// offline, so the cached answer stands. A development build can force the Coach on.
+// TODO(server): the v1 answer adds plus, coach_daily_limit and the rest of section 10.
+const flagsFetcher: FlagsFetcher = __DEV__ && process.env.EXPO_PUBLIC_DAASH_COACH === '1'
   ? async () => ({ coach_enabled: true })
-  : undefined;
+  : () => getJson<unknown>('/app/api/features').catch(() => null);
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({ GeistMono_500Medium, SourceSerif4_400Regular, SourceSerif4_400Regular_Italic });
@@ -50,13 +54,16 @@ export default function RootLayout() {
   const flagsStore = useMemo<FlagsStore | undefined>(() => db
     ? { load: () => kv(db).get(FLAGS_KEY), save: (raw) => kv(db).set(FLAGS_KEY, raw) }
     : undefined, [db]);
+  const coachChoice = useMemo<CoachChoiceStore | undefined>(() => db
+    ? { load: () => kv(db).get<boolean>(COACH_OFF_KEY), save: (off) => kv(db).set(COACH_OFF_KEY, off) }
+    : undefined, [db]);
 
   if (!ready) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <DbContext.Provider value={db}>
         <ThemeProvider initial={appearance} onChange={(a) => { if (db) kv(db).set(APPEARANCE_KEY, a); }}>
-          <FlagsProvider store={flagsStore} fetcher={devFetcher}>
+          <FlagsProvider store={flagsStore} fetcher={flagsFetcher} choice={coachChoice}>
             <EntitlementsProvider>
               <WatchProvider>
                 <Root />

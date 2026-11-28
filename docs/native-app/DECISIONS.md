@@ -925,3 +925,298 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
     "London in 148 days" for the countdown.
 - **Development.** A development build is Free (so the locks show) with
   `FakeStore`, whose free week works; `EXPO_PUBLIC_DAASH_PLUS=1` makes it Plus.
+
+## Milestone 11: Coach
+
+The thread, context tags, inline charts, proposals, memory, limits and the reply
+guard, 28 Nov. Built on `claude/native-app-m9`, alongside M10 (Plus).
+
+- **Built against the live chat pilot, as it is on `main`** (`chat_pilot.py`,
+  not changed and not copied here). `features/coach/api.ts` uses its real
+  shapes:
+  - `GET /app/api/chat` gives `{messages: [{id, role, text, status, feedback?,
+    tool?}], starters}`;
+  - `POST /app/api/chat/send` streams server-sent events: `start`, `delta`,
+    `tool`, `pending`, `done`, `error`;
+  - `POST /action`, `/feedback` and `/new`;
+  - `GET /app/api/features` answers `{"chat": true}`, which `parseFlags` reads as
+    `coach_enabled`. The root layout now asks it; before, only a dev stub did.
+
+  The client follows `api/client.ts`: the same token and typed errors. Two
+  errors are added: `CoachLimitReached` (the 429) and `CoachUnavailable` (the
+  404). Reads retry. A send is one try, never retried by the app, because a
+  second try could ask the model twice. The stream is parsed by a pure function
+  (`sse.ts`), tested with the bytes cut every way, in CRLF, and with a last frame
+  that has no blank line after it. It streams over `expo/fetch` (part of `expo`),
+  loaded only when a message is sent.
+- **The phone never confirms through the pilot's `/action`.** The pilot's
+  Confirm runs the stored call on Garmin directly. That would skip the watch
+  confirm sheet and the queue. So:
+  - "Not now" is the only call to `/action`, as a decline;
+  - a Coach proposal opens the shared diff (`/coach/new-week`), then the same
+    watch confirm, then the queue;
+  - the card follows that batch: Sending, "Changed · arrives at next sync", On
+    your watch, or Not sent with Resend and "Do it in Plan".
+
+  The decision type has no `confirm`, and `src/states.test.tsx` checks the
+  source for it. A pending event may carry `request` (a `ProposalRequest`:
+  easier, rest, swap, trim, life) or a whole `proposal` (`proposal.view`'s
+  shape). The pilot sends only `tool` and `text` today. Such a card is finished
+  in Plan (the prompt: a proposed change can always be finished in Plan), and
+  `inPlanFor(tool)` says where and what to do: a new or changed workout opens
+  Plan's builder ("Build it in Plan"); a move, schedule or removal opens Plan
+  with "open the session above and use Move, Swap or Skip". It also offers Not
+  now.
+- **One thread.** There's no New chat. "Clear conversation" is the pilot's
+  `/new`, behind a confirm. It leaves memory and the plan alone. The thread is
+  cached on the phone (`coach:thread`), so it opens offline, and the phone keeps
+  the last 14 days (section 16's default). Days before today collapse into
+  "Earlier · N messages since Wed · Show". The pilot sends no time on a
+  message, so a message this phone didn't write or see written has none
+  (`at: null`, never "now"): it folds into Earlier ("Earlier · 24 messages",
+  with no "since" when any earlier message is undated), keeps the server's
+  order, and stays while the server sends it (14 days can't be judged without a
+  time). Clear conversation clears the phone's copy only once `/new` succeeds;
+  offline, the sheet says clearing needs a connection, and a failure keeps the
+  thread and says so.
+- **Context tags** come from four places:
+  - Today's "Ask why": "From Today · Back off";
+  - post-run's "Ask about this run": "About · Wed 25 · 6 × 800 m";
+  - session detail's new "Ask about this session", in its Coach card;
+  - a run with no debrief and a session with no Coach note still show "Ask
+    about this run / session" in their own Coach slot (`coach-ask`): no server
+    sends debriefs or notes yet, so without it most runs and sessions had no way
+    in;
+  - the diff's "Ask about this".
+
+  The tag sits on the composer, removable, until sent. It's sent as `context`;
+  the pilot ignores keys it doesn't know.
+- **Source chips** come from the `tool` events the pilot already streams:
+  get_readiness becomes "Readiness · Garmin", get_sleep_data "Sleep · Garmin",
+  and so on. The phone keeps them with the message.
+- **Inline charts.** The app draws them (`InlineChart.tsx`, a line with the
+  runner's range shaded, or bars per rep) from a `chart` that comes with the
+  reply. The server builds it from what its tools returned, never from the
+  model's words. The summary is what a screen reader says, and marked points are
+  said in it too. A marked point is drawn with a shape as well as a colour: a
+  ringed point on a line, an outlined bar with a dot above it and a bold value. The pilot sends no chart yet. The development stand-in builds
+  its charts from the persona's fixtures: HRV from Today, peak heart rate per rep
+  from Wednesday's run's series.
+- **Prompt chips** are the server's `starters` (the pilot's five fixed ones). They
+  sit docked above the composer, outside the thread's scroll, so they never
+  cover it. The send button is the up arrow on iOS and Material send on
+  Android. It's neutral (the Coach has no hue) and disabled when the field is
+  empty, while a reply streams, offline, or at the limit.
+- **The daily limit.** Free gets `flags.coach_daily_limit` (10); the composer
+  says "7 left today". Today's sends are counted apart from the thread, in kv
+  (`coach:sent`, `{day, count}`), one per server `start` event (the server
+  stored the question). Clear conversation keeps the count; signing out clears
+  it with the rest of kv. Used today is the larger of that count and the
+  thread's messages known to be from today (once the server sends `at`, that
+  includes another device's). An undated message never counts. The server's
+  429 counts too, for the rest of that day. At the limit:
+  - the banner opens a sheet ("That's today's 10", "See Plus", "Tomorrow is
+    fine");
+  - a proposal already made can still be reviewed and sent.
+
+  Plus, or a running free week, has no limit and no count: the Coach reads
+  M10's `useEntitlement()` (see "Integration with milestones 9 and 10" below).
+  "See Plus" opens M10's paywall with `from=coach`.
+- **Offline.** A banner says "Offline · the Coach needs a connection. Your plan
+  and runs still work", with Try again; sending is off and the cached thread
+  shows. A send that never left is marked "Not sent. No connection." with "Send
+  again". **Chose disabled over queued**: a queued message would go later without
+  the runner seeing it go, which is a retry by another name.
+- **Errors** use the app's words, by code. The pilot's own words say "The AI
+  service isn't answering", and section 12 keeps "AI" to the Coach's name and
+  settings. What was written before the error stays, and Try again asks the same
+  question again (it's the runner's press, and it counts toward the limit). A
+  connection drop or timeout after the server's `start` is the same: the
+  question stays sent (the server has it), the words so far stay, marked cut
+  off, with Try again. Only a send that failed before `start` is "Not sent"
+  with Send again.
+- **Signed out, or Garmin needs a new sign-in.** The sign-in banner
+  (`FailureBanner`, with Sign in or Reconnect) shows over the thread, cached or
+  empty, and sending and Send again are off until it's fixed. Before, a cached
+  thread showed nothing and Send again failed in a loop.
+- **The reply guard** (`garmin_mcp/domain/coach_guard.py`, with its twin
+  `mobile/src/domain/replyGuard.ts`). It flags four kinds:
+  - causes ("because your HRV dropped, you are…", "in line with your short
+    sleep", "that's why");
+  - medical advice ("ice it", "take ibuprofen", "run through the pain");
+  - diagnoses ("sounds like shin splints", "you're overtrained");
+  - prescriptive certainty ("you must", "definitely", "will be fine").
+
+  `unmatched_numbers` returns the numbers in a reply that aren't in the payload.
+  The corpus has 22 good replies, 30 bad ones and 7 number cases, each labelled
+  by hand, in `scripts/domain_fixtures.py`. After review the rules were
+  narrowed and widened: "treat" is medical only next to a body part or injury;
+  "explain" and "leads to" alone aren't causes; "if you need to" is an offer,
+  not an order (the match takes the word before "you" with it, as there's no
+  lookbehind in the shared subset); "never do" is an order only at the start of
+  a sentence. Causal verbs after a body signal ("your short sleep made…", "is
+  why"), "from the alcohol" and hedged diagnoses ("probably getting ill", "a
+  sign of a stress fracture") are caught. Each example is a labelled case. That script writes
+  `fixtures/coach_replies.json` with the rules in it. The app's twin reads those
+  rules from its copy (`mobile/src/domain/replies.fixture.json`), so the two
+  can't drift; both are tested against the hand labels. The twin is called
+  `replyGuard` because `domain/pure.test.ts` keeps the word "coach" out of the
+  app's engines.
+
+  The phone runs the check on every reply it shows. It marks a failing reply
+  with a note: "Read this as an observation…" for a cause, or the medical line
+  for medical advice or a diagnosis. It never rewrites a reply or its numbers.
+  The check is conservative, so it will sometimes mark a fine sentence (a
+  planning "because" next to a body word); a reply with no finding passes as is.
+- **The Coach ON/OFF parity check** (in `src/smoke.test.tsx`, so it uses the one
+  list of screens):
+  - every screen renders with the Coach on and off, and every number drawn
+    (text and screen-reader labels) must be identical once the Coach's blocks
+    are set aside;
+  - those blocks are `coach`, `coach-line`, `ask-why`, `coach-note`,
+    `coach-ask`, `debrief` and `diff-coach`. Native tabs draw every tab, so the
+    Coach tab is one of them;
+  - every number in a Coach block must be on its screen or in what the server
+    sent that screen (its own fixture, not every fixture at once); the Coach
+    tab's numbers must be in its thread's data (the run asked about, the plan
+    and proposals, charts and tags, the runner's own words), never a reply's
+    words. A negative case shows the check fails an invented number;
+  - `coach.flows.test.tsx` 13 checks the Coach tab's replies, charts, cards and
+    memory notes against the data the stand-in Coach read and the structured
+    parts of what it sent; the streamed reply text is not its own payload, and
+    a reply with an invented number fails.
+- **Changes to earlier milestones, to hold that:**
+  - the diff now keeps "Rule used" with the Coach on and adds the Coach's card.
+    The prompt says "Coach ON adds an observation card". M5 replaced the rule,
+    which dropped its numbers ("about 60% of the time") with the Coach on;
+  - post-run's development debrief now uses only the run's own numbers ("Reps
+    averaged 4:01, the fastest and slowest 6 s apart…"). Before, it said "3:58 to
+    4:04", which aren't in the payload. The two post-run snapshots with the
+    Coach on changed for this;
+  - You's memory row carries no count.
+- **Memory and Training preferences** (`features/coach/memory.ts`, in SQLite's
+  `memory_items`): the same items with the Coach on and off. The items are goal,
+  training days, injuries you mentioned (on) or niggles to plan around (off),
+  preferences, travel, and notes. Tone and "Clear memory" are the Coach's only:
+  with it off they're hidden, not lost. With the Coach on, an item saved from
+  the chat says "you said in chat". The thread shows "Saved to memory: …" with
+  Edit (the `memory` event; TODO(server)). Items can be viewed, edited, deleted
+  and added in You, with clearing behind a confirm. Nothing in memory is a number
+  any screen uses. Two memory events in one reply both stay (changes build on
+  the current items). Training preferences say "Kept on this phone. Edit or
+  delete anything." and the row "What you've told Daash": the board's "Daash
+  plans around these" isn't true until the server reads them (see For the
+  owner).
+- **Turning the Coach off.** You has a Coach switch, only when the server offers
+  the Coach. It's the one place that says "AI" ("AI, run on Daash's server").
+  The choice is kept on the phone (`coach:off`, runner data, so sign-out clears
+  it). `FlagsProvider` gives `coach_enabled` as the server's flag unless the
+  runner switched it off. Off hides the tab and every Coach block, and You shows
+  Training preferences. No number changes; the parity test and coach flow 12
+  check that.
+- **Conflicts with the boards** (the prompt wins):
+  - the Pass 1 thread boards have a "New chat" pill: gone (no New chat);
+  - CoachEmpty's Today card (readiness, the run done, tomorrow) isn't built. It
+    repeats Today, the prompt doesn't ask for it, and the Coach tab doesn't have
+    Today's data. The empty thread says what the Coach reads, with the medical
+    line and the chips;
+  - CoachThread, CoachOffline and CoachError say "Friday was easy, so your legs
+    will be fine", which is a cause and a certainty. The corpus has it as a bad
+    reply;
+  - P3's "If you go, cap reps at 4:30 /km" uses a number that isn't in the plan
+    (4:23–4:28), so the fixtures don't use it;
+  - ComponentsCoach says "Red is the Coach's colour on controls", but the prompt
+    gives the Coach no hue;
+  - YouCoach's "Delete chat history" cleared the thread and memory together. The
+    prompt splits these into Clear conversation (in the menu; memory stays) and
+    Clear memory (in You);
+  - the memory board's footer ("Not medical advice. For pain or injury, see a
+    physio or doctor.") is the prompt's sentence instead. The memory boards'
+    "sub-2:40" goal is the persona's 3:15;
+  - the composer's dictation button isn't built: it needs a speech module, so a
+    device build.
+- **Analytics (section 11): deferred.** The app still has no analytics layer.
+  Events to send when it does:
+  - Coach message sent (starter or not, the context kind, no text);
+  - thumbs;
+  - proposal reviewed, declined or sent;
+  - limit reached;
+  - Coach switched off.
+- **TODO(server), for `chat_pilot.py` on main (not changed here):**
+  - run `coach_guard.check` on each finished reply, and `unmatched_numbers`
+    against the tool results the model read; regenerate once on a finding;
+  - the `pending` event carries `request` or `proposal`, and `/action` takes
+    `{decision: "applied", batch}` once the phone has sent it;
+  - read `context` from the send body into the model's context, and store it
+    with the message;
+  - messages carry `at`, `context`, `sources` and `chart`, with a `chart` event
+    built from tool results and a `memory` event when something is saved;
+  - `starters` generated from today's data;
+  - the daily cap is 10 for free and none for Plus (the pilot's
+    `CHAT_DAILY_MESSAGE_CAP` is 500 for everyone), with the free limit in the
+    features answer;
+  - the model reads the last 14 days plus memory (the pilot reads the last 20
+    messages);
+  - `GET/PUT/DELETE /app/api/v1/memory`, and Training preferences feeding plans;
+  - the Coach switch stored per person;
+  - the pilot's error words without "AI".
+- **Needs a device build:** streaming over `expo/fetch` (tested here with a
+  stand-in body that streams), and the keyboard pushing the composer up
+  (`KeyboardAvoidingView` on iOS).
+- **For the owner** (defaults taken):
+  - Clear conversation uses the pilot's `/new`, which keeps the old thread on the
+    server. It could delete it instead;
+  - the free count runs on the phone's local day; the server's runs on London
+    midnight;
+  - the guard marks a reply but doesn't hide it;
+  - the free count is kept on the phone, so a reinstall or a second phone starts
+    at 0 until the server enforces 10 a day (TODO(server) above). Default: the
+    phone's count, plus the server's 429;
+  - Training preferences: the board says "Daash plans around these"; the app
+    says "Kept on this phone" until plans read them. Default: the neutral copy;
+    switch back when `GET /app/api/v1/memory` feeds the plan. "Niggles to plan
+    around" (the board's category name) is kept;
+  - an undated pilot message folds into Earlier on first open (the whole web
+    thread, until the server sends `at`). Default: fold, rather than call it
+    today.
+- **Tests:**
+  - `coach.test.ts`: the thread model, the stream, the client against the
+    pilot's answers (no retry on send), the stand-in's numbers, memory labels;
+  - `coachView.test.tsx`: dark and light snapshots on both platforms, the one
+    brand fill, every state;
+  - `coach.flows.test.tsx`: 13 flows over the real routes and queue, plus,
+    after review: a pilot thread with no times (10 left, folded into Earlier),
+    send 10 then clear (still locked), a stream that drops after `start`,
+    signed out over a cached thread, a clear the server refused, Ask from a run
+    with no debrief and a session with no note, and a workout proposal finished
+    in the builder;
+  - `replyGuard.test.ts`, and `tests/domain_test.py`'s guard checks;
+  - every new route in the smoke test's SCREENS, light and dark, with the a11y
+    checks.
+
+### Integration with milestones 9 and 10 (28 Nov)
+
+M10 and M11 were built in parallel off an early M9 commit; M9 was finished
+afterwards. The stack is now hardening → M9 → M10 → M11, each branch merged
+into the one above it.
+
+- **The Coach's limit reads the real entitlement.** M11's local stub
+  (`features/coach/plus.ts`, `isPlus()` over `flags.plus`) is gone;
+  `CoachProvider` reads `useEntitlement()`. Plus or a running free week: no
+  daily limit and no count. Free, or a free week that has ended: 10 a day (the
+  flags' `coach_daily_limit`). Until the cached entitlement is read no limit is
+  applied, so a Plus runner never sees the banner flash up; the server's 429
+  still stops a free runner's eleventh message.
+- **The limit sheet and the paywall point at each other.** "See Plus" on the
+  limit sheet opens Daash Plus (`openPaywall(router, 'coach')`, the runner's own
+  tap, never mid-flow) with the Coach's row, "Coach without a daily limit · Free
+  has 10 messages a day", first; both read the same flags number. The
+  paywall's opener check (`src/plus.flows.test.tsx`) now lists the limit sheet.
+- **You** has, in the prompt's order: Connections, then the Coach switch and
+  Coach memory (or Training preferences), then Plus. `YouView` takes the Coach
+  section as children and Plus as `plus`.
+- **The root** nests `FlagsProvider` (with the Coach choice store and the live
+  features fetcher from M11) → `EntitlementsProvider` → `WatchProvider`.
+- **Coach ON/OFF parity:** the paywall's Coach row exists only with the Coach
+  (like the tab), so its "10" is set aside in the parity check as chrome, not a
+  number that changes.

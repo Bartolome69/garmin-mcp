@@ -238,5 +238,10 @@ describe('nothing reaches the watch without the confirm sheet, retries included'
     expect(where(/\.send\(op\)|transport\.send\(/)).toEqual(['features/watch/WatchProvider.tsx']);
     expect(where(/confirmOps\(p\.ops/)).toEqual(['features/watch/WatchProvider.tsx']);
     expect(where(/\/app\/api\/v1\/watch\/ops/)).toEqual(['features/watch/transport.ts']);
+    // The Coach: only "Not now" reaches the pilot's /action (its Confirm writes to Garmin
+    // itself, past the confirm sheet and the queue); a Coach proposal opens the shared diff.
+    expect(where(/\/action/)).toEqual(['features/coach/api.ts']);
+    expect(where(/decision:\s*['"]confirm['"]|['"]confirm['"]\s*\)|Decision = [^;]*confirm/)).toEqual([]);
+    expect(where(/watch\.confirm\(/)).toEqual(['app/watch/confirm.tsx']);
   });
 });

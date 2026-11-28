@@ -699,6 +699,7 @@ exports[`snapshot: paywall and free week sheet on ios: paywall-ios 1`] = `
               "paddingVertical": 6,
             }
           }
+          testID="plus-item-coach"
         >
           <ViewManagerAdapter_SymbolModule
             accessible={false}

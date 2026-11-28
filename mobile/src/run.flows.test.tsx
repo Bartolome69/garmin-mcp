@@ -108,7 +108,7 @@ describe('12. Coach on', () => {
     await renderRouter(app(new FakeGarmin(), { ...DEFAULT_FLAGS, coach_enabled: true }), { initialUrl: '/plan' });
     await screen.findByTestId('week-title');
     await act(async () => { router.push({ pathname: '/plan/run/[id]', params: { id: '2026-11-25-intervals' } }); });
-    expect(await screen.findByTestId('debrief-text')).toHaveTextContent(/^Reps were even, 3:58 to 4:04/);
+    expect(await screen.findByTestId('debrief-text')).toHaveTextContent(/^Reps averaged 4:01, the fastest and slowest 6 s apart/);
     await fireEvent.press(screen.getByTestId('ask-run'));
     expect(await screen.findByTestId('coach')).toBeTruthy();
   });

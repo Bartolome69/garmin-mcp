@@ -14,7 +14,7 @@ const CASES = (FIXTURE as unknown as { cases: Record<string, RunVM> }).cases;
 
 // Development only: what the server's Coach would say, from the run's own numbers. Never a cause.
 const DEBRIEFS: Record<string, string> = {
-  '2026-11-25-intervals': 'Reps were even, 3:58 to 4:04, and your heart rate fell under 130 in every recovery. Rep 6 peaked at 172 bpm, 4 above rep 5.',
+  '2026-11-25-intervals': 'Reps averaged 4:01, the fastest and slowest 6 s apart, and your heart rate fell under 130 in every recovery. Rep 6 peaked at 172 bpm, 4 above rep 5.',
   '2026-11-26-easy': 'The second half was 6 s/km quicker than the first, and every kilometre was faster than your easy range.',
 };
 

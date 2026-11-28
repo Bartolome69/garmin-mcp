@@ -1,5 +1,5 @@
 // You's stack (build prompt, section 4): You, then Connections and Source priority,
-// with the trust sheets, and the widgets setup. Large titles on iOS, the Material 3 app bar on Android;
+// with the trust sheets, the widgets setup, and Coach memory or Training preferences with its sheets. Large titles on iOS, the Material 3 app bar on Android;
 // navigation in the text colour, never brand.
 import { Stack } from 'expo-router';
 import { Platform } from 'react-native';
@@ -30,6 +30,9 @@ export default function YouLayout() {
         <Stack.Screen name="see" options={sheet} />
         <Stack.Screen name="trouble" options={sheet} />
         <Stack.Screen name="request" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
+        <Stack.Screen name="memory" options={{ title: 'Coach memory', headerBackTitle: 'You' }} />
+        <Stack.Screen name="memory-edit" options={{ ...sheet, sheetAllowedDetents: [0.7, 1] }} />
+        <Stack.Screen name="memory-clear" options={{ ...sheet, sheetAllowedDetents: 'fitToContents' }} />
       </Stack>
     </ConnectionsProvider>
   );

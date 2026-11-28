@@ -30,7 +30,7 @@ export function NewWeekScreen() {
       brand={focused}
       onReview={() => router.push({ pathname: '/watch/confirm', params: { id } })}
       onBack={() => router.back()}
-      onAsk={() => router.push({ pathname: '/coach', params: { about: p.source } })}
+      onAsk={() => router.push({ pathname: '/coach', params: { about: p.source, label: p.kicker || p.title } })}
     />
   );
 }

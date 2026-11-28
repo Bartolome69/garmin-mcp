@@ -157,9 +157,11 @@ export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated 
 // -- You -----------------------------------------------------------------------------------
 
 /** You (build prompt, section 4): a provider needing a reconnect comes first, with the screen's one brand fill. */
-export function YouView({ vm, brand, actions, plus }: {
+export function YouView({ vm, brand, actions, children, plus }: {
   vm: ConnectionsVM | null; brand: boolean; actions: { connections: () => void; reconnect: (p: Provider) => void };
-  /** You's Plus section (the YouPlus board), above Connections. */
+  /** You's other sections (the Coach and Training preferences, milestone 11), after Connections. */
+  children?: React.ReactNode;
+  /** You's Plus section (the YouPlus board), last. */
   plus?: React.ReactNode;
 }) {
   const { colors } = useTheme();
@@ -188,6 +190,7 @@ export function YouView({ vm, brand, actions, plus }: {
         <Row testID="row-connections" title="Watches and apps" sub={vm ? youSummary(vm) : 'Not loaded yet'} onPress={actions.connections} chevron />
       </List>
       {/* The prompt's order (section 4): Connections, then Coach memory or Training preferences, then Plus. */}
+      {children}
       {plus}
     </ScrollView>
   );

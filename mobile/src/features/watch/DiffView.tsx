@@ -2,8 +2,8 @@
 // change. Day by day, before struck through and after with its type rail; the
 // summary; kilometres for this week and the next two, before as a muted outline
 // and after as a solid bar, value labels only on weeks that change, unchanged
-// weeks identical; the rule used with the Coach off, or one Coach observation
-// with it on. "Review watch changes" opens the watch confirm; nothing is sent
+// weeks identical; the rule used, and with the Coach on one Coach observation
+// added (the prompt: "Coach ON adds an observation card"), so no number goes. "Review watch changes" opens the watch confirm; nothing is sent
 // from here.
 import { Pressable, ScrollView, View } from 'react-native';
 import Svg, { G, Rect, Text as SvgText } from 'react-native-svg';
@@ -136,6 +136,13 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
         </Card>
       ) : null}
 
+      {p.rule ? (
+        <View testID="diff-rule" style={{ gap: 2 }}>
+          <Text variant="kicker" tone="muted">Rule used</Text>
+          <Text variant="footnote" tone="muted">{`${p.rule}.`}</Text>
+        </View>
+      ) : null}
+
       {coach && p.coachNote ? (
         <View testID="diff-coach" style={{ gap: 8, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.hairline }}>
           <Text variant="kicker" tone="muted">Coach</Text>
@@ -145,11 +152,6 @@ export function DiffView({ p, coach, brand = true, onReview, onBack, onAsk }: {
               <Text variant="footnote">Ask about this</Text>
             </View>
           </Pressable>
-        </View>
-      ) : p.rule ? (
-        <View testID="diff-rule" style={{ gap: 2 }}>
-          <Text variant="kicker" tone="muted">Rule used</Text>
-          <Text variant="footnote" tone="muted">{`${p.rule}.`}</Text>
         </View>
       ) : null}
 

@@ -4,6 +4,8 @@
 // Coach tab is hidden, which also makes it unreachable, and the bar reflows to 4.
 import { NativeTabs } from 'expo-router/native-tabs';
 
+import { CoachProvider } from '../../features/coach/CoachProvider';
+import { MemoryProvider } from '../../features/coach/MemoryProvider';
 import { tabsFor, type TabName } from '../../flags/flags';
 import { useFlags } from '../../flags/FlagsProvider';
 import { ICONS } from '../../ui/Icon';
@@ -18,7 +20,10 @@ export default function TabsLayout() {
   const { colors } = useTheme();
   const { flags } = useFlags();
   const shown = new Set(tabsFor(flags));
+  // The Coach's thread and memory sit over the tabs, so they outlive switching tabs; both do nothing with the Coach off.
   return (
+    <MemoryProvider>
+    <CoachProvider>
     <NativeTabs
       backgroundColor={colors.bg}
       tintColor={colors.text}
@@ -37,5 +42,7 @@ export default function TabsLayout() {
         );
       })}
     </NativeTabs>
+    </CoachProvider>
+    </MemoryProvider>
   );
 }

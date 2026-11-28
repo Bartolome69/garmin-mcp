@@ -73,15 +73,22 @@ export function Debrief({ text, onAsk }: { text: string; onAsk: () => void }) {
           <Text testID="debrief-text" variant="coach">{text}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', gap: 6 }}>{thumb('up')}{thumb('down')}</View>
-            <Pressable testID="ask-run" accessibilityRole="button" onPress={onAsk} style={{ minHeight: MIN_TOUCH, justifyContent: 'center' }}>
-              <View style={{ minHeight: 32, paddingHorizontal: 12, borderRadius: 999, justifyContent: 'center', borderWidth: 1, borderColor: colors.muted }}>
-                <Text variant="subhead" style={{ fontWeight: '600' }}>Ask about this run</Text>
-              </View>
-            </Pressable>
+            <AskRun onAsk={onAsk} />
           </View>
         </>
       ) : null}
     </View>
+  );
+}
+
+function AskRun({ onAsk }: { onAsk: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable testID="ask-run" accessibilityRole="button" onPress={onAsk} style={{ minHeight: MIN_TOUCH, justifyContent: 'center' }}>
+      <View style={{ minHeight: 32, paddingHorizontal: 12, borderRadius: 999, justifyContent: 'center', borderWidth: 1, borderColor: colors.muted }}>
+        <Text variant="subhead" style={{ fontWeight: '600' }}>Ask about this run</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -298,6 +305,12 @@ export function RunView({ vm, coach, onAsk }: { vm: RunVM; coach: boolean; onAsk
         </View>
         <Text variant="footnote" tone="muted" numeric>{vm.when}</Text>
       </View>
+      {coach && !vm.coach?.debrief ? (
+        // No debrief from the server for this run: the way into the Coach is still here.
+        <View testID="coach-ask" style={{ alignSelf: 'flex-start' }}>
+          <AskRun onAsk={onAsk} />
+        </View>
+      ) : null}
       {vm.planned ? <PlannedCard rows={vm.planned} /> : null}
       <Charts vm={vm} km={km} onScrub={setKm} />
       {vm.zones ? <ZonesCard zones={vm.zones} /> : null}
