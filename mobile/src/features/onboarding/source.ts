@@ -9,7 +9,7 @@ import type { Goal, PaceResult, Reveal } from './model';
 
 const USE_FIXTURE = __DEV__ || process.env.EXPO_PUBLIC_DAASH_FIXTURE === '1';
 export const CASES = (FIXTURE as unknown as {
-  cases: { import: PaceResult; import_empty: PaceResult; questions: PaceResult; questions_race: PaceResult; reveal: Reveal; reveal_fit: Reveal };
+  cases: { import: PaceResult; import_empty: PaceResult; questions: PaceResult; questions_race: PaceResult; reveal: Reveal; reveal_fit: Reveal; reveal_empty: Reveal; reveal_questions: Reveal };
 }).cases;
 
 // Development only: what the server's Coach would say about the shape. Never a number of its own.

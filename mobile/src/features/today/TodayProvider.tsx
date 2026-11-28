@@ -1,7 +1,8 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 
 import { kv } from '../../db/kv';
 import { useDb } from '../../db/DbContext';
+import { onPlanChanged } from '../../data/planChanged';
 import { useResource, type Cached, type Resource, type ResourceStore } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
 import type { TodayVM } from './model';
@@ -20,6 +21,9 @@ export function TodayProvider({ children, fetcher }: { children: ReactNode; fetc
     save: (value) => kv(db).set(`today:${coach ? 'coach' : 'plain'}`, value),
   } : undefined, [db, coach]);
   const resource = useResource(source, store);
+  const { refresh } = resource;
+  // A plan made elsewhere (onboarding): today's session comes from it.
+  useEffect(() => onPlanChanged(() => { refresh(); }), [refresh]);
   return <TodayContext.Provider value={resource}>{children}</TodayContext.Provider>;
 }
 

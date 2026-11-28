@@ -1,14 +1,11 @@
 import { useLocalSearchParams } from 'expo-router';
 
+import { COMING } from '../../../features/plus/coming';
 import { Screen } from '../../../ui/Screen';
 import { Text } from '../../../ui/Text';
 
 // Where Plan's actions lead, until the milestones that build them. Nothing is
 // written to the watch from here.
-const COMING: Record<string, string> = {
-  plus: 'Plus arrives in milestone 10.',
-};
-
 export default function PlanNext() {
   const { kind } = useLocalSearchParams<{ kind?: string }>();
   return (

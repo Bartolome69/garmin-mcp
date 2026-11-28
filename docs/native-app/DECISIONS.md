@@ -531,9 +531,10 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
 
   No function takes a coach flag (tested with the other engines). The Coach's
   "why this shape" note comes from the server and never carries a number of its
-  own; the rule's line ("Phases follow from your 20 weeks…") shows with the
-  Coach off, as Life happened's rule does, and the numbers are tested equal
-  either way.
+  own; the rule's line ("Phases follow from your 20 weeks…") always shows,
+  because it carries numbers, and the Coach's note is added under it (the
+  prompt's "Coach ON adds"). The numbers, the rule's line included, are tested
+  equal either way.
 - **The four questions work on the phone**, before sign-up, with the shared
   pace engine. `features/onboarding/model.ts` `questions()` is held to the
   server's answers by `onboarding.json` (no race, and a recent half marathon).
@@ -561,8 +562,9 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
   - sending, then "arrives at the next sync" once Garmin has it;
   - on the watch: the filled 56 pt success check (labelled "Done") and, only
     now, the notification ask (section 8). "Allow notifications" asks the
-    system; the answer, or "Not now", is kept on the device so it's never asked
-    twice;
+    system; the answer, or "Not now", is kept on the device, and the landing
+    reads it: a runner who answered once (Plan's "Create a plan" later) gets
+    "Go to Plan" instead of the ask;
   - Not sent: the send state's own card (words, Resend, Trouble connecting?,
     "Nothing changed on your watch").
 
@@ -593,7 +595,9 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
 - **Copy.** The board's landing line "The rest of week 1 follows each evening
   before" is replaced by what actually happens: all of week 1 is sent at the
   confirm, so the landing says "The other 3 sessions of week 1 follow as the
-  watch syncs", or "The rest of week 1 is on it too". Errors use the error
+  watch syncs", or "The rest of week 1 is on it too". Sessions that weren't
+  sent are never in that count: they're said ("2 sessions of week 1 weren't
+  sent. Nothing changed on your watch for those.") with Resend. Errors use the error
   colour with an icon and words, never colour alone, and no exclamation marks.
 - **Conflicts with the boards** (the prompt wins):
   - the Pass 0 boards' "How do you train?" asks for a long run day; the prompt's
@@ -603,7 +607,17 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
     goal is step 1 of 4, so both go to the goal first;
   - the Pass 0 "Connect your watch" and "Stay in the loop" steps are gone:
     connecting happens at the import (or at the plan), and notifications are
-    asked only after the first workout lands.
+    asked only after the first workout lands. So the counter is "Step 1 of 3"
+    (goal), "Step 2 of 3" (paces, the questions and the result) and "Step 3 of
+    3" on the reveal (with the server's kicker), not the boards' "of 4";
+  - the removed Connect board carried section 1's "Daash is independent and not
+    endorsed by any watch maker."; it now sits wherever onboarding sends the
+    runner to Garmin's sign-in: the paces step, the reveal's Connect and
+    Reconnect states, and the welcome after Sign in;
+  - the boards' try card says "Like it? Send it to your watch.", but the
+    session tried isn't kept (Create free account goes to the goal), so it now
+    says "Like it? Make a plan that goes to your watch." and "This try isn't
+    saved".
 - **Analytics (section 11): deferred.** The app still has no analytics layer
   (HARDENING.md). The events onboarding should send when it has one: each step
   viewed (welcome, try, goal, paces, questions, result, reveal, landed),
@@ -639,6 +653,278 @@ source; the app's `mobile/src/domain/` holds only what runs on the device.
     with the landing on the watch as well;
   - `mobile/e2e/5-onboarding.yaml` for a device; flows 1 to 4 now open
     `daash://today` to start past onboarding.
+- **Review fixes (28 Nov).**
+  - *The easy pace the runner confirmed is the plan's.* The import's easy
+    range (read from their runs) now travels in `basis.easy`, and `reveal()`
+    uses it for week 1's easy and long runs, so the result and the reveal show
+    the same range (tested in the domain checks and against the fixture).
+  - *No race, no prediction.* With nothing imported, or no race answered,
+    `basis.assumed` is true: the reveal shows the target but no "Predicted
+    now", and its line says "No prediction without a recent race; paces use a
+    10K of 45:00 for now." instead of "your 10K". An import with no runs says
+    "Phases follow from your 20 weeks." rather than "recent 0 km weeks". New
+    fixture cases `reveal_empty` and `reveal_questions`.
+  - *Sentence case:* "from your half marathon" (race names inside a sentence
+    are lower case, 5K and 10K as they are), in the engine and the twin.
+  - *Targets of 10 hours or more* need h:mm:ss, as `plan_builder.goal_secs`
+    reads two parts of 10 or more as mm:ss.
+  - *Slow replies.* A plan made for paces or a goal that have changed since
+    (Back, Adjust) is dropped by the provider (`revealFor`), never shown or
+    sent; choosing the four questions, or leaving the paces step, makes a slow
+    import stale so it can't push its result over them.
+  - *Plan after "Create a plan".* `data/planChanged.ts`: the landing tells Plan
+    and Today the plan changed and they refresh, so Plan shows the new plan,
+    not "No plan yet".
+  - *No back on the landing* on Android either: a `BackHandler` consumes it, so
+    week 1 can't be staged twice from the steps.
+  - *Sending* has the muted spinner and says "Sending to Garmin"; "next time it
+    syncs" is only said once Garmin has it. The reveal's Reconnect state has
+    its own words (no plan exists yet, so not "Your plan is safe") and "I've
+    signed in", like the signed-out state. The days-a-week chips are
+    MIN_TOUCH wide. The empty import's note uses the basis the server sent.
+  - *Sign in.* After Sign in the welcome shows "I've signed in": with a token,
+    the phone is marked onboarded and goes to Today; without one it says "Not
+    signed in yet". The first screen also sends a phone that has a token
+    (signed in before onboarding existed, or after Sign in) to Today.
+    TODO(server): the token hand-back is still needed for any of this to work
+    on a device.
+  - *Flow tests and Maestro* type a race day five months from the real clock,
+    not 24 Apr 2027.
+- **Open questions for the owner (defaults taken):**
+  - *Sign in for a runner with no plan on the server.* Default: Today, with
+    Plan's "Create a plan"; the alternative is to ask the server whether
+    there's a plan and send a runner without one to the goal step. Likewise a
+    runner who connected Garmin mid-onboarding and closed the app lands on
+    Today next launch (onboarding's answers aren't kept across closing yet).
+  - *A prediction from an assumed 10K.* Default: none shown. The alternative is
+    to show it labelled "from a 10K of 45:00", which is still a guess.
+  - *The session tried before sign-up.* Default: not kept (the card says so).
+    The alternative is to carry it in onboarding and offer it after the
+    landing, through the watch confirm.
+- **Needs a device build (added):** on Android the default notification
+  channel is made before the permission ask (Android 13+ shows no prompt
+  without one); check the prompt appears on a real Android 13+ phone.
+
+## Milestone 10: Plus, entitlements and widgets
+
+- **Free, trial or Plus, in one pure model.** `features/plus/entitlement.ts`
+  holds the tier, when it ends, where it came from (the server, the App Store,
+  Google Play or the web) and whether it renews. `resolve()` picks the best
+  active answer from the server's, the features flags' `plus` (still honoured,
+  so the server can switch someone on) and the purchases the phone's store
+  holds: Plus over a trial, then the later end, then the more trusted source.
+  An answer that has run out is Free, offline included; the last one is kept as
+  `lapsed` so You can say "Your free week ended". A trial counts as Plus for
+  every lock.
+- **The provider.** `EntitlementsProvider` (in the root layout) opens on the
+  answer cached in the kv table, then asks the server and the store, on launch
+  and on coming back to the foreground. A purchase unlocks at once and is handed
+  to the server to check (once per transaction); the server's checked answer
+  then replaces it and is cached. `usePlus()` is what screens read; outside the
+  provider (a screen's own test) it falls back to the flags' `plus`. Plan asks
+  the server again when Plus changes, so the trend appears straight after the
+  free week starts.
+- **Plus isn't known until the cached answer is read (review fix).** Before,
+  every Plus runner was Free for the first render after a launch: Plan fetched
+  the Free plan (no trend) and saved it under the Plus key, and `WidgetSync`
+  wrote the Plus message over the widgets. The provider now has `ready` (the
+  cached answer read, found or not, or anything that unlocks already known);
+  Plan doesn't read or fetch and the widgets aren't written until then.
+  `useResource` takes the variant `key` (Plan's `plan:plain:plus`) and an
+  `enabled` switch: when the key changes, that variant's cached copy draws, a
+  fetch for the old one still on its way is saved under the old key only, and
+  the new one is asked for as soon as it ends. The store's own purchases now
+  count without waiting for a slow server. Source priority's lock can still
+  show for a moment on a cold launch (its data and the cached answer are both
+  kv reads); not worth a gate.
+- **The store, behind an interface, with no library yet.** `features/plus/store.ts`
+  is the `Store` interface (products with the store's own localized price
+  strings, purchase, restore, current, listen), `FakeStore`
+  for development and tests, and `UnavailableStore` for a release build until
+  a store library is added: it offers nothing and says "Daash Plus isn't on sale
+  in this version yet." No price is written anywhere in the app; a test scans
+  the source for currency amounts (the fake store's sample data aside). Product
+  ids: `run.daash.plus.monthly` and `run.daash.plus.yearly`.
+- **Needs a device build, and the owner:** an in-app purchase library and the
+  products in App Store Connect and the Play Console (a monthly subscription
+  with a 7-day free trial introductory offer; the yearly is optional). The
+  default recommendation is `react-native-iap` (StoreKit 2 and Play Billing,
+  open source; the server checks receipts itself with the App Store Server API
+  and the Play Developer API). The alternative is RevenueCat
+  (`react-native-purchases`), which takes the receipt checking and the web
+  subscriptions off the server but sees every purchase. Either one is a new
+  class implementing `Store`, mocked in Jest; nothing else changes.
+- **The paywall, value first (P3-Paywall-off/on).** Kicker "Daash Plus",
+  "See where your training is heading.", a faded preview of the prediction
+  trend (placeholder data, no figures, as on Trends), the Plus items with a
+  lock, "Always free" with ticks, and "Try Plus free for 7 days" as the one
+  brand fill. With the Coach on it adds "Coach without a daily limit · Free has
+  10 messages a day", the number from the flags' `coach_daily_limit`; with the
+  Coach off nothing mentions a Coach. Restore purchases is on the paywall and in
+  You; the footnote says Plus renews until cancelled and where to cancel, which
+  the stores require.
+- **The free week sheet (P1-PaySheet).** "How your free week works", the
+  timeline Today / Day 5 / Day 7 ("Everything in Plus unlocks", "We remind you
+  the trial is ending", "<store price> a month starts, unless you cancel"), "No
+  payment due today. Cancel anytime.", "Start free week" (brand) and "Not now",
+  and "Plans, Today and sending to your watch stay free either way." Until the
+  store answers it says it's asking and Start waits; if the store can't answer
+  it says so with "Try again"; without the store's price it never makes one up.
+  Cancelled at the store: nothing happens. Ask to Buy: "Waiting for approval.
+  Plus unlocks as soon as it's approved." Failed: "The purchase didn't go
+  through. You haven't been charged." Someone who has had the free week sees
+  "Get Plus" and the price from today instead. Started: the sheet and the
+  paywall close, back on the feature that was locked, now open.
+- **The day 5 reminder is Daash's (review fix).** The sheet says "We remind
+  you", and the stores don't reliably send one. `features/plus/reminder.ts`
+  sets a local notification (expo-notifications, already a dependency) two
+  days before a renewing free week ends: "Your free week ends in 2 days · Plus
+  starts Sat 5 Dec unless you cancel in the App Store." It's set when the free
+  week starts (from this phone or the server), taken away once Plus is bought
+  or the free week is cancelled or over, and never set or cleared before the
+  cached answer is read. It never asks for permission (that stays after the
+  first workout lands), so it shows only for runners who allowed
+  notifications. Needs a device build to see it fire.
+- **Open question for the owner: the reminder without notifications.**
+  Default taken: a local notification only, plus TODO(server) a day 5 email
+  to the account's address, so "We remind you" holds for runners who said no
+  to notifications. Until the email exists, someone who declined
+  notifications gets no reminder; the copy stays as on the board.
+- **Restore says what it found (review fix).** "Purchases restored." only when
+  Plus or a running free week is back; purchases that have all run out say
+  "Your free week has ended." or "Your Plus has ended."; nothing at all says
+  "No purchases found for this account."
+- **Never mid-flow.** The paywall is a root screen opened only by
+  `openPaywall()`, from a lock (Trends, Block, Source priority, Widgets) or
+  You's Plus row. A test lists exactly those callers, that only the free week
+  sheet buys, and that Today, the watch confirm and queue, the builder, post-run
+  and onboarding never read Plus or open the paywall. A flow test sends a
+  session to the watch as a Free runner.
+- **Conflict, board and routes: the paywall opens over the tab that asked.**
+  The board draws it inside You's stack with the tab bar. A lock on Plan would
+  then jump to You, so it's a modal on iOS (a full screen on Android) over
+  whichever tab asked, with a close button, and the free week sheet over it.
+- **Plus locks, visible but locked.** A shared `LockedPreview` (faded, hidden
+  from screen readers, a lock with "See Plus" and the words) and `PlusRow`
+  (lock, words, "Plus"; plain once unlocked):
+  - the prediction trend and race-day projection on Plan · Trends (as before,
+    now through the shared component);
+  - advanced plan styles: a new row on Plan · Block;
+  - advanced merge rules on Source priority, with the board's words "Pick the
+    source per metric, tune match windows" and today's rule;
+  - widgets: a Widgets row in You opens the setup screen, whose previews are
+    faded behind a lock for Free.
+- **Conflict, board and earlier decision: no named training methods.** The
+  paywall board says "Pfitzinger, Daniels and Hansons shapes"; milestone 4 left
+  out named methods because they read as an endorsement. The paywall says "More
+  shapes for your training block".
+- **Conflict, prompt and boards: what Plus holds.** P1-PaySheet and Plus-ios
+  list "More than one watch" and "Deeper analytics" as Plus; the prompt says
+  connecting all watches and apps is free and lists advanced merge rules
+  instead. The prompt wins (as on the P3 boards). Plus-ios's "Continue on the
+  web · handled on daash.run" gives way to the in-app trial (the prompt asks
+  for StoreKit and Play Billing); a web subscription still counts, as source
+  `web`.
+- **Owner decision: two Plus features don't exist yet.** Advanced plan styles
+  (the server's plan builder has steady, balanced and faster) and advanced merge
+  rules (per-metric sources, custom windows) have no engine. Free sees them
+  locked as the prompt asks; on Plus the rows open "…come with your Plus and
+  arrive in an update." Selling them before they exist is the owner's call;
+  the default keeps the locks so the designs hold.
+- **Review fix: the paywall doesn't sell them as there.** The paywall items,
+  Block's row and Source priority's row now say "Coming in an update", so
+  nobody pays for something that isn't built (store review also asks that
+  what's sold is delivered). Merge rules' placeholder for a Plus runner is
+  `/you/coming`, in You's own stack, rather than jumping into Plan's. Leaving
+  them off the paywall entirely is the other option; the owner decides when
+  the engines are scheduled.
+- **Plus in You (You, YouPlus boards).** A Plus section below Connections.
+  Free: "Daash Plus · Prediction trend, plan styles, widgets" (plus "Coach
+  without a daily limit" with the Coach on) and "Get Plus". Trial: "Free week ·
+  Plus starts Sat 5 Dec" with a Trial badge. Plus: "Since Nov · manage in the
+  App Store / in Google Play / on daash.run" with an Active badge. Then
+  Widgets, and Restore purchases (Free) or Manage subscription.
+- **Conflict, prompt and boards: where Plus sits in You.** The Plus-ios and
+  YouPlus boards put Plus above Connections; the prompt (section 4) orders You
+  as Connections, Coach memory or Training preferences, then Plus. The prompt
+  wins: Plus is below Connections (and goes below Training preferences or
+  Coach memory when they arrive).
+- **Manage goes where the money goes (review fix).** `manageLink()` picks the
+  place from the entitlement's source: a web subscription opens the daash.run
+  account page, an App Store or Play subscription that store's subscriptions
+  page (whichever phone it's opened on). A grant from Daash (the flags'
+  `plus`, or a server answer that names no source) has nowhere to manage it:
+  no Manage row or button, and You says "Since Nov".
+- **Widgets read a snapshot, never the server.** `features/widgets/snapshot.ts`
+  builds what every widget draws from the phone's cached Today (with the watch
+  queue's state applied) and the cached plan's block: the readiness word,
+  number and decision; today's session ("Today · Tempo", "3 × 2 km", "on
+  watch"); the countdown ("London", 148 days, "Sat 24 Apr", and the race day,
+  so the widget counts down without the app); the week strip ("Week 4 of 21 ·
+  Base", "This week · 28 of 54 km"); and the lock screen's circular and
+  rectangular lines. Old data says "Updated 07:02", "Updated yesterday" or
+  "Updated 26 Nov" (times, not "2h ago": a widget isn't redrawn every minute),
+  and a session from an earlier day is named by its day. Free gets "Widgets come
+  with Daash Plus. Open Daash to try it free." and no data, or "…Open Daash to
+  see Plus." once a free week or Plus has run out (the store won't give the
+  free week again); nothing cached gets "Open Daash to load today." Never a
+  blank.
+- **`WidgetSync`** (under Today's provider) rebuilds the snapshot whenever Today,
+  the queue or Plus changes, and every 15 minutes, and writes it through the
+  `WidgetBridge` only when it draws something different, then reloads the
+  widgets. It doesn't overwrite a good snapshot with "Open Daash" while Today is
+  still loading. The setup screen draws its previews from the same builder.
+- **Native widgets: written, not built.** `mobile/native/widgets/` holds an Expo
+  module (`DaashWidgets`: write the JSON to the App Group's shared defaults or
+  to shared preferences, then `reloadAllTimelines` / Glance `updateAll`), the
+  WidgetKit extension (Today small and lock screen circular and rectangular,
+  Countdown small, Week medium) and the Glance widgets (2×2 Today, 4×2 week,
+  countdown). Each reads the same snapshot and works out "Updated" and the
+  countdown at draw time with the app's rule. A config plugin adds the App
+  Group and writes the widgets' colours from the design tokens at prebuild
+  (`DaashTokens.swift`, `DaashTokens.kt`, git-ignored). None of it is in the
+  build yet, and all of it is marked UNVERIFIED. Jest checks the plugin's pure
+  parts, that every colour the widgets name is a token, that no colour is typed
+  by hand, and that both sides use the app's key and 30-minute rule. The app
+  side does nothing when the module isn't there.
+- **Needs a device build** to switch the widgets on: move `native/widgets` to
+  `modules/daash-widgets` (autolinked), add `@bacons/apple-targets` and copy
+  `ios-extension/` to `targets/widgets/` for the extension target, add the
+  plugin to app.json, and register the App Group `group.run.daash.app` for the
+  app and the extension in the Apple developer account. Then check every widget
+  in light and dark, at large text, with old data and with none.
+- **Conflict, prompt and platform: no At a Glance.** Android's At a Glance has
+  no public API for other apps' content, and phones have no lock screen widgets;
+  Android gets the three home screen widgets. Glance has no arc, so the 2×2
+  shows the number and the word in the decision's colour instead of a ring.
+  The setup screen, the paywall and You say so on Android (review fix): "home
+  screen" rather than "home and lock screen", no At a Glance instructions, and
+  no lock screen preview; a test checks the Android copy names only those.
+- **Analytics.** `analytics/analytics.ts` is a small `track()` with two events,
+  `paywall_viewed {from, coach}` and `trial_started {product, trial}`; any key
+  that looks like a health value is dropped. Nothing is sent yet: a later
+  milestone points the sink at PostHog.
+- **TODO(server):**
+  - `GET /app/api/v1/entitlements` answers `{tier, expires_at, source, since,
+    will_renew, product_id}` from checked receipts and web subscriptions, and
+    always names the `source` (app_store, play or web) when there's a
+    subscription behind it, or Manage has nowhere to go. The features flags'
+    `plus` stays a plain boolean (a grant); the flags parser drops anything
+    else, so the full answer comes only from this endpoint;
+  - the daash.run account page (`https://daash.run/account` in the app) where a
+    web subscription is managed, before anything is sold on the web;
+  - a day 5 email for a renewing free week (see the open question above);
+  - `POST /app/api/v1/entitlements/verify {platform, product_id,
+    transaction_id, receipt}` checks a purchase with Apple or Google and answers
+    the entitlement it records;
+  - App Store Server Notifications and Play real-time developer notifications,
+    so renewals, refunds and cancellations reach the server;
+  - the plan endpoint keeps leaving the trend out for Free, now for an expired
+    trial too;
+  - Today could send the race as `{name, date}` instead of the app reading
+    "London in 148 days" for the countdown.
+- **Development.** A development build is Free (so the locks show) with
+  `FakeStore`, whose free week works; `EXPO_PUBLIC_DAASH_PLUS=1` makes it Plus.
 
 ## Milestone 11: Coach
 

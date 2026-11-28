@@ -27,6 +27,7 @@ import PlanLife from './app/(tabs)/plan/life';
 import PlanMove from './app/(tabs)/plan/move';
 import PlanNewWeek from './app/(tabs)/plan/new-week';
 import PlanNext from './app/(tabs)/plan/next';
+import YouComing from './app/(tabs)/you/coming';
 import PlanRun from './app/(tabs)/plan/run/[id]';
 import PlanSession from './app/(tabs)/plan/session/[id]';
 import TodayLayout from './app/(tabs)/today/_layout';
@@ -46,6 +47,12 @@ import YouPriority from './app/(tabs)/you/priority';
 import YouRequest from './app/(tabs)/you/request';
 import YouSee from './app/(tabs)/you/see';
 import YouTrouble from './app/(tabs)/you/trouble';
+import YouWidgets from './app/(tabs)/you/widgets';
+import PlusPaywall from './app/plus/index';
+import PlusTrial from './app/plus/trial';
+import WatchConfirm from './app/watch/confirm';
+import { EntitlementsProvider } from './features/plus/EntitlementsProvider';
+import { FakeStore } from './features/plus/store';
 import OnboardingGoal from './app/onboarding/goal';
 import OnboardingIndex from './app/onboarding/index';
 import OnboardingLanded from './app/onboarding/landed';
@@ -55,7 +62,6 @@ import OnboardingResult from './app/onboarding/result';
 import OnboardingReveal from './app/onboarding/reveal';
 import OnboardingTry from './app/onboarding/try';
 import { OnboardingStack } from './app/onboarding/_layout';
-import WatchConfirm from './app/watch/confirm';
 import { numbersIn, numbersOfPayload } from './domain/replyGuard';
 import ONBOARDING from './features/onboarding/onboarding.fixture.json';
 import RUNS from './features/run/runs.fixture.json';
@@ -98,12 +104,14 @@ function app(scheme: 'dark' | 'light', coach = true) {
   const Root = ({ children }: { children?: ReactNode }) => (
     <ThemeProvider initial={scheme}>
       <FlagsProvider initial={{ ...DEFAULT_FLAGS, coach_enabled: coach }}>
-        <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false} pollEveryMs={0}>
-          <CoachApiContext.Provider value={coachThread()}>
-            <Probe />
-            {children ?? <Stack screenOptions={{ headerShown: false }} />}
-          </CoachApiContext.Provider>
-        </WatchProvider>
+        <EntitlementsProvider store={new FakeStore()} fetcher={async () => { throw new Error('offline'); }}>
+          <WatchProvider transport={new FakeGarmin()} store={memoryStore()} auto={false} pollEveryMs={0}>
+            <CoachApiContext.Provider value={coachThread()}>
+              <Probe />
+              {children ?? <Stack screenOptions={{ headerShown: false }} />}
+            </CoachApiContext.Provider>
+          </WatchProvider>
+        </EntitlementsProvider>
       </FlagsProvider>
     </ThemeProvider>
   );
@@ -123,6 +131,8 @@ function app(scheme: 'dark' | 'light', coach = true) {
     '(tabs)/you/_layout': YouLayout, '(tabs)/you/index': YouIndex, '(tabs)/you/connections': YouConnections,
     '(tabs)/you/priority': YouPriority, '(tabs)/you/see': YouSee, '(tabs)/you/trouble': YouTrouble, '(tabs)/you/request': YouRequest,
     '(tabs)/you/memory': YouMemory, '(tabs)/you/memory-edit': YouMemoryEdit, '(tabs)/you/memory-clear': YouMemoryClear,
+    '(tabs)/you/widgets': YouWidgets, '(tabs)/you/coming': YouComing,
+    'plus/index': PlusPaywall, 'plus/trial': PlusTrial,
     // Onboarding part way through (the persona's goal, import and plan), so every step has what it shows.
     'onboarding/_layout': () => (
       <OnboardingProvider initial={{ goal: { kind: 'race', name: 'London Marathon', date: '2027-04-24', km: 42.195, target: '3:15' }, result: CASES.import, reveal: CASES.reveal }}>
@@ -149,13 +159,17 @@ export const SCREENS: [string, string, string][] = [
   ['Builder · edit', '/plan/builder?id=2026-11-27-tempo', 'builder'],
   ['Post-run (Plan)', '/plan/run/2026-11-25-intervals', 'run'],
   ['Post-run (Today)', '/today/run/2026-11-26-easy', 'run'],
-  ['Plus placeholder', '/plan/next?kind=plus', 'plan-next'],
+  ['Plus feature to come', '/plan/next?kind=plan_styles', 'plan-next'],
   ['You', '/you', 'you'],
   ['Connections', '/you/connections', 'connections'],
   ['Source priority', '/you/priority', 'priority'],
   ['What Daash can see', '/you/see', 'see-sheet'],
   ['Trouble connecting', '/you/trouble', 'trouble-sheet'],
   ['Request a device', '/you/request', 'request-sheet'],
+  ['Widgets setup', '/you/widgets', 'widgets'],
+  ['Plus feature to come (You)', '/you/coming', 'you-coming'],
+  ['Plus (paywall)', '/plus?from=you', 'paywall'],
+  ['Plus · free week sheet', '/plus/trial', 'trial-sheet'],
   ['Coach', '/coach', 'coach'],
   ['Coach · from a run', '/coach?run=2026-11-25-intervals&label=Wed%2025%20%C2%B7%206%20%C3%97%20800%20m', 'coach'],
   ['Coach · menu', '/coach/menu', 'coach-menu'],

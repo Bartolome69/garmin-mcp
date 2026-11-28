@@ -12,6 +12,8 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { Button, MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
+import { PlusRow } from '../../ui/Locked';
+import { COMING_NOTE } from '../plus/coming';
 import { openGarminSignIn } from '../../ui/StateViews';
 import { Text } from '../../ui/Text';
 import { badgeWords, mergeTitle, mergeWords, prioritySummary, sourceName, youSummary, type ConnectionsVM, type Provider } from './model';
@@ -155,10 +157,12 @@ export function ConnectionsView({ vm, asked, actions, os = Platform.OS, updated 
 // -- You -----------------------------------------------------------------------------------
 
 /** You (build prompt, section 4): a provider needing a reconnect comes first, with the screen's one brand fill. */
-export function YouView({ vm, brand, actions, children }: {
+export function YouView({ vm, brand, actions, children, plus }: {
   vm: ConnectionsVM | null; brand: boolean; actions: { connections: () => void; reconnect: (p: Provider) => void };
   /** You's other sections (the Coach and Training preferences, milestone 11), after Connections. */
   children?: React.ReactNode;
+  /** You's Plus section (the YouPlus board), last. */
+  plus?: React.ReactNode;
 }) {
   const { colors } = useTheme();
   const broken = vm?.providers.filter((p) => p.state === 'reconnect') ?? [];
@@ -185,7 +189,9 @@ export function YouView({ vm, brand, actions, children }: {
       <List>
         <Row testID="row-connections" title="Watches and apps" sub={vm ? youSummary(vm) : 'Not loaded yet'} onPress={actions.connections} chevron />
       </List>
+      {/* The prompt's order (section 4): Connections, then Coach memory or Training preferences, then Plus. */}
       {children}
+      {plus}
     </ScrollView>
   );
 }
@@ -276,16 +282,8 @@ export function PriorityView({ vm, os = Platform.OS, plus, actions }: {
           ))}
         </>
       ) : null}
-      <Pressable testID="advanced" accessibilityRole="button" onPress={actions.plus}
-        accessibilityLabel={plus ? 'Advanced merge rules' : 'Advanced merge rules, Plus. Per-metric sources and custom match windows.'}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, minHeight: MIN_TOUCH, borderRadius: 12, borderWidth: 1, borderColor: colors.hairline }}>
-        <Icon name="lock" tone="muted" />
-        <View style={{ flex: 1 }}>
-          <Text variant="body">Advanced merge rules</Text>
-          <Text variant="footnote" tone="muted">{`Per-metric sources and custom match windows. Now: within ${vm.match.startWithinSeconds / 60 === 1 ? '1 minute' : `${vm.match.startWithinSeconds} s`} and ±${vm.match.distanceWithinPct}%.`}</Text>
-        </View>
-        <Text variant="footnote" tone="muted" style={{ fontWeight: '600' }}>Plus</Text>
-      </Pressable>
+      <PlusRow testID="advanced" title="Advanced merge rules" plus={plus} onPress={actions.plus}
+        sub={`Pick the source per metric, tune match windows. ${COMING_NOTE}. Now: within ${vm.match.startWithinSeconds / 60 === 1 ? '1 minute' : `${vm.match.startWithinSeconds} s`} and ±${vm.match.distanceWithinPct}%.`} />
     </ScrollView>
   );
 }

@@ -8,9 +8,9 @@ import Svg, { Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import { mmss } from '../../domain/format';
 import { useTheme } from '../../theme/ThemeProvider';
-import { MIN_TOUCH } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { Icon } from '../../ui/Icon';
+import { LockedPreview } from '../../ui/Locked';
 import { Text } from '../../ui/Text';
 import type { LoadWeek, TrendsVM } from './model';
 
@@ -89,6 +89,16 @@ function TrendChart({ points, target, start, projection, label }: {
 // The locked preview's shape: a generic line, not the person's predictions.
 const PREVIEW = [12000, 11940, 11880, 11800, 11760, 11700, 11640];
 
+/** The prediction trend card as a Free runner sees it behind the lock (and on the paywall): no figures. */
+export function TrendPreview() {
+  return (
+    <Card>
+      <Text variant="headline">Prediction trend</Text>
+      <TrendChart points={PREVIEW} target={null} start="" projection="" label="" />
+    </Card>
+  );
+}
+
 export function TrendsView({ vm, plus, onTrim, onPlus }: { vm: TrendsVM; plus: boolean; onTrim: () => void; onPlus: () => void }) {
   const { colors } = useTheme();
   const over = vm.load.weeks.find((w) => w.trim);
@@ -146,22 +156,9 @@ export function TrendsView({ vm, plus, onTrim, onPlus }: { vm: TrendsVM; plus: b
             label={`Predicted time over 12 weeks, from ${vm.trend.start.replace(' · ', ' ')} to ${mmss(vm.trend.points[vm.trend.points.length - 1].seconds)} now. ${vm.trend.projection}.`} />
         </Card>
       ) : !plus ? (
-        <View testID="trend-locked" style={{ borderRadius: 12, overflow: 'hidden' }}>
-          <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ opacity: 0.3 }}>
-            <Card>
-              <Text variant="headline">Prediction trend</Text>
-              <TrendChart points={PREVIEW} target={null} start="" projection="" label="" />
-            </Card>
-          </View>
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16 }}>
-            <Pressable testID="see-plus" accessibilityRole="button" accessibilityLabel="See Plus. Trend and race-day projection are in Plus" onPress={onPlus}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: MIN_TOUCH, paddingHorizontal: 16, borderRadius: 999, backgroundColor: colors.button }}>
-              <Icon name="lock" />
-              <Text variant="subhead" style={{ fontWeight: '600' }}>See Plus</Text>
-            </Pressable>
-            <Text variant="footnote" tone="text2" style={{ textAlign: 'center' }}>Trend and race-day projection are in Plus</Text>
-          </View>
-        </View>
+        <LockedPreview testID="trend-locked" caption="Trend and race-day projection are in Plus" onPress={onPlus}>
+          <TrendPreview />
+        </LockedPreview>
       ) : null}
     </View>
   );

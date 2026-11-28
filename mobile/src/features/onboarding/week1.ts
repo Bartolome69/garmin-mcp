@@ -23,15 +23,18 @@ const hhmm = (t: number) => { const d = new Date(t); return `${String(d.getHours
 
 /**
  * Where week 1 is, for the landing screen: its first session's watch state, and once
- * that's on the watch, how many of the others aren't yet. Null: not sent at all.
+ * that's on the watch, how many of the others are still on their way and how many
+ * weren't sent. Null: not sent at all.
  */
 export function landingFor(week: RevealSession[], opFor: (sessionId: string) => WatchOp | null, device: string | null): Landing | null {
   const first = week[0];
   const op = first ? opFor(first.id) : null;
   if (!op) return null;
   if (op.state === 'on_watch') {
-    const rest = week.slice(1).filter((s) => opFor(s.id)?.state !== 'on_watch').length;
-    return { state: 'landed', at: hhmm(op.onWatchAt ?? op.updatedAt), device, rest, total: week.length };
+    const others = week.slice(1).map((s) => opFor(s.id)?.state);
+    const failed = others.filter((st) => st === 'failed').length;
+    const rest = others.filter((st) => st !== 'on_watch' && st !== 'failed').length;
+    return { state: 'landed', at: hhmm(op.onWatchAt ?? op.updatedAt), device, rest, failed, total: week.length };
   }
   if (op.state === 'failed') {
     return { state: 'failed', error: op.error ?? 'Not sent.', at: hhmm(op.updatedAt), retrying: op.nextAttemptAt != null };

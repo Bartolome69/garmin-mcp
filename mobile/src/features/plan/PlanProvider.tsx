@@ -4,8 +4,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { kv } from '../../db/kv';
 import { useDb } from '../../db/DbContext';
+import { onPlanChanged } from '../../data/planChanged';
 import { useResource, type Cached, type Resource, type ResourceStore } from '../../data/resource';
 import { useFlags } from '../../flags/FlagsProvider';
+import { useEntitlement } from '../plus/EntitlementsProvider';
 import { applyToPlan } from '../watch/apply';
 import { useWatch } from '../watch/WatchProvider';
 import type { PlanVM } from './model';
@@ -37,14 +39,22 @@ const PlanContext = createContext<PlanState | null>(null);
 export function PlanProvider({ children, fetcher }: { children: ReactNode; fetcher?: () => Promise<PlanVM> }) {
   const db = useDb();
   const { flags } = useFlags();
-  const { coach_enabled: coach, plus } = flags;
+  const coach = flags.coach_enabled;
+  // Plus or a running free week: the server adds the prediction trend.
+  const { plus, ready } = useEntitlement();
   const key = `plan:${coach ? 'coach' : 'plain'}:${plus ? 'plus' : 'free'}`;
   const source = useMemo(() => fetcher ?? planSource(coach, plus), [fetcher, coach, plus]);
   const store = useMemo<ResourceStore<PlanVM> | undefined>(() => db ? {
     load: () => kv(db).get<Cached<PlanVM>>(key),
     save: (value) => kv(db).set(key, value),
   } : undefined, [db, key]);
-  const resource = useResource(source, store);
+  // Nothing is read or fetched until Plus is known, so a Plus runner never gets the
+  // Free plan first. Plus starting (or ending) changes the key: that plan's copy
+  // draws and the server is asked again at once (data/resource.ts).
+  const resource = useResource(source, store, undefined, { enabled: ready, key });
+  const { refresh } = resource;
+  // A plan made elsewhere (onboarding from "Create a plan"): fetch it rather than keep the empty one.
+  useEffect(() => onPlanChanged(() => { refresh(); }), [refresh]);
   const watch = useWatch();
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [warned, setWarned] = useState(false);

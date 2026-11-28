@@ -48,9 +48,11 @@ class RecentRun:
     name: str = ""
 
 
-def _race_name(km: float) -> str:
+def _race_name(km: float, mid: bool = False) -> str:
+    """"10K", "Half marathon"; `mid` for inside a sentence ("from your half marathon")."""
     near = min(RACE_NAMES, key=lambda k: abs(k - km))
-    return RACE_NAMES[near] if abs(near - km) / near < 0.03 else f"{km:g} km"
+    name = RACE_NAMES[near] if abs(near - km) / near < 0.03 else f"{km:g} km"
+    return name.lower() if mid and not name[0].isdigit() else name
 
 
 def _range(values: list[float], step: int = 5) -> tuple[int, int]:
@@ -69,7 +71,7 @@ def _rows(race: tuple[float, float, date | None, str] | None, basis: tuple[float
     rows.append({"key": "easy", "label": "Easy pace", "value": f"{mmss(e[0])}–{mmss(e[1])} /km", "note": easy_note})
     t = zones["threshold"]
     rows.append({"key": "threshold", "label": "Threshold", "value": f"{mmss(t[0])}–{mmss(t[1])} /km",
-                 "note": f"from your {_race_name(basis[0])}" if race else "from the 10K above"})
+                 "note": f"from your {_race_name(basis[0], mid=True)}" if race else "from the 10K above"})
     if week:
         rows.append({"key": "week", "label": "Usual week", "value": f"{week[0]:.0f} km · {week[1]:.0f} runs", "note": week_note})
     return rows
@@ -92,7 +94,7 @@ def import_summary(runs: Sequence[RecentRun], today: date) -> dict[str, Any]:
     first = recent[0].day if recent else today
     enough = len(easy_runs) >= 3
     # Too few easy runs to read a range: the race's easy zone, or the default 10K's, said as such.
-    easy_note = f"from {len(easy_runs)} runs" if enough else (f"from your {_race_name(best.km)}" if best else "from the 10K above")
+    easy_note = f"from {len(easy_runs)} runs" if enough else (f"from your {_race_name(best.km, mid=True)}" if best else "from the 10K above")
     return {
         "source": "import",
         "title": f"Found {len(recent)} runs since {MONTHS_LONG[first.month - 1]}" if recent else "No runs in the last 12 weeks",
@@ -101,7 +103,10 @@ def import_summary(runs: Sequence[RecentRun], today: date) -> dict[str, Any]:
                       _range(easy_runs) if enough else None, easy_note,
                       # No runs in the last 8 weeks: no usual week to show, rather than "0 km · 0 runs".
                       (km, n) if n else None, f"last {USUAL_WEEKS} weeks", "import"),
-        "basis": {"raceKm": basis[0], "raceSeconds": basis[1], "raceDate": best.day.isoformat() if best else None},
+        # `easy`: the range read from the runs, which the plan's easy runs use (the runner
+        # confirmed it); `assumed`: no race to go on, so no prediction is made from it.
+        "basis": {"raceKm": basis[0], "raceSeconds": basis[1], "raceDate": best.day.isoformat() if best else None,
+                  "easy": list(_range(easy_runs)) if enough else None, "assumed": best is None},
         "answers": {"avg_km": round(km, 1), "longest_km": round(longest, 1), "days": max(3, min(7, round(n)))},
     }
 
@@ -117,7 +122,7 @@ def questions(experience: str, days: int, weekly: str, race_km: float | None = N
         "title": "From your answers",
         "runs": None,
         "rows": _rows(race, basis, None, "from the race" if race else "from the 10K above", (km, days), "from your answers", "questions"),
-        "basis": {"raceKm": basis[0], "raceSeconds": basis[1], "raceDate": None},
+        "basis": {"raceKm": basis[0], "raceSeconds": basis[1], "raceDate": None, "easy": None, "assumed": race is None},
         "answers": {"avg_km": km, "longest_km": round(km * 0.3, 1), "days": max(3, min(7, days)), "level": level},
     }
 
@@ -145,7 +150,11 @@ def reveal(answers: dict[str, Any], basis: dict[str, Any], today: date, goal: di
     b = plan_builder.build(a, fitness, today)
     s = b.shape
     zones = pace_engine.paces(basis["raceKm"], basis["raceSeconds"]).zones
-    predicted = fitness.predicted(s.dist, s.km) if goal else None
+    # The easy range the runner confirmed on the result, when it was read from their runs.
+    easy = tuple(basis["easy"]) if basis.get("easy") else zones["easy"]
+    # A 10K assumed for want of a race (none in 12 weeks, or none answered) makes no prediction.
+    assumed = bool(basis.get("assumed"))
+    predicted = fitness.predicted(s.dist, s.km) if goal and not assumed else None
     target = plan_builder.goal_secs(goal.get("target"), s.dist) if goal and goal.get("target") else None
     week1 = []
     for r in b.weeks[0]["rows"]:
@@ -153,7 +162,7 @@ def reveal(answers: dict[str, Any], basis: dict[str, Any], today: date, goal: di
         km = round(r["km"], 1)
         title = plan_builder._plain(r["name"])
         title = f"Long run {km:g} km" if title == "Long run" else re.sub(r"(\d+(?:\.\d+)?)k\b", r"\1 km", title)
-        z = zones["easy"] if kind in ("easy", "long") else None
+        z = easy if kind in ("easy", "long") else None
         label = {"easy": "Easy", "long": "Long", "tempo": "Tempo", "intervals": "Intervals", "race": "Race"}[kind]
         d = r["date"]
         week1.append({
@@ -162,7 +171,12 @@ def reveal(answers: dict[str, Any], basis: dict[str, Any], today: date, goal: di
             "sub": " · ".join([label, f"{km:g} km", *([f"{mmss(z[0])}–{mmss(z[1])}"] if z else [])]),
             "workout": {"schema": "daash.workout.v1", "name": title, "sport": "running", "steps": r["steps"]},
         })
-    race_name = _race_name(basis["raceKm"])
+    race_name = _race_name(basis["raceKm"], mid=True)
+    avg = answers.get("avg_km") or 0
+    because = f"Phases follow from your {s.weeks} weeks" + (f" and recent {avg:.0f} km weeks." if avg >= 1 else ".")
+    if goal:
+        because += (f" No prediction without a recent race; paces use a {race_name} of {mmss(basis['raceSeconds'])} for now."
+                    if assumed else f" Prediction uses your {race_name} of {mmss(basis['raceSeconds'])}.")
     return {
         "kicker": f"Your plan · {s.weeks} weeks",
         "title": f"{goal['name']}, {DAYS[s.race.day.weekday()]} {short_date(s.race.day)}" if goal and s.race else
@@ -173,7 +187,6 @@ def reveal(answers: dict[str, Any], basis: dict[str, Any], today: date, goal: di
         "startKm": round(b.weeks[0]["km"]),
         "peakKm": round(b.peak_km),
         "starts": s.start.isoformat(),
-        "because": (f"Phases follow from your {s.weeks} weeks and recent {answers['avg_km']:.0f} km weeks."
-                    + (f" Prediction uses your {race_name} of {mmss(basis['raceSeconds'])}." if goal else "")),
+        "because": because,
         "week1": week1,
     }

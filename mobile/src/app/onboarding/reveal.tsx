@@ -22,13 +22,16 @@ export default function RevealScreen() {
   // The batches on the queue when week 1 was staged: a new one is this confirm's.
   const staged = useRef<{ id: string; before: Set<string> } | null>(null);
   const moved = useRef(false);
-  const { result, goal, reveal, setReveal } = ob;
+  const { result, goal, reveal, revealFor, current } = ob;
 
   const load = useCallback(() => {
     if (!result || !goal) return;
     setFailure(null);
-    makePlan(result, goal, flags.coach_enabled).then(setReveal).catch((err) => setFailure(failureKind(err)));
-  }, [result, goal, flags.coach_enabled, setReveal]);
+    // A reply for paces or a goal changed since (Back, Adjust) is dropped, never shown or sent.
+    makePlan(result, goal, flags.coach_enabled)
+      .then((r) => { revealFor(result, goal, r); })
+      .catch((err) => { if (current(result, goal)) setFailure(failureKind(err)); });
+  }, [result, goal, flags.coach_enabled, revealFor, current]);
   // A plan already made from these answers is kept; changed answers drop it (OnboardingProvider).
   useEffect(() => { if (!reveal) load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
